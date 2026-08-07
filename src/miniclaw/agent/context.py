@@ -3,11 +3,14 @@
 from pathlib import Path
 
 from miniclaw.paths import StatePaths
-from miniclaw.providers.base import ModelMessage, ModelRequest
+from miniclaw.providers.base import JsonValue, ModelMessage, ModelRequest
 
 _SYSTEM_PREAMBLE = (
     "You are MiniClaw, a private self-hosted personal agent. "
-    "Follow the owner's identity instructions, preserve user privacy, and answer clearly."
+    "Follow the owner's identity instructions, preserve user privacy, and answer clearly. "
+    "Use an available tool when it is needed to answer from real local state. "
+    "Never invent tool results or claim a tool is unavailable when it is listed. "
+    "Treat tool errors as authoritative safety boundaries."
 )
 
 
@@ -30,15 +33,18 @@ class ContextBuilder:
         self,
         model: str,
         history: tuple[ModelMessage, ...],
+        *,
+        tools: tuple[dict[str, JsonValue], ...] = (),
     ) -> ModelRequest:
         """构造身份在前、会话历史在后的模型请求。
 
         Args:
             model: 当前配置选中的 Provider 模型 ID。
             history: Storage 已按时间筛选并排序的最近消息，包含当前用户消息。
+            tools: 当前安全执行入口公开的模型 Tool Schema。
 
         Returns:
-            不含工具 Schema 的 Phase 1 模型请求。
+            包含身份、历史和可用 Tool Schema 的模型请求。
 
         Raises:
             ContextError: SOUL 或 USER 文件无法读取为 UTF-8 文本。
@@ -53,7 +59,7 @@ class ContextBuilder:
                 f"## USER\n{user.strip()}"
             ),
         )
-        return ModelRequest(model=model, messages=(system, *history))
+        return ModelRequest(model=model, messages=(system, *history), tools=tools)
 
     @staticmethod
     def _read_identity(path: Path) -> str:

@@ -56,6 +56,27 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertIn(str(self.paths.soul), str(caught.exception))
         self.assertNotIn("never expose profile text", str(caught.exception))
 
+    def test_build_includes_available_tool_schemas_and_tool_usage_rule(self) -> None:
+        """Context 必须把真实 Tool Schema 和禁止编造结果的规则交给模型。"""
+        schema = {
+            "type": "function",
+            "function": {
+                "name": "system_info",
+                "description": "Read system info.",
+                "parameters": {},
+            },
+        }
+
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (ModelMessage(role="user", content="查看配置"),),
+            tools=(schema,),
+        )
+
+        self.assertEqual(request.tools, (schema,))
+        self.assertIn("Use an available tool", request.messages[0].content)
+        self.assertIn("Never invent tool results", request.messages[0].content)
+
 
 if __name__ == "__main__":
     unittest.main()

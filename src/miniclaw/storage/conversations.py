@@ -5,7 +5,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from miniclaw.providers.base import JsonValue
+from miniclaw.providers.base import JsonValue, ModelMessage
 from miniclaw.storage.database import Database
 
 
@@ -240,6 +240,7 @@ class TurnRepository:
         session_id: int,
         content: str,
         *,
+        intermediate_messages: tuple[ModelMessage, ...] = (),
         input_tokens: int,
         output_tokens: int,
         provider_request_id: str | None,
@@ -252,6 +253,7 @@ class TurnRepository:
             turn_id: 必须处于 running 的 Turn ID。
             session_id: 同时约束 Turn 和新 Message 的 Session ID。
             content: 最终可见 Assistant 回答。
+            intermediate_messages: 本轮按顺序产生的 Assistant Tool Call 与 Tool Result。
             input_tokens: 当前 Agent Loop 累计输入 Token。
             output_tokens: 当前 Agent Loop 累计输出 Token。
             provider_request_id: 最后一个可用的服务商诊断请求 ID。
@@ -275,6 +277,44 @@ class TurnRepository:
         )
         metadata = _json_text({"provider_request_id": provider_request_id})
         with self._database.connect() as connection:
+            for message in intermediate_messages:
+                if message.role == "assistant":
+                    intermediate_metadata = _json_text(
+                        {
+                            "tool_calls": [
+                                {
+                                    "call_id": call.call_id,
+                                    "name": call.name,
+                                    "arguments": call.arguments,
+                                }
+                                for call in message.tool_calls
+                            ],
+                            "reasoning_content": message.reasoning_content,
+                        }
+                    )
+                elif message.role == "tool":
+                    intermediate_metadata = "{}"
+                else:
+                    raise ConversationStateError(
+                        "intermediate message must be assistant or tool"
+                    )
+                connection.execute(
+                    """
+                    INSERT INTO messages (
+                        session_id, turn_id, role, content, tool_call_id,
+                        metadata_json, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_id,
+                        turn_id,
+                        message.role,
+                        message.content,
+                        message.tool_call_id,
+                        intermediate_metadata,
+                        now,
+                    ),
+                )
             cursor = connection.execute(
                 """
                 INSERT INTO messages (

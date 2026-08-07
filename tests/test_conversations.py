@@ -7,6 +7,7 @@ from pathlib import Path
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
+from miniclaw.providers.base import ModelMessage, ToolCall
 from miniclaw.storage.conversations import (
     MessageRepository,
     SessionRepository,
@@ -131,6 +132,56 @@ class ConversationRepositoryTest(unittest.TestCase):
         recent = self.messages.list_recent(session.id)
         self.assertEqual(saved.status, "running")
         self.assertEqual([message.role for message in recent], ["user"])
+
+    def test_completion_persists_tool_conversation_in_one_transaction(self) -> None:
+        """Assistant Tool Call、Tool Result 和最终回答必须按顺序一起保存。"""
+        session = self.sessions.get_or_create_cli(self.owner.id, "tool-history")
+        turn = self.turns.create_with_user_message(
+            session.id,
+            "event-tool-history",
+            "deepseek-v4-pro",
+            "查看配置",
+        )
+        self.turns.mark_running(turn.id)
+        intermediate = (
+            ModelMessage(
+                role="assistant",
+                content="",
+                tool_calls=(ToolCall("call_1", "system_info", {}),),
+                reasoning_content="need actual data",
+            ),
+            ModelMessage(
+                role="tool",
+                content='{"ok":true,"tool":"system_info","data":{}}',
+                tool_call_id="call_1",
+            ),
+        )
+
+        self.turns.complete_with_assistant_message(
+            turn.id,
+            session.id,
+            "你的电脑是……",
+            intermediate_messages=intermediate,
+            input_tokens=10,
+            output_tokens=4,
+            provider_request_id="req_1",
+            iterations=2,
+            finish_reason="stop",
+        )
+
+        saved = self.messages.list_recent(session.id)
+        self.assertEqual(
+            [message.role for message in saved],
+            ["user", "assistant", "tool", "assistant"],
+        )
+        calls = saved[1].metadata["tool_calls"]
+        self.assertIsInstance(calls, list)
+        assert isinstance(calls, list)
+        self.assertIsInstance(calls[0], dict)
+        assert isinstance(calls[0], dict)
+        self.assertEqual(calls[0]["name"], "system_info")
+        self.assertEqual(saved[1].metadata["reasoning_content"], "need actual data")
+        self.assertEqual(saved[2].tool_call_id, "call_1")
 
     def test_failure_and_cancellation_store_terminal_state(self) -> None:
         """失败与取消使用不同状态，并保存安全错误码供 CLI/回放区分。"""

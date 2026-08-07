@@ -3,20 +3,30 @@
 import asyncio
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
+from unittest import mock
 
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
-from miniclaw.agent.turn import TurnService
+from miniclaw.agent.turn import TurnService, _model_message
 from miniclaw.bootstrap import initialize_state
+from miniclaw.config import WorkspaceConfig
 from miniclaw.paths import build_state_paths
-from miniclaw.providers.base import ModelResponse, ProviderAuthenticationError
+from miniclaw.policy.engine import PolicyEngine
+from miniclaw.providers.base import ModelResponse, ProviderAuthenticationError, ToolCall
 from miniclaw.storage.conversations import (
+    ConversationDataError,
     MessageRepository,
     SessionRepository,
+    StoredMessage,
     TurnRepository,
 )
 from miniclaw.storage.database import Database
+from miniclaw.storage.tooling import ToolRunRepository
+from miniclaw.tools.executor import ToolExecutor
+from miniclaw.tools.registry import ToolRegistry
+from miniclaw.tools.system import SystemInfoTool
 from tests.fakes.fake_provider import FakeProvider
 
 
@@ -49,7 +59,11 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.turns = TurnRepository(self.database)
         self.context = ContextBuilder(self.paths)
 
-    def service(self, provider: FakeProvider) -> TurnService:
+    def service(
+        self,
+        provider: FakeProvider,
+        runner: AgentRunner | None = None,
+    ) -> TurnService:
         """用真实 Repository/Context/Runner 和指定模型 Fake 构造服务。"""
         return TurnService(
             model="deepseek-v4-pro",
@@ -57,7 +71,9 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             messages=self.messages,
             turns=self.turns,
             context=self.context,
-            runner=AgentRunner(provider),
+            runner=runner or AgentRunner(provider),
+            state_home=self.paths.home,
+            workspace=WorkspaceConfig(path=self.paths.workspace),
         )
 
     async def test_success_persists_user_assistant_usage_and_completed_turn(self) -> None:
@@ -118,6 +134,79 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         session = self.sessions.get_or_create_cli(self.owner.id, "default")
         saved = self.turns.list_recent(session.id, limit=1)[0]
         self.assertEqual(saved.status, "cancelled")
+
+    async def test_tool_loop_persists_and_restores_complete_history(self) -> None:
+        """真实 Tool 纵切必须保存轨迹，并在下一 Turn 恢复结构化调用。"""
+        call = ToolCall("call_system", "system_info", {})
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(call,),
+                    reasoning_content="need actual data",
+                    finish_reason="tool_calls",
+                    input_tokens=5,
+                    output_tokens=2,
+                    provider_request_id="req_tool",
+                ),
+                final_response("你的电脑是测试配置"),
+                final_response("我记得刚才的配置"),
+            )
+        )
+        executor = ToolExecutor(
+            ToolRegistry((SystemInfoTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+        )
+        service = self.service(provider, AgentRunner(provider, executor))
+
+        with mock.patch(
+            "miniclaw.tools.system._collect_system_info",
+            return_value={
+                "cpu": {"model": "Test CPU", "logical_cores": 8},
+                "unavailable_sections": [],
+            },
+        ):
+            first = await service.handle(self.owner.id, "查看我的电脑配置", "tools")
+            await service.handle(self.owner.id, "你还记得吗", "tools")
+
+        saved_turn = self.turns.get(first.turn_id)
+        history = self.messages.list_recent(first.session_id)
+        self.assertEqual(saved_turn.status, "completed")
+        self.assertEqual(
+            [message.role for message in history],
+            ["user", "assistant", "tool", "assistant", "user", "assistant"],
+        )
+        with self.database.connect_read_only() as connection:
+            tool_run = connection.execute(
+                "SELECT tool_name, status FROM tool_runs"
+            ).fetchone()
+        self.assertEqual(tuple(tool_run), ("system_info", "succeeded"))
+        self.assertEqual(
+            provider.requests[0].tools[0]["function"]["name"],
+            "system_info",
+        )
+        self.assertEqual(provider.requests[1].messages[-1].role, "tool")
+        restored = provider.requests[2].messages
+        assistant_call = next(message for message in restored if message.tool_calls)
+        self.assertEqual(assistant_call.tool_calls, (call,))
+
+    def test_corrupt_tool_call_metadata_is_not_sent_to_provider(self) -> None:
+        """缺字段的持久 Tool Call 必须在 Provider 边界前被拒绝。"""
+        stored = StoredMessage(
+            id=99,
+            session_id=1,
+            turn_id=1,
+            role="assistant",
+            content="",
+            provider_message_id=None,
+            tool_call_id=None,
+            metadata={"tool_calls": [{"name": "system_info"}]},
+            created_at=datetime.now(UTC),
+        )
+
+        with self.assertRaises(ConversationDataError):
+            _model_message(stored)
 
 
 if __name__ == "__main__":
