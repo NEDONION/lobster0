@@ -99,6 +99,9 @@ class WorkspaceGuardTest(unittest.TestCase):
         candidates = (
             ".netrc",
             ".npmrc",
+            ".git-credentials",
+            ".pypirc",
+            ".docker/config.json",
             "token.json",
             "secrets.json",
             "secrets.yaml",
@@ -111,10 +114,26 @@ class WorkspaceGuardTest(unittest.TestCase):
         )
         for candidate in candidates:
             for raw_path in (candidate, str(self.read_only / candidate)):
-                with self.subTest(raw_path=raw_path), self.assertRaises(
-                    WorkspaceAccessError
-                ) as caught:
-                    self.guard.resolve_read(self.context, raw_path)
+                with self.subTest(raw_path=raw_path):
+                    with self.assertRaises(WorkspaceAccessError) as caught:
+                        self.guard.resolve_read(self.context, raw_path)
+                    self.assertEqual(caught.exception.code, "sensitive_path")
+
+    def test_symlinks_to_additional_credentials_are_denied(self) -> None:
+        """无害别名解析到新增凭据路径时也必须稳定拒绝。"""
+        targets = (
+            self.workspace / ".git-credentials",
+            self.workspace / ".pypirc",
+            self.workspace / ".docker" / "config.json",
+        )
+        for index, target in enumerate(targets):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("credential", encoding="utf-8")
+            alias = self.workspace / f"credential-{index}.txt"
+            alias.symlink_to(target)
+            with self.subTest(target=target.name):
+                with self.assertRaises(WorkspaceAccessError) as caught:
+                    self.guard.resolve_read(self.context, alias.name)
                 self.assertEqual(caught.exception.code, "sensitive_path")
 
     def test_symlink_to_sensitive_file_is_denied(self) -> None:
@@ -133,6 +152,9 @@ class WorkspaceGuardTest(unittest.TestCase):
         candidates = (
             self.context.state_home / "config.toml",
             self.context.state_home / "miniclaw.db",
+            self.context.state_home / "miniclaw.db-wal",
+            self.context.state_home / "miniclaw.db-shm",
+            self.context.state_home / "miniclaw.db-journal",
             self.context.state_home / "logs" / "miniclaw.log",
             Path("/etc/shadow"),
             Path("/etc/gshadow"),
@@ -146,6 +168,31 @@ class WorkspaceGuardTest(unittest.TestCase):
             ) as caught:
                 self.guard.resolve_read(self.context, str(candidate))
             self.assertEqual(caught.exception.code, "sensitive_path")
+
+    def test_state_database_sidecar_aliases_are_denied_without_overmatching(self) -> None:
+        """数据库 sidecar 的解析别名必须拒绝，类似前缀的普通文档仍可读。"""
+        self.context.state_home.mkdir()
+        allowed_context = ToolContext(
+            user_id=self.context.user_id,
+            session_id=self.context.session_id,
+            turn_id=self.context.turn_id,
+            state_home=self.context.state_home,
+            workspace=self.context.workspace,
+            read_only_roots=(self.context.state_home,),
+        )
+        for suffix in ("-wal", "-shm", "-journal"):
+            target = self.context.state_home / f"miniclaw.db{suffix}"
+            target.write_text("sqlite state", encoding="utf-8")
+            alias = self.workspace / f"sidecar{suffix}.txt"
+            alias.symlink_to(target)
+            with self.subTest(suffix=suffix):
+                with self.assertRaises(WorkspaceAccessError) as caught:
+                    self.guard.resolve_read(allowed_context, alias.name)
+                self.assertEqual(caught.exception.code, "sensitive_path")
+
+        notes = self.context.state_home / "miniclaw.db-notes.md"
+        notes.write_text("safe notes", encoding="utf-8")
+        self.assertEqual(self.guard.resolve_read(allowed_context, str(notes)), notes)
 
     def test_display_returns_only_paths_relative_to_the_allowed_root(self) -> None:
         """模型可见路径必须相对允许根，根目录本身显示为点号。"""

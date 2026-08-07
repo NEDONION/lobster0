@@ -28,15 +28,8 @@ class ToolRunRepository:
         decision: PolicyDecision,
     ) -> int:
         """在一个事务中创建 running ToolRun 与 started 审计事件。"""
-        arguments_json = json.dumps(
-            arguments,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        )
-        arguments_hash = hashlib.sha256(
-            f"{call.name}\n{arguments_json}".encode()
-        ).hexdigest()
+        arguments_json = _arguments_json(arguments)
+        arguments_hash = _arguments_hash(call.name, arguments_json)
         now = datetime.now(UTC).isoformat()
         with self._database.connect() as connection:
             cursor = connection.execute(
@@ -74,6 +67,34 @@ class ToolRunRepository:
                 ),
             )
         return run_id
+
+    def deny(
+        self,
+        context: ToolContext,
+        call: ToolCall,
+        arguments: dict[str, JsonValue],
+        error_code: str,
+    ) -> None:
+        """只写入脱敏拒绝审计，不创建 ToolRun 或 started 事件。"""
+        arguments_hash = _arguments_hash(call.name, _arguments_json(arguments))
+        now = datetime.now(UTC).isoformat()
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO audit_events (
+                    event_type, user_id, session_id, turn_id,
+                    summary, metadata_json, created_at
+                ) VALUES ('tool.denied', ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    context.user_id,
+                    context.session_id,
+                    context.turn_id,
+                    f"Denied {call.name}",
+                    _metadata(None, call.name, arguments_hash, error_code=error_code),
+                    now,
+                ),
+            )
 
     def succeed(self, run_id: int, result_preview: str, duration_ms: int) -> None:
         """把唯一 running ToolRun 原子转为 succeeded 并写审计。"""
@@ -157,18 +178,16 @@ class ToolRunRepository:
 
 
 def _metadata(
-    run_id: int,
+    run_id: int | None,
     tool_name: str,
     arguments_hash: str,
     *,
     error_code: str | None = None,
 ) -> str:
     """生成不含原始参数的稳定 Audit metadata。"""
-    metadata = {
-        "tool_run_id": run_id,
-        "tool_name": tool_name,
-        "arguments_hash": arguments_hash[:12],
-    }
+    metadata = {"tool_name": tool_name, "arguments_hash": arguments_hash[:12]}
+    if run_id is not None:
+        metadata["tool_run_id"] = run_id
     if error_code is not None:
         metadata["error_code"] = error_code
     return json.dumps(
@@ -176,3 +195,18 @@ def _metadata(
         separators=(",", ":"),
         sort_keys=True,
     )
+
+
+def _arguments_json(arguments: dict[str, JsonValue]) -> str:
+    """把已规范化参数编码为稳定 JSON，供执行记录和 hash 共用。"""
+    return json.dumps(
+        arguments,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _arguments_hash(tool_name: str, arguments_json: str) -> str:
+    """返回绑定 Tool 名与规范参数的稳定 SHA-256。"""
+    return hashlib.sha256(f"{tool_name}\n{arguments_json}".encode()).hexdigest()

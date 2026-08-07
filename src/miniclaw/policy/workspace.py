@@ -12,6 +12,8 @@ _CREDENTIAL_NAMES = frozenset(
     {
         ".netrc",
         ".npmrc",
+        ".git-credentials",
+        ".pypirc",
         "credentials",
         "credentials.json",
         "application_default_credentials.json",
@@ -24,6 +26,10 @@ _CREDENTIAL_NAMES = frozenset(
 _KEYSTORE_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".jks", ".keystore")
 _CONTAINER_SOCKET_NAMES = frozenset(
     {"docker.sock", "containerd.sock", "crio.sock", "podman.sock"}
+)
+_SENSITIVE_PATH_PAIRS = frozenset({(".config", "gcloud"), (".docker", "config.json")})
+_STATE_FILE_NAMES = frozenset(
+    {"config.toml", "miniclaw.db", "miniclaw.db-wal", "miniclaw.db-shm", "miniclaw.db-journal"}
 )
 
 
@@ -94,7 +100,7 @@ def _is_sensitive(path: Path, state_home: Path) -> bool:
     if any(part in _SENSITIVE_DIRECTORIES for part in parts):
         return True
     if any(
-        left == ".config" and right == "gcloud"
+        (left, right) in _SENSITIVE_PATH_PAIRS
         for left, right in zip(parts, parts[1:], strict=False)
     ):
         return True
@@ -107,7 +113,7 @@ def _is_sensitive(path: Path, state_home: Path) -> bool:
 
     normalized = Path(str(path).casefold())
     normalized_state = Path(str(state_home).casefold())
-    if normalized in (normalized_state / "config.toml", normalized_state / "miniclaw.db"):
+    if normalized.parent == normalized_state and normalized.name in _STATE_FILE_NAMES:
         return True
     if normalized.is_relative_to(normalized_state / "logs"):
         return True

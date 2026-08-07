@@ -51,6 +51,8 @@ class ToolExecutor:
 
         decision = self._policy.authorize(tool.definition, context, arguments)
         if decision.action is not PolicyAction.ALLOW:
+            if decision.action is PolicyAction.DENY:
+                self._runs.deny(context, call, arguments, decision.error_code)
             code = (
                 "approval_required"
                 if decision.action is PolicyAction.REQUIRE_APPROVAL

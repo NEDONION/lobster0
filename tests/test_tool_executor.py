@@ -2,9 +2,11 @@
 
 import asyncio
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
@@ -316,21 +318,20 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(count, 1)
 
     async def test_workspace_policy_denies_unsafe_read_tools_before_starting_runs(self) -> None:
-        """文件 Tool 的逃逸和敏感根必须保留具体错误码且不创建 ToolRun。"""
+        """两个 Policy 拒绝必须留下脱敏审计，但不能创建 ToolRun。"""
+        secret = "TOP-SECRET-CONTENT"
+        sensitive = self.context.workspace / ".env"
+        sensitive.write_text(secret, encoding="utf-8")
+        outside = self.context.workspace.parent / "outside-private.txt"
         cases = (
             (
                 _WorkspaceReadTool("read_file", "path"),
-                ToolCall("escape", "read_file", {"path": "../outside.txt"}),
+                ToolCall("escape", "read_file", {"path": str(outside)}),
                 "workspace_escape",
             ),
             (
                 _WorkspaceReadTool("glob", "root"),
                 ToolCall("glob_sensitive", "glob", {"root": ".env"}),
-                "sensitive_path",
-            ),
-            (
-                _WorkspaceReadTool("grep", "root"),
-                ToolCall("grep_sensitive", "grep", {"root": ".ssh"}),
                 "sensitive_path",
             ),
         )
@@ -341,7 +342,50 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
 
         with self.database.connect_read_only() as connection:
             count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+            events = connection.execute(
+                """
+                SELECT event_type, user_id, session_id, turn_id, summary, metadata_json
+                FROM audit_events ORDER BY id
+                """
+            ).fetchall()
         self.assertEqual(count, 0)
+        self.assertEqual([event["event_type"] for event in events], ["tool.denied"] * 2)
+        self.assertEqual(
+            [(event["user_id"], event["session_id"], event["turn_id"]) for event in events],
+            [(self.context.user_id, self.context.session_id, self.context.turn_id)] * 2,
+        )
+        metadata = [json.loads(event["metadata_json"]) for event in events]
+        self.assertEqual([item["tool_name"] for item in metadata], ["read_file", "glob"])
+        self.assertEqual(
+            [item["error_code"] for item in metadata],
+            ["workspace_escape", "sensitive_path"],
+        )
+        for item in metadata:
+            self.assertRegex(item["arguments_hash"], r"^[0-9a-f]{12}$")
+            self.assertNotIn("tool_run_id", item)
+        persisted = "".join(event["summary"] + event["metadata_json"] for event in events)
+        for private_value in (str(outside), ".env", secret):
+            self.assertNotIn(private_value, persisted)
+
+    async def test_policy_deny_fails_closed_when_audit_write_fails(self) -> None:
+        """拒绝审计无法落库时不能返回一个伪装正常的 Policy 结果。"""
+        executor = self.executor(_WorkspaceReadTool("read_file", "path"))
+        with (
+            patch.object(
+                ToolRunRepository,
+                "deny",
+                side_effect=sqlite3.OperationalError("audit unavailable"),
+                create=True,
+            ),
+            self.assertRaises(sqlite3.OperationalError),
+        ):
+            await executor.execute(
+                self.context,
+                ToolCall("escape", "read_file", {"path": "../outside.txt"}),
+            )
+
+        with self.database.connect_read_only() as connection:
+            self.assertEqual(connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0], 0)
 
     async def test_workspace_resolution_errors_are_redacted_before_starting_runs(self) -> None:
         """路径解析异常必须返回稳定错误且不能创建或泄露 ToolRun。"""
