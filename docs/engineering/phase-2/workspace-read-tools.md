@@ -138,12 +138,27 @@ Home 或临时目录绝对路径。
 所有 Tool 均拒绝未知参数；整数也显式排除 JSON 布尔值。下面的“错误”是经 Executor 交给模型的稳定码；参数校验
 失败会统一包装为 `invalid_arguments`。
 
+### 5.0 所有 Tool 共用的 Tool Message 外壳
+
+下面三个表中的“成功返回”只描述 `data` 内部字段，不是完整的模型 Tool Message。`ToolExecutor` 最后交给模型的
+结果始终有统一外壳：
+
+| 情况 | 完整模型结果形状 | 说明 |
+| --- | --- | --- |
+| 成功 | `{"ok": true, "tool": "read_file", "data": {…}}` | `tool` 是实际 Tool 名；三个 Tool 表列出的成功字段都位于 `data`。 |
+| 失败 | `{"ok": false, "tool": "read_file", "error": {"code": "…", "message": "…", "retryable": false}}` | 三个 Tool 表列出各自可能产生的错误码；模型不接收 traceback。 |
+| Executor 公共失败 | 同上失败外壳，`error.code` 为 `tool_failed` 或 `tool_result_too_large` | Tool 抛出未预期异常时是 `tool_failed`；紧凑 JSON 结果超过配置上限时是 `tool_result_too_large`。 |
+
+`ToolExecutor` 默认 `tool_result_max_chars=20_000`。`read_file` 虽然只读取 `512 KiB` 前缀，返回的文本仍可能超过
+这个 20,000 字符的模型结果上限；此时不会把大文本塞给模型，而是返回 `tool_result_too_large`。应缩小 `limit` 或按
+`next_offset` 分段读取。
+
 ### 5.1 `read_file`
 
 | 项目 | 已实现行为 |
 | --- | --- |
 | 参数 | `path` 必填、非空字符串；`offset` 可选，正整数，默认 `1`；`limit` 可选，`1..1000`，默认 `200`。 |
-| 成功返回 | `path`（允许根相对路径）、`content`、`offset`、`lines`、`truncated`；当还有可继续的行窗口时附加 `next_offset`。 |
+| `data` 成功字段 | `path`（允许根相对路径）、`content`、`offset`、`lines`、`truncated`；当还有可继续的行窗口时附加 `next_offset`。 |
 | 读取上限 | 最多读取文件前缀 `512 KiB`，并用至多 3 个边界字节确认 UTF-8 多字节字符没有被误判。 |
 | 错误 | `workspace_escape`、`sensitive_path`、`not_found`、`not_a_file`、`file_read_failed`、`binary_file`、`invalid_arguments`。 |
 | 文本规则 | 只接受严格 UTF-8；NUL 字节或非法 UTF-8 按 `binary_file` 拒绝；只读取普通文件。 |
@@ -156,7 +171,7 @@ Home 或临时目录绝对路径。
 | 项目 | 已实现行为 |
 | --- | --- |
 | 参数 | `pattern` 必填、非空相对 glob；`root` 可选、非空字符串，默认 `.`；`limit` 可选，`1..200`，默认 `200`。 |
-| 成功返回 | `matches`（按相对路径全局排序）和 `truncated`。安全目录本身与其普通文件都可能匹配返回。 |
+| `data` 成功字段 | `matches`（按相对路径全局排序）和 `truncated`。安全目录本身与其普通文件都可能匹配返回。 |
 | 遍历规则 | `os.walk(..., followlinks=False)`；目录符号链接不进入遍历；每个候选都再次经 Guard 和 `stat` 确认。 |
 | 错误 | `workspace_escape`、`sensitive_path`、`invalid_arguments`。不可读、消失、权限失败或不安全候选会跳过，不把宿主机细节交给模型。 |
 | 结果上限 | 多取第 `limit + 1` 项后按全局字典序截断，保证较晚遍历到的字典序更小路径不会被漏掉。 |
@@ -168,7 +183,7 @@ Home 或临时目录绝对路径。
 | 项目 | 已实现行为 |
 | --- | --- |
 | 参数 | `pattern` 必填、非空 Python 正则；`glob` 可选、非空相对 glob，默认 `**/*`；`root` 可选，默认 `.`；`limit` 可选，`1..100`，默认 `100`。 |
-| 成功返回 | `matches`（每项有 `path`、1 开始的 `line`、最多 500 字符的 `text`）和 `truncated`。每行最多返回一次。 |
+| `data` 成功字段 | `matches`（每项有 `path`、1 开始的 `line`、最多 500 字符的 `text`）和 `truncated`。每行最多返回一次。 |
 | 文件规则 | 只扫描普通 UTF-8 文件；NUL、非法 UTF-8、读取失败和大于 `1 MiB` 的单文件都跳过。 |
 | 错误 | `invalid_pattern`、`workspace_escape`、`sensitive_path`、`invalid_arguments`。 |
 | 总上限 | 最多实际读取 200 个文件、累计 `20 MiB`；达到文件/字节预算或结果超过上限时返回 `truncated=true`。 |

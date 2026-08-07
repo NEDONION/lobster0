@@ -48,9 +48,12 @@
 
 ## Phase 2 模块工程文档
 
+完整的已实现模块索引见 [工程文档索引](engineering/README.md)；本表保留从文档中心直接进入当前 Phase 2 文档的入口。
+
 | 模块 | 文档 |
 | --- | --- |
 | Tool Runtime 与 system_info | [tool-runtime-and-system-info.md](engineering/phase-2/tool-runtime-and-system-info.md) |
+| Workspace 只读文件与搜索 | [workspace-read-tools.md](engineering/phase-2/workspace-read-tools.md) |
 
 ## 设计与实施记录
 
