@@ -1,0 +1,61 @@
+"""Agent ContextBuilder 的身份与历史顺序测试。"""
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from miniclaw.agent.context import ContextBuilder, ContextError
+from miniclaw.bootstrap import initialize_state
+from miniclaw.paths import build_state_paths
+from miniclaw.providers.base import ModelMessage
+
+
+class ContextBuilderTest(unittest.TestCase):
+    """验证身份文件和消息历史进入模型请求的确定顺序。"""
+
+    def setUp(self) -> None:
+        """创建独立且完整初始化的 MiniClaw 状态目录。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+        initialize_state(self.paths)
+
+    def test_identity_files_precede_history_without_reordering_messages(self) -> None:
+        """System/SOUL/USER 必须位于历史前，历史中的当前用户消息保持最后。"""
+        self.paths.soul.write_text("Be precise.", encoding="utf-8")
+        self.paths.user.write_text("Name: Ned", encoding="utf-8")
+        history = (
+            ModelMessage(role="user", content="previous"),
+            ModelMessage(role="assistant", content="answer"),
+            ModelMessage(role="user", content="current"),
+        )
+
+        request = ContextBuilder(self.paths).build("deepseek-v4-pro", history)
+
+        self.assertEqual(request.model, "deepseek-v4-pro")
+        self.assertEqual(request.messages[0].role, "system")
+        self.assertLess(
+            request.messages[0].content.index("Be precise."),
+            request.messages[0].content.index("Name: Ned"),
+        )
+        self.assertEqual(request.messages[1:], history)
+        self.assertEqual(request.messages[-1].content, "current")
+
+    def test_identity_read_error_reports_path_without_file_contents(self) -> None:
+        """身份文件不可读时应指出路径，但不能把可能敏感的内容拼进异常。"""
+        self.paths.soul.unlink()
+        self.paths.soul.mkdir()
+        self.paths.user.write_text("never expose profile text", encoding="utf-8")
+
+        with self.assertRaises(ContextError) as caught:
+            ContextBuilder(self.paths).build(
+                "deepseek-v4-pro",
+                (ModelMessage(role="user", content="hello"),),
+            )
+
+        self.assertIn(str(self.paths.soul), str(caught.exception))
+        self.assertNotIn("never expose profile text", str(caught.exception))
+
+
+if __name__ == "__main__":
+    unittest.main()
