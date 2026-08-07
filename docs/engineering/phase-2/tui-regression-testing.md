@@ -1,7 +1,7 @@
 # MiniClaw TUI 回归测试规范
 
 > 状态：已落地。本规范与 `tests/test_tui.py`、`tests/test_cli.py`、`tests/test_turn.py` 和
-> `tests/test_agent_runner.py` 共同构成版本门禁。当前全仓基线：253/253 tests、20/20 offline
+> `tests/test_agent_runner.py` 共同构成版本门禁。当前全仓基线：270/270 tests、20/20 offline
 > Agent cases、Ruff PASS。
 
 ## 1. 为什么 TUI 必须单独回归
@@ -13,6 +13,8 @@ TUI 不是“好看的 `print()`”。它同时承载五类约束：
 3. Tool 参数、执行状态和结果必须可见；
 4. 默认 Deny、Esc 取消、Owner 绑定等安全语义不能被 UI 绕过；
 5. ANSI、控制字符、超长输出和动态 call ID 不能破坏终端。
+6. Provider usage 缺失不能被 UI 猜成 0；长粘贴失败不能丢草稿。
+7. Session/Always 按钮不能扩大 Core 给出的审批 scope。
 
 因此，“单元测试通过”不等于“TUI 可以发布”。每个版本要同时验证事件契约、无头交互、
 真实终端启动和 Agent 场景回归。
@@ -52,6 +54,8 @@ sequenceDiagram
     participant TUI
 
     Provider-->>Runner: reasoning_content + tool call
+    Provider-->>Runner: reported usage or missing usage
+    Runner-->>TUI: model_usage
     Runner-->>TUI: model_reasoning
     Runner-->>TUI: tool_requested + raw arguments
     Exec->>DB: ToolRun = running
@@ -65,13 +69,17 @@ sequenceDiagram
 - 每个 call ID 只有一张 Tool 卡；
 - Tool 标题始终可见，并显示当前状态；展开后保留 `requested -> running -> 终态` 完整路径；
 - 展开后能看到模型请求参数、执行耗时和结果预览；
-- Provider 返回非空 `reasoning_content` 时，生成 `Reasoning (provider)` 卡；
+- Provider 返回非空 `reasoning_content` 时，生成紧凑、弱色、默认折叠的 reasoning 卡；
 - Provider 没返回 reasoning 时，不伪造卡片；
 - 单卡可用键盘 Enter 或鼠标展开；
 - `Ctrl+O` 只展开/收起全部详情，不隐藏概要；
 - ANSI/C0/C1 在进入 Widget 前被移除；
 - Tool 预览不超过 2,000 字符，折叠详情不超过 8,000 字符；
 - 审批弹窗显示的是 Policy 归一化后参数，不是 Tool 卡中的原始模型参数。
+- 审计栏只显示 Provider 真实 usage；缺失显示 `N/A`；
+- 用户/Agent 始终有文字角色标签和不同结构；
+- 失败或取消后 Composer 逐字恢复本轮提交文本；
+- TUI 只显示 Core `grant_modes` 给出的 Once/Session/Always。
 
 ## 4. 稳定用例集
 
@@ -89,7 +97,7 @@ ID 固定，行为变更时更新原 ID；只有新增独立能力时才新增 I
 | `TUI-008` | Provider reasoning | 只展示真实返回字段，详情有界且安全 | `test_tui` |
 | `TUI-009` | Ctrl+O | Tool/Reasoning 详情全展开后全收起，卡片不隐藏 | `test_tui` |
 | `TUI-010` | 控制字符 | ANSI、OSC、C0/C1 不能改写终端 | `test_tui` |
-| `TUI-011` | 危险动作审批 | 完整归一化参数、Deny 默认焦点、只 Allow once | `test_tui` |
+| `TUI-011` | 危险动作审批 | 完整归一化参数、Deny 默认焦点、文件只 Allow once | `test_tui` |
 | `TUI-012` | Esc 关闭审批 | 等价 Deny，不执行动作 | `test_tui` |
 | `TUI-013` | Slash command | 不访问模型，在同一 transcript 显示 | `test_tui` |
 | `TUI-014` | `/new` | 清空投影、更换 session ID、不创建第二 Runtime | `test_tui` |
@@ -97,6 +105,11 @@ ID 固定，行为变更时更新原 ID；只有新增独立能力时才新增 I
 | `TUI-016` | 裸命令 TTY guard | 非 TTY 和 `TERM=dumb` 明确失败 | `test_cli` |
 | `TUI-017` | 持久化事件顺序 | Tool/Turn 事件发送前数据库已进入对应状态 | `test_turn` |
 | `TUI-018` | 裸命令 PTY smoke | 真实启动、可提交、可正常退出 | 发布前 smoke |
+| `TUI-019` | 对话角色层级 | “你”/“MiniClaw”文字标签、不同容器、Assistant 仍单 Widget 流式更新 | `test_tui` |
+| `TUI-020` | 长文本失败恢复 | 65 KiB+ 中文原文逐字回填，焦点恢复 | `test_tui` |
+| `TUI-021` | 真实遥测 | context/input/output/tool/iteration/duration 正确投影；缺失为 N/A | `test_tui` / `test_agent_runner` |
+| `TUI-022` | UI 双语 | 默认中文，`/lang zh|en` 原地切换且不调用 Agent | `test_tui` / `test_config` |
+| `TUI-023` | 分级审批 | 只显示 Core grant_modes；Session/Always 精确 scope 且失败不产生规则 | `test_tui` / `test_tool_executor` |
 
 ## 5. 为什么不做全屏快照主门禁
 
@@ -169,3 +182,6 @@ git diff --check
 
 如果未来增加多面板、主题或复杂响应式布局，再增加少量视觉快照和尺寸矩阵；当前行为契约已覆盖
 唯一入口、交互、Trace、审批和安全渲染。
+
+本轮实现细节与 scope 表见
+[TUI 可观测、长文本与分级审批](tui-observability-and-scoped-approvals.md)。

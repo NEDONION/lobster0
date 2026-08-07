@@ -2,7 +2,7 @@
 
 > 状态：`run_command` 已进入唯一 Textual TUI 的共享 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
 >
-> 当前门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS
+> 当前门禁：270/270 tests、20/20 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 
@@ -30,7 +30,7 @@ flowchart TD
     HARD -->|"否"| EXACT{"exact executable + argv 命中?"}
     EXACT -->|"命中"| RUN["create_subprocess_exec"]
     EXACT -->|"未命中；ask=on-miss"| APPROVAL["pending Approval"]
-    APPROVAL -->|"TUI Allow once"| RUN
+    APPROVAL -->|"TUI Once / Session / Always"| RUN
     APPROVAL -->|"TUI Deny / Esc"| STOP["不执行"]
     RUN --> RESULT["bounded stdout / stderr + exit code"]
     RESULT --> MODEL["模型基于真实结果回答"]
@@ -104,8 +104,9 @@ summary: run_command ["/usr/bin/git","status","--short"]
 
 ## 8. Exact rule 为什么不是“永久允许 git”
 
-当前 TUI 只提供 **Allow once** 与 **Deny**，不会在点击审批时创建永久规则。确实需要自动放行的只读命令时，
-Owner 必须在 `config.toml` 显式写入完整规则：
+当前 TUI 对安全 exact argv 可提供 **Allow once**、**Allow this session** 与 **Always allow**。Session 只在当前
+Runtime 生效；Always 只在命令成功后创建同一 exact argv 规则。inline `osascript -e` 不提供 Always，失败命令
+不创建规则。Owner 也可以在 `config.toml` 显式写入完整规则：
 
 ```toml
 [tools.run_command]
@@ -113,8 +114,7 @@ allow_commands = [{ program = "git", args = ["status", "--short"] }]
 ```
 
 只有 executable 和完整 argv 同时相等才自动放行。多一个 `--porcelain`、少一个参数、顺序变化或 executable
-路径变化都会重新进入审批。旧版本 SQLite 中已经存在的 exact rule 仍可读取，但当前不会为规则管理恢复第二个
-交互式 CLI。
+路径变化都会重新进入审批。SQLite exact rule 可在新 Runtime 读取，但当前不会为规则管理恢复第二个交互式 CLI。
 
 ## 9. 子进程隔离
 
@@ -168,7 +168,7 @@ uv run ruff check .
 ```
 
 覆盖：硬禁止、exact/extra argv、配置矩阵、真实 subprocess、秘密环境清理、stdin EOF、双流 1 MiB、普通超时、
-后台子进程占管道、transport 回收、Runtime 注册、TUI Allow once/Deny 和 forbidden 无 ToolRun。
+后台子进程占管道、transport 回收、Runtime 注册、TUI scoped approvals、失败不授权和 forbidden 无 ToolRun。
 
 ## 12. 已知边界
 

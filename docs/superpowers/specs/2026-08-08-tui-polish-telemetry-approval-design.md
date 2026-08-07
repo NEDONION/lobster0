@@ -1,6 +1,6 @@
 # MiniClaw TUI 对话层级与长文本可靠性设计
 
-> 状态：方案已确认，等待规格复核
+> 状态：已实现；270/270 tests、20/20 offline Agent cases 验证通过
 > 日期：2026-08-08
 > 目标：改善对话层级、Reasoning、长文本可靠性、运行审计和受限审批授权
 
@@ -96,7 +96,7 @@ flowchart TD
 状态栏下方增加一条低对比背景的审计栏，标签弱化、数值使用强调色，并用细分隔符分组。宽终端显示完整标签，80 列终端显示短标签，不使用横向滚动。
 
 ```text
-上下文 39% · 12.4K/32K │ 输入 18.9K │ 输出 1.2K │ 模型 3 │ 工具 2 │ 2.4秒
+上下文 12.4k/32k · 输入 18.9k · 输出 1.2k · 工具 2 · 迭代 3 · 耗时 2.4秒
 ```
 
 指标语义必须固定：
@@ -107,7 +107,7 @@ flowchart TD
 - 工具：当前 Turn 中模型请求的 Tool Call 数；
 - 耗时：当前 Turn 从开始到终态的单调时钟耗时；
 - Provider 不返回 Token 用量时显示 `N/A`，不能自行估算或把未知值显示为 0；
-- `/status` 补充显示 Provider Request ID、Turn ID 和完整指标；
+- `/status` 补充显示 Provider Request ID 和完整指标；
 - 审计栏不显示原始 Prompt、密钥、未脱敏参数或完整 Tool 结果。
 
 Core 使用现有 `AgentRunResult`、Tool 事件和 `RunEvent` 传递数据；只补齐最后一次 Prompt Token、Tool Call 计数和耗时，不创建第二套遥测系统。
@@ -138,7 +138,7 @@ Core 使用现有 `AgentRunResult`、Tool 事件和 `RunEvent` 传递数据；�
 - UI 不能自行从文字摘要推导规则，scope 必须由 Policy/Core 生成；
 - `run_command` 只允许精确规范化 argv 规则，不能永久放行整个 executable；
 - 任意 Shell、AppleScript 正文或解释器不能整体永久授权；
-- 截图中的 `/usr/bin/osascript -e ...` 默认仍只提供 Allow once；相同精确 argv 可做 Session scope，但正文改变即重新审批；
+- 截图中的 `/usr/bin/osascript -e ...` 只提供 Allow once 与 Session；相同精确 argv 仅在当前 Runtime 复用，正文改变即重新审批；
 - “创建备忘录”只有封装成带版本和能力声明的 `apple_notes.create` Skill 后，才可获得可复用的 Skill scope；
 - `http_get` 可使用现有精确 hostname + port 规则；URL path/query 不进入持久规则；
 - Always 规则只能在当前绑定调用成功后写入现有 `policy_rules`，并产生脱敏 Audit；

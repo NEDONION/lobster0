@@ -2,7 +2,7 @@
 
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> 当前单入口 TUI 基线：253/253 tests、20/20 offline Agent cases、Ruff PASS、真实 PTY smoke PASS
+> 当前单入口 TUI 基线：270/270 tests、20/20 offline Agent cases、Ruff PASS；历史 PTY smoke PASS
 >
 > 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
@@ -21,7 +21,7 @@ Phase 2 不只要求“某个 Tool 能跑”。每次版本都必须证明：
 
 ```mermaid
 flowchart TB
-    UNIT["Layer 1: 253 deterministic tests"] --> OFFLINE["Layer 2: 20 versioned Agent cases"]
+    UNIT["Layer 1: 270 deterministic tests"] --> OFFLINE["Layer 2: 20 versioned Agent cases"]
     OFFLINE --> LIVE["Layer 3: release-only DeepSeek smoke"]
     LIVE --> DOC["Release record + progress docs"]
     DOC --> RELEASE["Phase 2 release gate"]
@@ -247,7 +247,8 @@ uv run miniclaw
 ### 写入没有发生
 
 正常情况下首次 Turn 只会生成 Approval，不应该已经写文件。TUI 会显示 Policy 归一化后
-的完整参数；选择 **Allow once** 后由同一 `TurnService` 续跑，Esc 或 **Deny** 不执行。若批准
+的完整参数；文件选择 **Allow once**，安全 exact command/hostname 还可选择 Session/Always；Esc 或 **Deny**
+不执行。Session 只在当前 Runtime 生效，Always 只在 Tool 成功后保存精确规则。若批准
 失败，按 `expired`、`hash_mismatch`、`already_decided` 分类，不要直接修改数据库绕过。
 
 ### 命令被拒绝
@@ -275,15 +276,19 @@ uv run miniclaw
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
 - [x] Doctor 七项且网络/命令/数据库修改为零；
-- [x] 253/253 tests；
+- [x] 270/270 tests；
 - [x] 20/20 offline Agent cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
 - [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
 - [x] Provider reasoning、Tool 参数/状态/耗时/结果可展开回归；
+- [x] 用户/Agent 角色区分、默认中文与 `/lang zh|en`；
+- [x] 真实 usage 审计栏、缺失 N/A 与 Provider Request ID；
+- [x] 长文本失败/取消逐字恢复；
+- [x] Session/Always exact scope、失败不授权、inline AppleScript 不持久化；
 - [x] Ruff 与 diff check；
 - [x] README、架构、工程索引、进度页、TUI 回归规范和 v0.2.0 release record 同步。
 
 Phase 2 当前不包含：任意 Shell、删除/移动 Tool、后台任务、OS sandbox、多用户 RBAC、飞书审批卡片、Memory/Skills、
 自动修改部署源代码。这些不应在回归结果中被描述成已完成。
 
-TUI 专项分层、18 个稳定用例和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。
+TUI 专项分层、23 个稳定用例和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。

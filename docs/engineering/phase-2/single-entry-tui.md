@@ -1,6 +1,6 @@
 # Phase 2.2B：单入口 Textual TUI 工程文档
 
-> 状态：已实现；合并 P2.3A/P2.4 后全仓通过 253 项单元/集成测试与 20/20 离线 Agent 场景。
+> 状态：已实现；当前全仓通过 270 项单元/集成测试与 20/20 离线 Agent 场景。
 > 本文描述当前代码，不描述未来设想。
 
 ## 1. 这次解决了什么
@@ -111,6 +111,7 @@ TUI 不查询内部对象的瞬时字段，也不自己推测状态。Core 只�
 | `turn_started` | TurnService | Turn 已持久化为 `running` |
 | `model_text_delta` | AgentRunner | Provider 已收到该文本分片 |
 | `model_reasoning` | AgentRunner | Provider 明确返回非空 `reasoning_content` |
+| `model_usage` | AgentRunner | 当前 Provider 响应已通过协议与 call ID 校验 |
 | `tool_requested` | AgentRunner | 模型 Tool Call ID 已通过批次校验 |
 | `tool_started` | ToolExecutor | ToolRun 已持久化为 `running` |
 | `tool_finished` | ToolExecutor/TurnService | ToolRun 或拒绝决定已进入终态 |
@@ -131,6 +132,7 @@ sequenceDiagram
 
     Turn->>DB: mark running
     Turn-->>UI: turn_started
+    Runner-->>UI: model_usage (real provider usage or N/A)
     Runner-->>UI: model_reasoning (provider supplied)
     Runner-->>UI: tool_requested + raw arguments
     Exec->>DB: ToolRun running
@@ -170,17 +172,20 @@ flowchart TD
     WORKER --> SERVICE["TurnService.handle"]
     SERVICE -. events .-> VIEW["更新 Assistant / Tool 卡"]
     SERVICE --> RESTORE["恢复 Composer 与焦点"]
+    SERVICE -->|失败/取消| DRAFT["逐字恢复提交前草稿"]
 ```
 
 `exclusive=True` 保证同一 App 只有一个活动 Turn。没有再造队列、调度器或多会话并发；个人 MVP 当前不需要。
 
-## 7. 流式回答与可展开 Trace 卡
+## 7. 对话层级、流式回答与可展开 Trace 卡
 
+- 用户与 Assistant 分别显示“你”/“MiniClaw”文字角色标签、不同边线和背景，不只靠颜色区分；
 - 同一 Turn 的所有 `model_text_delta` 更新同一个临时 Markdown Widget；
 - `turn_finished` 用数据库最终正文固化该 Widget；
 - Markdown 禁止自动打开链接；
 - 模型和 Tool 文本先移除 ANSI/C0/C1 控制字符；
 - Tool Call ID 只作为字典键，不拼入 CSS selector；
+- Reasoning 默认折叠、弱色且无 Tool 卡的厚边框；终端不支持局部小字体，以紧凑布局实现“小字感”；
 - 每次 Tool Call 的“Tool 名 + 文字状态”始终保留在 transcript；
 - 按 Enter 或点击单张卡的标题，展开原始模型参数、完整状态路径、执行耗时和结果预览；
 - `Ctrl+O` 只批量折叠/展开详情，不会隐藏 Tool 或 Reasoning 概要；
@@ -190,9 +195,12 @@ flowchart TD
 
 ### 7.1 “思考过程”的边界
 
-MiniClaw 只展示 Provider API 明确返回的 `reasoning_content`，卡片标题固定写为
-`Reasoning (provider)`。这是模型产品边界给出的可见 reasoning，不是 MiniClaw 内部隐藏思维链，
+MiniClaw 只展示 Provider API 明确返回的 `reasoning_content`，中文 UI 标题为
+`思考（模型）· 第 N 轮`，英文 UI 为 `Reasoning (provider) · Turn N`。这是模型产品边界给出的可见 reasoning，不是 MiniClaw 内部隐藏思维链，
 也不会从最终答案反推或伪造思考步骤。Provider 不返回该字段时，界面不显示空卡。
+
+System Prompt 要求回答和 provider-visible reasoning 跟随 Owner 最新消息的主要语言；`/lang` 只切换 UI 文案，
+不翻译模型内容。
 
 ```mermaid
 flowchart TD
@@ -226,8 +234,8 @@ sequenceDiagram
     Turn->>DB: parent Turn = waiting_approval
     Turn-->>UI: handle 返回
     UI->>Modal: 展示完整参数
-    alt Allow once
-        Modal->>Turn: continue_approval(approved=true)
+    alt Allow once / Session / Always
+        Modal->>Turn: continue_approval(decision)
     else Deny 或 Esc
         Modal->>Turn: continue_approval(approved=false)
     end
@@ -237,8 +245,11 @@ Modal 的安全约束：
 
 - 展示 Policy 归一化后的完整参数，而不是模型原始参数；
 - 默认焦点为 **Deny**；
-- 只提供 **Allow once** 与 **Deny**；
-- 不提供永久文件写规则；
+- 文件写入只提供 **Allow once**；
+- 安全 exact argv / exact hostname 可由 Core 提供 **Allow this session** 与 **Always allow**；
+- TUI 不推导 scope，只显示 `approval_required.grant_modes`；
+- Session 只在当前 Runtime 生效，Always 只在成功后持久化 exact rule；
+- inline AppleScript 不提供 Always；
 - 不直接调用 Tool，只调用 `TurnService.continue_approval()`；
 - SQLite 的 Owner、TTL、hash、状态与单次 consume 约束仍是最终安全边界。
 
@@ -247,12 +258,26 @@ Modal 的安全约束：
 Slash Command 固定写在一个 `match` 中，没有命令注册框架：
 
 ```text
-/help  /status  /tools  /new  /exit  /quit
+/help  /status  /tools  /new  /lang zh|en  /exit  /quit
 ```
 
-`/new` 只切换本地 conversation ID 并清空当前可见投影，不创建第二个 Runtime。
+`/new` 只切换本地 conversation ID 并清空当前可见投影，不创建第二个 Runtime。`/lang` 原地切换固定 UI 文案；
+默认值由 `[ui].language = "zh-CN"` 提供。`/status` 显示 Provider Request ID 与完整真实指标。
 
-## 10. 启动与 Onboarding
+## 10. 紧凑审计栏
+
+```text
+上下文 1.2k/128k · 输入 1.5k · 输出 64 · 工具 2 · 迭代 2 · 耗时 432 ms
+```
+
+- 上下文是最后一次 Provider 上报的 input/prompt token 与配置预算；
+- 输入/输出是当前 Turn 多次 Provider 调用的累计值；
+- Tool 次数统计模型产生且 call ID 合法的调用，不等于成功次数；
+- 耗时来自 TurnService 单调时钟；
+- Provider 不上报 usage 时显示 `N/A`，绝不估算；
+- 审计栏不显示 Prompt、密钥、原始 Tool 参数或完整结果。
+
+## 11. 启动与 Onboarding
 
 ```mermaid
 flowchart TD
@@ -269,7 +294,7 @@ flowchart TD
 当前 `.env` 仍从启动命令的工作目录读取。若状态已存在但 Key 缺失，启动返回配置错误；若在 Onboarding 中
 初始化后 Key 缺失，错误显示在同一 App，不会创建第二个界面。
 
-## 11. 测试矩阵
+## 12. 测试矩阵
 
 | 层 | 主要断言 |
 | --- | --- |
@@ -280,8 +305,11 @@ flowchart TD
 | Interaction | Enter、Shift+Enter、exclusive Worker、Esc 取消、焦点恢复 |
 | Projection | 单一流式 Assistant、Provider reasoning、Tool 参数/状态/耗时/预览、动态 call ID 安全 |
 | Trace interaction | 单卡 Enter 展开、Ctrl+O 全展开/收起、概要始终可见、ANSI 过滤 |
-| Approval | 完整参数、Deny 默认焦点、Allow once、Esc=Deny、同一 Service 续跑 |
-| Full suite | 253/253 tests + Ruff + diff check |
+| Approval | 完整参数、Deny 默认焦点、Once/Session/Always Core scope、Esc=Deny、同一 Service 续跑 |
+| Reliability | 65 KiB+ 长文本失败/取消逐字恢复、Runtime 缺失不丢输入 |
+| Language | 默认中文、`/lang zh|en`、reasoning 跟随用户语言 Prompt |
+| Telemetry | 真实 usage、N/A、Provider Request ID、Tool/迭代/耗时 |
+| Full suite | 270/270 tests + Ruff + diff check |
 | Agent gate | 20/20 active offline Claw-like cases |
 
 运行命令：
@@ -296,7 +324,7 @@ git diff --check
 TUI 的用例编号、无头测试策略、PTY smoke 与版本门禁详见
 [TUI 回归测试规范](tui-regression-testing.md)。
 
-## 12. 当前边界与 Phase 2.3B
+## 13. 当前边界与 Phase 2.3B
 
 本阶段没有实现：
 
@@ -304,7 +332,7 @@ TUI 的用例编号、无头测试策略、PTY smoke 与版本门禁详见
 - NVM/Node 路径下 `lark-cli` 的真实 help/auth smoke；
 - TUI 历史记录浏览或多 Tab；
 - 自动恢复进程重启前尚未处理的审批 UI；
-- 永久审批规则；
+- 持久规则的 TUI 查看/撤销；
 - Web 管理台。
 
 Phase 2.3A 已实现 exact-argv `run_command`，不经过 shell 字符串；安全命令未命中精确规则时复用同一
@@ -315,3 +343,6 @@ doctor 检查与 `auth status` 真实 smoke，不会把“已安装”误写成�
 设计取舍与参考项目对比见
 [Gemini 风格 TUI 设计](../../superpowers/specs/2026-08-08-gemini-style-tui-and-lark-cli-design.md)，逐任务实现记录见
 [P2.2B 实施计划](../../superpowers/plans/2026-08-08-p2-2b-single-entry-textual-tui.md)。
+
+本轮双语、长文本、真实遥测与 scoped approvals 的完整工程说明见
+[TUI 可观测、长文本与分级审批](tui-observability-and-scoped-approvals.md)。

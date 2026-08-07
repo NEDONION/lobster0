@@ -2,8 +2,9 @@
 
 > [!WARNING]
 > 本文保留 Phase 2.2A 的历史交付证据。Phase 2.2B 已删除 `miniclaw approvals`；当前审批在同一个 Textual
-> TUI 中展示完整归一化参数，并只提供 **Allow once** / **Deny**。SQLite Approval 生命周期与安全约束仍然
-> 有效，当前用法见 [单入口 TUI 工程文档](single-entry-tui.md)。
+> TUI 中展示完整归一化参数，并按 Core scope 提供 **Allow once / Allow this session / Always allow / Deny**。
+> 文件写入仍只提供 Once。SQLite Approval 生命周期与安全约束仍然有效，当前用法见
+> [单入口 TUI 工程文档](single-entry-tui.md)。
 
 > 历史状态：`list / show / approve / deny` 曾实现，Phase 2.2B 已移除这些入口
 >
@@ -44,7 +45,7 @@ uv run miniclaw approvals deny 42
 | `approvals show ID [--json]` | 否 | 查看 Tool、摘要、状态和时间 |
 | `approvals approve ID [--json]` | 是 | 单次消费、执行 Tool、继续模型 |
 | `approvals deny ID [--json]` | 是 | 拒绝 Tool、继续模型解释 |
-| `approvals approve ID --always` | 视 Tool 而定 | 历史入口已移除；当前 TUI 只提供 Allow once / Deny |
+| `approvals approve ID --always` | 视 Tool 而定 | 历史入口已移除；当前 TUI 由 Core 决定是否显示 Always |
 
 自定义状态目录时，`--home` 放在 `approvals` 后面：
 

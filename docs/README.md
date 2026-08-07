@@ -68,7 +68,8 @@
 | 安全文件写入 | [filesystem-tools.md](engineering/phase-2/filesystem-tools.md) |
 | Approval 生命周期与续执行 | [approval-lifecycle.md](engineering/phase-2/approval-lifecycle.md) |
 | 单入口 Textual TUI、Runtime 与审批 Modal | [single-entry-tui.md](engineering/phase-2/single-entry-tui.md) |
-| TUI Trace 与回归测试规范 | [tui-regression-testing.md](engineering/phase-2/tui-regression-testing.md) |
+| TUI 双语、长文本、真实遥测与分级审批 | [tui-observability-and-scoped-approvals.md](engineering/phase-2/tui-observability-and-scoped-approvals.md) |
+| TUI Trace 与 23 项回归测试规范 | [tui-regression-testing.md](engineering/phase-2/tui-regression-testing.md) |
 | Exact-argv 命令执行 | [command-execution.md](engineering/phase-2/command-execution.md) |
 | Pinned HTTPS 与 SSRF 防护 | [https-get-and-ssrf.md](engineering/phase-2/https-get-and-ssrf.md) |
 | Phase 2 回归、恢复与调试 | [testing-and-debugging.md](engineering/phase-2/testing-and-debugging.md) |

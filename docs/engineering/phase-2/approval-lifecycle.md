@@ -2,12 +2,12 @@
 
 > 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 Textual TUI 已进入生产链路
 >
-> 当前门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS
+> 当前门禁：270/270 tests、20/20 offline Agent cases、Ruff PASS
 >
-> 当前非目标：TUI 永久规则管理与 HTTP hostname 规则；飞书卡片审批不在本阶段
+> 当前非目标：持久规则的 TUI 查看/撤销；飞书卡片审批不在本阶段
 
 Phase 2.2B 已移除独立 `miniclaw approvals` 命令。Owner 现在在同一个 TUI 中查看完整归一化参数，并选择
-Allow once 或 Deny；底层 SQLite 生命周期和本文安全约束不变。
+Allow once、受限的 Allow this session / Always allow 或 Deny；底层 SQLite 生命周期和本文安全约束不变。
 
 ## 1. 大白话解释
 
@@ -45,6 +45,7 @@ flowchart LR
 class ToolExecution:
     model_text: str
     approval_id: int | None = None
+    succeeded: bool = False
 ```
 
 普通 allow/deny 的 `approval_id` 是 `None`。只有真实写入 SQLite 的 waiting Approval 才返回 ID。
@@ -185,6 +186,8 @@ sequenceDiagram
 | `expired` | TTL 到期 | 否；ToolRun 变 denied |
 | `already_decided` | 已批准、已消费或其他非目标状态 | 否 |
 | `hash_mismatch` | JSON 损坏、参数或 hash 被修改 | 否 |
+| `scope_forbidden` | UI/调用方请求了 Core 未开放的 Session/Always | 否 |
+| `scope_unavailable` | 请求 Always 但当前 Runtime 没有规则 Repository | 已执行成功，但不伪装规则已创建 |
 
 底层数据库不可用不会伪装成上述业务错误，而是继续向上抛出，让 CLI 使用本地 I/O 失败退出码。
 
@@ -215,9 +218,9 @@ uv run ruff check src/miniclaw/policy/approvals.py src/miniclaw/policy/engine.py
   tests/test_approvals.py tests/test_tool_executor.py
 ```
 
-结果：28/28 通过。
+结果已并入当前全仓门禁：270/270 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS。
 
-全仓门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS。
+全仓门禁：270/270 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS。
 
 ## 13. Runner 为什么必须停下来
 
@@ -245,7 +248,8 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     P["原 Turn: waiting_approval"] --> D{"Owner 决策"}
-    D -->|approve| C["原子 consume: Approval consumed / ToolRun running"]
+    D -->|once/session/always| V["副作用前校验 decision 与 grant_modes"]
+    V --> C["原子 consume: Approval consumed / ToolRun running"]
     D -->|deny| N["Approval denied / ToolRun denied"]
     C --> X["ToolExecutor.execute_approved"]
     N --> T["approval_denied Tool Result"]
@@ -261,9 +265,37 @@ child Turn 的 `parent_turn_id` 指向产生 Approval 的 Turn，`inbound_event_
 安全取舍：Approval 一旦 `consumed` 就绝不自动重放。若进程在 consume 后崩溃，用户会看到冲突并需要重新发起
 操作；这比不确定地再次写文件更安全。
 
-## 15. 当前边界
+## 15. Session / Always 怎样安全生效
+
+```mermaid
+flowchart TD
+    M["Core grant_modes"] --> D["Owner decision"]
+    D --> V["ApprovalRepository.validate_decision"]
+    V --> X["consume + ToolExecutor.execute_approved"]
+    X --> O{"ToolResult.ok?"}
+    O -->|否| N["不创建规则"]
+    O -->|是且 Session| S["当前 PolicyEngine exact rule"]
+    O -->|是且 Always| A["policy_rules + 脱敏 audit"]
+```
+
+| Tool/参数 | Session | Always |
+| --- | --- | --- |
+| 安全 `run_command` | 同一 resolved executable + 完整 argv | 同一 exact argv 持久规则 |
+| `osascript -e ...` | 相同正文 exact argv 可在本次 Runtime 复用 | 禁止 |
+| `http_get` | 同一 hostname + port | 同一 exact hostname + port 持久规则 |
+| `write_file` / `edit_file` | 禁止 | 禁止 |
+
+作用域在批准/consume/执行前先校验，防止不受支持的 Always “先执行再失败”。规则只在绑定 Tool 成功后生效；
+失败命令不会留下 Session 或 Always。持久命令规则还会在 `PolicyRuleRepository` 再次检查
+`command_rule_is_persistable()`，即使绕过 TUI 直接调用 Repository，inline AppleScript 仍返回
+`scope_forbidden`。
+
+## 16. 当前边界
 
 - `ApprovalRepository.list/get` 只查询；过期状态在 approve/deny/consume 时结算。
-- `--always` 目前只预留给后续的精确 argv 命令和精确 hostname，文件写入不支持永久放行。
-- 审批 UI 当前是 CLI；飞书交互卡片会复用同一 Repository 和 TurnService，而不是复制状态机。
+- Always 已用于成功的精确 argv 与精确 hostname；文件写入和 inline AppleScript 不支持持久放行。
+- 审批 UI 当前是 Textual TUI；飞书交互卡片会复用同一 Repository 和 TurnService，而不是复制状态机。
 - 任意 Shell、删除/移动文件、多用户审批和自动重放明确不在 Phase 2.2。
+
+TUI 的按钮投影、真实遥测和测试证据见
+[TUI 可观测、长文本与分级审批](tui-observability-and-scoped-approvals.md)。

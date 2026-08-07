@@ -20,12 +20,15 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > 当前仓库已完成 Phase 2.4：裸 `miniclaw` 进入唯一的 Textual 全屏 TUI；同一个 `AgentRuntime`
 > 连接 DeepSeek、TurnService、SQLite、八个系统/文件/命令/HTTPS Tool 与参数绑定 Approval。TUI 支持流式回答、
 > Provider reasoning、可逐项展开的 Tool 参数/执行/结果 Trace、Enter 发送、Shift+Enter 换行、Esc 取消、
-> Ctrl+O 全展开/收起、Slash Command，以及只允许一次的 Allow once / Deny
-> 审批弹窗。旧 `miniclaw chat`、`miniclaw tui`、one-shot REPL 和 `miniclaw approvals` 已移除。
+> Ctrl+O 全展开/收起、Slash Command、默认中文/可切英文、失败草稿恢复，以及上下文/Token/Tool/迭代/耗时
+> 审计栏。审批弹窗由 Core 决定是否显示 Allow once、Allow this session、Always allow；文件写入仍只允许单次。
+> 旧 `miniclaw chat`、`miniclaw tui`、one-shot REPL 和 `miniclaw approvals` 已移除。
 > P2.3A 已接入不经过 Shell 的 exact-argv `run_command`；P2.4 已接入只读 `http_get`，包含 HTTPS-only、
 > 全 DNS 公网校验、固定 IP/TLS hostname、每跳重验、响应预算和不可信内容标记。两类动作未命中精确规则时
-> 都在同一 TUI 只允许一次。真实 `lark-cli`/Node 路径闭环、DeepSeek live eval 和飞书 Channel 尚未完成。
-> 当前回归基线为 **253 tests + 20/20 Agent cases**。Policy 拒绝只写脱敏审计，不创建 ToolRun。
+> 都在同一 TUI 接受参数绑定审批。Session 规则只活在当前 Runtime；Always 只在成功后为安全 exact argv 或
+> exact hostname 写入脱敏规则，inline AppleScript 和文件写入不能持久放行。真实 `lark-cli`/Node 路径闭环、
+> 当前版本 DeepSeek live eval 和飞书 Channel 尚未完成。当前回归基线为 **270 tests + 20/20 Agent cases**。
+> Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
 > 保存在 [v0.2.0 release record](docs/evals/releases/v0.2.0.md)，不冒充当前 TUI 版本的新 live 结果。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
@@ -92,13 +95,19 @@ uv run python -m miniclaw --version
 只执行离线检查，不连接模型或 IM 平台。裸 `miniclaw` 从当前目录的私密 `.env` 读取 Key，并要求真实
 TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`，也可在配置的
 Workspace 内调用 `read_file`、`glob`、`grep`；`write_file` / `edit_file` 会先生成参数绑定 Approval，只有
-Owner 在 TUI 中查看完整归一化参数并选择 **Allow once** 后才执行；Esc 和 **Deny** 都不会写入。模型仍不能运行
+Owner 在 TUI 中查看完整归一化参数并选择可用授权范围后才执行；Esc 和 **Deny** 都不会写入。文件写入只提供
+**Allow once**；安全 exact argv / exact hostname 可由 Core 提供 **Allow this session** 或 **Always allow**。模型仍不能运行
 任意 Shell 字符串；`run_command` 只接收 `program + args[]`，安全命令未命中 exact rule 时也走同一审批弹窗。
 `eval` 完全离线，不读取
 `.env`、不需要 `init` 或 API Key，并通过真实 Agent/Policy/Tool/SQLite 链路运行版本化场景。
 
 审批续跑会创建没有假 User Message 的 child Turn，并让模型基于真实执行结果继续回答。Approval 绑定 Tool
 名与完整规范参数；过期、篡改、Owner 不匹配和重复消费都会 fail closed。
+
+TUI 默认使用中文，可在当前界面输入 `/lang en` 切换英文、`/lang zh` 切回中文。Provider reasoning 仍跟随
+用户本轮提问语言，不跟随 UI 语言；终端无法真正缩小局部字体，因此 reasoning 用弱色、无厚边框和默认折叠实现
+紧凑“小字感”。底部审计栏只显示 Provider 真实上报的用量，缺失值明确为 `N/A`，不会估算。长文本在模型失败
+或用户取消后会逐字恢复到 Composer。
 
 ### Workspace 只读演示
 
@@ -172,10 +181,11 @@ miniclaw/
 | [Phase 2.2A 文件写入工程文档](docs/engineering/phase-2/filesystem-tools.md) | 严格 Tools 配置、Workspace 写边界、write/edit 原子性、错误码和测试矩阵 |
 | [Phase 2.2 Approval 生命周期](docs/engineering/phase-2/approval-lifecycle.md) | 参数 hash、waiting/child Turn、TTL、Owner、单次执行与审计 |
 | [Phase 2.2B 单入口 Textual TUI](docs/engineering/phase-2/single-entry-tui.md) | 技术选型、Runtime、RunEvent、Worker、Tool 卡、审批弹窗、入口迁移和测试矩阵 |
-| [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace 可观测契约、18 个稳定用例、Textual 无头测试、PTY smoke 与版本门禁 |
+| [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace、角色、长文本、双语、审计与审批的 23 个稳定用例、Textual 无头测试和 PTY smoke |
+| [TUI 可观测与分级审批加固](docs/engineering/phase-2/tui-observability-and-scoped-approvals.md) | 真实 Token 遥测、Session/Always exact scope、双语消息层级与草稿恢复 |
 | [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
 | [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |
-| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | 253 tests、20 场景、crash recovery、Doctor、历史 live smoke 与发布手册 |
+| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | 270 tests、20 场景、crash recovery、Doctor、历史 live smoke 与发布手册 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |

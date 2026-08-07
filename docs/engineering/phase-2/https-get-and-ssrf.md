@@ -2,7 +2,7 @@
 
 > 状态：`http_get` 已进入唯一 Textual TUI 的共享 `AgentRuntime`
 >
-> 当前门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS
+> 当前门禁：270/270 tests、20/20 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 
@@ -38,8 +38,8 @@ flowchart TD
     PUBLIC -->|"no"| DENY["tool.denied; no Approval / ToolRun"]
     PUBLIC -->|"yes"| RULE{"Exact hostname + port allowed?"}
     RULE -->|"yes"| FETCH["Pinned HTTPS GET"]
-    RULE -->|"no; ask=on-miss"| MODAL["TUI Allow once / Deny"]
-    MODAL -->|"Allow once"| FETCH
+    RULE -->|"no; ask=on-miss"| MODAL["TUI Once / Session / Always / Deny"]
+    MODAL -->|"allowed decision"| FETCH
     MODAL -->|"Deny / Esc"| STOP["No network request"]
     FETCH --> REDIRECT{"Redirect?"}
     REDIRECT -->|"yes"| URL
@@ -160,7 +160,8 @@ TCP 不再二次解析域名；SNI 与证书校验仍使用原 hostname，因此
 
 `http_get` 与 `run_command` 共用 `security × ask` 状态表。默认 `allowlist + on-miss`：公网 HTTPS 未命中规则
 时创建参数绑定 Approval，并由同一个 TUI Modal 展示完整 canonical URL 与参数；**Allow once** 只执行这一份
-hash 绑定请求。
+hash 绑定请求，**Allow this session** 只在当前 Runtime 放行相同 hostname + port，**Always allow** 只在请求
+成功后持久化相同 authority。
 
 长期需要访问的公开 authority 由 Owner 在 `config.toml` 显式配置：
 
@@ -172,7 +173,7 @@ max_response_bytes = 2097152
 ```
 
 规则只保存小写 `hostname + exact port`，不保存 path、query 或凭据。非 443 端口只有相同 authority 的规则才能
-打开。当前 TUI 不提供永久规则按钮，也不会恢复第二个 `approvals` CLI。
+打开。当前 TUI 由 Core `grant_modes` 控制持久规则按钮，不会恢复第二个 `approvals` CLI。
 
 ## 10. 审计与崩溃恢复
 
@@ -182,8 +183,7 @@ max_response_bytes = 2097152
 - 启动 `AgentRuntime` 时，遗留 `running` ToolRun 只会转为 `interrupted`，绝不重放网络或文件副作用；
 - pending Approval 可被 doctor 只读统计，doctor 不消费、不执行，也不修改数据库。
 
-持久层支持从一次已成功消费的 HTTP Approval 生成 exact-hostname rule，供历史数据兼容；当前单入口 TUI 不暴露
-创建永久规则的交互动作。
+持久层只从一次已成功消费的 HTTP Approval 生成 exact-hostname rule；失败请求不会产生 Session 或持久规则。
 
 ## 11. 稳定错误码
 
