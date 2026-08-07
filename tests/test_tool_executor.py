@@ -133,6 +133,42 @@ class _InvalidResultTool(_BrokenTool):
         return ToolResult.success({"value": float("nan")})
 
 
+class _WorkspaceReadTool:
+    """模拟只读文件 Tool 的路径参数与成功执行。"""
+
+    def __init__(self, name: str, path_argument: str) -> None:
+        """按真实 Tool 名和路径参数名创建 low-risk 定义。"""
+        self._path_argument = path_argument
+        self.definition = ToolDefinition(
+            name=name,
+            description="Read from the workspace.",
+            parameters={
+                "type": "object",
+                "properties": {path_argument: {"type": "string"}},
+                "required": [path_argument],
+                "additionalProperties": False,
+            },
+            risk=ToolRisk.LOW,
+        )
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """只接受定义中的单个字符串路径参数。"""
+        if set(arguments) != {self._path_argument} or not isinstance(
+            arguments[self._path_argument], str
+        ):
+            raise ToolValidationError(f"{self._path_argument} must be a string")
+        return arguments
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """返回成功，供测试观察是否越过 Policy 边界。"""
+        del context
+        return ToolResult.success({"path": arguments[self._path_argument]})
+
+
 class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
     """验证 Tool 只能经过 Policy 和持久化执行入口。"""
 
@@ -266,6 +302,46 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         with self.database.connect_read_only() as connection:
             status = connection.execute("SELECT status FROM tool_runs").fetchone()[0]
         self.assertEqual(status, "failed")
+
+    async def test_workspace_policy_allows_safe_read_tool_before_starting_run(self) -> None:
+        """合法 Workspace 路径必须通过预检并正常创建 ToolRun。"""
+        result = await self.executor(_WorkspaceReadTool("read_file", "path")).execute(
+            self.context,
+            ToolCall("call_read", "read_file", {"path": "notes.txt"}),
+        )
+
+        self.assertTrue(json.loads(result)["ok"])
+        with self.database.connect_read_only() as connection:
+            count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(count, 1)
+
+    async def test_workspace_policy_denies_unsafe_read_tools_before_starting_runs(self) -> None:
+        """文件 Tool 的逃逸和敏感根必须保留具体错误码且不创建 ToolRun。"""
+        cases = (
+            (
+                _WorkspaceReadTool("read_file", "path"),
+                ToolCall("escape", "read_file", {"path": "../outside.txt"}),
+                "workspace_escape",
+            ),
+            (
+                _WorkspaceReadTool("glob", "root"),
+                ToolCall("glob_sensitive", "glob", {"root": ".env"}),
+                "sensitive_path",
+            ),
+            (
+                _WorkspaceReadTool("grep", "root"),
+                ToolCall("grep_sensitive", "grep", {"root": ".ssh"}),
+                "sensitive_path",
+            ),
+        )
+        for tool, call, expected_code in cases:
+            with self.subTest(tool=call.name):
+                result = await self.executor(tool).execute(self.context, call)
+                self.assertEqual(json.loads(result)["error"]["code"], expected_code)
+
+        with self.database.connect_read_only() as connection:
+            count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(count, 0)
 
 
 if __name__ == "__main__":

@@ -2,9 +2,13 @@
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import cast
 
+from miniclaw.policy.workspace import WorkspaceAccessError, WorkspaceGuard
 from miniclaw.providers.base import JsonValue
 from miniclaw.tools.base import ToolContext, ToolDefinition, ToolRisk
+
+_READ_PATH_ARGUMENTS = {"read_file": "path", "glob": "root", "grep": "root"}
 
 
 class PolicyAction(StrEnum):
@@ -21,6 +25,7 @@ class PolicyDecision:
 
     action: PolicyAction
     reason: str
+    error_code: str = "denied"
 
 
 class PolicyEngine:
@@ -33,7 +38,13 @@ class PolicyEngine:
         arguments: dict[str, JsonValue],
     ) -> PolicyDecision:
         """只自动放行 low-risk；critical 拒绝；其余要求审批。"""
-        del context, arguments
+        path_argument = _READ_PATH_ARGUMENTS.get(definition.name)
+        if path_argument is not None:
+            raw_path = cast(str, arguments[path_argument])
+            try:
+                WorkspaceGuard().resolve_read(context, raw_path)
+            except WorkspaceAccessError as error:
+                return PolicyDecision(PolicyAction.DENY, str(error), error.code)
         if definition.risk is ToolRisk.LOW:
             return PolicyDecision(PolicyAction.ALLOW, "built_in_read_only")
         if definition.risk is ToolRisk.CRITICAL:

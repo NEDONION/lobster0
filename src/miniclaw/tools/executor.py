@@ -54,7 +54,7 @@ class ToolExecutor:
             code = (
                 "approval_required"
                 if decision.action is PolicyAction.REQUIRE_APPROVAL
-                else "denied"
+                else decision.error_code
             )
             return ToolResult.failure(code, decision.reason).to_model_text(call.name)
 
