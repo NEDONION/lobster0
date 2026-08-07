@@ -96,12 +96,12 @@ def _create_private_file(path: Path, content: str) -> bool:
 
 
 def _render_default_config(paths: StatePaths) -> str:
-    """生成只包含 Phase 0 已实现字段的稳定 TOML 配置。"""
+    """生成包含 DeepSeek V4 Pro 默认 Provider 的稳定 TOML 配置。"""
     workspace = json.dumps(str(paths.workspace), ensure_ascii=False)
     return (
-        '[agent]\nmodel = "provider/model"\nmax_tool_iterations = 8\n'
+        '[agent]\nmodel = "deepseek-v4-pro"\nmax_tool_iterations = 8\n'
         "context_budget_tokens = 32000\ntool_result_max_chars = 20000\n\n"
-        '[provider]\nbase_url = "https://api.openai.com/v1"\n'
+        '[provider]\nbase_url = "https://api.deepseek.com"\n'
         'api_key_env = "MINICLAW_MODEL_API_KEY"\ntimeout_seconds = 120\n\n'
         f"[workspace]\npath = {workspace}\nread_only_roots = []\n"
     )

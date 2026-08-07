@@ -25,6 +25,9 @@ class BootstrapTest(unittest.TestCase):
 
         self.assertEqual(result.applied_migrations, (1,))
         self.assertEqual(result.owner.display_name, "Owner")
+        self.assertEqual(config.agent.model, "deepseek-v4-pro")
+        self.assertEqual(config.provider.base_url, "https://api.deepseek.com")
+        self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
         self.assertEqual(config.workspace.path, self.paths.workspace)
         self.assertEqual(
             set(result.created_files),
