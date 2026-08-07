@@ -13,8 +13,8 @@ from miniclaw.runtime import create_runtime
 class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
     """验证 CLI/TUI 共用同一套 Owner、Service 和 Tool Registry。"""
 
-    async def test_create_runtime_exposes_seven_enabled_tools_and_closes(self) -> None:
-        """Runtime 应复用真实配置装配七个已实现 Tool，并拥有 Provider 生命周期。"""
+    async def test_create_runtime_exposes_eight_enabled_tools_and_closes(self) -> None:
+        """Runtime 应复用真实配置装配八个已实现 Tool，并拥有 Provider 生命周期。"""
         with tempfile.TemporaryDirectory() as directory:
             paths = build_state_paths(Path(directory).resolve())
             owner = initialize_state(paths).owner
@@ -31,6 +31,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                         "edit_file",
                         "glob",
                         "grep",
+                        "http_get",
                         "read_file",
                         "run_command",
                         "system_info",

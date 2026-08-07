@@ -101,6 +101,14 @@ class OfflineEvalRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.passed)
         self.assertEqual(result.failures, ("execution_error",))
 
+    async def test_write_approval_case_executes_continuation_and_checks_file(self) -> None:
+        """审批场景必须走真实 waiting/consume/child Turn 并验证文件副作用。"""
+        result = await run_offline_case(repository_case("WRITE-APPROVE-001"))
+
+        self.assertTrue(result.passed, result.failures)
+        self.assertEqual(result.tool_runs, (("write_file", "succeeded"),))
+        self.assertEqual(result.approval_statuses, ("consumed",))
+
     async def test_all_repository_cases_pass_offline_gate(self) -> None:
         """当前发布的所有 active offline case 必须 100% 通过。"""
         cases = tuple(
@@ -111,8 +119,8 @@ class OfflineEvalRunnerTest(unittest.IsolatedAsyncioTestCase):
 
         suite = await run_offline_suite(cases)
 
-        self.assertEqual(suite.total, 10)
-        self.assertEqual(suite.passed, 10, suite.cases)
+        self.assertEqual(suite.total, 20)
+        self.assertEqual(suite.passed, 20, suite.cases)
         self.assertEqual(suite.failed, 0)
 
 

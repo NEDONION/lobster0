@@ -1,0 +1,173 @@
+"""HTTPS URL、DNS 与 SSRF 硬禁止测试。"""
+
+import unittest
+from pathlib import Path
+
+from miniclaw.policy.engine import PolicyAction, PolicyEngine
+from miniclaw.policy.network import (
+    NetworkPolicyError,
+    NetworkRule,
+    normalize_network_rule,
+    validate_https_target,
+)
+from miniclaw.tools.base import ToolContext
+from miniclaw.tools.web import HttpGetTool
+
+
+class NetworkPolicyTest(unittest.TestCase):
+    """验证所有解析地址都必须是明确公网地址。"""
+
+    def resolver(self, hostname: str, port: int) -> tuple[str, ...]:
+        """返回测试域名对应的确定性地址集合。"""
+        answers = {
+            "example.com": ("93.184.216.34",),
+            "mixed.example": ("93.184.216.34", "10.0.0.8"),
+            "private.example": ("192.168.1.5",),
+            "malformed.example": ("not-an-ip",),
+        }
+        return answers.get(hostname, ("93.184.216.34",))
+
+    def test_non_https_credentials_and_non_public_addresses_are_denied(self) -> None:
+        """scheme、凭据和所有特殊 IP 类别都不能进入 Approval。"""
+        urls = (
+            "http://example.com",
+            "https://user:pass@example.com",
+            "https://127.0.0.1",
+            "https://[::1]",
+            "https://10.0.0.1",
+            "https://172.16.0.1",
+            "https://192.168.1.1",
+            "https://169.254.169.254",
+            "https://224.0.0.1",
+            "https://0.0.0.0",
+            "https://192.0.2.1",
+            "https://private.example",
+        )
+        for url in urls:
+            with self.subTest(url=url), self.assertRaises(NetworkPolicyError):
+                validate_https_target(url, self.resolver)
+
+    def test_mixed_dns_answers_fail_instead_of_selecting_only_public_ip(self) -> None:
+        """一个私网答案就必须拒绝整个目标，不能挑公网答案蒙混过关。"""
+        with self.assertRaises(NetworkPolicyError) as error:
+            validate_https_target("https://mixed.example/path", self.resolver)
+
+        self.assertEqual(error.exception.code, "non_public_address")
+
+    def test_ambiguous_hostname_control_fragment_and_unapproved_port_are_denied(self) -> None:
+        """拒绝歧义 host 编码、控制字符、fragment 和未精确授权端口。"""
+        urls = (
+            "https://127.1",
+            "https://2130706433",
+            "https://example.com.",
+            "https://éxample.com",
+            "https://example.com/%0aheader",
+            "https://example.com/path#fragment",
+            "https://example.com:8443/path",
+        )
+        for url in urls:
+            with self.subTest(url=url), self.assertRaises(NetworkPolicyError):
+                validate_https_target(url, self.resolver)
+
+    def test_public_target_is_canonical_and_non_443_needs_exact_rule(self) -> None:
+        """合法目标保留 path/query；显式规则才能打开同 authority 非 443 端口。"""
+        target = validate_https_target(
+            "https://EXAMPLE.com/a%20b?q=1",
+            self.resolver,
+        )
+        port_rule = normalize_network_rule("example.com:8443")
+        non_default = validate_https_target(
+            "https://example.com:8443/path",
+            self.resolver,
+            allowed_ports=(443, port_rule.port),
+        )
+
+        self.assertEqual(target.url, "https://example.com/a%20b?q=1")
+        self.assertEqual(target.hostname, "example.com")
+        self.assertEqual(target.port, 443)
+        self.assertEqual(target.addresses, ("93.184.216.34",))
+        self.assertEqual(target.request_target, "/a%20b?q=1")
+        self.assertEqual((port_rule.hostname, port_rule.port), ("example.com", 8443))
+        self.assertEqual(non_default.port, 8443)
+
+    def test_empty_dns_and_malformed_answers_fail_closed(self) -> None:
+        """DNS 无答案、异常或非 IP 文本都必须返回稳定错误。"""
+        for resolver in (
+            lambda hostname, port: (),
+            self.resolver,
+            lambda hostname, port: (_ for _ in ()).throw(OSError("secret DNS detail")),
+        ):
+            url = (
+                "https://malformed.example"
+                if resolver == self.resolver
+                else "https://empty.example"
+            )
+            with self.subTest(url=url), self.assertRaises(NetworkPolicyError) as error:
+                validate_https_target(url, resolver)
+            self.assertNotIn("secret DNS detail", str(error.exception))
+
+    def test_http_policy_uses_exact_authority_and_security_ask_matrix(self) -> None:
+        """HTTPS 公网目标使用与 command 一致的 security × ask 语义。"""
+        workspace = Path.cwd().resolve()
+        context = ToolContext(1, 1, 1, workspace / ".state", workspace, ())
+        definition = HttpGetTool().definition
+        arguments = {"url": "https://EXAMPLE.com/a?q=secret", "timeout_seconds": 20}
+        cases = (
+            (
+                PolicyEngine(
+                    network_rules=(NetworkRule("example.com"),),
+                    network_resolver=self.resolver,
+                ),
+                PolicyAction.ALLOW,
+            ),
+            (
+                PolicyEngine(
+                    ask="always",
+                    network_rules=(NetworkRule("example.com"),),
+                    network_resolver=self.resolver,
+                ),
+                PolicyAction.REQUIRE_APPROVAL,
+            ),
+            (
+                PolicyEngine(ask="off", network_resolver=self.resolver),
+                PolicyAction.DENY,
+            ),
+            (
+                PolicyEngine(security="full", ask="off", network_resolver=self.resolver),
+                PolicyAction.ALLOW,
+            ),
+            (
+                PolicyEngine(security="deny", network_resolver=self.resolver),
+                PolicyAction.DENY,
+            ),
+        )
+
+        for engine, expected in cases:
+            with self.subTest(expected=expected):
+                decision = engine.authorize(definition, context, arguments)
+                self.assertEqual(decision.action, expected)
+                self.assertEqual(
+                    decision.normalized_arguments,
+                    {"url": "https://example.com/a?q=secret", "timeout_seconds": 20},
+                )
+
+    def test_http_policy_hard_denies_private_target_before_approval(self) -> None:
+        """SSRF 目标不论 full/always 都不能变成 Owner 可批准请求。"""
+        workspace = Path.cwd().resolve()
+        context = ToolContext(1, 1, 1, workspace / ".state", workspace, ())
+        decision = PolicyEngine(
+            security="full",
+            ask="always",
+            network_resolver=self.resolver,
+        ).authorize(
+            HttpGetTool().definition,
+            context,
+            {"url": "https://private.example/secret", "timeout_seconds": 20},
+        )
+
+        self.assertEqual(decision.action, PolicyAction.DENY)
+        self.assertEqual(decision.error_code, "non_public_address")
+
+
+if __name__ == "__main__":
+    unittest.main()

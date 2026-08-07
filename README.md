@@ -9,7 +9,7 @@
 <p align="center">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-0F766E" />
-  <img alt="Status Phase 2.3A verified" src="https://img.shields.io/badge/Status-Phase_2.3A_verified-0F766E" />
+  <img alt="Status Phase 2.4 verified" src="https://img.shields.io/badge/Status-Phase_2.4_verified-0F766E" />
 </p>
 
 MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。目标是在同一个 Agent Core 后接入本地
@@ -17,14 +17,15 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 Phase 2.3A：裸 `miniclaw` 进入唯一的 Textual 全屏 TUI；同一个 `AgentRuntime`
-> 连接 DeepSeek、TurnService、SQLite、七个系统/文件/命令 Tool 与参数绑定 Approval。TUI 支持流式回答、Tool
-> 状态卡、Enter 发送、Shift+Enter 换行、Esc 取消、Slash Command，以及只允许一次的 Allow once / Deny
+> 当前仓库已完成 Phase 2.4：裸 `miniclaw` 进入唯一的 Textual 全屏 TUI；同一个 `AgentRuntime`
+> 连接 DeepSeek、TurnService、SQLite、八个系统/文件/命令/HTTPS Tool 与参数绑定 Approval。TUI 支持流式回答、
+> Provider reasoning、可逐项展开的 Tool 参数/执行/结果 Trace、Enter 发送、Shift+Enter 换行、Esc 取消、
+> Ctrl+O 全展开/收起、Slash Command，以及只允许一次的 Allow once / Deny
 > 审批弹窗。旧 `miniclaw chat`、`miniclaw tui`、one-shot REPL 和 `miniclaw approvals` 已移除。
-> P2.3A 已接入不经过 Shell 的 exact-argv `run_command`：固定 PATH、硬禁止清单、最小子进程环境、进程组
-> 超时和精确 allowlist；未命中规则时在同一 TUI 展示完整归一化参数并只允许一次。HTTP Tool、真实
-> `lark-cli`/Node 路径闭环、DeepSeek live eval 和飞书 Channel 尚未完成。
-> 当前回归基线为 **232 tests + 10/10 Agent cases**。Policy 拒绝只写脱敏审计，不创建 ToolRun。
+> P2.3A 已接入不经过 Shell 的 exact-argv `run_command`；P2.4 已接入只读 `http_get`，包含 HTTPS-only、
+> 全 DNS 公网校验、固定 IP/TLS hostname、每跳重验、响应预算和不可信内容标记。两类动作未命中精确规则时
+> 都在同一 TUI 只允许一次。真实 `lark-cli`/Node 路径闭环、DeepSeek live eval 和飞书 Channel 尚未完成。
+> 当前回归基线为 **253 tests + 20/20 Agent cases**。Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
 
 ## Planned MVP
@@ -110,6 +111,7 @@ uv run miniclaw
 # 请使用 glob 找出 Workspace 的 txt 文件。
 # 请使用 grep 在 txt 文件中查找 MiniClaw。
 # 请使用 run_command 运行 git status --short。
+# 请使用 http_get 读取 https://example.com/ 的公开文本。
 ```
 
 这三条命令只给模型提示和 Tool Schema，模型是否调用取决于 Provider；它们不是已完成的真实 DeepSeek 文件
@@ -168,7 +170,9 @@ miniclaw/
 | [Phase 2.2A 文件写入工程文档](docs/engineering/phase-2/filesystem-tools.md) | 严格 Tools 配置、Workspace 写边界、write/edit 原子性、错误码和测试矩阵 |
 | [Phase 2.2 Approval 生命周期](docs/engineering/phase-2/approval-lifecycle.md) | 参数 hash、waiting/child Turn、TTL、Owner、单次执行与审计 |
 | [Phase 2.2B 单入口 Textual TUI](docs/engineering/phase-2/single-entry-tui.md) | 技术选型、Runtime、RunEvent、Worker、Tool 卡、审批弹窗、入口迁移和测试矩阵 |
+| [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace 可观测契约、18 个稳定用例、Textual 无头测试、PTY smoke 与版本门禁 |
 | [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
+| [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |

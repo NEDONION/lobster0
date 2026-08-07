@@ -9,12 +9,18 @@ from typing import TYPE_CHECKING, cast
 from unittest import mock
 
 from textual.containers import VerticalScroll
-from textual.widgets import Button, Markdown, Static, TextArea
+from textual.widgets import Button, Collapsible, Markdown, Static, TextArea
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.paths import build_state_paths
 from miniclaw.tools.base import ToolDefinition, ToolRisk
-from miniclaw.tui.app import ApprovalModal, MiniClawApp, ToolCard, _terminal_safe
+from miniclaw.tui.app import (
+    ApprovalModal,
+    MiniClawApp,
+    ReasoningCard,
+    ToolCard,
+    _terminal_safe,
+)
 
 if TYPE_CHECKING:
     from miniclaw.runtime import AgentRuntime
@@ -336,7 +342,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(message.has_class("temporary"))
 
     async def test_tool_events_update_one_text_labelled_safe_card(self) -> None:
-        """任意 call ID 只能映射一张卡，状态和预览不能依赖颜色或解释 ANSI。"""
+        """调用概要始终可见，参数与结果可以单独展开且不解释 ANSI。"""
         app = MiniClawApp(self.paths, runtime=self.runtime)
         call_id = "call/with unsafe css id"
 
@@ -349,9 +355,12 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                         "call_id": call_id,
                         "tool_name": "read_file",
                         "summary": "README.md",
+                        "arguments": {"path": "README.md", "offset": 0},
                     },
                 )
             )
+            card = app.query_one(ToolCard)
+            self.assertIn("Status: requested", card.title)
             await app.on_run_event(
                 RunEvent(
                     "tool_started",
@@ -359,6 +368,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                     {"call_id": call_id, "tool_name": "read_file"},
                 )
             )
+            self.assertIn("Status: running", card.title)
             await app.on_run_event(
                 RunEvent(
                     "tool_finished",
@@ -374,15 +384,71 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             )
             await pilot.pause()
 
-            card = app.query_one(ToolCard)
-            rendered = str(card.render())
             self.assertEqual(len(app.query(ToolCard)), 1)
             self.assertEqual(card.status, "succeeded")
-            self.assertIn("Tool: read_file", rendered)
-            self.assertIn("Status: succeeded", rendered)
-            self.assertIn("18 ms", rendered)
-            self.assertIn("safe[2J preview", rendered)
-            self.assertNotIn("\x1b", rendered)
+            self.assertTrue(card.collapsed)
+            self.assertIn("Tool: read_file", card.title)
+            self.assertIn("Status: succeeded", card.title)
+
+            card.query_one("CollapsibleTitle").focus()
+            await pilot.press("enter")
+            await pilot.pause()
+
+            detail = str(card.query_one(".trace-detail", Static).render())
+            self.assertFalse(card.collapsed)
+            self.assertIn('"path": "README.md"', detail)
+            self.assertIn("requested -> running -> succeeded", detail)
+            self.assertIn("18 ms", detail)
+            self.assertIn("safe[2J preview", detail)
+            self.assertNotIn("\x1b", detail)
+
+    async def test_reasoning_and_tool_traces_remain_visible_and_toggle_together(self) -> None:
+        """Provider reasoning 与 Tool 摘要都保留，Ctrl+O 只折叠详情而不隐藏卡片。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+
+        async with app.run_test() as pilot:
+            await app.on_run_event(
+                RunEvent(
+                    "model_reasoning",
+                    12,
+                    {"text": "inspect\x1b[2J the workspace"},
+                )
+            )
+            await app.on_run_event(
+                RunEvent(
+                    "tool_requested",
+                    12,
+                    {
+                        "call_id": "read-12",
+                        "tool_name": "read_file",
+                        "summary": "read_file",
+                        "arguments": {"path": "README.md"},
+                    },
+                )
+            )
+            await pilot.pause()
+
+            reasoning = app.query_one(ReasoningCard)
+            tool = app.query_one(ToolCard)
+            self.assertTrue(reasoning.collapsed)
+            self.assertTrue(tool.collapsed)
+            self.assertTrue(reasoning.display)
+            self.assertTrue(tool.display)
+            self.assertIn("Reasoning", reasoning.title)
+            self.assertNotIn("\x1b", str(reasoning.query_one(Static).render()))
+
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            self.assertFalse(reasoning.collapsed)
+            self.assertFalse(tool.collapsed)
+            self.assertTrue(reasoning.display)
+            self.assertTrue(tool.display)
+
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            self.assertTrue(reasoning.collapsed)
+            self.assertTrue(tool.collapsed)
+            self.assertEqual(len(app.query(Collapsible)), 2)
 
     async def test_local_slash_commands_render_without_contacting_the_agent(self) -> None:
         """help/status/tools/unknown 都应只更新本地 transcript。"""

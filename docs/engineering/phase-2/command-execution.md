@@ -2,7 +2,7 @@
 
 > 状态：`run_command` 已进入唯一 Textual TUI 的共享 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
 >
-> 当前门禁：232/232 tests、10/10 offline Agent cases、Ruff PASS
+> 当前门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 
@@ -73,7 +73,7 @@ flowchart TD
 | 包安装入口 | pip、npm、yarn、pnpm、brew、apt、yum、dnf 等 |
 | Git 红线 | `push`、`clean`、`reset --hard`、`config/credential` |
 
-通用网络读取必须走 P2.4 的 `http_get`；文件创建和精确修改应使用带 Workspace Guard 的文件 Tool。
+通用网络读取必须走已实现的 P2.4 `http_get`；文件创建和精确修改应使用带 Workspace Guard 的文件 Tool。
 
 ## 6. security × ask
 

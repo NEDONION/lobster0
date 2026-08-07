@@ -160,13 +160,17 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             [event.kind for event in events],
             [
                 "turn_started",
+                "model_reasoning",
                 "tool_requested",
                 "tool_started",
                 "tool_finished",
                 "model_text_delta",
+                "model_reasoning",
                 "turn_finished",
             ],
         )
+        requested = next(event for event in events if event.kind == "tool_requested")
+        self.assertEqual(requested.data["arguments"], {})
 
     async def test_approval_event_has_committed_normalized_arguments(self) -> None:
         """审批弹窗收到事件时，pending Approval 已存在且参数来自 Policy 归一化。"""
@@ -671,6 +675,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 "edit_file",
                 "glob",
                 "grep",
+                "http_get",
                 "read_file",
                 "run_command",
                 "system_info",

@@ -36,7 +36,7 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((code, error), (0, ""))
         lines = output.splitlines()
-        self.assertEqual(len(lines), 10)
+        self.assertEqual(len(lines), 20)
         self.assertTrue(lines[0].startswith("CORE-001 active core "))
         self.assertTrue(any(line.startswith("PROTO-001 active provider ") for line in lines))
 
@@ -48,7 +48,7 @@ class CliEvalTest(unittest.TestCase):
                 ["eval", "validate", "--root", str(SCENARIO_ROOT)]
             )
 
-        self.assertEqual((code, output, error), (0, "Validated 10 eval cases.\n", ""))
+        self.assertEqual((code, output, error), (0, "Validated 20 eval cases.\n", ""))
         self.assertFalse(missing_home.exists())
 
     def test_run_offline_prints_pass_rows_and_summary(self) -> None:
@@ -60,7 +60,7 @@ class CliEvalTest(unittest.TestCase):
         self.assertEqual((code, error), (0, ""))
         self.assertIn("PASS CORE-001", output)
         self.assertIn("PASS SAFE-001", output)
-        self.assertIn("Offline eval: 10/10 passed, 0 failed", output)
+        self.assertIn("Offline eval: 20/20 passed, 0 failed", output)
 
     def test_run_returns_one_and_only_short_codes_when_case_fails(self) -> None:
         """任一场景失败应返回 1，只打印 ID 和稳定短码。"""

@@ -633,7 +633,7 @@ Tool Message 恢复 `tool_call_id`。如果 metadata 缺字段、类型错误，
 
 代码位置：`src/miniclaw/cli.py`
 
-P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册七个 Tool：
+P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册八个 Tool：
 
 ```python
 registry = ToolRegistry((SystemInfoTool(),))
@@ -797,6 +797,7 @@ sqlite3 ~/.miniclaw/miniclaw.db \
 - [ ] Approval 创建与消费（P2.2）；
 - [x] Workspace 路径逃逸防护（P2.1B）；
 - [x] Exact-argv `run_command` 与 allowlist（P2.3A；不等同 OS sandbox）。
+- [x] Pinned `http_get`、SSRF 防护与响应预算（P2.4）。
 
 ## 21. 如何增加下一个 Tool
 

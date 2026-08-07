@@ -2,7 +2,7 @@
 
 > 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 Textual TUI 已进入生产链路
 >
-> 当前门禁：232/232 tests、10/10 offline Agent cases、Ruff PASS
+> 当前门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS
 >
 > 当前非目标：TUI 永久规则管理与 HTTP hostname 规则；飞书卡片审批不在本阶段
 
@@ -217,7 +217,7 @@ uv run ruff check src/miniclaw/policy/approvals.py src/miniclaw/policy/engine.py
 
 结果：28/28 通过。
 
-全仓门禁：232/232 tests、10/10 offline Agent cases、Ruff PASS、diff check PASS。
+全仓门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS。
 
 ## 13. Runner 为什么必须停下来
 

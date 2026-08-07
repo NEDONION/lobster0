@@ -155,6 +155,15 @@ class AgentRunner:
             input_tokens += response.input_tokens or 0
             output_tokens += response.output_tokens or 0
             provider_request_id = response.provider_request_id or provider_request_id
+            if tool_context is not None and response.reasoning_content:
+                await emit(
+                    on_event,
+                    RunEvent(
+                        "model_reasoning",
+                        tool_context.turn_id,
+                        {"text": response.reasoning_content},
+                    ),
+                )
 
             if not response.tool_calls:
                 if not response.content.strip():
@@ -203,6 +212,7 @@ class AgentRunner:
                                 "call_id": call.call_id,
                                 "tool_name": call.name,
                                 "summary": call.name,
+                                "arguments": call.arguments,
                             },
                         ),
                     )

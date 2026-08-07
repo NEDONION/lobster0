@@ -5,6 +5,7 @@ import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from miniclaw.agent.events import RunEvent, RunEventHandler, emit
 from miniclaw.policy.engine import PolicyAction, PolicyEngine
@@ -289,6 +290,18 @@ def _approval_summary(tool_name: str, arguments: dict[str, JsonValue]) -> str:
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
+    if tool_name == "http_get":
+        url = arguments.get("url")
+        if isinstance(url, str):
+            try:
+                parsed = urlsplit(url)
+                hostname = parsed.hostname
+                port = parsed.port or 443
+            except ValueError:
+                hostname = None
+            if hostname is not None:
+                host_text = f"[{hostname}]" if ":" in hostname else hostname
+                return f"http_get https://{host_text}:{port}"
     path = arguments.get("path")
     if isinstance(path, str):
         return f"{tool_name} {Path(path).name}"

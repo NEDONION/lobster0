@@ -14,7 +14,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Footer, Markdown, Static, TextArea
+from textual.widgets import Button, Collapsible, Footer, Markdown, Static, TextArea
 from textual.worker import Worker
 
 from miniclaw import __version__
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
 
 _DEFAULT_SESSION = "default"
 _TOOL_PREVIEW_CHARS = 2_000
+_TRACE_DETAIL_CHARS = 8_000
 
 
 class Composer(TextArea):
@@ -59,16 +60,31 @@ class Composer(TextArea):
         self.insert("\n")
 
 
-class ToolCard(Static):
-    """以文字标签展示一次 Tool 调用的当前状态。"""
+class ToolCard(Collapsible):
+    """始终展示 Tool 状态，按需展开参数和结果。"""
 
-    def __init__(self, call_id: str, tool_name: str, summary: str) -> None:
+    def __init__(
+        self,
+        call_id: str,
+        tool_name: str,
+        summary: str,
+        arguments: dict[str, object],
+    ) -> None:
         """保存稳定调用标识并显示 requested 初态。"""
-        super().__init__(markup=False, classes="tool-card")
+        self._detail = Static("", markup=False, classes="trace-detail")
+        super().__init__(
+            self._detail,
+            collapsed=True,
+            classes="trace-card tool-card",
+        )
         self.call_id = call_id
         self.tool_name = _terminal_safe(tool_name)
         self.summary = _terminal_safe(summary)
+        self.arguments = _terminal_safe(
+            json.dumps(arguments, ensure_ascii=False, indent=2, sort_keys=True)
+        )[:_TRACE_DETAIL_CHARS]
         self.status = "requested"
+        self.status_history = [self.status]
         self.duration_ms: int | None = None
         self.preview = ""
         self._refresh_content()
@@ -82,20 +98,45 @@ class ToolCard(Static):
     ) -> None:
         """更新可见状态、耗时和有界结果预览。"""
         self.status = _terminal_safe(status)
+        if self.status != self.status_history[-1]:
+            self.status_history.append(self.status)
         self.duration_ms = duration_ms
         self.preview = _terminal_safe(preview)[:_TOOL_PREVIEW_CHARS]
         self._refresh_content()
 
     def _refresh_content(self) -> None:
-        """用不依赖颜色的稳定标签刷新卡片正文。"""
-        lines = [f"Tool: {self.tool_name}", f"Status: {self.status}"]
+        """用不依赖颜色的标签刷新概要和详情。"""
+        self.title = f"Tool: {self.tool_name} · Status: {self.status}"
+        lines: list[str] = []
         if self.summary:
-            lines.append(self.summary)
+            lines.extend(("Request", self.summary))
+        lines.extend(
+            (
+                "Arguments",
+                self.arguments,
+                "Lifecycle",
+                " -> ".join(self.status_history),
+            )
+        )
         if self.duration_ms is not None:
-            lines.append(f"Duration: {self.duration_ms} ms")
+            lines.extend(("Execution", f"Duration: {self.duration_ms} ms"))
         if self.preview:
-            lines.append(self.preview)
-        self.update("\n".join(lines))
+            lines.extend(("Result preview", self.preview))
+        self._detail.update("\n".join(lines))
+
+
+class ReasoningCard(Collapsible):
+    """展示 Provider 明确返回的有界 reasoning，不代表内部思维链。"""
+
+    def __init__(self, turn_id: int, text: str) -> None:
+        """默认折叠详情，但始终保留可聚焦概要。"""
+        detail = _terminal_safe(text)[:_TRACE_DETAIL_CHARS]
+        super().__init__(
+            Static(detail, markup=False, classes="trace-detail"),
+            title=f"Reasoning (provider) · Turn {turn_id}",
+            collapsed=True,
+            classes="trace-card reasoning-card",
+        )
 
 
 class ApprovalModal(ModalScreen[bool]):
@@ -215,14 +256,13 @@ class MiniClawApp(App[int]):
         border: round $accent;
     }
 
-    .assistant, .tool-card, .local-message {
+    .assistant, .trace-card, .local-message {
         height: auto;
         margin: 1 0;
     }
 
-    .tool-card {
+    .trace-card {
         border: round $surface-lighten-2;
-        padding: 0 1;
     }
 
     #onboarding {
@@ -238,7 +278,7 @@ class MiniClawApp(App[int]):
 
     BINDINGS = [
         Binding("escape", "cancel_turn", "Cancel", show=True),
-        Binding("ctrl+o", "toggle_tools", "Tool details", show=True),
+        Binding("ctrl+o", "toggle_traces", "Trace details", show=True),
         Binding("ctrl+d", "exit_if_idle", "Exit", show=True),
     ]
 
@@ -306,6 +346,8 @@ class MiniClawApp(App[int]):
         """把 Core 事件投影到当前 Turn 的临时消息或 Tool 卡片。"""
         if event.kind == "model_text_delta":
             await self._append_model_delta(event)
+        elif event.kind == "model_reasoning":
+            await self._append_reasoning(event)
         elif event.kind == "turn_finished":
             await self._finish_assistant(event)
         elif event.kind == "tool_requested":
@@ -316,6 +358,15 @@ class MiniClawApp(App[int]):
         elif event.kind in {"tool_started", "tool_finished"}:
             await self._update_tool(event)
         self.query_one("#transcript", VerticalScroll).scroll_end(animate=False)
+
+    async def _append_reasoning(self, event: RunEvent) -> None:
+        """为每次 Provider reasoning 事件保留一张可展开卡片。"""
+        value = event.data.get("text")
+        if not isinstance(value, str) or not value.strip():
+            return
+        await self.query_one("#transcript", VerticalScroll).mount(
+            ReasoningCard(event.turn_id, value)
+        )
 
     async def _append_model_delta(self, event: RunEvent) -> None:
         """把一个安全文本增量追加到该 Turn 的唯一临时消息。"""
@@ -367,14 +418,16 @@ class MiniClawApp(App[int]):
         call_id = event.data.get("call_id")
         tool_name = event.data.get("tool_name")
         summary = event.data.get("summary", "")
+        arguments = event.data.get("arguments", {})
         if (
             not isinstance(call_id, str)
             or not isinstance(tool_name, str)
             or not isinstance(summary, str)
+            or not isinstance(arguments, dict)
             or call_id in self._tool_cards
         ):
             return
-        card = ToolCard(call_id, tool_name, summary)
+        card = ToolCard(call_id, tool_name, summary, arguments)
         self._tool_cards[call_id] = card
         await self.query_one("#transcript", VerticalScroll).mount(card)
 
@@ -415,7 +468,8 @@ class MiniClawApp(App[int]):
             case "/help":
                 await self._append_local_message(
                     "/help · /status · /tools · /new · /exit · /quit\n"
-                    "Enter sends · Shift+Enter inserts a line · Esc cancels"
+                    "Enter sends · Shift+Enter inserts a line · Esc cancels · "
+                    "Ctrl+O toggles trace details"
                 )
             case "/status":
                 model = self.runtime.model if self.runtime is not None else "not-configured"
@@ -561,10 +615,12 @@ class MiniClawApp(App[int]):
         if self._active_worker is None or self._active_worker.is_finished:
             self.exit(0)
 
-    def action_toggle_tools(self) -> None:
-        """切换 Tool 卡片可见性。"""
-        for card in self.query(ToolCard):
-            card.display = not card.display
+    def action_toggle_traces(self) -> None:
+        """展开全部折叠卡；已全展开时收起全部详情。"""
+        cards = list(self.query(Collapsible))
+        expand = any(card.collapsed for card in cards)
+        for card in cards:
+            card.collapsed = not expand
 
     async def _append_local_message(self, content: str) -> None:
         """向 transcript 添加一条不解释 markup 的本地状态消息。"""

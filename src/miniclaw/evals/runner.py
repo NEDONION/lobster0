@@ -13,6 +13,7 @@ from miniclaw.bootstrap import initialize_state
 from miniclaw.config import AppConfig, load_config
 from miniclaw.evals.cases import EvalCase
 from miniclaw.paths import StatePaths, build_state_paths
+from miniclaw.policy.approvals import ApprovalError
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import (
     ModelRequest,
@@ -22,12 +23,14 @@ from miniclaw.providers.base import (
 )
 from miniclaw.storage.conversations import MessageRepository, SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ToolRunRepository
+from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
+from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.filesystem import ReadFileTool
+from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
+from miniclaw.tools.web import HttpGetTool
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +43,7 @@ class EvalCaseResult:
     failures: tuple[str, ...]
     tool_runs: tuple[tuple[str, str], ...]
     audit_events: tuple[str, ...]
+    approval_statuses: tuple[str, ...]
     request_count: int
 
 
@@ -95,19 +99,71 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
         config = load_config(paths, environ={})
         _write_setup(paths.workspace, case.setup_files)
         database = Database(paths.database)
-        service = _build_service(database, paths, config, provider)
+        approvals = ApprovalRepository(database)
+        service = _build_service(database, paths, config, provider, approvals)
         answer = ""
-        execution_failed = False
+        execution_error_code: str | None = None
         try:
             for text in (case.query, *case.turns):
                 answer = (await service.handle(initialized.owner.id, text, case.id)).content
+            approval_id: int | None = None
+            for action in case.approval_actions:
+                if approval_id is None:
+                    stored = approvals.list(initialized.owner.id)
+                    if not stored:
+                        raise ApprovalError("not_found", "eval approval was not created")
+                    approval_id = stored[-1].id
+                if action == "approve":
+                    answer = (
+                        await service.continue_approval(
+                            initialized.owner.id,
+                            approval_id,
+                            approved=True,
+                        )
+                    ).content
+                elif action == "deny":
+                    answer = (
+                        await service.continue_approval(
+                            initialized.owner.id,
+                            approval_id,
+                            approved=False,
+                        )
+                    ).content
+                elif action == "tamper":
+                    approvals.approve(initialized.owner.id, approval_id)
+                    with database.connect() as connection:
+                        connection.execute(
+                            """
+                            UPDATE tool_runs SET arguments_json = '{}'
+                            WHERE id = (SELECT tool_run_id FROM approvals WHERE id = ?)
+                            """,
+                            (approval_id,),
+                        )
+                    await service.continue_approval(
+                        initialized.owner.id,
+                        approval_id,
+                        approved=True,
+                    )
+                else:
+                    await service.continue_approval(
+                        initialized.owner.id,
+                        approval_id,
+                        approved=True,
+                    )
+        except ApprovalError as error:
+            execution_error_code = error.code
         except Exception:  # noqa: BLE001 - eval 边界只输出短码并继续后续 case
-            execution_failed = True
-        tool_runs, audit_events = _observations(database)
-        failures = (
-            ("execution_error",)
-            if execution_failed
-            else _verify(case, answer, provider.requests, tool_runs, audit_events)
+            execution_error_code = "execution_error"
+        tool_runs, audit_events, approval_statuses = _observations(database)
+        failures = _verify(
+            case,
+            answer,
+            provider.requests,
+            tool_runs,
+            audit_events,
+            approval_statuses,
+            paths.workspace,
+            execution_error_code,
         )
     return EvalCaseResult(
         case_id=case.id,
@@ -116,6 +172,7 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
         failures=failures,
         tool_runs=tool_runs,
         audit_events=audit_events,
+        approval_statuses=approval_statuses,
         request_count=len(provider.requests),
     )
 
@@ -139,13 +196,27 @@ def _build_service(
     paths: StatePaths,
     config: AppConfig,
     provider: ScriptedProvider,
+    approvals: ApprovalRepository,
 ) -> TurnService:
     """按生产 CLI 的稳定顺序组装真实 Turn 与 Tool 依赖。"""
     executor = ToolExecutor(
-        ToolRegistry((SystemInfoTool(), ReadFileTool(), GlobTool(), GrepTool())),
+        ToolRegistry(
+            (
+                SystemInfoTool(),
+                ReadFileTool(),
+                WriteFileTool(),
+                EditFileTool(),
+                GlobTool(),
+                GrepTool(),
+                HttpGetTool(),
+                RunCommandTool(),
+            )
+        ),
         PolicyEngine(),
         ToolRunRepository(database),
         result_max_chars=config.agent.tool_result_max_chars,
+        approvals=approvals,
+        approval_ttl_seconds=config.tools.approval_ttl_seconds,
     )
     return TurnService(
         model=config.agent.model,
@@ -154,6 +225,7 @@ def _build_service(
         turns=TurnRepository(database),
         context=ContextBuilder(paths),
         runner=AgentRunner(provider, executor, max_iterations=config.agent.max_tool_iterations),
+        approvals=approvals,
         state_home=paths.home,
         workspace=config.workspace,
     )
@@ -170,7 +242,9 @@ def _write_setup(workspace: Path, files: tuple[tuple[str, str], ...]) -> None:
         target.write_text(content, encoding="utf-8")
 
 
-def _observations(database: Database) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...]]:
+def _observations(
+    database: Database,
+) -> tuple[tuple[tuple[str, str], ...], tuple[str, ...], tuple[str, ...]]:
     """读取 verifier 所需的 ToolRun 状态和审计事件类型。"""
     with database.connect_read_only() as connection:
         runs = tuple(
@@ -185,7 +259,13 @@ def _observations(database: Database) -> tuple[tuple[tuple[str, str], ...], tupl
                 "SELECT event_type FROM audit_events ORDER BY id"
             ).fetchall()
         )
-    return runs, events
+        approvals = tuple(
+            str(row["status"])
+            for row in connection.execute(
+                "SELECT status FROM approvals ORDER BY id"
+            ).fetchall()
+        )
+    return runs, events, approvals
 
 
 def _verify(
@@ -194,10 +274,19 @@ def _verify(
     requests: list[ModelRequest],
     tool_runs: tuple[tuple[str, str], ...],
     audit_events: tuple[str, ...],
+    approval_statuses: tuple[str, ...],
+    workspace: Path,
+    execution_error_code: str | None,
 ) -> tuple[str, ...]:
     """执行不依赖自然语言 Judge 的稳定可观察断言。"""
     expected = case.expected
     failures: list[str] = []
+    if execution_error_code != expected.error_code:
+        return (
+            "execution_error"
+            if expected.error_code is None
+            else "error_code_mismatch",
+        )
     if any(fragment not in answer for fragment in expected.answer_contains):
         failures.append("answer_missing")
     if any(fragment in answer for fragment in expected.answer_excludes):
@@ -214,6 +303,18 @@ def _verify(
         failures.append("request_missing")
     if expected.max_tool_runs is not None and len(tool_runs) > expected.max_tool_runs:
         failures.append("too_many_tool_runs")
+    if approval_statuses != expected.approval_statuses:
+        failures.append("approval_status_mismatch")
+    for relative, content in expected.files:
+        try:
+            actual = (workspace / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            failures.append("file_mismatch")
+            continue
+        if actual != content:
+            failures.append("file_mismatch")
+    if any((workspace / relative).exists() for relative in expected.absent_files):
+        failures.append("unexpected_file")
     return tuple(failures)
 
 

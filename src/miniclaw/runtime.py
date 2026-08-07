@@ -10,6 +10,7 @@ from miniclaw.config import AppConfig
 from miniclaw.paths import StatePaths
 from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
+from miniclaw.policy.network import normalize_network_rule
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
 from miniclaw.storage.conversations import MessageRepository, SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
@@ -27,6 +28,7 @@ from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
+from miniclaw.tools.web import HttpGetTool
 
 
 @dataclass(slots=True)
@@ -46,14 +48,31 @@ class AgentRuntime:
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
-    """按已校验配置装配当前七个内置 Tool 和唯一 TurnService。"""
+    """按已校验配置装配当前八个内置 Tool 和唯一 TurnService。"""
     database = Database(paths.database)
     apply_migrations(database)
     owner = OwnerRepository(database).get_or_create()
+    runs = ToolRunRepository(database)
+    runs.interrupt_stale_runs()
     provider = OpenAICompatibleProvider(
         config.provider.base_url,
         api_key,
         config.provider.timeout_seconds,
+    )
+    approvals = ApprovalRepository(database)
+    rules = PolicyRuleRepository(database)
+    configured_command_rules = tuple(
+        normalize_command(rule.program, rule.args, config.workspace.path)
+        for rule in config.tools.run_command.allow_commands
+    )
+    command_rules = tuple(
+        dict.fromkeys((*configured_command_rules, *rules.command_rules(owner.id)))
+    )
+    configured_network_rules = tuple(
+        normalize_network_rule(value) for value in config.tools.http_get.allow_hosts
+    )
+    network_rules = tuple(
+        dict.fromkeys((*configured_network_rules, *rules.network_rules(owner.id)))
     )
     available_tools = (
         SystemInfoTool(),
@@ -62,6 +81,11 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         EditFileTool(),
         GlobTool(),
         GrepTool(),
+        HttpGetTool(
+            timeout_seconds=config.tools.http_get.timeout_seconds,
+            max_response_bytes=config.tools.http_get.max_response_bytes,
+            allow_rules=network_rules,
+        ),
         RunCommandTool(
             timeout_seconds=config.tools.run_command.timeout_seconds,
             max_timeout_seconds=config.tools.run_command.max_timeout_seconds,
@@ -70,24 +94,15 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
     )
-    approvals = ApprovalRepository(database)
-    configured_command_rules = tuple(
-        normalize_command(rule.program, rule.args, config.workspace.path)
-        for rule in config.tools.run_command.allow_commands
-    )
-    command_rules = tuple(
-        dict.fromkeys(
-            (*configured_command_rules, *PolicyRuleRepository(database).command_rules(owner.id))
-        )
-    )
     executor = ToolExecutor(
         ToolRegistry(tools),
         PolicyEngine(
             security=config.tools.security,
             ask=config.tools.ask,
             command_rules=command_rules,
+            network_rules=network_rules,
         ),
-        ToolRunRepository(database),
+        runs,
         result_max_chars=config.agent.tool_result_max_chars,
         approvals=approvals,
         approval_ttl_seconds=config.tools.approval_ttl_seconds,
