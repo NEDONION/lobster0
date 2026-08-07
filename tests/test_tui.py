@@ -37,9 +37,37 @@ class FakeTurnService:
         self.calls.append((owner_id, text, conversation_id))
         assert on_event is not None
         await on_event(RunEvent("turn_started", 21, {}))
+        await on_event(
+            RunEvent(
+                "model_usage",
+                21,
+                {
+                    "iteration": 2,
+                    "context_tokens": 1_200,
+                    "input_tokens": 1_500,
+                    "output_tokens": 64,
+                    "tool_calls": 2,
+                    "provider_request_id": "req-21",
+                },
+            )
+        )
         await on_event(RunEvent("model_text_delta", 21, {"text": "pong"}))
         await on_event(
-            RunEvent("turn_finished", 21, {"status": "completed", "content": "pong"})
+            RunEvent(
+                "turn_finished",
+                21,
+                {
+                    "status": "completed",
+                    "content": "pong",
+                    "context_tokens": 1_200,
+                    "input_tokens": 1_500,
+                    "output_tokens": 64,
+                    "iterations": 2,
+                    "tool_calls": 2,
+                    "provider_request_id": "req-21",
+                    "duration_ms": 432,
+                },
+            )
         )
 
 
@@ -57,6 +85,14 @@ class BlockingTurnService:
         except asyncio.CancelledError:
             self.cancelled = True
             raise
+
+
+class FailingTurnService:
+    """模拟 Provider 失败，验证输入草稿不会丢失。"""
+
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+        del owner_id, text, conversation_id, on_event
+        raise RuntimeError("provider failed")
 
 
 class ApprovalTurnService:
@@ -143,6 +179,8 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 owner_id=1,
                 model="deepseek-v4-pro",
                 workspace=self.paths.workspace,
+                ui_language="zh-CN",
+                context_budget_tokens=128_000,
                 service=FakeTurnService(),
                 tool_definitions=(
                     ToolDefinition(
@@ -177,9 +215,26 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertIs(app.focused, composer)
             self.assertEqual(app.query_one("#assistant-21", Markdown).source, "pong")
             user_output = "\n".join(
-                str(message.render()) for message in app.query(".user-message")
+                str(message.render())
+                for message in app.query(".user-message .message-body")
             )
             self.assertIn("ping", user_output)
+            user_role = "\n".join(
+                str(message.render()) for message in app.query(".user-message .role")
+            )
+            self.assertIn("你", user_role)
+            assistant_output = "\n".join(
+                str(message.render()) for message in app.query(".assistant-message .role")
+            )
+            self.assertIn("MiniClaw", assistant_output)
+            self.assertEqual(len(app.query(".conversation-message")), 2)
+            telemetry = str(app.query_one("#telemetry", Static).render())
+            self.assertIn("1.2k/128k", telemetry)
+            self.assertIn("输入 1.5k", telemetry)
+            self.assertIn("输出 64", telemetry)
+            self.assertIn("工具 2", telemetry)
+            self.assertIn("迭代 2", telemetry)
+            self.assertIn("432 ms", telemetry)
 
     async def test_escape_cancels_the_active_turn_and_restores_composer(self) -> None:
         """Esc 只能取消当前 Worker，取消后仍停留在同一个 App。"""
@@ -190,6 +245,8 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 owner_id=1,
                 model="deepseek-v4-pro",
                 workspace=self.paths.workspace,
+                ui_language="zh-CN",
+                context_budget_tokens=128_000,
                 service=service,
                 tool_definitions=(),
             ),
@@ -210,10 +267,37 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(service.cancelled)
             self.assertFalse(composer.disabled)
             self.assertIs(app.focused, composer)
+            self.assertEqual(composer.text, "wait")
             output = "\n".join(
                 str(message.render()) for message in app.query(".local-message")
             )
-            self.assertIn("cancelled", output.lower())
+            self.assertIn("已取消", output)
+
+    async def test_failed_turn_restores_long_submitted_text_exactly(self) -> None:
+        """长输入在 Provider 失败后必须逐字回填，不能静默丢失。"""
+        text = "很长的粘贴内容\n" + "数据" * 32_768
+        runtime = cast(
+            "AgentRuntime",
+            SimpleNamespace(
+                owner_id=1,
+                model="deepseek-v4-pro",
+                workspace=self.paths.workspace,
+                ui_language="zh-CN",
+                context_budget_tokens=128_000,
+                service=FailingTurnService(),
+                tool_definitions=(),
+            ),
+        )
+        app = MiniClawApp(self.paths, runtime=runtime)
+
+        async with app.run_test() as pilot:
+            composer = app.query_one("#composer", TextArea)
+            composer.load_text(text)
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            self.assertEqual(composer.text, text)
 
     async def test_approval_modal_shows_exact_arguments_and_allows_once(self) -> None:
         """审批只能在原 Turn 返回后，通过同一 Service 选择一次 Allow once。"""
@@ -224,6 +308,8 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 owner_id=1,
                 model="deepseek-v4-pro",
                 workspace=self.paths.workspace,
+                ui_language="zh-CN",
+                context_budget_tokens=128_000,
                 service=service,
                 tool_definitions=(),
             ),
@@ -263,6 +349,8 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 owner_id=1,
                 model="deepseek-v4-pro",
                 workspace=self.paths.workspace,
+                ui_language="zh-CN",
+                context_budget_tokens=128_000,
                 service=service,
                 tool_definitions=(),
             ),
@@ -279,6 +367,44 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(service.decisions, [(1, 7, ApprovalDecision.DENY)])
             self.assertEqual(app.query_one(ToolCard).status, "denied")
+
+    async def test_approval_modal_only_shows_core_session_and_always_modes(self) -> None:
+        """TUI 必须按 Core grant_modes 展示 Session/Always，不能自行放宽。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+        decisions: list[ApprovalDecision | None] = []
+        event = RunEvent(
+            "approval_required",
+            41,
+            {
+                "approval_id": 9,
+                "call_id": "command-9",
+                "tool_name": "run_command",
+                "summary": 'run_command ["/usr/bin/open","-a","Lark"]',
+                "arguments": {
+                    "program": "/usr/bin/open",
+                    "args": ["-a", "Lark"],
+                    "timeout_seconds": 30,
+                },
+                "expires_at": "2030-01-01T00:00:00+00:00",
+                "grant_modes": ["once", "session", "always"],
+            },
+        )
+
+        async with app.run_test() as pilot:
+            modal = ApprovalModal(event, language="zh-CN")
+            app.push_screen(modal, decisions.append)
+            await pilot.pause()
+
+            self.assertEqual(len(modal.query("#approval-once")), 1)
+            self.assertEqual(len(modal.query("#approval-session")), 1)
+            self.assertEqual(len(modal.query("#approval-always")), 1)
+            labels = "\n".join(str(button.label) for button in modal.query(Button))
+            self.assertIn("本次运行允许", labels)
+            self.assertIn("始终允许", labels)
+            await pilot.click("#approval-session")
+            await pilot.pause()
+
+        self.assertEqual(decisions, [ApprovalDecision.SESSION])
 
     async def test_eighty_by_twenty_four_starts_with_one_focused_composer(self) -> None:
         """小终端仍应显示三块主区域，并把键盘焦点放在唯一输入框。"""
@@ -299,7 +425,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertGreater(composer.size.height, 0)
             self.assertIn("MiniClaw", rendered_status)
             self.assertIn("deepseek-v4-pro", rendered_status)
-            self.assertIn("session:default", rendered_status)
+            self.assertIn("会话:default", rendered_status)
             self.assertNotIn(str(self.paths.home.parent), rendered_status)
 
     def test_terminal_safe_removes_ansi_and_controls_but_keeps_text_layout(self) -> None:
@@ -366,7 +492,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 )
             )
             card = app.query_one(ToolCard)
-            self.assertIn("Status: requested", card.title)
+            self.assertIn("状态: requested", card.title)
             await app.on_run_event(
                 RunEvent(
                     "tool_started",
@@ -374,7 +500,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                     {"call_id": call_id, "tool_name": "read_file"},
                 )
             )
-            self.assertIn("Status: running", card.title)
+            self.assertIn("状态: running", card.title)
             await app.on_run_event(
                 RunEvent(
                     "tool_finished",
@@ -393,8 +519,8 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(app.query(ToolCard)), 1)
             self.assertEqual(card.status, "succeeded")
             self.assertTrue(card.collapsed)
-            self.assertIn("Tool: read_file", card.title)
-            self.assertIn("Status: succeeded", card.title)
+            self.assertIn("工具: read_file", card.title)
+            self.assertIn("状态: succeeded", card.title)
 
             card.query_one("CollapsibleTitle").focus()
             await pilot.press("enter")
@@ -440,7 +566,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(tool.collapsed)
             self.assertTrue(reasoning.display)
             self.assertTrue(tool.display)
-            self.assertIn("Reasoning", reasoning.title)
+            self.assertIn("思考", reasoning.title)
             self.assertNotIn("\x1b", str(reasoning.query_one(Static).render()))
 
             await pilot.press("ctrl+o")
@@ -472,9 +598,58 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 if message.has_class("local-message")
             )
             self.assertIn("/help", output)
-            self.assertIn("model: deepseek-v4-pro", output)
+            self.assertIn("模型: deepseek-v4-pro", output)
             self.assertIn("read_file (low)", output)
-            self.assertIn("Unknown command: /missing", output)
+            self.assertIn("未知命令: /missing", output)
+
+    async def test_language_defaults_to_chinese_and_can_switch_to_english(self) -> None:
+        """UI 默认中文，/lang en 只切换界面文案且不调用 Agent。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+
+        async with app.run_test() as pilot:
+            self.assertIn("会话:default", str(app.query_one("#status", Static).render()))
+            self.assertTrue(await app.handle_local_command("/lang en"))
+            await pilot.pause()
+
+            status = str(app.query_one("#status", Static).render())
+            self.assertIn("session:default", status)
+            self.assertNotIn("会话:default", status)
+            self.assertTrue(await app.handle_local_command("/lang zh"))
+            self.assertIn("会话:default", str(app.query_one("#status", Static).render()))
+
+    async def test_missing_provider_usage_stays_na_and_status_exposes_request_id(self) -> None:
+        """Provider 未上报 usage 时不能估算；/status 应保留诊断 request ID。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+
+        async with app.run_test() as pilot:
+            initial = str(app.query_one("#telemetry", Static).render())
+            self.assertIn("上下文 N/A/128k", initial)
+            self.assertIn("输入 N/A", initial)
+            await app.on_run_event(
+                RunEvent(
+                    "model_usage",
+                    55,
+                    {
+                        "iteration": 1,
+                        "context_tokens": None,
+                        "input_tokens": None,
+                        "output_tokens": None,
+                        "tool_calls": 0,
+                        "provider_request_id": "req-missing-usage",
+                    },
+                )
+            )
+            await app.handle_local_command("/status")
+            await pilot.pause()
+
+            telemetry = str(app.query_one("#telemetry", Static).render())
+            output = "\n".join(
+                str(message.render()) for message in app.query(".local-message")
+            )
+            self.assertIn("上下文 N/A/128k", telemetry)
+            self.assertIn("输入 N/A", telemetry)
+            self.assertIn("输出 N/A", telemetry)
+            self.assertIn("provider_request_id: req-missing-usage", output)
 
     async def test_new_command_clears_visible_transcript_and_changes_session(self) -> None:
         """新 Session 应清空界面投影，但不创建第二个 App 或 Runtime。"""

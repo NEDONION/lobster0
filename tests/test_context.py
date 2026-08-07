@@ -100,6 +100,17 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertIn("request approval", system)
         self.assertIn("do not replace the tool call with manual instructions", system)
 
+    def test_visible_reasoning_follows_latest_user_language(self) -> None:
+        """模型可见 reasoning 与回答应跟随 Owner 最新消息的主要语言。"""
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (ModelMessage(role="user", content="帮我查看系统配置"),),
+        )
+
+        system = request.messages[0].content
+        self.assertIn("same primary language", system)
+        self.assertIn("latest message", system)
+
 
 if __name__ == "__main__":
     unittest.main()

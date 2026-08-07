@@ -14,7 +14,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Collapsible, Footer, Markdown, Static, TextArea
+from textual.widgets import Button, Collapsible, Markdown, Static, TextArea
 from textual.worker import Worker
 
 from miniclaw import __version__
@@ -34,6 +34,118 @@ if TYPE_CHECKING:
 _DEFAULT_SESSION = "default"
 _TOOL_PREVIEW_CHARS = 2_000
 _TRACE_DETAIL_CHARS = 8_000
+_TEXT = {
+    "zh-CN": {
+        "session": "会话",
+        "workspace": "工作区",
+        "context": "上下文",
+        "input": "输入",
+        "output": "输出",
+        "tools": "工具",
+        "iterations": "迭代",
+        "duration": "耗时",
+        "user": "你",
+        "agent": "MiniClaw",
+        "tool": "工具",
+        "status": "状态",
+        "request": "请求",
+        "arguments": "参数",
+        "lifecycle": "流程",
+        "execution": "执行",
+        "result_preview": "结果预览",
+        "reasoning": "思考（模型）· 第 {turn_id} 轮",
+        "approval": "审批 #{approval_id}",
+        "expires": "过期时间",
+        "deny": "拒绝",
+        "once": "仅允许一次",
+        "session_grant": "本次运行允许",
+        "always": "始终允许",
+        "shortcuts": "Enter 发送 · Shift+Enter 换行 · Esc 取消 · Ctrl+O 展开详情",
+        "help": (
+            "/help · /status · /tools · /new · /lang zh|en · /exit · /quit\n"
+            "Enter 发送 · Shift+Enter 换行 · Esc 取消 · Ctrl+O 展开详情"
+        ),
+        "model": "模型",
+        "state": "状态",
+        "idle": "空闲",
+        "no_tools": "没有可用工具。",
+        "unknown": "未知命令",
+        "language_changed": "界面语言已切换为中文。",
+        "invalid_language": "用法：/lang zh|en",
+        "cancelled": "本轮已取消，原输入已恢复。",
+        "failed": "本轮失败：{error}。原输入已恢复。",
+        "runtime_missing": "Agent 运行环境不可用。",
+        "approval_invalid": "审批事件无效。",
+        "initialize": "初始化 MiniClaw",
+        "state_directory": "状态目录",
+        "initialize_action": "初始化",
+        "exit": "退出",
+        "initialization_failed": "初始化失败",
+    },
+    "en": {
+        "session": "session",
+        "workspace": "workspace",
+        "context": "context",
+        "input": "input",
+        "output": "output",
+        "tools": "tools",
+        "iterations": "iterations",
+        "duration": "duration",
+        "user": "You",
+        "agent": "MiniClaw",
+        "tool": "Tool",
+        "status": "Status",
+        "request": "Request",
+        "arguments": "Arguments",
+        "lifecycle": "Lifecycle",
+        "execution": "Execution",
+        "result_preview": "Result preview",
+        "reasoning": "Reasoning (provider) · Turn {turn_id}",
+        "approval": "Approval #{approval_id}",
+        "expires": "Expires",
+        "deny": "Deny",
+        "once": "Allow once",
+        "session_grant": "Allow this session",
+        "always": "Always allow",
+        "shortcuts": "Enter send · Shift+Enter newline · Esc cancel · Ctrl+O details",
+        "help": (
+            "/help · /status · /tools · /new · /lang zh|en · /exit · /quit\n"
+            "Enter sends · Shift+Enter inserts a line · Esc cancels · Ctrl+O details"
+        ),
+        "model": "model",
+        "state": "state",
+        "idle": "idle",
+        "no_tools": "No tools are available.",
+        "unknown": "Unknown command",
+        "language_changed": "UI language changed to English.",
+        "invalid_language": "Usage: /lang zh|en",
+        "cancelled": "Turn cancelled. The original input was restored.",
+        "failed": "Turn failed: {error}. The original input was restored.",
+        "runtime_missing": "Agent runtime is not available.",
+        "approval_invalid": "Approval event is invalid.",
+        "initialize": "Initialize MiniClaw",
+        "state_directory": "State directory",
+        "initialize_action": "Initialize",
+        "exit": "Exit",
+        "initialization_failed": "Initialization failed",
+    },
+}
+
+
+def _t(language: str, key: str, **values: object) -> str:
+    """返回两个受支持 UI 语言之一的固定文案。"""
+    return _TEXT[language][key].format(**values)
+
+
+class ConversationMessage(Vertical):
+    """用稳定的角色标签和视觉边界包装一条对话消息。"""
+
+    def __init__(self, role: str, body: Static | Markdown, *, classes: str) -> None:
+        super().__init__(
+            Static(role, markup=False, classes="role"),
+            body,
+            classes=f"conversation-message {classes}",
+        )
 
 
 class Composer(TextArea):
@@ -70,6 +182,8 @@ class ToolCard(Collapsible):
         tool_name: str,
         summary: str,
         arguments: dict[str, object],
+        *,
+        language: str = "zh-CN",
     ) -> None:
         """保存稳定调用标识并显示 requested 初态。"""
         self._detail = Static("", markup=False, classes="trace-detail")
@@ -79,6 +193,7 @@ class ToolCard(Collapsible):
             classes="trace-card tool-card",
         )
         self.call_id = call_id
+        self.language = language
         self.tool_name = _terminal_safe(tool_name)
         self.summary = _terminal_safe(summary)
         self.arguments = _terminal_safe(
@@ -107,34 +222,42 @@ class ToolCard(Collapsible):
 
     def _refresh_content(self) -> None:
         """用不依赖颜色的标签刷新概要和详情。"""
-        self.title = f"Tool: {self.tool_name} · Status: {self.status}"
+        self.title = (
+            f"{_t(self.language, 'tool')}: {self.tool_name} · "
+            f"{_t(self.language, 'status')}: {self.status}"
+        )
         lines: list[str] = []
         if self.summary:
-            lines.extend(("Request", self.summary))
+            lines.extend((_t(self.language, "request"), self.summary))
         lines.extend(
             (
-                "Arguments",
+                _t(self.language, "arguments"),
                 self.arguments,
-                "Lifecycle",
+                _t(self.language, "lifecycle"),
                 " -> ".join(self.status_history),
             )
         )
         if self.duration_ms is not None:
-            lines.extend(("Execution", f"Duration: {self.duration_ms} ms"))
+            lines.extend(
+                (
+                    _t(self.language, "execution"),
+                    f"{_t(self.language, 'duration')}: {self.duration_ms} ms",
+                )
+            )
         if self.preview:
-            lines.extend(("Result preview", self.preview))
+            lines.extend((_t(self.language, "result_preview"), self.preview))
         self._detail.update("\n".join(lines))
 
 
 class ReasoningCard(Collapsible):
     """展示 Provider 明确返回的有界 reasoning，不代表内部思维链。"""
 
-    def __init__(self, turn_id: int, text: str) -> None:
+    def __init__(self, turn_id: int, text: str, *, language: str = "zh-CN") -> None:
         """默认折叠详情，但始终保留可聚焦概要。"""
         detail = _terminal_safe(text)[:_TRACE_DETAIL_CHARS]
         super().__init__(
             Static(detail, markup=False, classes="trace-detail"),
-            title=f"Reasoning (provider) · Turn {turn_id}",
+            title=_t(language, "reasoning", turn_id=turn_id),
             collapsed=True,
             classes="trace-card reasoning-card",
         )
@@ -164,20 +287,23 @@ class ApprovalModal(ModalScreen[ApprovalDecision]):
     }
 
     #approval-actions {
-        height: 3;
+        height: auto;
         align-horizontal: right;
     }
 
     #approval-actions Button {
+        width: auto;
+        min-width: 12;
         margin-left: 1;
     }
     """
 
     BINDINGS = [Binding("escape", "deny", show=False, priority=True)]
 
-    def __init__(self, event: RunEvent) -> None:
+    def __init__(self, event: RunEvent, *, language: str = "zh-CN") -> None:
         """从已提交的 approval_required 事件读取可见字段。"""
         super().__init__()
+        self.language = language
         approval_id = event.data.get("approval_id")
         tool_name = event.data.get("tool_name")
         summary = event.data.get("summary")
@@ -209,11 +335,13 @@ class ApprovalModal(ModalScreen[ApprovalDecision]):
 
     def compose(self) -> ComposeResult:
         """生成带完整参数和 Core 授权按钮的弹窗。"""
-        buttons = [Button("Deny", id="approval-deny", variant="error")]
+        buttons = [
+            Button(_t(self.language, "deny"), id="approval-deny", variant="error")
+        ]
         labels = {
-            ApprovalDecision.ONCE: "Allow once",
-            ApprovalDecision.SESSION: "Allow this session",
-            ApprovalDecision.ALWAYS: "Always allow",
+            ApprovalDecision.ONCE: _t(self.language, "once"),
+            ApprovalDecision.SESSION: _t(self.language, "session_grant"),
+            ApprovalDecision.ALWAYS: _t(self.language, "always"),
         }
         buttons.extend(
             Button(
@@ -224,14 +352,17 @@ class ApprovalModal(ModalScreen[ApprovalDecision]):
             for decision in self.grant_modes
         )
         yield Vertical(
-            Static(f"Approval #{self.approval_id}", markup=False),
-            Static(f"Tool: {self.tool_name}", markup=False),
+            Static(
+                _t(self.language, "approval", approval_id=self.approval_id),
+                markup=False,
+            ),
+            Static(f"{_t(self.language, 'tool')}: {self.tool_name}", markup=False),
             Static(self.summary, markup=False),
             VerticalScroll(
                 Static(self.arguments, markup=False),
                 id="approval-body",
             ),
-            Static(f"Expires: {self.expires_at}", markup=False),
+            Static(f"{_t(self.language, 'expires')}: {self.expires_at}", markup=False),
             Horizontal(
                 *buttons,
                 id="approval-actions",
@@ -278,18 +409,56 @@ class MiniClawApp(App[int]):
         padding: 0 1;
     }
 
+    #telemetry, #shortcuts {
+        height: 1;
+        padding: 0 1;
+        background: $surface;
+        color: $text-muted;
+    }
+
     #composer {
         height: 5;
         border: round $accent;
     }
 
-    .assistant, .trace-card, .local-message {
+    .conversation-message, .trace-card, .local-message {
         height: auto;
         margin: 1 0;
     }
 
+    .conversation-message {
+        padding: 0 1 1 1;
+    }
+
+    .conversation-message .role {
+        height: 1;
+        text-style: bold;
+    }
+
+    .conversation-message .message-body {
+        height: auto;
+        padding: 0 1;
+    }
+
+    .user-message {
+        background: $surface;
+        border-left: thick $primary;
+    }
+
+    .assistant-message {
+        background: $boost;
+        border-left: thick $success;
+    }
+
     .trace-card {
         border: round $surface-lighten-2;
+    }
+
+    .reasoning-card {
+        margin: 0 2;
+        border: none;
+        color: $text-muted;
+        background: $surface-darken-1;
     }
 
     #onboarding {
@@ -319,6 +488,8 @@ class MiniClawApp(App[int]):
         super().__init__()
         self.paths = paths
         self.runtime = runtime
+        configured_language = getattr(runtime, "ui_language", "zh-CN")
+        self._language = configured_language if configured_language in _TEXT else "zh-CN"
         self.session_id = _DEFAULT_SESSION
         self._state_ready = runtime is not None
         self._assistant_text: dict[int, str] = {}
@@ -326,27 +497,39 @@ class MiniClawApp(App[int]):
         self._tool_cards: dict[str, ToolCard] = {}
         self._active_worker: Worker[None] | None = None
         self._pending_approval: RunEvent | None = None
+        self._context_tokens: int | None = None
+        self._input_tokens: int | None = None
+        self._output_tokens: int | None = None
+        self._tool_calls = 0
+        self._iterations = 0
+        self._duration_ms: int | None = None
+        self._provider_request_id: str | None = None
 
     def compose(self) -> ComposeResult:
         """生成状态栏、可滚动记录、输入区和快捷键页脚。"""
         if not self._state_ready:
             yield Vertical(
-                Static("Initialize MiniClaw", classes="role", markup=False),
+                Static(_t(self._language, "initialize"), classes="role", markup=False),
                 Static(
-                    f"State directory: {self.paths.home}",
+                    f"{_t(self._language, 'state_directory')}: {self.paths.home}",
                     id="onboarding-path",
                     markup=False,
                 ),
                 Static("", id="onboarding-error", markup=False),
-                Button("Initialize", id="initialize", variant="primary"),
-                Button("Exit", id="onboarding-exit"),
+                Button(
+                    _t(self._language, "initialize_action"),
+                    id="initialize",
+                    variant="primary",
+                ),
+                Button(_t(self._language, "exit"), id="onboarding-exit"),
                 id="onboarding",
             )
             return
         yield Static(self._status_text(), id="status", markup=False)
         yield VerticalScroll(id="transcript")
+        yield Static(self._telemetry_text(), id="telemetry", markup=False)
         yield Composer(id="composer")
-        yield Footer()
+        yield Static(_t(self._language, "shortcuts"), id="shortcuts", markup=False)
 
     def on_mount(self) -> None:
         """启动后把键盘焦点放进唯一输入框。"""
@@ -366,11 +549,38 @@ class MiniClawApp(App[int]):
         workspace = self.runtime.workspace if self.runtime is not None else self.paths.workspace
         return _terminal_safe(
             f"MiniClaw {__version__} · {model} · "
-            f"session:{self.session_id} · workspace:{workspace.name}"
+            f"{_t(self._language, 'session')}:{self.session_id} · "
+            f"{_t(self._language, 'workspace')}:{workspace.name}"
+        )
+
+    def _telemetry_text(self) -> str:
+        """返回只展示 Provider 真实上报值的紧凑审计栏。"""
+        budget = getattr(self.runtime, "context_budget_tokens", None)
+        context = _metric(self._context_tokens)
+        if type(budget) is int and budget > 0:
+            context += f"/{_metric(budget)}"
+        duration = (
+            f"{self._duration_ms} ms" if self._duration_ms is not None else "N/A"
+        )
+        return _terminal_safe(
+            f"{_t(self._language, 'context')} {context} · "
+            f"{_t(self._language, 'input')} {_metric(self._input_tokens)} · "
+            f"{_t(self._language, 'output')} {_metric(self._output_tokens)} · "
+            f"{_t(self._language, 'tools')} {self._tool_calls} · "
+            f"{_t(self._language, 'iterations')} {self._iterations} · "
+            f"{_t(self._language, 'duration')} {duration}"
         )
 
     async def on_run_event(self, event: RunEvent) -> None:
         """把 Core 事件投影到当前 Turn 的临时消息或 Tool 卡片。"""
+        if event.kind in {
+            "turn_started",
+            "model_usage",
+            "turn_finished",
+            "turn_failed",
+            "turn_cancelled",
+        }:
+            self._update_telemetry(event)
         if event.kind == "model_text_delta":
             await self._append_model_delta(event)
         elif event.kind == "model_reasoning":
@@ -386,13 +596,44 @@ class MiniClawApp(App[int]):
             await self._update_tool(event)
         self.query_one("#transcript", VerticalScroll).scroll_end(animate=False)
 
+    def _update_telemetry(self, event: RunEvent) -> None:
+        """用事件中的可信整数更新当前 Turn 指标。"""
+        if event.kind == "turn_started":
+            self._context_tokens = None
+            self._input_tokens = None
+            self._output_tokens = None
+            self._tool_calls = 0
+            self._iterations = 0
+            self._duration_ms = None
+            self._provider_request_id = None
+        else:
+            mappings = (
+                ("context_tokens", "_context_tokens"),
+                ("input_tokens", "_input_tokens"),
+                ("output_tokens", "_output_tokens"),
+                ("tool_calls", "_tool_calls"),
+                ("iteration", "_iterations"),
+                ("iterations", "_iterations"),
+                ("duration_ms", "_duration_ms"),
+            )
+            for key, attribute in mappings:
+                value = event.data.get(key)
+                if type(value) is int and value >= 0:
+                    setattr(self, attribute, value)
+            request_id = event.data.get("provider_request_id")
+            if isinstance(request_id, str) and request_id:
+                self._provider_request_id = request_id
+        widgets = self.query("#telemetry")
+        if widgets:
+            widgets.first(Static).update(self._telemetry_text())
+
     async def _append_reasoning(self, event: RunEvent) -> None:
         """为每次 Provider reasoning 事件保留一张可展开卡片。"""
         value = event.data.get("text")
         if not isinstance(value, str) or not value.strip():
             return
         await self.query_one("#transcript", VerticalScroll).mount(
-            ReasoningCard(event.turn_id, value)
+            ReasoningCard(event.turn_id, value, language=self._language)
         )
 
     async def _append_model_delta(self, event: RunEvent) -> None:
@@ -407,11 +648,17 @@ class MiniClawApp(App[int]):
             message = Markdown(
                 text,
                 id=f"assistant-{event.turn_id}",
-                classes="assistant temporary",
+                classes="message-body temporary",
                 open_links=False,
             )
             self._assistant_widgets[event.turn_id] = message
-            await self.query_one("#transcript", VerticalScroll).mount(message)
+            await self.query_one("#transcript", VerticalScroll).mount(
+                ConversationMessage(
+                    _t(self._language, "agent"),
+                    message,
+                    classes="assistant-message",
+                )
+            )
         else:
             await message.update(text)
 
@@ -430,11 +677,17 @@ class MiniClawApp(App[int]):
             message = Markdown(
                 content,
                 id=f"assistant-{event.turn_id}",
-                classes="assistant",
+                classes="message-body",
                 open_links=False,
             )
             self._assistant_widgets[event.turn_id] = message
-            await self.query_one("#transcript", VerticalScroll).mount(message)
+            await self.query_one("#transcript", VerticalScroll).mount(
+                ConversationMessage(
+                    _t(self._language, "agent"),
+                    message,
+                    classes="assistant-message",
+                )
+            )
         else:
             await message.update(content)
             message.remove_class("temporary")
@@ -454,7 +707,13 @@ class MiniClawApp(App[int]):
             or call_id in self._tool_cards
         ):
             return
-        card = ToolCard(call_id, tool_name, summary, arguments)
+        card = ToolCard(
+            call_id,
+            tool_name,
+            summary,
+            arguments,
+            language=self._language,
+        )
         self._tool_cards[call_id] = card
         await self.query_one("#transcript", VerticalScroll).mount(card)
 
@@ -491,17 +750,26 @@ class MiniClawApp(App[int]):
         command = text.strip()
         if not command.startswith("/"):
             return False
+        if command.startswith("/lang"):
+            parts = command.split()
+            if len(parts) != 2 or parts[1] not in {"zh", "zh-CN", "en"}:
+                await self._append_local_message(_t(self._language, "invalid_language"))
+                return True
+            self._language = "zh-CN" if parts[1] in {"zh", "zh-CN"} else "en"
+            self._refresh_chrome()
+            await self._append_local_message(_t(self._language, "language_changed"))
+            return True
         match command:
             case "/help":
-                await self._append_local_message(
-                    "/help · /status · /tools · /new · /exit · /quit\n"
-                    "Enter sends · Shift+Enter inserts a line · Esc cancels · "
-                    "Ctrl+O toggles trace details"
-                )
+                await self._append_local_message(_t(self._language, "help"))
             case "/status":
                 model = self.runtime.model if self.runtime is not None else "not-configured"
                 await self._append_local_message(
-                    f"model: {model}\nsession: {self.session_id}\nstate: idle"
+                    f"{_t(self._language, 'model')}: {model}\n"
+                    f"{_t(self._language, 'session')}: {self.session_id}\n"
+                    f"{_t(self._language, 'state')}: {_t(self._language, 'idle')}\n"
+                    f"provider_request_id: {self._provider_request_id or 'N/A'}\n"
+                    f"{self._telemetry_text()}"
                 )
             case "/tools":
                 definitions = (
@@ -512,15 +780,28 @@ class MiniClawApp(App[int]):
                         f"{definition.name} ({definition.risk.value})"
                         for definition in definitions
                     )
-                    or "No tools are available."
+                    or _t(self._language, "no_tools")
                 )
             case "/new":
                 await self._new_session()
             case "/exit" | "/quit":
                 self.exit(0)
             case _:
-                await self._append_local_message(f"Unknown command: {command}")
+                await self._append_local_message(
+                    f"{_t(self._language, 'unknown')}: {command}"
+                )
         return True
+
+    def _refresh_chrome(self) -> None:
+        """语言切换后原地刷新固定状态条。"""
+        for selector, content in (
+            ("#status", self._status_text()),
+            ("#telemetry", self._telemetry_text()),
+            ("#shortcuts", _t(self._language, "shortcuts")),
+        ):
+            widgets = self.query(selector)
+            if widgets:
+                widgets.first(Static).update(content)
 
     async def on_composer_submitted(self, event: Composer.Submitted) -> None:
         """清空输入并用一个独占 Worker 执行普通消息。"""
@@ -530,7 +811,8 @@ class MiniClawApp(App[int]):
         if await self.handle_local_command(text):
             return
         if self.runtime is None:
-            await self._append_local_message("Agent runtime is not available.")
+            composer.load_text(text)
+            await self._append_local_message(_t(self._language, "runtime_missing"))
             return
         await self._append_user_message(text)
         composer.disabled = True
@@ -554,10 +836,14 @@ class MiniClawApp(App[int]):
             )
             completed = True
         except asyncio.CancelledError:
-            await self._append_local_message("Turn cancelled.")
+            self._restore_draft(text)
+            await self._append_local_message(_t(self._language, "cancelled"))
             raise
         except Exception as error:
-            await self._append_local_message(f"Turn failed: {type(error).__name__}")
+            self._restore_draft(text)
+            await self._append_local_message(
+                _t(self._language, "failed", error=type(error).__name__)
+            )
         finally:
             composer = self.query_one("#composer", Composer)
             composer.disabled = False
@@ -572,10 +858,10 @@ class MiniClawApp(App[int]):
         if event is None:
             return
         try:
-            modal = ApprovalModal(event)
+            modal = ApprovalModal(event, language=self._language)
         except ValueError:
             self.run_worker(
-                self._append_local_message("Approval event is invalid."),
+                self._append_local_message(_t(self._language, "approval_invalid")),
                 exit_on_error=False,
             )
             return
@@ -618,10 +904,18 @@ class MiniClawApp(App[int]):
             )
             completed = True
         except asyncio.CancelledError:
-            await self._append_local_message("Turn cancelled.")
+            await self._append_local_message(
+                "审批续跑已取消。"
+                if self._language == "zh-CN"
+                else "Approval continuation cancelled."
+            )
             raise
         except Exception as error:
-            await self._append_local_message(f"Turn failed: {type(error).__name__}")
+            await self._append_local_message(
+                f"审批续跑失败：{type(error).__name__}"
+                if self._language == "zh-CN"
+                else f"Approval continuation failed: {type(error).__name__}"
+            )
         finally:
             composer = self.query_one("#composer", Composer)
             composer.disabled = False
@@ -631,14 +925,25 @@ class MiniClawApp(App[int]):
 
     async def _append_user_message(self, content: str) -> None:
         """把原始用户文本安全显示在 transcript。"""
-        message = Static(
-            _terminal_safe(f"You\n{content}"),
-            markup=False,
+        message = ConversationMessage(
+            _t(self._language, "user"),
+            Static(
+                _terminal_safe(content),
+                markup=False,
+                classes="message-body",
+            ),
             classes="user-message",
         )
         transcript = self.query_one("#transcript", VerticalScroll)
         await transcript.mount(message)
         transcript.scroll_end(animate=False)
+
+    def _restore_draft(self, text: str) -> None:
+        """失败或取消时逐字恢复已提交文本和末尾光标。"""
+        composer = self.query_one("#composer", Composer)
+        composer.load_text(text)
+        lines = text.split("\n")
+        composer.cursor_location = (len(lines) - 1, len(lines[-1]))
 
     async def action_cancel_turn(self) -> None:
         """取消当前后台 Turn；空闲时不做任何事。"""
@@ -675,8 +980,15 @@ class MiniClawApp(App[int]):
         self._assistant_text.clear()
         self._assistant_widgets.clear()
         self._tool_cards.clear()
+        self._context_tokens = None
+        self._input_tokens = None
+        self._output_tokens = None
+        self._tool_calls = 0
+        self._iterations = 0
+        self._duration_ms = None
+        self._provider_request_id = None
         self.session_id = f"session-{uuid4().hex[:8]}"
-        self.query_one("#status", Static).update(self._status_text())
+        self._refresh_chrome()
 
     async def on_button_pressed(self, event: Button.Pressed) -> None:
         """处理同 App 初始化与退出按钮。"""
@@ -697,7 +1009,9 @@ class MiniClawApp(App[int]):
             OSError,
         ) as error:
             self.query_one("#onboarding-error", Static).update(
-                _terminal_safe(f"Initialization failed: {error}")
+                _terminal_safe(
+                    f"{_t(self._language, 'initialization_failed')}: {error}"
+                )
             )
             return
         self._state_ready = True
@@ -714,6 +1028,16 @@ def _terminal_safe(value: str) -> str:
         or ord(character) >= 0x20
         and not 0x7F <= ord(character) <= 0x9F
     )
+
+
+def _metric(value: int | None) -> str:
+    """用紧凑十进制单位显示真实计数；缺失值明确为 N/A。"""
+    if value is None:
+        return "N/A"
+    for divisor, suffix in ((1_000_000, "m"), (1_000, "k")):
+        if value >= divisor:
+            return f"{value / divisor:.1f}".removesuffix(".0") + suffix
+    return str(value)
 
 
 def _is_initialized(paths: StatePaths) -> bool:
