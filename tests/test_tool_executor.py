@@ -343,6 +343,27 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
             count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
         self.assertEqual(count, 0)
 
+    async def test_workspace_resolution_errors_are_redacted_before_starting_runs(self) -> None:
+        """路径解析异常必须返回稳定错误且不能创建或泄露 ToolRun。"""
+        loop = self.context.workspace / "loop"
+        loop.symlink_to(loop)
+        calls = (
+            ToolCall("nul_path", "read_file", {"path": "invalid" + chr(0) + "path"}),
+            ToolCall("loop_path", "read_file", {"path": "loop/file.txt"}),
+        )
+        for call in calls:
+            with self.subTest(call=call.call_id):
+                result = await self.executor(_WorkspaceReadTool("read_file", "path")).execute(
+                    self.context,
+                    call,
+                )
+                self.assertEqual(json.loads(result)["error"]["code"], "workspace_escape")
+                self.assertNotIn(str(self.paths.home), result)
+
+        with self.database.connect_read_only() as connection:
+            count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(count, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

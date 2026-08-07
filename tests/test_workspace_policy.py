@@ -62,6 +62,18 @@ class WorkspaceGuardTest(unittest.TestCase):
 
         self.assertEqual(caught.exception.code, "workspace_escape")
 
+    def test_resolution_failures_become_redacted_workspace_errors(self) -> None:
+        """NUL 与 symlink loop 必须变成不含绝对路径的稳定 Guard 错误。"""
+        loop = self.workspace / "loop"
+        loop.symlink_to(loop)
+        candidates = ("invalid" + chr(0) + "path", "loop/file.txt")
+        for candidate in candidates:
+            with self.subTest(candidate=repr(candidate)):
+                with self.assertRaises(WorkspaceAccessError) as caught:
+                    self.guard.resolve_read(self.context, candidate)
+                self.assertEqual(caught.exception.code, "workspace_escape")
+                self.assertNotIn(str(self.workspace.parent), str(caught.exception))
+
     def test_sensitive_names_are_denied_even_inside_workspace(self) -> None:
         """常见凭据目录、私钥和凭据文件名必须大小写无关地拒绝。"""
         candidates = (
@@ -82,6 +94,29 @@ class WorkspaceGuardTest(unittest.TestCase):
                 self.guard.resolve_read(self.context, candidate)
             self.assertEqual(caught.exception.code, "sensitive_path")
 
+    def test_additional_credentials_and_keystores_are_denied_in_all_read_roots(self) -> None:
+        """补充凭据名和常见密钥库后缀在所有读取根内都必须拒绝。"""
+        candidates = (
+            ".netrc",
+            ".npmrc",
+            "token.json",
+            "secrets.json",
+            "secrets.yaml",
+            "client.pem",
+            "private.key",
+            "identity.p12",
+            "identity.pfx",
+            "truststore.jks",
+            "release.keystore",
+        )
+        for candidate in candidates:
+            for raw_path in (candidate, str(self.read_only / candidate)):
+                with self.subTest(raw_path=raw_path), self.assertRaises(
+                    WorkspaceAccessError
+                ) as caught:
+                    self.guard.resolve_read(self.context, raw_path)
+                self.assertEqual(caught.exception.code, "sensitive_path")
+
     def test_symlink_to_sensitive_file_is_denied(self) -> None:
         """无害逻辑名解析到敏感文件时也必须拒绝。"""
         sensitive = self.workspace / ".env"
@@ -100,6 +135,7 @@ class WorkspaceGuardTest(unittest.TestCase):
             self.context.state_home / "miniclaw.db",
             self.context.state_home / "logs" / "miniclaw.log",
             Path("/etc/shadow"),
+            Path("/etc/gshadow"),
             Path("/etc/sudoers"),
             Path("/var/run/docker.sock"),
             Path("/run/containerd/containerd.sock"),
