@@ -25,6 +25,8 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(runtime.owner_id, owner.id)
                 self.assertEqual(runtime.model, "deepseek-v4-pro")
                 self.assertEqual(runtime.workspace, paths.workspace)
+                self.assertEqual(runtime.ui_language, "zh-CN")
+                self.assertEqual(runtime.context_budget_tokens, 32_000)
                 self.assertEqual(
                     [definition.name for definition in runtime.tool_definitions],
                     [

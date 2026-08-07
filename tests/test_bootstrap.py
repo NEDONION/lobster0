@@ -28,7 +28,12 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(config.agent.model, "deepseek-v4-pro")
         self.assertEqual(config.provider.base_url, "https://api.deepseek.com")
         self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
+        self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.workspace.path, self.paths.workspace)
+        self.assertIn(
+            '[ui]\nlanguage = "zh-CN"',
+            self.paths.config.read_text(encoding="utf-8"),
+        )
         self.assertEqual(
             set(result.created_files),
             {self.paths.config, self.paths.soul, self.paths.user, self.paths.memory_file},

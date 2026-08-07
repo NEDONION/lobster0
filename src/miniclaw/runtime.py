@@ -38,6 +38,8 @@ class AgentRuntime:
     owner_id: int
     model: str
     workspace: Path
+    ui_language: str
+    context_budget_tokens: int
     service: TurnService
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
@@ -126,6 +128,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         owner_id=owner.id,
         model=config.agent.model,
         workspace=config.workspace.path,
+        ui_language=config.ui.language,
+        context_budget_tokens=config.agent.context_budget_tokens,
         service=service,
         tool_definitions=tuple(
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)

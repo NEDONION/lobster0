@@ -24,7 +24,7 @@ BUILTIN_TOOL_NAMES = (
     "run_command",
 )
 
-_TOP_LEVEL_KEYS = frozenset({"agent", "provider", "workspace", "tools"})
+_TOP_LEVEL_KEYS = frozenset({"agent", "provider", "workspace", "tools", "ui"})
 _AGENT_KEYS = frozenset(
     {"model", "max_tool_iterations", "context_budget_tokens", "tool_result_max_chars"}
 )
@@ -37,6 +37,7 @@ _RUN_COMMAND_KEYS = frozenset(
     {"allow_commands", "timeout_seconds", "max_timeout_seconds"}
 )
 _HTTP_GET_KEYS = frozenset({"allow_hosts", "timeout_seconds", "max_response_bytes"})
+_UI_KEYS = frozenset({"language"})
 _OVERRIDE_KEYS = frozenset({"model", "base_url", "api_key_env", "workspace"})
 _ENVIRONMENT_NAME = re.compile(r"[A-Z_][A-Z0-9_]*\Z")
 
@@ -111,6 +112,13 @@ class ToolConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class UIConfig:
+    """保存本地 TUI 的有限展示偏好。"""
+
+    language: str = "zh-CN"
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     """汇总 Phase 0 已实现的强类型配置。"""
 
@@ -118,6 +126,7 @@ class AppConfig:
     provider: ProviderConfig
     workspace: WorkspaceConfig
     tools: ToolConfig = ToolConfig()
+    ui: UIConfig = UIConfig()
 
 
 def load_config(
@@ -146,6 +155,7 @@ def load_config(
     provider_raw = _section(raw, "provider", _PROVIDER_KEYS)
     workspace_raw = _section(raw, "workspace", _WORKSPACE_KEYS)
     tools_raw = _section(raw, "tools", _TOOLS_KEYS)
+    ui_raw = _section(raw, "ui", _UI_KEYS)
     run_command_raw = _section(
         tools_raw,
         "run_command",
@@ -231,6 +241,11 @@ def load_config(
         "tools.http_get.allow_hosts",
         allow_empty=False,
     )
+    ui_language = _enum_string(
+        ui_raw.get("language", "zh-CN"),
+        "ui.language",
+        frozenset({"zh-CN", "en"}),
+    )
 
     model = _environment_string(source, "MINICLAW_MODEL_NAME", model)
     max_tool_iterations = _environment_integer(
@@ -291,6 +306,7 @@ def load_config(
                 max_response_bytes=http_max_response_bytes,
             ),
         ),
+        ui=UIConfig(language=ui_language),
     )
 
 

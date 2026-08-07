@@ -29,6 +29,7 @@ class ConfigTest(unittest.TestCase):
 
         self.assertEqual(config.agent.model, "provider/model")
         self.assertEqual(config.agent.max_tool_iterations, 8)
+        self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
         self.assertEqual(config.workspace.path, self.paths.workspace)
@@ -51,6 +52,21 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.tools.run_command.timeout_seconds, 30)
         self.assertEqual(config.tools.http_get.max_response_bytes, 2 * 1024 * 1024)
         self.assertNotIn("secret-must-stay-outside-config", repr(config))
+
+    def test_ui_language_defaults_to_chinese_and_accepts_only_english(self) -> None:
+        """界面默认中文，并且持久配置只能在中英文之间选择。"""
+        self.paths.config.write_text('[ui]\nlanguage = "en"\n', encoding="utf-8")
+
+        self.assertEqual(load_config(self.paths, {}, {}).ui.language, "en")
+
+        for content, expected in (
+            ('[ui]\nlanguage = "fr"\n', "ui.language"),
+            ("[ui]\nlocale = \"en\"\n", "ui.locale"),
+        ):
+            with self.subTest(content=content):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
 
     def test_tools_sections_are_strict_and_load_exact_rules(self) -> None:
         """Tool 配置拼错时必须失败，合法 exact 规则必须保留参数边界。"""
