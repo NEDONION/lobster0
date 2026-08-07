@@ -47,6 +47,8 @@ class ConfigTest(unittest.TestCase):
                 "grep",
                 "http_get",
                 "run_command",
+                "read_memory",
+                "propose_memory",
             ),
         )
         self.assertEqual(config.tools.run_command.timeout_seconds, 30)

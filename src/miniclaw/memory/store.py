@@ -168,13 +168,7 @@ class MemoryStore:
         Raises:
             MemoryError: 输入敏感/无效、路径不安全或文件超过上限。
         """
-        fact = _normalize_line(content, "memory content", maximum=2_000)
-        origin = _normalize_line(source, "memory source", maximum=200)
-        if _contains_sensitive(fact) or _contains_sensitive(origin):
-            raise MemoryError(
-                "sensitive_memory",
-                "memory content looks sensitive and was not stored",
-            )
+        fact, origin = self.validate_candidate(content, source)
         if type(session_id) is not int or session_id <= 0:
             raise MemoryError("invalid_memory_source", "memory session source is invalid")
 
@@ -221,6 +215,28 @@ class MemoryStore:
         finally:
             os.close(descriptor)
         return MemoryWrite("recorded", day.isoformat(), content_hash)
+
+    def validate_candidate(self, content: str, source: str) -> tuple[str, str]:
+        """在创建审批前规范化候选并拒绝常见凭据。
+
+        Args:
+            content: 模型提出的事实文本。
+            source: 模型提出的简短来源。
+
+        Returns:
+            空白稳定的事实与来源。
+
+        Raises:
+            MemoryError: 文本无效或疑似包含凭据。
+        """
+        fact = _normalize_line(content, "memory content", maximum=2_000)
+        origin = _normalize_line(source, "memory source", maximum=200)
+        if _contains_sensitive(fact) or _contains_sensitive(origin):
+            raise MemoryError(
+                "sensitive_memory",
+                "memory content looks sensitive and was not stored",
+            )
+        return fact, origin
 
     def _daily_path(self, day: date) -> Path:
         """从内部日期生成不可由模型控制的 daily 文件路径。"""

@@ -1,8 +1,12 @@
 """MiniClaw Tool 数据契约与 Registry 行为测试。"""
 
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
+from miniclaw.memory.store import MemoryStore
+from miniclaw.paths import build_state_paths
 from miniclaw.providers.base import JsonValue
 from miniclaw.tools.base import (
     ToolContext,
@@ -12,6 +16,7 @@ from miniclaw.tools.base import (
 )
 from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
+from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
@@ -49,22 +54,26 @@ class _EchoTool:
 class ToolContractTest(unittest.TestCase):
     """验证模型可见 Schema 与 Tool Result 的稳定边界。"""
 
-    def test_builtin_registry_exposes_eight_tools_in_stable_order(self) -> None:
+    def test_builtin_registry_exposes_ten_tools_in_stable_order(self) -> None:
         """内置 Tool Schema 必须按名称稳定排序，避免模型请求漂移。"""
-        registry = ToolRegistry(
-            (
-                SystemInfoTool(),
-                ReadFileTool(),
-                WriteFileTool(),
-                EditFileTool(),
-                GlobTool(),
-                GrepTool(),
-                HttpGetTool(),
-                RunCommandTool(),
+        with tempfile.TemporaryDirectory() as directory:
+            store = MemoryStore(build_state_paths(Path(directory).resolve()))
+            registry = ToolRegistry(
+                (
+                    SystemInfoTool(),
+                    ReadFileTool(),
+                    WriteFileTool(),
+                    EditFileTool(),
+                    GlobTool(),
+                    GrepTool(),
+                    HttpGetTool(),
+                    RunCommandTool(),
+                    ReadMemoryTool(store),
+                    ProposeMemoryTool(store),
+                )
             )
-        )
 
-        names = [schema["function"]["name"] for schema in registry.schemas]
+            names = [schema["function"]["name"] for schema in registry.schemas]
 
         self.assertEqual(
             names,
@@ -73,7 +82,9 @@ class ToolContractTest(unittest.TestCase):
                 "glob",
                 "grep",
                 "http_get",
+                "propose_memory",
                 "read_file",
+                "read_memory",
                 "run_command",
                 "system_info",
                 "write_file",

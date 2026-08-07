@@ -100,6 +100,26 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertIn("request approval", system)
         self.assertIn("do not replace the tool call with manual instructions", system)
 
+    def test_memory_files_enter_system_context_with_usage_rules(self) -> None:
+        """长期和 recent daily memory 应进入身份之后，并教模型走受控写入 Tool。"""
+        self.paths.memory_file.write_text("- prefers Python 3.12\n", encoding="utf-8")
+        (self.paths.memory_dir / "2099-01-01.md").write_text(
+            "- must not load arbitrary old daily notes\n",
+            encoding="utf-8",
+        )
+
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (ModelMessage(role="user", content="记住我喜欢简洁回答"),),
+        )
+
+        system = request.messages[0].content
+        self.assertLess(system.index("## USER"), system.index("## MEMORY"))
+        self.assertIn("prefers Python 3.12", system)
+        self.assertNotIn("must not load arbitrary old daily notes", system)
+        self.assertIn("propose_memory", system)
+        self.assertIn("explicitly asks you to remember", system)
+
     def test_visible_reasoning_follows_latest_user_language(self) -> None:
         """模型可见 reasoning 与回答应跟随 Owner 最新消息的主要语言。"""
         request = ContextBuilder(self.paths).build(
