@@ -9,7 +9,7 @@
 <p align="center">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-0F766E" />
-  <img alt="Status Phase 2.1C verified" src="https://img.shields.io/badge/Status-Phase_2.1C_verified-0F766E" />
+  <img alt="Status Phase 2.2A verified" src="https://img.shields.io/badge/Status-Phase_2.2A_verified-0F766E" />
 </p>
 
 MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。目标是在同一个 Agent Core 后接入本地
@@ -17,12 +17,13 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 Phase 1 CLI Agent 闭环、Phase 2.1A/2.1B 只读 Tool，以及 Phase 2.1C R1/R2
+> 当前仓库已完成 Phase 1 CLI Agent 闭环、Phase 2.1A/2.1B 只读 Tool、Phase 2.1C R1/R2
 > Agent 回归门禁：安全 `.env`、
 > OpenAI-compatible HTTP/SSE、Policy + ToolExecutor、脱敏 `system_info`、Workspace 内的
 > `read_file` / `glob` / `grep`、ToolRun/Audit、完整工具消息持久化，以及 10 条版本化 Claw-like query。
-> 文件写入、Shell、真实 DeepSeek live eval、审批和飞书尚未完成。
-> 当前离线回归基线为 **177 tests + 10/10 Agent cases**；Policy 拒绝会留下仅含 Tool 名、参数 hash
+> P2.2A 已实现严格 Tools 配置、Workspace 写边界、原子 `write_file` 和精确 `edit_file`；它们会等待
+> P2.2B 参数绑定审批完成后才注册到生产 `chat`。Shell、HTTP Tool、真实 DeepSeek live eval、审批续执行和飞书尚未完成。
+> 当前离线回归基线为 **194 tests + 10/10 Agent cases**；Policy 拒绝会留下仅含 Tool 名、参数 hash
 > 前缀和错误码的脱敏审计，
 > 但不会创建 ToolRun。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
@@ -92,6 +93,10 @@ uv run python -m miniclaw --version
 Workspace 内调用 `read_file`、`glob`、`grep`；模型不能写文件或运行 Shell。`eval` 完全离线，不读取
 `.env`、不需要 `init` 或 API Key，并通过真实 Agent/Policy/Tool/SQLite 链路运行版本化场景。
 
+底层 `write_file` / `edit_file` 已通过原子性和安全边界测试，但当前有意不在 `chat` 中公开。原因是
+Approval ID、查询、批准与重启续执行仍在 P2.2B 开发中；不会用一个无法真正批准的 `approval_required`
+错误冒充可用功能。
+
 ### Workspace 只读演示
 
 初始化后的默认 Workspace 是 `~/.miniclaw/workspace/`。把演示文本放进去后，可让已配置的模型尝试调用当前
@@ -155,6 +160,7 @@ miniclaw/
 | [Phase 2.1A Tool 工程文档](docs/engineering/phase-2/tool-runtime-and-system-info.md) | Tool Contract、Policy、Executor、审计、消息轨迹与 system_info |
 | [Phase 2.1B Workspace 读取 Tool 工程文档](docs/engineering/phase-2/workspace-read-tools.md) | read_file、glob、grep、Workspace Guard、边界与测试矩阵 |
 | [Phase 2.1C Agent 回归工程文档](docs/engineering/phase-2/agent-regression-evals.md) | JSONL 场景、真实离线 runner、CLI 门禁、事故回归和 benchmark 分层 |
+| [Phase 2.2A 文件写入工程文档](docs/engineering/phase-2/filesystem-tools.md) | 严格 Tools 配置、Workspace 写边界、write/edit 原子性、错误码和测试矩阵 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 

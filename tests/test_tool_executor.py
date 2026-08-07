@@ -24,6 +24,7 @@ from miniclaw.tools.base import (
     ToolValidationError,
 )
 from miniclaw.tools.executor import ToolExecutor
+from miniclaw.tools.filesystem import WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 
 
@@ -366,6 +367,28 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         persisted = "".join(event["summary"] + event["metadata_json"] for event in events)
         for private_value in (str(outside), ".env", secret):
             self.assertNotIn(private_value, persisted)
+
+    async def test_workspace_policy_hard_denies_sensitive_write_before_approval(self) -> None:
+        """敏感写路径必须硬拒绝并审计，不能创建可批准的动作。"""
+        result = await self.executor(WriteFileTool()).execute(
+            self.context,
+            ToolCall(
+                "write_secret",
+                "write_file",
+                {"path": ".env", "content": "SECRET=value"},
+            ),
+        )
+
+        self.assertEqual(json.loads(result)["error"]["code"], "sensitive_path")
+        with self.database.connect_read_only() as connection:
+            run_count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+            event = connection.execute(
+                "SELECT event_type, metadata_json FROM audit_events"
+            ).fetchone()
+        self.assertEqual(run_count, 0)
+        self.assertEqual(event["event_type"], "tool.denied")
+        self.assertEqual(json.loads(event["metadata_json"])["error_code"], "sensitive_path")
+        self.assertNotIn("SECRET=value", event["metadata_json"])
 
     async def test_policy_deny_fails_closed_when_audit_write_fails(self) -> None:
         """拒绝审计无法落库时不能返回一个伪装正常的 Policy 结果。"""

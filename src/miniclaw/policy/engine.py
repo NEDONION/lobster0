@@ -9,6 +9,7 @@ from miniclaw.providers.base import JsonValue
 from miniclaw.tools.base import ToolContext, ToolDefinition, ToolRisk
 
 _READ_PATH_ARGUMENTS = {"read_file": "path", "glob": "root", "grep": "root"}
+_WRITE_PATH_ARGUMENTS = {"write_file": "path", "edit_file": "path"}
 
 
 class PolicyAction(StrEnum):
@@ -43,6 +44,13 @@ class PolicyEngine:
             raw_path = cast(str, arguments[path_argument])
             try:
                 WorkspaceGuard().resolve_read(context, raw_path)
+            except WorkspaceAccessError as error:
+                return PolicyDecision(PolicyAction.DENY, str(error), error.code)
+        write_path_argument = _WRITE_PATH_ARGUMENTS.get(definition.name)
+        if write_path_argument is not None:
+            raw_path = cast(str, arguments[write_path_argument])
+            try:
+                WorkspaceGuard().resolve_write(context, raw_path)
             except WorkspaceAccessError as error:
                 return PolicyDecision(PolicyAction.DENY, str(error), error.code)
         if definition.risk is ToolRisk.LOW:

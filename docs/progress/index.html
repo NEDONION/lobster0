@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · P2.1C R1/R2 verified · live DeepSeek eval pending</div>
+      <div class="branch">target: main · P2.2A atomic files verified · Approval next</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">安全只读链路现在有了可重复的版本门禁：10 条 Claw-like query 会穿过真实 Agent、Policy、Tool、SQLite，再由确定性 verifier 判定。</p>
+        <p class="lede">安全只读链路已有版本门禁；P2.2A 又补上严格写边界与原子文件内核。下一步把它接入参数绑定 Approval，而不是提前向模型暴露半条链路。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Offline exit gate</span>
-        <strong>P2.1C R2 ✓</strong>
-        <p>177 tests + 10/10 offline Agent cases + Ruff verified</p>
+        <span class="tag">Filesystem kernel gate</span>
+        <strong>P2.2A ✓</strong>
+        <p>194 tests + 10/10 offline Agent cases + Ruff verified</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">177 <small>passing</small></span>
+        <span class="metric-value">194 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -426,7 +426,7 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool、安全与回归门禁</h3><p>P2.1A system_info、P2.1B Workspace 只读工具、P2.1C R1/R2 offline eval 已验证。</p></div>
+          <div><h3>Tool、安全与回归门禁</h3><p>P2.1 只读与回归已验证；P2.2A 写边界、write_file/edit_file 原子内核已验证，Approval 尚在开发。</p></div>
           <span class="pill">IN PROGRESS</span>
         </article>
         <article class="phase queued">
@@ -459,7 +459,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 2.1C R1/R2 exit gate</p>
+        <p class="eyebrow">Phase 2.2A filesystem gate</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -475,7 +475,11 @@
           <li class="complete">严格 JSONL Schema 与 10 条 Claw-like query</li>
           <li class="complete">真实 Agent / Policy / Tool / SQLite offline runner</li>
           <li class="complete">miniclaw eval list / validate / run</li>
-          <li class="complete">177 tests + 10/10 Agent cases + Ruff 门禁</li>
+          <li class="complete">严格 [tools] / command / HTTP 配置边界</li>
+          <li class="complete">Workspace resolve_write：只写根、父目录、symlink、敏感路径</li>
+          <li class="complete">write_file：256 KiB、no-clobber、原子覆盖与权限保持</li>
+          <li class="complete">edit_file：唯一精确匹配、1 MiB 与并发修改保护</li>
+          <li class="complete">194 tests + 10/10 Agent cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -487,14 +491,14 @@
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
         <div class="decision"><code>eval gate</code><p>每次提交跑 deterministic offline 100%；真实模型留给 release-only live suite。</p></div>
-        <div class="decision"><code>scope</code><p>R1/R2 只交付离线回归地基；write、Shell、审批、live eval 和飞书仍未实现。</p></div>
+        <div class="decision"><code>scope</code><p>写入内核已实现但不在 chat 暴露；Approval、Shell、HTTP、live eval 和飞书仍未完成。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/f2bdf35">f2bdf35</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b6309b9">b6309b9</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2a112a8">2a112a8</a> · <a href="https://github.com/NEDONION/miniclaw/commit/061e045">061e045</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b491fce">b491fce</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2a74e9e">2a74e9e</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 177 tests + 10/10 offline Agent cases + Ruff verified</span>
-      <span><a href="../engineering/phase-2/agent-regression-evals.md">P2.1C 工程文档</a> · <a href="../evals/releases/v0.1.0.md">v0.1.0 eval record</a></span>
+      <span>Last updated · 2026-08-08 · 194 tests + 10/10 offline Agent cases + Ruff verified</span>
+      <span><a href="../engineering/phase-2/filesystem-tools.md">P2.2A 工程文档</a> · <a href="../evals/releases/v0.1.0.md">v0.1.0 eval record</a></span>
     </footer>
   </main>
 </body>

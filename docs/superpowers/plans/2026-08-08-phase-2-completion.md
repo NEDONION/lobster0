@@ -145,7 +145,7 @@ Commit: `feat(config): 增加 supervised tools 配置与 write boundary`
 - Produces: error codes `file_exists`, `text_not_found`, `text_not_unique`, `file_too_large`, `binary_file`, `write_failed`.
 - Consumes: `WorkspaceGuard.resolve_write()` from Task 1.
 
-- [ ] **Step 1: Write RED contract and behavior tests**
+- [x] **Step 1: Write RED contract and behavior tests**
 
 ```python
 async def test_write_file_creates_utf8_file_without_overwrite(self) -> None:
@@ -169,21 +169,21 @@ async def test_edit_file_requires_one_exact_match_and_preserves_mode(self) -> No
 
 Also assert: content >256 KiB rejected during validation; edit result >1 MiB rejected; NUL/invalid UTF-8 rejected; existing file with `overwrite=false` unchanged; missing parent leaves no file; temp files are removed after an injected `os.replace` failure.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `uv run python -m unittest tests.test_file_tools -v`
 
 Expected: ImportError for the missing tools.
 
-- [ ] **Step 3: Implement one private atomic replace helper**
+- [x] **Step 3: Implement one private atomic replace helper**
 
 Use `tempfile.NamedTemporaryFile(dir=target.parent, delete=False)`, UTF-8 bytes, `flush()`, `os.fsync()`, mode `0o600` for new files, existing mode for edit/overwrite, `os.replace()`, and unconditional temp cleanup. Re-resolve the target immediately before replace; never create parent directories.
 
-- [ ] **Step 4: Register both tools and enforce write Policy normalization**
+- [x] **Step 4: Expose both contracts and enforce write Policy normalization**
 
-`PolicyEngine.authorize()` must canonicalize write paths before returning `REQUIRE_APPROVAL`; hard-denied paths never create ToolRun/Approval. Both tools remain model-visible only when enabled.
+`PolicyEngine.authorize()` must canonicalize write paths before returning `REQUIRE_APPROVAL`; hard-denied paths never create ToolRun/Approval. Contract tests include both tools; production CLI registration waits for Task 4 so the model never sees an approval flow that cannot yet be completed.
 
-- [ ] **Step 5: Run GREEN and commit**
+- [x] **Step 5: Run GREEN and commit**
 
 Run: `uv run python -m unittest tests.test_file_tools tests.test_tool_contract tests.test_tool_executor -v && uv run ruff check .`
 

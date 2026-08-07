@@ -1,12 +1,14 @@
-"""``read_file`` 的 UTF-8 行窗口与安全边界测试。"""
+"""Workspace 文本文件 Tool 的读取窗口与原子写入边界测试。"""
 
+import stat
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from miniclaw.providers.base import JsonValue
 from miniclaw.tools.base import ToolContext, ToolResult, ToolValidationError
-from miniclaw.tools.filesystem import ReadFileTool
+from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 
 
 class ReadFileToolTest(unittest.IsolatedAsyncioTestCase):
@@ -193,6 +195,255 @@ class ReadFileToolTest(unittest.IsolatedAsyncioTestCase):
                 assert isinstance(result.data, dict)
                 self.assertFalse(result.data["truncated"])
                 self.assertNotIn("next_offset", result.data)
+
+
+class WriteFileToolTest(unittest.IsolatedAsyncioTestCase):
+    """验证 ``write_file`` 只做有限、原子且不隐式建目录的文本写入。"""
+
+    def setUp(self) -> None:
+        """创建隔离 Workspace 和额外只读根。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        root = Path(self.temporary_directory.name).resolve()
+        self.workspace = root / "workspace"
+        self.read_only = root / "shared"
+        self.workspace.mkdir()
+        self.read_only.mkdir()
+        self.context = ToolContext(
+            user_id=1,
+            session_id=2,
+            turn_id=3,
+            state_home=root / "state",
+            workspace=self.workspace,
+            read_only_roots=(self.read_only,),
+        )
+        self.tool = WriteFileTool()
+
+    async def _run(self, arguments: dict[str, JsonValue]) -> ToolResult:
+        """通过公开校验和执行边界运行一次写入。"""
+        return await self.tool.execute(self.context, self.tool.validate(arguments))
+
+    def test_validate_defaults_schema_and_utf8_byte_limit(self) -> None:
+        """公开 Schema、overwrite 默认值和 256 KiB UTF-8 上限必须一致。"""
+        self.assertEqual(
+            self.tool.validate({"path": "note.txt", "content": "你好"}),
+            {"path": "note.txt", "content": "你好", "overwrite": False},
+        )
+        self.assertEqual(self.tool.definition.risk.value, "medium")
+        self.assertEqual(
+            self.tool.definition.parameters,
+            {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"},
+                    "overwrite": {"type": "boolean"},
+                },
+                "required": ["path", "content"],
+                "additionalProperties": False,
+            },
+        )
+        for arguments in (
+            {"path": "", "content": "x"},
+            {"path": "x", "content": "a\0b"},
+            {"path": "x", "content": "😀" * (64 * 1024 + 1)},
+            {"path": "x", "content": "x", "overwrite": 1},
+            {"path": "x", "content": "x", "parents": True},
+        ):
+            with self.subTest(arguments=list(arguments)), self.assertRaises(
+                ToolValidationError
+            ):
+                self.tool.validate(arguments)
+
+    async def test_creates_owner_only_utf8_file_without_parents(self) -> None:
+        """新文件必须完整出现、权限私有，缺失父目录不能留下半文件。"""
+        result = await self._run({"path": "note.txt", "content": "你好\n"})
+
+        target = self.workspace / "note.txt"
+        self.assertTrue(result.ok)
+        self.assertEqual(target.read_text(encoding="utf-8"), "你好\n")
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o600)
+        self.assertEqual(
+            result.data,
+            {"path": "note.txt", "bytes": 7, "overwritten": False},
+        )
+
+        missing = await self._run({"path": "missing/note.txt", "content": "x"})
+        self.assertEqual(missing.error_code, "parent_not_found")
+        self.assertFalse((self.workspace / "missing").exists())
+
+    async def test_existing_file_requires_overwrite_and_preserves_mode(self) -> None:
+        """默认不得覆盖；显式覆盖必须替换完整内容并保留原权限。"""
+        target = self.workspace / "note.txt"
+        target.write_text("old", encoding="utf-8")
+        target.chmod(0o640)
+
+        refused = await self._run({"path": "note.txt", "content": "new"})
+        self.assertEqual(refused.error_code, "file_exists")
+        self.assertEqual(target.read_text(encoding="utf-8"), "old")
+
+        replaced = await self._run(
+            {"path": "note.txt", "content": "new", "overwrite": True}
+        )
+        self.assertTrue(replaced.ok)
+        self.assertEqual(target.read_text(encoding="utf-8"), "new")
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o640)
+        self.assertEqual(replaced.data["overwritten"], True)
+
+    async def test_replace_failure_keeps_original_and_removes_temp_file(self) -> None:
+        """原子替换失败时原文件不能损坏，同目录临时文件必须清理。"""
+        target = self.workspace / "note.txt"
+        target.write_text("old", encoding="utf-8")
+
+        with mock.patch("miniclaw.tools.filesystem.os.replace", side_effect=OSError):
+            result = await self._run(
+                {"path": "note.txt", "content": "new", "overwrite": True}
+            )
+
+        self.assertEqual(result.error_code, "write_failed")
+        self.assertEqual(target.read_text(encoding="utf-8"), "old")
+        self.assertEqual([path.name for path in self.workspace.iterdir()], ["note.txt"])
+
+    async def test_write_guard_rejects_read_only_sensitive_and_symlink_targets(self) -> None:
+        """直接调用 Tool 也不能绕开只读根、敏感文件或 symlink 防线。"""
+        target = self.workspace / "real.txt"
+        target.write_text("old", encoding="utf-8")
+        (self.workspace / "alias.txt").symlink_to(target)
+        for raw_path, code in (
+            (str(self.read_only / "x.txt"), "read_only_path"),
+            (".env", "sensitive_path"),
+            ("alias.txt", "symlink_path"),
+        ):
+            with self.subTest(raw_path=raw_path):
+                result = await self._run(
+                    {"path": raw_path, "content": "secret", "overwrite": True}
+                )
+                self.assertEqual(result.error_code, code)
+
+
+class EditFileToolTest(unittest.IsolatedAsyncioTestCase):
+    """验证 ``edit_file`` 只替换唯一精确文本并保留文件属性。"""
+
+    def setUp(self) -> None:
+        """创建隔离 Workspace 与待编辑 Tool。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        root = Path(self.temporary_directory.name).resolve()
+        self.workspace = root / "workspace"
+        self.workspace.mkdir()
+        self.context = ToolContext(
+            user_id=1,
+            session_id=2,
+            turn_id=3,
+            state_home=root / "state",
+            workspace=self.workspace,
+            read_only_roots=(),
+        )
+        self.tool = EditFileTool()
+
+    async def _run(self, arguments: dict[str, JsonValue]) -> ToolResult:
+        """通过公开校验与执行接口运行一次精确编辑。"""
+        return await self.tool.execute(self.context, self.tool.validate(arguments))
+
+    def test_validate_requires_exact_nonempty_text_contract(self) -> None:
+        """路径、非空 old_text、字符串 new_text 与未知字段必须严格校验。"""
+        self.assertEqual(
+            self.tool.validate({"path": "note.txt", "old_text": "old", "new_text": ""}),
+            {"path": "note.txt", "old_text": "old", "new_text": ""},
+        )
+        for arguments in (
+            {"path": "note.txt", "old_text": "", "new_text": "new"},
+            {"path": "note.txt", "old_text": "old", "new_text": 1},
+            {"path": "note.txt", "old_text": "old\0", "new_text": "new"},
+            {"path": "note.txt", "old_text": "old", "new_text": "new", "regex": True},
+        ):
+            with self.subTest(arguments=arguments), self.assertRaises(ToolValidationError):
+                self.tool.validate(arguments)
+
+    async def test_replaces_one_exact_match_and_preserves_mode(self) -> None:
+        """唯一匹配必须原子替换，并保留原文件权限。"""
+        target = self.workspace / "note.txt"
+        target.write_text("before old after\n", encoding="utf-8")
+        target.chmod(0o640)
+
+        result = await self._run(
+            {"path": "note.txt", "old_text": "old", "new_text": "new"}
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(target.read_text(encoding="utf-8"), "before new after\n")
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), 0o640)
+        self.assertEqual(result.data, {"path": "note.txt", "bytes": 17})
+
+    async def test_zero_overlapping_or_multiple_matches_never_modify_file(self) -> None:
+        """零次、重叠多次和普通多次匹配都不能猜测替换目标。"""
+        cases = (
+            ("alpha", "missing", "text_not_found"),
+            ("aaa", "aa", "text_not_unique"),
+            ("old and old", "old", "text_not_unique"),
+        )
+        for index, (content, old_text, code) in enumerate(cases):
+            target = self.workspace / f"case-{index}.txt"
+            target.write_text(content, encoding="utf-8")
+            with self.subTest(content=content):
+                result = await self._run(
+                    {"path": target.name, "old_text": old_text, "new_text": "new"}
+                )
+                self.assertEqual(result.error_code, code)
+                self.assertEqual(target.read_text(encoding="utf-8"), content)
+
+    async def test_binary_and_oversized_files_fail_without_replacement(self) -> None:
+        """非 UTF-8 或超过 1 MiB 的文件不能被覆盖。"""
+        binary = self.workspace / "binary.txt"
+        binary.write_bytes(b"old\0value")
+        binary_result = await self._run(
+            {"path": binary.name, "old_text": "old", "new_text": "new"}
+        )
+        self.assertEqual(binary_result.error_code, "binary_file")
+
+        large = self.workspace / "large.txt"
+        large.write_bytes(b"old" + b"x" * (1024 * 1024))
+        large_result = await self._run(
+            {"path": large.name, "old_text": "old", "new_text": "new"}
+        )
+        self.assertEqual(large_result.error_code, "file_too_large")
+
+    async def test_edit_result_larger_than_one_mib_keeps_original(self) -> None:
+        """替换后的 UTF-8 文件超过上限时不能发布超大结果。"""
+        target = self.workspace / "growth.txt"
+        target.write_text("old", encoding="utf-8")
+
+        result = await self._run(
+            {
+                "path": target.name,
+                "old_text": "old",
+                "new_text": "x" * (1024 * 1024 + 1),
+            }
+        )
+
+        self.assertEqual(result.error_code, "file_too_large")
+        self.assertEqual(target.read_text(encoding="utf-8"), "old")
+
+    async def test_file_changed_after_read_is_not_overwritten(self) -> None:
+        """读取后的并发修改必须让精确编辑失败，不能覆盖别人的新内容。"""
+        target = self.workspace / "changed.txt"
+        target.write_text("old", encoding="utf-8")
+        real_mkstemp = tempfile.mkstemp
+
+        def change_then_create_temp(*args: object, **kwargs: object) -> tuple[int, str]:
+            target.write_text("someone else", encoding="utf-8")
+            return real_mkstemp(*args, **kwargs)
+
+        with mock.patch(
+            "miniclaw.tools.filesystem.tempfile.mkstemp",
+            side_effect=change_then_create_temp,
+        ):
+            result = await self._run(
+                {"path": target.name, "old_text": "old", "new_text": "new"}
+            )
+
+        self.assertEqual(result.error_code, "file_changed")
+        self.assertEqual(target.read_text(encoding="utf-8"), "someone else")
 
 
 if __name__ == "__main__":
