@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · P2.2 approval continuation verified · P2.3 command next</div>
+      <div class="branch">target: main · P2.3 exact-argv command verified · P2.4 HTTPS next</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">参数绑定电子签字单已贯穿生产链路：Agent 暂停、Owner 决策、child Turn 恢复和一次性执行都落在 SQLite。下一步实现 exact-argv 命令。</p>
+        <p class="lede">受限命令已经贯穿生产链路：exact argv、硬禁止、Owner 审批、环境隔离和进程组超时都可回归。下一步实现 pinned HTTPS 与 SSRF 防护。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Approval continuation gate</span>
-        <strong>P2.2 ✓</strong>
-        <p>210 tests + 10/10 offline Agent cases + Ruff verified</p>
+        <span class="tag">Exact argv command gate</span>
+        <strong>P2.3 ✓</strong>
+        <p>224 tests + 10/10 offline Agent cases + Ruff verified</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">210 <small>passing</small></span>
+        <span class="metric-value">224 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -426,7 +426,7 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool、安全与回归门禁</h3><p>P2.1 只读 Tool 与 P2.2 文件写入、参数绑定 Approval、Turn/CLI 续执行均已验证；P2.3 命令在开发。</p></div>
+          <div><h3>Tool、安全与回归门禁</h3><p>P2.1 只读 Tool、P2.2 文件与审批、P2.3 exact-argv 命令均已验证；P2.4 HTTPS 在开发。</p></div>
           <span class="pill">IN PROGRESS</span>
         </article>
         <article class="phase queued">
@@ -459,7 +459,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 2.2 Approval continuation gate</p>
+        <p class="eyebrow">Phase 2.3 Exact argv command gate</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -487,7 +487,10 @@
           <li class="complete">waiting Turn + 无假 User Message 的 child Turn</li>
           <li class="complete">approvals list / show / approve / deny 与 JSON 输出</li>
           <li class="complete">写 Tool 正式注册生产 chat</li>
-          <li class="complete">210 tests + 10/10 Agent cases + Ruff 门禁</li>
+          <li class="complete">run_command：fixed PATH + shell=False + 最小环境</li>
+          <li class="complete">命令硬禁止 + exact argv allow rule</li>
+          <li class="complete">双流 1 MiB + 整个进程组/transport 超时回收</li>
+          <li class="complete">224 tests + 10/10 Agent cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -499,14 +502,14 @@
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
         <div class="decision"><code>eval gate</code><p>每次提交跑 deterministic offline 100%；真实模型留给 release-only live suite。</p></div>
-        <div class="decision"><code>scope</code><p>写入和 Approval 续执行已进入 chat；Shell、HTTP、live eval 和飞书仍未完成。</p></div>
+        <div class="decision"><code>scope</code><p>写入、Approval 与 exact-argv 命令已进入 chat；任意 Shell、HTTP、live eval 和飞书仍未完成。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/f2bdf35">f2bdf35</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b6309b9">b6309b9</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2a112a8">2a112a8</a> · <a href="https://github.com/NEDONION/miniclaw/commit/061e045">061e045</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b491fce">b491fce</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2a74e9e">2a74e9e</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 210 tests + 10/10 offline Agent cases + Ruff verified</span>
-      <span><a href="../engineering/phase-2/approval-lifecycle.md">P2.2 生命周期</a> · <a href="../engineering/phase-2/cli-approvals.md">Approvals CLI</a> · <a href="../evals/releases/v0.1.0.md">v0.1.0 eval record</a></span>
+      <span>Last updated · 2026-08-08 · 224 tests + 10/10 offline Agent cases + Ruff verified</span>
+      <span><a href="../engineering/phase-2/command-execution.md">P2.3 命令工程文档</a> · <a href="../engineering/phase-2/cli-approvals.md">Approvals CLI</a> · <a href="../evals/releases/v0.1.0.md">v0.1.0 eval record</a></span>
     </footer>
   </main>
 </body>

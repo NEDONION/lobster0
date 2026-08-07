@@ -12,9 +12,10 @@
 | [Phase 2.2A：安全写边界与原子文件 Tool](phase-2/filesystem-tools.md) | 严格 Tools 配置、`resolve_write`、`write_file`、`edit_file`、原子发布与失败保护。 | 参数绑定 Approval、生产 chat 注册、Shell、HTTP、飞书。 |
 | [Phase 2.2：参数绑定 Approval 与续执行](phase-2/approval-lifecycle.md) | canonical hash、waiting/child Turn、Owner/TTL、approve/deny、重启恢复、单次消费与审计。 | Shell、HTTP、飞书卡片。 |
 | [Phase 2.2：Approvals CLI](phase-2/cli-approvals.md) | `list/show/approve/deny`、JSON、退出码、无 Key 查询和恢复流程。 | TUI、IM 审批卡片、永久文件规则。 |
+| [Phase 2.3：Exact-Argv 命令](phase-2/command-execution.md) | 固定 PATH、硬禁止、exact allow rule、环境清理、进程组超时和有界双流。 | 任意 Shell、PTY、后台任务、OS sandbox。 |
 
-功能主线当前位于 P2.3：P2.2 文件写入与审批续执行已验证并进入生产 `chat`，下一步是 exact-argv
-`run_command`。质量主线下一步仍是 R3 live DeepSeek release eval。
+功能主线当前位于 P2.4：P2.3 exact-argv `run_command` 已验证并进入生产 `chat`，下一步是 pinned HTTPS
+和 SSRF 防护。质量主线下一步仍是 R3 live DeepSeek release eval。
 
 ## Phase 1：CLI Agent 闭环
 

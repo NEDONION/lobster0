@@ -21,6 +21,7 @@ from miniclaw.evals.cases import EvalCaseError, load_cases
 from miniclaw.evals.runner import run_offline_suite
 from miniclaw.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
 from miniclaw.policy.approvals import ApprovalError
+from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import ProviderAuthenticationError, ProviderError
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
@@ -34,7 +35,14 @@ from miniclaw.storage.conversations import (
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import MigrationError, apply_migrations
 from miniclaw.storage.repositories import OwnerRepository
-from miniclaw.storage.tooling import ApprovalRepository, StoredApproval, ToolRunRepository
+from miniclaw.storage.tooling import (
+    ApprovalRepository,
+    PolicyRuleRepository,
+    StoredApproval,
+    ToolRunRepository,
+    ToolStateError,
+)
+from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
@@ -233,6 +241,9 @@ def _run_approvals(arguments: argparse.Namespace, paths: StatePaths) -> int:
                 arguments.approval_id,
                 approved=arguments.approval_command == "approve",
                 as_json=arguments.as_json,
+                always=(
+                    arguments.approval_command == "approve" and arguments.always
+                ),
             )
         )
     except ProviderAuthenticationError as error:
@@ -250,6 +261,7 @@ def _run_approvals(arguments: argparse.Namespace, paths: StatePaths) -> int:
         DatabaseError,
         MigrationError,
         OSError,
+        ToolStateError,
         sqlite3.Error,
     ) as error:
         print(f"error: {error}", file=sys.stderr)
@@ -268,6 +280,7 @@ async def _continue_approval(
     *,
     approved: bool,
     as_json: bool,
+    always: bool,
 ) -> int:
     """创建运行期、继续一次审批，并确保关闭 Provider。"""
     runtime_owner_id, provider, service = _create_runtime(config, paths, api_key)
@@ -280,6 +293,15 @@ async def _continue_approval(
             approval_id,
             approved=approved,
         )
+        if always:
+            item = ApprovalRepository(Database(paths.database)).get(owner_id, approval_id)
+            if item.tool_name == "run_command":
+                PolicyRuleRepository(Database(paths.database)).add_command_from_approval(
+                    owner_id,
+                    approval_id,
+                )
+            else:
+                raise ConfigError("--always rule is not implemented for this tool")
         if as_json:
             print(
                 json.dumps(
@@ -381,6 +403,7 @@ def _run_chat(arguments: argparse.Namespace, paths: StatePaths) -> int:
         DatabaseError,
         MigrationError,
         OSError,
+        ToolStateError,
         sqlite3.Error,
     ) as error:
         print(f"error: {error}", file=sys.stderr)
@@ -465,13 +488,30 @@ def _create_runtime(
         EditFileTool(),
         GlobTool(),
         GrepTool(),
+        RunCommandTool(
+            timeout_seconds=config.tools.run_command.timeout_seconds,
+            max_timeout_seconds=config.tools.run_command.max_timeout_seconds,
+        ),
     )
     approvals = ApprovalRepository(database)
+    configured_command_rules = tuple(
+        normalize_command(rule.program, rule.args, config.workspace.path)
+        for rule in config.tools.run_command.allow_commands
+    )
+    command_rules = tuple(
+        dict.fromkeys(
+            (*configured_command_rules, *PolicyRuleRepository(database).command_rules(owner.id))
+        )
+    )
     executor = ToolExecutor(
         ToolRegistry(
             tool for tool in available_tools if tool.definition.name in config.tools.enabled
         ),
-        PolicyEngine(),
+        PolicyEngine(
+            security=config.tools.security,
+            ask=config.tools.ask,
+            command_rules=command_rules,
+        ),
         ToolRunRepository(database),
         result_max_chars=config.agent.tool_result_max_chars,
         approvals=approvals,

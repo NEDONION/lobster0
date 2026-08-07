@@ -5,6 +5,7 @@ import sqlite3
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import cast
 
 from miniclaw.policy.approvals import (
@@ -12,6 +13,7 @@ from miniclaw.policy.approvals import (
     canonical_arguments_hash,
     canonical_arguments_json,
 )
+from miniclaw.policy.command import NormalizedCommand
 from miniclaw.policy.engine import PolicyDecision
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.database import Database
@@ -350,6 +352,104 @@ class ApprovalRepository:
         return value.astimezone(UTC)
 
 
+class PolicyRuleRepository:
+    """保存并读取由 Approval 产生的窄 Policy allow 规则。"""
+
+    def __init__(self, database: Database) -> None:
+        self._database = database
+
+    def command_rules(self, user_id: int) -> tuple[NormalizedCommand, ...]:
+        """读取当前 Owner 的 enabled exact-argv 规则；损坏数据失败关闭。"""
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT rule_json FROM policy_rules
+                WHERE user_id = ? AND tool_name = 'run_command' AND enabled = 1
+                ORDER BY id
+                """,
+                (user_id,),
+            ).fetchall()
+        return tuple(_decode_command_rule(row["rule_json"]) for row in rows)
+
+    def add_command_from_approval(self, user_id: int, approval_id: int) -> int:
+        """从已成功消费的 run_command Approval 幂等创建 exact-argv 规则。"""
+        now = datetime.now(UTC).isoformat()
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = _approval_join_row(connection, approval_id)
+            failure = _approval_access_error(row, user_id)
+            if failure is not None:
+                raise failure
+            if (
+                row["status"] != "consumed"
+                or row["tool_name"] != "run_command"
+                or row["tool_run_status"] != "succeeded"
+            ):
+                raise ApprovalError(
+                    "already_decided",
+                    "approval did not complete a command successfully",
+                )
+            arguments = _decode_arguments(row["arguments_json"])
+            expected_hash = canonical_arguments_hash(row["tool_name"], arguments)
+            if (
+                expected_hash != row["arguments_hash"]
+                or expected_hash != row["tool_run_arguments_hash"]
+            ):
+                raise ApprovalError("hash_mismatch", "approval arguments no longer match")
+            command = _command_from_arguments(arguments)
+            rule_json = json.dumps(
+                {
+                    "type": "exact_argv",
+                    "resolved_program": command.resolved_program,
+                    "args": list(command.args),
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            existing = connection.execute(
+                """
+                SELECT id FROM policy_rules
+                WHERE user_id = ? AND tool_name = 'run_command'
+                  AND rule_json = ? AND enabled = 1
+                """,
+                (user_id, rule_json),
+            ).fetchone()
+            if existing is not None:
+                return int(existing["id"])
+            cursor = connection.execute(
+                """
+                INSERT INTO policy_rules (
+                    user_id, tool_name, rule_json, source_approval_id, created_at
+                ) VALUES (?, 'run_command', ?, ?, ?)
+                """,
+                (user_id, rule_json, approval_id, now),
+            )
+            rule_id = int(cursor.lastrowid)
+            connection.execute(
+                """
+                INSERT INTO audit_events (
+                    event_type, user_id, turn_id, summary, metadata_json, created_at
+                ) VALUES ('policy_rule.created', ?, ?, 'Created exact command rule', ?, ?)
+                """,
+                (
+                    user_id,
+                    row["turn_id"],
+                    json.dumps(
+                        {
+                            "approval_id": approval_id,
+                            "policy_rule_id": rule_id,
+                            "tool_name": "run_command",
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    now,
+                ),
+            )
+        return rule_id
+
+
 class ToolRunRepository:
     """保存 running → terminal ToolRun 及其最小审计摘要。"""
 
@@ -659,6 +759,46 @@ def _decode_arguments(value: str) -> dict[str, JsonValue]:
     if not isinstance(decoded, dict) or any(not isinstance(key, str) for key in decoded):
         raise ApprovalError("hash_mismatch", "approval arguments are invalid")
     return cast(dict[str, JsonValue], decoded)
+
+
+def _command_from_arguments(arguments: dict[str, JsonValue]) -> NormalizedCommand:
+    """从已 hash 绑定的规范参数恢复 exact-argv；不重新搜索 PATH。"""
+    program = arguments.get("program")
+    args = arguments.get("args")
+    if (
+        set(arguments) != {"program", "args", "timeout_seconds"}
+        or not isinstance(program, str)
+        or not Path(program).is_absolute()
+        or not isinstance(args, list)
+        or any(not isinstance(argument, str) for argument in args)
+    ):
+        raise ApprovalError("hash_mismatch", "approval command arguments are invalid")
+    return NormalizedCommand(program, tuple(args))
+
+
+def _decode_command_rule(value: str) -> NormalizedCommand:
+    """严格恢复持久 exact-argv 规则；未知类型或字段失败关闭。"""
+    try:
+        decoded = json.loads(value, parse_constant=_reject_json_constant)
+    except (json.JSONDecodeError, ValueError):
+        raise ToolStateError("stored command policy rule is invalid") from None
+    if not isinstance(decoded, dict) or set(decoded) != {
+        "type",
+        "resolved_program",
+        "args",
+    }:
+        raise ToolStateError("stored command policy rule is invalid")
+    program = decoded["resolved_program"]
+    args = decoded["args"]
+    if (
+        decoded["type"] != "exact_argv"
+        or not isinstance(program, str)
+        or not Path(program).is_absolute()
+        or not isinstance(args, list)
+        or any(not isinstance(argument, str) for argument in args)
+    ):
+        raise ToolStateError("stored command policy rule is invalid")
+    return NormalizedCommand(program, tuple(args))
 
 
 def _approval_from_row(row: sqlite3.Row) -> StoredApproval:

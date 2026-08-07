@@ -2,9 +2,9 @@
 
 > 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 CLI 已进入生产链路
 >
-> 当前门禁：210/210 tests、10/10 offline Agent cases、Ruff PASS
+> 当前门禁：224/224 tests、10/10 offline Agent cases、Ruff PASS
 >
-> 当前非目标：命令/HTTP 的 `--always` 规则在 P2.3/P2.4 接入；飞书卡片审批不在本阶段
+> 当前非目标：HTTP 的 `--always` hostname 规则在 P2.4 接入；飞书卡片审批不在本阶段
 
 ## 1. 大白话解释
 
@@ -214,7 +214,7 @@ uv run ruff check src/miniclaw/policy/approvals.py src/miniclaw/policy/engine.py
 
 结果：28/28 通过。
 
-全仓门禁：210/210 tests、10/10 offline Agent cases、Ruff PASS、diff check PASS。
+全仓门禁：224/224 tests、10/10 offline Agent cases、Ruff PASS、diff check PASS。
 
 ## 13. Runner 为什么必须停下来
 
@@ -261,6 +261,6 @@ child Turn 的 `parent_turn_id` 指向产生 Approval 的 Turn，`inbound_event_
 ## 15. 当前边界
 
 - `ApprovalRepository.list/get` 只查询；过期状态在 approve/deny/consume 时结算。
-- `--always` 目前只预留给后续的精确 argv 命令和精确 hostname，文件写入不支持永久放行。
+- `run_command --always` 只保存 resolved executable + exact argv；文件写入不支持永久放行，hostname 等待 P2.4。
 - 审批 UI 当前是 CLI；飞书交互卡片会复用同一 Repository 和 TurnService，而不是复制状态机。
 - 任意 Shell、删除/移动文件、多用户审批和自动重放明确不在 Phase 2.2。

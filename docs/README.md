@@ -60,6 +60,7 @@
 | 安全文件写入 | [filesystem-tools.md](engineering/phase-2/filesystem-tools.md) |
 | Approval 生命周期与续执行 | [approval-lifecycle.md](engineering/phase-2/approval-lifecycle.md) |
 | Approvals CLI | [cli-approvals.md](engineering/phase-2/cli-approvals.md) |
+| Exact-Argv 命令执行 | [command-execution.md](engineering/phase-2/command-execution.md) |
 
 ## 评测与版本证据
 

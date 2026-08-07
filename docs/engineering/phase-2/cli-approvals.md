@@ -2,7 +2,7 @@
 
 > 状态：`list / show / approve / deny` 已实现，生产 `chat` 已公开 `write_file` 和 `edit_file`
 >
-> 验证基线：210/210 tests、10/10 offline Agent cases、Ruff PASS
+> 验证基线：224/224 tests、10/10 offline Agent cases、Ruff PASS
 
 ## 1. 最短使用流程
 
@@ -39,7 +39,7 @@ uv run miniclaw approvals deny 42
 | `approvals show ID [--json]` | 否 | 查看 Tool、摘要、状态和时间 |
 | `approvals approve ID [--json]` | 是 | 单次消费、执行 Tool、继续模型 |
 | `approvals deny ID [--json]` | 是 | 拒绝 Tool、继续模型解释 |
-| `approvals approve ID --always` | 视 Tool 而定 | 当前仅为 P2.3/P2.4 精确规则保留；文件 Tool 会拒绝 |
+| `approvals approve ID --always` | 视 Tool 而定 | 命令保存 exact argv；文件 Tool 拒绝；hostname 在 P2.4 接入 |
 
 自定义状态目录时，`--home` 放在 `approvals` 后面：
 
@@ -49,8 +49,8 @@ uv run miniclaw approvals --home /absolute/state list --json
 
 ## 3. 输出为什么不显示完整参数
 
-列表和详情只包含：ID、Tool 名、脱敏摘要、状态、创建/到期/决策时间。写入内容、绝对路径和完整 hash 不会
-进入终端表格或 JSON 输出。
+列表和详情包含：ID、Tool 名、摘要、状态、创建/到期/决策时间。文件写入内容和完整 hash 不会进入输出；
+`run_command` 摘要会显示完整 resolved executable + JSON argv，因为 Owner 必须看清自己批准的命令。
 
 ```json
 [{"id":42,"tool":"write_file","summary":"write_file note.txt","status":"pending"}]
@@ -125,5 +125,5 @@ uv run ruff check .
 
 ## 8. 下一阶段边界
 
-P2.3 会让 `run_command` 使用相同审批入口，但永久放行只保存“解析后的 executable + 完整 exact argv”；P2.4
-的 `http_get` 只保存精确 hostname。文件内容、任意命令字符串和 URL path 都不会成为宽泛的永久规则。
+P2.3 的 `run_command` 已使用相同审批入口，永久放行只保存“解析后的 executable + 完整 exact argv”；P2.4
+的 `http_get` 将只保存精确 hostname。文件内容、任意命令字符串和 URL path 都不会成为宽泛的永久规则。
