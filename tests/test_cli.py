@@ -66,6 +66,29 @@ class CliTest(unittest.TestCase):
         self.assertEqual(output, "")
         self.assertIn("absolute path", error)
 
+    def test_doctor_reports_healthy_initialized_state(self) -> None:
+        """doctor 应输出五项 PASS 并以 0 退出。"""
+        with tempfile.TemporaryDirectory() as directory:
+            run_cli(["init", "--home", directory])
+
+            exit_code, output, error = run_cli(["doctor", "--home", directory])
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(error, "")
+        self.assertEqual(output.count("[PASS]"), 5)
+
+    def test_doctor_returns_two_for_corrupt_config(self) -> None:
+        """损坏配置应显示失败项并使用配置错误退出码 2。"""
+        with tempfile.TemporaryDirectory() as directory:
+            run_cli(["init", "--home", directory])
+            Path(directory, "config.toml").write_text("[agent\n", encoding="utf-8")
+
+            exit_code, output, error = run_cli(["doctor", "--home", directory])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("[FAIL] config", output)
+        self.assertEqual(error, "")
+
 
 if __name__ == "__main__":
     unittest.main()

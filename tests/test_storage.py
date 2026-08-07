@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.storage.database import Database
+from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import apply_migrations, current_schema_version
 from miniclaw.storage.repositories import OwnerRepository
 
@@ -97,6 +97,16 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(second.display_name, "Owner")
         self.assertIsNotNone(second.created_at.tzinfo)
         self.assertEqual(owner_count, 1)
+
+    def test_read_only_connection_does_not_create_missing_database(self) -> None:
+        """只读诊断连接在数据库缺失时必须失败，不能创建空文件。"""
+        database = Database(self.database_path)
+
+        with self.assertRaises(DatabaseError):
+            with database.connect_read_only():
+                self.fail("missing database unexpectedly opened")
+
+        self.assertFalse(self.database_path.exists())
 
 
 if __name__ == "__main__":
