@@ -43,12 +43,24 @@ def initialize_state(paths: StatePaths) -> InitResult:
     """
     for directory in paths.directories:
         _ensure_directory(directory)
+    example_skill_directory = paths.skills / "summarize"
+    _ensure_directory(example_skill_directory)
 
     templates = (
         (paths.config, _render_default_config(paths)),
         (paths.soul, "# MiniClaw\n"),
         (paths.user, "# User\n"),
         (paths.memory_file, "# Long-term Memory\n"),
+        (
+            example_skill_directory / "SKILL.md",
+            "---\n"
+            "name: summarize\n"
+            "description: 总结长文本，提取决定、风险和下一步行动。\n"
+            "version: 1\n"
+            "---\n\n"
+            "# Instructions\n\n"
+            "先给结论，再列决定、风险和 action items。\n",
+        ),
     )
     created_files = tuple(
         path for path, content in templates if _create_private_file(path, content)

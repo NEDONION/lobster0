@@ -36,7 +36,13 @@ class BootstrapTest(unittest.TestCase):
         )
         self.assertEqual(
             set(result.created_files),
-            {self.paths.config, self.paths.soul, self.paths.user, self.paths.memory_file},
+            {
+                self.paths.config,
+                self.paths.soul,
+                self.paths.user,
+                self.paths.memory_file,
+                self.paths.skills / "summarize/SKILL.md",
+            },
         )
         self.assertTrue(all(path.is_dir() for path in self.paths.directories))
         self.assertTrue(self.paths.database.is_file())
@@ -47,6 +53,8 @@ class BootstrapTest(unittest.TestCase):
         """重复初始化不能覆盖 Markdown、重复迁移或插入第二个 Owner。"""
         first = initialize_state(self.paths)
         self.paths.user.write_text("My profile\n", encoding="utf-8")
+        example = self.paths.skills / "summarize/SKILL.md"
+        example.write_text("custom skill\n", encoding="utf-8")
 
         second = initialize_state(self.paths)
 
@@ -54,6 +62,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(second.applied_migrations, ())
         self.assertEqual(second.created_files, ())
         self.assertEqual(self.paths.user.read_text(encoding="utf-8"), "My profile\n")
+        self.assertEqual(example.read_text(encoding="utf-8"), "custom skill\n")
 
     def test_symbolic_link_state_directory_is_rejected(self) -> None:
         """预置符号链接不能把初始化写入重定向到非预期目录。"""

@@ -120,6 +120,36 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertIn("propose_memory", system)
         self.assertIn("explicitly asks you to remember", system)
 
+    def test_query_activates_at_most_three_skill_bodies_after_memory(self) -> None:
+        """当前用户 query 只激活最匹配的三个 Skill，并保持 Memory 在前。"""
+        example = self.paths.skills / "summarize/SKILL.md"
+        example.unlink()
+        example.parent.rmdir()
+        for name in ("delta", "alpha", "charlie", "bravo"):
+            directory = self.paths.skills / name
+            directory.mkdir()
+            (directory / "SKILL.md").write_text(
+                "---\n"
+                f"name: {name}\n"
+                "description: summarize project report\n"
+                "version: 1\n"
+                "---\n\n"
+                f"Instruction from {name}.\n",
+                encoding="utf-8",
+            )
+
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (ModelMessage(role="user", content="summarize this project report"),),
+        )
+
+        system = request.messages[0].content
+        self.assertLess(system.index("## MEMORY"), system.index("## ACTIVE SKILLS"))
+        self.assertIn("Instruction from alpha.", system)
+        self.assertIn("Instruction from bravo.", system)
+        self.assertIn("Instruction from charlie.", system)
+        self.assertNotIn("Instruction from delta.", system)
+
     def test_visible_reasoning_follows_latest_user_language(self) -> None:
         """模型可见 reasoning 与回答应跟随 Owner 最新消息的主要语言。"""
         request = ContextBuilder(self.paths).build(
