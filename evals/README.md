@@ -1,6 +1,6 @@
 # MiniClaw Agent 回归场景集
 
-Active offline gate: 10 cases
+Active offline gate: 20 cases
 
 这里保存随代码版本化的 Claw-like 使用场景。它回答两个问题：
 
@@ -17,6 +17,10 @@ Active offline gate: 10 cases
 | Workspace | `FILE-READ-001`、`FILE-GLOB-001`、`FILE-GREP-001` |
 | 安全 | `SAFE-001`、`SAFE-002` |
 | 会话状态 | `STATE-001` |
+| 写入与审批 | `WRITE-APPROVE-001`、`WRITE-OVERWRITE-001`、`EDIT-APPROVE-001`、`APPROVAL-DENY-001` |
+| 审批完整性 | `APPROVAL-HASH-001`、`APPROVAL-REPLAY-001` |
+| 受控命令 | `COMMAND-APPROVE-001`、`COMMAND-FORBID-001` |
+| HTTPS / SSRF | `HTTP-APPROVAL-001`、`HTTP-PRIVATE-001` |
 
 所有 active offline case 必须 100% PASS。任何 skipped 都按失败处理。
 

@@ -16,6 +16,7 @@ _CASE_FIELDS = {
     "capability",
     "query",
     "turns",
+    "approval_actions",
     "setup",
     "offline",
     "expected",
@@ -30,6 +31,10 @@ _EXPECTATION_FIELDS = {
     "audit_events",
     "request_contains",
     "max_tool_runs",
+    "approval_statuses",
+    "files",
+    "absent_files",
+    "error_code",
 }
 _RESPONSE_FIELDS = {
     "content",
@@ -43,7 +48,15 @@ _RESPONSE_FIELDS = {
 _TOOL_CALL_FIELDS = {"call_id", "name", "arguments"}
 _STATUSES = {"active", "planned", "retired"}
 _LAYERS = {"offline", "live", "channel", "soak", "manual_sensitive"}
-_TOOL_STATUSES = {"succeeded", "failed", "interrupted"}
+_TOOL_STATUSES = {
+    "waiting_approval",
+    "succeeded",
+    "failed",
+    "denied",
+    "interrupted",
+}
+_APPROVAL_ACTIONS = {"approve", "deny", "tamper", "replay"}
+_APPROVAL_STATUSES = {"pending", "approved", "denied", "expired", "consumed"}
 _CREDENTIAL_FIELDS = {
     "api_key",
     "apikey",
@@ -73,6 +86,10 @@ class EvalExpectation:
     audit_events: tuple[str, ...]
     request_contains: tuple[str, ...]
     max_tool_runs: int | None
+    approval_statuses: tuple[str, ...]
+    files: tuple[tuple[str, str], ...]
+    absent_files: tuple[str, ...]
+    error_code: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +104,7 @@ class EvalCase:
     capability: str
     query: str
     turns: tuple[str, ...]
+    approval_actions: tuple[str, ...]
     setup_files: tuple[tuple[str, str], ...]
     responses: tuple[ModelResponse, ...]
     expected: EvalExpectation
@@ -159,6 +177,13 @@ def _parse_case(raw: object, source: str) -> EvalCase:
     if not layers or any(layer not in _LAYERS for layer in layers):
         raise EvalCaseError(f"invalid layers at {source}")
     setup_files = _parse_setup(value.get("setup", {}), source)
+    approval_actions = _strings(
+        value.get("approval_actions", []),
+        source,
+        "approval_actions",
+    )
+    if any(action not in _APPROVAL_ACTIONS for action in approval_actions):
+        raise EvalCaseError(f"invalid approval action at {source}")
     responses = _parse_offline(value.get("offline"), source)
     if status == "active" and "offline" in layers and not responses:
         raise EvalCaseError(f"active offline case has no responses at {source}")
@@ -171,6 +196,7 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         capability=_string(value.get("capability"), source, "capability"),
         query=_string(value.get("query"), source, "query"),
         turns=_strings(value.get("turns", []), source, "turns"),
+        approval_actions=approval_actions,
         setup_files=setup_files,
         responses=responses,
         expected=_parse_expectation(value.get("expected", {}), source),
@@ -253,6 +279,17 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         maximum = _integer(maximum, source, "max_tool_runs")
         if maximum < 0:
             raise EvalCaseError(f"max_tool_runs must be non-negative at {source}")
+    approval_statuses = _strings(
+        value.get("approval_statuses", []),
+        source,
+        "approval_statuses",
+    )
+    if any(status not in _APPROVAL_STATUSES for status in approval_statuses):
+        raise EvalCaseError(f"invalid approval status at {source}")
+    files = _parse_expected_files(value.get("files", {}), source)
+    absent_files = _strings(value.get("absent_files", []), source, "absent_files")
+    if any(not _safe_relative_path(path) for path in absent_files):
+        raise EvalCaseError(f"expected file path is unsafe at {source}")
     return EvalExpectation(
         answer_contains=_strings(value.get("answer_contains", []), source, "answer_contains"),
         answer_excludes=_strings(value.get("answer_excludes", []), source, "answer_excludes"),
@@ -261,7 +298,22 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         audit_events=_strings(value.get("audit_events", []), source, "audit_events"),
         request_contains=_strings(value.get("request_contains", []), source, "request_contains"),
         max_tool_runs=maximum,
+        approval_statuses=approval_statuses,
+        files=files,
+        absent_files=absent_files,
+        error_code=_optional_string(value.get("error_code"), source),
     )
+
+
+def _parse_expected_files(raw: object, source: str) -> tuple[tuple[str, str], ...]:
+    """解析临时 Workspace 内的精确文件结果断言。"""
+    files = _object(raw, source, "expected.files")
+    parsed: list[tuple[str, str]] = []
+    for path, content in sorted(files.items()):
+        if not isinstance(path, str) or not _safe_relative_path(path):
+            raise EvalCaseError(f"expected file path is unsafe at {source}")
+        parsed.append((path, _string(content, source, f"expected.files.{path}", allow_empty=True)))
+    return tuple(parsed)
 
 
 def _reject_unknown(value: dict[str, object], allowed: set[str], source: str) -> None:

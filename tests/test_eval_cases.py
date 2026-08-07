@@ -176,6 +176,35 @@ class EvalCaseLoaderTest(unittest.TestCase):
             with self.assertRaisesRegex(EvalCaseError, "invalid JSON at cases.jsonl:1"):
                 load_cases(root)
 
+    def test_approval_actions_and_workspace_expectations_are_strict(self) -> None:
+        """审批动作与文件断言只接受固定枚举和安全相对路径。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            case = valid_case("APPROVAL-001")
+            case["approval_actions"] = ["approve", "replay"]
+            case["expected"]["approval_statuses"] = ["consumed"]
+            case["expected"]["files"] = {"notes/result.txt": "done"}
+            case["expected"]["absent_files"] = ["never.txt"]
+            case["expected"]["error_code"] = "already_decided"
+            write_cases(root, "cases.jsonl", [case])
+
+            loaded = load_cases(root)[0]
+
+        self.assertEqual(loaded.approval_actions, ("approve", "replay"))
+        self.assertEqual(loaded.expected.approval_statuses, ("consumed",))
+        self.assertEqual(loaded.expected.files, (("notes/result.txt", "done"),))
+        self.assertEqual(loaded.expected.absent_files, ("never.txt",))
+        self.assertEqual(loaded.expected.error_code, "already_decided")
+
+        for actions in (["always"], [1]):
+            with self.subTest(actions=actions), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                case = valid_case("APPROVAL-002")
+                case["approval_actions"] = actions
+                write_cases(root, "cases.jsonl", [case])
+                with self.assertRaises(EvalCaseError):
+                    load_cases(root)
+
 
 class RepositoryEvalSuiteTest(unittest.TestCase):
     """保证随代码提交的首批 Claw-like 场景始终可执行且可追溯。"""
@@ -192,7 +221,17 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
         self.assertEqual(len(active), int(match.group(1)))
         self.assertEqual(
             {case.capability for case in active},
-            {"core", "provider", "tools", "safety", "state", "error"},
+            {
+                "approval",
+                "command",
+                "core",
+                "error",
+                "network",
+                "provider",
+                "safety",
+                "state",
+                "tools",
+            },
         )
         self.assertTrue(all("offline" in case.layers and case.responses for case in active))
         self.assertEqual(len({case.id for case in cases}), len(cases))
