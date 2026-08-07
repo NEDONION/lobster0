@@ -15,6 +15,7 @@
 | [TUI 回归测试规范](phase-2/tui-regression-testing.md) | 18 个稳定用例、Textual Pilot、事件/持久化契约、PTY smoke 和发布门禁。 | 全屏快照主门禁、live LLM 硬断言。 |
 | [Phase 2.3A：exact-argv 命令执行](phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确 argv 规则、最小环境、进程组超时、输出上限与 TUI 审批。 | 任意 Shell、真实 `lark-cli`/Node 路径 smoke、OS sandbox。 |
 | [Phase 2.4：Pinned HTTPS 与 SSRF 防护](phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 公网校验、固定 IP/TLS hostname、每跳重验、文本预算、审批与 crash recovery。 | 浏览器、认证 Header、任意方法、企业代理。 |
+| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 253 tests、20 场景、stale-run recovery、七项 Doctor、历史 live smoke 和发布手册。 | 飞书 E2E、soak、自动 Prompt/Skill 演进。 |
 | [Phase 2.2：Approvals CLI（历史迁移）](phase-2/cli-approvals.md) | 记录旧入口为何被单入口 TUI 取代。 | 当前可执行命令。 |
 
 功能主线已验证到 P2.4（全仓 253 tests + 20/20 Agent cases），但 P2.3B 的真实 `lark-cli` 闭环仍明确

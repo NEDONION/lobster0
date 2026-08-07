@@ -71,6 +71,7 @@
 | TUI Trace 与回归测试规范 | [tui-regression-testing.md](engineering/phase-2/tui-regression-testing.md) |
 | Exact-argv 命令执行 | [command-execution.md](engineering/phase-2/command-execution.md) |
 | Pinned HTTPS 与 SSRF 防护 | [https-get-and-ssrf.md](engineering/phase-2/https-get-and-ssrf.md) |
+| Phase 2 回归、恢复与调试 | [testing-and-debugging.md](engineering/phase-2/testing-and-debugging.md) |
 | Approvals CLI（已迁移） | [cli-approvals.md](engineering/phase-2/cli-approvals.md) |
 
 ## 评测与版本证据
@@ -79,6 +80,7 @@
 | --- | --- |
 | [评测记录规范](evals/README.md) | 场景、baseline、release record 与本地 raw result 的边界 |
 | [Eval v0.1.0](evals/releases/v0.1.0.md) | 首个 offline-v1 基线：177 tests、10/10 Agent cases |
+| [Eval v0.2.0](evals/releases/v0.2.0.md) | Phase 2 历史基线：245 tests、20/20 Agent cases、DeepSeek live smoke |
 | [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md) | 对 OpenClaw/ZeroClaw/nanobot/RayClaw/Claw Bench/OpenJarvis 的方法映射 |
 | [R1/R2 实施计划](superpowers/plans/2026-08-08-agent-regression-benchmark.md) | TDD 任务、文件、命令与完成定义 |
 
