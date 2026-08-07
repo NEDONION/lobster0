@@ -9,7 +9,7 @@
 <p align="center">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-0F766E" />
-  <img alt="Status Phase 1" src="https://img.shields.io/badge/Status-Phase_1-2563EB" />
+  <img alt="Status Phase 2.1A" src="https://img.shields.io/badge/Status-Phase_2.1A-2563EB" />
 </p>
 
 MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。目标是在同一个 Agent Core 后接入本地
@@ -17,8 +17,9 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 Phase 1 CLI Agent 闭环：安全 `.env`、DeepSeek V4 Pro、OpenAI-compatible HTTP/SSE
-> Provider、有上限 Agent Loop、会话持久化、one-shot/交互 CLI 和离线端到端测试。工具和飞书尚未接入。
+> 当前仓库已完成 Phase 1 CLI Agent 闭环和 Phase 2.1A 第一个真实 Tool 纵切：安全 `.env`、DeepSeek
+> V4 Pro、OpenAI-compatible HTTP/SSE、Policy + ToolExecutor、脱敏 `system_info`、ToolRun/Audit、完整工具
+> 消息持久化与离线端到端测试。文件工具、审批和飞书尚未接入。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
 
 ## Planned MVP
@@ -60,6 +61,7 @@ uv run miniclaw --version
 uv run miniclaw init
 uv run miniclaw doctor
 uv run miniclaw chat --message "你好，请介绍你自己"
+uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
 uv run python -m unittest discover -s tests -v
 ```
 
@@ -76,7 +78,7 @@ uv run python -m miniclaw --version
 
 `init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md` 或 `MEMORY.md`；`doctor`
 只执行离线检查，不连接模型或 IM 平台。`chat` 从当前目录的私密 `.env` 读取 Key；省略 `--message`
-时进入 TTY 交互模式。
+时进入 TTY 交互模式。模型需要真实本机配置时可调用只读、脱敏的 `system_info`。
 
 ## Repository Layout
 
@@ -97,8 +99,10 @@ miniclaw/
 │   ├── env.py
 │   ├── paths.py
 │   ├── agent/
+│   ├── policy/
 │   ├── providers/
-│   └── storage/
+│   ├── storage/
+│   └── tools/
 ├── tests/
 └── pyproject.toml
 ```
@@ -112,6 +116,7 @@ miniclaw/
 | [系统架构](docs/architecture/20260807_系统架构.md) | 核心边界、数据流和计划中的包布局 |
 | [本地运行指南](docs/getting-started/20260807_本地运行指南.md) | 安装、凭据、初始化、CLI 对话、诊断和测试命令 |
 | [Phase 1 模块工程文档](docs/engineering/phase-1/cli-chat.md) | CLI、Provider、Runner、Storage 等逐模块实现说明 |
+| [Phase 2.1A Tool 工程文档](docs/engineering/phase-2/tool-runtime-and-system-info.md) | Tool Contract、Policy、Executor、审计、消息轨迹与 system_info |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

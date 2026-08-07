@@ -31,6 +31,9 @@
 
 ## Phase 1 模块工程文档
 
+> Phase 1 文档保留当时的实现快照。ToolHandler、Runner 和消息持久化在 Phase 2.1A 已升级；涉及这些模块时
+> 以 [Phase 2.1A Tool 工程文档](engineering/phase-2/tool-runtime-and-system-info.md) 为准。
+
 | 模块 | 文档 |
 | --- | --- |
 | 本地环境与凭据 | [environment.md](engineering/phase-1/environment.md) |
@@ -42,6 +45,12 @@
 | TurnService | [turn-service.md](engineering/phase-1/turn-service.md) |
 | CLI Chat | [cli-chat.md](engineering/phase-1/cli-chat.md) |
 | 测试与调试 | [testing-and-debugging.md](engineering/phase-1/testing-and-debugging.md) |
+
+## Phase 2 模块工程文档
+
+| 模块 | 文档 |
+| --- | --- |
+| Tool Runtime 与 system_info | [tool-runtime-and-system-info.md](engineering/phase-2/tool-runtime-and-system-info.md) |
 
 ## 设计与实施记录
 

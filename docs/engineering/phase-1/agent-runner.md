@@ -1,5 +1,9 @@
 # Phase 1 工程文档：AgentRunner
 
+> 本文记录 Phase 1 当时的 Runner。Phase 2.1A 已删除临时 `ToolHandler` Mapping，改为 Policy 控制的
+> `ToolExecutor`，并持久化中间消息；当前实现见
+> [Tool Runtime 与 system_info](../phase-2/tool-runtime-and-system-info.md)。
+
 ## 1. 模块目的
 
 `src/miniclaw/agent/runner.py` 管理一次 Turn 内部的模型与 Tool Call 循环。它接收完整 `ModelRequest`，

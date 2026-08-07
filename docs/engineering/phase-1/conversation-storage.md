@@ -1,5 +1,8 @@
 # Phase 1 工程文档：Conversation Storage
 
+> 本文记录 Phase 1 当时的存储能力。Phase 2.1A 已增加 ToolRun/Audit 和完整工具消息事务；当前实现见
+> [Tool Runtime 与 system_info](../phase-2/tool-runtime-and-system-info.md)。
+
 ## 1. 模块目的
 
 `src/miniclaw/storage/conversations.py` 是 CLI Agent 闭环对 SQLite 的唯一会话写入边界。它把 Phase 0

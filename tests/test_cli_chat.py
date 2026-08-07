@@ -51,26 +51,40 @@ class _ModelHandler(BaseHTTPRequestHandler):
         assert isinstance(server, _ModelServer)
         length = int(self.headers.get("Content-Length", "0"))
         payload = json.loads(self.rfile.read(length))
-        server.observation = {
+        observation = {
             "path": self.path,
             "authorized": self.headers.get("Authorization", "").startswith("Bearer "),
             "model": payload.get("model"),
             "stream": payload.get("stream"),
+            "tools": payload.get("tools", []),
+            "messages": payload.get("messages", []),
         }
+        server.observation = observation
+        server.observations.append(observation)
         if server.status != 200:
             self.send_response(server.status)
             self.end_headers()
             return
 
-        body = (
-            b'data: {"id":"offline-request","choices":[{"index":0,'
-            b'"delta":{"content":"offline "},"finish_reason":null}]}\n\n'
-            b'data: {"id":"offline-request","choices":[{"index":0,'
-            b'"delta":{"content":"answer"},"finish_reason":"stop"}]}\n\n'
-            b'data: {"id":"offline-request","choices":[],"usage":'
-            b'{"prompt_tokens":12,"completion_tokens":3}}\n\n'
-            b"data: [DONE]\n\n"
-        )
+        if server.tool_mode and len(server.observations) == 1:
+            body = (
+                b'data: {"id":"offline-tool","choices":[{"index":0,"delta":'
+                b'{"tool_calls":[{"index":0,"id":"call_system","type":"function",'
+                b'"function":{"name":"system_info","arguments":"{}"}}]},'
+                b'"finish_reason":"tool_calls"}],"usage":'
+                b'{"prompt_tokens":8,"completion_tokens":2}}\n\n'
+                b"data: [DONE]\n\n"
+            )
+        else:
+            body = (
+                b'data: {"id":"offline-request","choices":[{"index":0,'
+                b'"delta":{"content":"offline "},"finish_reason":null}]}\n\n'
+                b'data: {"id":"offline-request","choices":[{"index":0,'
+                b'"delta":{"content":"answer"},"finish_reason":"stop"}]}\n\n'
+                b'data: {"id":"offline-request","choices":[],"usage":'
+                b'{"prompt_tokens":12,"completion_tokens":3}}\n\n'
+                b"data: [DONE]\n\n"
+            )
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Content-Length", str(len(body)))
@@ -84,11 +98,13 @@ class _ModelHandler(BaseHTTPRequestHandler):
 class _ModelServer(ThreadingHTTPServer):
     """携带测试响应状态和脱敏观测值的本机 HTTP Server。"""
 
-    def __init__(self, status: int = 200) -> None:
+    def __init__(self, status: int = 200, *, tool_mode: bool = False) -> None:
         """绑定随机 loopback 端口并设置响应状态。"""
         super().__init__(("127.0.0.1", 0), _ModelHandler)
         self.status = status
+        self.tool_mode = tool_mode
         self.observation: dict[str, object] = {}
+        self.observations: list[dict[str, object]] = []
 
 
 class _TtyInput(io.StringIO):
@@ -100,9 +116,9 @@ class _TtyInput(io.StringIO):
 
 
 @contextlib.contextmanager
-def model_server(status: int = 200) -> Iterator[_ModelServer]:
+def model_server(status: int = 200, *, tool_mode: bool = False) -> Iterator[_ModelServer]:
     """在后台线程运行可自动关闭的本机兼容模型端点。"""
-    server = _ModelServer(status)
+    server = _ModelServer(status, tool_mode=tool_mode)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -227,6 +243,62 @@ class CliChatTest(unittest.TestCase):
         self.assertEqual(output, "")
         self.assertIn("authentication failed", error)
         self.assertNotIn("must-not-leak", error)
+
+    def test_chat_executes_system_info_tool_and_persists_trace(self) -> None:
+        """真实 CLI 应发送 Schema、执行 system_info 并保存完整 Tool 轨迹。"""
+        with tempfile.TemporaryDirectory() as directory, model_server(tool_mode=True) as server:
+            root = Path(directory)
+            home = root / "state"
+            run_cli(["init", "--home", str(home)])
+            config_path = home / "config.toml"
+            config_path.write_text(
+                config_path.read_text(encoding="utf-8").replace(
+                    "https://api.deepseek.com",
+                    f"http://127.0.0.1:{server.server_port}",
+                ),
+                encoding="utf-8",
+            )
+            env_file = root / ".env"
+            env_file.write_text("MINICLAW_MODEL_API_KEY=offline-secret\n", encoding="utf-8")
+            env_file.chmod(0o600)
+
+            with (
+                mock.patch.dict(os.environ, {}, clear=True),
+                change_directory(root),
+                mock.patch(
+                    "miniclaw.tools.system._collect_system_info",
+                    return_value={
+                        "cpu": {"model": "Test CPU", "logical_cores": 8},
+                        "unavailable_sections": [],
+                    },
+                ),
+            ):
+                code, output, error = run_cli(
+                    ["chat", "--home", str(home), "--message", "查看我的电脑配置"]
+                )
+
+            with contextlib.closing(sqlite3.connect(home / "miniclaw.db")) as connection:
+                tool_run = connection.execute(
+                    "SELECT tool_name, status, policy_action FROM tool_runs"
+                ).fetchone()
+                messages = connection.execute(
+                    "SELECT role FROM messages ORDER BY id"
+                ).fetchall()
+
+        self.assertEqual((code, output, error), (0, "offline answer\n", ""))
+        tools = server.observations[0]["tools"]
+        self.assertIsInstance(tools, list)
+        assert isinstance(tools, list)
+        self.assertEqual(tools[0]["function"]["name"], "system_info")
+        second_messages = server.observations[1]["messages"]
+        self.assertIsInstance(second_messages, list)
+        assert isinstance(second_messages, list)
+        self.assertEqual(second_messages[-1]["role"], "tool")
+        self.assertEqual(tool_run, ("system_info", "succeeded", "allow"))
+        self.assertEqual(
+            messages,
+            [("user",), ("assistant",), ("tool",), ("assistant",)],
+        )
 
     def test_chat_interactive_mode_reuses_session_until_exit(self) -> None:
         """TTY 模式应处理消息、打印角色提示，并在显式指令后成功退出。"""

@@ -17,6 +17,7 @@ from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.doctor import CheckStatus, run_local_checks
 from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
+from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import ProviderAuthenticationError, ProviderError
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
 from miniclaw.storage.conversations import (
@@ -29,6 +30,10 @@ from miniclaw.storage.conversations import (
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import MigrationError, apply_migrations
 from miniclaw.storage.repositories import OwnerRepository
+from miniclaw.storage.tooling import ToolRunRepository
+from miniclaw.tools.executor import ToolExecutor
+from miniclaw.tools.registry import ToolRegistry
+from miniclaw.tools.system import SystemInfoTool
 
 _DEFAULT_CLI_SESSION = "default"
 
@@ -202,13 +207,25 @@ async def _chat(
         api_key,
         config.provider.timeout_seconds,
     )
+    executor = ToolExecutor(
+        ToolRegistry((SystemInfoTool(),)),
+        PolicyEngine(),
+        ToolRunRepository(database),
+        result_max_chars=config.agent.tool_result_max_chars,
+    )
     service = TurnService(
         model=config.agent.model,
         sessions=SessionRepository(database),
         messages=MessageRepository(database),
         turns=TurnRepository(database),
         context=ContextBuilder(paths),
-        runner=AgentRunner(provider, max_iterations=config.agent.max_tool_iterations),
+        runner=AgentRunner(
+            provider,
+            executor,
+            max_iterations=config.agent.max_tool_iterations,
+        ),
+        state_home=paths.home,
+        workspace=config.workspace,
     )
     try:
         if message is not None:

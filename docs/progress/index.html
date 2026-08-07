@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">branch: main · Phase 1 verified</div>
+      <div class="branch">target: main · Phase 2.1A verified</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">第一条纵向主链路已经接通：CLI、Agent Runner、DeepSeek V4 Pro 与 SQLite 真实运行，并留下可回放的 Turn。</p>
+        <p class="lede">第一把真实本机工具已经接通：模型可读取脱敏电脑配置，并经过 Policy、ToolRun、Audit 和完整消息回放。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Verified milestone</span>
-        <strong>Phase 1 ✓</strong>
-        <p>CLI Agent 闭环 · 离线 E2E 与真实模型均通过</p>
+        <strong>P2.1A ✓</strong>
+        <p>Tool Runtime + system_info · 92 tests passing</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">75 <small>passing</small></span>
+        <span class="metric-value">92 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -377,7 +377,7 @@
     <section class="section" aria-labelledby="signal-title">
       <div class="section-head">
         <h2 id="signal-title">已经接通的信号链</h2>
-        <p class="section-note">每个节点都必须有离线测试与可观察结果。真实模型调用只作为显式冒烟验证，不进入普通测试。</p>
+        <p class="section-note">每个节点都有离线测试与可观察结果；Tool 参数、权限、执行和持久化不能绕开统一入口。</p>
       </div>
       <div class="signal">
         <div class="signal-node active">
@@ -392,18 +392,18 @@
         </div>
         <div class="signal-node active">
           <div class="signal-dot">03</div>
-          <div class="signal-label">Runner</div>
-          <p>8 轮安全上限</p>
+          <div class="signal-label">Executor</div>
+          <p>参数 + Policy</p>
         </div>
         <div class="signal-node active">
           <div class="signal-dot">04</div>
-          <div class="signal-label">DeepSeek</div>
-          <p>V4 Pro + SSE</p>
+          <div class="signal-label">System info</div>
+          <p>固定查询 + 脱敏</p>
         </div>
         <div class="signal-node active">
           <div class="signal-dot">05</div>
-          <div class="signal-label">SQLite</div>
-          <p>Turn 与 Message</p>
+          <div class="signal-label">Trace</div>
+          <p>ToolRun + Audit</p>
         </div>
       </div>
     </section>
@@ -424,10 +424,10 @@
           <div><h3>CLI Agent 闭环</h3><p>Provider、Context、Runner、Turn 持久化与真实模型验证。</p></div>
           <span class="pill">COMPLETED</span>
         </article>
-        <article class="phase queued">
+        <article class="phase current">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool 与安全</h3><p>Workspace、文件、HTTP、Shell、Policy 与审批。</p></div>
-          <span class="pill">PLANNED</span>
+          <div><h3>Tool 与安全</h3><p>P2.1A system_info 已完成；下一步是 Workspace 只读文件与搜索。</p></div>
+          <span class="pill">IN PROGRESS</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 3</div>
@@ -459,16 +459,16 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 1 exit gate</p>
+        <p class="eyebrow">Phase 2.1A exit gate</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
-          <li class="complete">Phase 1 工程规格与模块边界</li>
-          <li class="complete">DeepSeek V4 Pro 官方协议核验</li>
-          <li class="complete">严格 .env 加载与密钥迁移</li>
-          <li class="complete">OpenAI-compatible Provider + SSE</li>
-          <li class="complete">Agent Runner 与 8 轮上限</li>
-          <li class="complete">Turn / Message SQLite 持久化</li>
-          <li class="complete">CLI 离线 E2E 与真实模型冒烟验证</li>
+          <li class="complete">Tool Contract 与唯一 Registry</li>
+          <li class="complete">Policy + ToolExecutor 唯一执行入口</li>
+          <li class="complete">脱敏 system_info 与固定 macOS 命令</li>
+          <li class="complete">ToolRun / Audit 原子状态迁移</li>
+          <li class="complete">完整 Tool 消息持久化与恢复</li>
+          <li class="complete">CLI 两轮 HTTP/SSE 离线端到端测试</li>
+          <li class="complete">92 tests + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -476,14 +476,15 @@
         <h3>不会漂移的边界</h3>
         <div class="decision"><code>model</code><p>deepseek-v4-pro</p></div>
         <div class="decision"><code>credentials</code><p>本地 .env，0600，永不进入 Git。</p></div>
-        <div class="decision"><code>runtime</code><p>单进程 asyncio + 一个 SQLite。</p></div>
-        <div class="decision"><code>scope</code><p>先完成纵向主链路，工具和飞书按后续 Phase 接入。</p></div>
+        <div class="decision"><code>runtime</code><p>单进程 asyncio + 一个 SQLite + 顺序 Tool Call。</p></div>
+        <div class="decision"><code>safety</code><p>固定命令、输入/输出白名单、异常脱敏、参数哈希审计。</p></div>
+        <div class="decision"><code>scope</code><p>P2.1A 只交付 system_info；文件工具、审批和飞书继续分阶段。</p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-07 · 75 tests + live DeepSeek verified</span>
-      <a href="../superpowers/specs/2026-08-07-phase-1-cli-agent-design.md">查看 Phase 1 工程规格</a>
+      <span>Last updated · 2026-08-07 · 92 tests + local Mac smoke verified</span>
+      <a href="../engineering/phase-2/tool-runtime-and-system-info.md">查看 Phase 2.1A 工程文档</a>
     </footer>
   </main>
 </body>
