@@ -9,7 +9,7 @@
 **Tech Stack:** Python 3.12+、Textual 8.2.x、Rich（Textual 已安装依赖）、SQLite、argparse、unittest、Ruff；不新增直接依赖。
 
 > **完成记录（2026-08-08）：** Task 0–5 已执行。功能提交为 `0eb6052`、`a8db692`、`e9fa616`、
-> `a26efe3`；新鲜门禁为 270/270 tests、20/20 offline Agent cases、Ruff PASS。下方 checkbox 保留原始
+> `a26efe3`；合并主分支后门禁为 273/273 tests、21/21 offline Agent cases、Ruff PASS。下方 checkbox 保留原始
 > TDD 执行脚本，不作为当前进度来源；当前事实以本完成记录、工程文档与 `docs/progress/index.html` 为准。
 
 ## Global Constraints

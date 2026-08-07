@@ -2,7 +2,7 @@
 
 > 状态：`run_command` 已进入唯一 Textual TUI 的共享 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
 >
-> 当前门禁：270/270 tests、20/20 offline Agent cases、Ruff PASS
+> 当前门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 
@@ -170,7 +170,27 @@ uv run ruff check .
 覆盖：硬禁止、exact/extra argv、配置矩阵、真实 subprocess、秘密环境清理、stdin EOF、双流 1 MiB、普通超时、
 后台子进程占管道、transport 回收、Runtime 注册、TUI scoped approvals、失败不授权和 forbidden 无 ToolRun。
 
-## 12. 已知边界
+## 12. 打开应用事故与通用修复
+
+用户输入“你能帮我打开飞书吗”时，旧 Provider 可见 description 没有解释 direct argv 和 Approval 语义。
+真实 DeepSeek 一次直接口头拒绝，另一次在读取 Darwin 后生成 `bash -c` 与管道；两条路径都没有到达安全的
+应用启动 Approval。
+
+当前契约明确要求：本机动作先尝试已列出的 Tool；需要 Approval 不等于 Tool 不可用；`run_command` 只能调用
+单个 executable，不能使用 Shell、管道、重定向或 inline code。macOS 打开应用的通用形态是：
+
+```json
+{
+  "program": "open",
+  "args": ["-a", "Lark"]
+}
+```
+
+这不是飞书硬编码。任何应用名都走相同 `open -a <Application>` 形态、现有 `normalize_command()` 和参数绑定
+Approval。`ACTION-OPEN-APP-001` 的 offline gate 断言状态停在 `waiting_approval`；真实 planning probe 只检查
+Provider 选择，不经过 Executor，因此验证时不会启动应用。
+
+## 13. 已知边界
 
 - 这是应用层 Policy，不是 OS sandbox；受批准的普通程序仍拥有当前用户本来拥有的 OS 权限。
 - 新进程组能终止正常后代；恶意程序主动重新 `setsid` 逃离进程组，需要 Phase 7 的 Seatbelt/container 级隔离。

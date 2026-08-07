@@ -17,16 +17,17 @@
 
 ```mermaid
 flowchart LR
-    CHANGE["代码或 Prompt 变更"] --> UNIT["245 unit/integration tests"]
+    CHANGE["代码或 Prompt 变更"] --> UNIT["258 unit/integration tests"]
     UNIT --> VALIDATE["eval validate"]
-    VALIDATE --> OFFLINE["20 active offline cases"]
+    VALIDATE --> OFFLINE["21 active offline cases"]
     OFFLINE --> RUFF["Ruff + diff check"]
     RUFF --> LIVE["release-only DeepSeek smoke"]
     LIVE --> RECORD["release record"]
 ```
 
-当前提交门禁要求：unittest 全绿、Ruff 全绿、场景输入全部有效、20 个 active offline case 100% PASS。
-Phase 2 release 已执行一次脱敏 DeepSeek smoke；重复 3 次采样、费用趋势和 compare CLI 仍是后续能力。
+当前提交门禁要求：unittest 全绿、Ruff 全绿、场景输入全部有效、21 个 active offline case 100% PASS。
+Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已单独完成 3 次 planning probe。
+通用 live runner、费用趋势和 compare CLI 仍是后续能力。
 
 ## 版本规则
 

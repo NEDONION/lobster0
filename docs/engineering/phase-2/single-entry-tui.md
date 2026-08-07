@@ -1,6 +1,6 @@
 # Phase 2.2B：单入口 Textual TUI 工程文档
 
-> 状态：已实现；当前全仓通过 270 项单元/集成测试与 20/20 离线 Agent 场景。
+> 状态：已实现；当前全仓通过 273 项单元/集成测试与 21/21 离线 Agent 场景。
 > 本文描述当前代码，不描述未来设想。
 
 ## 1. 这次解决了什么
@@ -306,11 +306,11 @@ flowchart TD
 | Projection | 单一流式 Assistant、Provider reasoning、Tool 参数/状态/耗时/预览、动态 call ID 安全 |
 | Trace interaction | 单卡 Enter 展开、Ctrl+O 全展开/收起、概要始终可见、ANSI 过滤 |
 | Approval | 完整参数、Deny 默认焦点、Once/Session/Always Core scope、Esc=Deny、同一 Service 续跑 |
-| Reliability | 65 KiB+ 长文本失败/取消逐字恢复、Runtime 缺失不丢输入 |
+| Reliability | 250,000 字符 bracketed paste 失败/取消逐字恢复、Runtime 缺失不丢输入 |
 | Language | 默认中文、`/lang zh|en`、reasoning 跟随用户语言 Prompt |
 | Telemetry | 真实 usage、N/A、Provider Request ID、Tool/迭代/耗时 |
-| Full suite | 270/270 tests + Ruff + diff check |
-| Agent gate | 20/20 active offline Claw-like cases |
+| Full suite | 273/273 tests + Ruff + diff check |
+| Agent gate | 21/21 active offline Claw-like cases |
 
 运行命令：
 

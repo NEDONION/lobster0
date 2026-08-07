@@ -8,6 +8,7 @@ import os
 import platform
 import shutil
 import subprocess
+from pathlib import Path
 from typing import Any
 
 from miniclaw.providers.base import JsonValue
@@ -19,17 +20,21 @@ from miniclaw.tools.base import (
     ToolValidationError,
 )
 
-_SECTIONS = ("os", "cpu", "memory", "storage", "gpu")
+_DEFAULT_SECTIONS = ("os", "cpu", "memory", "storage", "gpu")
+_SECTIONS = (*_DEFAULT_SECTIONS, "applications")
+_MAC_APPLICATION_ROOTS = (Path("/Applications"),)
+_APPLICATION_LIMIT = 200
 
 
 class SystemInfoTool:
-    """返回操作系统、处理器、内存、磁盘和显卡的安全摘要。"""
+    """返回硬件摘要，以及显式请求的安全 macOS 应用名称清单。"""
 
     definition = ToolDefinition(
         name="system_info",
         description=(
-            "Read the current machine's real operating system, CPU, memory, storage, "
-            "and GPU information. Use this instead of saying you cannot inspect the computer."
+            "Read the current machine's real operating system, CPU, memory, storage, GPU, "
+            "or explicitly requested installed macOS application names. Use the applications "
+            "section to resolve an exact app name before launching it."
         ),
         parameters={
             "type": "object",
@@ -52,7 +57,7 @@ class SystemInfoTool:
         if unexpected:
             raise ToolValidationError("system_info only accepts the 'sections' parameter")
 
-        sections = arguments.get("sections", list(_SECTIONS))
+        sections = arguments.get("sections", list(_DEFAULT_SECTIONS))
         if not isinstance(sections, list) or not sections:
             raise ToolValidationError("sections must be a non-empty list")
         if any(not isinstance(section, str) or section not in _SECTIONS for section in sections):
@@ -123,9 +128,43 @@ def _collect_system_info(sections: list[JsonValue]) -> dict[str, JsonValue]:
         data["gpu"] = [{"model": model} for model in models]
         if system != "Darwin" or not hardware_available or "gpus" not in hardware:
             unavailable.append("gpu")
+    if "applications" in requested:
+        applications = _mac_applications() if system == "Darwin" else []
+        data["applications"] = applications
+        if system != "Darwin" or not applications:
+            unavailable.append("applications")
 
     data["unavailable_sections"] = unavailable
     return data
+
+
+def _mac_applications(
+    roots: tuple[Path, ...] = _MAC_APPLICATION_ROOTS,
+) -> list[str]:
+    """从固定目录返回有界、去路径且不跟随 symlink 的 macOS 应用名。"""
+    names: set[str] = set()
+    for root in roots:
+        try:
+            entries = root.iterdir()
+        except OSError:
+            continue
+        try:
+            for entry in entries:
+                try:
+                    if (
+                        entry.is_symlink()
+                        or entry.suffix.casefold() != ".app"
+                        or not entry.is_dir()
+                    ):
+                        continue
+                except OSError:
+                    continue
+                name = entry.name[:-4]
+                if name:
+                    names.add(name)
+        except OSError:
+            continue
+    return sorted(names, key=str.casefold)[:_APPLICATION_LIMIT]
 
 
 def _mac_hardware() -> dict[str, Any]:

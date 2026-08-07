@@ -119,8 +119,8 @@ class OfflineEvalRunnerTest(unittest.IsolatedAsyncioTestCase):
 
         suite = await run_offline_suite(cases)
 
-        self.assertEqual(suite.total, 20)
-        self.assertEqual(suite.passed, 20, suite.cases)
+        self.assertEqual(suite.total, 21)
+        self.assertEqual(suite.passed, 21, suite.cases)
         self.assertEqual(suite.failed, 0)
 
 

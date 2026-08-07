@@ -2,7 +2,7 @@
 
 > 状态：`http_get` 已进入唯一 Textual TUI 的共享 `AgentRuntime`
 >
-> 当前门禁：270/270 tests、20/20 offline Agent cases、Ruff PASS
+> 当前门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 

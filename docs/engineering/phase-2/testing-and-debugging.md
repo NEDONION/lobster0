@@ -2,7 +2,7 @@
 
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> 当前单入口 TUI 基线：270/270 tests、20/20 offline Agent cases、Ruff PASS；历史 PTY smoke PASS
+> 当前单入口 TUI 基线：273/273 tests、21/21 offline Agent cases、Ruff PASS；历史 PTY smoke PASS
 >
 > 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
@@ -21,7 +21,7 @@ Phase 2 不只要求“某个 Tool 能跑”。每次版本都必须证明：
 
 ```mermaid
 flowchart TB
-    UNIT["Layer 1: 270 deterministic tests"] --> OFFLINE["Layer 2: 20 versioned Agent cases"]
+    UNIT["Layer 1: 273 deterministic tests"] --> OFFLINE["Layer 2: 21 versioned Agent cases"]
     OFFLINE --> LIVE["Layer 3: release-only DeepSeek smoke"]
     LIVE --> DOC["Release record + progress docs"]
     DOC --> RELEASE["Phase 2 release gate"]
@@ -46,7 +46,7 @@ git diff --check
 - diff check 无空白错误；
 - 文档中的计数来自这次新鲜输出，不手算、不预测。
 
-## 3. 20 条 Claw-like 回归场景
+## 3. 21 条 Claw-like 回归场景
 
 ### 3.1 Phase 1 / P2.1 基线
 
@@ -74,6 +74,7 @@ git diff --check
 | 参数篡改 | `APPROVAL-HASH-001` | `hash_mismatch`；无副作用 |
 | 命令批准 | `COMMAND-APPROVE-001` | exact argv `/usr/bin/true` 成功 |
 | Shell 硬拒绝 | `COMMAND-FORBID-001` | `command_forbidden`；无 Approval |
+| 打开应用 | `ACTION-OPEN-APP-001` | direct `open -a`；waiting Approval；live planning 3 次采样 |
 | HTTPS pending | `HTTP-APPROVAL-001` | 公网 IP 只创建 waiting Approval，不访问网络 |
 | SSRF | `HTTP-PRIVATE-001` | `127.0.0.1` 审批前拒绝 |
 | 重放 | `APPROVAL-REPLAY-001` | 首次执行一次；第二次 `already_decided` |
@@ -218,6 +219,12 @@ uv run miniclaw
 进入 TUI 后输入同样的 query；需审批动作在 Modal 中选择 **Allow once** 或 **Deny**。每次重跑
 live smoke 都必须产生新的脱敏 release record，不能把 v0.2.0 的历史记录写成新版本证据。
 
+`ACTION-OPEN-APP-001` 额外要求真实 DeepSeek 做三次 planning probe：先调用 `system_info(applications)`，拿到
+本机真实名称 `Lark` 后必须选择 `run_command(open, [-a, Lark])`，不能口头拒绝，也不能生成 `bash -c`、管道
+或重定向。probe 直接
+观察 Provider 响应，不进入 ToolExecutor，因此不会弹 Approval 或启动飞书；真正的 TUI smoke 仍必须人工看到
+Approval 后再决定 Allow once / Deny。
+
 验收观察的是 Tool/Approval 行为，不要求模型逐字回答一致。不得把 API Key、完整环境、未脱敏用户数据或网页响应保存到
 release record。
 
@@ -276,8 +283,8 @@ uv run miniclaw
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
 - [x] Doctor 七项且网络/命令/数据库修改为零；
-- [x] 270/270 tests；
-- [x] 20/20 offline Agent cases；
+- [x] 273/273 tests；
+- [x] 21/21 offline Agent cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
 - [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
 - [x] Provider reasoning、Tool 参数/状态/耗时/结果可展开回归；

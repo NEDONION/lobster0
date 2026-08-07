@@ -34,7 +34,8 @@ class RunCommandTool:
             "Run a single executable directly with exact arguments in the workspace. "
             "Never use a shell, pipeline, redirection, or inline code. Call this tool to "
             "request approval when needed instead of claiming it is unavailable. On macOS, "
-            'launch an application with open -a: program "open", args ["-a", "Application"].'
+            "if the exact installed app name is uncertain, call system_info applications "
+            'first; then launch it with open -a: program "open", args ["-a", "Exact Name"].'
         ),
         parameters={
             "type": "object",
