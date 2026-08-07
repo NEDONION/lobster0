@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
+from textual.screen import ModalScreen
 from textual.widgets import Button, Footer, Markdown, Static, TextArea
 from textual.worker import Worker
 
@@ -92,6 +94,98 @@ class ToolCard(Static):
         self.update("\n".join(lines))
 
 
+class ApprovalModal(ModalScreen[bool]):
+    """展示完整绑定参数，并只提供一次允许或拒绝。"""
+
+    CSS = """
+    ApprovalModal {
+        align: center middle;
+        background: $background 70%;
+    }
+
+    #approval-dialog {
+        width: 80%;
+        max-width: 100;
+        height: 80%;
+        border: round $warning;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #approval-body {
+        height: 1fr;
+        margin: 1 0;
+    }
+
+    #approval-actions {
+        height: 3;
+        align-horizontal: right;
+    }
+
+    #approval-actions Button {
+        margin-left: 1;
+    }
+    """
+
+    BINDINGS = [Binding("escape", "deny", show=False, priority=True)]
+
+    def __init__(self, event: RunEvent) -> None:
+        """从已提交的 approval_required 事件读取可见字段。"""
+        super().__init__()
+        approval_id = event.data.get("approval_id")
+        tool_name = event.data.get("tool_name")
+        summary = event.data.get("summary")
+        arguments = event.data.get("arguments")
+        expires_at = event.data.get("expires_at")
+        if (
+            type(approval_id) is not int
+            or not isinstance(tool_name, str)
+            or not isinstance(summary, str)
+            or not isinstance(arguments, dict)
+            or not isinstance(expires_at, str)
+        ):
+            raise ValueError("invalid approval event")
+        self.approval_id = approval_id
+        self.tool_name = _terminal_safe(tool_name)
+        self.summary = _terminal_safe(summary)
+        self.arguments = _terminal_safe(
+            json.dumps(arguments, ensure_ascii=False, indent=2, sort_keys=True)
+        )
+        self.expires_at = _terminal_safe(expires_at)
+
+    def compose(self) -> ComposeResult:
+        """生成带文字标签、滚动参数区和两个决定按钮的弹窗。"""
+        yield Vertical(
+            Static(f"Approval #{self.approval_id}", markup=False),
+            Static(f"Tool: {self.tool_name}", markup=False),
+            Static(self.summary, markup=False),
+            VerticalScroll(
+                Static(self.arguments, markup=False),
+                id="approval-body",
+            ),
+            Static(f"Expires: {self.expires_at}", markup=False),
+            Horizontal(
+                Button("Deny", id="approval-deny", variant="error"),
+                Button("Allow once", id="approval-allow-once", variant="warning"),
+                id="approval-actions",
+            ),
+            id="approval-dialog",
+        )
+
+    def on_mount(self) -> None:
+        """危险操作默认聚焦 Deny。"""
+        self.query_one("#approval-deny", Button).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """关闭弹窗并返回唯一一次人工决定。"""
+        event.stop()
+        self.dismiss(event.button.id == "approval-allow-once")
+
+    def action_deny(self) -> None:
+        """Esc 与显式 Deny 使用同一安全决定。"""
+        self.dismiss(False)
+
+
 class MiniClawApp(App[int]):
     """展示状态、对话记录和唯一输入框的本地 Agent 界面。"""
 
@@ -160,6 +254,7 @@ class MiniClawApp(App[int]):
         self._assistant_widgets: dict[int, Markdown] = {}
         self._tool_cards: dict[str, ToolCard] = {}
         self._active_worker: Worker[None] | None = None
+        self._pending_approval: RunEvent | None = None
 
     def compose(self) -> ComposeResult:
         """生成状态栏、可滚动记录、输入区和快捷键页脚。"""
@@ -205,6 +300,9 @@ class MiniClawApp(App[int]):
             await self._finish_assistant(event)
         elif event.kind == "tool_requested":
             await self._request_tool(event)
+        elif event.kind == "approval_required":
+            self._pending_approval = event
+            await self._mark_tool_waiting(event)
         elif event.kind in {"tool_started", "tool_finished"}:
             await self._update_tool(event)
         self.query_one("#transcript", VerticalScroll).scroll_end(animate=False)
@@ -292,6 +390,12 @@ class MiniClawApp(App[int]):
         preview = preview_value if isinstance(preview_value, str) else ""
         card.set_status(status, duration_ms=duration_ms, preview=preview)
 
+    async def _mark_tool_waiting(self, event: RunEvent) -> None:
+        """把审批对应的现有 Tool 卡片标为等待人工决定。"""
+        call_id = event.data.get("call_id")
+        if isinstance(call_id, str) and call_id in self._tool_cards:
+            self._tool_cards[call_id].set_status("waiting_approval")
+
     async def handle_local_command(self, text: str) -> bool:
         """处理固定 Slash Command；普通消息返回 False 交给 Agent。"""
         command = text.strip()
@@ -349,6 +453,7 @@ class MiniClawApp(App[int]):
     async def _run_turn(self, text: str) -> None:
         """在后台执行一次 Turn，并始终恢复唯一输入框。"""
         assert self.runtime is not None
+        completed = False
         try:
             await self.runtime.service.handle(
                 self.runtime.owner_id,
@@ -356,6 +461,7 @@ class MiniClawApp(App[int]):
                 self.session_id,
                 on_event=self.on_run_event,
             )
+            completed = True
         except asyncio.CancelledError:
             await self._append_local_message("Turn cancelled.")
             raise
@@ -365,6 +471,64 @@ class MiniClawApp(App[int]):
             composer = self.query_one("#composer", Composer)
             composer.disabled = False
             composer.focus()
+            if completed:
+                self._show_pending_approval()
+
+    def _show_pending_approval(self) -> None:
+        """在原 Turn 已安全返回后展示一个待审批弹窗。"""
+        event = self._pending_approval
+        self._pending_approval = None
+        if event is None:
+            return
+        try:
+            modal = ApprovalModal(event)
+        except ValueError:
+            self.run_worker(
+                self._append_local_message("Approval event is invalid."),
+                exit_on_error=False,
+            )
+            return
+        self.push_screen(
+            modal,
+            lambda approved: self._start_approval(modal.approval_id, approved),
+        )
+
+    def _start_approval(self, approval_id: int, approved: bool | None) -> None:
+        """从 Modal 回调启动唯一 continuation Worker。"""
+        if approved is None or self.runtime is None:
+            return
+        composer = self.query_one("#composer", Composer)
+        composer.disabled = True
+        self._active_worker = self.run_worker(
+            self._continue_approval(approval_id, approved),
+            group="turn",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _continue_approval(self, approval_id: int, approved: bool) -> None:
+        """只经 TurnService 继续已绑定动作，并恢复输入框。"""
+        assert self.runtime is not None
+        completed = False
+        try:
+            await self.runtime.service.continue_approval(
+                self.runtime.owner_id,
+                approval_id,
+                approved=approved,
+                on_event=self.on_run_event,
+            )
+            completed = True
+        except asyncio.CancelledError:
+            await self._append_local_message("Turn cancelled.")
+            raise
+        except Exception as error:
+            await self._append_local_message(f"Turn failed: {type(error).__name__}")
+        finally:
+            composer = self.query_one("#composer", Composer)
+            composer.disabled = False
+            composer.focus()
+            if completed:
+                self._show_pending_approval()
 
     async def _append_user_message(self, content: str) -> None:
         """把原始用户文本安全显示在 transcript。"""

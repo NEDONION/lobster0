@@ -13,7 +13,7 @@ from textual.widgets import Button, Markdown, Static, TextArea
 from miniclaw.agent.events import RunEvent
 from miniclaw.paths import build_state_paths
 from miniclaw.tools.base import ToolDefinition, ToolRisk
-from miniclaw.tui.app import MiniClawApp, ToolCard, _terminal_safe
+from miniclaw.tui.app import ApprovalModal, MiniClawApp, ToolCard, _terminal_safe
 
 if TYPE_CHECKING:
     from miniclaw.runtime import AgentRuntime
@@ -49,6 +49,71 @@ class BlockingTurnService:
         except asyncio.CancelledError:
             self.cancelled = True
             raise
+
+
+class ApprovalTurnService:
+    """先请求审批，再记录 TUI 通过同一 TurnService 的续跑决定。"""
+
+    def __init__(self) -> None:
+        self.decisions: list[tuple[int, int, bool]] = []
+
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+        assert on_event is not None
+        await on_event(
+            RunEvent(
+                "tool_requested",
+                31,
+                {
+                    "call_id": "write-1",
+                    "tool_name": "write_file",
+                    "summary": "write_file",
+                },
+            )
+        )
+        await on_event(
+            RunEvent(
+                "approval_required",
+                31,
+                {
+                    "approval_id": 7,
+                    "call_id": "write-1",
+                    "tool_name": "write_file",
+                    "summary": "write_file notes.txt",
+                    "arguments": {"path": "/safe/workspace/notes.txt", "content": "hello"},
+                    "expires_at": "2030-01-01T00:00:00+00:00",
+                },
+            )
+        )
+
+    async def continue_approval(
+        self,
+        owner_id,
+        approval_id,
+        *,
+        approved,
+        on_event=None,
+    ):
+        self.decisions.append((owner_id, approval_id, approved))
+        assert on_event is not None
+        await on_event(
+            RunEvent(
+                "tool_finished",
+                31,
+                {
+                    "call_id": "write-1",
+                    "tool_name": "write_file",
+                    "status": "succeeded" if approved else "denied",
+                },
+            )
+        )
+        await on_event(RunEvent("model_text_delta", 32, {"text": "continued"}))
+        await on_event(
+            RunEvent(
+                "turn_finished",
+                32,
+                {"status": "completed", "content": "continued"},
+            )
+        )
 
 
 class TuiShellTest(unittest.IsolatedAsyncioTestCase):
@@ -136,6 +201,71 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 str(message.render()) for message in app.query(".local-message")
             )
             self.assertIn("cancelled", output.lower())
+
+    async def test_approval_modal_shows_exact_arguments_and_allows_once(self) -> None:
+        """审批只能在原 Turn 返回后，通过同一 Service 选择一次 Allow once。"""
+        service = ApprovalTurnService()
+        runtime = cast(
+            "AgentRuntime",
+            SimpleNamespace(
+                owner_id=1,
+                model="deepseek-v4-pro",
+                workspace=self.paths.workspace,
+                service=service,
+                tool_definitions=(),
+            ),
+        )
+        app = MiniClawApp(self.paths, runtime=runtime)
+
+        async with app.run_test() as pilot:
+            app.query_one("#composer", TextArea).load_text("write")
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            modal = app.screen
+            self.assertIsInstance(modal, ApprovalModal)
+            self.assertEqual(modal.query_one("#approval-deny"), app.focused)
+            visible = "\n".join(str(widget.render()) for widget in modal.query(Static))
+            self.assertIn("write_file notes.txt", visible)
+            self.assertIn("/safe/workspace/notes.txt", visible)
+            self.assertIn('"content": "hello"', visible)
+            self.assertEqual(len(modal.query("#approval-allow-once")), 1)
+            self.assertEqual(len(modal.query("#approval-always")), 0)
+
+            await pilot.click("#approval-allow-once")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            self.assertEqual(service.decisions, [(1, 7, True)])
+            self.assertEqual(app.query_one(ToolCard).status, "succeeded")
+            self.assertEqual(app.query_one("#assistant-32", Markdown).source, "continued")
+
+    async def test_approval_escape_denies_once(self) -> None:
+        """审批默认焦点和 Esc 都必须走 Deny，不能静默留下待执行动作。"""
+        service = ApprovalTurnService()
+        runtime = cast(
+            "AgentRuntime",
+            SimpleNamespace(
+                owner_id=1,
+                model="deepseek-v4-pro",
+                workspace=self.paths.workspace,
+                service=service,
+                tool_definitions=(),
+            ),
+        )
+        app = MiniClawApp(self.paths, runtime=runtime)
+
+        async with app.run_test() as pilot:
+            app.query_one("#composer", TextArea).load_text("write")
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.press("escape")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+            self.assertEqual(service.decisions, [(1, 7, False)])
+            self.assertEqual(app.query_one(ToolCard).status, "denied")
 
     async def test_eighty_by_twenty_four_starts_with_one_focused_composer(self) -> None:
         """小终端仍应显示三块主区域，并把键盘焦点放在唯一输入框。"""
