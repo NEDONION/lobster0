@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -18,8 +20,10 @@ from textual.worker import Worker
 from miniclaw import __version__
 from miniclaw.agent.events import RunEvent
 from miniclaw.bootstrap import BootstrapError, initialize_state
-from miniclaw.config import ConfigError
+from miniclaw.config import ConfigError, load_config
+from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.paths import StatePaths
+from miniclaw.runtime import create_runtime
 from miniclaw.storage.database import DatabaseError
 from miniclaw.storage.migrations import MigrationError
 
@@ -249,7 +253,7 @@ class MiniClawApp(App[int]):
         self.paths = paths
         self.runtime = runtime
         self.session_id = _DEFAULT_SESSION
-        self._state_ready = runtime is not None or _is_initialized(paths)
+        self._state_ready = runtime is not None
         self._assistant_text: dict[int, str] = {}
         self._assistant_widgets: dict[int, Markdown] = {}
         self._tool_cards: dict[str, ToolCard] = {}
@@ -282,6 +286,12 @@ class MiniClawApp(App[int]):
         composer = self.query("#composer")
         if composer:
             composer.first(TextArea).focus()
+
+    async def on_unmount(self) -> None:
+        """在 Textual 事件循环关闭前释放唯一 Provider。"""
+        close = getattr(self.runtime, "aclose", None)
+        if close is not None:
+            await close()
 
     def _status_text(self) -> str:
         """返回不暴露本机绝对路径的单行运行状态。"""
@@ -586,7 +596,15 @@ class MiniClawApp(App[int]):
             return
         try:
             initialize_state(self.paths)
-        except (BootstrapError, ConfigError, DatabaseError, MigrationError, OSError) as error:
+            self.runtime = _load_runtime(self.paths)
+        except (
+            BootstrapError,
+            ConfigError,
+            DatabaseError,
+            DotEnvError,
+            MigrationError,
+            OSError,
+        ) as error:
             self.query_one("#onboarding-error", Static).update(
                 _terminal_safe(f"Initialization failed: {error}")
             )
@@ -619,5 +637,16 @@ def _is_initialized(paths: StatePaths) -> bool:
 
 def run_tui(paths: StatePaths) -> int:
     """运行 MiniClaw 全屏应用并返回稳定进程退出码。"""
-    result = MiniClawApp(paths).run()
+    runtime = _load_runtime(paths) if _is_initialized(paths) else None
+    result = MiniClawApp(paths, runtime=runtime).run()
     return 0 if result is None else result
+
+
+def _load_runtime(paths: StatePaths) -> AgentRuntime:
+    """从当前 `.env` 和已初始化状态装配唯一 Runtime。"""
+    load_dotenv(Path.cwd() / ".env")
+    config = load_config(paths)
+    api_key = os.environ.get(config.provider.api_key_env, "").strip()
+    if not api_key:
+        raise ConfigError(f"{config.provider.api_key_env} is not configured")
+    return create_runtime(config, paths, api_key)

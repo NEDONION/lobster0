@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
@@ -25,15 +26,26 @@ def run_cli(arguments: list[str]) -> tuple[int, str, str]:
 class CliTest(unittest.TestCase):
     """验证帮助、版本和已有本地状态命令的稳定行为。"""
 
-    def test_no_arguments_prints_help(self) -> None:
-        """无参数启动时应成功打印帮助，避免空白退出或伪装已实现的子命令。"""
-        output = io.StringIO()
+    def test_bare_command_enters_the_only_tui_with_selected_home(self) -> None:
+        """裸 miniclaw 必须进入 TUI，不能打印帮助或跳到另一套聊天循环。"""
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch("miniclaw.cli._is_tui_terminal", return_value=True),
+            mock.patch("miniclaw.cli.run_tui", return_value=0) as run_tui,
+        ):
+            exit_code, output, error = run_cli(["--home", directory])
 
-        with contextlib.redirect_stdout(output):
-            exit_code = main([])
+        self.assertEqual((exit_code, output, error), (0, "", ""))
+        self.assertEqual(run_tui.call_args.args[0].home, Path(directory).resolve())
 
-        self.assertEqual(exit_code, 0)
-        self.assertIn("MiniClaw", output.getvalue())
+    def test_bare_command_rejects_non_interactive_terminal(self) -> None:
+        """全屏 TUI 不得在 pipe、CI 或 TERM=dumb 中挂起。"""
+        with mock.patch("miniclaw.cli._is_tui_terminal", return_value=False):
+            exit_code, output, error = run_cli([])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(output, "")
+        self.assertIn("interactive terminal", error)
 
     def test_version_option_prints_version(self) -> None:
         """版本参数应以成功状态退出，并输出当前可安装包版本。"""
@@ -45,15 +57,27 @@ class CliTest(unittest.TestCase):
 
         self.assertIn("miniclaw 0.1.0", output.getvalue())
 
-    def test_help_lists_chat_command(self) -> None:
-        """顶层帮助应公开可用的 chat 入口。"""
+    def test_help_lists_only_tui_maintenance_commands(self) -> None:
+        """帮助只保留 init/doctor/eval，不再公开 chat 或 approvals 分叉入口。"""
         output = io.StringIO()
 
         with contextlib.redirect_stdout(output):
             with self.assertRaisesRegex(SystemExit, "0"):
                 main(["--help"])
 
-        self.assertIn("chat", output.getvalue())
+        help_text = output.getvalue()
+        self.assertIn("init", help_text)
+        self.assertIn("doctor", help_text)
+        self.assertIn("eval", help_text)
+        self.assertNotIn("chat", help_text)
+        self.assertNotIn("approvals", help_text)
+
+    def test_legacy_chat_tui_and_approval_aliases_are_not_commands(self) -> None:
+        """历史 REPL、TUI 别名和审批 CLI 都不能形成第二个人类交互入口。"""
+        for command in ("chat", "tui", "approvals"):
+            with self.subTest(command=command), contextlib.redirect_stderr(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, "2"):
+                    main([command])
 
     def test_init_creates_state_and_is_repeatable(self) -> None:
         """CLI 重复初始化应成功，并清楚区分首次创建和已有状态。"""

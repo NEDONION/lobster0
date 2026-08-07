@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
+from unittest import mock
 
 from textual.containers import VerticalScroll
 from textual.widgets import Button, Markdown, Static, TextArea
@@ -437,8 +438,9 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(app.query("#onboarding")), 1)
             self.assertIsInstance(app.query_one("#initialize"), Button)
 
-            await pilot.click("#initialize")
-            await pilot.pause()
+            with mock.patch("miniclaw.tui.app._load_runtime", return_value=self.runtime):
+                await pilot.click("#initialize")
+                await pilot.pause()
 
             self.assertEqual(id(app), original_app_id)
             self.assertTrue(self.paths.database.is_file())

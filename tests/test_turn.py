@@ -1,8 +1,6 @@
 """TurnService 对 Context、Runner 和 SQLite 的编排测试。"""
 
 import asyncio
-import contextlib
-import io
 import json
 import tempfile
 import unittest
@@ -15,7 +13,6 @@ from miniclaw.agent.events import RunEvent
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService, _model_message
 from miniclaw.bootstrap import initialize_state
-from miniclaw.cli import _chat
 from miniclaw.config import WorkspaceConfig, load_config
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalError
@@ -28,6 +25,7 @@ from miniclaw.providers.base import (
     StreamHandler,
     ToolCall,
 )
+from miniclaw.runtime import create_runtime
 from miniclaw.storage.conversations import (
     ConversationDataError,
     MessageRepository,
@@ -599,8 +597,8 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(later.exists())
         self.assertEqual(len(approvals.list(self.owner.id)), 1)
 
-    async def test_chat_bootstrap_executes_read_file_and_persists_full_trace(self) -> None:
-        """真实 CLI 组装必须暴露 read_file，并持久化完整的两轮 Tool 轨迹。"""
+    async def test_runtime_executes_read_file_and_persists_full_trace(self) -> None:
+        """共享 Runtime 必须暴露 read_file，并持久化完整的两轮 Tool 轨迹。"""
         (self.paths.workspace / "README.md").write_text(
             "MiniClaw workspace README\nSecond line\n",
             encoding="utf-8",
@@ -636,17 +634,23 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         provider.complete = verify_tool_message_before_final_response  # type: ignore[method-assign]
         provider.aclose = mock.AsyncMock()  # type: ignore[attr-defined]
 
-        with (
-            mock.patch("miniclaw.cli.OpenAICompatibleProvider", return_value=provider),
-            contextlib.redirect_stdout(io.StringIO()),
+        with mock.patch(
+            "miniclaw.runtime.OpenAICompatibleProvider",
+            return_value=provider,
         ):
-            exit_code = await _chat(
+            runtime = create_runtime(
                 load_config(self.paths, {}, {}),
                 self.paths,
                 "offline-secret",
-                "read-file",
-                "read the README",
             )
+        try:
+            result = await runtime.service.handle(
+                runtime.owner_id,
+                "read the README",
+                "read-file",
+            )
+        finally:
+            await runtime.aclose()
 
         session = self.sessions.get_or_create_cli(self.owner.id, "read-file")
         turn = self.turns.list_recent(session.id, limit=1)[0]
@@ -660,7 +664,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 "SELECT event_type FROM audit_events ORDER BY id"
             ).fetchall()
 
-        self.assertEqual(exit_code, 0)
+        self.assertEqual(result.content, "README says MiniClaw workspace README")
         self.assertEqual(
             [schema["function"]["name"] for schema in provider.requests[0].tools],
             ["edit_file", "glob", "grep", "read_file", "system_info", "write_file"],
