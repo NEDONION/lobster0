@@ -80,6 +80,17 @@ uv run miniclaw --version
 - 不提交 `.venv/`、`.idea/`、`data/`、`workspace/`、日志、缓存或构建产物。
 - 不覆盖、回退、暂存或提交用户的无关修改，不执行破坏性 Git 清理。
 
+## Git 提交信息
+
+- 提交标题采用大约一半中文、一半英文的混合表达：保留 `feat:`、`fix:`、`docs:`、`test:`、
+  `refactor:` 等类型前缀和关键工程术语，同时用中文写清动作与目的。
+- 推荐示例：`feat(eval): 增加 offline Agent regression gate`、
+  `fix(provider): 兼容 empty tool arguments`；避免 100% 纯英文或堆满难懂缩写。
+- `Agent`、`Provider`、`Tool Loop`、`CLI`、`SQLite` 等术语优先保留英文，用户仍应能一眼看懂该
+  commit 完成了什么。
+- 一个提交只表达一个完整意图；必要时在正文补充测试结果、兼容性或安全边界，不把大量实现细节塞进标题。
+- 不为了调整提交语言而重写已经推送的共享历史；新规则从后续提交开始执行。
+
 ## 文档同步
 
 - 产品范围或里程碑变化：更新 `docs/product/20260807_产品需求文档.md`。

@@ -16,6 +16,8 @@ from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.doctor import CheckStatus, run_local_checks
 from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.evals.cases import EvalCaseError, load_cases
+from miniclaw.evals.runner import run_offline_suite
 from miniclaw.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import ProviderAuthenticationError, ProviderError
@@ -60,6 +62,19 @@ def build_parser() -> argparse.ArgumentParser:
     chat_parser.add_argument("--home", help="absolute MiniClaw state directory")
     chat_parser.add_argument("--session", default=_DEFAULT_CLI_SESSION, help="CLI session ID")
     chat_parser.add_argument("--message", help="one-shot user message")
+    eval_parser = subparsers.add_parser("eval", help="run deterministic agent regressions")
+    eval_subparsers = eval_parser.add_subparsers(dest="eval_command", required=True)
+    eval_list = eval_subparsers.add_parser("list", help="list versioned eval cases")
+    eval_validate = eval_subparsers.add_parser("validate", help="validate eval case files")
+    eval_run = eval_subparsers.add_parser("run", help="run an eval suite")
+    for child in (eval_list, eval_validate, eval_run):
+        child.add_argument(
+            "--root",
+            type=Path,
+            default=Path.cwd() / "evals" / "scenarios",
+            help="directory containing versioned JSONL cases",
+        )
+    eval_run.add_argument("--suite", choices=("offline",), required=True)
     return parser
 
 
@@ -70,14 +85,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv: 需要解析的参数；为 ``None`` 时由 ``argparse`` 读取进程参数。
 
     Returns:
-        成功为 0；参数/配置为 2；认证为 3；Agent/Provider 为 4；本地 I/O 为 5；
-        用户中断为 130。
+        成功为 0；eval case 失败为 1；参数/配置为 2；认证为 3；Agent/Provider 为 4；
+        本地 I/O 为 5；用户中断为 130。
     """
     parser = build_parser()
     arguments = parser.parse_args(argv)
     if arguments.command is None:
         parser.print_help()
         return 0
+    if arguments.command == "eval":
+        return _run_eval(arguments)
 
     try:
         paths = build_state_paths(resolve_home(arguments.home))
@@ -111,6 +128,44 @@ def main(argv: Sequence[str] | None = None) -> int:
     else:
         print(f"MiniClaw is already initialized at {paths.home} (owner {result.owner.id}).")
     return 0
+
+
+def _run_eval(arguments: argparse.Namespace) -> int:
+    """运行无需本地 Agent 状态或模型凭据的离线回归命令。
+
+    Args:
+        arguments: 已由 eval 子解析器校验的参数命名空间。
+
+    Returns:
+        成功为 0；任一场景失败为 1；场景输入无效为 2。
+    """
+    try:
+        cases = load_cases(arguments.root)
+    except EvalCaseError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    if arguments.eval_command == "list":
+        for case in cases:
+            print(f"{case.id} {case.status} {case.capability} {case.title}")
+        return 0
+    if arguments.eval_command == "validate":
+        print(f"Validated {len(cases)} eval cases.")
+        return 0
+
+    active = tuple(
+        case for case in cases if case.status == "active" and "offline" in case.layers
+    )
+    suite = asyncio.run(run_offline_suite(active))
+    for result in suite.cases:
+        if result.passed:
+            print(f"PASS {result.case_id} {result.duration_ms}ms")
+        else:
+            print(f"FAIL {result.case_id} {','.join(result.failures)}")
+    print(
+        f"Offline eval: {suite.passed}/{suite.total} passed, "
+        f"{suite.failed} failed ({suite.duration_ms}ms)."
+    )
+    return 1 if suite.failed else 0
 
 
 def _run_chat(arguments: argparse.Namespace, paths: StatePaths) -> int:
