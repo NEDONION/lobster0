@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · P2.1B verified · live provider file smoke pending</div>
+      <div class="branch">target: main · P2.1C R1/R2 verified · live DeepSeek eval pending</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">安全只读链路已扩展到 Workspace：模型可读取文本、找文件、查文本，仍要经过 Policy、ToolRun、Audit 和完整消息回放。</p>
+        <p class="lede">安全只读链路现在有了可重复的版本门禁：10 条 Claw-like query 会穿过真实 Agent、Policy、Tool、SQLite，再由确定性 verifier 判定。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Offline exit gate</span>
-        <strong>P2.1B ✓</strong>
-        <p>153 tests + Ruff verified · live DeepSeek file smoke still pending</p>
+        <strong>P2.1C R2 ✓</strong>
+        <p>177 tests + 10/10 offline Agent cases + Ruff verified</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">153 <small>passing</small></span>
+        <span class="metric-value">177 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -377,33 +377,33 @@
     <section class="section" aria-labelledby="signal-title">
       <div class="section-head">
         <h2 id="signal-title">已经接通的信号链</h2>
-        <p class="section-note">每个节点都有离线测试与可观察结果；Tool 参数、Workspace、执行和持久化不能绕开统一入口。</p>
+        <p class="section-note">生产消息链与离线回归复用同一个 Agent Core；只有模型边界在 offline suite 中换成固定脚本。</p>
       </div>
       <div class="signal">
         <div class="signal-node active">
           <div class="signal-dot">01</div>
-          <div class="signal-label">CLI input</div>
-          <p>chat --message</p>
+          <div class="signal-label">Versioned case</div>
+          <p>query + synthetic data</p>
         </div>
         <div class="signal-node active">
           <div class="signal-dot">02</div>
-          <div class="signal-label">Context</div>
-          <p>身份与会话</p>
+          <div class="signal-label">Real context</div>
+          <p>身份 + 同 session 历史</p>
         </div>
         <div class="signal-node active">
           <div class="signal-dot">03</div>
-          <div class="signal-label">Executor</div>
-          <p>参数 + Policy</p>
+          <div class="signal-label">Agent loop</div>
+          <p>ScriptedProvider</p>
         </div>
         <div class="signal-node active">
           <div class="signal-dot">04</div>
-          <div class="signal-label">Workspace guard</div>
-          <p>路径 + 敏感文件</p>
+          <div class="signal-label">Real executor</div>
+          <p>Policy + Tool + SQLite</p>
         </div>
         <div class="signal-node active">
           <div class="signal-dot">05</div>
-          <div class="signal-label">Read tools</div>
-          <p>read / glob / grep</p>
+          <div class="signal-label">Verifier</div>
+          <p>answer / run / audit</p>
         </div>
       </div>
     </section>
@@ -426,7 +426,7 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool 与安全</h3><p>P2.1A system_info 与 P2.1B Workspace 只读工具已验证；下一步是 P2.2 写入与审批。</p></div>
+          <div><h3>Tool、安全与回归门禁</h3><p>P2.1A system_info、P2.1B Workspace 只读工具、P2.1C R1/R2 offline eval 已验证。</p></div>
           <span class="pill">IN PROGRESS</span>
         </article>
         <article class="phase queued">
@@ -459,7 +459,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 2.1B exit gate</p>
+        <p class="eyebrow">Phase 2.1C R1/R2 exit gate</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -471,7 +471,11 @@
           <li class="complete">Policy deny 脱敏审计（无 denied ToolRun）</li>
           <li class="complete">完整 Tool 消息持久化与恢复</li>
           <li class="complete">CLI / Agent 离线 Tool 集成验证</li>
-          <li class="complete">153 tests + Ruff 门禁</li>
+          <li class="complete">PROTO-001：empty tool arguments 事故回归</li>
+          <li class="complete">严格 JSONL Schema 与 10 条 Claw-like query</li>
+          <li class="complete">真实 Agent / Policy / Tool / SQLite offline runner</li>
+          <li class="complete">miniclaw eval list / validate / run</li>
+          <li class="complete">177 tests + 10/10 Agent cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -482,14 +486,15 @@
         <div class="decision"><code>runtime</code><p>单进程 asyncio + 一个 SQLite + 顺序 Tool Call。</p></div>
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>scope</code><p>P2.1B 只交付只读文件工具；写入、Shell、审批和飞书仍未实现。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/76b0999">76b0999</a> · <a href="https://github.com/NEDONION/miniclaw/commit/359e5fc">359e5fc</a> · <a href="https://github.com/NEDONION/miniclaw/commit/311c02f">311c02f</a> · <a href="https://github.com/NEDONION/miniclaw/commit/c8e7d80">c8e7d80</a> · <a href="https://github.com/NEDONION/miniclaw/commit/3a27688">3a27688</a> · <a href="https://github.com/NEDONION/miniclaw/commit/73bdec3">73bdec3</a> · <a href="https://github.com/NEDONION/miniclaw/commit/f599087">f599087</a> · <a href="https://github.com/NEDONION/miniclaw/commit/c3f8409">c3f8409</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b94bd45">b94bd45</a> · <a href="https://github.com/NEDONION/miniclaw/commit/3aa6e13">3aa6e13</a> · <a href="https://github.com/NEDONION/miniclaw/commit/59131f0">59131f0</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2c08db7">2c08db7</a> · <a href="https://github.com/NEDONION/miniclaw/commit/942acd2">942acd2</a></p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 deterministic offline 100%；真实模型留给 release-only live suite。</p></div>
+        <div class="decision"><code>scope</code><p>R1/R2 只交付离线回归地基；write、Shell、审批、live eval 和飞书仍未实现。</p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/f2bdf35">f2bdf35</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b6309b9">b6309b9</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2a112a8">2a112a8</a> · <a href="https://github.com/NEDONION/miniclaw/commit/061e045">061e045</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b491fce">b491fce</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2a74e9e">2a74e9e</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-07 · 153 tests on Python 3.12/3.13 + Ruff + offline Tool integration verified</span>
-      <span><a href="../engineering/phase-2/tool-runtime-and-system-info.md">P2.1A 文档</a> · <a href="../engineering/phase-2/workspace-read-tools.md">P2.1B 文档</a></span>
+      <span>Last updated · 2026-08-08 · 177 tests + 10/10 offline Agent cases + Ruff verified</span>
+      <span><a href="../engineering/phase-2/agent-regression-evals.md">P2.1C 工程文档</a> · <a href="../evals/releases/v0.1.0.md">v0.1.0 eval record</a></span>
     </footer>
   </main>
 </body>

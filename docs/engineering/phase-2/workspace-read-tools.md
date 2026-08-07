@@ -262,7 +262,8 @@ uv run miniclaw chat --message "请使用 grep 在当前 Workspace 的 *.txt 中
 | 文本搜索 | `test_search_tools.py` 的 `GrepToolTest` | 正则、摘要、排序、1 MiB/200 候选/20 MiB 上限、失败候选计数、fd race 与 symlink 去重。 |
 | 统一入口 | `test_tool_executor.py` | Guard 拒绝只写脱敏 `tool.denied`、无 ToolRun；合法读取才创建 running/terminal ToolRun。 |
 | Runtime 装配 | `test_turn.py`、`test_cli_chat.py` | `read_file` 与全部四个 Schema 进入 Agent Runtime，Tool Message、ToolRun 和 Audit 完整保存。 |
-| 全仓回归 | `unittest discover` 与 Ruff | 当前验证基线为 **153 tests**；另运行 `uv run ruff check .`。 |
+| Agent 场景 | `test_eval_cases.py`、`test_eval_runner.py`、`test_cli_eval.py` | 版本化 query 经真实 Agent/Policy/Tool/SQLite，10/10 active cases PASS。 |
+| 全仓回归 | `unittest discover` 与 Ruff | P2.1B exit gate 为 153 tests；当前 P2.1C 基线为 **177 tests**，另运行 `uv run ruff check .`。 |
 
 ## 10. 常见报错怎么理解
 
@@ -323,6 +324,8 @@ P2.2 规划的是 `write_file`、`edit_file`、参数绑定审批与 CLI 审批/
 
 读取边界与 Tool 的实现提交依次为：`76b0999`、`359e5fc`、`311c02f`、`c8e7d80`、`3a27688`、`73bdec3`、
 `f599087`、`c3f8409`、`b94bd45`、`3aa6e13`、`942acd2`。其中 `942acd2` 保证 Python 3.13 也会拒绝
-symlink loop；最终 153 项测试已分别在 Python 3.12 与 3.13 通过。本页事实来自这些提交中的 `workspace.py`、
+symlink loop；P2.1B exit gate 的 153 项测试已分别在 Python 3.12 与 3.13 通过，当前 P2.1C 全仓基线为
+177 项。本页事实来自这些提交中的 `workspace.py`、
 `filesystem.py`、`search.py`、`cli.py`，以及对应单元测试和现有 Tool Runtime 契约；本页不把设计文档中的
-P2.2/P2.3 规划写成当前功能。
+P2.2/P2.3 规划写成当前功能。Agent 版本回归的最新验证方式见
+[P2.1C 工程文档](agent-regression-evals.md)。

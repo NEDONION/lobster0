@@ -1,10 +1,14 @@
 # Phase 2.1A 工程文档：Tool Runtime 与 system_info
 
-> 状态：已实现，等待合并到 `main`
+> 状态：P2.1A 已实现并合并到 `main`；本文保留该阶段工程快照
 >
 > 范围：Tool Contract、Registry、Policy、Executor、ToolRun/Audit、完整消息轨迹、`system_info`、CLI 装配
 >
 > 不代表：整个 Phase 2 已完成
+
+> 当前仓库已继续完成 P2.1B Workspace 只读 Tool 和 P2.1C Agent 回归门禁；最新能力请分别阅读
+> [P2.1B 文档](workspace-read-tools.md) 与 [P2.1C 文档](agent-regression-evals.md)。本页“还没有实现”只描述
+> P2.1A 当时的阶段边界，不代表仓库当前状态。
 
 ## 1. 这一小阶段解决了什么
 
@@ -788,7 +792,7 @@ sqlite3 ~/.miniclaw/miniclaw.db \
 - [x] medium/high 默认不执行；
 - [x] critical 默认拒绝；
 - [ ] Approval 创建与消费（P2.2）；
-- [ ] Workspace 路径逃逸防护（P2.1B）；
+- [x] Workspace 路径逃逸防护（P2.1B）；
 - [ ] Shell allowlist/sandbox（P2.3）。
 
 ## 21. 如何增加下一个 Tool
@@ -821,9 +825,9 @@ P2.1B 增加 `read_file` 时，必须按同一条链路：
 MiniClaw 当前选择 Python 标准库 + 已有依赖，SQLite Schema 复用 Phase 0，不为单一 Tool 引入插件框架、ORM、
 硬件探测依赖或消息队列。
 
-## 23. 下一步
+## 23. 阶段后续（历史记录）
 
-P2.1A 完成后，最短的下一条学习链路是 P2.1B：
+P2.1A 完成后的下一条学习链路是 P2.1B；该链路现在已经实现：
 
 ```text
 WorkspacePathResolver
@@ -834,4 +838,5 @@ WorkspacePathResolver
 → CLI 真实文件问答
 ```
 
-写文件、Shell 和真正 Approval 继续后移，因为它们会改变本机状态，需要更严格的确认和恢复语义。
+写文件、Shell 和真正 Approval 仍继续后移，因为它们会改变本机状态，需要更严格的确认和恢复语义。当前
+质量门禁已继续完成到 [P2.1C Agent 回归](agent-regression-evals.md)。

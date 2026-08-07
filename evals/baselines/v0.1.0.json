@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "suite_version": "offline-v1",
+  "source_git_sha": "2a74e9ecfeb828fd77beb260f5c04b4841477972",
+  "generated_at": "2026-08-08T00:47:24+08:00",
+  "python": "3.13.5",
+  "platform": "Darwin arm64",
+  "status": "passed",
+  "total_cases": 10,
+  "passed_cases": 10,
+  "failed_cases": 0,
+  "duration_ms": 794,
+  "unit_tests": 177,
+  "ruff": "passed",
+  "cases": [
+    {"id": "CORE-001", "status": "passed"},
+    {"id": "STATE-001", "status": "passed"},
+    {"id": "PROTO-001", "status": "passed"},
+    {"id": "SAFE-001", "status": "passed"},
+    {"id": "SAFE-002", "status": "passed"},
+    {"id": "TOOL-001", "status": "passed"},
+    {"id": "FILE-READ-001", "status": "passed"},
+    {"id": "FILE-GLOB-001", "status": "passed"},
+    {"id": "FILE-GREP-001", "status": "passed"},
+    {"id": "ERROR-001", "status": "passed"}
+  ],
+  "commands": [
+    ".venv/bin/python -m unittest discover -s tests -v",
+    ".venv/bin/ruff check --no-cache .",
+    ".venv/bin/miniclaw eval validate --root evals/scenarios",
+    ".venv/bin/miniclaw eval run --suite offline --root evals/scenarios"
+  ]
+}

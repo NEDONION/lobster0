@@ -9,7 +9,7 @@
 <p align="center">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-0F766E" />
-  <img alt="Status Phase 2.1B verified" src="https://img.shields.io/badge/Status-Phase_2.1B_verified-0F766E" />
+  <img alt="Status Phase 2.1C verified" src="https://img.shields.io/badge/Status-Phase_2.1C_verified-0F766E" />
 </p>
 
 MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。目标是在同一个 Agent Core 后接入本地
@@ -17,11 +17,13 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 Phase 1 CLI Agent 闭环，以及已验证的 Phase 2.1A/2.1B 只读 Tool：安全 `.env`、
+> 当前仓库已完成 Phase 1 CLI Agent 闭环、Phase 2.1A/2.1B 只读 Tool，以及 Phase 2.1C R1/R2
+> Agent 回归门禁：安全 `.env`、
 > OpenAI-compatible HTTP/SSE、Policy + ToolExecutor、脱敏 `system_info`、Workspace 内的
-> `read_file` / `glob` / `grep`、ToolRun/Audit 与完整工具消息持久化。文件写入、Shell、真实 DeepSeek
-> 文件 Tool 冒烟、审批和飞书尚未完成。
-> 当前离线回归基线为 **153 tests**；Policy 拒绝会留下仅含 Tool 名、参数 hash 前缀和错误码的脱敏审计，
+> `read_file` / `glob` / `grep`、ToolRun/Audit、完整工具消息持久化，以及 10 条版本化 Claw-like query。
+> 文件写入、Shell、真实 DeepSeek live eval、审批和飞书尚未完成。
+> 当前离线回归基线为 **177 tests + 10/10 Agent cases**；Policy 拒绝会留下仅含 Tool 名、参数 hash
+> 前缀和错误码的脱敏审计，
 > 但不会创建 ToolRun。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
 
@@ -65,6 +67,8 @@ uv run miniclaw init
 uv run miniclaw doctor
 uv run miniclaw chat --message "你好，请介绍你自己"
 uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
+uv run miniclaw eval validate --root evals/scenarios
+uv run miniclaw eval run --suite offline --root evals/scenarios
 uv run python -m unittest discover -s tests -v
 ```
 
@@ -76,13 +80,17 @@ uv run miniclaw init [--home /absolute/path]
 uv run miniclaw doctor [--home /absolute/path]
 uv run miniclaw chat --message TEXT [--session ID] [--home /absolute/path]
 uv run miniclaw chat [--session ID] [--home /absolute/path]
+uv run miniclaw eval list [--root evals/scenarios]
+uv run miniclaw eval validate [--root evals/scenarios]
+uv run miniclaw eval run --suite offline [--root evals/scenarios]
 uv run python -m miniclaw --version
 ```
 
 `init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md` 或 `MEMORY.md`；`doctor`
 只执行离线检查，不连接模型或 IM 平台。`chat` 从当前目录的私密 `.env` 读取 Key；省略 `--message`
 时进入 TTY 交互模式。模型需要真实本机数据时可调用只读、脱敏的 `system_info`，也可在配置的
-Workspace 内调用 `read_file`、`glob`、`grep`；模型不能写文件或运行 Shell。
+Workspace 内调用 `read_file`、`glob`、`grep`；模型不能写文件或运行 Shell。`eval` 完全离线，不读取
+`.env`、不需要 `init` 或 API Key，并通过真实 Agent/Policy/Tool/SQLite 链路运行版本化场景。
 
 ### Workspace 只读演示
 
@@ -107,13 +115,17 @@ smoke。可以在 `config.toml` 的 `[workspace].path` 或绝对 `MINICLAW_WORKS
 ```text
 miniclaw/
 ├── AGENTS.md
+├── evals/                  # 版本化场景与脱敏 baseline
 ├── docs/
 │   ├── architecture/
 │   ├── development/
+│   ├── evals/
 │   ├── getting-started/
 │   ├── engineering/phase-1/
+│   ├── engineering/phase-2/
 │   ├── product/
-│   └── superpowers/plans/
+│   ├── progress/
+│   └── superpowers/
 ├── src/miniclaw/
 │   ├── bootstrap.py
 │   ├── config.py
@@ -121,6 +133,7 @@ miniclaw/
 │   ├── env.py
 │   ├── paths.py
 │   ├── agent/
+│   ├── evals/
 │   ├── policy/
 │   ├── providers/
 │   ├── storage/
@@ -141,6 +154,8 @@ miniclaw/
 | [Phase 1 模块工程文档](docs/engineering/phase-1/cli-chat.md) | CLI、Provider、Runner、Storage 等逐模块实现说明 |
 | [Phase 2.1A Tool 工程文档](docs/engineering/phase-2/tool-runtime-and-system-info.md) | Tool Contract、Policy、Executor、审计、消息轨迹与 system_info |
 | [Phase 2.1B Workspace 读取 Tool 工程文档](docs/engineering/phase-2/workspace-read-tools.md) | read_file、glob、grep、Workspace Guard、边界与测试矩阵 |
+| [Phase 2.1C Agent 回归工程文档](docs/engineering/phase-2/agent-regression-evals.md) | JSONL 场景、真实离线 runner、CLI 门禁、事故回归和 benchmark 分层 |
+| [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

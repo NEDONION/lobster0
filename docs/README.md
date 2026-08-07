@@ -13,7 +13,9 @@
    了解本机 Tool、Workspace、审批、命令和 SSRF 的落地方案。
 5. 阅读 [系统架构](architecture/20260807_系统架构.md)，理解渠道、Agent、工具、安全和数据边界。
 6. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证 CLI。
-7. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+7. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
+   跑离线 gate 并记录 baseline。
+8. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -54,6 +56,16 @@
 | --- | --- |
 | Tool Runtime 与 system_info | [tool-runtime-and-system-info.md](engineering/phase-2/tool-runtime-and-system-info.md) |
 | Workspace 只读文件与搜索 | [workspace-read-tools.md](engineering/phase-2/workspace-read-tools.md) |
+| Agent 场景回归与 Benchmark 基线 | [agent-regression-evals.md](engineering/phase-2/agent-regression-evals.md) |
+
+## 评测与版本证据
+
+| 文档 | 内容 |
+| --- | --- |
+| [评测记录规范](evals/README.md) | 场景、baseline、release record 与本地 raw result 的边界 |
+| [Eval v0.1.0](evals/releases/v0.1.0.md) | 首个 offline-v1 基线：177 tests、10/10 Agent cases |
+| [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md) | 对 OpenClaw/ZeroClaw/nanobot/RayClaw/Claw Bench/OpenJarvis 的方法映射 |
+| [R1/R2 实施计划](superpowers/plans/2026-08-08-agent-regression-benchmark.md) | TDD 任务、文件、命令与完成定义 |
 
 ## 设计与实施记录
 
@@ -63,6 +75,8 @@
   V4 Pro、Provider、Runner、Turn 持久化、`.env` 安全边界和验收标准。
 - [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)：Python
   版个人 Claw v1.0 的工程规格、参考来源、模块契约、部署、测试和交付阶段。
+- [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md)：
+  Claw-like query、四层测试、版本记录、live 采样与安全 gate 方法论。
 - [`superpowers/specs/`](superpowers/specs/)：经确认的设计规格。
 - [`superpowers/plans/`](superpowers/plans/)：可执行的实施计划与验证命令。
 

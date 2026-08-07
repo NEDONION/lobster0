@@ -8,8 +8,10 @@
 | --- | --- | --- |
 | [Phase 2.1A：Tool Runtime 与 system_info](phase-2/tool-runtime-and-system-info.md) | Tool Contract、Registry、Policy、Executor、ToolRun/Audit、`system_info` 与 Agent Runtime。 | 文件读写、审批、Shell、飞书。 |
 | [Phase 2.1B：Workspace 只读文件与搜索](phase-2/workspace-read-tools.md) | `read_file`、`glob`、`grep`、Workspace Guard、离线 Agent/CLI 装配验证。 | 真实 DeepSeek 文件 smoke、`write_file`、Shell、审批、飞书。 |
+| [Phase 2.1C：Agent 场景回归与 Benchmark 基线](phase-2/agent-regression-evals.md) | JSONL Schema、10 条 Claw-like query、真实离线 runner、`miniclaw eval`、baseline/release record。 | live DeepSeek、report/compare、飞书 E2E、自动改 Prompt/Skill。 |
 
-下一步规划是 P2.2：写入与参数绑定审批。它仍是规划，不应被当作当前 CLI 能力。
+功能主线下一步是 P2.2 写入与参数绑定审批；质量主线下一步是 R3 live DeepSeek release eval。两者仍是规划，
+不应被当作当前 CLI 能力。
 
 ## Phase 1：CLI Agent 闭环
 
