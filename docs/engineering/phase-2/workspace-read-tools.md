@@ -17,7 +17,7 @@ Tool Schema、参数校验、`PolicyEngine`、`ToolExecutor`、ToolRun/Audit 和
 ```mermaid
 flowchart TB
     subgraph L1["第 1 层：用户与入口"]
-        USER["用户"] --> CLI["miniclaw chat"]
+        USER["用户"] --> CLI["bare miniclaw TUI"]
     end
     subgraph L2["第 2 层：Agent Runtime"]
         CLI --> TURN["TurnService / AgentRunner"]
@@ -218,7 +218,7 @@ Shell 看起来是最短路径，但对模型来说它会把“读取一个文�
 | `src/miniclaw/tools/filesystem.py` | `ReadFileTool` 的 Schema、参数规范化、512 KiB 有界 UTF-8 行窗口、文件错误映射。 |
 | `src/miniclaw/tools/search.py` | `GlobTool`/`GrepTool` 的 Schema、稳定遍历、普通文件筛选、排序、结果与读取预算。 |
 | `src/miniclaw/storage/tooling.py` | allowed ToolRun 状态迁移，以及不创建 ToolRun 的脱敏 `tool.denied` 审计。 |
-| `src/miniclaw/cli.py` | 生产 CLI 组装；把 `ReadFileTool`、`GlobTool`、`GrepTool` 与既有 `SystemInfoTool` 注册进唯一 `ToolExecutor`。 |
+| `src/miniclaw/runtime.py` | 生产 Runtime 组装；把文件/search Tool 与 `SystemInfoTool` 注册进唯一 `ToolExecutor`。 |
 | `src/miniclaw/policy/engine.py` | 对三个读取 Tool 的路径参数在开始 ToolRun 前做 Guard 预检；合法 low-risk 读取才允许执行。 |
 | `src/miniclaw/tools/executor.py` | 保持唯一顺序：`get → validate → policy → (deny audit 或 start → execute → finish)`；负责失败关闭、异常脱敏和结果上限。 |
 
@@ -244,10 +244,11 @@ uv run ruff check .
 ```bash
 uv run miniclaw init
 printf 'hello from MiniClaw workspace\n' > ~/.miniclaw/workspace/demo.txt
-uv run miniclaw chat --message "请使用 read_file 读取 demo.txt 的内容。"
-uv run miniclaw chat --message "请使用 glob 查找当前 Workspace 的 *.txt 文件。"
-uv run miniclaw chat --message "请使用 grep 在当前 Workspace 的 *.txt 中搜索 MiniClaw。"
+uv run miniclaw
 ```
+
+然后在同一个 TUI 中依次输入“请使用 read_file 读取 demo.txt 的内容”“请使用 glob 查找当前 Workspace 的
+`*.txt` 文件”“请使用 grep 在当前 Workspace 的 `*.txt` 中搜索 MiniClaw”。
 
 也可通过绝对 `MINICLAW_WORKSPACE` 环境变量或 `config.toml` 的 `[workspace].path` 切换到另一个 Workspace。
 不要把 `.env`、凭据、MiniClaw 状态目录或任意 Home 目录当作演示目标：Guard 的目标正是拒绝它们。

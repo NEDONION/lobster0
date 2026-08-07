@@ -6,8 +6,8 @@
 >
 > 不代表：整个 Phase 2 已完成
 
-> 当前仓库已继续完成 P2.1B Workspace 只读 Tool 和 P2.1C Agent 回归门禁；最新能力请分别阅读
-> [P2.1B 文档](workspace-read-tools.md) 与 [P2.1C 文档](agent-regression-evals.md)。本页“还没有实现”只描述
+> 当前仓库已继续完成 P2.1B、P2.1C、P2.2 与 P2.2B 单入口 TUI；最新入口请阅读
+> [P2.2B 文档](single-entry-tui.md)。本页“还没有实现”和 CLI 片段只描述
 > P2.1A 当时的阶段边界，不代表仓库当前状态。
 
 ## 1. 这一小阶段解决了什么
@@ -27,7 +27,7 @@ Phase 2.1A 把第一把真实工具 `system_info` 接进完整 Agent 链路。�
 
 ```mermaid
 flowchart LR
-    USER["用户：查看电脑配置"] --> CLI["miniclaw chat"]
+    USER["用户：查看电脑配置"] --> CLI["bare miniclaw TUI"]
     CLI --> CONTEXT["Context + Tool Schema"]
     CONTEXT --> MODEL1["模型第 1 轮"]
     MODEL1 -->|"ToolCall: system_info"| EXECUTOR["ToolExecutor"]
@@ -629,11 +629,11 @@ Tool Message 恢复 `tool_call_id`。如果 metadata 缺字段、类型错误，
 最近历史的 `limit=20` 是软上限：如果第 20 条落在一个 Turn 中间，Repository 会补齐该 Turn 更早的消息，
 避免把孤立 Tool Result 或缺少结果的 Assistant Tool Call 发给 Provider。
 
-## 14. CLI 生产装配
+## 14. Phase 2.1A 当时的 CLI 装配（历史）
 
 代码位置：`src/miniclaw/cli.py`
 
-`_chat()` 当前只注册一个生产 Tool：
+P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册六个 Tool：
 
 ```python
 registry = ToolRegistry((SystemInfoTool(),))
@@ -737,8 +737,10 @@ uv run miniclaw doctor
 询问真实配置：
 
 ```bash
-uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
+uv run miniclaw
 ```
+
+在 TUI 中输入“帮我看看我的电脑是什么配置”。
 
 模型必须选择调用 Tool 才能得到真实结果。若 Provider 没有调用 Tool，先检查：
 

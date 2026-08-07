@@ -1,10 +1,13 @@
 # Phase 2.2 工程文档：参数绑定 Approval 与跨进程续执行
 
-> 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 CLI 已进入生产链路
+> 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 Textual TUI 已进入生产链路
 >
-> 当前门禁：210/210 tests、10/10 offline Agent cases、Ruff PASS
+> 当前门禁：221/221 tests、10/10 offline Agent cases、Ruff PASS
 >
 > 当前非目标：命令/HTTP 的 `--always` 规则在 P2.3/P2.4 接入；飞书卡片审批不在本阶段
+
+Phase 2.2B 已移除独立 `miniclaw approvals` 命令。Owner 现在在同一个 TUI 中查看完整归一化参数，并选择
+Allow once 或 Deny；底层 SQLite 生命周期和本文安全约束不变。
 
 ## 1. 大白话解释
 
@@ -214,7 +217,7 @@ uv run ruff check src/miniclaw/policy/approvals.py src/miniclaw/policy/engine.py
 
 结果：28/28 通过。
 
-全仓门禁：210/210 tests、10/10 offline Agent cases、Ruff PASS、diff check PASS。
+全仓门禁：221/221 tests、10/10 offline Agent cases、Ruff PASS、diff check PASS。
 
 ## 13. Runner 为什么必须停下来
 

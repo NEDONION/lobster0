@@ -12,10 +12,12 @@
 4. 阅读 [Phase 2：Tool、权限与安全执行设计](superpowers/specs/2026-08-07-phase-2-tools-security-design.md)，
    了解本机 Tool、Workspace、审批、命令和 SSRF 的落地方案。
 5. 阅读 [系统架构](architecture/20260807_系统架构.md)，理解渠道、Agent、工具、安全和数据边界。
-6. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证 CLI。
-7. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
+6. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证唯一 TUI。
+7. 阅读 [单入口 Textual TUI 工程文档](engineering/phase-2/single-entry-tui.md)，理解 Runtime、RunEvent、
+   Worker、Tool 卡与审批 Modal。
+8. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
    跑离线 gate 并记录 baseline。
-8. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+9. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -28,13 +30,13 @@
 
 | 文档 | 内容 |
 | --- | --- |
-| [本地运行指南](getting-started/20260807_本地运行指南.md) | Python、uv、CLI、测试和当前项目状态 |
+| [本地运行指南](getting-started/20260807_本地运行指南.md) | Python、uv、裸 TUI、审批、测试和当前项目状态 |
 | [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md) | 每轮开发后如何同步产品、架构和运行文档 |
 
 ## Phase 1 模块工程文档
 
-> Phase 1 文档保留当时的实现快照。ToolHandler、Runner 和消息持久化在 Phase 2.1A 已升级；涉及这些模块时
-> 以 [Phase 2.1A Tool 工程文档](engineering/phase-2/tool-runtime-and-system-info.md) 为准。
+> Phase 1 文档保留当时的实现快照。`miniclaw chat` 已在 Phase 2.2B 移除；涉及当前入口时以
+> [单入口 Textual TUI 工程文档](engineering/phase-2/single-entry-tui.md) 为准。
 
 | 模块 | 文档 |
 | --- | --- |
@@ -45,7 +47,7 @@
 | AgentRunner | [agent-runner.md](engineering/phase-1/agent-runner.md) |
 | 会话持久化 | [conversation-storage.md](engineering/phase-1/conversation-storage.md) |
 | TurnService | [turn-service.md](engineering/phase-1/turn-service.md) |
-| CLI Chat | [cli-chat.md](engineering/phase-1/cli-chat.md) |
+| CLI Chat（历史快照） | [cli-chat.md](engineering/phase-1/cli-chat.md) |
 | 测试与调试 | [testing-and-debugging.md](engineering/phase-1/testing-and-debugging.md) |
 
 ## Phase 2 模块工程文档
@@ -59,7 +61,8 @@
 | Agent 场景回归与 Benchmark 基线 | [agent-regression-evals.md](engineering/phase-2/agent-regression-evals.md) |
 | 安全文件写入 | [filesystem-tools.md](engineering/phase-2/filesystem-tools.md) |
 | Approval 生命周期与续执行 | [approval-lifecycle.md](engineering/phase-2/approval-lifecycle.md) |
-| Approvals CLI | [cli-approvals.md](engineering/phase-2/cli-approvals.md) |
+| 单入口 Textual TUI、Runtime 与审批 Modal | [single-entry-tui.md](engineering/phase-2/single-entry-tui.md) |
+| Approvals CLI（已迁移） | [cli-approvals.md](engineering/phase-2/cli-approvals.md) |
 
 ## 评测与版本证据
 
@@ -80,6 +83,8 @@
   版个人 Claw v1.0 的工程规格、参考来源、模块契约、部署、测试和交付阶段。
 - [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md)：
   Claw-like query、四层测试、版本记录、live 采样与安全 gate 方法论。
+- [Gemini 风格单入口 TUI 设计](superpowers/specs/2026-08-08-gemini-style-tui-and-lark-cli-design.md)：
+  OpenClaw/pi-tui、Gemini CLI、OpenCode 与 Python 方案对比，以及 Textual 选型。
 - [`superpowers/specs/`](superpowers/specs/)：经确认的设计规格。
 - [`superpowers/plans/`](superpowers/plans/)：可执行的实施计划与验证命令。
 

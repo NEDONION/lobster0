@@ -1,8 +1,13 @@
 # Phase 2.2 工程文档：Approvals CLI 与操作手册
 
-> 状态：`list / show / approve / deny` 已实现，生产 `chat` 已公开 `write_file` 和 `edit_file`
+> [!WARNING]
+> 本文保留 Phase 2.2A 的历史交付证据。Phase 2.2B 已删除 `miniclaw approvals`；当前审批在同一个 Textual
+> TUI 中展示完整归一化参数，并只提供 **Allow once** / **Deny**。SQLite Approval 生命周期与安全约束仍然
+> 有效，当前用法见 [单入口 TUI 工程文档](single-entry-tui.md)。
+
+> 历史状态：`list / show / approve / deny` 曾实现，Phase 2.2B 已移除这些入口
 >
-> 验证基线：210/210 tests、10/10 offline Agent cases、Ruff PASS
+> 当时验证基线：210/210 tests、10/10 offline Agent cases、Ruff PASS
 
 ## 1. 最短使用流程
 
