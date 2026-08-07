@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="MiniClaw 开源个人 Agent 的开发进度与当前验证状态。">
+  <title>MiniClaw · Build Signal</title>
+  <style>
+    :root {
+      --ink: #10243a;
+      --muted: #5d7185;
+      --paper: #f4f8fb;
+      --panel: #ffffff;
+      --line: #bfd0dc;
+      --blue: #2c63e7;
+      --aqua: #0a9995;
+      --orange: #e8782f;
+      --shadow: 0 18px 50px rgb(16 36 58 / 10%);
+      --display: "Avenir Next Condensed", "Arial Narrow", sans-serif;
+      --body: "Avenir Next", "Segoe UI", sans-serif;
+      --mono: "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        linear-gradient(rgb(44 99 231 / 5%) 1px, transparent 1px),
+        linear-gradient(90deg, rgb(44 99 231 / 5%) 1px, transparent 1px),
+        var(--paper);
+      background-size: 28px 28px;
+      font-family: var(--body);
+      line-height: 1.55;
+    }
+
+    a { color: inherit; }
+
+    a:focus-visible {
+      outline: 3px solid var(--orange);
+      outline-offset: 4px;
+    }
+
+    .shell {
+      width: min(1180px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 28px 0 72px;
+    }
+
+    .masthead {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 10px 0 22px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .brand,
+    .eyebrow,
+    .tag,
+    .phase-no,
+    .metric-label,
+    .signal-label {
+      font-family: var(--mono);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .brand { font-weight: 800; }
+    .brand span { color: var(--blue); }
+
+    .branch {
+      color: var(--muted);
+      font: 12px/1.4 var(--mono);
+    }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.3fr) minmax(280px, .7fr);
+      gap: clamp(40px, 7vw, 92px);
+      padding: clamp(58px, 9vw, 112px) 0 62px;
+    }
+
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--aqua);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    h1,
+    h2,
+    h3,
+    p { margin-top: 0; }
+
+    h1 {
+      max-width: 780px;
+      margin-bottom: 24px;
+      font-family: var(--display);
+      font-size: clamp(48px, 8vw, 94px);
+      font-stretch: condensed;
+      font-weight: 800;
+      letter-spacing: -.055em;
+      line-height: .91;
+    }
+
+    h1 em {
+      color: var(--blue);
+      font-style: normal;
+    }
+
+    .lede {
+      max-width: 640px;
+      color: var(--muted);
+      font-size: clamp(17px, 2vw, 21px);
+    }
+
+    .status-card {
+      align-self: end;
+      padding: 26px;
+      background: var(--ink);
+      color: #f9fcff;
+      box-shadow: 12px 12px 0 var(--aqua);
+    }
+
+    .status-card .tag { color: #8be1dc; font-size: 11px; }
+    .status-card strong {
+      display: block;
+      margin: 15px 0 10px;
+      font: 800 clamp(32px, 5vw, 54px)/.95 var(--display);
+      letter-spacing: -.035em;
+    }
+    .status-card p { margin: 0; color: #b9cad7; }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .metric { padding: 24px; }
+    .metric + .metric { border-left: 1px solid var(--line); }
+    .metric-label { color: var(--muted); font-size: 11px; }
+    .metric-value {
+      display: block;
+      margin-top: 8px;
+      font: 800 clamp(24px, 4vw, 38px)/1 var(--display);
+    }
+    .metric-value small { color: var(--aqua); font: 13px var(--mono); }
+
+    .section { padding-top: 84px; }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: end;
+      gap: 28px;
+      margin-bottom: 28px;
+    }
+
+    h2 {
+      max-width: 700px;
+      margin-bottom: 0;
+      font: 800 clamp(34px, 5vw, 58px)/.98 var(--display);
+      letter-spacing: -.035em;
+    }
+
+    .section-note {
+      max-width: 390px;
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .signal {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      padding: 38px 28px 30px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .signal::before {
+      position: absolute;
+      top: 58px;
+      right: 10%;
+      left: 10%;
+      height: 2px;
+      background: linear-gradient(90deg, var(--aqua), var(--blue) 70%, var(--line) 70%);
+      content: "";
+    }
+
+    .signal-node { position: relative; text-align: center; }
+    .signal-dot {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      width: 42px;
+      height: 42px;
+      margin: 0 auto 18px;
+      place-items: center;
+      border: 2px solid var(--blue);
+      border-radius: 50%;
+      background: var(--panel);
+      color: var(--blue);
+      font: 800 12px var(--mono);
+    }
+
+    .signal-node.active .signal-dot {
+      background: var(--blue);
+      color: white;
+      box-shadow: 0 0 0 8px rgb(44 99 231 / 12%);
+      animation: pulse 2.2s ease-in-out infinite;
+    }
+
+    .signal-node.queued .signal-dot { border-color: var(--line); color: var(--muted); }
+    .signal-label { font-size: 11px; font-weight: 800; }
+    .signal-node p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+
+    @keyframes pulse {
+      50% { box-shadow: 0 0 0 15px rgb(44 99 231 / 4%); }
+    }
+
+    .roadmap { border-top: 1px solid var(--line); }
+
+    .phase {
+      display: grid;
+      grid-template-columns: 86px 1fr auto;
+      gap: 24px;
+      align-items: start;
+      padding: 26px 0;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .phase-no { color: var(--muted); font-size: 12px; }
+    .phase h3 { margin-bottom: 5px; font-size: 20px; }
+    .phase p { margin-bottom: 0; color: var(--muted); }
+
+    .pill {
+      min-width: 88px;
+      padding: 7px 11px;
+      border: 1px solid currentColor;
+      border-radius: 999px;
+      text-align: center;
+      font: 700 11px var(--mono);
+    }
+
+    .done .pill { color: var(--aqua); }
+    .current { margin: 0 -16px; padding-right: 16px; padding-left: 16px; background: #edf3ff; }
+    .current .phase-no,
+    .current .pill { color: var(--blue); }
+    .queued .pill { color: var(--muted); }
+
+    .work-grid {
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 22px;
+    }
+
+    .work-card {
+      padding: clamp(24px, 4vw, 38px);
+      border: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .work-card h3 { margin-bottom: 24px; font-size: 22px; }
+
+    .checklist { margin: 0; padding: 0; list-style: none; }
+    .checklist li {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: 12px;
+      padding: 12px 0;
+      border-top: 1px solid #dce7ee;
+    }
+    .checklist li::before {
+      color: var(--orange);
+      content: "○";
+      font: 18px/1 var(--mono);
+    }
+    .checklist li.complete::before { color: var(--aqua); content: "●"; }
+
+    .decision {
+      padding: 14px 0;
+      border-top: 1px solid #dce7ee;
+    }
+    .decision code { color: var(--blue); font: 13px var(--mono); }
+    .decision p { margin: 5px 0 0; color: var(--muted); font-size: 14px; }
+
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      margin-top: 84px;
+      padding-top: 22px;
+      border-top: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .footer a { color: var(--blue); font-weight: 700; }
+
+    @media (max-width: 760px) {
+      .hero,
+      .work-grid { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: 1fr; }
+      .metric + .metric { border-top: 1px solid var(--line); border-left: 0; }
+      .section-head,
+      .footer { display: block; }
+      .section-note { margin-top: 14px; }
+      .signal { grid-template-columns: 1fr; padding-left: 72px; }
+      .signal::before {
+        top: 48px;
+        bottom: 48px;
+        left: 43px;
+        width: 2px;
+        height: auto;
+        background: linear-gradient(var(--aqua), var(--blue) 70%, var(--line) 70%);
+      }
+      .signal-node { display: grid; grid-template-columns: 42px 1fr; gap: 18px; text-align: left; }
+      .signal-dot { margin: 0; }
+      .signal-node p { grid-column: 2; margin-top: -18px; }
+      .phase { grid-template-columns: 60px 1fr; }
+      .phase .pill { grid-column: 2; justify-self: start; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .signal-node.active .signal-dot { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="masthead">
+      <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
+      <div class="branch">branch: phase-1-cli-agent</div>
+    </header>
+
+    <section class="hero" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow">Open-source personal agent · Python 3.12</p>
+        <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
+        <p class="lede">Phase 0 已把地基钉牢。现在正在接通 CLI、Agent Runner、DeepSeek V4 Pro 与 SQLite，形成第一条可运行、可回放的主链路。</p>
+      </div>
+      <aside class="status-card" aria-label="当前开发状态">
+        <span class="tag">Current signal</span>
+        <strong>Phase 1</strong>
+        <p>CLI Agent 闭环 · 规格设计与 Provider 接入</p>
+      </aside>
+    </section>
+
+    <section class="metrics" aria-label="项目指标">
+      <div class="metric">
+        <span class="metric-label">Completed phases</span>
+        <span class="metric-value">1 <small>/ 8</small></span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Baseline checks</span>
+        <span class="metric-value">32 <small>passing</small></span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Base model</span>
+        <span class="metric-value">V4 Pro</span>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="signal-title">
+      <div class="section-head">
+        <h2 id="signal-title">当前要接通的信号链</h2>
+        <p class="section-note">每个节点都必须有离线测试与可观察结果。真实模型调用只作为显式冒烟验证，不进入普通测试。</p>
+      </div>
+      <div class="signal">
+        <div class="signal-node active">
+          <div class="signal-dot">01</div>
+          <div class="signal-label">CLI input</div>
+          <p>chat --message</p>
+        </div>
+        <div class="signal-node active">
+          <div class="signal-dot">02</div>
+          <div class="signal-label">Context</div>
+          <p>身份与会话</p>
+        </div>
+        <div class="signal-node active">
+          <div class="signal-dot">03</div>
+          <div class="signal-label">Runner</div>
+          <p>8 轮安全上限</p>
+        </div>
+        <div class="signal-node active">
+          <div class="signal-dot">04</div>
+          <div class="signal-label">DeepSeek</div>
+          <p>V4 Pro + SSE</p>
+        </div>
+        <div class="signal-node queued">
+          <div class="signal-dot">05</div>
+          <div class="signal-label">SQLite</div>
+          <p>Turn 与 Message</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" aria-labelledby="roadmap-title">
+      <div class="section-head">
+        <h2 id="roadmap-title">八个阶段，一条主干</h2>
+        <p class="section-note">状态按合并到 main 且通过阶段门禁计算；“规划中”不冒充已实现。</p>
+      </div>
+      <div class="roadmap">
+        <article class="phase done">
+          <div class="phase-no">Phase 0</div>
+          <div><h3>基础与存储</h3><p>安全路径、强类型配置、SQLite Migration、init 与 doctor。</p></div>
+          <span class="pill">COMPLETED</span>
+        </article>
+        <article class="phase current">
+          <div class="phase-no">Phase 1</div>
+          <div><h3>CLI Agent 闭环</h3><p>Provider、Context、Runner、Turn 持久化与真实模型验证。</p></div>
+          <span class="pill">IN PROGRESS</span>
+        </article>
+        <article class="phase queued">
+          <div class="phase-no">Phase 2</div>
+          <div><h3>Tool 与安全</h3><p>Workspace、文件、HTTP、Shell、Policy 与审批。</p></div>
+          <span class="pill">PLANNED</span>
+        </article>
+        <article class="phase queued">
+          <div class="phase-no">Phase 3</div>
+          <div><h3>Memory、Skills 与压缩</h3><p>长期记忆、按需 Skills 与上下文预算。</p></div>
+          <span class="pill">PLANNED</span>
+        </article>
+        <article class="phase queued">
+          <div class="phase-no">Phase 4</div>
+          <div><h3>飞书生产链路</h3><p>WebSocket、白名单、去重、队列与消息回复。</p></div>
+          <span class="pill">PLANNED</span>
+        </article>
+        <article class="phase queued">
+          <div class="phase-no">Phase 5</div>
+          <div><h3>Telegram 与 Discord</h3><p>复用统一 Channel 契约与同一 Agent Core。</p></div>
+          <span class="pill">PLANNED</span>
+        </article>
+        <article class="phase queued">
+          <div class="phase-no">Phase 6</div>
+          <div><h3>受控自我迭代</h3><p>反馈、回放评测、提案、人工应用与回滚。</p></div>
+          <span class="pill">PLANNED</span>
+        </article>
+        <article class="phase queued">
+          <div class="phase-no">Phase 7</div>
+          <div><h3>部署与 v1.0</h3><p>Docker Compose、健康检查、发布门禁与文档。</p></div>
+          <span class="pill">PLANNED</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="section work-grid" aria-label="当前工作与工程决策">
+      <article class="work-card">
+        <p class="eyebrow">Phase 1 exit gate</p>
+        <h3>当前交付清单</h3>
+        <ul class="checklist">
+          <li class="complete">Phase 1 工程规格与模块边界</li>
+          <li class="complete">DeepSeek V4 Pro 官方协议核验</li>
+          <li>严格 .env 加载与密钥迁移</li>
+          <li>OpenAI-compatible Provider + SSE</li>
+          <li>Agent Runner 与 8 轮上限</li>
+          <li>Turn / Message SQLite 持久化</li>
+          <li>CLI 离线 E2E 与真实模型冒烟验证</li>
+        </ul>
+      </article>
+      <article class="work-card">
+        <p class="eyebrow">Decisions locked</p>
+        <h3>不会漂移的边界</h3>
+        <div class="decision"><code>model</code><p>deepseek-v4-pro</p></div>
+        <div class="decision"><code>credentials</code><p>本地 .env，0600，永不进入 Git。</p></div>
+        <div class="decision"><code>runtime</code><p>单进程 asyncio + 一个 SQLite。</p></div>
+        <div class="decision"><code>scope</code><p>先完成纵向主链路，工具和飞书按后续 Phase 接入。</p></div>
+      </article>
+    </section>
+
+    <footer class="footer">
+      <span>Last updated · 2026-08-07 · commit baseline 8afad33</span>
+      <a href="../superpowers/specs/2026-08-07-phase-1-cli-agent-design.md">查看 Phase 1 工程规格</a>
+    </footer>
+  </main>
+</body>
+</html>

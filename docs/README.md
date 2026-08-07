@@ -5,12 +5,13 @@
 
 ## 推荐阅读顺序
 
-1. 阅读 [PRD](product/20260807_产品需求文档.md)，确认 v0.1 范围、非目标和验收标准。
-2. 阅读 [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)，确认 v1.0
+1. 打开 [开发进度页](progress/index.html)，查看当前 Phase、验证状态和下一步交付。
+2. 阅读 [PRD](product/20260807_产品需求文档.md)，确认 v0.1 范围、非目标和验收标准。
+3. 阅读 [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)，确认 v1.0
    的范围、契约、安全边界、数据模型和分阶段交付标准。
-3. 阅读 [系统架构](architecture/20260807_系统架构.md)，理解渠道、Agent、工具、安全和数据边界。
-4. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证 CLI。
-5. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+4. 阅读 [系统架构](architecture/20260807_系统架构.md)，理解渠道、Agent、工具、安全和数据边界。
+5. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证 CLI。
+6. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -28,6 +29,8 @@
 
 ## 设计与实施记录
 
+- [Phase 1：CLI Agent 闭环设计](superpowers/specs/2026-08-07-phase-1-cli-agent-design.md)：DeepSeek
+  V4 Pro、Provider、Runner、Turn 持久化、`.env` 安全边界和验收标准。
 - [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)：Python
   版个人 Claw v1.0 的工程规格、参考来源、模块契约、部署、测试和交付阶段。
 - [`superpowers/specs/`](superpowers/specs/)：经确认的设计规格。
