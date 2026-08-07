@@ -333,10 +333,11 @@ def _merge_tool_fragments(value: object, tools: dict[int, _ToolAccumulator]) -> 
         function = _object(call.get("function"), "model provider tool function is invalid")
         if function.get("name") is not None:
             accumulator.name = _required_string(function.get("name"), "tool name")
-        if function.get("arguments") is not None:
-            accumulator.argument_parts.append(
-                _required_string(function.get("arguments"), "tool arguments")
-            )
+        arguments = function.get("arguments")
+        if arguments is not None:
+            if not isinstance(arguments, str):
+                raise ProviderProtocolError("model provider tool arguments is invalid")
+            accumulator.argument_parts.append(arguments)
 
 
 def _finish_tools(tools: dict[int, _ToolAccumulator]) -> tuple[ToolCall, ...]:

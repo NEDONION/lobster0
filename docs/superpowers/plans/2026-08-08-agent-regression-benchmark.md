@@ -27,7 +27,7 @@
 
 - Modify: `tests/test_openai_compatible_provider.py`
 - Modify: `src/miniclaw/providers/openai_compatible.py`
-- Modify: `docs/engineering/20260807_Phase1_CLI_Agent工程落地文档.md`
+- Modify: `docs/engineering/phase-1/openai-compatible-provider.md`
 
 - [ ] **Step 1: 保留已经制造的 RED 回归**
 
@@ -76,7 +76,7 @@ Expected: 全部 PASS。
 - [ ] **Step 7: 提交事故修复**
 
 ```bash
-git add src/miniclaw/providers/openai_compatible.py tests/test_openai_compatible_provider.py docs/engineering/20260807_Phase1_CLI_Agent工程落地文档.md
+git add src/miniclaw/providers/openai_compatible.py tests/test_openai_compatible_provider.py docs/engineering/phase-1/openai-compatible-provider.md
 git commit -m "fix: accept empty streamed tool arguments"
 ```
 
@@ -376,7 +376,8 @@ git commit -m "feat: add offline agent eval command"
 - Modify: `README.md`
 - Modify: `docs/README.md`
 - Modify: `docs/engineering/README.md`
-- Modify: `docs/engineering/20260807_Phase2_工程落地文档.md`
+- Modify: `docs/engineering/phase-2/tool-runtime-and-system-info.md`
+- Modify: `docs/engineering/phase-2/workspace-read-tools.md`
 - Modify: `docs/progress/index.html`
 
 - [ ] **Step 1: 运行离线门禁并生成脱敏基线**

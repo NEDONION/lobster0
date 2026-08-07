@@ -220,6 +220,51 @@ class OpenAICompatibleProviderTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(messages, list)
         self.assertEqual(messages[1]["reasoning_content"], "previous reasoning")
 
+    async def test_sse_accepts_empty_arguments_fragment_for_no_argument_tool(self) -> None:
+        """[PROTO-001] 空 arguments 分片应聚合为空对象，不能让 Tool 提前失败。"""
+        empty_arguments = sse(
+            {
+                "id": "chat_empty_arguments",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_system_info",
+                                    "type": "function",
+                                    "function": {"name": "system_info", "arguments": ""},
+                                }
+                            ]
+                        },
+                        "finish_reason": None,
+                    }
+                ],
+            },
+            {
+                "id": "chat_empty_arguments",
+                "choices": [
+                    {"index": 0, "delta": {}, "finish_reason": "tool_calls"}
+                ],
+            },
+        )
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=empty_arguments,
+            )
+
+        provider = await self._provider(respond)
+
+        response = await provider.complete(simple_request())
+
+        self.assertEqual(len(response.tool_calls), 1)
+        self.assertEqual(response.tool_calls[0].name, "system_info")
+        self.assertEqual(response.tool_calls[0].arguments, {})
+
     async def test_json_response_is_supported_without_stream_callback(self) -> None:
         """兼容端点忽略 stream 时仍应解析同一语义的非流式 JSON。"""
         async def respond(request: httpx.Request) -> httpx.Response:

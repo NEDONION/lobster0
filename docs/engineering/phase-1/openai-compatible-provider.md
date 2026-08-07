@@ -164,6 +164,10 @@ DeepSeek/OpenAI 流会把同一调用拆成多个片段：
 - 第一次或后续非空 `function.name`；
 - 按到达顺序追加的 `function.arguments` 字符串。
 
+部分兼容端点会先发送 `arguments: ""`，再结束无参数 Tool Call。这是合法的中间分片，必须参与
+聚合；Provider 不能把空字符串当成缺失字段。流完成后，拼接结果为空时按 `{}` 解析。只有非字符串分片
+或最终结果不是 JSON object 才属于协议错误。该事故以 `[PROTO-001]` 固化在 Provider 回归测试中。
+
 流完成后按 index 排序，拼接 arguments，并用 `json.loads()` 解码。只有字符串键 JSON object 可以进入
 `ToolCall.arguments`。缺少 ID、name、非法 JSON、数组或标量都转换为 `ProviderProtocolError`。
 
@@ -290,6 +294,7 @@ HTTPX 异常通过 `raise ... from error` 保留进程内因果链，但 CLI 只
 - 429 使用数值 Retry-After；
 - 超时只重试一次且底层详情不泄露；
 - 已产生可见 delta 的超时不重试；
+- `[PROTO-001]` 无参数 Tool 的空 arguments 中间分片可正常聚合；
 - Tool arguments 非 JSON object 被拒绝。
 
 所有测试使用 `httpx.MockTransport` 或自定义 `AsyncByteStream`，不连接真实模型。
