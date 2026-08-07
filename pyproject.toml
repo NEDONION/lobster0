@@ -23,6 +23,9 @@ miniclaw = "miniclaw.cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"miniclaw.storage" = ["schema.sql"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py312"
