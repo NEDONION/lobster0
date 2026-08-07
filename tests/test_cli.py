@@ -23,7 +23,7 @@ def run_cli(arguments: list[str]) -> tuple[int, str, str]:
 
 
 class CliTest(unittest.TestCase):
-    """验证帮助、版本和 Phase 0 初始化命令的稳定行为。"""
+    """验证帮助、版本和已有本地状态命令的稳定行为。"""
 
     def test_no_arguments_prints_help(self) -> None:
         """无参数启动时应成功打印帮助，避免空白退出或伪装已实现的子命令。"""
@@ -44,6 +44,16 @@ class CliTest(unittest.TestCase):
                 main(["--version"])
 
         self.assertIn("miniclaw 0.1.0", output.getvalue())
+
+    def test_help_lists_chat_command(self) -> None:
+        """顶层帮助应公开可用的 chat 入口。"""
+        output = io.StringIO()
+
+        with contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(SystemExit, "0"):
+                main(["--help"])
+
+        self.assertIn("chat", output.getvalue())
 
     def test_init_creates_state_and_is_repeatable(self) -> None:
         """CLI 重复初始化应成功，并清楚区分首次创建和已有状态。"""

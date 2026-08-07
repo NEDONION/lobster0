@@ -27,6 +27,20 @@
 | [本地运行指南](getting-started/20260807_本地运行指南.md) | Python、uv、CLI、测试和当前项目状态 |
 | [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md) | 每轮开发后如何同步产品、架构和运行文档 |
 
+## Phase 1 模块工程文档
+
+| 模块 | 文档 |
+| --- | --- |
+| 本地环境与凭据 | [environment.md](engineering/phase-1/environment.md) |
+| Provider 稳定契约 | [provider-contract.md](engineering/phase-1/provider-contract.md) |
+| HTTP/SSE Provider | [openai-compatible-provider.md](engineering/phase-1/openai-compatible-provider.md) |
+| ContextBuilder | [context-builder.md](engineering/phase-1/context-builder.md) |
+| AgentRunner | [agent-runner.md](engineering/phase-1/agent-runner.md) |
+| 会话持久化 | [conversation-storage.md](engineering/phase-1/conversation-storage.md) |
+| TurnService | [turn-service.md](engineering/phase-1/turn-service.md) |
+| CLI Chat | [cli-chat.md](engineering/phase-1/cli-chat.md) |
+| 测试与调试 | [testing-and-debugging.md](engineering/phase-1/testing-and-debugging.md) |
+
 ## 设计与实施记录
 
 - [Phase 1：CLI Agent 闭环设计](superpowers/specs/2026-08-07-phase-1-cli-agent-design.md)：DeepSeek

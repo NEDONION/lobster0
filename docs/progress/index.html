@@ -343,30 +343,30 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">branch: phase-1-cli-agent</div>
+      <div class="branch">branch: main · Phase 1 verified</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">Phase 0 已把地基钉牢。现在正在接通 CLI、Agent Runner、DeepSeek V4 Pro 与 SQLite，形成第一条可运行、可回放的主链路。</p>
+        <p class="lede">第一条纵向主链路已经接通：CLI、Agent Runner、DeepSeek V4 Pro 与 SQLite 真实运行，并留下可回放的 Turn。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Current signal</span>
-        <strong>Phase 1</strong>
-        <p>CLI Agent 闭环 · 规格设计与 Provider 接入</p>
+        <span class="tag">Verified milestone</span>
+        <strong>Phase 1 ✓</strong>
+        <p>CLI Agent 闭环 · 离线 E2E 与真实模型均通过</p>
       </aside>
     </section>
 
     <section class="metrics" aria-label="项目指标">
       <div class="metric">
         <span class="metric-label">Completed phases</span>
-        <span class="metric-value">1 <small>/ 8</small></span>
+        <span class="metric-value">2 <small>/ 8</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">32 <small>passing</small></span>
+        <span class="metric-value">75 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -376,7 +376,7 @@
 
     <section class="section" aria-labelledby="signal-title">
       <div class="section-head">
-        <h2 id="signal-title">当前要接通的信号链</h2>
+        <h2 id="signal-title">已经接通的信号链</h2>
         <p class="section-note">每个节点都必须有离线测试与可观察结果。真实模型调用只作为显式冒烟验证，不进入普通测试。</p>
       </div>
       <div class="signal">
@@ -400,7 +400,7 @@
           <div class="signal-label">DeepSeek</div>
           <p>V4 Pro + SSE</p>
         </div>
-        <div class="signal-node queued">
+        <div class="signal-node active">
           <div class="signal-dot">05</div>
           <div class="signal-label">SQLite</div>
           <p>Turn 与 Message</p>
@@ -419,10 +419,10 @@
           <div><h3>基础与存储</h3><p>安全路径、强类型配置、SQLite Migration、init 与 doctor。</p></div>
           <span class="pill">COMPLETED</span>
         </article>
-        <article class="phase current">
+        <article class="phase done">
           <div class="phase-no">Phase 1</div>
           <div><h3>CLI Agent 闭环</h3><p>Provider、Context、Runner、Turn 持久化与真实模型验证。</p></div>
-          <span class="pill">IN PROGRESS</span>
+          <span class="pill">COMPLETED</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 2</div>
@@ -464,11 +464,11 @@
         <ul class="checklist">
           <li class="complete">Phase 1 工程规格与模块边界</li>
           <li class="complete">DeepSeek V4 Pro 官方协议核验</li>
-          <li>严格 .env 加载与密钥迁移</li>
-          <li>OpenAI-compatible Provider + SSE</li>
-          <li>Agent Runner 与 8 轮上限</li>
-          <li>Turn / Message SQLite 持久化</li>
-          <li>CLI 离线 E2E 与真实模型冒烟验证</li>
+          <li class="complete">严格 .env 加载与密钥迁移</li>
+          <li class="complete">OpenAI-compatible Provider + SSE</li>
+          <li class="complete">Agent Runner 与 8 轮上限</li>
+          <li class="complete">Turn / Message SQLite 持久化</li>
+          <li class="complete">CLI 离线 E2E 与真实模型冒烟验证</li>
         </ul>
       </article>
       <article class="work-card">
@@ -482,7 +482,7 @@
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-07 · commit baseline 8afad33</span>
+      <span>Last updated · 2026-08-07 · 75 tests + live DeepSeek verified</span>
       <a href="../superpowers/specs/2026-08-07-phase-1-cli-agent-design.md">查看 Phase 1 工程规格</a>
     </footer>
   </main>
