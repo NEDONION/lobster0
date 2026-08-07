@@ -5,6 +5,7 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+from miniclaw.agent.events import RunEvent, RunEventHandler, emit
 from miniclaw.policy.engine import PolicyAction, PolicyEngine
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.tooling import ApprovalRepository, StoredToolRun, ToolRunRepository
@@ -49,24 +50,38 @@ class ToolExecutor:
         """返回模型可见的稳定 Tool Schema。"""
         return self._registry.schemas
 
-    async def execute(self, context: ToolContext, call: ToolCall) -> ToolExecution:
+    async def execute(
+        self,
+        context: ToolContext,
+        call: ToolCall,
+        *,
+        on_event: RunEventHandler | None = None,
+    ) -> ToolExecution:
         """按 get → validate → policy → start → execute → finish 执行。"""
         tool = self._registry.get(call.name)
         if tool is None:
-            return ToolExecution(
+            return await _finish_unstarted(
+                context,
+                call,
                 ToolResult.failure(
                     "tool_not_found",
                     f"tool is not available: {call.name}",
-                ).to_model_text(call.name)
+                ).to_model_text(call.name),
+                "rejected",
+                on_event,
             )
         try:
             arguments = tool.validate(call.arguments)
         except ToolValidationError as error:
-            return ToolExecution(
+            return await _finish_unstarted(
+                context,
+                call,
                 ToolResult.failure(
                     "invalid_arguments",
                     str(error),
-                ).to_model_text(call.name)
+                ).to_model_text(call.name),
+                "rejected",
+                on_event,
             )
 
         decision = self._policy.authorize(tool.definition, context, arguments)
@@ -83,6 +98,21 @@ class ToolExecutor:
                     ttl_seconds=self._approval_ttl_seconds,
                     summary=_approval_summary(call.name, arguments),
                 )
+                await emit(
+                    on_event,
+                    RunEvent(
+                        "approval_required",
+                        context.turn_id,
+                        {
+                            "approval_id": approval.id,
+                            "call_id": call.call_id,
+                            "tool_name": call.name,
+                            "summary": approval.summary,
+                            "arguments": arguments,
+                            "expires_at": approval.expires_at.isoformat(),
+                        },
+                    ),
+                )
                 return ToolExecution(
                     ToolResult.failure(
                         "approval_required",
@@ -95,17 +125,30 @@ class ToolExecutor:
                 if decision.action is PolicyAction.REQUIRE_APPROVAL
                 else decision.error_code
             )
-            return ToolExecution(
-                ToolResult.failure(code, decision.reason).to_model_text(call.name)
+            return await _finish_unstarted(
+                context,
+                call,
+                ToolResult.failure(code, decision.reason).to_model_text(call.name),
+                "denied" if decision.action is PolicyAction.DENY else "failed",
+                on_event,
             )
 
         run_id = self._runs.start(context, call, arguments, decision)
-        return await self._execute_started(context, tool, arguments, run_id)
+        return await self._execute_started(
+            context,
+            tool,
+            arguments,
+            run_id,
+            call.call_id,
+            on_event,
+        )
 
     async def execute_approved(
         self,
         context: ToolContext,
         run: StoredToolRun,
+        *,
+        on_event: RunEventHandler | None = None,
     ) -> ToolExecution:
         """执行已由 Approval 原子 claim 的唯一 running ToolRun。"""
         if run.status != "running":
@@ -115,7 +158,13 @@ class ToolExecutor:
             result = ToolResult.failure("tool_not_found", "approved tool is not available")
             model_text = result.to_model_text(run.tool_name)
             self._runs.fail(run.id, model_text, 0, result.error_code)
-            return ToolExecution(model_text)
+            return await _finish_unstarted(
+                context,
+                ToolCall(run.tool_call_id, run.tool_name, run.arguments),
+                model_text,
+                "failed",
+                on_event,
+            )
         try:
             arguments = tool.validate(run.arguments)
         except ToolValidationError:
@@ -125,8 +174,21 @@ class ToolExecutor:
             )
             model_text = result.to_model_text(run.tool_name)
             self._runs.fail(run.id, model_text, 0, result.error_code)
-            return ToolExecution(model_text)
-        return await self._execute_started(context, tool, arguments, run.id)
+            return await _finish_unstarted(
+                context,
+                ToolCall(run.tool_call_id, run.tool_name, run.arguments),
+                model_text,
+                "failed",
+                on_event,
+            )
+        return await self._execute_started(
+            context,
+            tool,
+            arguments,
+            run.id,
+            run.tool_call_id,
+            on_event,
+        )
 
     async def _execute_started(
         self,
@@ -134,10 +196,20 @@ class ToolExecutor:
         tool: Tool,
         arguments: dict[str, JsonValue],
         run_id: int,
+        call_id: str,
+        on_event: RunEventHandler | None,
     ) -> ToolExecution:
         """执行并终结一个已经处于 running 的 ToolRun。"""
         started = time.monotonic()
         try:
+            await emit(
+                on_event,
+                RunEvent(
+                    "tool_started",
+                    context.turn_id,
+                    {"call_id": call_id, "tool_name": tool.definition.name},
+                ),
+            )
             result = await tool.execute(context, arguments)
             if not isinstance(result, ToolResult):
                 raise TypeError("tool returned an invalid result")
@@ -159,7 +231,45 @@ class ToolExecutor:
             self._runs.succeed(run_id, model_text, duration_ms)
         else:
             self._runs.fail(run_id, model_text, duration_ms, result.error_code)
+        await emit(
+            on_event,
+            RunEvent(
+                "tool_finished",
+                context.turn_id,
+                {
+                    "call_id": call_id,
+                    "tool_name": tool.definition.name,
+                    "status": "succeeded" if result.ok else "failed",
+                    "duration_ms": duration_ms,
+                    "preview": model_text,
+                },
+            ),
+        )
         return ToolExecution(model_text)
+
+
+async def _finish_unstarted(
+    context: ToolContext,
+    call: ToolCall,
+    model_text: str,
+    status: str,
+    on_event: RunEventHandler | None,
+) -> ToolExecution:
+    """终结未进入 running 的 Tool 请求并更新可见卡片。"""
+    await emit(
+        on_event,
+        RunEvent(
+            "tool_finished",
+            context.turn_id,
+            {
+                "call_id": call.call_id,
+                "tool_name": call.name,
+                "status": status,
+                "preview": model_text,
+            },
+        ),
+    )
+    return ToolExecution(model_text)
 
 
 def _elapsed_ms(started: float) -> int:

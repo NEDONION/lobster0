@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import StrEnum
 
+from miniclaw.agent.events import RunEvent, RunEventHandler, emit
 from miniclaw.providers.base import (
     JsonValue,
     ModelMessage,
@@ -88,11 +89,14 @@ class AgentRunner:
         self,
         context: ToolContext,
         run: StoredToolRun,
+        on_event: RunEventHandler | None = None,
     ) -> str:
         """通过同一 Executor 执行已消费的绑定 ToolRun。"""
         if self._executor is None:
             raise AgentError("tool executor is required for approval continuation")
-        return (await self._executor.execute_approved(context, run)).model_text
+        return (
+            await self._executor.execute_approved(context, run, on_event=on_event)
+        ).model_text
 
     async def run(
         self,
@@ -101,6 +105,7 @@ class AgentRunner:
         *,
         tool_context: ToolContext | None = None,
         on_intermediate: Callable[[tuple[ModelMessage, ...]], None] | None = None,
+        on_event: RunEventHandler | None = None,
     ) -> AgentRunResult:
         """执行模型与工具循环，直到获得非空最终回答。
 
@@ -129,6 +134,15 @@ class AgentRunner:
 
         async def capture_text(chunk: str) -> None:
             round_chunks.append(chunk)
+            if tool_context is not None:
+                await emit(
+                    on_event,
+                    RunEvent(
+                        "model_text_delta",
+                        tool_context.turn_id,
+                        {"text": chunk},
+                    ),
+                )
 
         for iteration in range(1, self._max_iterations + 1):
             current = replace(request, messages=tuple(messages))
@@ -136,7 +150,7 @@ class AgentRunner:
 
             response = await self._provider.complete(
                 current,
-                capture_text if on_text is not None else None,
+                capture_text if on_text is not None or on_event is not None else None,
             )
             input_tokens += response.input_tokens or 0
             output_tokens += response.output_tokens or 0
@@ -179,7 +193,24 @@ class AgentRunner:
             messages.append(assistant_message)
             intermediate_messages.append(assistant_message)
             for call in response.tool_calls:
-                tool_message, approval_id = await self._execute_tool(call, tool_context)
+                if tool_context is not None:
+                    await emit(
+                        on_event,
+                        RunEvent(
+                            "tool_requested",
+                            tool_context.turn_id,
+                            {
+                                "call_id": call.call_id,
+                                "tool_name": call.name,
+                                "summary": call.name,
+                            },
+                        ),
+                    )
+                tool_message, approval_id = await self._execute_tool(
+                    call,
+                    tool_context,
+                    on_event,
+                )
                 if approval_id is not None:
                     if on_intermediate is not None:
                         on_intermediate(tuple(intermediate_messages[batch_start:]))
@@ -205,6 +236,7 @@ class AgentRunner:
         self,
         call: ToolCall,
         context: ToolContext | None,
+        on_event: RunEventHandler | None,
     ) -> tuple[ModelMessage, int | None]:
         """执行已注册工具，或构造确定性未注册 Tool Result。"""
         if self._executor is None:
@@ -215,7 +247,7 @@ class AgentRunner:
             )
         else:
             assert context is not None
-            outcome = await self._executor.execute(context, call)
+            outcome = await self._executor.execute(context, call, on_event=on_event)
             result = outcome.model_text
             if outcome.approval_id is not None:
                 return (

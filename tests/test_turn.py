@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 from miniclaw.agent.context import ContextBuilder
+from miniclaw.agent.events import RunEvent
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService, _model_message
 from miniclaw.bootstrap import initialize_state
@@ -107,6 +108,120 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             [("user", "hello"), ("assistant", "world")],
         )
         self.assertEqual(provider.requests[0].messages[-1].content, "hello")
+
+    async def test_run_events_follow_persisted_turn_and_tool_states(self) -> None:
+        """TUI 只能看到已落库的 Turn/Tool 状态，且顺序与真实执行一致。"""
+        call = ToolCall("call_system", "system_info", {})
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(call,),
+                    reasoning_content="inspect",
+                    finish_reason="tool_calls",
+                    input_tokens=2,
+                    output_tokens=1,
+                    provider_request_id="req_tool_event",
+                ),
+                final_response("done"),
+            )
+        )
+        executor = ToolExecutor(
+            ToolRegistry((SystemInfoTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+        )
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
+            if event.kind == "turn_started":
+                self.assertEqual(self.turns.get(event.turn_id).status, "running")
+            if event.kind == "tool_finished":
+                with self.database.connect_read_only() as connection:
+                    status = connection.execute(
+                        "SELECT status FROM tool_runs WHERE tool_call_id = ?",
+                        (event.data["call_id"],),
+                    ).fetchone()[0]
+                self.assertEqual(status, "succeeded")
+            if event.kind == "turn_finished":
+                self.assertEqual(self.turns.get(event.turn_id).status, "completed")
+
+        with mock.patch(
+            "miniclaw.tools.system._collect_system_info",
+            return_value={"unavailable_sections": []},
+        ):
+            await self.service(provider, AgentRunner(provider, executor)).handle(
+                self.owner.id,
+                "inspect",
+                "events",
+                on_event=capture,
+            )
+
+        self.assertEqual(
+            [event.kind for event in events],
+            [
+                "turn_started",
+                "tool_requested",
+                "tool_started",
+                "tool_finished",
+                "model_text_delta",
+                "turn_finished",
+            ],
+        )
+
+    async def test_approval_event_has_committed_normalized_arguments(self) -> None:
+        """审批弹窗收到事件时，pending Approval 已存在且参数来自 Policy 归一化。"""
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "call_write",
+                            "write_file",
+                            {"path": "approved.txt", "content": "yes"},
+                        ),
+                    ),
+                    reasoning_content="write",
+                    finish_reason="tool_calls",
+                    input_tokens=2,
+                    output_tokens=1,
+                    provider_request_id="req_approval_event",
+                ),
+            )
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+        )
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
+            if event.kind == "approval_required":
+                approval_id = event.data["approval_id"]
+                assert type(approval_id) is int
+                self.assertEqual(approvals.get(self.owner.id, approval_id).status, "pending")
+
+        result = await self.service(
+            provider,
+            AgentRunner(provider, executor),
+            approvals,
+        ).handle(self.owner.id, "write", "approval-events", on_event=capture)
+
+        approval_event = next(
+            event for event in events if event.kind == "approval_required"
+        )
+        arguments = approval_event.data["arguments"]
+        assert isinstance(arguments, dict)
+        self.assertEqual(arguments["content"], "yes")
+        self.assertEqual(arguments["path"], str(self.paths.workspace / "approved.txt"))
+        self.assertEqual(self.turns.get(result.turn_id).status, "waiting_approval")
+        self.assertNotIn("turn_finished", [event.kind for event in events])
 
     async def test_second_turn_receives_previous_history_in_chronological_order(self) -> None:
         """复用同一 CLI Session 时，新请求应包含上一轮和当前输入。"""
