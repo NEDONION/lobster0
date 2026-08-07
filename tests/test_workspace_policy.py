@@ -206,6 +206,54 @@ class WorkspaceGuardTest(unittest.TestCase):
         )
         self.assertEqual(self.guard.display(self.context, self.workspace), ".")
 
+    def test_resolve_write_allows_only_a_normal_workspace_target(self) -> None:
+        """写目标必须位于真实 Workspace，且最近父目录已经存在。"""
+        notes = self.workspace / "notes"
+        notes.mkdir()
+
+        self.assertEqual(
+            self.guard.resolve_write(self.context, "notes/today.md"),
+            notes / "today.md",
+        )
+
+        shared_target = self.read_only / "shared.md"
+        with self.assertRaises(WorkspaceAccessError) as caught:
+            self.guard.resolve_write(self.context, str(shared_target))
+        self.assertEqual(caught.exception.code, "read_only_path")
+
+        with self.assertRaises(WorkspaceAccessError) as caught:
+            self.guard.resolve_write(self.context, "missing/today.md")
+        self.assertEqual(caught.exception.code, "parent_not_found")
+
+    def test_resolve_write_rejects_escape_symlinks_and_sensitive_paths(self) -> None:
+        """写边界必须拒绝逻辑逃逸、任意 symlink 路径和凭据目标。"""
+        safe_directory = self.workspace / "safe"
+        safe_directory.mkdir()
+        (self.workspace / "inside-link").symlink_to(safe_directory, target_is_directory=True)
+        (self.workspace / "outside-link").symlink_to(
+            self.outside,
+            target_is_directory=True,
+        )
+        target = self.workspace / "target.txt"
+        target.write_text("target", encoding="utf-8")
+        (self.workspace / "file-link.txt").symlink_to(target)
+
+        expected = {
+            "../outside.txt": "workspace_escape",
+            str(self.outside / "outside.txt"): "workspace_escape",
+            "inside-link/new.txt": "symlink_path",
+            "outside-link/new.txt": "symlink_path",
+            "file-link.txt": "symlink_path",
+            ".env": "sensitive_path",
+            "credentials.json": "sensitive_path",
+        }
+        for raw_path, error_code in expected.items():
+            with self.subTest(raw_path=raw_path):
+                with self.assertRaises(WorkspaceAccessError) as caught:
+                    self.guard.resolve_write(self.context, raw_path)
+                self.assertEqual(caught.exception.code, error_code)
+                self.assertNotIn(str(self.workspace.parent), str(caught.exception))
+
 
 if __name__ == "__main__":
     unittest.main()

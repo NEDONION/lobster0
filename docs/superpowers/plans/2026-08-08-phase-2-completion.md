@@ -60,7 +60,7 @@
 - Produces: `WorkspaceGuard.resolve_write(context: ToolContext, raw_path: str) -> Path`.
 - Consumes: existing `WorkspaceGuard.resolve_read()` sensitive-path and display rules.
 
-- [ ] **Step 1: Add failing strict-config tests**
+- [x] **Step 1: Add failing strict-config tests**
 
 ```python
 def test_tools_defaults_are_supervised(self) -> None:
@@ -76,13 +76,13 @@ def test_unknown_nested_tools_key_is_rejected(self) -> None:
         load_config(self.paths, {}, {})
 ```
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `uv run python -m unittest tests.test_config -v`
 
 Expected: FAIL because `AppConfig` has no `tools` field and `[tools]` is unknown.
 
-- [ ] **Step 3: Implement the minimum dataclasses and strict TOML parser**
+- [x] **Step 3: Implement the minimum dataclasses and strict TOML parser**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -97,7 +97,7 @@ class ToolConfig:
 
 Reject duplicate/unknown tool names, invalid enums, booleans as integers, and timeout values beyond their fixed maxima.
 
-- [ ] **Step 4: Add failing write-boundary tests**
+- [x] **Step 4: Add failing write-boundary tests**
 
 ```python
 def test_resolve_write_only_allows_workspace(self) -> None:
@@ -115,7 +115,7 @@ def test_resolve_write_rejects_parent_symlink_and_sensitive_target(self) -> None
             WorkspaceGuard().resolve_write(self.context, value)
 ```
 
-- [ ] **Step 5: Run RED, then implement `resolve_write` using existing guard helpers**
+- [x] **Step 5: Run RED, then implement `resolve_write` using existing guard helpers**
 
 Run: `uv run python -m unittest tests.test_workspace_policy -v`
 
@@ -123,7 +123,7 @@ Expected before implementation: FAIL because `resolve_write` does not exist.
 
 Implementation rules: relative paths anchor to Workspace; absolute paths must remain under Workspace; target/parent symlinks and missing parent directories fail; do not reuse read-only-root authorization.
 
-- [ ] **Step 6: Verify and commit**
+- [x] **Step 6: Verify and commit**
 
 Run: `uv run python -m unittest tests.test_config tests.test_workspace_policy -v && uv run ruff check src/miniclaw/config.py src/miniclaw/policy/workspace.py tests/test_config.py tests/test_workspace_policy.py`
 

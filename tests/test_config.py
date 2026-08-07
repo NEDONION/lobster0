@@ -32,7 +32,91 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
         self.assertEqual(config.workspace.path, self.paths.workspace)
+        self.assertEqual(config.tools.security, "allowlist")
+        self.assertEqual(config.tools.ask, "on-miss")
+        self.assertEqual(config.tools.approval_ttl_seconds, 600)
+        self.assertEqual(
+            config.tools.enabled,
+            (
+                "system_info",
+                "read_file",
+                "write_file",
+                "edit_file",
+                "glob",
+                "grep",
+                "http_get",
+                "run_command",
+            ),
+        )
+        self.assertEqual(config.tools.run_command.timeout_seconds, 30)
+        self.assertEqual(config.tools.http_get.max_response_bytes, 2 * 1024 * 1024)
         self.assertNotIn("secret-must-stay-outside-config", repr(config))
+
+    def test_tools_sections_are_strict_and_load_exact_rules(self) -> None:
+        """Tool 配置拼错时必须失败，合法 exact 规则必须保留参数边界。"""
+        self.paths.config.write_text(
+            "[tools]\n"
+            'enabled = ["system_info", "run_command", "http_get"]\n'
+            'security = "full"\n'
+            'ask = "always"\n'
+            "approval_ttl_seconds = 90\n"
+            "[tools.run_command]\n"
+            'allow_commands = [{ program = "git", args = ["status", "--short"] }]\n'
+            "timeout_seconds = 12\n"
+            "max_timeout_seconds = 45\n"
+            "[tools.http_get]\n"
+            'allow_hosts = ["example.com"]\n'
+            "timeout_seconds = 9\n"
+            "max_response_bytes = 4096\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(self.paths, {}, {})
+
+        self.assertEqual(config.tools.enabled, ("system_info", "run_command", "http_get"))
+        self.assertEqual((config.tools.security, config.tools.ask), ("full", "always"))
+        self.assertEqual(config.tools.approval_ttl_seconds, 90)
+        self.assertEqual(config.tools.run_command.allow_commands[0].program, "git")
+        self.assertEqual(
+            config.tools.run_command.allow_commands[0].args,
+            ("status", "--short"),
+        )
+        self.assertEqual(config.tools.run_command.max_timeout_seconds, 45)
+        self.assertEqual(config.tools.http_get.allow_hosts, ("example.com",))
+        self.assertEqual(config.tools.http_get.max_response_bytes, 4096)
+
+    def test_invalid_tool_config_is_rejected_without_fallback(self) -> None:
+        """未知字段、重复工具和越界超时不能静默降级为安全默认值。"""
+        invalid_configs = (
+            ("[tools.run_command]\nunknown = true\n", "tools.run_command.unknown"),
+            ('[tools]\nenabled = ["grep", "grep"]\n', "tools.enabled"),
+            ('[tools]\nsecurity = "unsafe"\n', "tools.security"),
+            (
+                "[tools.run_command]\ntimeout_seconds = 121\nmax_timeout_seconds = 120\n",
+                "tools.run_command.timeout_seconds",
+            ),
+            ("[tools.http_get]\nmax_response_bytes = true\n", "max_response_bytes"),
+        )
+        for content, expected in invalid_configs:
+            with self.subTest(content=content):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
+
+    def test_exact_command_rule_preserves_repeated_arguments(self) -> None:
+        """合法 argv 中重复值不能被配置去重或误判为重复规则。"""
+        self.paths.config.write_text(
+            "[tools.run_command]\n"
+            'allow_commands = [{ program = "printf", args = ["%s%s", "x", "x"] }]\n',
+            encoding="utf-8",
+        )
+
+        config = load_config(self.paths, {}, {})
+
+        self.assertEqual(
+            config.tools.run_command.allow_commands[0].args,
+            ("%s%s", "x", "x"),
+        )
 
     def test_environment_and_explicit_values_override_toml(self) -> None:
         """单字段覆盖必须遵循文件、环境和显式值的稳定优先级。"""

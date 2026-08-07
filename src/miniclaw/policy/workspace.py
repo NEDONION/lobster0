@@ -1,5 +1,6 @@
-"""Workspace 文件读取边界。"""
+"""Workspace 文件读写边界。"""
 
+import os
 from pathlib import Path
 
 from miniclaw.tools.base import ToolContext
@@ -69,6 +70,65 @@ class WorkspaceGuard:
             )
         return resolved
 
+    def resolve_write(self, context: ToolContext, raw_path: str) -> Path:
+        """返回允许写入的 Workspace 路径；只读根和 symlink 一律拒绝。"""
+        supplied = Path(raw_path)
+        candidate = supplied if supplied.is_absolute() else context.workspace / supplied
+        state_home = _resolve(context.state_home)
+        if _is_sensitive(candidate, state_home):
+            raise WorkspaceAccessError(
+                "sensitive_path",
+                "path is sensitive and cannot be written",
+            )
+
+        workspace = _resolve(context.workspace)
+        lexical = _absolute_without_symlink_resolution(candidate)
+        for read_only_root in context.read_only_roots:
+            if _contains(_resolve(read_only_root), _resolve(candidate)):
+                raise WorkspaceAccessError(
+                    "read_only_path",
+                    "path belongs to a read-only root",
+                )
+        if not _contains(workspace, lexical):
+            raise WorkspaceAccessError(
+                "workspace_escape",
+                "path is outside the configured workspace",
+            )
+
+        relative = lexical.relative_to(workspace)
+        current = workspace
+        try:
+            for part in relative.parts:
+                current /= part
+                if current.is_symlink():
+                    raise WorkspaceAccessError(
+                        "symlink_path",
+                        "symbolic links cannot be used for writes",
+                    )
+        except OSError:
+            raise WorkspaceAccessError(
+                "workspace_escape",
+                "path could not be resolved safely",
+            ) from None
+
+        if not lexical.parent.is_dir():
+            raise WorkspaceAccessError(
+                "parent_not_found",
+                "target parent directory does not exist",
+            )
+        resolved = _resolve(lexical)
+        if _is_sensitive(resolved, state_home):
+            raise WorkspaceAccessError(
+                "sensitive_path",
+                "path is sensitive and cannot be written",
+            )
+        if not _contains(workspace, resolved):
+            raise WorkspaceAccessError(
+                "workspace_escape",
+                "path is outside the configured workspace",
+            )
+        return resolved
+
     def display(self, context: ToolContext, path: Path, *, root: Path | None = None) -> str:
         """返回相对允许根的路径，不把本机 Home 目录暴露给模型。"""
         base = _resolve(root or context.workspace)
@@ -88,6 +148,17 @@ def _resolve(path: Path) -> Path:
         except FileNotFoundError:
             return path.resolve(strict=False)
     except (OSError, RuntimeError, ValueError):
+        raise WorkspaceAccessError(
+            "workspace_escape",
+            "path could not be resolved safely",
+        ) from None
+
+
+def _absolute_without_symlink_resolution(path: Path) -> Path:
+    """规范化 `.`/`..`，但保留 symlink 组件供写边界逐段拒绝。"""
+    try:
+        return Path(os.path.abspath(path))
+    except (OSError, ValueError):
         raise WorkspaceAccessError(
             "workspace_escape",
             "path could not be resolved safely",
