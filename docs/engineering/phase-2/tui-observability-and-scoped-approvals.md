@@ -1,7 +1,7 @@
 # Phase 2 加固：TUI 可观测、长文本与分级审批
 
 > 状态：已实现并验证  
-> 当前门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS
+> 当前门禁：296/296 tests、24/24 offline Agent cases、Ruff PASS
 > 范围：唯一 Textual TUI；不代表 `lark-cli` 或飞书 Channel 已完成
 
 ## 1. 大白话结论
@@ -198,7 +198,7 @@ flowchart TD
 git diff --check
 ```
 
-结果：273/273 tests、21/21 offline Agent cases、Ruff PASS。
+当前全仓结果：296/296 tests、24/24 offline Agent cases、Ruff PASS。
 
 ## 10. 仍未完成
 

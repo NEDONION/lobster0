@@ -1,6 +1,7 @@
 # Phase 3：Memory、Skills 与上下文压缩工程文档
 
-> 状态：实施中。本文先固定验收口径；只有通过测试和真实 CLI smoke 的能力才会标记为“已验证”。
+> 状态：已实现并通过阶段门禁。当前证据：296/296 tests、24/24 offline Agent cases、Ruff PASS；
+> 当前版本没有把历史 v0.2 DeepSeek live smoke 冒充 Phase 3 新结果。
 
 ## 1. 这阶段解决什么
 
@@ -198,11 +199,16 @@ flowchart LR
 
 ## 9. Phase 3 完成定义
 
-- 全量测试、Ruff、回归 Agent eval、文档链接和 Mermaid 检查通过。
-- `uv run miniclaw` 真实 CLI 完成记忆读取、记忆审批和 Skill 命中 smoke。
-- 小预算会话触发一次真实/受控 Provider compaction，SQLite 原消息仍完整。
-- README、架构文档、工程索引、repo progress 和外部 progress HTML 同步。
-- 以上证据进入版本记录并推送 `main`，否则只能标记为“实施中”。
+- [x] 全量 296 个确定性测试、Ruff 与 24 条 offline Agent eval 通过。
+- [x] `MEMORY-READ-001` 通过生产 `ContextBuilder`/Tool 路径读取 Memory。
+- [x] `MEMORY-PROPOSE-001` 通过真实 Policy、Approval、child Turn 和文件追加链路。
+- [x] `SKILL-ACTIVATE-001` 证明匹配 Skill 进入模型请求，未命中 Skill 不进入上下文。
+- [x] 小预算测试触发 Provider compaction，重启后读取摘要且 SQLite 原消息完整保留。
+- [x] README、架构文档、工程索引、release record、repo progress 和外部 progress HTML 同步。
+- [ ] 当前版本的真实 DeepSeek Phase 3 smoke；它属于 release-only R3，不作为每次提交的确定性门禁。
+
+机器可读 gate、复现命令和未覆盖范围见
+[v0.3.0 release record](../../evals/releases/v0.3.0.md)。
 
 ## 10. 明确不做
 
@@ -210,3 +216,17 @@ flowchart LR
 - 不自动把 daily memory 合并进长期记忆；这属于后续 Evolution 的评测与人工批准链。
 - 不执行 Skill 自带 Python，不允许 Skill 绕过 Policy。
 - 不在后台定时改 Prompt、源码、Git 或部署。
+
+## 11. 已落地代码与回放证据
+
+| 边界 | 生产代码 | 主要测试/场景 |
+| --- | --- | --- |
+| Markdown Memory | `src/miniclaw/memory/store.py` | `tests/test_memory_store.py`、`MEMORY-READ-001` |
+| Memory Tool + Approval | `src/miniclaw/tools/memory.py` | `tests/test_memory_tools.py`、`MEMORY-PROPOSE-001` |
+| Skills 惰性加载 | `src/miniclaw/skills/loader.py` | `tests/test_skills.py`、`SKILL-ACTIVATE-001` |
+| Context 注入与 snapshot | `src/miniclaw/agent/context.py` | `tests/test_context.py`、`tests/test_turn.py` |
+| Persistent compaction | `src/miniclaw/agent/compaction.py` | `tests/test_compaction.py`、`tests/test_turn.py` |
+| 唯一生产装配 | `src/miniclaw/runtime.py` | `tests/test_runtime.py`、全量 offline eval |
+
+Phase 3 没有新增第三方运行时依赖，也没有新增数据库表。Compaction summary 复用 `messages` 表中的 system
+message，并用 metadata 保存覆盖范围、模型和哈希；这让旧数据库可以直接升级，同时保留完整回放能力。

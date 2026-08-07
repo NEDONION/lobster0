@@ -9,7 +9,7 @@
 <p align="center">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-0F766E" />
-  <img alt="Status Phase 2.4 verified" src="https://img.shields.io/badge/Status-Phase_2.4_verified-0F766E" />
+  <img alt="Status Phase 3 verified" src="https://img.shields.io/badge/Status-Phase_3_verified-0F766E" />
 </p>
 
 MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。目标是在同一个 Agent Core 后接入本地
@@ -17,8 +17,8 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 Phase 2.4：裸 `miniclaw` 进入唯一的 Textual 全屏 TUI；同一个 `AgentRuntime`
-> 连接 DeepSeek、TurnService、SQLite、八个系统/文件/命令/HTTPS Tool 与参数绑定 Approval。TUI 支持流式回答、
+> 当前仓库已完成 Phase 3：裸 `miniclaw` 进入唯一的 Textual 全屏 TUI；同一个 `AgentRuntime`
+> 连接 DeepSeek、TurnService、SQLite、十个系统/文件/命令/HTTPS/Memory Tool 与参数绑定 Approval。TUI 支持流式回答、
 > Provider reasoning、可逐项展开的 Tool 参数/执行/结果 Trace、Enter 发送、Shift+Enter 换行、Esc 取消、
 > Ctrl+O 全展开/收起、Slash Command、默认中文/可切英文、失败草稿恢复，以及上下文/Token/Tool/迭代/耗时
 > 审计栏。审批弹窗由 Core 决定是否显示 Allow once、Allow this session、Always allow；文件写入仍只允许单次。
@@ -27,8 +27,10 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > 全 DNS 公网校验、固定 IP/TLS hostname、每跳重验、响应预算和不可信内容标记。两类动作未命中精确规则时
 > 都在同一 TUI 接受参数绑定审批。Session 规则只活在当前 Runtime；Always 只在成功后为安全 exact argv 或
 > exact hostname 写入脱敏规则，inline AppleScript 和文件写入不能持久放行。
-> `ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek live eval runner、
-> 真实 `lark-cli`/Node 路径闭环和飞书 Channel 尚未完成。当前回归基线为 **273 tests + 21/21 Agent cases**。
+> Phase 3 已增加安全 Markdown Memory、经审批的 daily memory 写入、惰性 `SKILL.md` 激活，以及保留原始消息的
+> persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek
+> live eval runner、真实 `lark-cli`/Node 路径闭环和飞书 Channel 尚未完成。当前回归基线为
+> **296 tests + 24/24 Agent cases**。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
 > 保存在 [v0.2.0 release record](docs/evals/releases/v0.2.0.md)，不冒充当前 TUI 版本的新 live 结果。
@@ -92,7 +94,8 @@ uv run miniclaw eval run --suite offline [--root evals/scenarios]
 uv run python -m miniclaw --version
 ```
 
-`init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md` 或 `MEMORY.md`；`doctor`
+`init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md`、`MEMORY.md` 或已有 Skill；它会为新环境
+创建一个 `skills/summarize/SKILL.md` 示例。`doctor`
 只执行离线检查，不连接模型或 IM 平台。裸 `miniclaw` 从当前目录的私密 `.env` 读取 Key，并要求真实
 TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`，也可在配置的
 Workspace 内调用 `read_file`、`glob`、`grep`；`write_file` / `edit_file` 会先生成参数绑定 Approval，只有
@@ -103,6 +106,21 @@ macOS 应用名不确定时，模型可显式调用 `system_info` 的 `applicati
 `/Applications` 中有界、去路径的真实 `.app` 名称，再由 `run_command(open, [-a, Exact Name])` 请求审批。
 `eval` 完全离线，不读取
 `.env`、不需要 `init` 或 API Key，并通过真实 Agent/Policy/Tool/SQLite 链路运行版本化场景。
+
+### Memory、Skills 与长对话
+
+```text
+~/.miniclaw/
+├── MEMORY.md                  # Owner 手工维护的稳定长期记忆
+├── memory/YYYY-MM-DD.md       # propose_memory 经审批追加的 daily memory
+└── skills/<name>/SKILL.md     # 按当前 Query 惰性激活的做事说明书
+```
+
+每次请求按固定顺序注入长期记忆、今天/昨天的 daily memory、最多 3 个命中 Skill、最新 compaction summary
+与未压缩消息。`read_memory` 只读；`propose_memory` 必须经过参数绑定 Approval，而且只追加当天 daily 文件，
+不会静默改写 `MEMORY.md`。常见 Key、Token、Password、Secret、验证码和私钥片段会在校验与写盘边界被拒绝。
+上下文达到预算的 80% 时，当前 Provider 会生成可持久化摘要；SQLite 原消息永不删除，摘要失败也不会留下半成品。
+完整边界与图解见 [Phase 3 工程文档](docs/engineering/phase-3/memory-skills-compaction.md)。
 
 审批续跑会创建没有假 User Message 的 child Turn，并让模型基于真实执行结果继续回答。Approval 绑定 Tool
 名与完整规范参数；过期、篡改、Owner 不匹配和重复消费都会 fail closed。
@@ -148,6 +166,7 @@ miniclaw/
 │   ├── getting-started/
 │   ├── engineering/phase-1/
 │   ├── engineering/phase-2/
+│   ├── engineering/phase-3/
 │   ├── product/
 │   ├── progress/
 │   └── superpowers/
@@ -160,9 +179,11 @@ miniclaw/
 │   ├── runtime.py
 │   ├── agent/
 │   ├── evals/
+│   ├── memory/
 │   ├── policy/
 │   ├── providers/
 │   ├── storage/
+│   ├── skills/
 │   ├── tui/
 │   └── tools/
 ├── tests/
@@ -189,10 +210,12 @@ miniclaw/
 | [TUI 可观测与分级审批加固](docs/engineering/phase-2/tui-observability-and-scoped-approvals.md) | 真实 Token 遥测、Session/Always exact scope、双语消息层级与草稿恢复 |
 | [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
 | [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |
-| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | 273 tests、21 场景、crash recovery、Doctor、历史 live smoke 与发布手册 |
+| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | 当前 296 tests、24 场景、crash recovery、Doctor、历史 live smoke 与发布手册 |
+| [Phase 3 Memory、Skills 与 Compaction](docs/engineering/phase-3/memory-skills-compaction.md) | Markdown 记忆、审批写入、Skill 惰性激活、持久化摘要、恢复和测试矩阵 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |
+| [Eval v0.3.0 发布记录](docs/evals/releases/v0.3.0.md) | Phase 3 的 296 tests、24/24 场景与已知边界 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

@@ -2,7 +2,7 @@
 
 > 状态：`run_command` 已进入唯一 Textual TUI 的共享 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
 >
-> 当前门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS
+> 当前门禁：296/296 tests、24/24 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 
