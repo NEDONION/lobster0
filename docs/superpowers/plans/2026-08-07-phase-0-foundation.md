@@ -40,7 +40,7 @@ initialization, and `doctor.py` inspects the same public boundaries without repa
 - Produces: `PathConfigurationError`, `StatePaths`,
   `resolve_home(value, environ) -> Path`, and `build_state_paths(home) -> StatePaths`.
 
-- [ ] **Step 1: Write failing path tests**
+- [x] **Step 1: Write failing path tests**
 
 The production change caught by these tests is accepting a relative state root or deriving a state
 file outside the selected root.
@@ -73,7 +73,7 @@ class StatePathsTest(unittest.TestCase):
             resolve_home("relative/state", {})
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run:
 
@@ -83,7 +83,7 @@ Run:
 
 Expected: import failure because `miniclaw.paths` does not exist.
 
-- [ ] **Step 3: Implement the path boundary**
+- [x] **Step 3: Implement the path boundary**
 
 Use a frozen, slotted dataclass with these fields:
 
@@ -129,7 +129,7 @@ class StatePaths:
 `resolve_home()` chooses explicit value, then `MINICLAW_HOME`, then `~/.miniclaw`; it calls
 `expanduser()`, rejects a non-absolute result, and returns `resolve(strict=False)`.
 
-- [ ] **Step 4: Verify GREEN and commit**
+- [x] **Step 4: Verify GREEN and commit**
 
 Run:
 
@@ -153,7 +153,7 @@ Expected: focused tests and Ruff pass; commit contains only path code and tests.
 - Produces: `ConfigError`, `AgentConfig`, `ProviderConfig`, `WorkspaceConfig`, `AppConfig`, and
   `load_config(paths, environ, overrides) -> AppConfig`.
 
-- [ ] **Step 1: Write failing default and precedence tests**
+- [x] **Step 1: Write failing default and precedence tests**
 
 The production changes caught are reversing precedence, loading an API key value into printable
 configuration, or accepting a relative Workspace.
@@ -200,7 +200,7 @@ class ConfigTest(unittest.TestCase):
             load_config(self.paths, {}, {})
 ```
 
-- [ ] **Step 2: Verify RED**
+- [x] **Step 2: Verify RED**
 
 Run:
 
@@ -210,7 +210,7 @@ Run:
 
 Expected: import failure because `miniclaw.config` does not exist.
 
-- [ ] **Step 3: Implement typed configuration**
+- [x] **Step 3: Implement typed configuration**
 
 Use these public dataclasses and defaults:
 
@@ -249,7 +249,7 @@ and URL credentials. Never resolve the value stored in `api_key_env`; it is an e
 name, not a secret. Wrap `TOMLDecodeError`, `OSError`, and validation failures in `ConfigError` without
 including secret environment values.
 
-- [ ] **Step 4: Add malformed input tests**
+- [x] **Step 4: Add malformed input tests**
 
 ```python
 def test_malformed_toml_reports_config_path(self) -> None:
@@ -265,7 +265,7 @@ def test_boolean_is_not_accepted_as_integer(self) -> None:
         load_config(self.paths, {}, {})
 ```
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run:
 
@@ -296,7 +296,7 @@ Expected: all tests pass and no secret values appear in failure text.
   `current_schema_version(database) -> int`, `Owner`, and
   `OwnerRepository.get_or_create(display_name="Owner") -> Owner`.
 
-- [ ] **Step 1: Write failing migration tests**
+- [x] **Step 1: Write failing migration tests**
 
 The production changes caught are omitting a core table, failing to enable a required PRAGMA, or
 reapplying migration 1.
@@ -340,7 +340,7 @@ class StorageTest(unittest.TestCase):
         self.assertEqual(busy_timeout, 5000)
 ```
 
-- [ ] **Step 2: Verify migration RED**
+- [x] **Step 2: Verify migration RED**
 
 Run:
 
@@ -350,7 +350,7 @@ Run:
 
 Expected: import failure because `miniclaw.storage` does not exist.
 
-- [ ] **Step 3: Implement connection and migration primitives**
+- [x] **Step 3: Implement connection and migration primitives**
 
 `Database.connect()` requires an existing parent directory, opens the database path, sets
 `sqlite3.Row`, and executes:
@@ -373,7 +373,7 @@ and raises `MigrationError`. Add this package-data declaration:
 Use the complete version-1 DDL from the approved engineering specification; do not add repository
 classes for tables not used in Phase 0.
 
-- [ ] **Step 4: Write failing Owner idempotency test**
+- [x] **Step 4: Write failing Owner idempotency test**
 
 The production change caught is inserting a second Owner or overwriting its display name on a
 repeated initialization.
@@ -391,7 +391,7 @@ def test_owner_is_created_once_and_preserved(self) -> None:
     self.assertEqual(second.display_name, "Owner")
 ```
 
-- [ ] **Step 5: Verify Owner RED, implement, and verify GREEN**
+- [x] **Step 5: Verify Owner RED, implement, and verify GREEN**
 
 Run the Owner test before implementation; expect `ImportError` for `OwnerRepository`. Implement
 `get_or_create()` using `BEGIN IMMEDIATE`, select the lowest existing user ID, insert only when no
@@ -422,7 +422,7 @@ not add or rename a row.
 - Produces: `InitResult`, `initialize_state(paths) -> InitResult`, and CLI
   `miniclaw init [--home PATH]`.
 
-- [ ] **Step 1: Write failing bootstrap idempotency test**
+- [x] **Step 1: Write failing bootstrap idempotency test**
 
 The production changes caught are replacing user-owned Markdown/config content or adding a second
 Owner during repeated initialization.
@@ -455,7 +455,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertTrue(all(path.is_dir() for path in paths.directories))
 ```
 
-- [ ] **Step 2: Verify bootstrap RED**
+- [x] **Step 2: Verify bootstrap RED**
 
 Run:
 
@@ -465,7 +465,7 @@ Run:
 
 Expected: import failure because `miniclaw.bootstrap` does not exist.
 
-- [ ] **Step 3: Implement minimal initialization**
+- [x] **Step 3: Implement minimal initialization**
 
 Create every `StatePaths.directories` entry with mode `0o700`. Create only missing files using
 exclusive mode and UTF-8:
@@ -487,7 +487,7 @@ class InitResult:
     created_files: tuple[Path, ...]
 ```
 
-- [ ] **Step 4: Write failing CLI init test**
+- [x] **Step 4: Write failing CLI init test**
 
 ```python
 def run_cli(arguments: list[str]) -> tuple[int, str, str]:
@@ -512,7 +512,7 @@ def test_init_creates_state_and_is_repeatable(self) -> None:
 
 `run_cli()` is a test-only helper that redirects stdout/stderr around the real `main()` function.
 
-- [ ] **Step 5: Verify CLI RED, implement, and commit**
+- [x] **Step 5: Verify CLI RED, implement, and commit**
 
 Add a required `init` subparser only when a command is present; preserve no-argument help and
 `--version`. `main()` catches `PathConfigurationError`, `ConfigError`, `MigrationError`, and
@@ -544,7 +544,7 @@ Expected: repeated init succeeds without replacing files or creating another Own
 - Produces: `CheckStatus`, `CheckResult`, `run_local_checks(paths, environ)`, and CLI
   `miniclaw doctor [--home PATH]`.
 
-- [ ] **Step 1: Write failing healthy-state diagnostics test**
+- [x] **Step 1: Write failing healthy-state diagnostics test**
 
 The production changes caught are a doctor that reports success without actually parsing config,
 opening SQLite, or checking Workspace.
@@ -579,7 +579,7 @@ class DoctorTest(unittest.TestCase):
         )
 ```
 
-- [ ] **Step 2: Verify doctor RED**
+- [x] **Step 2: Verify doctor RED**
 
 Run:
 
@@ -589,7 +589,7 @@ Run:
 
 Expected: import failure because `miniclaw.doctor` does not exist.
 
-- [ ] **Step 3: Implement real local checks**
+- [x] **Step 3: Implement real local checks**
 
 Use `StrEnum` values `pass`, `warn`, and `fail`. Each `CheckResult` contains `name`, `status`, and a
 safe human-readable `message`. Checks must:
@@ -602,7 +602,7 @@ safe human-readable `message`. Checks must:
 
 Do not create or repair state, call a network, or read an API key value.
 
-- [ ] **Step 4: Add corrupt-config and CLI tests**
+- [x] **Step 4: Add corrupt-config and CLI tests**
 
 ```python
 def test_corrupt_config_fails_without_exposing_file_contents(self) -> None:
@@ -628,7 +628,7 @@ def test_doctor_returns_two_for_corrupt_config(self) -> None:
         self.assertEqual(error, "")
 ```
 
-- [ ] **Step 5: Verify GREEN and commit**
+- [x] **Step 5: Verify GREEN and commit**
 
 Run:
 
@@ -655,7 +655,7 @@ does not appear in output.
 - Consumes: verified CLI behavior from Tasks 1-5.
 - Produces: commands and status descriptions that match the implementation.
 
-- [ ] **Step 1: Update only verified claims**
+- [x] **Step 1: Update only verified claims**
 
 Change repository status from scaffold to Phase 0 foundation. Document:
 
@@ -668,7 +668,7 @@ MINICLAW_HOME=/absolute/path uv run miniclaw init
 List created local files, configuration precedence, exit codes 0/2/5, and the fact that doctor is
 offline. Keep Agent chat, Provider calls, Tools, and Feishu explicitly unimplemented.
 
-- [ ] **Step 2: Run the release gate in a temporary home**
+- [x] **Step 2: Run the release gate in a temporary home**
 
 Run:
 
@@ -686,7 +686,7 @@ Expected: both init calls return 0, doctor reports five PASS checks, all tests a
 `git diff --check` is empty. Remove only the exact temporary directory printed by `mktemp -d` after
 verifying its value is non-empty and starts with the platform temporary root.
 
-- [ ] **Step 3: Mark this plan's completed checkboxes and commit docs**
+- [x] **Step 3: Mark this plan's completed checkboxes and commit docs**
 
 Run:
 

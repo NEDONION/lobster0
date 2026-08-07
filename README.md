@@ -9,7 +9,7 @@
 <p align="center">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-0F766E" />
-  <img alt="Status Scaffold" src="https://img.shields.io/badge/Status-Scaffold-F59E0B" />
+  <img alt="Status Phase 0" src="https://img.shields.io/badge/Status-Phase_0-2563EB" />
 </p>
 
 MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。目标是在同一个 Agent Core 后接入本地
@@ -17,7 +17,8 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库只完成项目初始化与最小 CLI，尚未实现 Agent Loop、模型调用、飞书接入和持久化。
+> 当前仓库已完成 Phase 0 本地基础：安全状态路径、强类型配置、SQLite Schema、幂等 `init` 和离线
+> `doctor`。尚未实现 Agent Loop、模型调用、工具和飞书接入。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
 
 ## Planned MVP
@@ -53,6 +54,8 @@ flowchart LR
 uv venv
 uv sync --extra dev
 uv run miniclaw --version
+uv run miniclaw init
+uv run miniclaw doctor
 uv run python -m unittest discover -s tests -v
 ```
 
@@ -60,8 +63,13 @@ uv run python -m unittest discover -s tests -v
 
 ```bash
 uv run miniclaw
+uv run miniclaw init [--home /absolute/path]
+uv run miniclaw doctor [--home /absolute/path]
 uv run python -m miniclaw --version
 ```
+
+`init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md` 或 `MEMORY.md`；`doctor`
+只执行离线检查，不连接模型或 IM 平台。
 
 ## Repository Layout
 
@@ -75,6 +83,11 @@ miniclaw/
 │   ├── product/
 │   └── superpowers/plans/
 ├── src/miniclaw/
+│   ├── bootstrap.py
+│   ├── config.py
+│   ├── doctor.py
+│   ├── paths.py
+│   └── storage/
 ├── tests/
 └── pyproject.toml
 ```
@@ -86,7 +99,7 @@ miniclaw/
 | [文档中心](docs/README.md) | 全部产品、架构、运行和开发文档入口 |
 | [产品需求文档](docs/product/20260807_产品需求文档.md) | v0.1 范围、流程图、架构图、验收标准和里程碑 |
 | [系统架构](docs/architecture/20260807_系统架构.md) | 核心边界、数据流和计划中的包布局 |
-| [本地运行指南](docs/getting-started/20260807_本地运行指南.md) | 当前脚手架的安装、测试和 CLI 命令 |
+| [本地运行指南](docs/getting-started/20260807_本地运行指南.md) | Phase 0 安装、初始化、配置、诊断和测试命令 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License
