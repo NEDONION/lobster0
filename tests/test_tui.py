@@ -11,6 +11,7 @@ from textual.widgets import Markdown, Static, TextArea
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.paths import build_state_paths
+from miniclaw.tools.base import ToolDefinition, ToolRisk
 from miniclaw.tui.app import MiniClawApp, ToolCard, _terminal_safe
 
 if TYPE_CHECKING:
@@ -30,6 +31,14 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(
                 model="deepseek-v4-pro",
                 workspace=self.paths.workspace,
+                tool_definitions=(
+                    ToolDefinition(
+                        name="read_file",
+                        description="Read one workspace file.",
+                        parameters={"type": "object"},
+                        risk=ToolRisk.LOW,
+                    ),
+                ),
             ),
         )
 
@@ -148,6 +157,50 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("18 ms", rendered)
             self.assertIn("safe[2J preview", rendered)
             self.assertNotIn("\x1b", rendered)
+
+    async def test_local_slash_commands_render_without_contacting_the_agent(self) -> None:
+        """help/status/tools/unknown 都应只更新本地 transcript。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+
+        async with app.run_test() as pilot:
+            for command in ("/help", "/status", "/tools", "/missing"):
+                self.assertTrue(await app.handle_local_command(command))
+            self.assertFalse(await app.handle_local_command("ordinary message"))
+            await pilot.pause()
+
+            output = "\n".join(
+                str(message.render())
+                for message in app.query(Static)
+                if message.has_class("local-message")
+            )
+            self.assertIn("/help", output)
+            self.assertIn("model: deepseek-v4-pro", output)
+            self.assertIn("read_file (low)", output)
+            self.assertIn("Unknown command: /missing", output)
+
+    async def test_new_command_clears_visible_transcript_and_changes_session(self) -> None:
+        """新 Session 应清空界面投影，但不创建第二个 App 或 Runtime。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+
+        async with app.run_test() as pilot:
+            await app.handle_local_command("/help")
+            self.assertGreater(len(app.query(".local-message")), 0)
+
+            self.assertTrue(await app.handle_local_command("/new"))
+            await pilot.pause()
+
+            self.assertNotEqual(app.session_id, "default")
+            self.assertEqual(len(app.query("#transcript > *")), 0)
+            self.assertIn(app.session_id, str(app.query_one("#status", Static).render()))
+
+    async def test_quit_command_exits_the_same_app(self) -> None:
+        """exit/quit 必须结束唯一 TUI，而不是跳转到另一套界面。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+
+        async with app.run_test():
+            self.assertTrue(await app.handle_local_command("/quit"))
+
+        self.assertEqual(app.return_value, 0)
 
 
 if __name__ == "__main__":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import uuid4
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
@@ -84,7 +85,7 @@ class MiniClawApp(App[int]):
         border: round $accent;
     }
 
-    .assistant, .tool-card {
+    .assistant, .tool-card, .local-message {
         height: auto;
         margin: 1 0;
     }
@@ -230,6 +231,62 @@ class MiniClawApp(App[int]):
         preview_value = event.data.get("preview")
         preview = preview_value if isinstance(preview_value, str) else ""
         card.set_status(status, duration_ms=duration_ms, preview=preview)
+
+    async def handle_local_command(self, text: str) -> bool:
+        """处理固定 Slash Command；普通消息返回 False 交给 Agent。"""
+        command = text.strip()
+        if not command.startswith("/"):
+            return False
+        match command:
+            case "/help":
+                await self._append_local_message(
+                    "/help · /status · /tools · /new · /exit · /quit\n"
+                    "Enter sends · Shift+Enter inserts a line · Esc cancels"
+                )
+            case "/status":
+                model = self.runtime.model if self.runtime is not None else "not-configured"
+                await self._append_local_message(
+                    f"model: {model}\nsession: {self.session_id}\nstate: idle"
+                )
+            case "/tools":
+                definitions = (
+                    self.runtime.tool_definitions if self.runtime is not None else ()
+                )
+                await self._append_local_message(
+                    "\n".join(
+                        f"{definition.name} ({definition.risk.value})"
+                        for definition in definitions
+                    )
+                    or "No tools are available."
+                )
+            case "/new":
+                await self._new_session()
+            case "/exit" | "/quit":
+                self.exit(0)
+            case _:
+                await self._append_local_message(f"Unknown command: {command}")
+        return True
+
+    async def _append_local_message(self, content: str) -> None:
+        """向 transcript 添加一条不解释 markup 的本地状态消息。"""
+        message = Static(
+            _terminal_safe(content),
+            markup=False,
+            classes="local-message",
+        )
+        transcript = self.query_one("#transcript", VerticalScroll)
+        await transcript.mount(message)
+        transcript.scroll_end(animate=False)
+
+    async def _new_session(self) -> None:
+        """切换随机本地 Session，并清空当前界面投影。"""
+        transcript = self.query_one("#transcript", VerticalScroll)
+        await transcript.remove_children()
+        self._assistant_text.clear()
+        self._assistant_widgets.clear()
+        self._tool_cards.clear()
+        self.session_id = f"session-{uuid4().hex[:8]}"
+        self.query_one("#status", Static).update(self._status_text())
 
 
 def _terminal_safe(value: str) -> str:
