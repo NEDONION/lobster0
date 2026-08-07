@@ -155,10 +155,6 @@ evals/
 │   ├── safety.v1.jsonl
 │   ├── state.v1.jsonl
 │   └── channel.v1.jsonl
-├── fixtures/
-│   ├── workspace-basic/
-│   ├── workspace-pagination/
-│   └── workspace-sensitive/
 └── baselines/
     └── v0.1.0.json
 
@@ -184,18 +180,42 @@ JSONL 一行一个 case，使用标准库 `json`，不新增 YAML 依赖：
   "capability": "workspace.read",
   "query": "请使用 read_file 读取 hello.txt，并告诉我其中的项目代号。",
   "turns": [],
-  "fixture": "workspace-basic",
+  "setup": {
+    "files": {"hello.txt": "MINICLAW-FIXTURE-ALPHA"}
+  },
+  "offline": {
+    "responses": [
+      {
+        "content": "",
+        "tool_calls": [
+          {"call_id": "call_read", "name": "read_file", "arguments": {"path": "hello.txt"}}
+        ],
+        "reasoning_content": null,
+        "finish_reason": "tool_calls",
+        "input_tokens": 8,
+        "output_tokens": 2,
+        "provider_request_id": "offline-read-1"
+      },
+      {
+        "content": "项目代号是 MINICLAW-FIXTURE-ALPHA。",
+        "tool_calls": [],
+        "reasoning_content": null,
+        "finish_reason": "stop",
+        "input_tokens": 12,
+        "output_tokens": 5,
+        "provider_request_id": "offline-read-2"
+      }
+    ]
+  },
   "expected": {
-    "required_tools": ["read_file"],
-    "forbidden_tools": [],
-    "tool_arguments": {"read_file": {"path": "hello.txt"}},
-    "tool_statuses": ["succeeded"],
+    "tool_runs": ["read_file"],
+    "tool_statuses": {"read_file": "succeeded"},
     "answer_contains": ["MINICLAW-FIXTURE-ALPHA"],
     "answer_excludes": [],
     "audit_events": ["tool.started", "tool.succeeded"],
-    "max_tool_calls": 1
+    "request_contains": ["MINICLAW-FIXTURE-ALPHA"],
+    "max_tool_runs": 1
   },
-  "live": {"runs": 3, "min_passes": 2, "timeout_seconds": 120},
   "introduced_by": "initial-suite",
   "tags": ["file", "grounding", "p0"]
 }
@@ -211,6 +231,13 @@ JSONL 一行一个 case，使用标准库 `json`，不新增 YAML 依赖：
 - `answer_contains` 只用于 fixture sentinel 或稳定事实，不做整段自然语言快照；
 - 安全 case 使用 `answer_excludes`、零 ToolRun、副作用检查和 Audit 断言；
 - `introduced_by` 记录 Issue、事故、提交或需求来源。
+
+R2 的 `setup.files` 只会在独立临时 Workspace 创建合成 UTF-8 文件；路径必须是相对路径，拒绝绝对路径、
+`..` 和反斜杠。`offline.responses` 是 Fake Provider 的确定性完整响应序列，不经过网络，不能包含凭据。
+体积较大的分页 fixture 到对应 case 真正进入 active 时再增加独立 fixture 文件，避免提前复制无用数据。
+
+R3 才给 Schema 增加 `live` 运行参数；R2 loader 会把未实现字段当成未知字段拒绝，防止看似配置成功但实际
+没有执行。已有 `layers` 可以先声明 `live` 目标，但 active offline case 必须同时提供离线响应。
 
 ### 5.3 Run Manifest
 
