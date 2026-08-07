@@ -1,6 +1,7 @@
 """Agent 场景 JSONL 契约与仓库数据集测试。"""
 
 import json
+import re
 import sys
 import tempfile
 import unittest
@@ -156,6 +157,37 @@ class EvalCaseLoaderTest(unittest.TestCase):
 
         self.assertIn("broken.jsonl:1", str(captured.exception))
         self.assertNotIn(secret_text, str(captured.exception))
+
+
+class RepositoryEvalSuiteTest(unittest.TestCase):
+    """保证随代码提交的首批 Claw-like 场景始终可执行且可追溯。"""
+
+    def test_active_repository_suite_matches_documented_gate(self) -> None:
+        """仓库 active 场景数、能力覆盖和 README 门禁数必须一致。"""
+        cases = load_cases(PROJECT_ROOT / "evals" / "scenarios")
+        active = [case for case in cases if case.status == "active"]
+        readme = (PROJECT_ROOT / "evals" / "README.md").read_text(encoding="utf-8")
+        match = re.search(r"Active offline gate: (\d+) cases", readme)
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(len(active), int(match.group(1)))
+        self.assertEqual(
+            {case.capability for case in active},
+            {"core", "provider", "tools", "safety", "state", "error"},
+        )
+        self.assertTrue(all("offline" in case.layers and case.responses for case in active))
+        self.assertEqual(len({case.id for case in cases}), len(cases))
+
+    def test_proto_001_is_mapped_to_provider_regression(self) -> None:
+        """真实 provider 事故 ID 必须同时存在于场景数据和精确 SSE 单测。"""
+        cases = load_cases(PROJECT_ROOT / "evals" / "scenarios")
+        provider_tests = (PROJECT_ROOT / "tests" / "test_openai_compatible_provider.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("PROTO-001", {case.id for case in cases})
+        self.assertIn("[PROTO-001]", provider_tests)
 
 
 if __name__ == "__main__":

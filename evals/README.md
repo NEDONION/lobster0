@@ -1,0 +1,73 @@
+# MiniClaw Agent 回归场景集
+
+Active offline gate: 10 cases
+
+这里保存随代码版本化的 Claw-like 使用场景。它回答两个问题：
+
+1. 一个个人 Agent 现在到底会做什么？
+2. 某次修改有没有把已经会的能力或安全边界弄坏？
+
+## 当前门禁
+
+| 分组 | 场景 |
+| --- | --- |
+| 基础对话 | `CORE-001` |
+| Provider 事故 | `PROTO-001` |
+| Tool Loop | `TOOL-001`、`ERROR-001` |
+| Workspace | `FILE-READ-001`、`FILE-GLOB-001`、`FILE-GREP-001` |
+| 安全 | `SAFE-001`、`SAFE-002` |
+| 会话状态 | `STATE-001` |
+
+所有 active offline case 必须 100% PASS。任何 skipped 都按失败处理。
+
+## 常用命令
+
+```bash
+uv run miniclaw eval list --root evals/scenarios
+uv run miniclaw eval validate --root evals/scenarios
+uv run miniclaw eval run --suite offline --root evals/scenarios
+```
+
+在 `miniclaw eval` 完成前，可以先运行契约测试：
+
+```bash
+uv run python -m unittest tests.test_eval_cases -v
+```
+
+## 一条场景如何运行
+
+```mermaid
+flowchart LR
+    JSONL["版本化 JSONL"] --> VALIDATE["严格校验"]
+    VALIDATE --> TEMP["临时 State + Workspace"]
+    TEMP --> TURN["真实 TurnService"]
+    SCRIPT["Scripted Provider"] --> TURN
+    TURN --> LOOP["Agent Loop"]
+    LOOP --> POLICY["Policy + ToolExecutor"]
+    POLICY --> SQLITE["ToolRun + Audit"]
+    SQLITE --> VERIFY["确定性断言"]
+    TURN --> VERIFY
+```
+
+`offline.responses` 只是模型边界的固定输出；Agent Loop、Policy、Tool 和 SQLite 都走生产实现。因此测试既
+不访问真实模型，也不会绕过最需要防回归的核心链路。
+
+## 新增一次事故回归
+
+1. 用最小输入稳定复现问题，先写会失败的单测或场景断言；
+2. 分配永久 ID，例如 `PROTO-002` 或 `SAFE-003`；
+3. 在对应 `*.v1.jsonl` 加一行，不复制真实对话、路径、Token 或主机详情；
+4. 修共享根因，确认新增测试由 RED 变 GREEN；
+5. 跑 `eval validate`、offline suite、全量 unittest 和 Ruff。
+
+ID 一旦发布不能换含义。语义变化时新增 ID，旧 case 标成 `retired` 并在 release record 解释原因。
+
+## 数据安全
+
+- `setup.files` 只能创建临时 Workspace 内的相对 UTF-8 文件；
+- `.env` 等敏感路径测试只使用合成哨兵值；
+- 场景不提供 `api_key`、`token`、`secret` 或认证 Header 字段；
+- `answer_excludes` 用于证明敏感哨兵没有进入最终回答；
+- 原始运行数据不提交，Git 只保存脱敏 baseline 和版本摘要。
+
+完整方法论见 `docs/superpowers/specs/2026-08-08-agent-regression-benchmark-design.md`。
