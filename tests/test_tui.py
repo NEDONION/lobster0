@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
 from textual.containers import VerticalScroll
-from textual.widgets import Markdown, Static, TextArea
+from textual.widgets import Button, Markdown, Static, TextArea
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.paths import build_state_paths
@@ -201,6 +201,25 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(await app.handle_local_command("/quit"))
 
         self.assertEqual(app.return_value, 0)
+
+    async def test_missing_state_initializes_inside_the_same_app(self) -> None:
+        """裸入口缺少状态时应原地初始化，再聚焦同一个聊天输入框。"""
+        app = MiniClawApp(self.paths)
+        original_app_id = id(app)
+
+        async with app.run_test() as pilot:
+            self.assertEqual(len(app.query("#composer")), 0)
+            self.assertEqual(len(app.query("#onboarding")), 1)
+            self.assertIsInstance(app.query_one("#initialize"), Button)
+
+            await pilot.click("#initialize")
+            await pilot.pause()
+
+            self.assertEqual(id(app), original_app_id)
+            self.assertTrue(self.paths.database.is_file())
+            self.assertTrue(self.paths.config.is_file())
+            self.assertEqual(len(app.query("#onboarding")), 0)
+            self.assertIs(app.focused, app.query_one("#composer", TextArea))
 
 
 if __name__ == "__main__":

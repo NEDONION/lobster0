@@ -7,12 +7,16 @@ from uuid import uuid4
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import VerticalScroll
-from textual.widgets import Footer, Markdown, Static, TextArea
+from textual.containers import Vertical, VerticalScroll
+from textual.widgets import Button, Footer, Markdown, Static, TextArea
 
 from miniclaw import __version__
 from miniclaw.agent.events import RunEvent
+from miniclaw.bootstrap import BootstrapError, initialize_state
+from miniclaw.config import ConfigError
 from miniclaw.paths import StatePaths
+from miniclaw.storage.database import DatabaseError
+from miniclaw.storage.migrations import MigrationError
 
 if TYPE_CHECKING:
     from miniclaw.runtime import AgentRuntime
@@ -94,6 +98,16 @@ class MiniClawApp(App[int]):
         border: round $surface-lighten-2;
         padding: 0 1;
     }
+
+    #onboarding {
+        align: center middle;
+        padding: 2 4;
+    }
+
+    #onboarding Button {
+        width: 24;
+        margin-top: 1;
+    }
     """
 
     BINDINGS = [
@@ -113,12 +127,27 @@ class MiniClawApp(App[int]):
         self.paths = paths
         self.runtime = runtime
         self.session_id = _DEFAULT_SESSION
+        self._state_ready = runtime is not None or _is_initialized(paths)
         self._assistant_text: dict[int, str] = {}
         self._assistant_widgets: dict[int, Markdown] = {}
         self._tool_cards: dict[str, ToolCard] = {}
 
     def compose(self) -> ComposeResult:
         """生成状态栏、可滚动记录、输入区和快捷键页脚。"""
+        if not self._state_ready:
+            yield Vertical(
+                Static("Initialize MiniClaw", classes="role", markup=False),
+                Static(
+                    f"State directory: {self.paths.home}",
+                    id="onboarding-path",
+                    markup=False,
+                ),
+                Static("", id="onboarding-error", markup=False),
+                Button("Initialize", id="initialize", variant="primary"),
+                Button("Exit", id="onboarding-exit"),
+                id="onboarding",
+            )
+            return
         yield Static(self._status_text(), id="status", markup=False)
         yield VerticalScroll(id="transcript")
         yield TextArea(id="composer")
@@ -126,7 +155,9 @@ class MiniClawApp(App[int]):
 
     def on_mount(self) -> None:
         """启动后把键盘焦点放进唯一输入框。"""
-        self.query_one("#composer", TextArea).focus()
+        composer = self.query("#composer")
+        if composer:
+            composer.first(TextArea).focus()
 
     def _status_text(self) -> str:
         """返回不暴露本机绝对路径的单行运行状态。"""
@@ -288,6 +319,24 @@ class MiniClawApp(App[int]):
         self.session_id = f"session-{uuid4().hex[:8]}"
         self.query_one("#status", Static).update(self._status_text())
 
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
+        """处理同 App 初始化与退出按钮。"""
+        if event.button.id == "onboarding-exit":
+            self.exit(0)
+            return
+        if event.button.id != "initialize":
+            return
+        try:
+            initialize_state(self.paths)
+        except (BootstrapError, ConfigError, DatabaseError, MigrationError, OSError) as error:
+            self.query_one("#onboarding-error", Static).update(
+                _terminal_safe(f"Initialization failed: {error}")
+            )
+            return
+        self._state_ready = True
+        await self.recompose()
+        self.query_one("#composer", TextArea).focus()
+
 
 def _terminal_safe(value: str) -> str:
     """移除能改变终端状态的控制字符，同时保留文本布局。"""
@@ -297,6 +346,16 @@ def _terminal_safe(value: str) -> str:
         if character in "\n\t"
         or ord(character) >= 0x20
         and not 0x7F <= ord(character) <= 0x9F
+    )
+
+
+def _is_initialized(paths: StatePaths) -> bool:
+    """判断完整非符号链接状态是否已存在，不创建任何文件。"""
+    required = (paths.config, paths.database, paths.soul, paths.user)
+    return (
+        paths.home.is_dir()
+        and not paths.home.is_symlink()
+        and all(path.is_file() and not path.is_symlink() for path in required)
     )
 
 
