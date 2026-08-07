@@ -1,5 +1,6 @@
 """MiniClaw Textual TUI 的无头交互测试。"""
 
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +19,38 @@ if TYPE_CHECKING:
     from miniclaw.runtime import AgentRuntime
 
 
+class FakeTurnService:
+    """记录 TUI 调用，并用真实 RunEvent 模拟一次完成的 Turn。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, str, str]] = []
+
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+        self.calls.append((owner_id, text, conversation_id))
+        assert on_event is not None
+        await on_event(RunEvent("turn_started", 21, {}))
+        await on_event(RunEvent("model_text_delta", 21, {"text": "pong"}))
+        await on_event(
+            RunEvent("turn_finished", 21, {"status": "completed", "content": "pong"})
+        )
+
+
+class BlockingTurnService:
+    """保持 Turn 运行，直到测试通过 Esc 取消 Worker。"""
+
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.cancelled = False
+
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+        self.started.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+
+
 class TuiShellTest(unittest.IsolatedAsyncioTestCase):
     """验证唯一 TUI 的最小布局、焦点与安全渲染边界。"""
 
@@ -29,8 +62,10 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
         self.runtime = cast(
             "AgentRuntime",
             SimpleNamespace(
+                owner_id=1,
                 model="deepseek-v4-pro",
                 workspace=self.paths.workspace,
+                service=FakeTurnService(),
                 tool_definitions=(
                     ToolDefinition(
                         name="read_file",
@@ -41,6 +76,66 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
         )
+
+    async def test_enter_runs_one_turn_and_shift_enter_keeps_a_newline(self) -> None:
+        """Enter 发送并清空输入；Shift+Enter 只在同一输入框内换行。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+
+        async with app.run_test() as pilot:
+            composer = app.query_one("#composer", TextArea)
+            composer.load_text("ping")
+            composer.cursor_location = (0, 4)
+            await pilot.press("shift+enter")
+            self.assertEqual(composer.text, "ping\n")
+
+            composer.load_text("ping")
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            self.assertEqual(self.runtime.service.calls, [(1, "ping", "default")])
+            self.assertEqual(composer.text, "")
+            self.assertFalse(composer.disabled)
+            self.assertIs(app.focused, composer)
+            self.assertEqual(app.query_one("#assistant-21", Markdown).source, "pong")
+            user_output = "\n".join(
+                str(message.render()) for message in app.query(".user-message")
+            )
+            self.assertIn("ping", user_output)
+
+    async def test_escape_cancels_the_active_turn_and_restores_composer(self) -> None:
+        """Esc 只能取消当前 Worker，取消后仍停留在同一个 App。"""
+        service = BlockingTurnService()
+        runtime = cast(
+            "AgentRuntime",
+            SimpleNamespace(
+                owner_id=1,
+                model="deepseek-v4-pro",
+                workspace=self.paths.workspace,
+                service=service,
+                tool_definitions=(),
+            ),
+        )
+        app = MiniClawApp(self.paths, runtime=runtime)
+
+        async with app.run_test() as pilot:
+            composer = app.query_one("#composer", TextArea)
+            composer.load_text("wait")
+            await pilot.press("enter")
+            await asyncio.wait_for(service.started.wait(), timeout=0.5)
+
+            self.assertTrue(composer.disabled)
+            await pilot.press("escape")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            self.assertTrue(service.cancelled)
+            self.assertFalse(composer.disabled)
+            self.assertIs(app.focused, composer)
+            output = "\n".join(
+                str(message.render()) for message in app.query(".local-message")
+            )
+            self.assertIn("cancelled", output.lower())
 
     async def test_eighty_by_twenty_four_starts_with_one_focused_composer(self) -> None:
         """小终端仍应显示三块主区域，并把键盘焦点放在唯一输入框。"""

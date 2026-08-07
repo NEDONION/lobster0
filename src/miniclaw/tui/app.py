@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical, VerticalScroll
+from textual.message import Message
 from textual.widgets import Button, Footer, Markdown, Static, TextArea
+from textual.worker import Worker
 
 from miniclaw import __version__
 from miniclaw.agent.events import RunEvent
@@ -23,6 +26,31 @@ if TYPE_CHECKING:
 
 _DEFAULT_SESSION = "default"
 _TOOL_PREVIEW_CHARS = 2_000
+
+
+class Composer(TextArea):
+    """支持 Enter 发送、Shift+Enter 换行的唯一输入框。"""
+
+    BINDINGS = [
+        Binding("enter", "submit", show=False, priority=True),
+        Binding("shift+enter", "insert_newline", show=False),
+    ]
+
+    class Submitted(Message):
+        """携带用户提交时的完整输入。"""
+
+        def __init__(self, text: str) -> None:
+            super().__init__()
+            self.text = text
+
+    def action_submit(self) -> None:
+        """提交非空文本，不让 TextArea 同时插入换行。"""
+        if self.text.strip():
+            self.post_message(self.Submitted(self.text))
+
+    def action_insert_newline(self) -> None:
+        """在当前光标位置插入一行。"""
+        self.insert("\n")
 
 
 class ToolCard(Static):
@@ -131,6 +159,7 @@ class MiniClawApp(App[int]):
         self._assistant_text: dict[int, str] = {}
         self._assistant_widgets: dict[int, Markdown] = {}
         self._tool_cards: dict[str, ToolCard] = {}
+        self._active_worker: Worker[None] | None = None
 
     def compose(self) -> ComposeResult:
         """生成状态栏、可滚动记录、输入区和快捷键页脚。"""
@@ -150,7 +179,7 @@ class MiniClawApp(App[int]):
             return
         yield Static(self._status_text(), id="status", markup=False)
         yield VerticalScroll(id="transcript")
-        yield TextArea(id="composer")
+        yield Composer(id="composer")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -298,6 +327,71 @@ class MiniClawApp(App[int]):
                 await self._append_local_message(f"Unknown command: {command}")
         return True
 
+    async def on_composer_submitted(self, event: Composer.Submitted) -> None:
+        """清空输入并用一个独占 Worker 执行普通消息。"""
+        composer = self.query_one("#composer", Composer)
+        text = event.text
+        composer.clear()
+        if await self.handle_local_command(text):
+            return
+        if self.runtime is None:
+            await self._append_local_message("Agent runtime is not available.")
+            return
+        await self._append_user_message(text)
+        composer.disabled = True
+        self._active_worker = self.run_worker(
+            self._run_turn(text),
+            group="turn",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _run_turn(self, text: str) -> None:
+        """在后台执行一次 Turn，并始终恢复唯一输入框。"""
+        assert self.runtime is not None
+        try:
+            await self.runtime.service.handle(
+                self.runtime.owner_id,
+                text,
+                self.session_id,
+                on_event=self.on_run_event,
+            )
+        except asyncio.CancelledError:
+            await self._append_local_message("Turn cancelled.")
+            raise
+        except Exception as error:
+            await self._append_local_message(f"Turn failed: {type(error).__name__}")
+        finally:
+            composer = self.query_one("#composer", Composer)
+            composer.disabled = False
+            composer.focus()
+
+    async def _append_user_message(self, content: str) -> None:
+        """把原始用户文本安全显示在 transcript。"""
+        message = Static(
+            _terminal_safe(f"You\n{content}"),
+            markup=False,
+            classes="user-message",
+        )
+        transcript = self.query_one("#transcript", VerticalScroll)
+        await transcript.mount(message)
+        transcript.scroll_end(animate=False)
+
+    async def action_cancel_turn(self) -> None:
+        """取消当前后台 Turn；空闲时不做任何事。"""
+        if self._active_worker is not None and not self._active_worker.is_finished:
+            self._active_worker.cancel()
+
+    def action_exit_if_idle(self) -> None:
+        """仅在没有运行中 Turn 时退出。"""
+        if self._active_worker is None or self._active_worker.is_finished:
+            self.exit(0)
+
+    def action_toggle_tools(self) -> None:
+        """切换 Tool 卡片可见性。"""
+        for card in self.query(ToolCard):
+            card.display = not card.display
+
     async def _append_local_message(self, content: str) -> None:
         """向 transcript 添加一条不解释 markup 的本地状态消息。"""
         message = Static(
@@ -335,7 +429,7 @@ class MiniClawApp(App[int]):
             return
         self._state_ready = True
         await self.recompose()
-        self.query_one("#composer", TextArea).focus()
+        self.query_one("#composer", Composer).focus()
 
 
 def _terminal_safe(value: str) -> str:
