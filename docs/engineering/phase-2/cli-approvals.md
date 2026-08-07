@@ -1,8 +1,13 @@
 # Phase 2.2 工程文档：Approvals CLI 与操作手册
 
-> 状态：`list / show / approve / deny` 已实现，生产 `chat` 已公开 `write_file` 和 `edit_file`
+> [!WARNING]
+> 本文保留 Phase 2.2A 的历史交付证据。Phase 2.2B 已删除 `miniclaw approvals`；当前审批在同一个 Textual
+> TUI 中展示完整归一化参数，并只提供 **Allow once** / **Deny**。SQLite Approval 生命周期与安全约束仍然
+> 有效，当前用法见 [单入口 TUI 工程文档](single-entry-tui.md)。
+
+> 历史状态：`list / show / approve / deny` 曾实现，Phase 2.2B 已移除这些入口
 >
-> 验证基线：245/245 tests、20/20 offline Agent cases、DeepSeek live smoke、Ruff PASS
+> 当时验证基线：210/210 tests、10/10 offline Agent cases、Ruff PASS
 
 ## 1. 最短使用流程
 
@@ -39,7 +44,7 @@ uv run miniclaw approvals deny 42
 | `approvals show ID [--json]` | 否 | 查看 Tool、摘要、状态和时间 |
 | `approvals approve ID [--json]` | 是 | 单次消费、执行 Tool、继续模型 |
 | `approvals deny ID [--json]` | 是 | 拒绝 Tool、继续模型解释 |
-| `approvals approve ID --always` | 视 Tool 而定 | 命令保存 exact argv；HTTP 保存 exact hostname + port；文件 Tool 拒绝 |
+| `approvals approve ID --always` | 视 Tool 而定 | 历史入口已移除；当前 TUI 只提供 Allow once / Deny |
 
 自定义状态目录时，`--home` 放在 `approvals` 后面：
 
@@ -49,9 +54,8 @@ uv run miniclaw approvals --home /absolute/state list --json
 
 ## 3. 输出为什么不显示完整参数
 
-列表和详情包含：ID、Tool 名、摘要、状态、创建/到期/决策时间。文件写入内容和完整 hash 不会进入输出；
-`run_command` 摘要会显示完整 resolved executable + JSON argv，因为 Owner 必须看清自己批准的命令；`http_get`
-只显示 `https://hostname:port`，不显示可能含敏感值的 path/query。
+列表和详情只包含：ID、Tool 名、脱敏摘要、状态、创建/到期/决策时间。写入内容、绝对路径和完整 hash 不会
+进入终端表格或 JSON 输出。
 
 ```json
 [{"id":42,"tool":"write_file","summary":"write_file note.txt","status":"pending"}]
@@ -119,12 +123,13 @@ Assistant(final answer, child turn)
 复现：
 
 ```bash
-uv run python -m unittest tests.test_cli_approvals tests.test_turn tests.test_approvals -v
+uv run python -m unittest tests.test_approvals tests.test_turn tests.test_tui -v
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
 ```
 
 ## 8. 下一阶段边界
 
-P2.3 的 `run_command` 已使用相同审批入口，永久放行只保存“解析后的 executable + 完整 exact argv”；P2.4
-的 `http_get` 将只保存精确 hostname。文件内容、任意命令字符串和 URL path 都不会成为宽泛的永久规则。
+P2.3A 已让 `run_command` 复用相同 Approval/Turn/TUI Modal；长期规则只能由 Owner 在配置中显式写入
+“program + 完整 exact argv”。P2.4
+的 `http_get` 只保存精确 hostname。文件内容、任意命令字符串和 URL path 都不会成为宽泛的永久规则。

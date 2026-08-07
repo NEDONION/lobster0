@@ -12,6 +12,7 @@ license = "MIT"
 authors = [{ name = "MiniClaw contributors" }]
 dependencies = [
   "httpx>=0.28,<1",
+  "textual>=8.2,<9",
 ]
 
 [project.optional-dependencies]

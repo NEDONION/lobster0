@@ -1,5 +1,8 @@
 # Phase 1 工程文档：测试与调试
 
+> 本文保留 Phase 1 的测试分层思路；`test_cli_chat.py` 已随单入口 TUI 迁移删除。下方命令已更新为当前
+> `test_cli.py`、`test_runtime.py` 与 `test_tui.py`。
+
 ## 1. 目标
 
 Phase 1 的验证目标不是证明某个函数能返回字符串，而是证明一条真实消息可以安全穿过：
@@ -20,7 +23,7 @@ CLI → .env/config → TurnService → ContextBuilder → AgentRunner
 | Provider 协议 | `test_openai_compatible_provider.py` | JSON、SSE、Tool Call、usage、重试、脱敏 | 否 |
 | Agent 单元 | `test_context.py`, `test_agent_runner.py` | 身份顺序、循环、工具、空回答、上限 | 否 |
 | 持久化 | `test_conversations.py`, `test_turn.py` | Session、状态机、事务、终态 | 否 |
-| CLI E2E | `test_cli_chat.py` | 真实装配、loopback HTTP/SSE、stdout/退出码/SQLite | 仅 127.0.0.1 |
+| 入口/Runtime/TUI | `test_cli.py`, `test_runtime.py`, `test_tui.py` | 单入口、真实装配、事件与审批交互 | 否 |
 | 真实冒烟 | 手动命令 | 当前 Key、账号权限和 DeepSeek 在线兼容性 | 是，显式执行 |
 
 ## 3. 常用命令
@@ -31,7 +34,7 @@ CLI → .env/config → TurnService → ContextBuilder → AgentRunner
 uv sync --extra dev
 
 # 单模块
-.venv/bin/python -m unittest tests.test_cli_chat -v
+.venv/bin/python -m unittest tests.test_cli tests.test_runtime tests.test_tui -v
 .venv/bin/python -m unittest tests.test_openai_compatible_provider -v
 .venv/bin/python -m unittest tests.test_turn -v
 

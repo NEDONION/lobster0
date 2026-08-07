@@ -1,8 +1,10 @@
-# Phase 2.5 工程文档：回归门禁、恢复与调试手册
+# Phase 2 工程文档：回归门禁、恢复与调试手册
 
-> 发布基线：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
+> v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> Live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
+> 当前单入口 TUI 基线：253/253 tests、20/20 offline Agent cases、Ruff PASS、真实 PTY smoke PASS
+>
+> 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
 ## 1. 这份文档解决什么问题
 
@@ -19,7 +21,7 @@ Phase 2 不只要求“某个 Tool 能跑”。每次版本都必须证明：
 
 ```mermaid
 flowchart TB
-    UNIT["Layer 1: 245 deterministic tests"] --> OFFLINE["Layer 2: 20 versioned Agent cases"]
+    UNIT["Layer 1: 253 deterministic tests"] --> OFFLINE["Layer 2: 20 versioned Agent cases"]
     OFFLINE --> LIVE["Layer 3: release-only DeepSeek smoke"]
     LIVE --> DOC["Release record + progress docs"]
     DOC --> RELEASE["Phase 2 release gate"]
@@ -149,12 +151,14 @@ lease/heartbeat，而不是继续放大这个固定窗口。
 
 ## 6. Approval lazy expiry
 
-`approvals list/show` 会先把当前 Owner 已过期的 pending/approved 记录结算为 `expired`，绑定 ToolRun 变 `denied`。
-它只做状态结算，不消费 Tool。`doctor` 为保持完全只读，直接统计“仍未过期的 pending”，不会调用 lazy expiry。
+`ApprovalRepository.list/get` 会先把当前 Owner 已过期的 pending/approved 记录结算为
+`expired`，绑定 ToolRun 变 `denied`。它只做状态结算，不消费 Tool。历史 Approvals CLI 已被
+单入口 TUI 取代，但 Repository 契约和回归测试仍保留。`doctor` 为保持完全只读，直接统计
+“仍未过期的 pending”，不会调用 lazy expiry。
 
 ```mermaid
 flowchart LR
-    LIST["approvals list/show"] --> DUE{"expires_at <= now?"}
+    LIST["ApprovalRepository list/get"] --> DUE{"expires_at <= now?"}
     DUE -->|"是"| EXPIRE["Approval expired + ToolRun denied"]
     DUE -->|"否"| KEEP["保持当前状态"]
     EXPIRE --> OUTPUT["返回最新状态"]
@@ -190,7 +194,9 @@ flowchart LR
 真实模型测试不是每次提交都跑。它会产生费用、受网络和模型随机性影响，只在 release gate 执行，并把脱敏结果记录到
 `docs/evals/releases/`。
 
-Phase 2 使用以下场景：
+v0.2.0 发布时用历史 `chat`/`approvals` 入口完成了以下场景，脱敏证据保存在
+[`docs/evals/releases/v0.2.0.md`](../../evals/releases/v0.2.0.md)。这些命令是发布历史，当前版本不再提供
+`miniclaw chat` 或 `miniclaw approvals`：
 
 ```bash
 uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
@@ -202,6 +208,15 @@ uv run miniclaw chat --message "在 workspace 里运行 git status --short"
 uv run miniclaw approvals approve ID
 uv run miniclaw approvals list --status pending --json
 ```
+
+当前版本的人类入口只有：
+
+```bash
+uv run miniclaw
+```
+
+进入 TUI 后输入同样的 query；需审批动作在 Modal 中选择 **Allow once** 或 **Deny**。每次重跑
+live smoke 都必须产生新的脱敏 release record，不能把 v0.2.0 的历史记录写成新版本证据。
 
 验收观察的是 Tool/Approval 行为，不要求模型逐字回答一致。不得把 API Key、完整环境、未脱敏用户数据或网页响应保存到
 release record。
@@ -223,21 +238,17 @@ uv run python -m unittest tests.test_openai_compatible_provider -v
 
 ```bash
 uv run miniclaw doctor
-uv run miniclaw chat --message "请使用 system_info 查看电脑配置"
+uv run miniclaw
+# 在 TUI 输入：请使用 system_info 查看电脑配置
 ```
 
 检查首个 Provider request 是否包含 8 个 Tool Schema；不要用 Shell 替代 `system_info`。
 
 ### 写入没有发生
 
-```bash
-uv run miniclaw approvals list --status pending
-uv run miniclaw approvals show ID
-uv run miniclaw approvals approve ID
-```
-
-正常情况下首次 chat 只返回 Approval ID，不应该已经写文件。若批准失败，按 `expired`、`hash_mismatch`、`already_decided`
-分类，不要直接修改数据库绕过。
+正常情况下首次 Turn 只会生成 Approval，不应该已经写文件。TUI 会显示 Policy 归一化后
+的完整参数；选择 **Allow once** 后由同一 `TurnService` 续跑，Esc 或 **Deny** 不执行。若批准
+失败，按 `expired`、`hash_mismatch`、`already_decided` 分类，不要直接修改数据库绕过。
 
 ### 命令被拒绝
 
@@ -249,11 +260,11 @@ uv run miniclaw approvals approve ID
 ### HTTP 被拒绝
 
 按 `https_required`、`port_forbidden`、`dns_failed`、`non_public_address`、`redirect_not_allowed` 分流。不要为了“先跑通”
-关闭证书或公网检查。详见 [HTTP 与 SSRF](http-and-ssrf.md)。
+关闭证书或公网检查。详见 [HTTP 与 SSRF](https-get-and-ssrf.md)。
 
 ### Doctor 显示 stale running
 
-当前 Doctor 不修改状态。重新启动一次 `chat` 或 Approval continuation 会运行 crash recovery；超过 5 分钟的旧记录转为
+当前 Doctor 不修改状态。重新启动一次裸 `miniclaw` 会在 Runtime 装配时运行 crash recovery；超过 5 分钟的旧记录转为
 `interrupted`。它不会自动再次执行原动作。
 
 ## 10. 发布完成定义
@@ -264,11 +275,15 @@ uv run miniclaw approvals approve ID
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
 - [x] Doctor 七项且网络/命令/数据库修改为零；
-- [x] 245/245 tests；
+- [x] 253/253 tests；
 - [x] 20/20 offline Agent cases；
-- [x] DeepSeek V4 Pro live smoke；
+- [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
+- [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
+- [x] Provider reasoning、Tool 参数/状态/耗时/结果可展开回归；
 - [x] Ruff 与 diff check；
-- [x] README、架构、工程索引、进度页和 v0.2.0 release record 同步。
+- [x] README、架构、工程索引、进度页、TUI 回归规范和 v0.2.0 release record 同步。
 
-Phase 2 不包含：任意 Shell、删除/移动 Tool、PTY/后台任务、OS sandbox、多用户 RBAC、飞书审批卡片、Memory/Skills、
+Phase 2 当前不包含：任意 Shell、删除/移动 Tool、后台任务、OS sandbox、多用户 RBAC、飞书审批卡片、Memory/Skills、
 自动修改部署源代码。这些不应在回归结果中被描述成已完成。
+
+TUI 专项分层、18 个稳定用例和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。

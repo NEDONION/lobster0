@@ -1,8 +1,8 @@
-# Phase 2.3 工程文档：Exact-Argv 命令执行
+# Phase 2.3A 工程文档：Exact-Argv 命令执行
 
-> 状态：`run_command` 已进入生产 `chat`，默认未命中规则时生成参数绑定 Approval
+> 状态：`run_command` 已进入唯一 Textual TUI 的共享 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
 >
-> 当前门禁：245/245 tests、20/20 offline Agent cases、DeepSeek live smoke、Ruff PASS
+> 当前门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 
@@ -30,11 +30,10 @@ flowchart TD
     HARD -->|"否"| EXACT{"exact executable + argv 命中?"}
     EXACT -->|"命中"| RUN["create_subprocess_exec"]
     EXACT -->|"未命中；ask=on-miss"| APPROVAL["pending Approval"]
-    APPROVAL -->|"approve once"| RUN
-    APPROVAL -->|"approve --always"| RUN
+    APPROVAL -->|"TUI Allow once"| RUN
+    APPROVAL -->|"TUI Deny / Esc"| STOP["不执行"]
     RUN --> RESULT["bounded stdout / stderr + exit code"]
     RESULT --> MODEL["模型基于真实结果回答"]
-    RESULT -->|"成功且 --always"| RULE["policy_rules: exact_argv"]
 ```
 
 硬禁止先于审批。因此 `bash -c`、`sudo`、`rm` 或 `git push` 不会生成一张“也许可以点批准”的单子。
@@ -74,7 +73,7 @@ flowchart TD
 | 包安装入口 | pip、npm、yarn、pnpm、brew、apt、yum、dnf 等 |
 | Git 红线 | `push`、`clean`、`reset --hard`、`config/credential` |
 
-通用网络读取必须走已实现的 `http_get`；文件创建和精确修改应使用带 Workspace Guard 的文件 Tool。
+通用网络读取必须走已实现的 P2.4 `http_get`；文件创建和精确修改应使用带 Workspace Guard 的文件 Tool。
 
 ## 6. security × ask
 
@@ -93,31 +92,29 @@ flowchart TD
 
 ## 7. 审批时能看到什么
 
-文件写入摘要隐藏 content；命令审批不同，它必须让 Owner 看清完整动作。`approvals show ID` 的 summary 使用无歧义
-JSON argv，包含 resolved executable 和每个原始参数：
+文件写入摘要隐藏 content；命令审批不同，它必须让 Owner 看清完整动作。TUI Modal 使用无歧义 JSON argv，
+同时展示 Policy 归一化后的完整参数，包含 resolved executable 和每个原始参数：
 
 ```text
 summary: run_command ["/usr/bin/git","status","--short"]
 ```
 
-这段 summary 只存在 owner-only SQLite 和本地 CLI，不进入普通 Audit metadata。Audit 仍只记录 Tool 名、ID 和
+这段 summary 只存在 owner-only SQLite 和本地 TUI，不进入普通 Audit metadata。Audit 仍只记录 Tool 名、ID 和
 参数 hash 前缀。
 
-## 8. `--always` 为什么不是“永久允许 git”
+## 8. Exact rule 为什么不是“永久允许 git”
 
-成功执行后保存的规则只有：
+当前 TUI 只提供 **Allow once** 与 **Deny**，不会在点击审批时创建永久规则。确实需要自动放行的只读命令时，
+Owner 必须在 `config.toml` 显式写入完整规则：
 
-```json
-{
-  "type": "exact_argv",
-  "resolved_program": "/usr/bin/git",
-  "args": ["status", "--short"]
-}
+```toml
+[tools.run_command]
+allow_commands = [{ program = "git", args = ["status", "--short"] }]
 ```
 
-下次只有 executable 和完整 argv 同时相等才自动放行。多一个 `--porcelain`、少一个参数、顺序变化或 executable
-路径变化都会重新进入审批。规则必须来源于已 `consumed` 且 ToolRun `succeeded` 的 Approval；不能凭 CLI 参数
-凭空创建。
+只有 executable 和完整 argv 同时相等才自动放行。多一个 `--porcelain`、少一个参数、顺序变化或 executable
+路径变化都会重新进入审批。旧版本 SQLite 中已经存在的 exact rule 仍可读取，但当前不会为规则管理恢复第二个
+交互式 CLI。
 
 ## 9. 子进程隔离
 
@@ -164,14 +161,14 @@ sequenceDiagram
 
 ```bash
 uv run python -m unittest tests.test_command_policy tests.test_run_command \
-  tests.test_cli_approvals -v
+  tests.test_runtime tests.test_tui -v
 uv run python -W always::ResourceWarning -m unittest tests.test_run_command -v
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
 ```
 
 覆盖：硬禁止、exact/extra argv、配置矩阵、真实 subprocess、秘密环境清理、stdin EOF、双流 1 MiB、普通超时、
-后台子进程占管道、transport 回收、Approval once/always、跨进程规则恢复和 forbidden 无 ToolRun。
+后台子进程占管道、transport 回收、Runtime 注册、TUI Allow once/Deny 和 forbidden 无 ToolRun。
 
 ## 12. 已知边界
 
@@ -179,3 +176,5 @@ uv run ruff check .
 - 新进程组能终止正常后代；恶意程序主动重新 `setsid` 逃离进程组，需要 Phase 7 的 Seatbelt/container 级隔离。
 - 不提供后台任务、PTY、交互 stdin、任意 Shell、删除/移动或包安装。
 - Windows 进程组终止尚未作为当前 macOS/Linux MVP 的发布门禁。
+- P2.3B 尚未解决 NVM/Node 安装下的 `lark-cli` 发现、doctor 检查和真实 `auth status` smoke；本机已安装不等于
+  Agent 当前能在固定最小 PATH 中稳定执行。

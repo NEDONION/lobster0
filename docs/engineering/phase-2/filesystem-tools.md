@@ -2,9 +2,10 @@
 
 > 状态：`write_file`、`edit_file`、严格 `[tools]` 配置和 Workspace 写边界已经进入代码并通过测试
 >
-> 当前仓库门禁：245/245 tests、20/20 offline Agent cases、Ruff PASS；本模块首次退出门禁为 194 tests
+> 当前仓库门禁：253/253 tests、20/20 offline Agent cases、Ruff PASS；本模块首次退出门禁为 194 tests
 >
-> 当前入口：两个写 Tool 已注册到生产 `chat`，但只能在参数绑定 Approval 被 Owner 批准后执行
+> 当前入口：两个写 Tool 已注册到唯一 Textual TUI Runtime，但只能在参数绑定 Approval 被 Owner 选择
+> Allow once 后执行
 
 ## 1. 这一小步解决什么
 
@@ -24,7 +25,7 @@ P2.2A 先独立验证文件内核；完整 Phase 2.2 现已把 `require_approval
 
 ```mermaid
 flowchart LR
-    MODEL["生产 chat"] --> REGISTRY["当前 Registry：8 个 Tool"]
+    MODEL["Textual TUI / AgentRuntime"] --> REGISTRY["当前 Registry：8 个 Tool"]
     REGISTRY --> READ["system_info / read_file / glob / grep"]
     REGISTRY --> WRITE["write_file / edit_file"]
     WRITE --> GUARD["WorkspaceGuard.resolve_write"]
@@ -222,5 +223,6 @@ git diff --check
 - 应用层通过重复 Guard、普通文件身份和原子发布缓解 TOCTOU，但不能取代 OS sandbox；Phase 7 再增加进程级隔离。
 - 新文件使用 hard-link 实现原子 no-clobber，因此要求 Workspace 和临时文件位于同一文件系统；临时文件固定创建在目标目录。
 - 当前不支持创建目录、删除、移动、regex replace、模糊 patch 或批量编辑。
-- 当前生产 CLI 注册 4 个只读 Tool、2 个需审批文件 Tool 和 exact-argv `run_command`；HTTPS Tool 尚未注册。
-- 参数绑定 Approval、waiting/child Turn、CLI 决策和命令续执行已完成；下一开发点是 pinned HTTPS 与 SSRF 防护。
+- 当前 AgentRuntime 注册 4 个只读系统/文件 Tool、2 个需审批文件 Tool、`run_command` 与 `http_get`，共 8 个。
+- 参数绑定 `ApprovalRepository + ToolExecution.approval_id`、waiting/child Turn 和 TUI Modal 已完成；命令与
+  HTTPS 复用同一生命周期，下一缺口是 P2.3B 真实 `lark-cli` 闭环。

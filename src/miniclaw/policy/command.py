@@ -100,7 +100,7 @@ def normalize_command(
         candidate = supplied if supplied.is_absolute() else workspace / supplied
         try:
             resolved = candidate.resolve(strict=True)
-        except OSError:
+        except (OSError, RuntimeError):
             raise CommandPolicyError("command_not_found", "program was not found") from None
         if not resolved.is_file() or not os.access(resolved, os.X_OK):
             raise CommandPolicyError("command_not_found", "program is not executable")
@@ -109,7 +109,10 @@ def normalize_command(
         found = shutil.which(program, path=SAFE_EXECUTABLE_PATH)
         if found is None:
             raise CommandPolicyError("command_not_found", "program was not found")
-        resolved_program = str(Path(found).resolve(strict=True))
+        try:
+            resolved_program = str(Path(found).resolve(strict=True))
+        except (OSError, RuntimeError):
+            raise CommandPolicyError("command_not_found", "program was not found") from None
 
     name = Path(resolved_program).name.casefold()
     if name in _FORBIDDEN_PROGRAMS or name.startswith("pip3."):

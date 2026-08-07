@@ -4,10 +4,10 @@
 >
 > 范围：Tool Contract、Registry、Policy、Executor、ToolRun/Audit、完整消息轨迹、`system_info`、CLI 装配
 >
-> 本文保留 P2.1A 当时的实现快照；整个 Phase 2 现已完成，当前入口见本目录索引
+> 不代表：整个 Phase 2 已完成
 
-> 当前仓库已继续完成 P2.1B Workspace 只读 Tool 和 P2.1C Agent 回归门禁；最新能力请分别阅读
-> [P2.1B 文档](workspace-read-tools.md) 与 [P2.1C 文档](agent-regression-evals.md)。本页“还没有实现”只描述
+> 当前仓库已继续完成 P2.1B、P2.1C、P2.2 与 P2.2B 单入口 TUI；最新入口请阅读
+> [P2.2B 文档](single-entry-tui.md)。本页“还没有实现”和 CLI 片段只描述
 > P2.1A 当时的阶段边界，不代表仓库当前状态。
 
 ## 1. 这一小阶段解决了什么
@@ -27,7 +27,7 @@ Phase 2.1A 把第一把真实工具 `system_info` 接进完整 Agent 链路。�
 
 ```mermaid
 flowchart LR
-    USER["用户：查看电脑配置"] --> CLI["miniclaw chat"]
+    USER["用户：查看电脑配置"] --> CLI["bare miniclaw TUI"]
     CLI --> CONTEXT["Context + Tool Schema"]
     CONTEXT --> MODEL1["模型第 1 轮"]
     MODEL1 -->|"ToolCall: system_info"| EXECUTOR["ToolExecutor"]
@@ -629,11 +629,11 @@ Tool Message 恢复 `tool_call_id`。如果 metadata 缺字段、类型错误，
 最近历史的 `limit=20` 是软上限：如果第 20 条落在一个 Turn 中间，Repository 会补齐该 Turn 更早的消息，
 避免把孤立 Tool Result 或缺少结果的 Assistant Tool Call 发给 Provider。
 
-## 14. CLI 生产装配
+## 14. Phase 2.1A 当时的 CLI 装配（历史）
 
 代码位置：`src/miniclaw/cli.py`
 
-`_chat()` 当前只注册一个生产 Tool：
+P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册八个 Tool：
 
 ```python
 registry = ToolRegistry((SystemInfoTool(),))
@@ -650,7 +650,7 @@ runner = AgentRunner(
 )
 ```
 
-同一个 Executor 同时服务 one-shot 与交互 CLI。未来飞书 Adapter 应复用 TurnService，而不是重新实现一套
+当前同一个 Executor 服务唯一 Textual TUI。未来飞书 Adapter 应复用 TurnService，而不是重新实现一套
 Tool Calling。
 
 ## 15. 端到端数据流
@@ -702,7 +702,7 @@ flowchart TD
 | `test_context.py` | Tool Schema 和禁止编造规则 |
 | `test_conversations.py` | Tool 消息批次、最终回答、完整 Turn 边界历史 |
 | `test_turn.py` | 完整纵切、失败后轨迹、下一 Turn 恢复、损坏 metadata 拒绝 |
-| `test_cli_chat.py` | 真实 loopback HTTP/SSE 两轮调用与 SQLite 轨迹 |
+| `test_runtime.py` / `test_tui.py` | 真实生产装配、唯一入口、事件投影与审批 Modal |
 
 聚焦验证：
 
@@ -715,7 +715,8 @@ uv run python -m unittest \
   tests.test_context \
   tests.test_conversations \
   tests.test_turn \
-  tests.test_cli_chat -v
+  tests.test_runtime \
+  tests.test_tui -v
 ```
 
 完整验证：
@@ -737,8 +738,10 @@ uv run miniclaw doctor
 询问真实配置：
 
 ```bash
-uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
+uv run miniclaw
 ```
+
+在 TUI 中输入“帮我看看我的电脑是什么配置”。
 
 模型必须选择调用 Tool 才能得到真实结果。若 Provider 没有调用 Tool，先检查：
 
@@ -791,10 +794,10 @@ sqlite3 ~/.miniclaw/miniclaw.db \
 - [x] 损坏历史不发送给 Provider；
 - [x] medium/high 默认不执行；
 - [x] critical 默认拒绝；
-- [x] Approval 创建与消费（P2.2）；
+- [ ] Approval 创建与消费（P2.2）；
 - [x] Workspace 路径逃逸防护（P2.1B）；
-- [x] Exact-argv command allowlist（P2.3）；
-- [ ] OS sandbox（不在 Phase 2 范围）。
+- [x] Exact-argv `run_command` 与 allowlist（P2.3A；不等同 OS sandbox）。
+- [x] Pinned `http_get`、SSRF 防护与响应预算（P2.4）。
 
 ## 21. 如何增加下一个 Tool
 

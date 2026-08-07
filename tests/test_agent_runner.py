@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from miniclaw.agent.events import RunEvent
 from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
@@ -153,15 +154,25 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         provider = FakeProvider(
             (
                 response("checking", tool_calls=(call,), reasoning="need echo"),
-                response("done", input_tokens=11, output_tokens=4),
+                response(
+                    "done",
+                    reasoning="answer with the observed result",
+                    input_tokens=11,
+                    output_tokens=4,
+                ),
             )
         )
         tool = _EchoTool()
         executor = self.executor(tool)
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
 
         result = await AgentRunner(provider, executor).run(
             request(*executor.schemas),
             tool_context=self.tool_context,
+            on_event=capture,
         )
 
         self.assertEqual(result.content, "done")
@@ -181,6 +192,21 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(continued[-2].reasoning_content, "need echo")
         self.assertEqual(continued[-1].role, "tool")
         self.assertEqual(continued[-1].tool_call_id, "call_1")
+        visible = [
+            event
+            for event in events
+            if event.kind in {"model_reasoning", "tool_requested"}
+        ]
+        self.assertEqual(
+            [event.kind for event in visible],
+            ["model_reasoning", "tool_requested", "model_reasoning"],
+        )
+        self.assertEqual(visible[0].data["text"], "need echo")
+        self.assertEqual(visible[1].data["arguments"], {"text": "hello"})
+        self.assertEqual(
+            visible[2].data["text"],
+            "answer with the observed result",
+        )
 
     async def test_first_pending_call_ends_loop_and_skips_later_calls(self) -> None:
         """首个 waiting Approval 必须结束本轮，后续同批 Tool 不得执行。"""

@@ -7,6 +7,7 @@ from typing import cast
 from uuid import uuid4
 
 from miniclaw.agent.context import ContextBuilder, ContextError
+from miniclaw.agent.events import RunEvent, RunEventHandler, emit
 from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
@@ -96,6 +97,8 @@ class TurnService:
         text: str,
         conversation_id: str,
         on_text: StreamHandler | None = None,
+        *,
+        on_event: RunEventHandler | None = None,
     ) -> TurnResult:
         """执行并持久化一条 CLI 用户消息。
 
@@ -127,6 +130,10 @@ class TurnService:
         self._turns.mark_running(turn.id)
 
         try:
+            await emit(
+                on_event,
+                RunEvent("turn_started", turn.id, {"session_id": session.id}),
+            )
             history = tuple(
                 _model_message(message)
                 for message in self._messages.list_recent(session.id, limit=20)
@@ -153,13 +160,29 @@ class TurnService:
                     session.id,
                     batch,
                 ),
+                on_event=on_event,
             )
             self._persist_result(turn.id, session.id, result)
+            if result.status is AgentRunStatus.COMPLETED:
+                await emit(
+                    on_event,
+                    RunEvent(
+                        "turn_finished",
+                        turn.id,
+                        {"status": "completed", "content": result.content},
+                    ),
+                )
         except asyncio.CancelledError:
             self._turns.cancel(turn.id)
+            await emit(on_event, RunEvent("turn_cancelled", turn.id, {}))
             raise
         except (ContextError, ConversationDataError, AgentError, ProviderError) as error:
-            self._turns.fail(turn.id, _error_code(error), str(error))
+            error_code = _error_code(error)
+            self._turns.fail(turn.id, error_code, str(error))
+            await emit(
+                on_event,
+                RunEvent("turn_failed", turn.id, {"error_code": error_code}),
+            )
             raise
 
         return TurnResult(
@@ -178,6 +201,7 @@ class TurnService:
         *,
         approved: bool,
         on_text: StreamHandler | None = None,
+        on_event: RunEventHandler | None = None,
     ) -> TurnResult:
         """批准或拒绝绑定 ToolRun，并用没有假 User Message 的 child Turn 继续。"""
         if self._approvals is None:
@@ -204,16 +228,34 @@ class TurnService:
         )
         self._turns.mark_running(child.id)
         try:
+            await emit(
+                on_event,
+                RunEvent("turn_started", child.id, {"session_id": parent.session_id}),
+            )
             if approved:
                 model_text = await self._runner.execute_approved(
                     self._tool_context(user_id, parent.session_id, parent.id),
                     run,
+                    on_event,
                 )
             else:
                 model_text = ToolResult.failure(
                     "approval_denied",
                     f"approval {approval_id} was denied",
                 ).to_model_text(run.tool_name)
+                await emit(
+                    on_event,
+                    RunEvent(
+                        "tool_finished",
+                        parent.id,
+                        {
+                            "call_id": run.tool_call_id,
+                            "tool_name": run.tool_name,
+                            "status": "denied",
+                            "preview": model_text,
+                        },
+                    ),
+                )
             history_before = self._messages.list_recent(parent.session_id, limit=20)
             self._turns.append_intermediate_messages(
                 child.id,
@@ -238,13 +280,29 @@ class TurnService:
                     parent.session_id,
                     batch,
                 ),
+                on_event=on_event,
             )
             self._persist_result(child.id, parent.session_id, result)
+            if result.status is AgentRunStatus.COMPLETED:
+                await emit(
+                    on_event,
+                    RunEvent(
+                        "turn_finished",
+                        child.id,
+                        {"status": "completed", "content": result.content},
+                    ),
+                )
         except asyncio.CancelledError:
             self._turns.cancel(child.id)
+            await emit(on_event, RunEvent("turn_cancelled", child.id, {}))
             raise
         except (ContextError, ConversationDataError, AgentError, ProviderError) as error:
-            self._turns.fail(child.id, _error_code(error), str(error))
+            error_code = _error_code(error)
+            self._turns.fail(child.id, error_code, str(error))
+            await emit(
+                on_event,
+                RunEvent("turn_failed", child.id, {"error_code": error_code}),
+            )
             raise
 
         return TurnResult(
