@@ -343,30 +343,30 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · P2.3 exact-argv command verified · P2.4 HTTPS next</div>
+      <div class="branch">target: main · Phase 2 release gate complete · Phase 3 Memory / Skills next</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">受限命令已经贯穿生产链路：exact argv、硬禁止、Owner 审批、环境隔离和进程组超时都可回归。下一步实现 pinned HTTPS 与 SSRF 防护。</p>
+        <p class="lede">8 个 Tool 已穿过同一条安全链：Workspace、Approval、exact argv、pinned HTTPS、SQLite 恢复和版本回归都有可重复证据。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Exact argv command gate</span>
-        <strong>P2.3 ✓</strong>
-        <p>224 tests + 10/10 offline Agent cases + Ruff verified</p>
+        <span class="tag">Phase 2 release gate</span>
+        <strong>P2 ✓</strong>
+        <p>245 tests · 20/20 Agent cases · DeepSeek live smoke</p>
       </aside>
     </section>
 
     <section class="metrics" aria-label="项目指标">
       <div class="metric">
         <span class="metric-label">Completed phases</span>
-        <span class="metric-value">2 <small>/ 8</small></span>
+        <span class="metric-value">3 <small>/ 8</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">224 <small>passing</small></span>
+        <span class="metric-value">245 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -424,15 +424,15 @@
           <div><h3>CLI Agent 闭环</h3><p>Provider、Context、Runner、Turn 持久化与真实模型验证。</p></div>
           <span class="pill">COMPLETED</span>
         </article>
-        <article class="phase current">
+        <article class="phase done">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool、安全与回归门禁</h3><p>P2.1 只读 Tool、P2.2 文件与审批、P2.3 exact-argv 命令均已验证；P2.4 HTTPS 在开发。</p></div>
-          <span class="pill">IN PROGRESS</span>
+          <div><h3>Tool、安全与回归门禁</h3><p>8 Tool、文件审批、exact argv、pinned HTTPS/SSRF、恢复、20 场景与 live smoke。</p></div>
+          <span class="pill">COMPLETED</span>
         </article>
-        <article class="phase queued">
+        <article class="phase current">
           <div class="phase-no">Phase 3</div>
           <div><h3>Memory、Skills 与压缩</h3><p>长期记忆、按需 Skills 与上下文预算。</p></div>
-          <span class="pill">PLANNED</span>
+          <span class="pill">NEXT</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 4</div>
@@ -459,7 +459,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 2.3 Exact argv command gate</p>
+        <p class="eyebrow">Phase 2 complete gate</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -472,7 +472,7 @@
           <li class="complete">完整 Tool 消息持久化与恢复</li>
           <li class="complete">CLI / Agent 离线 Tool 集成验证</li>
           <li class="complete">PROTO-001：empty tool arguments 事故回归</li>
-          <li class="complete">严格 JSONL Schema 与 10 条 Claw-like query</li>
+          <li class="complete">严格 JSONL Schema 与 20 条 Claw-like query</li>
           <li class="complete">真实 Agent / Policy / Tool / SQLite offline runner</li>
           <li class="complete">miniclaw eval list / validate / run</li>
           <li class="complete">严格 [tools] / command / HTTP 配置边界</li>
@@ -490,7 +490,14 @@
           <li class="complete">run_command：fixed PATH + shell=False + 最小环境</li>
           <li class="complete">命令硬禁止 + exact argv allow rule</li>
           <li class="complete">双流 1 MiB + 整个进程组/transport 超时回收</li>
-          <li class="complete">224 tests + 10/10 Agent cases + Ruff 门禁</li>
+          <li class="complete">http_get：HTTPS-only + 全 DNS 公网校验</li>
+          <li class="complete">pinned peer + 原 hostname TLS + redirect 每跳重验</li>
+          <li class="complete">2 MiB 文本预算 + untrusted data 提示边界</li>
+          <li class="complete">HTTP exact hostname:port --always rule</li>
+          <li class="complete">lazy expiry + stale running interrupted，不重放</li>
+          <li class="complete">七项 read-only Doctor</li>
+          <li class="complete">245 tests + 20/20 Agent cases + Ruff 门禁</li>
+          <li class="complete">DeepSeek V4 Pro system / write / read / command live smoke</li>
         </ul>
       </article>
       <article class="work-card">
@@ -499,17 +506,18 @@
         <div class="decision"><code>model</code><p>deepseek-v4-pro</p></div>
         <div class="decision"><code>credentials</code><p>本地 .env，0600，永不进入 Git。</p></div>
         <div class="decision"><code>runtime</code><p>单进程 asyncio + 一个 SQLite + 顺序 Tool Call。</p></div>
-        <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
-        <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
+        <div class="decision"><code>safety</code><p>Workspace Guard、参数哈希、exact argv、pinned TLS、SSRF 全答案拒绝与异常脱敏。</p></div>
+        <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时；应用层 SSRF 不替代 OS egress policy。</p></div>
         <div class="decision"><code>eval gate</code><p>每次提交跑 deterministic offline 100%；真实模型留给 release-only live suite。</p></div>
-        <div class="decision"><code>scope</code><p>写入、Approval 与 exact-argv 命令已进入 chat；任意 Shell、HTTP、live eval 和飞书仍未完成。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/f2bdf35">f2bdf35</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b6309b9">b6309b9</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2a112a8">2a112a8</a> · <a href="https://github.com/NEDONION/miniclaw/commit/061e045">061e045</a> · <a href="https://github.com/NEDONION/miniclaw/commit/b491fce">b491fce</a> · <a href="https://github.com/NEDONION/miniclaw/commit/2a74e9e">2a74e9e</a></p></div>
+        <div class="decision"><code>scope</code><p>Phase 2 完成；任意 Shell、Memory/Skills、自我迭代和飞书仍未实现。</p></div>
+        <div class="decision"><code>next</code><p>Phase 3：长期 Memory、Markdown/Python Skills 与上下文压缩。</p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/3e6ba5e">3e6ba5e</a> · <a href="https://github.com/NEDONION/miniclaw/commit/ca15ba7">ca15ba7</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 224 tests + 10/10 offline Agent cases + Ruff verified</span>
-      <span><a href="../engineering/phase-2/command-execution.md">P2.3 命令工程文档</a> · <a href="../engineering/phase-2/cli-approvals.md">Approvals CLI</a> · <a href="../evals/releases/v0.1.0.md">v0.1.0 eval record</a></span>
+      <span>Last updated · 2026-08-08 · 245 tests + 20/20 offline Agent cases + live smoke + Ruff</span>
+      <span><a href="../engineering/phase-2/http-and-ssrf.md">P2.4 HTTPS / SSRF</a> · <a href="../engineering/phase-2/testing-and-debugging.md">P2.5 release gate</a> · <a href="../evals/releases/v0.2.0.md">v0.2.0 record</a></span>
     </footer>
   </main>
 </body>

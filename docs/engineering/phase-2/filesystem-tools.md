@@ -2,7 +2,7 @@
 
 > 状态：`write_file`、`edit_file`、严格 `[tools]` 配置和 Workspace 写边界已经进入代码并通过测试
 >
-> 当前仓库门禁：224/224 tests、10/10 offline Agent cases、Ruff PASS；本模块首次退出门禁为 194 tests
+> 当前仓库门禁：245/245 tests、20/20 offline Agent cases、Ruff PASS；本模块首次退出门禁为 194 tests
 >
 > 当前入口：两个写 Tool 已注册到生产 `chat`，但只能在参数绑定 Approval 被 Owner 批准后执行
 
@@ -24,7 +24,7 @@ P2.2A 先独立验证文件内核；完整 Phase 2.2 现已把 `require_approval
 
 ```mermaid
 flowchart LR
-    MODEL["生产 chat"] --> REGISTRY["当前 Registry：7 个 Tool"]
+    MODEL["生产 chat"] --> REGISTRY["当前 Registry：8 个 Tool"]
     REGISTRY --> READ["system_info / read_file / glob / grep"]
     REGISTRY --> WRITE["write_file / edit_file"]
     WRITE --> GUARD["WorkspaceGuard.resolve_write"]

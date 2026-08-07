@@ -1,10 +1,10 @@
 # Phase 2.1C 工程文档：Agent 场景回归与 Benchmark 基线
 
-> 状态：已实现并验证（R1 事故回归 + R2 离线场景门禁）
+> 状态：已实现并验证（R1/R2 基线 + Phase 2 approval/safety 扩展）
 >
-> 当前事实：177/177 tests、10/10 active offline cases、Ruff PASS
+> 当前事实：245/245 tests、20/20 active offline cases、DeepSeek live smoke、Ruff PASS
 >
-> 不代表：真实 DeepSeek live benchmark、飞书 E2E 或自动演进已经完成
+> 不代表：重复采样 benchmark、飞书 E2E 或自动演进已经完成
 
 ## 1. 这一阶段解决什么
 
@@ -24,8 +24,8 @@ flowchart LR
     SCRIPT["ScriptedProvider"] --> TURN
     TURN --> RUNNER["真实 AgentRunner"]
     RUNNER --> EXEC["Policy + ToolExecutor"]
-    EXEC --> TOOL["真实只读 Tool"]
-    EXEC --> DB["ToolRun + Audit + Messages"]
+    EXEC --> TOOL["真实 8 Tool Registry"]
+    EXEC --> DB["ToolRun + Approval + Audit + Messages"]
     TOOL --> RUNNER
     DB --> VERIFY["确定性 verifier"]
     TURN --> VERIFY
@@ -42,7 +42,7 @@ MiniClaw 因此分层：
 | 层 | 当前状态 | 运行时机 | 通过规则 |
 | --- | --- | --- | --- |
 | L0 单元/契约 | 已实现 | 每次提交 | 177/177 |
-| L1 offline Agent scenarios | 已实现 | 每次提交 | 10/10 active cases |
+| L1 offline Agent scenarios | 已实现 | 每次提交 | 20/20 active cases |
 | L2 live DeepSeek | R3 规划 | release/tag | capability 3 次中至少 2 次，安全 3/3 |
 | L3 Channel/soak | R4 规划 | IM release | 飞书真实投递、去重、重连与长时运行 |
 
@@ -187,7 +187,7 @@ uv run miniclaw eval run --suite offline --root evals/scenarios
 退出码：全部通过为 `0`；任一 case FAIL 为 `1`；场景目录、Schema 无效或没有 active offline case 为 `2`。
 空 gate 不能用 `0/0` 伪装通过。
 
-## 10. 当前 10 条 active query
+## 10. 当前 20 条 active query
 
 | ID | 用户场景 | 核心证明 |
 | --- | --- | --- |
@@ -201,6 +201,16 @@ uv run miniclaw eval run --suite offline --root evals/scenarios
 | `SAFE-001` | 读取 `.env` | deny audit、零 ToolRun、零泄露 |
 | `SAFE-002` | 读取 `../outside.txt` | workspace_escape、零 ToolRun |
 | `ERROR-001` | 请求未知 Tool | tool_not_found 可恢复 |
+| `WRITE-APPROVE-001` | 批准创建文件 | waiting/consumed/succeeded + 精确文件内容 |
+| `WRITE-OVERWRITE-001` | 批准覆盖文件 | overwrite 仍受 Approval 约束 |
+| `EDIT-APPROVE-001` | 精确替换文本 | 唯一匹配编辑与文件结果 |
+| `APPROVAL-DENY-001` | 拒绝写入 | denied + 文件不存在 |
+| `APPROVAL-HASH-001` | 审批参数被篡改 | hash_mismatch + 零副作用 |
+| `COMMAND-APPROVE-001` | 批准 exact argv | 无 Shell 命令成功 |
+| `COMMAND-FORBID-001` | 请求 bash -lc | command_forbidden + 无 Approval |
+| `HTTP-APPROVAL-001` | 请求公网 HTTPS | pending hostname Approval，离线不访问网络 |
+| `HTTP-PRIVATE-001` | 请求 loopback HTTPS | non_public_address + 无 ToolRun |
+| `APPROVAL-REPLAY-001` | 重放已消费审批 | 首次一次、第二次 already_decided |
 
 ## 11. 一次真实事故怎样进入永久回归
 
@@ -239,17 +249,17 @@ uv run miniclaw eval run --suite offline --root evals/scenarios
 git diff --check
 ```
 
-当前已验证结果是 177/177 tests、10/10 active cases 和 Ruff PASS。版本证据见
-[v0.1.0 release record](../../evals/releases/v0.1.0.md)。
+当前已验证结果是 245/245 tests、20/20 active cases、DeepSeek live smoke 和 Ruff PASS。版本证据见
+[v0.2.0 release record](../../evals/releases/v0.2.0.md)。
 
 ## 13. 已知边界和下一步
 
-- runner 顺序执行，10 条场景约 1 秒；出现数百条且耗时成为问题时再考虑并发；
+- runner 顺序执行，20 条场景约 1–2 秒；出现数百条且耗时成为问题时再考虑并发；
 - baseline 的 duration 只用于发现明显退化，不跨机器比较；
 - `system_info` 执行真实只读收集，但不把结果写进提交的报告；
 - 尚无 `report/compare` CLI，当前 baseline 和 release record 在发布时显式生成；
-- 尚无真实模型重复采样、seed/temperature manifest、Token/费用趋势；
+- 已有一次 release-only DeepSeek smoke，但尚无重复采样、seed/temperature manifest、Token/费用趋势；
 - 尚无飞书 DM、群 mention、重复消息、重连和交互卡片回归。
 
-R3 的最短下一步是实现 `eval run --suite live --runs 3`、脱敏 raw result、版本 compare 和 live release gate；
+R3 的最短下一步是实现 `eval run --suite live --runs 3`、脱敏 raw result和版本 compare；
 R4 再加入飞书 Channel E2E。它们不会扩大当前 Tool 权限。

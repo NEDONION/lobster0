@@ -56,6 +56,11 @@ flowchart LR
 `offline.responses` 只是模型边界的固定输出；Agent Loop、Policy、Tool 和 SQLite 都走生产实现。因此测试既
 不访问真实模型，也不会绕过最需要防回归的核心链路。
 
+Phase 2 场景还可使用 `approval_actions` 的 `approve / deny / tamper / replay`，以及 `expected` 中的
+`approval_statuses / files / absent_files / error_code`。Runner 会走真实 waiting Turn、ApprovalRepository、child
+continuation 和文件/命令 Tool；公网 HTTPS pending 与私网拒绝场景不会发真实网络请求。字段契约和调试方式见
+[`docs/engineering/phase-2/testing-and-debugging.md`](../docs/engineering/phase-2/testing-and-debugging.md)。
+
 ## 新增一次事故回归
 
 1. 用最小输入稳定复现问题，先写会失败的单测或场景断言；

@@ -400,7 +400,7 @@ Commit: `feat(command): 加入 exact argv policy 与 safe subprocess`
 - Produces: `HttpGetTool`, exact hostname allow rule, `untrusted=true` metadata.
 - Consumes: existing `httpx` only if it can preserve pinned peer verification; otherwise stdlib `http.client`/`ssl` with an injected resolver in tests.
 
-- [ ] **Step 1: Write network-policy RED tests**
+- [x] **Step 1: Write network-policy RED tests**
 
 ```python
 def test_non_https_credentials_and_non_public_addresses_are_denied(self) -> None:
@@ -412,21 +412,21 @@ def test_non_https_credentials_and_non_public_addresses_are_denied(self) -> None
 
 Cover RFC1918, link-local, multicast, unspecified, reserved, mixed public/private DNS answers, control characters, ambiguous hostname encoding, and non-443 ports without an exact rule.
 
-- [ ] **Step 2: Run RED and implement URL/DNS validation**
+- [x] **Step 2: Run RED and implement URL/DNS validation**
 
 Run: `uv run python -m unittest tests.test_network_policy -v`
 
 Use `urllib.parse`, `socket.getaddrinfo` and `ipaddress`; every resolved address must be globally routable.
 
-- [ ] **Step 3: Write HTTP RED tests**
+- [x] **Step 3: Write HTTP RED tests**
 
 Use a fake connection factory to prove: the validated IP is the connected peer, TLS hostname remains the original hostname, every redirect is revalidated, redirect #4 fails, redirect to private IP fails, response >2 MiB aborts, binary content type fails, and returned metadata contains `untrusted=true`.
 
-- [ ] **Step 4: Implement bounded pinned HTTPS transport**
+- [x] **Step 4: Implement bounded pinned HTTPS transport**
 
 Support GET only, no custom/auth headers, body or fallback service. Stream at most configured bytes; accept text/JSON/XML/HTML media types; strip fragment from requests and redact query from audit summaries.
 
-- [ ] **Step 5: Wire hostname exact rules and verify**
+- [x] **Step 5: Wire hostname exact rules and verify**
 
 `approve --always` stores only lower-cased exact hostname (and explicit allowed port when non-443). Redirect targets must match Policy independently and never inherit the first host's trust.
 
@@ -461,7 +461,7 @@ Commit: `feat(http): 实现 pinned HTTPS 与 SSRF redirect 防护`
 - Produces: Doctor checks for Tool config, writable Workspace, resolvable configured command rules and pending Approval count; checks are read-only.
 - Produces: versioned P2.2-P2.4 offline regression cases and v0.2.0 release record.
 
-- [ ] **Step 1: Write recovery/doctor RED tests**
+- [x] **Step 1: Write recovery/doctor RED tests**
 
 ```python
 def test_doctor_reports_pending_approvals_without_executing_them(self) -> None:
@@ -476,15 +476,15 @@ def test_stale_running_tool_is_interrupted_not_replayed(self) -> None:
     self.assertEqual(self.status(self.run_id), "interrupted")
 ```
 
-- [ ] **Step 2: Implement minimal recovery and Doctor checks**
+- [x] **Step 2: Implement minimal recovery and Doctor checks**
 
 No background scheduler: expiry occurs on read/decision; stale runs are marked interrupted during initialized runtime assembly. Doctor never performs DNS requests, HTTP calls, commands or writes beyond its existing safe database access.
 
-- [ ] **Step 3: Add deterministic Agent regression cases**
+- [x] **Step 3: Add deterministic Agent regression cases**
 
 Add active queries for: new file approval, overwrite approval, exact edit, deny-no-write, hash-change rejection, exact command approval, forbidden shell, HTTPS approval, private-address rejection, and approval replay rejection. Assertions use ToolRun/Audit/messages/files, not an LLM judge.
 
-- [ ] **Step 4: Run the complete offline exit gate**
+- [x] **Step 4: Run the complete offline exit gate**
 
 Run:
 
@@ -498,7 +498,7 @@ git diff --check
 
 Expected: zero failures; every active offline case passes.
 
-- [ ] **Step 5: Run three explicit live DeepSeek smoke cases**
+- [x] **Step 5: Run three explicit live DeepSeek smoke cases**
 
 ```bash
 uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
@@ -510,11 +510,11 @@ uv run miniclaw approvals approve <ID>
 
 Record timestamp, model, commit, sanitized outcome, Approval ID/status and any provider limitation in `docs/evals/releases/v0.2.0.md`; never record the API key or raw secret-bearing environment.
 
-- [ ] **Step 6: Write fact-only engineering docs and progress page**
+- [x] **Step 6: Write fact-only engineering docs and progress page**
 
 Each document must include: scope/non-scope, plain-language flow, Mermaid state/sequence diagram, public contract, limits, stable errors, SQLite/audit behavior, local commands, test matrix and known ceilings. README/progress counts must be taken from the fresh gate output, not predicted.
 
-- [ ] **Step 7: Final verification and commit**
+- [x] **Step 7: Final verification and commit**
 
 Re-run the exact Step 4 commands after documentation changes. Verify `rg -n "尚未完成|规划中|P2.1C R2" README.md docs/progress/index.html docs/engineering/README.md` has no stale Phase 2 status claim.
 

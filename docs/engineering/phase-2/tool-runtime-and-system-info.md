@@ -4,7 +4,7 @@
 >
 > 范围：Tool Contract、Registry、Policy、Executor、ToolRun/Audit、完整消息轨迹、`system_info`、CLI 装配
 >
-> 不代表：整个 Phase 2 已完成
+> 本文保留 P2.1A 当时的实现快照；整个 Phase 2 现已完成，当前入口见本目录索引
 
 > 当前仓库已继续完成 P2.1B Workspace 只读 Tool 和 P2.1C Agent 回归门禁；最新能力请分别阅读
 > [P2.1B 文档](workspace-read-tools.md) 与 [P2.1C 文档](agent-regression-evals.md)。本页“还没有实现”只描述
@@ -791,9 +791,10 @@ sqlite3 ~/.miniclaw/miniclaw.db \
 - [x] 损坏历史不发送给 Provider；
 - [x] medium/high 默认不执行；
 - [x] critical 默认拒绝；
-- [ ] Approval 创建与消费（P2.2）；
+- [x] Approval 创建与消费（P2.2）；
 - [x] Workspace 路径逃逸防护（P2.1B）；
-- [ ] Shell allowlist/sandbox（P2.3）。
+- [x] Exact-argv command allowlist（P2.3）；
+- [ ] OS sandbox（不在 Phase 2 范围）。
 
 ## 21. 如何增加下一个 Tool
 

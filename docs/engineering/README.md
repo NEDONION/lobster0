@@ -8,14 +8,16 @@
 | --- | --- | --- |
 | [Phase 2.1A：Tool Runtime 与 system_info](phase-2/tool-runtime-and-system-info.md) | Tool Contract、Registry、Policy、Executor、ToolRun/Audit、`system_info` 与 Agent Runtime。 | 文件读写、审批、Shell、飞书。 |
 | [Phase 2.1B：Workspace 只读文件与搜索](phase-2/workspace-read-tools.md) | `read_file`、`glob`、`grep`、Workspace Guard、离线 Agent/CLI 装配验证。 | 真实 DeepSeek 文件 smoke、`write_file`、Shell、审批、飞书。 |
-| [Phase 2.1C：Agent 场景回归与 Benchmark 基线](phase-2/agent-regression-evals.md) | JSONL Schema、10 条 Claw-like query、真实离线 runner、`miniclaw eval`、baseline/release record。 | live DeepSeek、report/compare、飞书 E2E、自动改 Prompt/Skill。 |
+| [Phase 2.1C：Agent 场景回归与 Benchmark 基线](phase-2/agent-regression-evals.md) | JSONL Schema、20 条 Claw-like query、真实离线 runner、`miniclaw eval`、baseline/release record。 | report/compare、飞书 E2E、自动改 Prompt/Skill。 |
 | [Phase 2.2A：安全写边界与原子文件 Tool](phase-2/filesystem-tools.md) | 严格 Tools 配置、`resolve_write`、`write_file`、`edit_file`、原子发布与失败保护。 | 参数绑定 Approval、生产 chat 注册、Shell、HTTP、飞书。 |
-| [Phase 2.2：参数绑定 Approval 与续执行](phase-2/approval-lifecycle.md) | canonical hash、waiting/child Turn、Owner/TTL、approve/deny、重启恢复、单次消费与审计。 | Shell、HTTP、飞书卡片。 |
+| [Phase 2.2：参数绑定 Approval 与续执行](phase-2/approval-lifecycle.md) | canonical hash、waiting/child Turn、Owner/TTL、approve/deny、重启恢复、单次消费与审计。 | 飞书卡片、多用户审批。 |
 | [Phase 2.2：Approvals CLI](phase-2/cli-approvals.md) | `list/show/approve/deny`、JSON、退出码、无 Key 查询和恢复流程。 | TUI、IM 审批卡片、永久文件规则。 |
 | [Phase 2.3：Exact-Argv 命令](phase-2/command-execution.md) | 固定 PATH、硬禁止、exact allow rule、环境清理、进程组超时和有界双流。 | 任意 Shell、PTY、后台任务、OS sandbox。 |
+| [Phase 2.4：Pinned HTTPS 与 SSRF](phase-2/http-and-ssrf.md) | HTTPS-only、全 DNS 公网校验、pinned peer、TLS hostname、redirect、响应预算和 exact hostname rule。 | POST、认证 Header、代理、下载、OS egress sandbox。 |
+| [Phase 2.5：测试、恢复与调试](phase-2/testing-and-debugging.md) | 245 tests、20 场景、stale-run recovery、七项 Doctor、DeepSeek live smoke 和发布手册。 | 飞书 E2E、soak、自动 Prompt/Skill 演进。 |
 
-功能主线当前位于 P2.4：P2.3 exact-argv `run_command` 已验证并进入生产 `chat`，下一步是 pinned HTTPS
-和 SSRF 防护。质量主线下一步仍是 R3 live DeepSeek release eval。
+Phase 2 已完成并进入 v0.2.0 release gate。当前生产 Registry 有 8 个 Tool；下一主线是 Phase 3 Memory、Skills 与
+上下文压缩，飞书 Channel 仍在 Phase 4。
 
 ## Phase 1：CLI Agent 闭环
 
