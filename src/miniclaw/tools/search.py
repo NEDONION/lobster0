@@ -160,19 +160,24 @@ class GrepTool:
             return ToolResult.failure(error.code, str(error))
 
         matches: list[dict[str, JsonValue]] = []
-        files_scanned = 0
         bytes_read = 0
-        for display, path, is_file in _candidates(context, guard, root, file_glob):
+        for display, path, is_file in _candidates(
+            context,
+            guard,
+            root,
+            file_glob,
+            file_limit=_MAX_GREP_FILES,
+        ):
+            if path is None:
+                return _grep_result(matches, limit, truncated=True)
             if not is_file:
                 continue
-            if files_scanned >= _MAX_GREP_FILES or bytes_read >= _MAX_GREP_TOTAL_BYTES:
+            if bytes_read >= _MAX_GREP_TOTAL_BYTES:
                 return _grep_result(matches, limit, truncated=True)
-            text, consumed, budget_exhausted, was_read = _read_search_text(
+            text, consumed, budget_exhausted, _was_read = _read_search_text(
                 path,
                 _MAX_GREP_TOTAL_BYTES - bytes_read,
             )
-            if was_read:
-                files_scanned += 1
             bytes_read += consumed
             if budget_exhausted:
                 return _grep_result(matches, limit, truncated=True)
@@ -196,8 +201,11 @@ def _candidates(
     guard: WorkspaceGuard,
     root: Path,
     pattern: str,
-) -> Iterator[tuple[str, Path, bool]]:
-    """稳定遍历匹配的安全文件与目录，并标记普通文件。"""
+    *,
+    file_limit: int | None = None,
+) -> Iterator[tuple[str, Path | None, bool]]:
+    """稳定遍历安全候选，并在文件预算耗尽后用空路径标记截断。"""
+    selected_files = 0
     for directory, directory_names, file_names in os.walk(
         root,
         followlinks=False,
@@ -207,7 +215,7 @@ def _candidates(
         safe_directories: list[str] = []
         for name in sorted(directory_names):
             candidate = current / name
-            if _unsafe_directory(candidate):
+            if _unsafe_symlink(candidate):
                 continue
             safe = _safe_candidate(context, guard, root, candidate)
             if safe is None:
@@ -221,12 +229,21 @@ def _candidates(
         directory_names[:] = safe_directories
         for name in sorted(file_names):
             candidate = current / name
+            logical_display = candidate.relative_to(root).as_posix()
+            if not _glob_matches(logical_display, pattern):
+                continue
+            if file_limit is not None and selected_files >= file_limit:
+                yield logical_display, None, True
+                return
+            if _unsafe_symlink(candidate):
+                continue
             safe = _safe_candidate(context, guard, root, candidate)
             if safe is None:
                 continue
             display, resolved, mode = safe
-            if not stat.S_ISREG(mode) or not _glob_matches(display, pattern):
+            if not stat.S_ISREG(mode):
                 continue
+            selected_files += 1
             yield display, resolved, True
 
 
@@ -246,8 +263,8 @@ def _safe_candidate(
     return display, resolved, mode
 
 
-def _unsafe_directory(path: Path) -> bool:
-    """把无法安全判断或属于 symlink 的目录从遍历队列移除。"""
+def _unsafe_symlink(path: Path) -> bool:
+    """把无法安全判断或属于 symlink 的文件系统项从搜索中移除。"""
     try:
         return path.is_symlink()
     except OSError:

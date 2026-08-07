@@ -107,35 +107,80 @@ class ReadFileToolTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(result.error_code, code)
                 self.assertNotIn(str(self.workspace.parent), result.error_message or "")
 
-    async def test_read_is_bounded_and_validates_utf8_split_at_the_byte_limit(self) -> None:
-        """512 KiB 边界截断多字节 UTF-8 时仍应识别为合法文本。"""
-        limit = 512 * 1024
-        (self.workspace / "boundary.txt").write_bytes(b"x" * (limit - 1) + "一".encode() + b"\n")
+    async def test_next_offset_reads_real_lines_beyond_512_kib(self) -> None:
+        """第一页的 cursor 必须能读取 512 KiB 之后的真实完整行。"""
+        full_page = (b"x" * 1023 + b"\n") * 512
+        (self.workspace / "paged.txt").write_bytes(full_page + b"tail\n")
 
-        result = await self._run({"path": "boundary.txt", "limit": 1000})
-
-        self.assertTrue(result.ok)
-        self.assertIsInstance(result.data, dict)
-        assert isinstance(result.data, dict)
-        self.assertLessEqual(len(result.data["content"].encode()), limit)
-        self.assertTrue(result.data["truncated"])
-        self.assertEqual(result.data["next_offset"], 2)
-
-    async def test_byte_truncated_long_line_does_not_repeat_an_empty_cursor(self) -> None:
-        """超长无换行文本续读为空时，不能再次返回同一续读位置。"""
-        (self.workspace / "long.txt").write_bytes(b"x" * (512 * 1024 + 1))
-
-        first = await self._run({"path": "long.txt"})
+        first = await self._run({"path": "paged.txt", "limit": 1000})
         self.assertIsInstance(first.data, dict)
         assert isinstance(first.data, dict)
+        self.assertEqual(len(first.data["content"].encode()), 512 * 1024)
+        self.assertEqual(first.data["lines"], 512)
+        self.assertEqual(first.data["next_offset"], 513)
+
+        resumed = await self._run({"path": "paged.txt", "offset": 513})
+        self.assertEqual(
+            resumed.data,
+            {
+                "path": "paged.txt",
+                "content": "tail\n",
+                "offset": 513,
+                "lines": 1,
+                "truncated": False,
+            },
+        )
+
+    async def test_byte_budget_stops_before_a_complete_line_without_losing_it(self) -> None:
+        """页尾放不下的普通行必须由下一行号完整续读，不能切断后跳过。"""
+        first_line = "a" * (400 * 1024) + "\n"
+        second_line = "b" * (200 * 1024) + "\n"
+        (self.workspace / "whole-lines.txt").write_text(
+            first_line + second_line,
+            encoding="utf-8",
+        )
+
+        first = await self._run({"path": "whole-lines.txt", "limit": 1000})
+        self.assertEqual(first.data["content"], first_line)
+        self.assertEqual(first.data["lines"], 1)
         self.assertEqual(first.data["next_offset"], 2)
 
-        resumed = await self._run({"path": "long.txt", "offset": first.data["next_offset"]})
-        self.assertIsInstance(resumed.data, dict)
-        assert isinstance(resumed.data, dict)
-        self.assertEqual(resumed.data["content"], "")
-        self.assertTrue(resumed.data["truncated"])
-        self.assertNotIn("next_offset", resumed.data)
+        resumed = await self._run({"path": "whole-lines.txt", "offset": 2})
+        self.assertEqual(resumed.data["content"], second_line)
+        self.assertFalse(resumed.data["truncated"])
+
+    async def test_continuation_preserves_final_line_without_newline(self) -> None:
+        """512 KiB 之后无末尾换行的最后一行也必须能完整续读。"""
+        full_page = (b"x" * 1023 + b"\n") * 512
+        (self.workspace / "no-newline.txt").write_bytes(full_page + b"final")
+
+        first = await self._run({"path": "no-newline.txt", "limit": 1000})
+        resumed = await self._run(
+            {"path": "no-newline.txt", "offset": first.data["next_offset"]}
+        )
+
+        self.assertEqual(resumed.data["content"], "final")
+        self.assertEqual(resumed.data["lines"], 1)
+        self.assertFalse(resumed.data["truncated"])
+
+    async def test_line_larger_than_512_kib_fails_without_a_lossy_cursor(self) -> None:
+        """单行无法装入一页时必须稳定失败，不能发布会丢数据的 cursor。"""
+        (self.workspace / "long.txt").write_bytes(b"x" * (512 * 1024 + 1))
+
+        result = await self._run({"path": "long.txt"})
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "line_too_large")
+        self.assertNotIn(str(self.workspace.parent), result.error_message or "")
+
+    async def test_four_byte_utf8_starting_after_512_kib_is_not_binary(self) -> None:
+        """窗口外才开始的完整 emoji 不能被误报为非法 UTF-8。"""
+        (self.workspace / "emoji.txt").write_bytes(b"x" * (512 * 1024) + "😀".encode())
+
+        result = await self._run({"path": "emoji.txt"})
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "line_too_large")
 
     async def test_eof_and_offset_past_lines_have_no_next_offset(self) -> None:
         """普通 EOF 与超出已有行的偏移量不能虚构续读 cursor。"""

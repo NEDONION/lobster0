@@ -1,7 +1,6 @@
 """Workspace 内受限的文本文件读取 Tool。"""
 
 import asyncio
-import codecs
 import stat
 from pathlib import Path
 
@@ -15,7 +14,11 @@ from miniclaw.tools.base import (
     ToolValidationError,
 )
 
-_MAX_PREFIX_BYTES = 512 * 1024
+_MAX_READ_BYTES = 512 * 1024
+
+
+class _LineTooLargeError(ValueError):
+    """表示单行超过一次调用可安全返回的字节上限。"""
 
 
 class ReadFileTool:
@@ -70,22 +73,25 @@ class ReadFileTool:
         except WorkspaceAccessError as error:
             return ToolResult.failure(error.code, str(error))
         try:
-            prefix, boundary = await asyncio.to_thread(_read_prefix, resolved)
+            content, lines, truncated = await asyncio.to_thread(
+                _read_window,
+                resolved,
+                offset,
+                limit,
+            )
         except FileNotFoundError:
             return ToolResult.failure("not_found", "file was not found")
         except IsADirectoryError:
             return ToolResult.failure("not_a_file", "path is not a regular file")
-        except OSError:
-            return ToolResult.failure("file_read_failed", "file could not be read")
-
-        try:
-            content = _decode_utf8_prefix(prefix, boundary)
+        except _LineTooLargeError:
+            return ToolResult.failure(
+                "line_too_large",
+                "line exceeds the 512 KiB read limit",
+            )
         except UnicodeDecodeError:
             return ToolResult.failure("binary_file", "file is not valid UTF-8 text")
-        lines = content.splitlines(keepends=True)
-        start = offset - 1
-        window = lines[start : start + limit]
-        truncated = bool(boundary) or start + len(window) < len(lines)
+        except OSError:
+            return ToolResult.failure("file_read_failed", "file could not be read")
         root = next(
             root
             for root in (context.workspace, *context.read_only_roots)
@@ -93,37 +99,49 @@ class ReadFileTool:
         )
         data: dict[str, JsonValue] = {
             "path": guard.display(context, resolved, root=root),
-            "content": "".join(window),
+            "content": content,
             "offset": offset,
-            "lines": len(window),
+            "lines": lines,
             "truncated": truncated,
         }
-        if truncated and window:
-            data["next_offset"] = offset + len(window)
+        if truncated and lines:
+            data["next_offset"] = offset + lines
         return ToolResult.success(data)
 
 
-def _read_prefix(path: Path) -> tuple[bytes, bytes]:
-    """读取普通文件的 512 KiB 前缀和最多三个边界字节。"""
+def _read_window(path: Path, offset: int, limit: int) -> tuple[str, int, bool]:
+    """流式跳过 offset 前行，并读取不超过 512 KiB 的完整 UTF-8 行。"""
     if not stat.S_ISREG(path.stat().st_mode):
         raise IsADirectoryError
     with path.open("rb") as file:
-        return file.read(_MAX_PREFIX_BYTES), file.read(3)
+        for _ in range(offset - 1):
+            line = file.readline(_MAX_READ_BYTES + 1)
+            if not line:
+                return "", 0, False
+            if len(line) > _MAX_READ_BYTES:
+                raise _LineTooLargeError
+            _decode_line(line)
+
+        content: list[str] = []
+        content_bytes = 0
+        for _ in range(limit):
+            line = file.readline(_MAX_READ_BYTES + 1)
+            if not line:
+                return "".join(content), len(content), False
+            if len(line) > _MAX_READ_BYTES:
+                if content:
+                    return "".join(content), len(content), True
+                raise _LineTooLargeError
+            if content_bytes + len(line) > _MAX_READ_BYTES:
+                return "".join(content), len(content), True
+            content.append(_decode_line(line))
+            content_bytes += len(line)
+        return "".join(content), len(content), bool(file.read(1))
 
 
-def _decode_utf8_prefix(prefix: bytes, boundary: bytes) -> str:
-    """严格解码前缀，并仅用边界字节验证被截断的 UTF-8 字符。"""
-    if b"\0" in prefix:
-        nul_index = prefix.index(b"\0")
-        raise UnicodeDecodeError("utf-8", prefix, nul_index, nul_index + 1, "NUL byte")
-    decoder = codecs.getincrementaldecoder("utf-8")()
-    content = decoder.decode(prefix, final=not boundary)
-    if not boundary:
-        return content
-    for byte in boundary:
-        decoder.decode(bytes((byte,)), final=False)
-        if not decoder.getstate()[0]:
-            break
-    else:
-        decoder.decode(b"", final=True)
-    return content
+def _decode_line(line: bytes) -> str:
+    """严格解码一条完整行，并把 NUL 当作二进制内容拒绝。"""
+    if b"\0" in line:
+        nul_index = line.index(b"\0")
+        raise UnicodeDecodeError("utf-8", line, nul_index, nul_index + 1, "NUL byte")
+    return line.decode("utf-8")

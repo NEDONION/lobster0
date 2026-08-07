@@ -175,6 +175,16 @@ class GlobToolTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.data, {"matches": [], "truncated": False})
 
+    async def test_same_root_file_symlink_is_not_resolved_or_duplicated(self) -> None:
+        """同根文件别名必须跳过，不能按目标路径重复返回。"""
+        target = self.workspace / "target.txt"
+        target.write_text("text", encoding="utf-8")
+        (self.workspace / "alias.py").symlink_to(target)
+
+        result = await self._glob({"pattern": "*"})
+
+        self.assertEqual(result.data, {"matches": ["target.txt"], "truncated": False})
+
 
 class GrepToolTest(unittest.IsolatedAsyncioTestCase):
     """验证 ``grep`` 有界扫描 Workspace 内的 UTF-8 普通文件。"""
@@ -313,8 +323,8 @@ class GrepToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.data["matches"], [])
         self.assertTrue(result.data["truncated"])
 
-    async def test_only_actually_read_files_consume_file_limit(self) -> None:
-        """超大未读文件不能挤占 200 个实际读取文件的配额。"""
+    async def test_oversized_candidate_consumes_file_limit_before_later_match(self) -> None:
+        """超大候选也必须计数，使第 201 个有效文件不再被读取。"""
         (self.workspace / "f000-large.txt").write_bytes(b"x" * (1024 * 1024 + 1))
         for index in range(1, 201):
             text = "needle" if index == 200 else "none"
@@ -322,10 +332,46 @@ class GrepToolTest(unittest.IsolatedAsyncioTestCase):
 
         result = await self._grep({"pattern": "needle"})
 
+        self.assertEqual(result.data, {"matches": [], "truncated": True})
+
+    async def test_200_unreadable_candidates_stop_before_stat_or_open_of_201st(self) -> None:
+        """200 个不可读候选必须耗尽配额，且第 201 个不能再 stat/open。"""
+        for index in range(201):
+            (self.workspace / f"f{index:03}.txt").write_text("needle", encoding="utf-8")
+        real_stat = Path.stat
+
+        def controlled_stat(path: Path, *args: object, **kwargs: object) -> object:
+            """若实现触碰第 201 个候选就让测试失败。"""
+            if path.name == "f200.txt":
+                raise AssertionError("the 201st candidate was stat'ed")
+            return real_stat(path, *args, **kwargs)
+
+        def unreadable_open(path: Path, *args: object, **kwargs: object) -> object:
+            """模拟前 200 个候选均无法打开，并拒绝触碰第 201 个。"""
+            if path.name == "f200.txt":
+                raise AssertionError("the 201st candidate was opened")
+            raise PermissionError("test candidate is unreadable")
+
+        with (
+            patch.object(Path, "stat", controlled_stat),
+            patch.object(Path, "open", unreadable_open),
+        ):
+            result = await self._grep({"pattern": "needle"})
+
+        self.assertEqual(result.data, {"matches": [], "truncated": True})
+
+    async def test_grep_skips_same_root_file_symlink_without_duplicate_match(self) -> None:
+        """grep 必须只扫描目标文件一次，不把同根 alias 当成第二个目标。"""
+        target = self.workspace / "target.txt"
+        target.write_text("needle\n", encoding="utf-8")
+        (self.workspace / "alias.py").symlink_to(target)
+
+        result = await self._grep({"pattern": "needle"})
+
         self.assertEqual(
             result.data,
             {
-                "matches": [{"path": "f200.txt", "line": 1, "text": "needle"}],
+                "matches": [{"path": "target.txt", "line": 1, "text": "needle"}],
                 "truncated": False,
             },
         )
