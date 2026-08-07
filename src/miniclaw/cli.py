@@ -61,6 +61,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     try:
         result = initialize_state(paths)
+    except ConfigError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     except (BootstrapError, DatabaseError, MigrationError, OSError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 5

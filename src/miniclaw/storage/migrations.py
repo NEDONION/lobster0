@@ -33,6 +33,12 @@ def apply_migrations(database: Database) -> tuple[int, ...]:
             applied = {
                 row[0] for row in connection.execute("SELECT version FROM schema_migrations")
             }
+            newest_version = max(applied, default=0)
+            if newest_version > LATEST_SCHEMA_VERSION:
+                raise MigrationError(
+                    f"database uses newer schema version {newest_version}; "
+                    f"this MiniClaw supports {LATEST_SCHEMA_VERSION}"
+                )
             if LATEST_SCHEMA_VERSION in applied:
                 return ()
 

@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 from miniclaw.storage.database import Database, DatabaseError
-from miniclaw.storage.migrations import apply_migrations, current_schema_version
+from miniclaw.storage.migrations import MigrationError, apply_migrations, current_schema_version
 from miniclaw.storage.repositories import OwnerRepository
 
 EXPECTED_TABLES = {
@@ -107,6 +107,26 @@ class StorageTest(unittest.TestCase):
                 self.fail("missing database unexpectedly opened")
 
         self.assertFalse(self.database_path.exists())
+
+    def test_older_binary_rejects_newer_schema_version(self) -> None:
+        """程序不能在更高版本 Schema 上继续写入，避免不可逆数据损坏。"""
+        database = Database(self.database_path)
+        with database.connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE schema_migrations (
+                    version INTEGER PRIMARY KEY,
+                    applied_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                (2, "future"),
+            )
+
+        with self.assertRaisesRegex(MigrationError, "newer schema version 2"):
+            apply_migrations(database)
 
 
 if __name__ == "__main__":
