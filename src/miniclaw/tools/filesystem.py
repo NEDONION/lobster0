@@ -98,7 +98,7 @@ class ReadFileTool:
             "lines": len(window),
             "truncated": truncated,
         }
-        if truncated:
+        if truncated and window:
             data["next_offset"] = offset + len(window)
         return ToolResult.success(data)
 

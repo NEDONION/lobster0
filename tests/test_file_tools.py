@@ -121,6 +121,34 @@ class ReadFileToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.data["truncated"])
         self.assertEqual(result.data["next_offset"], 2)
 
+    async def test_byte_truncated_long_line_does_not_repeat_an_empty_cursor(self) -> None:
+        """超长无换行文本续读为空时，不能再次返回同一续读位置。"""
+        (self.workspace / "long.txt").write_bytes(b"x" * (512 * 1024 + 1))
+
+        first = await self._run({"path": "long.txt"})
+        self.assertIsInstance(first.data, dict)
+        assert isinstance(first.data, dict)
+        self.assertEqual(first.data["next_offset"], 2)
+
+        resumed = await self._run({"path": "long.txt", "offset": first.data["next_offset"]})
+        self.assertIsInstance(resumed.data, dict)
+        assert isinstance(resumed.data, dict)
+        self.assertEqual(resumed.data["content"], "")
+        self.assertTrue(resumed.data["truncated"])
+        self.assertNotIn("next_offset", resumed.data)
+
+    async def test_eof_and_offset_past_lines_have_no_next_offset(self) -> None:
+        """普通 EOF 与超出已有行的偏移量不能虚构续读 cursor。"""
+        (self.workspace / "single.txt").write_text("only line\n", encoding="utf-8")
+
+        for arguments in ({"path": "single.txt"}, {"path": "single.txt", "offset": 2}):
+            with self.subTest(arguments=arguments):
+                result = await self._run(arguments)
+                self.assertIsInstance(result.data, dict)
+                assert isinstance(result.data, dict)
+                self.assertFalse(result.data["truncated"])
+                self.assertNotIn("next_offset", result.data)
+
 
 if __name__ == "__main__":
     unittest.main()
