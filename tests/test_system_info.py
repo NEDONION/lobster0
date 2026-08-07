@@ -1,11 +1,13 @@
 """``system_info`` 的平台字段、隐私和参数边界测试。"""
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
+import miniclaw.tools.system as system_module
 from miniclaw.tools.base import ToolContext, ToolValidationError
 from miniclaw.tools.system import SystemInfoTool, _mac_hardware
 
@@ -78,9 +80,53 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
         """模型不能借 Tool 参数读取序列号或执行任意命令。"""
         tool = SystemInfoTool()
 
+        section_enum = tool.definition.parameters["properties"]["sections"]["items"]["enum"]
+        self.assertIn("applications", section_enum)
+        self.assertEqual(
+            tool.validate({"sections": ["applications"]}),
+            {"sections": ["applications"]},
+        )
+        self.assertNotIn("applications", tool.validate({})["sections"])
+
         for arguments in ({"sections": ["serial"]}, {"command": "env"}):
             with self.subTest(arguments=arguments), self.assertRaises(ToolValidationError):
                 tool.validate(arguments)
+
+    async def test_applications_section_returns_safe_installed_names(self) -> None:
+        """应用清单必须显式请求，且只返回去路径后的安装名称。"""
+        tool = SystemInfoTool()
+        self.assertTrue(hasattr(system_module, "_mac_applications"))
+        with (
+            mock.patch("miniclaw.tools.system.platform.system", return_value="Darwin"),
+            mock.patch(
+                "miniclaw.tools.system._mac_applications",
+                return_value=["Lark", "Notes"],
+            ),
+        ):
+            result = await tool.execute(
+                self.context,
+                tool.validate({"sections": ["applications"]}),
+            )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(
+            result.data,
+            {"applications": ["Lark", "Notes"], "unavailable_sections": []},
+        )
+
+    def test_macos_application_inventory_skips_paths_files_and_symlinks(self) -> None:
+        """固定应用目录扫描只返回真实 .app 目录名，不泄露路径或跟随 symlink。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Lark.app").mkdir()
+            (root / "Notes.app").mkdir()
+            (root / "plain.txt").write_text("not an app", encoding="utf-8")
+            (root / "Alias.app").symlink_to(root / "Lark.app", target_is_directory=True)
+
+            self.assertTrue(hasattr(system_module, "_mac_applications"))
+            applications = system_module._mac_applications((root,))
+
+        self.assertEqual(applications, ["Lark", "Notes"])
 
     async def test_platform_collector_failure_marks_sections_unavailable(self) -> None:
         """单个平台查询失败时仍返回成功，并明确哪些分区不可用。"""

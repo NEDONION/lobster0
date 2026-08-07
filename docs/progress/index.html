@@ -355,7 +355,7 @@
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Pinned HTTPS gate</span>
         <strong>P2.4 ✓</strong>
-        <p>253 tests + 20/20 offline Agent cases + Ruff verified</p>
+        <p>258 tests + 21/21 offline Agent cases + Ruff verified</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">253 <small>passing</small></span>
+        <span class="metric-value">258 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -472,7 +472,8 @@
           <li class="complete">完整 Tool 消息持久化与恢复</li>
           <li class="complete">AgentRuntime / Agent 离线 Tool 集成验证</li>
           <li class="complete">PROTO-001：empty tool arguments 事故回归</li>
-          <li class="complete">严格 JSONL Schema 与 20 条 Claw-like query</li>
+          <li class="complete">ACTION-OPEN-APP-001：direct open -a 与 Approval 事故回归</li>
+          <li class="complete">严格 JSONL Schema 与 21 条 Claw-like query</li>
           <li class="complete">真实 Agent / Policy / Tool / SQLite offline runner</li>
           <li class="complete">miniclaw eval list / validate / run</li>
           <li class="complete">严格 [tools] / command / HTTP 配置边界</li>
@@ -494,10 +495,11 @@
           <li class="complete">run_command：exact argv、固定 PATH 与硬禁止</li>
           <li class="complete">最小子进程环境、输出上限与进程组超时</li>
           <li class="complete">安全命令未命中规则时复用 TUI Allow once / Deny</li>
+          <li class="complete">应用名显式发现 + direct open -a 的 DeepSeek planning 3/3</li>
           <li class="complete">http_get：HTTPS-only、全部 DNS 公网校验与精确 authority</li>
           <li class="complete">固定 IP/TLS hostname、每跳重验与有界文本响应</li>
           <li class="complete">stale ToolRun crash recovery 与 doctor 七项只读检查</li>
-          <li class="complete">253 tests + 20/20 Agent cases + Ruff 门禁</li>
+          <li class="complete">258 tests + 21/21 Agent cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -508,14 +510,14 @@
         <div class="decision"><code>runtime</code><p>单进程 asyncio + Textual Worker + 一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 deterministic offline 100%；真实模型留给 release-only live suite。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 deterministic offline 100%；打开应用事故另跑不执行 Tool 的 3 次 live planning probe，完整 live runner 仍待实现。</p></div>
         <div class="decision"><code>scope</code><p>TUI、八个 Tool 与 Approval 续执行已完成；任意 Shell、live eval、lark-cli 真实 smoke 和飞书 Channel 仍未完成。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/bab7ebf">bab7ebf</a> · <a href="https://github.com/NEDONION/miniclaw/commit/fb9d360">fb9d360</a> · <a href="https://github.com/NEDONION/miniclaw/commit/3e6ba5e">3e6ba5e</a> · <a href="https://github.com/NEDONION/miniclaw/commit/ca15ba7">ca15ba7</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 253 tests + 20/20 offline Agent cases + Ruff verified</span>
+      <span>Last updated · 2026-08-08 · 258 tests + 21/21 offline Agent cases + Ruff verified</span>
       <span><a href="../engineering/phase-2/single-entry-tui.md">P2.2B TUI</a> · <a href="../engineering/phase-2/tui-regression-testing.md">TUI regression</a> · <a href="../engineering/phase-2/testing-and-debugging.md">release gate</a> · <a href="../evals/releases/v0.2.0.md">v0.2.0 record</a></span>
     </footer>
   </main>

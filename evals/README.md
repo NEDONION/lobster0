@@ -1,6 +1,6 @@
 # MiniClaw Agent 回归场景集
 
-Active offline gate: 20 cases
+Active offline gate: 21 cases
 
 这里保存随代码版本化的 Claw-like 使用场景。它回答两个问题：
 

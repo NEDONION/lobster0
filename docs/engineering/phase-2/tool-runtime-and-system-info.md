@@ -404,7 +404,7 @@ WHERE id = ? AND status = 'running'
 
 ### 10.1 参数
 
-缺省读取全部安全分区：
+缺省读取五个硬件安全分区，不枚举应用：
 
 ```json
 {}
@@ -423,6 +423,16 @@ WHERE id = ? AND status = 'running'
 - `memory`
 - `storage`
 - `gpu`
+- `applications`（仅显式请求；当前只支持 macOS）
+
+应用清单必须显式选择：
+
+```json
+{"sections":["applications"]}
+```
+
+它用于在 `open -a` 前解析真实安装名。例如用户说“飞书”，但本机实际 bundle 名可能是 `Lark`。默认 `{}`
+不返回应用清单，避免普通硬件查询扩大可见范围。
 
 拒绝未知键、空数组、重复值、非字符串和未知 section。例如：
 
@@ -469,6 +479,9 @@ WHERE id = ? AND status = 'running'
 - MAC address；
 - 环境变量。
 
+`applications` 不运行命令。它只扫描固定 `/Applications` 顶层，接受真实、非 symlink 的 `.app` 目录，
+去掉 `.app` 后缀后按名称排序，最多返回 200 个名称；不返回绝对路径，也不读取 bundle 内文件。
+
 ```mermaid
 flowchart LR
     PROFILER["system_profiler JSON"] --> FILTER["字段白名单"]
@@ -476,6 +489,8 @@ flowchart LR
     FILTER --> GPU["sppci_model"]
     PROFILER -.->|"忽略"| SERIAL["serial / UUID / UDID"]
     SYSCTL["sysctl hw.memsize"] --> MEMORY["memory_bytes"]
+    APPS["/Applications/*.app"] --> NAMES["sorted names ≤ 200"]
+    APPS -.->|"忽略"| LINKS["symlink / file / non-app"]
 ```
 
 ### 10.3 Linux fallback
@@ -531,6 +546,17 @@ flowchart LR
 ```
 
 数值保留字节和核心数，不在 Tool 内格式化成 GB/GiB。自然语言单位转换交给最终回答层，原始数据保持可测试。
+
+显式应用清单的结果形状：
+
+```json
+{
+  "applications": ["Lark", "Notes"],
+  "unavailable_sections": []
+}
+```
+
+非 macOS 或固定目录不可读时返回空数组，并把 `applications` 放入 `unavailable_sections`。
 
 ## 11. AgentRunner 集成
 
@@ -696,7 +722,7 @@ flowchart TD
 | 测试文件 | 关键验证 |
 | --- | --- |
 | `test_tool_contract.py` | Schema、稳定 JSON、Registry 重名 |
-| `test_system_info.py` | macOS/Linux 字段、隐私排除、参数拒绝、局部失败、固定 argv |
+| `test_system_info.py` | macOS/Linux 字段、隐私排除、参数拒绝、局部失败、固定 argv、显式应用清单与 symlink 过滤 |
 | `test_tool_executor.py` | allow、ToolRun/Audit、异常/非法结果脱敏、取消、大小上限、approval |
 | `test_agent_runner.py` | Executor、中间消息、重复 call ID、最终轮回调、循环上限 |
 | `test_context.py` | Tool Schema 和禁止编造规则 |
@@ -751,6 +777,9 @@ uv run miniclaw
 4. Provider 是否支持 OpenAI-compatible Tool Calling；
 5. 第二轮 messages 是否以 `role=tool` 结束。
 
+若“打开飞书”没有到达 Approval，还要检查 Provider 是否先请求 `system_info` 的 `applications` 分区，并把返回的
+真实名称原样用于 `run_command(open, [-a, Exact Name])`；不得用 `bash -c`、管道或猜测名称。
+
 ## 19. SQLite 调试
 
 只看状态，不输出用户内容：
@@ -781,6 +810,7 @@ sqlite3 ~/.miniclaw/miniclaw.db \
 - [x] 模型不能提供可执行程序名或 argv；
 - [x] `system_info` 参数使用白名单；
 - [x] 输出字段使用白名单；
+- [x] 应用清单仅显式请求、固定根、有界、去路径且不跟随 symlink；
 - [x] 不返回 hostname、username、serial、UUID、MAC、env；
 - [x] 固定命令有 5 秒 timeout；
 - [x] Tool 内部异常不进入模型；

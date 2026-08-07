@@ -24,8 +24,9 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > 审批弹窗。旧 `miniclaw chat`、`miniclaw tui`、one-shot REPL 和 `miniclaw approvals` 已移除。
 > P2.3A 已接入不经过 Shell 的 exact-argv `run_command`；P2.4 已接入只读 `http_get`，包含 HTTPS-only、
 > 全 DNS 公网校验、固定 IP/TLS hostname、每跳重验、响应预算和不可信内容标记。两类动作未命中精确规则时
-> 都在同一 TUI 只允许一次。真实 `lark-cli`/Node 路径闭环、DeepSeek live eval 和飞书 Channel 尚未完成。
-> 当前回归基线为 **253 tests + 20/20 Agent cases**。Policy 拒绝只写脱敏审计，不创建 ToolRun。
+> 都在同一 TUI 只允许一次。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整
+> DeepSeek live eval runner、真实 `lark-cli`/Node 路径闭环和飞书 Channel 尚未完成。
+> 当前回归基线为 **258 tests + 21/21 Agent cases**。Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
 > 保存在 [v0.2.0 release record](docs/evals/releases/v0.2.0.md)，不冒充当前 TUI 版本的新 live 结果。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
@@ -94,6 +95,8 @@ TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据
 Workspace 内调用 `read_file`、`glob`、`grep`；`write_file` / `edit_file` 会先生成参数绑定 Approval，只有
 Owner 在 TUI 中查看完整归一化参数并选择 **Allow once** 后才执行；Esc 和 **Deny** 都不会写入。模型仍不能运行
 任意 Shell 字符串；`run_command` 只接收 `program + args[]`，安全命令未命中 exact rule 时也走同一审批弹窗。
+macOS 应用名不确定时，模型可显式调用 `system_info` 的 `applications` 分区；该分区默认不读取，只返回固定
+`/Applications` 中有界、去路径的真实 `.app` 名称，再由 `run_command(open, [-a, Exact Name])` 请求审批。
 `eval` 完全离线，不读取
 `.env`、不需要 `init` 或 API Key，并通过真实 Agent/Policy/Tool/SQLite 链路运行版本化场景。
 
@@ -113,6 +116,7 @@ uv run miniclaw
 # 请使用 glob 找出 Workspace 的 txt 文件。
 # 请使用 grep 在 txt 文件中查找 MiniClaw。
 # 请使用 run_command 运行 git status --short。
+# 请帮我打开飞书。  # macOS: direct open -a，执行前显示 Approval
 # 请使用 http_get 读取 https://example.com/ 的公开文本。
 ```
 
@@ -175,7 +179,7 @@ miniclaw/
 | [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace 可观测契约、18 个稳定用例、Textual 无头测试、PTY smoke 与版本门禁 |
 | [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
 | [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |
-| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | 253 tests、20 场景、crash recovery、Doctor、历史 live smoke 与发布手册 |
+| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | 258 tests、21 场景、crash recovery、Doctor、历史 live smoke 与发布手册 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |

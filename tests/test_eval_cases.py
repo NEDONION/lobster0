@@ -246,6 +246,26 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
         self.assertIn("PROTO-001", {case.id for case in cases})
         self.assertIn("[PROTO-001]", provider_tests)
 
+    def test_action_open_app_001_preserves_direct_command_and_live_gate(self) -> None:
+        """打开应用事故必须保留 direct argv、Approval 和真实 Provider 验收层。"""
+        cases = {
+            case.id: case for case in load_cases(PROJECT_ROOT / "evals" / "scenarios")
+        }
+
+        self.assertIn("ACTION-OPEN-APP-001", cases)
+        case = cases["ACTION-OPEN-APP-001"]
+        self.assertEqual(case.layers, ("offline", "live"))
+        self.assertEqual(case.query, "你能帮我打开飞书吗")
+        self.assertIn("incident", case.tags)
+        self.assertIn("app-launch", case.tags)
+        self.assertEqual(len(case.responses), 1)
+        self.assertEqual(len(case.responses[0].tool_calls), 1)
+        call = case.responses[0].tool_calls[0]
+        self.assertEqual(call.name, "run_command")
+        self.assertEqual(call.arguments, {"program": "open", "args": ["-a", "Lark"]})
+        self.assertEqual(case.expected.tool_statuses, (("run_command", "waiting_approval"),))
+        self.assertEqual(case.expected.approval_statuses, ("pending",))
+
 
 if __name__ == "__main__":
     unittest.main()

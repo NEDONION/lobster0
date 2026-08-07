@@ -1,6 +1,6 @@
 # Phase 2.2B：单入口 Textual TUI 工程文档
 
-> 状态：已实现；合并 P2.3A/P2.4 后全仓通过 253 项单元/集成测试与 20/20 离线 Agent 场景。
+> 状态：已实现；合并 P2.3A/P2.4 后全仓通过 258 项单元/集成测试与 21/21 离线 Agent 场景。
 > 本文描述当前代码，不描述未来设想。
 
 ## 1. 这次解决了什么
@@ -281,8 +281,8 @@ flowchart TD
 | Projection | 单一流式 Assistant、Provider reasoning、Tool 参数/状态/耗时/预览、动态 call ID 安全 |
 | Trace interaction | 单卡 Enter 展开、Ctrl+O 全展开/收起、概要始终可见、ANSI 过滤 |
 | Approval | 完整参数、Deny 默认焦点、Allow once、Esc=Deny、同一 Service 续跑 |
-| Full suite | 253/253 tests + Ruff + diff check |
-| Agent gate | 20/20 active offline Claw-like cases |
+| Full suite | 258/258 tests + Ruff + diff check |
+| Agent gate | 21/21 active offline Claw-like cases |
 
 运行命令：
 
