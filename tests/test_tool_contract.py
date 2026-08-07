@@ -1,0 +1,94 @@
+"""MiniClaw Tool 数据契约与 Registry 行为测试。"""
+
+import json
+import unittest
+
+from miniclaw.providers.base import JsonValue
+from miniclaw.tools.base import (
+    ToolContext,
+    ToolDefinition,
+    ToolResult,
+    ToolRisk,
+)
+from miniclaw.tools.registry import ToolRegistry
+
+
+class _EchoTool:
+    """提供稳定 Schema 与返回值的测试 Tool。"""
+
+    definition = ToolDefinition(
+        name="echo",
+        description="Echo one text value.",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """原样返回当前测试提供的结构化参数。"""
+        return arguments
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """返回参数，供后续 Executor 测试复用同一 Tool。"""
+        return ToolResult.success(arguments)
+
+
+class ToolContractTest(unittest.TestCase):
+    """验证模型可见 Schema 与 Tool Result 的稳定边界。"""
+
+    def test_registry_emits_stable_openai_schema_and_rejects_duplicate_names(self) -> None:
+        """Registry 必须稳定列出工具，并在启动时拒绝同名覆盖。"""
+        registry = ToolRegistry((_EchoTool(),))
+
+        tool = registry.get("echo")
+        self.assertIsNotNone(tool)
+        assert tool is not None
+        self.assertEqual(tool.definition.name, "echo")
+        self.assertEqual(
+            registry.schemas,
+            (
+                {
+                    "type": "function",
+                    "function": {
+                        "name": "echo",
+                        "description": "Echo one text value.",
+                        "parameters": _EchoTool.definition.parameters,
+                    },
+                },
+            ),
+        )
+        with self.assertRaisesRegex(ValueError, "duplicate tool name: echo"):
+            ToolRegistry((_EchoTool(), _EchoTool()))
+
+    def test_tool_result_uses_stable_model_json_without_traceback(self) -> None:
+        """成功和失败结果必须是模型可解析且不含内部异常的 JSON。"""
+        success = json.loads(ToolResult.success({"value": 1}).to_model_text("echo"))
+        failure = json.loads(
+            ToolResult.failure("invalid_arguments", "text is required").to_model_text("echo")
+        )
+
+        self.assertEqual(success, {"ok": True, "tool": "echo", "data": {"value": 1}})
+        self.assertEqual(
+            failure,
+            {
+                "ok": False,
+                "tool": "echo",
+                "error": {
+                    "code": "invalid_arguments",
+                    "message": "text is required",
+                    "retryable": False,
+                },
+            },
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()
