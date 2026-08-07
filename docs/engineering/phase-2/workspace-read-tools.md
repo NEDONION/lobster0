@@ -91,19 +91,25 @@ sequenceDiagram
     P->>W: "resolve_read(context, path)"
     W-->>P: "允许路径，或稳定拒绝码"
     P-->>E: "allow，或 deny"
-    E->>D: "start"
-    E->>F: "execute(context, arguments)"
-    F->>W: "resolve_read"
-    W-->>F: "规范路径"
-    F-->>E: "ToolResult"
-    E->>D: "succeed / fail"
-    E-->>R: "模型安全 JSON"
+    alt deny
+        E->>D: "tool.denied：Tool 名 + 参数 hash + error_code"
+        E-->>R: "模型安全拒绝 JSON"
+    else allow
+        E->>D: "running ToolRun + tool.started"
+        E->>F: "execute(context, arguments)"
+        F->>W: "resolve_read"
+        W-->>F: "规范路径"
+        F-->>E: "ToolResult"
+        E->>D: "succeed / fail"
+        E-->>R: "模型安全结果 JSON"
+    end
     R->>M: "Tool Message"
     M-->>R: "基于真实结果的回答"
 ```
 
-这里有两次 Guard 检查：Policy 在创建 ToolRun 前预检，Tool 在真正读取前再次解析。这样无效路径不会留下“已经开始”的
-ToolRun；同时工具自己仍保持不能被别的调用者绕开边界的性质。
+这里有两次 Guard 检查：Policy 在创建 ToolRun 前预检，Tool 在真正读取前再次解析。拒绝不会创建 ToolRun 或
+`tool.started`，但会先原子写一条 `tool.denied`；其 metadata 只含 Tool 名、规范参数 SHA-256 的 12 位前缀和稳定错误码，
+不保存原始路径或文件内容。若拒绝审计写入失败，Executor 失败关闭，不会返回一个伪装正常的拒绝结果。
 
 ## 4. Workspace Guard：先问“能不能读”，再问“怎么读”
 
@@ -126,9 +132,10 @@ flowchart TD
     ROOT -->|"是"| ALLOW["返回规范路径"]
 ```
 
-Guard 会拒绝 `.env*`、`.ssh`、`.aws`、`.gnupg`、`.kube`、GCP 默认凭据、常见私钥/密钥库后缀、
-MiniClaw 自己的配置/数据库/日志、`/etc/shadow` 等系统敏感文件，以及容器 socket。检查同时在逻辑路径和
-符号链接解析后的路径做一次，避免 `safe-name.txt -> .env` 这种别名绕过。
+Guard 会拒绝 `.env*`、`.ssh`、`.aws`、`.gnupg`、`.kube`、`.git-credentials`、`.pypirc`、
+`.docker/config.json`、GCP 默认凭据、常见私钥/密钥库后缀、MiniClaw 自己的配置/数据库/日志、
+状态根下精确的 `miniclaw.db-wal/-shm/-journal`、`/etc/shadow` 等系统敏感文件，以及容器 socket。检查同时在
+逻辑路径和符号链接解析后的路径做一次；`miniclaw.db-notes.md` 这类普通文件不会被无限通配误伤。
 
 对模型可见的成功路径始终相对于实际允许根展示。例如 `shared` 只读根里的绝对文件返回 `guide.md`，而不是泄露本机
 Home 或临时目录绝对路径。
@@ -149,10 +156,9 @@ Home 或临时目录绝对路径。
 | 失败 | `{"ok": false, "tool": "read_file", "error": {"code": "…", "message": "…", "retryable": false}}` | 三个 Tool 表列出各自可能产生的错误码；模型不接收 traceback。 |
 | Executor 公共失败 | 同上失败外壳，`error.code` 为 `tool_failed` 或 `tool_result_too_large` | Tool 抛出未预期异常时是 `tool_failed`；紧凑 JSON 结果超过配置上限时是 `tool_result_too_large`。 |
 
-`ToolExecutor` 默认 `tool_result_max_chars=20_000`。`read_file` 虽然只读取 `512 KiB` 前缀，返回的文本仍可能超过
-这个 20,000 字符的模型结果上限；此时不会把大文本塞给模型，而是返回 `tool_result_too_large`。正常的多行文件可缩小
-`limit` 或按 `next_offset` 分段读取。若单独一行本身超过 20,000 字符，当前 `read_file` 没有字符/字节窗口；`limit`
-不会缩短该行，`next_offset` 只会前往下一行。因此该行当前不可达，用户需要拆分文件，或在后续版本增加字符/字节窗口。
+`ToolExecutor` 默认 `tool_result_max_chars=20_000`。`read_file` 单次 `content` 最多 512 KiB，因此结果仍可能超过
+20,000 字符的模型上限；此时 Executor 返回 `tool_result_too_large`。正常多行文件可缩小 `limit` 或按
+`next_offset` 分页；一条完整行若大于 512 KiB，则直接返回 `line_too_large`，不发布会跳过内容的 cursor。
 
 ### 5.1 `read_file`
 
@@ -160,12 +166,13 @@ Home 或临时目录绝对路径。
 | --- | --- |
 | 参数 | `path` 必填、非空字符串；`offset` 可选，正整数，默认 `1`；`limit` 可选，`1..1000`，默认 `200`。 |
 | `data` 成功字段 | `path`（允许根相对路径）、`content`、`offset`、`lines`、`truncated`；当还有可继续的行窗口时附加 `next_offset`。 |
-| 读取上限 | 最多读取文件前缀 `512 KiB`，并用至多 3 个边界字节确认 UTF-8 多字节字符没有被误判。 |
-| 错误 | `workspace_escape`、`sensitive_path`、`not_found`、`not_a_file`、`file_read_failed`、`binary_file`、`invalid_arguments`。 |
+| 读取上限 | 流式跳过 `offset` 前的完整行，再返回最多 `512 KiB`、最多 `limit` 条完整行；内存使用有界。 |
+| 错误 | `workspace_escape`、`sensitive_path`、`not_found`、`not_a_file`、`file_read_failed`、`binary_file`、`line_too_large`、`invalid_arguments`。 |
 | 文本规则 | 只接受严格 UTF-8；NUL 字节或非法 UTF-8 按 `binary_file` 拒绝；只读取普通文件。 |
 
-`offset` 是从 1 开始的行号，不是字节偏移。`truncated=true` 只说明这次答案不是完整文件：可能是请求的行数到了，也可能
-512 KiB 前缀到了。超长且没有换行的一行再次续读时不会重复给一个空的 `next_offset`。
+`offset` 是从 1 开始的行号，不是字节偏移。页尾放不下的普通行不会被切断：当前页停在它之前，`next_offset` 指回该行，
+下一次会完整返回它；因此跨过文件开头 512 KiB 后仍能继续读真实行，无末尾换行的最后一行也不会丢失。单行自身超过
+512 KiB 时无法用行号无损分页，稳定失败为 `line_too_large`。窗口外才开始的 UTF-8 字符不会被误判为二进制。
 
 ### 5.2 `glob`
 
@@ -173,7 +180,7 @@ Home 或临时目录绝对路径。
 | --- | --- |
 | 参数 | `pattern` 必填、非空相对 glob；`root` 可选、非空字符串，默认 `.`；`limit` 可选，`1..200`，默认 `200`。 |
 | `data` 成功字段 | `matches`（按相对路径全局排序）和 `truncated`。安全目录本身与其普通文件都可能匹配返回。 |
-| 遍历规则 | `os.walk(..., followlinks=False)`；目录符号链接不进入遍历；每个候选都再次经 Guard 和 `stat` 确认。 |
+| 遍历规则 | `os.walk(..., followlinks=False)`；目录和文件符号链接都在解析目标前跳过；每个其余候选再经 Guard 和 `stat`。 |
 | 错误 | `workspace_escape`、`sensitive_path`、`invalid_arguments`。不可读、消失、权限失败或不安全候选会跳过，不把宿主机细节交给模型。 |
 | 结果上限 | 多取第 `limit + 1` 项后按全局字典序截断，保证较晚遍历到的字典序更小路径不会被漏掉。 |
 
@@ -187,10 +194,11 @@ Home 或临时目录绝对路径。
 | `data` 成功字段 | `matches`（每项有 `path`、1 开始的 `line`、最多 500 字符的 `text`）和 `truncated`。每行最多返回一次。 |
 | 文件规则 | 只扫描普通 UTF-8 文件；NUL、非法 UTF-8、读取失败和大于 `1 MiB` 的单文件都跳过。 |
 | 错误 | `invalid_pattern`、`workspace_escape`、`sensitive_path`、`invalid_arguments`。 |
-| 总上限 | 最多实际读取 200 个文件、累计 `20 MiB`；达到文件/字节预算或结果超过上限时返回 `truncated=true`。 |
+| 总上限 | 最多尝试 200 个匹配、Guard 允许的普通文件，累计实际读取 `20 MiB`；达到文件/字节预算或结果超过上限时返回 `truncated=true`。 |
 
-`grep` 在每个文件打开后用同一个 fd 的读取前后 metadata 做一次稳定性比较；发现读取期间文件长度或关键 metadata
-改变时，该文件结果会被跳过，已读字节仍计入总预算。
+文件候选在尝试打开前就消耗 200 文件配额，所以超大、权限失败、消失、二进制和非法 UTF-8 候选都计数；第 201 个
+匹配项不再 `stat/open`。20 MiB 只累计实际读取字节。`grep` 在每个已打开文件上比较同一 fd 的读取前后 metadata；
+发现读取期间长度或关键 metadata 改变时跳过结果，已读字节仍计入总预算。
 
 ## 6. 为什么不做 Shell `cat` / `find` / `grep`
 
@@ -209,9 +217,10 @@ Shell 看起来是最短路径，但对模型来说它会把“读取一个文�
 | `src/miniclaw/policy/workspace.py` | `WorkspaceGuard`、稳定 `WorkspaceAccessError`、敏感路径黑名单和安全相对展示路径。 |
 | `src/miniclaw/tools/filesystem.py` | `ReadFileTool` 的 Schema、参数规范化、512 KiB 有界 UTF-8 行窗口、文件错误映射。 |
 | `src/miniclaw/tools/search.py` | `GlobTool`/`GrepTool` 的 Schema、稳定遍历、普通文件筛选、排序、结果与读取预算。 |
+| `src/miniclaw/storage/tooling.py` | allowed ToolRun 状态迁移，以及不创建 ToolRun 的脱敏 `tool.denied` 审计。 |
 | `src/miniclaw/cli.py` | 生产 CLI 组装；把 `ReadFileTool`、`GlobTool`、`GrepTool` 与既有 `SystemInfoTool` 注册进唯一 `ToolExecutor`。 |
 | `src/miniclaw/policy/engine.py` | 对三个读取 Tool 的路径参数在开始 ToolRun 前做 Guard 预检；合法 low-risk 读取才允许执行。 |
-| `src/miniclaw/tools/executor.py` | 保持唯一执行顺序：`get → validate → policy → start → execute → finish`；负责审计、异常脱敏和结果大小上限。 |
+| `src/miniclaw/tools/executor.py` | 保持唯一顺序：`get → validate → policy → (deny audit 或 start → execute → finish)`；负责失败关闭、异常脱敏和结果上限。 |
 
 相关测试分别在 `tests/test_workspace_policy.py`、`tests/test_file_tools.py`、`tests/test_search_tools.py`，并由
 `tests/test_tool_executor.py`、`tests/test_turn.py`、`tests/test_cli_chat.py` 覆盖 Policy、消息轨迹和 CLI 装配。
@@ -248,12 +257,12 @@ uv run miniclaw chat --message "请使用 grep 在当前 Workspace 的 *.txt 中
 | 层次 | 测试文件 | 覆盖的可观察结果 |
 | --- | --- | --- |
 | Workspace 边界 | `test_workspace_policy.py` | 相对/只读根允许，父目录与绝对逃逸拒绝，符号链接、循环、凭据、状态、系统敏感文件和 socket 拒绝，错误不泄露绝对路径。 |
-| 文件读取 | `test_file_tools.py` | 行窗口、1 开始 offset、续读 cursor、512 KiB、多字节 UTF-8 边界、二进制/目录/不存在路径及参数 Schema。 |
-| 文件名搜索 | `test_search_tools.py` 的 `GlobToolTest` | 排序、顶层递归匹配、目录结果、全局 limit、敏感路径和符号链接处理。 |
-| 文本搜索 | `test_search_tools.py` 的 `GrepToolTest` | 正则错误、逐行匹配、500 字符摘要、排序、1 MiB/200 文件/20 MiB 上限、读时变更与消失文件。 |
-| 统一入口 | `test_tool_executor.py` | Guard 在 ToolRun 前拒绝不安全路径；合法读取才会创建审计记录。 |
+| 文件读取 | `test_file_tools.py` | 1 开始 offset、跨 512 KiB 完整行分页、无末尾换行、超长单行、UTF-8/NUL、目录/不存在路径。 |
+| 文件名搜索 | `test_search_tools.py` 的 `GlobToolTest` | 排序、顶层递归匹配、目录结果、全局 limit、敏感路径，以及目录/文件 symlink 跳过。 |
+| 文本搜索 | `test_search_tools.py` 的 `GrepToolTest` | 正则、摘要、排序、1 MiB/200 候选/20 MiB 上限、失败候选计数、fd race 与 symlink 去重。 |
+| 统一入口 | `test_tool_executor.py` | Guard 拒绝只写脱敏 `tool.denied`、无 ToolRun；合法读取才创建 running/terminal ToolRun。 |
 | Runtime 装配 | `test_turn.py`、`test_cli_chat.py` | `read_file` 与全部四个 Schema 进入 Agent Runtime，Tool Message、ToolRun 和 Audit 完整保存。 |
-| 全仓回归 | `unittest discover` 与 Ruff | 当前验证基线为 **144 tests**；另运行 `uv run ruff check .`。 |
+| 全仓回归 | `unittest discover` 与 Ruff | 当前验证基线为 **153 tests**；另运行 `uv run ruff check .`。 |
 
 ## 10. 常见报错怎么理解
 
@@ -264,6 +273,7 @@ uv run miniclaw chat --message "请使用 grep 在当前 Workspace 的 *.txt 中
 | `sensitive_path` | 虽在允许根附近，但名字或解析目标属于凭据、状态、系统敏感路径或 socket。 | 不要尝试读取它；用专门的受控配置流程处理凭据。 |
 | `not_found` / `not_a_file` | `read_file` 找不到目标，或目标不是普通文件。 | 先用 `glob` 查看安全路径，再读取具体文件。 |
 | `binary_file` | 文件有 NUL 或不是 UTF-8 文本。 | 该 Tool 不处理二进制；不要改用 Shell 绕过。 |
+| `line_too_large` | 流式读取或跳过时遇到单条超过 512 KiB 的行，无法用行号无损分页。 | 拆分该行或文件；不会收到会跳过内容的 `next_offset`。 |
 | `invalid_pattern` | `grep.pattern` 不是有效 Python 正则。 | 先简化模式，检查括号、方括号和反斜杠。 |
 | `truncated: true` | 命中/路径/文件内容或预算还没全部返回。 | 缩小 `root`、`glob`、`limit` 或用 `next_offset` 继续读。 |
 
@@ -306,5 +316,5 @@ P2.2 规划的是 `write_file`、`edit_file`、参数绑定审批与 CLI 审批/
 ## 13. 本阶段实现提交与事实来源
 
 读取边界与 Tool 的实现提交依次为：`76b0999`、`359e5fc`、`311c02f`、`c8e7d80`、`3a27688`、`73bdec3`、
-`f599087`、`c3f8409`。本页事实来自这些提交中的 `workspace.py`、`filesystem.py`、`search.py`、`cli.py`，以及
+`f599087`、`c3f8409`、`b94bd45`、`3aa6e13`。本页事实来自这些提交中的 `workspace.py`、`filesystem.py`、`search.py`、`cli.py`，以及
 对应单元测试和现有 Tool Runtime 契约；本页不把设计文档中的 P2.2/P2.3 规划写成当前功能。

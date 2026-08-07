@@ -21,6 +21,8 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > OpenAI-compatible HTTP/SSE、Policy + ToolExecutor、脱敏 `system_info`、Workspace 内的
 > `read_file` / `glob` / `grep`、ToolRun/Audit 与完整工具消息持久化。文件写入、Shell、真实 DeepSeek
 > 文件 Tool 冒烟、审批和飞书尚未完成。
+> 当前离线回归基线为 **153 tests**；Policy 拒绝会留下仅含 Tool 名、参数 hash 前缀和错误码的脱敏审计，
+> 但不会创建 ToolRun。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
 
 ## Planned MVP
@@ -96,7 +98,9 @@ uv run miniclaw chat --message "请使用 grep 在 txt 文件中查找 MiniClaw�
 
 这三条命令只给模型提示和 Tool Schema，模型是否调用取决于 Provider；它们不是已完成的真实 DeepSeek 文件
 smoke。可以在 `config.toml` 的 `[workspace].path` 或绝对 `MINICLAW_WORKSPACE` 环境变量中设置其他 Workspace。
-`.env`、私钥、凭据、MiniClaw 状态文件和 Workspace 外路径会被拒绝。
+`.env`、`.git-credentials`、`.pypirc`、`.docker/config.json`、私钥、MiniClaw 数据库及 sidecar、
+状态文件和 Workspace 外路径会被拒绝。`read_file` 按完整行跨 512 KiB 分页；单行超过该上限时返回
+`line_too_large`，不会发布可能丢数据的 cursor。
 
 ## Repository Layout
 
