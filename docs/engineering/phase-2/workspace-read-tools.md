@@ -150,8 +150,9 @@ Home 或临时目录绝对路径。
 | Executor 公共失败 | 同上失败外壳，`error.code` 为 `tool_failed` 或 `tool_result_too_large` | Tool 抛出未预期异常时是 `tool_failed`；紧凑 JSON 结果超过配置上限时是 `tool_result_too_large`。 |
 
 `ToolExecutor` 默认 `tool_result_max_chars=20_000`。`read_file` 虽然只读取 `512 KiB` 前缀，返回的文本仍可能超过
-这个 20,000 字符的模型结果上限；此时不会把大文本塞给模型，而是返回 `tool_result_too_large`。应缩小 `limit` 或按
-`next_offset` 分段读取。
+这个 20,000 字符的模型结果上限；此时不会把大文本塞给模型，而是返回 `tool_result_too_large`。正常的多行文件可缩小
+`limit` 或按 `next_offset` 分段读取。若单独一行本身超过 20,000 字符，当前 `read_file` 没有字符/字节窗口；`limit`
+不会缩短该行，`next_offset` 只会前往下一行。因此该行当前不可达，用户需要拆分文件，或在后续版本增加字符/字节窗口。
 
 ### 5.1 `read_file`
 
