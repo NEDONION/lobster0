@@ -3,6 +3,7 @@
 import contextlib
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,8 +13,17 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from miniclaw.cli import main  # noqa: E402
 
 
+def run_cli(arguments: list[str]) -> tuple[int, str, str]:
+    """调用真实 CLI main，并返回退出码、标准输出和标准错误。"""
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+        exit_code = main(arguments)
+    return exit_code, stdout.getvalue(), stderr.getvalue()
+
+
 class CliTest(unittest.TestCase):
-    """验证尚未实现业务命令时，CLI 仍提供稳定的帮助和版本入口。"""
+    """验证帮助、版本和 Phase 0 初始化命令的稳定行为。"""
 
     def test_no_arguments_prints_help(self) -> None:
         """无参数启动时应成功打印帮助，避免空白退出或伪装已实现的子命令。"""
@@ -34,6 +44,27 @@ class CliTest(unittest.TestCase):
                 main(["--version"])
 
         self.assertIn("miniclaw 0.1.0", output.getvalue())
+
+    def test_init_creates_state_and_is_repeatable(self) -> None:
+        """CLI 重复初始化应成功，并清楚区分首次创建和已有状态。"""
+        with tempfile.TemporaryDirectory() as directory:
+            first_code, first_output, first_error = run_cli(["init", "--home", directory])
+            second_code, second_output, second_error = run_cli(["init", "--home", directory])
+
+            self.assertTrue((Path(directory) / "miniclaw.db").is_file())
+
+        self.assertEqual((first_code, second_code), (0, 0))
+        self.assertEqual((first_error, second_error), ("", ""))
+        self.assertIn("Initialized MiniClaw", first_output)
+        self.assertIn("already initialized", second_output)
+
+    def test_init_rejects_relative_home_with_exit_code_two(self) -> None:
+        """CLI 必须把相对状态目录分类为可操作的配置错误。"""
+        exit_code, output, error = run_cli(["init", "--home", "relative"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(output, "")
+        self.assertIn("absolute path", error)
 
 
 if __name__ == "__main__":

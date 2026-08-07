@@ -1,0 +1,61 @@
+"""MiniClaw 本地状态初始化的行为测试。"""
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from miniclaw.bootstrap import BootstrapError, initialize_state
+from miniclaw.config import load_config
+from miniclaw.paths import build_state_paths
+
+
+class BootstrapTest(unittest.TestCase):
+    """验证首次初始化和重复初始化都保持用户数据安全。"""
+
+    def setUp(self) -> None:
+        """为每个测试创建独立状态根。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+
+    def test_initialization_creates_loadable_state_with_private_files(self) -> None:
+        """首次初始化应创建目录、模板、数据库和一个可加载配置。"""
+        result = initialize_state(self.paths)
+        config = load_config(self.paths, {}, {})
+
+        self.assertEqual(result.applied_migrations, (1,))
+        self.assertEqual(result.owner.display_name, "Owner")
+        self.assertEqual(config.workspace.path, self.paths.workspace)
+        self.assertEqual(
+            set(result.created_files),
+            {self.paths.config, self.paths.soul, self.paths.user, self.paths.memory_file},
+        )
+        self.assertTrue(all(path.is_dir() for path in self.paths.directories))
+        self.assertTrue(self.paths.database.is_file())
+        for path in result.created_files:
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+    def test_repeated_initialization_preserves_user_files_and_owner(self) -> None:
+        """重复初始化不能覆盖 Markdown、重复迁移或插入第二个 Owner。"""
+        first = initialize_state(self.paths)
+        self.paths.user.write_text("My profile\n", encoding="utf-8")
+
+        second = initialize_state(self.paths)
+
+        self.assertEqual(first.owner.id, second.owner.id)
+        self.assertEqual(second.applied_migrations, ())
+        self.assertEqual(second.created_files, ())
+        self.assertEqual(self.paths.user.read_text(encoding="utf-8"), "My profile\n")
+
+    def test_symbolic_link_state_directory_is_rejected(self) -> None:
+        """预置符号链接不能把初始化写入重定向到非预期目录。"""
+        target = self.paths.home / "redirect-target"
+        target.mkdir()
+        self.paths.workspace.symlink_to(target, target_is_directory=True)
+
+        with self.assertRaisesRegex(BootstrapError, "symbolic link"):
+            initialize_state(self.paths)
+
+
+if __name__ == "__main__":
+    unittest.main()

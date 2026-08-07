@@ -1,22 +1,31 @@
 """MiniClaw 命令行入口。"""
 
 import argparse
+import sys
 from collections.abc import Sequence
 
 from miniclaw import __version__
+from miniclaw.bootstrap import BootstrapError, initialize_state
+from miniclaw.config import ConfigError
+from miniclaw.paths import PathConfigurationError, build_state_paths, resolve_home
+from miniclaw.storage.database import DatabaseError
+from miniclaw.storage.migrations import MigrationError
 
 
 def build_parser() -> argparse.ArgumentParser:
     """创建 CLI 参数解析器。
 
     Returns:
-        配置好程序名、简介和版本参数的解析器。MVP 子命令会在对应能力实现时加入。
+        配置好程序名、版本参数和 Phase 0 子命令的解析器。
     """
     parser = argparse.ArgumentParser(
         prog="miniclaw",
         description="MiniClaw — a tiny self-hosted personal agent.",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    subparsers = parser.add_subparsers(dest="command")
+    init_parser = subparsers.add_parser("init", help="initialize local MiniClaw state")
+    init_parser.add_argument("--home", help="absolute MiniClaw state directory")
     return parser
 
 
@@ -27,9 +36,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         argv: 需要解析的参数；为 ``None`` 时由 ``argparse`` 读取进程参数。
 
     Returns:
-        正常显示帮助后的进程退出码 0。版本参数由 ``argparse`` 直接结束进程。
+        成功为 0，路径或配置错误为 2，初始化运行错误为 5。
     """
     parser = build_parser()
-    parser.parse_args(argv)
-    parser.print_help()
+    arguments = parser.parse_args(argv)
+    if arguments.command is None:
+        parser.print_help()
+        return 0
+
+    try:
+        paths = build_state_paths(resolve_home(arguments.home))
+        result = initialize_state(paths)
+    except (PathConfigurationError, ConfigError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    except (BootstrapError, DatabaseError, MigrationError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 5
+
+    if result.created_files or result.applied_migrations:
+        print(f"Initialized MiniClaw at {paths.home} (owner {result.owner.id}).")
+    else:
+        print(f"MiniClaw is already initialized at {paths.home} (owner {result.owner.id}).")
     return 0
