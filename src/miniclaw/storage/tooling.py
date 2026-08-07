@@ -217,6 +217,63 @@ class ApprovalRepository:
         assert stored is not None
         return stored
 
+    def deny(self, user_id: int, approval_id: int) -> StoredToolRun:
+        """原子拒绝 pending Approval，并终止绑定 ToolRun。"""
+        now = self._now()
+        failure: ApprovalError | None = None
+        stored: StoredToolRun | None = None
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = _approval_join_row(connection, approval_id)
+            failure = _approval_access_error(row, user_id)
+            if failure is None and row["status"] != "pending":
+                failure = ApprovalError("already_decided", "approval is not pending")
+            if failure is None and _parse_time(row["expires_at"]) <= now:
+                _expire_approval(connection, row, now)
+                failure = ApprovalError("expired", "approval has expired")
+            if failure is None:
+                approval_update = connection.execute(
+                    """
+                    UPDATE approvals SET status = 'denied', decided_at = ?
+                    WHERE id = ? AND user_id = ? AND status = 'pending' AND expires_at > ?
+                    """,
+                    (now.isoformat(), approval_id, user_id, now.isoformat()),
+                )
+                run_update = connection.execute(
+                    """
+                    UPDATE tool_runs SET status = 'denied', completed_at = ?
+                    WHERE id = ? AND status = 'waiting_approval'
+                    """,
+                    (now.isoformat(), row["tool_run_id"]),
+                )
+                if approval_update.rowcount != 1 or run_update.rowcount != 1:
+                    raise ToolStateError("Approval or ToolRun cannot be denied")
+                _insert_approval_audit(
+                    connection,
+                    "approval.denied",
+                    row["user_id"],
+                    row["session_id"],
+                    row["turn_id"],
+                    row["id"],
+                    row["tool_run_id"],
+                    row["tool_name"],
+                    row["arguments_hash"],
+                    now,
+                )
+                stored = StoredToolRun(
+                    id=row["tool_run_id"],
+                    turn_id=row["turn_id"],
+                    tool_call_id=row["tool_call_id"],
+                    tool_name=row["tool_name"],
+                    arguments={},
+                    arguments_hash=row["arguments_hash"],
+                    status="denied",
+                )
+        if failure is not None:
+            raise failure
+        assert stored is not None
+        return stored
+
     def consume(self, user_id: int, approval_id: int) -> StoredToolRun:
         """原子 claim 已批准参数；成功后同一 Approval 永远不能再执行。"""
         now = self._now()

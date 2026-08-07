@@ -2,9 +2,9 @@
 
 > 状态：`write_file`、`edit_file`、严格 `[tools]` 配置和 Workspace 写边界已经进入代码并通过测试
 >
-> 当前仓库门禁：201/201 tests、10/10 offline Agent cases、Ruff PASS；本模块首次退出门禁为 194 tests
+> 当前仓库门禁：210/210 tests、10/10 offline Agent cases、Ruff PASS；本模块首次退出门禁为 194 tests
 >
-> 重要边界：Approval 生命周期和 CLI 续执行尚未接通，因此两个写 Tool 暂时没有注册到生产 `chat`；当前用户不能通过模型直接写文件
+> 当前入口：两个写 Tool 已注册到生产 `chat`，但只能在参数绑定 Approval 被 Owner 批准后执行
 
 ## 1. 这一小步解决什么
 
@@ -17,24 +17,22 @@ P2.1B 只允许 Agent 读取 Workspace。P2.2A 先把真正改动磁盘前最难
 - 精确编辑怎样避免“猜测替换位置”；
 - Tool 参数和结果大小如何被限制。
 
-这一步没有伪造审批单。`PolicyEngine` 会把安全写路径判为 `require_approval`，但直到 P2.2B 完成真实
-Approval 状态机前，生产 `chat` 不公开这两个 Schema。
+P2.2A 先独立验证文件内核；完整 Phase 2.2 现已把 `require_approval` 接入 SQLite、waiting Turn 和 CLI
+续执行，因此模型可以发起写请求，但不能绕过人工决定。
 
 ## 2. 当前状态图
 
 ```mermaid
 flowchart LR
-    MODEL["生产 chat"] --> REGISTRY["当前 Registry：4 个只读 Tool"]
+    MODEL["生产 chat"] --> REGISTRY["当前 Registry：6 个 Tool"]
     REGISTRY --> READ["system_info / read_file / glob / grep"]
-
-    TEST["P2.2A 单元与契约测试"] --> WRITE["write_file / edit_file"]
+    REGISTRY --> WRITE["write_file / edit_file"]
     WRITE --> GUARD["WorkspaceGuard.resolve_write"]
-    GUARD --> ATOMIC["同目录临时文件 + 原子发布"]
-    WRITE -. "等待 P2.2B" .-> APPROVAL["参数绑定 Approval"]
+    GUARD --> APPROVAL["参数绑定 Approval"]
+    APPROVAL -->|"Owner approve"| ATOMIC["同目录临时文件 + 原子发布"]
 ```
 
-这里刻意区分“实现存在”和“用户入口可用”。如果现在就把写 Tool 暴露给模型，模型只能拿到旧的
-`approval_required` 错误，却没有可查询的 Approval ID；那会制造一个看似可用、实际断开的功能。
+`approval_required` 现在携带真实可查询 ID；拒绝、过期、参数篡改或重复消费都不会触碰文件。
 
 ## 3. 文件和职责
 
@@ -193,7 +191,7 @@ sequenceDiagram
 
 1. 路径硬禁止失败：返回 `DENY`，由 Executor 写脱敏 deny audit；
 2. 路径安全：两个 Tool 的风险为 `MEDIUM`，返回 `REQUIRE_APPROVAL`；
-3. P2.2B 会把第 2 步持久化为带参数哈希的 Approval；当前不会执行写入。
+3. Executor 把第 2 步持久化为带参数哈希的 Approval；Owner approve 后才执行写入。
 
 生产 Agent 不存在绕过 Policy 的第二条入口。单元测试直接调用 Tool 是为了验证纯文件行为，不等于生产授权。
 
@@ -224,5 +222,5 @@ git diff --check
 - 应用层通过重复 Guard、普通文件身份和原子发布缓解 TOCTOU，但不能取代 OS sandbox；Phase 7 再增加进程级隔离。
 - 新文件使用 hard-link 实现原子 no-clobber，因此要求 Workspace 和临时文件位于同一文件系统；临时文件固定创建在目标目录。
 - 当前不支持创建目录、删除、移动、regex replace、模糊 patch 或批量编辑。
-- 当前生产 CLI 仍只注册 4 个只读 Tool；P2.2B 完成参数绑定 Approval 和 child Turn 后才注册写 Tool。
-- 参数绑定 `ApprovalRepository + ToolExecution.approval_id` 已在 P2.2B 完成；下一开发点是 waiting Turn、CLI 决策和 child Turn 续执行，不是继续扩大文件功能。
+- 当前生产 CLI 注册 4 个只读 Tool 和 2 个需审批文件 Tool；精确命令与 HTTPS Tool 尚未注册。
+- 参数绑定 `ApprovalRepository + ToolExecution.approval_id`、waiting/child Turn 和 CLI 决策已完成；下一开发点是 exact-argv `run_command`。

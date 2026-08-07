@@ -57,6 +57,9 @@
 | Tool Runtime 与 system_info | [tool-runtime-and-system-info.md](engineering/phase-2/tool-runtime-and-system-info.md) |
 | Workspace 只读文件与搜索 | [workspace-read-tools.md](engineering/phase-2/workspace-read-tools.md) |
 | Agent 场景回归与 Benchmark 基线 | [agent-regression-evals.md](engineering/phase-2/agent-regression-evals.md) |
+| 安全文件写入 | [filesystem-tools.md](engineering/phase-2/filesystem-tools.md) |
+| Approval 生命周期与续执行 | [approval-lifecycle.md](engineering/phase-2/approval-lifecycle.md) |
+| Approvals CLI | [cli-approvals.md](engineering/phase-2/cli-approvals.md) |
 
 ## 评测与版本证据
 

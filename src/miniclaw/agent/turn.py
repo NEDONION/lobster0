@@ -11,9 +11,12 @@ from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
     AgentRunner,
+    AgentRunResult,
+    AgentRunStatus,
     EmptyModelResponseError,
 )
 from miniclaw.config import WorkspaceConfig
+from miniclaw.policy.approvals import ApprovalError
 from miniclaw.providers.base import (
     JsonValue,
     ModelMessage,
@@ -33,7 +36,8 @@ from miniclaw.storage.conversations import (
     StoredMessage,
     TurnRepository,
 )
-from miniclaw.tools.base import ToolContext
+from miniclaw.storage.tooling import ApprovalRepository, StoredToolRun
+from miniclaw.tools.base import ToolContext, ToolResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +64,7 @@ class TurnService:
         turns: TurnRepository,
         context: ContextBuilder,
         runner: AgentRunner,
+        approvals: ApprovalRepository | None = None,
         state_home: Path,
         workspace: WorkspaceConfig,
     ) -> None:
@@ -81,6 +86,7 @@ class TurnService:
         self._turns = turns
         self._context = context
         self._runner = runner
+        self._approvals = approvals
         self._state_home = state_home
         self._workspace = workspace
 
@@ -148,16 +154,7 @@ class TurnService:
                     batch,
                 ),
             )
-            self._turns.complete_with_assistant_message(
-                turn.id,
-                session.id,
-                result.content,
-                input_tokens=result.input_tokens,
-                output_tokens=result.output_tokens,
-                provider_request_id=result.provider_request_id,
-                iterations=result.iterations,
-                finish_reason=result.finish_reason,
-            )
+            self._persist_result(turn.id, session.id, result)
         except asyncio.CancelledError:
             self._turns.cancel(turn.id)
             raise
@@ -173,6 +170,170 @@ class TurnService:
             output_tokens=result.output_tokens,
             provider_request_id=result.provider_request_id,
         )
+
+    async def continue_approval(
+        self,
+        user_id: int,
+        approval_id: int,
+        *,
+        approved: bool,
+        on_text: StreamHandler | None = None,
+    ) -> TurnResult:
+        """批准或拒绝绑定 ToolRun，并用没有假 User Message 的 child Turn 继续。"""
+        if self._approvals is None:
+            raise AgentError("approval repository is required")
+        approval = self._approvals.get(user_id, approval_id)
+        parent = self._turns.get(approval.turn_id)
+        if parent.status != "waiting_approval":
+            raise ApprovalError("already_decided", "approval Turn is not waiting")
+
+        if approved:
+            if approval.status == "pending":
+                self._approvals.approve(user_id, approval_id)
+            elif approval.status != "approved":
+                raise ApprovalError("already_decided", "approval is not pending")
+            run = self._approvals.consume(user_id, approval_id)
+        else:
+            run = self._approvals.deny(user_id, approval_id)
+
+        child = self._turns.create_continuation(
+            parent.session_id,
+            approval_id,
+            parent.id,
+            self._model,
+        )
+        self._turns.mark_running(child.id)
+        try:
+            if approved:
+                model_text = await self._runner.execute_approved(
+                    self._tool_context(user_id, parent.session_id, parent.id),
+                    run,
+                )
+            else:
+                model_text = ToolResult.failure(
+                    "approval_denied",
+                    f"approval {approval_id} was denied",
+                ).to_model_text(run.tool_name)
+            history_before = self._messages.list_recent(parent.session_id, limit=20)
+            self._turns.append_intermediate_messages(
+                child.id,
+                parent.session_id,
+                _continuation_messages(history_before, run, model_text),
+            )
+            history = tuple(
+                _model_message(message)
+                for message in self._messages.list_recent(parent.session_id, limit=20)
+            )
+            request = self._context.build(
+                self._model,
+                history,
+                tools=self._runner.tool_schemas,
+            )
+            result = await self._runner.run(
+                request,
+                on_text,
+                tool_context=self._tool_context(user_id, parent.session_id, child.id),
+                on_intermediate=lambda batch: self._turns.append_intermediate_messages(
+                    child.id,
+                    parent.session_id,
+                    batch,
+                ),
+            )
+            self._persist_result(child.id, parent.session_id, result)
+        except asyncio.CancelledError:
+            self._turns.cancel(child.id)
+            raise
+        except (ContextError, ConversationDataError, AgentError, ProviderError) as error:
+            self._turns.fail(child.id, _error_code(error), str(error))
+            raise
+
+        return TurnResult(
+            turn_id=child.id,
+            session_id=parent.session_id,
+            content=result.content,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            provider_request_id=result.provider_request_id,
+        )
+
+    def _tool_context(self, user_id: int, session_id: int, turn_id: int) -> ToolContext:
+        """构造模型无法覆盖的统一 Tool 运行边界。"""
+        return ToolContext(
+            user_id=user_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            state_home=self._state_home,
+            workspace=self._workspace.path,
+            read_only_roots=self._workspace.read_only_roots,
+        )
+
+    def _persist_result(
+        self,
+        turn_id: int,
+        session_id: int,
+        result: AgentRunResult,
+    ) -> None:
+        """把 Agent 正常完成或等待审批写为对应 Turn 状态。"""
+        if result.status is AgentRunStatus.WAITING_APPROVAL:
+            assert result.approval_id is not None
+            self._turns.wait_for_approval(
+                turn_id,
+                session_id,
+                result.approval_id,
+                input_tokens=result.input_tokens,
+                output_tokens=result.output_tokens,
+                provider_request_id=result.provider_request_id,
+                iterations=result.iterations,
+            )
+            return
+        self._turns.complete_with_assistant_message(
+            turn_id,
+            session_id,
+            result.content,
+            input_tokens=result.input_tokens,
+            output_tokens=result.output_tokens,
+            provider_request_id=result.provider_request_id,
+            iterations=result.iterations,
+            finish_reason=result.finish_reason,
+        )
+
+
+def _continuation_messages(
+    history: tuple[StoredMessage, ...],
+    run: StoredToolRun,
+    model_text: str,
+) -> tuple[ModelMessage, ...]:
+    """补齐当前 Tool Result，并标记同批后续调用未执行。"""
+    assistant: ModelMessage | None = None
+    for message in reversed(history):
+        if message.role != "assistant":
+            continue
+        candidate = _model_message(message)
+        if any(call.call_id == run.tool_call_id for call in candidate.tool_calls):
+            assistant = candidate
+            break
+    if assistant is None:
+        raise ConversationDataError("approval tool call is missing from conversation history")
+    index = next(
+        index
+        for index, call in enumerate(assistant.tool_calls)
+        if call.call_id == run.tool_call_id
+    )
+    skipped = ToolResult.failure(
+        "not_executed",
+        "tool call was skipped after an earlier call required approval",
+    )
+    return (
+        ModelMessage(role="tool", content=model_text, tool_call_id=run.tool_call_id),
+        *(
+            ModelMessage(
+                role="tool",
+                content=skipped.to_model_text(call.name),
+                tool_call_id=call.call_id,
+            )
+            for call in assistant.tool_calls[index + 1 :]
+        ),
+    )
 
 
 def _model_message(message: StoredMessage) -> ModelMessage:

@@ -1,10 +1,10 @@
-# Phase 2.2B 工程文档：参数绑定 Approval SQLite 状态机
+# Phase 2.2 工程文档：参数绑定 Approval 与跨进程续执行
 
-> 状态：canonical 参数哈希、waiting ToolRun、pending/approved/expired/consumed 和并发单次消费已实现
+> 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 CLI 已进入生产链路
 >
-> 当前门禁：201/201 tests、10/10 offline Agent cases、Ruff PASS
+> 当前门禁：210/210 tests、10/10 offline Agent cases、Ruff PASS
 >
-> 当前非目标：`approvals` CLI、Turn `waiting_approval`、批准后的 child Turn 和模型续答在 P2.2C 接入
+> 当前非目标：命令/HTTP 的 `--always` 规则在 P2.3/P2.4 接入；飞书卡片审批不在本阶段
 
 ## 1. 大白话解释
 
@@ -121,20 +121,23 @@ stateDiagram-v2
     pending --> expired: approve after expires_at
     approved --> consumed: consume + hash match
     approved --> expired: consume after expires_at
+    pending --> denied: deny(owner, id)
     consumed --> [*]
+    denied --> [*]
     expired --> [*]
 ```
 
-P2.2B 已验证的迁移：
+Phase 2.2 已验证的迁移：
 
 | Approval 迁移 | 绑定 ToolRun 迁移 | 条件 |
 | --- | --- | --- |
 | 新建为 `pending` | 新建为 `waiting_approval` | Policy 返回 require approval |
 | `pending -> approved` | 保持 waiting | Owner 正确且未过期 |
+| `pending -> denied` | `waiting_approval -> denied` | Owner 明确拒绝 |
 | `pending/approved -> expired` | `waiting_approval -> denied` | 决策或消费时发现 TTL 到期 |
 | `approved -> consumed` | `waiting_approval -> running` | Owner、TTL、两个 hash 与重算 hash 全部一致 |
 
-`denied` 会在 P2.2C 与 CLI/模型续答一起加入，避免先实现一个没有消费方的半条拒绝链。
+拒绝也会生成结构化 Tool Result，模型可以向用户解释“操作已取消”，但原 Tool 永不执行。
 
 ## 8. 原子单次消费
 
@@ -168,7 +171,7 @@ sequenceDiagram
 ### `StoredToolRun`
 
 只有成功消费后返回，包含绑定 ToolRun ID、原 Tool Call ID、Tool 名、完整规范参数、hash 和 `running` 状态。
-P2.2C 会把它交给 `ToolExecutor.execute_approved()`，不会重新经过一个可改变参数的模型请求。
+续执行会把它直接交给 `ToolExecutor.execute_approved()`，不会重新经过一个可改变参数的模型请求。
 
 ## 10. 稳定错误码
 
@@ -188,6 +191,7 @@ P2.2C 会把它交给 `ToolExecutor.execute_approved()`，不会重新经过一�
 
 - `approval.created`
 - `approval.approved`
+- `approval.denied`
 - `approval.expired`
 - `approval.consumed`
 
@@ -210,12 +214,53 @@ uv run ruff check src/miniclaw/policy/approvals.py src/miniclaw/policy/engine.py
 
 结果：28/28 通过。
 
-全仓门禁：201/201 tests、10/10 offline Agent cases、Ruff PASS、diff check PASS。
+全仓门禁：210/210 tests、10/10 offline Agent cases、Ruff PASS、diff check PASS。
 
-## 13. 当前边界与 P2.2C
+## 13. Runner 为什么必须停下来
 
-- `ApprovalRepository.list/get` 当前只查询，不在读取时惰性过期；P2.5 硬化会补齐。
-- `ToolExecutor` 只有配置了 Approval Repository 才创建真实记录；生产 CLI 会在 P2.2C 一次性完成组装。
-- Runner 目前读取 `ToolExecution.model_text`，还不会在 `approval_id` 出现时停止模型循环。
-- 当前没有 `deny`、`--always` 或 PolicyRule；它们与实际 CLI 决策入口一起实现。
-- 当前不会执行 consumed ToolRun；`execute_approved` 和 child Turn 是下一任务的唯一功能重点。
+```mermaid
+sequenceDiagram
+    participant M as Model
+    participant R as AgentRunner
+    participant E as ToolExecutor
+    participant DB as SQLite
+
+    M->>R: write_file + later tool call
+    R->>E: first call
+    E->>DB: waiting ToolRun + pending Approval
+    E-->>R: approval_id
+    R->>DB: persist Assistant Tool Call
+    R->>DB: Turn running → waiting_approval
+    Note over R: 不请求下一轮模型，不执行 later call
+```
+
+`AgentRunStatus.WAITING_APPROVAL` 是正常业务状态，不是异常。首个待审批项立即结束当前 Loop；同批后续调用
+不会执行。批准续跑时，它们会收到 `not_executed` Tool Result，保证 OpenAI-compatible 消息协议完整。
+
+## 14. Child Turn 如何恢复
+
+```mermaid
+flowchart TD
+    P["原 Turn: waiting_approval"] --> D{"Owner 决策"}
+    D -->|approve| C["原子 consume: Approval consumed / ToolRun running"]
+    D -->|deny| N["Approval denied / ToolRun denied"]
+    C --> X["ToolExecutor.execute_approved"]
+    N --> T["approval_denied Tool Result"]
+    X --> CHILD["创建 child Turn: approval:id"]
+    T --> CHILD
+    CHILD --> HISTORY["恢复 Session 历史，无假 User Message"]
+    HISTORY --> MODEL["模型生成最终说明或下一次 Tool Call"]
+```
+
+child Turn 的 `parent_turn_id` 指向产生 Approval 的 Turn，`inbound_event_id` 固定为 `approval:<id>`。
+它只新增 Tool Message 和模型回答，不伪造“用户又说了一句话”。进程重启后所有恢复数据来自 SQLite。
+
+安全取舍：Approval 一旦 `consumed` 就绝不自动重放。若进程在 consume 后崩溃，用户会看到冲突并需要重新发起
+操作；这比不确定地再次写文件更安全。
+
+## 15. 当前边界
+
+- `ApprovalRepository.list/get` 只查询；过期状态在 approve/deny/consume 时结算。
+- `--always` 目前只预留给后续的精确 argv 命令和精确 hostname，文件写入不支持永久放行。
+- 审批 UI 当前是 CLI；飞书交互卡片会复用同一 Repository 和 TurnService，而不是复制状态机。
+- 任意 Shell、删除/移动文件、多用户审批和自动重放明确不在 Phase 2.2。

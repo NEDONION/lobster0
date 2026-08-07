@@ -7,8 +7,8 @@ from pathlib import Path
 
 from miniclaw.policy.engine import PolicyAction, PolicyEngine
 from miniclaw.providers.base import JsonValue, ToolCall
-from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
-from miniclaw.tools.base import ToolContext, ToolResult, ToolValidationError
+from miniclaw.storage.tooling import ApprovalRepository, StoredToolRun, ToolRunRepository
+from miniclaw.tools.base import Tool, ToolContext, ToolResult, ToolValidationError
 from miniclaw.tools.registry import ToolRegistry
 
 
@@ -100,24 +100,60 @@ class ToolExecutor:
             )
 
         run_id = self._runs.start(context, call, arguments, decision)
+        return await self._execute_started(context, tool, arguments, run_id)
+
+    async def execute_approved(
+        self,
+        context: ToolContext,
+        run: StoredToolRun,
+    ) -> ToolExecution:
+        """执行已由 Approval 原子 claim 的唯一 running ToolRun。"""
+        if run.status != "running":
+            raise ValueError("approved ToolRun must be running")
+        tool = self._registry.get(run.tool_name)
+        if tool is None:
+            result = ToolResult.failure("tool_not_found", "approved tool is not available")
+            model_text = result.to_model_text(run.tool_name)
+            self._runs.fail(run.id, model_text, 0, result.error_code)
+            return ToolExecution(model_text)
+        try:
+            arguments = tool.validate(run.arguments)
+        except ToolValidationError:
+            result = ToolResult.failure(
+                "invalid_arguments",
+                "approved tool arguments are no longer valid",
+            )
+            model_text = result.to_model_text(run.tool_name)
+            self._runs.fail(run.id, model_text, 0, result.error_code)
+            return ToolExecution(model_text)
+        return await self._execute_started(context, tool, arguments, run.id)
+
+    async def _execute_started(
+        self,
+        context: ToolContext,
+        tool: Tool,
+        arguments: dict[str, JsonValue],
+        run_id: int,
+    ) -> ToolExecution:
+        """执行并终结一个已经处于 running 的 ToolRun。"""
         started = time.monotonic()
         try:
             result = await tool.execute(context, arguments)
             if not isinstance(result, ToolResult):
                 raise TypeError("tool returned an invalid result")
-            model_text = result.to_model_text(call.name)
+            model_text = result.to_model_text(tool.definition.name)
         except asyncio.CancelledError:
             self._runs.interrupt(run_id, _elapsed_ms(started))
             raise
         except Exception:  # noqa: BLE001 - 内部异常必须在 Tool 边界脱敏
             result = ToolResult.failure("tool_failed", "tool execution failed")
-            model_text = result.to_model_text(call.name)
+            model_text = result.to_model_text(tool.definition.name)
         if len(model_text) > self._result_max_chars:
             result = ToolResult.failure(
                 "tool_result_too_large",
                 "tool result exceeded the configured size limit",
             )
-            model_text = result.to_model_text(call.name)
+            model_text = result.to_model_text(tool.definition.name)
         duration_ms = _elapsed_ms(started)
         if result.ok:
             self._runs.succeed(run_id, model_text, duration_ms)

@@ -10,6 +10,7 @@ from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
     AgentRunner,
+    AgentRunStatus,
     EmptyModelResponseError,
 )
 from miniclaw.bootstrap import initialize_state
@@ -18,7 +19,7 @@ from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import JsonValue, ModelMessage, ModelRequest, ModelResponse, ToolCall
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ToolRunRepository
+from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
 from miniclaw.tools.base import (
     ToolContext,
     ToolDefinition,
@@ -27,6 +28,7 @@ from miniclaw.tools.base import (
     ToolValidationError,
 )
 from miniclaw.tools.executor import ToolExecutor
+from miniclaw.tools.filesystem import WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from tests.fakes.fake_provider import FakeProvider
 
@@ -179,6 +181,43 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(continued[-2].reasoning_content, "need echo")
         self.assertEqual(continued[-1].role, "tool")
         self.assertEqual(continued[-1].tool_call_id, "call_1")
+
+    async def test_first_pending_call_ends_loop_and_skips_later_calls(self) -> None:
+        """首个 waiting Approval 必须结束本轮，后续同批 Tool 不得执行。"""
+        pending = ToolCall(
+            "call_write",
+            "write_file",
+            {"path": "later.txt", "content": "not-yet"},
+        )
+        later = ToolCall("call_echo_later", "echo", {"text": "must-not-run"})
+        provider = FakeProvider((response("", tool_calls=(pending, later)),))
+        echo = _EchoTool()
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(), echo)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=ApprovalRepository(self.database),
+        )
+        persisted: list[tuple[ModelMessage, ...]] = []
+
+        result = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=self.tool_context,
+            on_intermediate=persisted.append,
+        )
+
+        self.assertEqual(result.status, AgentRunStatus.WAITING_APPROVAL)
+        self.assertIsNotNone(result.approval_id)
+        self.assertIn(f"Approval {result.approval_id}", result.content)
+        self.assertEqual(len(provider.requests), 1)
+        self.assertEqual(echo.executions, 0)
+        self.assertFalse((self.paths.workspace / "later.txt").exists())
+        self.assertEqual([message.role for message in persisted[0]], ["assistant"])
+        with self.database.connect_read_only() as connection:
+            statuses = connection.execute(
+                "SELECT status FROM tool_runs ORDER BY id"
+            ).fetchall()
+        self.assertEqual([row[0] for row in statuses], ["waiting_approval"])
 
     async def test_tool_call_requires_runtime_context(self) -> None:
         """有执行器但没有当前用户/Turn 边界时不能执行 Tool。"""

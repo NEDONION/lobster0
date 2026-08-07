@@ -270,7 +270,7 @@ Commit: `feat(approval): 增加 parameter-bound SQLite lifecycle`
 - Produces CLI: `approvals list|show|approve|deny [--json]`; `approve` supports `--always` only for exact command/hostname rules.
 - Consumes: `ApprovalRepository` and `ToolExecutor.execute_approved()` from Task 3.
 
-- [ ] **Step 1: Write Runner RED test**
+- [x] **Step 1: Write Runner RED test**
 
 ```python
 async def test_first_pending_call_ends_loop_and_skips_later_calls(self) -> None:
@@ -283,13 +283,13 @@ async def test_first_pending_call_ends_loop_and_skips_later_calls(self) -> None:
 
 The persisted batch contains the Assistant Tool Call but no fabricated successful Tool Result.
 
-- [ ] **Step 2: Run RED, implement Runner/Turn waiting state, run GREEN**
+- [x] **Step 2: Run RED, implement Runner/Turn waiting state, run GREEN**
 
 Run: `uv run python -m unittest tests.test_agent_runner tests.test_turn -v`
 
 `TurnService.handle()` calls `wait_for_approval()` instead of completing the Turn and returns deterministic content such as `Approval 42 required for write_file.` without another provider call.
 
-- [ ] **Step 3: Write continuation RED test**
+- [x] **Step 3: Write continuation RED test**
 
 ```python
 async def test_approve_creates_child_turn_executes_once_and_model_finishes(self) -> None:
@@ -303,15 +303,15 @@ async def test_approve_creates_child_turn_executes_once_and_model_finishes(self)
 
 Also test deny produces a tool error and never invokes the Tool, hash mismatch never writes, and restart reconstructs context from SQLite.
 
-- [ ] **Step 4: Implement continuation with no fake user message**
+- [x] **Step 4: Implement continuation with no fake user message**
 
 Create `inbound_event_id="approval:<id>"`, append the approved/denied Tool Message under the child Turn, then call the existing Runner with session history. A consumed ToolRun is never auto-replayed after interruption.
 
-- [ ] **Step 5: Write CLI RED tests and implement commands**
+- [x] **Step 5: Write CLI RED tests and implement commands**
 
 Assert stable table output, JSON output, owner/expiry/conflict exit code 2, local I/O exit code 5, and no API key requirement for list/show. `approve`/`deny` load the model key only when continuation must contact the provider.
 
-- [ ] **Step 6: Verify P2.2 and commit**
+- [x] **Step 6: Verify P2.2 and commit**
 
 Run: `uv run python -m unittest tests.test_cli_approvals tests.test_agent_runner tests.test_turn tests.test_approvals tests.test_file_tools -v && uv run ruff check .`
 
