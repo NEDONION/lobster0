@@ -244,7 +244,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             contextlib.redirect_stdout(io.StringIO()),
         ):
             exit_code = await _chat(
-                load_config(self.paths),
+                load_config(self.paths, {}, {}),
                 self.paths,
                 "offline-secret",
                 "read-file",
