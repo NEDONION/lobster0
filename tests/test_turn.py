@@ -1,6 +1,9 @@
 """TurnService 对 Context、Runner 和 SQLite 的编排测试。"""
 
 import asyncio
+import contextlib
+import io
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -11,13 +14,16 @@ from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService, _model_message
 from miniclaw.bootstrap import initialize_state
-from miniclaw.config import WorkspaceConfig
+from miniclaw.cli import _chat
+from miniclaw.config import WorkspaceConfig, load_config
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import (
+    ModelRequest,
     ModelResponse,
     ProviderAuthenticationError,
     ProviderServerError,
+    StreamHandler,
     ToolCall,
 )
 from miniclaw.storage.conversations import (
@@ -195,6 +201,103 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         restored = provider.requests[2].messages
         assistant_call = next(message for message in restored if message.tool_calls)
         self.assertEqual(assistant_call.tool_calls, (call,))
+
+    async def test_chat_bootstrap_executes_read_file_and_persists_full_trace(self) -> None:
+        """真实 CLI 组装必须暴露 read_file，并持久化完整的两轮 Tool 轨迹。"""
+        (self.paths.workspace / "README.md").write_text(
+            "MiniClaw workspace README\nSecond line\n",
+            encoding="utf-8",
+        )
+        call = ToolCall("call_readme", "read_file", {"path": "README.md"})
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(call,),
+                    reasoning_content="read the workspace readme",
+                    finish_reason="tool_calls",
+                    input_tokens=5,
+                    output_tokens=2,
+                    provider_request_id="req_readme",
+                ),
+                final_response("README says MiniClaw workspace README"),
+            )
+        )
+        complete = provider.complete
+
+        async def verify_tool_message_before_final_response(
+            request: ModelRequest,
+            on_text: StreamHandler | None = None,
+        ) -> ModelResponse:
+            """在第二轮返回总结前验证真实 Tool Message 已传回 Provider。"""
+            if provider.requests:
+                message = request.messages[-1]
+                self.assertEqual((message.role, message.tool_call_id), ("tool", "call_readme"))
+                self.assertEqual(json.loads(message.content)["ok"], True)
+            return await complete(request, on_text)
+
+        provider.complete = verify_tool_message_before_final_response  # type: ignore[method-assign]
+        provider.aclose = mock.AsyncMock()  # type: ignore[attr-defined]
+
+        with (
+            mock.patch("miniclaw.cli.OpenAICompatibleProvider", return_value=provider),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            exit_code = await _chat(
+                load_config(self.paths),
+                self.paths,
+                "offline-secret",
+                "read-file",
+                "read the README",
+            )
+
+        session = self.sessions.get_or_create_cli(self.owner.id, "read-file")
+        turn = self.turns.list_recent(session.id, limit=1)[0]
+        history = self.messages.list_recent(session.id)
+        tool_message = provider.requests[1].messages[-1]
+        with self.database.connect_read_only() as connection:
+            tool_run = connection.execute(
+                "SELECT tool_name, status, policy_action FROM tool_runs"
+            ).fetchone()
+            audit_events = connection.execute(
+                "SELECT event_type FROM audit_events ORDER BY id"
+            ).fetchall()
+
+        self.assertEqual(exit_code, 0)
+        self.assertEqual(
+            [schema["function"]["name"] for schema in provider.requests[0].tools],
+            ["glob", "grep", "read_file", "system_info"],
+        )
+        self.assertEqual((tool_message.role, tool_message.tool_call_id), ("tool", "call_readme"))
+        self.assertEqual(
+            json.loads(tool_message.content),
+            {
+                "ok": True,
+                "tool": "read_file",
+                "data": {
+                    "path": "README.md",
+                    "content": "MiniClaw workspace README\nSecond line\n",
+                    "offset": 1,
+                    "lines": 2,
+                    "truncated": False,
+                },
+            },
+        )
+        self.assertEqual(turn.status, "completed")
+        self.assertEqual(
+            [(message.role, message.content) for message in history],
+            [
+                ("user", "read the README"),
+                ("assistant", ""),
+                ("tool", tool_message.content),
+                ("assistant", "README says MiniClaw workspace README"),
+            ],
+        )
+        self.assertEqual(tuple(tool_run), ("read_file", "succeeded", "allow"))
+        self.assertEqual(
+            [event[0] for event in audit_events],
+            ["tool.started", "tool.succeeded"],
+        )
 
     def test_corrupt_tool_call_metadata_is_not_sent_to_provider(self) -> None:
         """缺字段的持久 Tool Call 必须在 Provider 边界前被拒绝。"""

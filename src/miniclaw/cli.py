@@ -32,7 +32,9 @@ from miniclaw.storage.migrations import MigrationError, apply_migrations
 from miniclaw.storage.repositories import OwnerRepository
 from miniclaw.storage.tooling import ToolRunRepository
 from miniclaw.tools.executor import ToolExecutor
+from miniclaw.tools.filesystem import ReadFileTool
 from miniclaw.tools.registry import ToolRegistry
+from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
 
 _DEFAULT_CLI_SESSION = "default"
@@ -208,7 +210,14 @@ async def _chat(
         config.provider.timeout_seconds,
     )
     executor = ToolExecutor(
-        ToolRegistry((SystemInfoTool(),)),
+        ToolRegistry(
+            (
+                SystemInfoTool(),
+                ReadFileTool(),
+                GlobTool(),
+                GrepTool(),
+            )
+        ),
         PolicyEngine(),
         ToolRunRepository(database),
         result_max_chars=config.agent.tool_result_max_chars,
