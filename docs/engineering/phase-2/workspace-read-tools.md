@@ -322,5 +322,7 @@ P2.2 规划的是 `write_file`、`edit_file`、参数绑定审批与 CLI 审批/
 ## 13. 本阶段实现提交与事实来源
 
 读取边界与 Tool 的实现提交依次为：`76b0999`、`359e5fc`、`311c02f`、`c8e7d80`、`3a27688`、`73bdec3`、
-`f599087`、`c3f8409`、`b94bd45`、`3aa6e13`。本页事实来自这些提交中的 `workspace.py`、`filesystem.py`、`search.py`、`cli.py`，以及
-对应单元测试和现有 Tool Runtime 契约；本页不把设计文档中的 P2.2/P2.3 规划写成当前功能。
+`f599087`、`c3f8409`、`b94bd45`、`3aa6e13`、`942acd2`。其中 `942acd2` 保证 Python 3.13 也会拒绝
+symlink loop；最终 153 项测试已分别在 Python 3.12 与 3.13 通过。本页事实来自这些提交中的 `workspace.py`、
+`filesystem.py`、`search.py`、`cli.py`，以及对应单元测试和现有 Tool Runtime 契约；本页不把设计文档中的
+P2.2/P2.3 规划写成当前功能。
