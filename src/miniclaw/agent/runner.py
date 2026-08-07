@@ -1,7 +1,6 @@
 """执行有上限的模型与顺序 Tool Call 循环。"""
 
 import json
-from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, replace
 
 from miniclaw.providers.base import (
@@ -13,8 +12,8 @@ from miniclaw.providers.base import (
     StreamHandler,
     ToolCall,
 )
-
-type ToolHandler = Callable[[dict[str, JsonValue]], Awaitable[str]]
+from miniclaw.tools.base import ToolContext
+from miniclaw.tools.executor import ToolExecutor
 
 
 class AgentError(RuntimeError):
@@ -39,6 +38,7 @@ class AgentRunResult:
     output_tokens: int
     provider_request_id: str | None
     finish_reason: str
+    intermediate_messages: tuple[ModelMessage, ...] = ()
 
 
 class AgentRunner:
@@ -47,7 +47,7 @@ class AgentRunner:
     def __init__(
         self,
         provider: ModelProvider,
-        tools: Mapping[str, ToolHandler] | None = None,
+        executor: ToolExecutor | None = None,
         *,
         max_iterations: int = 8,
     ) -> None:
@@ -55,7 +55,7 @@ class AgentRunner:
 
         Args:
             provider: 实际或 Fake 模型边界。
-            tools: 工具名到异步执行函数的映射；Phase 1 默认空。
+            executor: 可选的唯一安全 Tool 执行入口。
             max_iterations: 包含最终响应在内的最多模型调用次数。
 
         Raises:
@@ -64,13 +64,20 @@ class AgentRunner:
         if type(max_iterations) is not int or max_iterations <= 0:
             raise ValueError("max_iterations must be a positive integer")
         self._provider = provider
-        self._tools = {} if tools is None else dict(tools)
+        self._executor = executor
         self._max_iterations = max_iterations
+
+    @property
+    def tool_schemas(self) -> tuple[dict[str, JsonValue], ...]:
+        """返回当前执行器公开给模型的 Tool Schema。"""
+        return () if self._executor is None else self._executor.schemas
 
     async def run(
         self,
         request: ModelRequest,
         on_text: StreamHandler | None = None,
+        *,
+        tool_context: ToolContext | None = None,
     ) -> AgentRunResult:
         """执行模型与工具循环，直到获得非空最终回答。
 
@@ -88,6 +95,7 @@ class AgentRunner:
             asyncio.CancelledError: 调用方取消，Runner 不拦截。
         """
         messages = list(request.messages)
+        intermediate_messages: list[ModelMessage] = []
         input_tokens = 0
         output_tokens = 0
         provider_request_id: str | None = None
@@ -109,29 +117,41 @@ class AgentRunner:
                     output_tokens=output_tokens,
                     provider_request_id=provider_request_id,
                     finish_reason=response.finish_reason,
+                    intermediate_messages=tuple(intermediate_messages),
                 )
             if iteration == self._max_iterations:
                 raise AgentLoopLimitError(
                     f"agent reached the model iteration limit ({self._max_iterations})"
                 )
 
-            messages.append(_assistant_tool_message(response))
+            if self._executor is not None and tool_context is None:
+                raise AgentError("tool context is required")
+
+            assistant_message = _assistant_tool_message(response)
+            messages.append(assistant_message)
+            intermediate_messages.append(assistant_message)
             for call in response.tool_calls:
-                messages.append(await self._execute_tool(call))
+                tool_message = await self._execute_tool(call, tool_context)
+                messages.append(tool_message)
+                intermediate_messages.append(tool_message)
 
         raise AgentLoopLimitError("agent reached an unexpected loop state")
 
-    async def _execute_tool(self, call: ToolCall) -> ModelMessage:
+    async def _execute_tool(
+        self,
+        call: ToolCall,
+        context: ToolContext | None,
+    ) -> ModelMessage:
         """执行已注册工具，或构造确定性未注册 Tool Result。"""
-        handler = self._tools.get(call.name)
-        if handler is None:
+        if self._executor is None:
             result = json.dumps(
                 {"ok": False, "error": "tool_not_found", "tool": call.name},
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
         else:
-            result = await handler(call.arguments)
+            assert context is not None
+            result = await self._executor.execute(context, call)
         return ModelMessage(role="tool", content=result, tool_call_id=call.call_id)
 
 

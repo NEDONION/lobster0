@@ -2,10 +2,32 @@
 
 import asyncio
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from miniclaw.agent.runner import AgentLoopLimitError, AgentRunner, EmptyModelResponseError
-from miniclaw.providers.base import ModelMessage, ModelRequest, ModelResponse, ToolCall
+from miniclaw.agent.runner import (
+    AgentError,
+    AgentLoopLimitError,
+    AgentRunner,
+    EmptyModelResponseError,
+)
+from miniclaw.bootstrap import initialize_state
+from miniclaw.paths import build_state_paths
+from miniclaw.policy.engine import PolicyEngine
+from miniclaw.providers.base import JsonValue, ModelMessage, ModelRequest, ModelResponse, ToolCall
+from miniclaw.storage.conversations import SessionRepository, TurnRepository
+from miniclaw.storage.database import Database
+from miniclaw.storage.tooling import ToolRunRepository
+from miniclaw.tools.base import (
+    ToolContext,
+    ToolDefinition,
+    ToolResult,
+    ToolRisk,
+    ToolValidationError,
+)
+from miniclaw.tools.executor import ToolExecutor
+from miniclaw.tools.registry import ToolRegistry
 from tests.fakes.fake_provider import FakeProvider
 
 
@@ -38,8 +60,79 @@ def request(*tools: dict[str, object]) -> ModelRequest:
     )
 
 
+class _EchoTool:
+    """记录执行次数并返回输入文本的 Runner 测试 Tool。"""
+
+    definition = ToolDefinition(
+        name="echo",
+        description="Echo text.",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self) -> None:
+        self.executions = 0
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """只接受单个字符串 text。"""
+        if set(arguments) != {"text"} or not isinstance(arguments["text"], str):
+            raise ToolValidationError("text must be a string")
+        return arguments
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """记录并返回参数。"""
+        del context
+        self.executions += 1
+        return ToolResult.success({"text": arguments["text"]})
+
+
 class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
     """验证 Runner 只编排模型和工具，不触碰 Channel 或 Storage。"""
+
+    def setUp(self) -> None:
+        """创建 ToolExecutor 所需的真实临时 Turn。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+        initialized = initialize_state(self.paths)
+        self.database = Database(self.paths.database)
+        session = SessionRepository(self.database).get_or_create_cli(
+            initialized.owner.id,
+            "runner-test",
+        )
+        turns = TurnRepository(self.database)
+        turn = turns.create_with_user_message(
+            session.id,
+            "runner-event",
+            "test-model",
+            "hello",
+        )
+        turns.mark_running(turn.id)
+        self.tool_context = ToolContext(
+            initialized.owner.id,
+            session.id,
+            turn.id,
+            self.paths.home,
+            self.paths.workspace,
+            (),
+        )
+
+    def executor(self, tool: _EchoTool) -> ToolExecutor:
+        """创建真实安全执行入口。"""
+        return ToolExecutor(
+            ToolRegistry((tool,)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+        )
 
     async def test_final_text_returns_usage_and_single_iteration(self) -> None:
         """无 Tool Call 的正常响应应一次结束并保留可观察用量。"""
@@ -61,25 +154,40 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
                 response("done", input_tokens=11, output_tokens=4),
             )
         )
-        observed_arguments: list[dict[str, object]] = []
+        tool = _EchoTool()
+        executor = self.executor(tool)
 
-        async def echo(arguments: dict[str, object]) -> str:
-            observed_arguments.append(arguments)
-            return str(arguments["text"])
-
-        result = await AgentRunner(provider, {"echo": echo}).run(
-            request({"type": "function", "function": {"name": "echo"}})
+        result = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=self.tool_context,
         )
 
         self.assertEqual(result.content, "done")
         self.assertEqual(result.iterations, 2)
         self.assertEqual((result.input_tokens, result.output_tokens), (16, 6))
-        self.assertEqual(observed_arguments, [{"text": "hello"}])
+        self.assertEqual(tool.executions, 1)
+        self.assertEqual(
+            [(message.role, message.tool_call_id) for message in result.intermediate_messages],
+            [("assistant", None), ("tool", "call_1")],
+        )
+        self.assertEqual(
+            json.loads(result.intermediate_messages[-1].content)["data"],
+            {"text": "hello"},
+        )
         continued = provider.requests[1].messages
         self.assertEqual(continued[-2].role, "assistant")
         self.assertEqual(continued[-2].reasoning_content, "need echo")
         self.assertEqual(continued[-1].role, "tool")
         self.assertEqual(continued[-1].tool_call_id, "call_1")
+
+    async def test_tool_call_requires_runtime_context(self) -> None:
+        """有执行器但没有当前用户/Turn 边界时不能执行 Tool。"""
+        call = ToolCall("call_1", "echo", {"text": "hello"})
+        provider = FakeProvider((response("", tool_calls=(call,)),))
+        executor = self.executor(_EchoTool())
+
+        with self.assertRaises(AgentError):
+            await AgentRunner(provider, executor).run(request(*executor.schemas))
 
     async def test_unknown_tool_becomes_structured_result_then_model_can_finish(self) -> None:
         """未注册工具不能让进程崩溃，应作为确定性 Tool Result 回传模型。"""
@@ -104,20 +212,26 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_eighth_tool_response_stops_before_executing_more_side_effects(self) -> None:
         """第八次仍请求工具时必须停止，且不能执行已经无法继续回传的最后动作。"""
-        call = ToolCall("call_loop", "echo", {"text": "x"})
-        provider = FakeProvider(tuple(response("", tool_calls=(call,)) for _ in range(8)))
-        executions = 0
-
-        async def echo(arguments: dict[str, object]) -> str:
-            nonlocal executions
-            executions += 1
-            return "x"
+        provider = FakeProvider(
+            tuple(
+                response(
+                    "",
+                    tool_calls=(ToolCall(f"call_loop_{index}", "echo", {"text": "x"}),),
+                )
+                for index in range(8)
+            )
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
 
         with self.assertRaises(AgentLoopLimitError):
-            await AgentRunner(provider, {"echo": echo}, max_iterations=8).run(request())
+            await AgentRunner(provider, executor, max_iterations=8).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+            )
 
         self.assertEqual(len(provider.requests), 8)
-        self.assertEqual(executions, 7)
+        self.assertEqual(tool.executions, 7)
 
     async def test_cancellation_propagates_without_becoming_agent_failure(self) -> None:
         """Runner 不得吞掉 CancelledError，TurnService 需要据此保存 cancelled。"""
