@@ -207,6 +207,61 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
             visible[2].data["text"],
             "answer with the observed result",
         )
+        usage = [event.data for event in events if event.kind == "model_usage"]
+        self.assertEqual(
+            [
+                {
+                    key: item[key]
+                    for key in (
+                        "iteration",
+                        "context_tokens",
+                        "input_tokens",
+                        "output_tokens",
+                        "tool_calls",
+                    )
+                }
+                for item in usage
+            ],
+            [
+                {
+                    "iteration": 1,
+                    "context_tokens": 5,
+                    "input_tokens": 5,
+                    "output_tokens": 2,
+                    "tool_calls": 1,
+                },
+                {
+                    "iteration": 2,
+                    "context_tokens": 11,
+                    "input_tokens": 16,
+                    "output_tokens": 6,
+                    "tool_calls": 1,
+                },
+            ],
+        )
+
+    async def test_usage_event_preserves_unknown_provider_counts(self) -> None:
+        """Provider 缺失 usage 时必须显示未知，不能把它伪装成零。"""
+        provider = FakeProvider(
+            (response("done", input_tokens=None, output_tokens=None),)
+        )
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
+
+        result = await AgentRunner(provider).run(
+            request(),
+            tool_context=self.tool_context,
+            on_event=capture,
+        )
+
+        usage = next(event for event in events if event.kind == "model_usage")
+        self.assertEqual((result.input_tokens, result.output_tokens), (0, 0))
+        self.assertIsNone(usage.data["context_tokens"])
+        self.assertIsNone(usage.data["input_tokens"])
+        self.assertIsNone(usage.data["output_tokens"])
+        self.assertEqual(usage.data["tool_calls"], 0)
 
     async def test_first_pending_call_ends_loop_and_skips_later_calls(self) -> None:
         """首个 waiting Approval 必须结束本轮，后续同批 Tool 不得执行。"""

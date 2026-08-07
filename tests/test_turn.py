@@ -160,17 +160,27 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             [event.kind for event in events],
             [
                 "turn_started",
+                "model_usage",
                 "model_reasoning",
                 "tool_requested",
                 "tool_started",
                 "tool_finished",
                 "model_text_delta",
+                "model_usage",
                 "model_reasoning",
                 "turn_finished",
             ],
         )
         requested = next(event for event in events if event.kind == "tool_requested")
         self.assertEqual(requested.data["arguments"], {})
+        finished = events[-1]
+        self.assertEqual(finished.data["context_tokens"], 9)
+        self.assertEqual(finished.data["input_tokens"], 11)
+        self.assertEqual(finished.data["output_tokens"], 4)
+        self.assertEqual(finished.data["iterations"], 2)
+        self.assertEqual(finished.data["tool_calls"], 1)
+        self.assertEqual(finished.data["provider_request_id"], "req_turn")
+        self.assertIs(type(finished.data["duration_ms"]), int)
 
     async def test_approval_event_has_committed_normalized_arguments(self) -> None:
         """审批弹窗收到事件时，pending Approval 已存在且参数来自 Policy 归一化。"""
@@ -246,26 +256,50 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_provider_failure_marks_turn_failed_with_stable_code(self) -> None:
         """认证失败应原样抛给 CLI，同时数据库保存安全错误分类。"""
         provider = FakeProvider((ProviderAuthenticationError("authentication failed"),))
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
 
         with self.assertRaises(ProviderAuthenticationError):
-            await self.service(provider).handle(self.owner.id, "hello", "default")
+            await self.service(provider).handle(
+                self.owner.id,
+                "hello",
+                "default",
+                on_event=capture,
+            )
 
         session = self.sessions.get_or_create_cli(self.owner.id, "default")
         saved = self.turns.list_recent(session.id, limit=1)[0]
         self.assertEqual(saved.status, "failed")
         self.assertEqual(saved.error_code, "provider_authentication")
         self.assertEqual(saved.error_message, "authentication failed")
+        self.assertEqual(events[-1].kind, "turn_failed")
+        self.assertEqual(events[-1].data["error_code"], "provider_authentication")
+        self.assertIs(type(events[-1].data["duration_ms"]), int)
+        self.assertNotIn("authentication failed", str(events[-1].data))
 
     async def test_cancellation_marks_turn_cancelled_and_propagates(self) -> None:
         """取消必须持久化 cancelled，并继续抛出以便 CLI 返回 130。"""
         provider = FakeProvider((asyncio.CancelledError(),))
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
 
         with self.assertRaises(asyncio.CancelledError):
-            await self.service(provider).handle(self.owner.id, "hello", "default")
+            await self.service(provider).handle(
+                self.owner.id,
+                "hello",
+                "default",
+                on_event=capture,
+            )
 
         session = self.sessions.get_or_create_cli(self.owner.id, "default")
         saved = self.turns.list_recent(session.id, limit=1)[0]
         self.assertEqual(saved.status, "cancelled")
+        self.assertEqual(events[-1].kind, "turn_cancelled")
+        self.assertIs(type(events[-1].data["duration_ms"]), int)
 
     async def test_tool_loop_persists_and_restores_complete_history(self) -> None:
         """真实 Tool 纵切必须保存轨迹，并在下一 Turn 恢复结构化调用。"""

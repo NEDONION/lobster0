@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 type RunEventKind = Literal[
     "turn_started",
     "model_text_delta",
+    "model_usage",
     "model_reasoning",
     "tool_requested",
     "tool_started",

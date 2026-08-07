@@ -49,6 +49,10 @@ class AgentRunResult:
     output_tokens: int
     provider_request_id: str | None
     finish_reason: str
+    context_tokens: int | None
+    reported_input_tokens: int | None
+    reported_output_tokens: int | None
+    tool_calls_count: int
     status: AgentRunStatus = AgentRunStatus.COMPLETED
     approval_id: int | None = None
     intermediate_messages: tuple[ModelMessage, ...] = ()
@@ -128,6 +132,8 @@ class AgentRunner:
         intermediate_messages: list[ModelMessage] = []
         input_tokens = 0
         output_tokens = 0
+        input_usage_complete = True
+        output_usage_complete = True
         provider_request_id: str | None = None
         seen_tool_call_ids: set[str] = set()
         round_chunks: list[str] = []
@@ -152,9 +158,43 @@ class AgentRunner:
                 current,
                 capture_text if on_text is not None or on_event is not None else None,
             )
-            input_tokens += response.input_tokens or 0
-            output_tokens += response.output_tokens or 0
+            if response.input_tokens is None:
+                input_usage_complete = False
+            else:
+                input_tokens += response.input_tokens
+            if response.output_tokens is None:
+                output_usage_complete = False
+            else:
+                output_tokens += response.output_tokens
             provider_request_id = response.provider_request_id or provider_request_id
+            call_ids = [call.call_id for call in response.tool_calls]
+            if (
+                any(not call_id.strip() for call_id in call_ids)
+                or len(set(call_ids)) != len(call_ids)
+                or not seen_tool_call_ids.isdisjoint(call_ids)
+            ):
+                raise AgentError("model returned an empty or duplicate tool call id")
+            seen_tool_call_ids.update(call_ids)
+            if tool_context is not None:
+                await emit(
+                    on_event,
+                    RunEvent(
+                        "model_usage",
+                        tool_context.turn_id,
+                        {
+                            "iteration": iteration,
+                            "context_tokens": response.input_tokens,
+                            "input_tokens": (
+                                input_tokens if input_usage_complete else None
+                            ),
+                            "output_tokens": (
+                                output_tokens if output_usage_complete else None
+                            ),
+                            "tool_calls": len(seen_tool_call_ids),
+                            "provider_request_id": provider_request_id,
+                        },
+                    ),
+                )
             if tool_context is not None and response.reasoning_content:
                 await emit(
                     on_event,
@@ -178,21 +218,20 @@ class AgentRunner:
                     output_tokens=output_tokens,
                     provider_request_id=provider_request_id,
                     finish_reason=response.finish_reason,
+                    context_tokens=response.input_tokens,
+                    reported_input_tokens=(
+                        input_tokens if input_usage_complete else None
+                    ),
+                    reported_output_tokens=(
+                        output_tokens if output_usage_complete else None
+                    ),
+                    tool_calls_count=len(seen_tool_call_ids),
                     intermediate_messages=tuple(intermediate_messages),
                 )
             if iteration == self._max_iterations:
                 raise AgentLoopLimitError(
                     f"agent reached the model iteration limit ({self._max_iterations})"
                 )
-
-            call_ids = [call.call_id for call in response.tool_calls]
-            if (
-                any(not call_id.strip() for call_id in call_ids)
-                or len(set(call_ids)) != len(call_ids)
-                or not seen_tool_call_ids.isdisjoint(call_ids)
-            ):
-                raise AgentError("model returned an empty or duplicate tool call id")
-            seen_tool_call_ids.update(call_ids)
 
             if self._executor is not None and tool_context is None:
                 raise AgentError("tool context is required")
@@ -231,6 +270,14 @@ class AgentRunner:
                         output_tokens=output_tokens,
                         provider_request_id=provider_request_id,
                         finish_reason="approval_required",
+                        context_tokens=response.input_tokens,
+                        reported_input_tokens=(
+                            input_tokens if input_usage_complete else None
+                        ),
+                        reported_output_tokens=(
+                            output_tokens if output_usage_complete else None
+                        ),
+                        tool_calls_count=len(seen_tool_call_ids),
                         status=AgentRunStatus.WAITING_APPROVAL,
                         approval_id=approval_id,
                         intermediate_messages=tuple(intermediate_messages),

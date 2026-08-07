@@ -1,6 +1,7 @@
 """把一次 CLI 输入编排为可持久化的 Agent Turn。"""
 
 import asyncio
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -128,6 +129,7 @@ class TurnService:
             text,
         )
         self._turns.mark_running(turn.id)
+        started = time.monotonic()
 
         try:
             await emit(
@@ -169,19 +171,37 @@ class TurnService:
                     RunEvent(
                         "turn_finished",
                         turn.id,
-                        {"status": "completed", "content": result.content},
+                        {
+                            "status": "completed",
+                            "content": result.content,
+                            **_telemetry(result, started),
+                        },
                     ),
                 )
         except asyncio.CancelledError:
             self._turns.cancel(turn.id)
-            await emit(on_event, RunEvent("turn_cancelled", turn.id, {}))
+            await emit(
+                on_event,
+                RunEvent(
+                    "turn_cancelled",
+                    turn.id,
+                    {"duration_ms": _elapsed_ms(started)},
+                ),
+            )
             raise
         except (ContextError, ConversationDataError, AgentError, ProviderError) as error:
             error_code = _error_code(error)
             self._turns.fail(turn.id, error_code, str(error))
             await emit(
                 on_event,
-                RunEvent("turn_failed", turn.id, {"error_code": error_code}),
+                RunEvent(
+                    "turn_failed",
+                    turn.id,
+                    {
+                        "error_code": error_code,
+                        "duration_ms": _elapsed_ms(started),
+                    },
+                ),
             )
             raise
 
@@ -227,6 +247,7 @@ class TurnService:
             self._model,
         )
         self._turns.mark_running(child.id)
+        started = time.monotonic()
         try:
             await emit(
                 on_event,
@@ -289,19 +310,37 @@ class TurnService:
                     RunEvent(
                         "turn_finished",
                         child.id,
-                        {"status": "completed", "content": result.content},
+                        {
+                            "status": "completed",
+                            "content": result.content,
+                            **_telemetry(result, started),
+                        },
                     ),
                 )
         except asyncio.CancelledError:
             self._turns.cancel(child.id)
-            await emit(on_event, RunEvent("turn_cancelled", child.id, {}))
+            await emit(
+                on_event,
+                RunEvent(
+                    "turn_cancelled",
+                    child.id,
+                    {"duration_ms": _elapsed_ms(started)},
+                ),
+            )
             raise
         except (ContextError, ConversationDataError, AgentError, ProviderError) as error:
             error_code = _error_code(error)
             self._turns.fail(child.id, error_code, str(error))
             await emit(
                 on_event,
-                RunEvent("turn_failed", child.id, {"error_code": error_code}),
+                RunEvent(
+                    "turn_failed",
+                    child.id,
+                    {
+                        "error_code": error_code,
+                        "duration_ms": _elapsed_ms(started),
+                    },
+                ),
             )
             raise
 
@@ -432,6 +471,24 @@ def _model_message(message: StoredMessage) -> ModelMessage:
         tool_call_id=message.tool_call_id,
         reasoning_content=reasoning_value,
     )
+
+
+def _telemetry(result: AgentRunResult, started: float) -> dict[str, JsonValue]:
+    """返回只含可信标量的 Turn 运行指标。"""
+    return {
+        "context_tokens": result.context_tokens,
+        "input_tokens": result.reported_input_tokens,
+        "output_tokens": result.reported_output_tokens,
+        "iterations": result.iterations,
+        "tool_calls": result.tool_calls_count,
+        "provider_request_id": result.provider_request_id,
+        "duration_ms": _elapsed_ms(started),
+    }
+
+
+def _elapsed_ms(started: float) -> int:
+    """把单调时钟差值转换为非负毫秒。"""
+    return max(0, round((time.monotonic() - started) * 1000))
 
 
 def _error_code(
