@@ -1,6 +1,6 @@
 # MiniClaw Phase 2：Tool、权限与安全执行设计
 
-> 状态：待评审，不代表功能已经实现
+> 状态：已评审，Phase 2 开发中；未验证的能力仍按目标描述
 >
 > 目标版本：MiniClaw Phase 2
 >
@@ -8,7 +8,247 @@
 >
 > 前置基线：Phase 0 与 Phase 1 已完成，仓库基线 `7353791`
 >
-> 评审通过后：再编写逐任务 Implementation Plan，并按 TDD 开发
+> 实施方式：逐任务 Implementation Plan + TDD + 独立 worktree
+
+## 0. 大白话导读：先看懂我们到底要做什么
+
+如果你现在只想理解 Phase 2，而不是马上看代码，只读这一章就够了。后面的章节是开发时查细节用的。
+
+### 0.1 一句话解释 Phase 2
+
+Phase 1 的 MiniClaw 只有“嘴”和“大脑”：它能听懂问题，也能组织语言回答，但没有真正操作电脑的手。
+
+Phase 2 给它增加三样东西：
+
+1. **工具箱**：查看电脑配置、读文件、写文件、搜索、访问网页、运行受限命令；
+2. **门卫**：每次使用工具前判断是直接允许、需要你批准，还是必须拒绝；
+3. **操作记录本**：把调用了什么、为什么允许、结果如何保存下来，方便排错和回放。
+
+```mermaid
+flowchart LR
+    subgraph BEFORE["Phase 1：只会聊天"]
+        U1["你：看看我的电脑配置"] --> M1["模型思考"]
+        M1 --> A1["我没法访问你的电脑，请手动查看"]
+    end
+
+    subgraph AFTER["Phase 2：可以安全使用工具"]
+        U2["你：看看我的电脑配置"] --> M2["模型决定调用 system_info"]
+        M2 --> G2["门卫检查：只读、安全"]
+        G2 --> T2["工具读取脱敏后的真实配置"]
+        T2 --> A2["模型根据真实结果回答"]
+    end
+```
+
+### 0.2 把 MiniClaw 想成一个小团队
+
+这些英文名第一次看会很抽象，可以先用下面的比喻理解：
+
+| 工程名 | 大白话 | 负责什么 |
+| --- | --- | --- |
+| Model / DeepSeek | 大脑 | 理解你的话，决定下一步做什么 |
+| AgentRunner | 调度员 | 让模型和工具来回配合，最多循环 8 次 |
+| Tool | 工具箱 | 真正读取电脑、文件、网页或运行命令 |
+| ToolRegistry | 工具清单 | 告诉模型“你现在有哪些工具可用” |
+| PolicyEngine | 门卫 | 决定这次操作放行、审批还是拒绝 |
+| Approval | 你的签字 | 高风险操作必须由你明确确认 |
+| Workspace | 工作区围栏 | Agent 默认只能在这个目录里活动 |
+| SQLite | 操作记录本 | 保存会话、工具调用、审批和结果 |
+| Turn | 一轮任务 | 从你发一句话开始，到回答或等待审批结束 |
+
+```mermaid
+flowchart LR
+    USER["你：提出任务"] --> BRAIN["大脑：DeepSeek"]
+    BRAIN --> DISPATCH["调度员：AgentRunner"]
+    DISPATCH --> GUARD{"门卫：PolicyEngine"}
+    GUARD -->|"安全"| TOOL["工具箱：Tool"]
+    GUARD -->|"有风险"| SIGN["等你签字：Approval"]
+    GUARD -->|"禁止"| STOP["拒绝执行"]
+    SIGN -->|"批准"| TOOL
+    TOOL --> RECORD["记录本：SQLite"]
+    RECORD --> BRAIN
+    BRAIN --> ANSWER["给你最终回答"]
+```
+
+关键点只有一个：**模型不能直接碰电脑。它只能提出结构化工具请求，真正执行前一定经过门卫。**
+
+### 0.3 Phase 2 会给它哪些工具
+
+| 你可能说的话 | MiniClaw 使用的工具 | 默认怎么处理 |
+| --- | --- | --- |
+| “看看我的电脑配置” | `system_info` | 只读，直接执行 |
+| “读一下 README.md” | `read_file` | 工作区内直接执行 |
+| “找出所有 Python 文件” | `glob` | 工作区内直接执行 |
+| “搜索哪里出现了 AgentRunner” | `grep` | 工作区内直接执行 |
+| “创建一份 notes.md” | `write_file` | 会改文件，需要审批 |
+| “把这段文字替换掉” | `edit_file` | 会改文件，需要审批 |
+| “访问这个 HTTPS 页面” | `http_get` | 会访问外部网络，默认审批 |
+| “运行 git status --short” | `run_command` | 会启动程序，默认审批 |
+
+Phase 2 不会给它“任意 Bash”。例如下面这些能力暂时明确不做：
+
+- `sudo` 或切换系统用户；
+- 删除文件和目录；
+- SSH、上传文件或 `git push`；
+- `bash -c "一长串命令"`；
+- 自动修改、提交并部署 MiniClaw 自己的源代码。
+
+这不是功能没做完，而是第一版先把边界缩小，确保我们知道它到底会做什么。
+
+### 0.4 示例一：查看电脑配置为什么不需要审批
+
+`system_info` 只能调用写死的系统查询方式，模型不能偷偷替换成其他命令。返回结果还会主动删除序列号、
+Hardware UUID、用户名、MAC 地址、环境变量等隐私字段。
+
+```mermaid
+sequenceDiagram
+    participant You as 你
+    participant Agent as MiniClaw
+    participant Policy as 权限门卫
+    participant Tool as system_info
+    participant Model as DeepSeek
+
+    You->>Agent: 帮我看看电脑配置
+    Agent->>Model: 你准备怎么处理？
+    Model-->>Agent: 调用 system_info
+    Agent->>Policy: 这次调用可以吗？
+    Policy-->>Agent: 只读工具，允许
+    Agent->>Tool: 读取 OS、CPU、内存、硬盘、GPU
+    Tool-->>Agent: 返回脱敏后的结构化结果
+    Agent->>Model: 根据这些真实数据回答
+    Model-->>You: 你的电脑是……
+```
+
+### 0.5 示例二：为什么 Agent 不能随便读你的整个 Home 目录
+
+Workspace 可以理解成给 Agent 划出的“工作桌”。它可以处理桌面上的项目文件，但不能翻你家的保险柜。
+
+```mermaid
+flowchart LR
+    REQUEST["模型想读取一个路径"] --> INSIDE{"路径在 Workspace 里吗？"}
+    INSIDE -->|"否"| OUTSIDE["拒绝：越过工作区围栏"]
+    INSIDE -->|"是"| SECRET{"是 .env、SSH Key 或凭据吗？"}
+    SECRET -->|"是"| BLOCK["拒绝：敏感文件"]
+    SECRET -->|"否"| LINK{"符号链接跳到外面了吗？"}
+    LINK -->|"是"| OUTSIDE
+    LINK -->|"否"| READ["允许读取"]
+```
+
+比如项目里的 `README.md` 可以读；即使 `.env` 也在项目目录里，仍然不能读。这样模型 API Key 不会被
+Agent 自己拿出来放进对话或命令输出。
+
+### 0.6 示例三：运行命令时你会看到什么
+
+MiniClaw 不接收一整段 Shell 字符串，而是把命令拆成“程序 + 参数”：
+
+```text
+program = "git"
+args = ["status", "--short"]
+```
+
+这样门卫能准确看到要启动哪个程序、带哪些参数。第一次运行默认会暂停并给你一个审批 ID。
+
+```mermaid
+sequenceDiagram
+    participant You as 你
+    participant Agent as MiniClaw
+    participant DB as SQLite
+    participant Command as run_command
+
+    You->>Agent: 运行 git status --short
+    Agent->>Agent: 检查程序、参数、工作目录和禁止名单
+    Agent->>DB: 保存待审批动作和参数指纹
+    Agent-->>You: 需要批准，Approval ID = 42
+    You->>Agent: miniclaw approvals approve 42
+    Agent->>DB: 确认 ID、有效期和参数都没变
+    Agent->>Command: 只执行原来的 git status --short
+    Command-->>Agent: 返回 stdout 和 stderr
+    Agent-->>You: 根据命令结果回答
+```
+
+所谓“参数指纹”，就是把工具名和完整参数算成 SHA-256。你批准的是
+`git status --short`，模型后来多加一个 `--force`，指纹就会变化，旧批准不能复用。
+
+### 0.7 三种权限结果：绿灯、黄灯、红灯
+
+```mermaid
+flowchart TD
+    ACTION["模型提出一个工具动作"] --> FORBIDDEN{"命中硬禁止吗？"}
+    FORBIDDEN -->|"是"| RED["红灯：直接拒绝，批准也不能绕过"]
+    FORBIDDEN -->|"否"| SAFE{"只读且在安全范围内吗？"}
+    SAFE -->|"是"| GREEN["绿灯：自动执行"]
+    SAFE -->|"否"| RULE{"已经有精确允许规则吗？"}
+    RULE -->|"是"| GREEN
+    RULE -->|"否"| YELLOW["黄灯：保存动作，等你批准"]
+```
+
+| 灯 | 典型例子 | 含义 |
+| --- | --- | --- |
+| 绿灯 | 查看配置、读普通文件、搜索代码 | 可以自动做，但仍记录日志 |
+| 黄灯 | 写文件、访问外网、运行普通命令 | 先暂停，等你确认这一次 |
+| 红灯 | 读密钥、sudo、上传、删除、git push | 默认彻底禁止，审批也不能放行 |
+
+### 0.8 为什么要保存 ToolRun、Approval 和 Audit
+
+因为个人 Agent 是长期在线的。它今天改了一个文件，明天你需要知道：是谁要求的、模型调用了哪个工具、
+当时的参数是什么、你是否批准、最终成功还是失败。
+
+```mermaid
+flowchart LR
+    MESSAGE["你的消息"] --> TURN["Turn：这一轮任务"]
+    TURN --> TOOLRUN["ToolRun：具体工具动作"]
+    TOOLRUN --> APPROVAL["Approval：是否经过你批准"]
+    TOOLRUN --> RESULT["Tool Message：执行结果"]
+    TURN --> ANSWER["Assistant Message：最终回答"]
+    TOOLRUN --> AUDIT["Audit：脱敏操作轨迹"]
+    MESSAGE --> DB[("SQLite")]
+    TURN --> DB
+    TOOLRUN --> DB
+    APPROVAL --> DB
+    RESULT --> DB
+    ANSWER --> DB
+    AUDIT --> DB
+```
+
+如果进程在高风险动作执行到一半时崩溃，状态会记录为 `interrupted`，重启后不会自动再执行一次。这能避免
+“上次到底有没有改成功”不确定时又重复产生副作用。
+
+### 0.9 我们会按什么顺序开发
+
+不会一次写完几十个文件再一起调试，而是每一段都先跑通一个真实闭环。
+
+```mermaid
+flowchart LR
+    P21["P2.1 先会安全地看\n电脑配置、文件和代码"] --> P22["P2.2 再会改文件\n加入审批和续执行"]
+    P22 --> P23["P2.3 再会跑命令\n限制程序、参数和环境"]
+    P23 --> P24["P2.4 再会访问网页\n阻断内网与恶意跳转"]
+    P24 --> P25["P2.5 最后做恢复、审计\n完整文档和真实冒烟"]
+```
+
+每一步都遵循同一个节奏：
+
+```text
+先写一个会失败的测试
+    -> 确认它确实因为功能不存在而失败
+    -> 写最少代码让它通过
+    -> 跑相关测试和全部测试
+    -> 写对应工程文档
+    -> 提交
+```
+
+### 0.10 你应该怎么读后面的技术章节
+
+| 如果你想知道 | 建议阅读 |
+| --- | --- |
+| 最终能做什么 | 第 1、3、13、21 节 |
+| 为什么不是直接 Fork OpenClaw | 第 4、5 节 |
+| 整体代码怎么连接 | 第 6、7、8、9 节 |
+| 权限和审批怎么保证安全 | 第 10、11、12、17 节 |
+| 数据保存在哪里 | 第 15、16、18 节 |
+| 会创建哪些代码文件 | 第 19 节 |
+| 怎么证明不是“看起来能用” | 第 20、21、22 节 |
+
+第一次阅读时可以跳过 Python 接口、JSON Schema、SQL 和完整测试矩阵。它们不是让你背的，而是开发时
+用来防止我们写着写着改变设计。
 
 ## 1. 结论先行
 
@@ -176,6 +416,9 @@ Policy 的学习价值很低，排障时还要跨语言和跨进程。
 结论：采用。它最符合“个人项目 + 学习 + 未来企业 Agent 工作方向”的目标。
 
 ## 6. Phase 2 总体架构
+
+说人话：这张图是在说明“用户入口、模型、门卫、工具和数据库怎么接起来”。无论以后消息来自 CLI 还是
+飞书，最后都走同一个 Agent、同一个权限门卫和同一份操作记录，不会出现 CLI 安全、飞书却能绕过的情况。
 
 ```mermaid
 flowchart LR
@@ -371,6 +614,9 @@ flowchart TD
 
 ## 10. Policy 模型
 
+说人话：Policy 就是门卫。它不负责真的读取文件或运行命令，只负责在执行前给出一个明确结论：绿灯
+`allow`、红灯 `deny`，或者黄灯 `require_approval`。
+
 ### 10.1 两轴策略
 
 `security` 决定能力上限：
@@ -437,6 +683,9 @@ timeout_seconds = 30
 未知 Tool、未知规则类型、损坏规则 JSON、无法解析路径或程序都按 deny 处理。
 
 ## 11. Approval 设计
+
+说人话：Approval 不是给 Agent 永久管理员权限，而是让你看清楚“哪个工具、哪些参数、这一次要做什么”
+以后再签字。批准内容发生任何变化，都必须重新申请。
 
 ### 11.1 为什么不挂起协程
 
@@ -784,6 +1033,9 @@ max_response_bytes = 2097152
 项都增加环境变量。Phase 2 默认不提供 `MINICLAW_TOOLS_FULL_ACCESS=1` 之类一键关闭安全门的开关。
 
 ## 15. 持久化与事务
+
+说人话：每次工具动作都要有一张可以追溯的“电子小票”。数据库事务保证不会出现文件已经改了，但审批
+和操作记录却没保存下来的半截状态。
 
 ### 15.1 复用现有 Schema
 
