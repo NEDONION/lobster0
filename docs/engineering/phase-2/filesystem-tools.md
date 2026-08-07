@@ -2,7 +2,7 @@
 
 > 状态：`write_file`、`edit_file`、严格 `[tools]` 配置和 Workspace 写边界已经进入代码并通过测试
 >
-> 当前门禁：194/194 tests、10/10 offline Agent cases、Ruff PASS
+> 当前仓库门禁：201/201 tests、10/10 offline Agent cases、Ruff PASS；本模块首次退出门禁为 194 tests
 >
 > 重要边界：Approval 生命周期和 CLI 续执行尚未接通，因此两个写 Tool 暂时没有注册到生产 `chat`；当前用户不能通过模型直接写文件
 
@@ -225,4 +225,4 @@ git diff --check
 - 新文件使用 hard-link 实现原子 no-clobber，因此要求 Workspace 和临时文件位于同一文件系统；临时文件固定创建在目标目录。
 - 当前不支持创建目录、删除、移动、regex replace、模糊 patch 或批量编辑。
 - 当前生产 CLI 仍只注册 4 个只读 Tool；P2.2B 完成参数绑定 Approval 和 child Turn 后才注册写 Tool。
-- 下一开发点是 `ApprovalRepository + ApprovalService + ToolExecution.approval_id`，不是继续扩大文件功能。
+- 参数绑定 `ApprovalRepository + ToolExecution.approval_id` 已在 P2.2B 完成；下一开发点是 waiting Turn、CLI 决策和 child Turn 续执行，不是继续扩大文件功能。

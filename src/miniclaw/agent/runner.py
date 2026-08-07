@@ -180,7 +180,7 @@ class AgentRunner:
             )
         else:
             assert context is not None
-            result = await self._executor.execute(context, call)
+            result = (await self._executor.execute(context, call)).model_text
         return ModelMessage(role="tool", content=result, tool_call_id=call.call_id)
 
 

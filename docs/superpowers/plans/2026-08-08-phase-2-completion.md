@@ -206,7 +206,7 @@ Commit: `feat(files): 实现 atomic write_file 与 exact edit_file`
 - Produces: `ApprovalError` with stable codes `not_found`, `not_owner`, `expired`, `already_decided`, `hash_mismatch`.
 - Consumes: existing `_arguments_json()` and `_arguments_hash()` canonical encoder.
 
-- [ ] **Step 1: Write RED hash/state tests**
+- [x] **Step 1: Write RED hash/state tests**
 
 ```python
 def test_argument_hash_is_order_independent_and_tool_bound(self) -> None:
@@ -224,17 +224,17 @@ def test_concurrent_consume_has_one_winner(self) -> None:
 
 Also test owner mismatch, TTL expiry, changed stored arguments, restart with a new repository instance, deny without execution, and no raw content in audit metadata.
 
-- [ ] **Step 2: Run RED**
+- [x] **Step 2: Run RED**
 
 Run: `uv run python -m unittest tests.test_approvals -v`
 
 Expected: ImportError for `miniclaw.policy.approvals`.
 
-- [ ] **Step 3: Implement SQLite conditional transitions**
+- [x] **Step 3: Implement SQLite conditional transitions**
 
 Use `BEGIN IMMEDIATE` for consume. `create_waiting()` inserts a waiting ToolRun, pending Approval and `approval.created` audit atomically. `consume()` recomputes the tool-name-bound hash from `arguments_json` and performs `approved -> consumed` plus `waiting_approval -> running` only when owner and unexpired hash match.
 
-- [ ] **Step 4: Make Executor return a typed outcome**
+- [x] **Step 4: Make Executor return a typed outcome**
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -245,7 +245,7 @@ class ToolExecution:
 
 Normal allow/deny returns `approval_id=None`. `REQUIRE_APPROVAL` calls `create_waiting()` and returns a deterministic approval-required JSON result carrying only Approval ID, tool name and redacted summary.
 
-- [ ] **Step 5: Verify and commit**
+- [x] **Step 5: Verify and commit**
 
 Run: `uv run python -m unittest tests.test_approvals tests.test_tool_executor -v && uv run ruff check .`
 
