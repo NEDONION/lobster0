@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 from unittest import mock
 
 from textual.containers import VerticalScroll
+from textual.events import Paste
 from textual.widgets import Button, Collapsible, Markdown, Static, TextArea
 
 from miniclaw.agent.events import RunEvent
@@ -275,7 +276,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_turn_restores_long_submitted_text_exactly(self) -> None:
         """长输入在 Provider 失败后必须逐字回填，不能静默丢失。"""
-        text = "很长的粘贴内容\n" + "数据" * 32_768
+        text = "长文本\n" + "数" * 250_000
         runtime = cast(
             "AgentRuntime",
             SimpleNamespace(
@@ -292,7 +293,9 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
         async with app.run_test() as pilot:
             composer = app.query_one("#composer", TextArea)
-            composer.load_text(text)
+            await composer._on_paste(Paste(text))
+            await pilot.pause()
+            self.assertEqual(composer.text, text)
             await pilot.press("enter")
             await app.workers.wait_for_complete()
             await pilot.pause()
