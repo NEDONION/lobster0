@@ -10,7 +10,9 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [{ name = "MiniClaw contributors" }]
-dependencies = []
+dependencies = [
+  "httpx>=0.28,<1",
+]
 
 [project.optional-dependencies]
 dev = [

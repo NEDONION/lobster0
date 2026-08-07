@@ -15,6 +15,7 @@ from miniclaw.providers.base import (
     StreamHandler,
     ToolCall,
 )
+from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
 
 __all__ = [
     "JsonValue",
@@ -22,6 +23,7 @@ __all__ = [
     "ModelProvider",
     "ModelRequest",
     "ModelResponse",
+    "OpenAICompatibleProvider",
     "ProviderAuthenticationError",
     "ProviderError",
     "ProviderProtocolError",
