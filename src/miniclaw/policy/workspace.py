@@ -83,7 +83,10 @@ def _contains(root: Path, path: Path) -> bool:
 def _resolve(path: Path) -> Path:
     """解析路径并把底层异常转换成不含本机细节的稳定错误。"""
     try:
-        return path.resolve(strict=False)
+        try:
+            return path.resolve(strict=True)
+        except FileNotFoundError:
+            return path.resolve(strict=False)
     except (OSError, RuntimeError, ValueError):
         raise WorkspaceAccessError(
             "workspace_escape",
