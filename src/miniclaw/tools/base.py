@@ -99,7 +99,13 @@ class ToolResult:
                 "message": self.error_message,
                 "retryable": self.retryable,
             }
-        return json.dumps(body, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+        return json.dumps(
+            body,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
 
 
 class Tool(Protocol):

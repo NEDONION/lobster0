@@ -1,6 +1,7 @@
 """执行有上限的模型与顺序 Tool Call 循环。"""
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 
 from miniclaw.providers.base import (
@@ -78,12 +79,15 @@ class AgentRunner:
         on_text: StreamHandler | None = None,
         *,
         tool_context: ToolContext | None = None,
+        on_intermediate: Callable[[tuple[ModelMessage, ...]], None] | None = None,
     ) -> AgentRunResult:
         """执行模型与工具循环，直到获得非空最终回答。
 
         Args:
             request: 初始上下文、Tool Schema 与生成预算。
             on_text: 可选的最终可见文本流回调，由 Provider 施加背压。
+            tool_context: 当前 Tool 不可由模型伪造的运行边界。
+            on_intermediate: 每批 Tool Call/Result 完成后的同步持久化回调。
 
         Returns:
             最终回答、实际模型调用轮数与累计 Token 用量。
@@ -99,10 +103,20 @@ class AgentRunner:
         input_tokens = 0
         output_tokens = 0
         provider_request_id: str | None = None
+        seen_tool_call_ids: set[str] = set()
+        round_chunks: list[str] = []
+
+        async def capture_text(chunk: str) -> None:
+            round_chunks.append(chunk)
 
         for iteration in range(1, self._max_iterations + 1):
             current = replace(request, messages=tuple(messages))
-            response = await self._provider.complete(current, on_text)
+            round_chunks.clear()
+
+            response = await self._provider.complete(
+                current,
+                capture_text if on_text is not None else None,
+            )
             input_tokens += response.input_tokens or 0
             output_tokens += response.output_tokens or 0
             provider_request_id = response.provider_request_id or provider_request_id
@@ -110,6 +124,9 @@ class AgentRunner:
             if not response.tool_calls:
                 if not response.content.strip():
                     raise EmptyModelResponseError("model returned an empty final response")
+                if on_text is not None:
+                    for chunk in round_chunks:
+                        await on_text(chunk)
                 return AgentRunResult(
                     content=response.content,
                     iterations=iteration,
@@ -124,16 +141,28 @@ class AgentRunner:
                     f"agent reached the model iteration limit ({self._max_iterations})"
                 )
 
+            call_ids = [call.call_id for call in response.tool_calls]
+            if (
+                any(not call_id.strip() for call_id in call_ids)
+                or len(set(call_ids)) != len(call_ids)
+                or not seen_tool_call_ids.isdisjoint(call_ids)
+            ):
+                raise AgentError("model returned an empty or duplicate tool call id")
+            seen_tool_call_ids.update(call_ids)
+
             if self._executor is not None and tool_context is None:
                 raise AgentError("tool context is required")
 
             assistant_message = _assistant_tool_message(response)
+            batch_start = len(intermediate_messages)
             messages.append(assistant_message)
             intermediate_messages.append(assistant_message)
             for call in response.tool_calls:
                 tool_message = await self._execute_tool(call, tool_context)
                 messages.append(tool_message)
                 intermediate_messages.append(tool_message)
+            if on_intermediate is not None:
+                on_intermediate(tuple(intermediate_messages[batch_start:]))
 
         raise AgentLoopLimitError("agent reached an unexpected loop state")
 

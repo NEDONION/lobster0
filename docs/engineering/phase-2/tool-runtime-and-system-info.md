@@ -76,7 +76,8 @@ flowchart TD
 - Tool 输出长度上限；
 - 内部异常脱敏；
 - Agent Loop 的真实 ToolExecutor 集成；
-- Assistant Tool Call、Tool Result、最终回答的原子持久化；
+- 每批 Assistant Tool Call/Result 原子持久化，最终回答单独完成 Turn；
+- 最终模型轮失败时仍保留已执行 Tool 的消息轨迹；
 - 下一 Turn 恢复结构化工具历史；
 - macOS/Linux 的只读 `system_info`；
 - CLI 生产装配与离线两轮 HTTP/SSE 端到端测试。
@@ -106,7 +107,7 @@ src/miniclaw/
 │   ├── __init__.py
 │   └── engine.py           # 风险等级 → allow/deny/require_approval
 ├── storage/
-│   ├── conversations.py    # 中间 Tool 消息和最终回答原子保存
+│   ├── conversations.py    # Tool 消息批次、最终回答和完整 Turn 边界读取
 │   └── tooling.py          # ToolRun 与 Audit 原子状态迁移
 └── tools/
     ├── base.py             # Tool Contract
@@ -588,8 +589,10 @@ sequenceDiagram
     S->>R: request(tools=runner.tool_schemas, tool_context=...)
     R->>E: execute ToolCall
     E-->>R: Tool Result
-    R-->>S: final + intermediate_messages
-    S->>DB: save intermediate + final + complete Turn
+    R-->>S: completed Tool message batch
+    S->>DB: atomically append assistant call + tool results
+    R-->>S: final answer
+    S->>DB: save final + complete Turn
     S-->>C: TurnResult
 ```
 
@@ -604,8 +607,9 @@ tool       # tool_call_id + Tool Result JSON
 assistant  # 最终可见回答
 ```
 
-中间消息、最终 Assistant、Token、runtime snapshot 和 completed 状态位于同一个事务。最终写入失败不会留下
-半条 Tool 对话。
+每一批 Assistant Tool Call 与对应 Tool Result 在同一个事务写入。这样第二轮 Provider 失败时，已经执行的
+Tool 不会只存在于 ToolRun/Audit 而从消息回放中消失。最终 Assistant、Token、runtime snapshot 和
+completed 状态使用另一个完成事务；如果最终模型失败，Turn 进入 failed，但已完成的 Tool 消息批次仍保留。
 
 ### 13.2 下一轮恢复
 
@@ -617,6 +621,9 @@ ToolCall(call_id=..., name=..., arguments=...)
 
 Tool Message 恢复 `tool_call_id`。如果 metadata 缺字段、类型错误，或者 Tool Message 没有 call ID，抛
 `ConversationDataError`，不会把损坏历史发送给 Provider。
+
+最近历史的 `limit=20` 是软上限：如果第 20 条落在一个 Turn 中间，Repository 会补齐该 Turn 更早的消息，
+避免把孤立 Tool Result 或缺少结果的 Assistant Tool Call 发给 Provider。
 
 ## 14. CLI 生产装配
 
@@ -655,10 +662,11 @@ flowchart TD
     G --> H["8. 写 ToolRun running + tool.started"]
     H --> I["9. 固定系统查询 + 输出白名单"]
     I --> J["10. 写 succeeded + tool.succeeded"]
-    J --> K["11. Tool Message 回传 Provider"]
-    K --> L["12. Provider SSE 返回最终回答"]
-    L --> M["13. 原子保存中间消息与 completed Turn"]
-    M --> N["14. CLI 打印回答"]
+    J --> K["11. 原子保存 Tool 消息批次"]
+    K --> L["12. Tool Message 回传 Provider"]
+    L --> M["13. Provider SSE 返回最终回答"]
+    M --> N["14. 保存最终回答并 complete Turn"]
+    N --> O["15. CLI 打印回答"]
 ```
 
 ## 16. 错误行为速查
@@ -671,8 +679,11 @@ flowchart TD
 | critical | `denied` | 不执行 |
 | 固定查询部分失败 | 成功结果 + unavailable | succeeded |
 | Tool 编程异常 | `tool_failed`，无原始异常 | failed |
+| ToolResult 类型/JSON 非法 | `tool_failed`，无原始值 | failed，不留 running |
 | 结果太大 | `tool_result_too_large` | failed |
+| Tool call ID 为空或重复 | `AgentError`，执行前拒绝 | 同批不创建 ToolRun |
 | 用户取消 | `CancelledError` 继续向上 | ToolRun interrupted，Turn cancelled |
+| 最终模型轮失败 | 原 ProviderError | 保留已完成 Tool 消息，Turn failed |
 | 历史 metadata 损坏 | `ConversationDataError` | 当前 Turn failed |
 | 模型第 8 轮仍调 Tool | `AgentLoopLimitError` | 最后一批 Tool 不执行 |
 
@@ -681,12 +692,12 @@ flowchart TD
 | 测试文件 | 关键验证 |
 | --- | --- |
 | `test_tool_contract.py` | Schema、稳定 JSON、Registry 重名 |
-| `test_system_info.py` | macOS 字段、隐私排除、参数拒绝、局部失败、固定 argv |
-| `test_tool_executor.py` | allow、ToolRun/Audit、异常脱敏、取消、大小上限、approval |
-| `test_agent_runner.py` | Executor 集成、中间消息、上下文要求、循环上限 |
+| `test_system_info.py` | macOS/Linux 字段、隐私排除、参数拒绝、局部失败、固定 argv |
+| `test_tool_executor.py` | allow、ToolRun/Audit、异常/非法结果脱敏、取消、大小上限、approval |
+| `test_agent_runner.py` | Executor、中间消息、重复 call ID、最终轮回调、循环上限 |
 | `test_context.py` | Tool Schema 和禁止编造规则 |
-| `test_conversations.py` | Tool 消息与最终回答原子保存 |
-| `test_turn.py` | 完整 Tool 纵切、下一 Turn 恢复、损坏 metadata 拒绝 |
+| `test_conversations.py` | Tool 消息批次、最终回答、完整 Turn 边界历史 |
+| `test_turn.py` | 完整纵切、失败后轨迹、下一 Turn 恢复、损坏 metadata 拒绝 |
 | `test_cli_chat.py` | 真实 loopback HTTP/SSE 两轮调用与 SQLite 轨迹 |
 
 聚焦验证：
@@ -769,7 +780,10 @@ sqlite3 ~/.miniclaw/miniclaw.db \
 - [x] Tool 输出有大小上限；
 - [x] 取消留下 interrupted；
 - [x] ToolRun 与 Audit 原子写入；
-- [x] Assistant Tool Call 与 Tool Message 原子保存；
+- [x] 每批 Assistant Tool Call 与 Tool Message 原子保存；
+- [x] 最终模型失败仍保留已执行 Tool 的消息轨迹；
+- [x] 历史软上限不截断 Tool Turn；
+- [x] 空或重复 Tool call ID 在执行前拒绝；
 - [x] 损坏历史不发送给 Provider；
 - [x] medium/high 默认不执行；
 - [x] critical 默认拒绝；

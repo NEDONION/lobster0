@@ -113,6 +113,26 @@ class _ApprovalTool(_BrokenTool):
     )
 
 
+class _InvalidResultTool(_BrokenTool):
+    """返回 JSON 不允许的非有限浮点数。"""
+
+    definition = ToolDefinition(
+        name="invalid_result",
+        description="Return an invalid result.",
+        parameters={"type": "object", "properties": {}, "additionalProperties": False},
+        risk=ToolRisk.LOW,
+    )
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """模拟违反 ToolResult JSON 契约的插件。"""
+        del context, arguments
+        return ToolResult.success({"value": float("nan")})
+
+
 class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
     """验证 Tool 只能经过 Policy 和持久化执行入口。"""
 
@@ -233,6 +253,19 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         with self.database.connect_read_only() as connection:
             count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
         self.assertEqual(count, 0)
+
+    async def test_invalid_tool_result_is_redacted_and_marks_run_failed(self) -> None:
+        """ToolResult 编码失败也必须收口，不能留下 running ToolRun。"""
+        result = await self.executor(_InvalidResultTool()).execute(
+            self.context,
+            ToolCall("call_invalid_result", "invalid_result", {}),
+        )
+
+        self.assertEqual(json.loads(result)["error"]["code"], "tool_failed")
+        self.assertNotIn("NaN", result)
+        with self.database.connect_read_only() as connection:
+            status = connection.execute("SELECT status FROM tool_runs").fetchone()[0]
+        self.assertEqual(status, "failed")
 
 
 if __name__ == "__main__":

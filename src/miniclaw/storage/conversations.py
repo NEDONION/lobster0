@@ -135,7 +135,7 @@ class MessageRepository:
             limit: 最多返回的严格正整数条数。
 
         Returns:
-            最多 ``limit`` 条按递增消息 ID 排列的不可变记录。
+            按递增消息 ID 排列的不可变记录；为补齐最早 Turn 时可略多于 ``limit``。
 
         Raises:
             ValueError: limit 不是正整数。
@@ -148,7 +148,15 @@ class MessageRepository:
                 "SELECT * FROM messages WHERE session_id = ? ORDER BY id DESC LIMIT ?",
                 (session_id, limit),
             ).fetchall()
-        return tuple(_message_from_row(row) for row in reversed(rows))
+            ordered = list(reversed(rows))
+            if ordered and ordered[0]["turn_id"] is not None:
+                prefix = connection.execute(
+                    "SELECT * FROM messages "
+                    "WHERE session_id = ? AND turn_id = ? AND id < ? ORDER BY id",
+                    (session_id, ordered[0]["turn_id"], ordered[0]["id"]),
+                ).fetchall()
+                ordered = [*prefix, *ordered]
+        return tuple(_message_from_row(row) for row in ordered)
 
 
 class TurnRepository:
@@ -234,6 +242,38 @@ class TurnRepository:
             row = connection.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
         return _turn_from_row(row)
 
+    def append_intermediate_messages(
+        self,
+        turn_id: int,
+        session_id: int,
+        messages: tuple[ModelMessage, ...],
+    ) -> None:
+        """原子保存一个已完成的 Assistant Tool Call/Result 批次。"""
+        if not messages:
+            return
+        now = _utc_now().isoformat()
+        with self._database.connect() as connection:
+            running = connection.execute(
+                """
+                SELECT 1 FROM turns
+                WHERE id = ? AND session_id = ? AND status = 'running'
+                """,
+                (turn_id, session_id),
+            ).fetchone()
+            if running is None:
+                raise ConversationStateError("Turn is not running")
+            _insert_intermediate_messages(
+                connection,
+                turn_id,
+                session_id,
+                messages,
+                now,
+            )
+            connection.execute(
+                "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                (now, session_id),
+            )
+
     def complete_with_assistant_message(
         self,
         turn_id: int,
@@ -277,44 +317,13 @@ class TurnRepository:
         )
         metadata = _json_text({"provider_request_id": provider_request_id})
         with self._database.connect() as connection:
-            for message in intermediate_messages:
-                if message.role == "assistant":
-                    intermediate_metadata = _json_text(
-                        {
-                            "tool_calls": [
-                                {
-                                    "call_id": call.call_id,
-                                    "name": call.name,
-                                    "arguments": call.arguments,
-                                }
-                                for call in message.tool_calls
-                            ],
-                            "reasoning_content": message.reasoning_content,
-                        }
-                    )
-                elif message.role == "tool":
-                    intermediate_metadata = "{}"
-                else:
-                    raise ConversationStateError(
-                        "intermediate message must be assistant or tool"
-                    )
-                connection.execute(
-                    """
-                    INSERT INTO messages (
-                        session_id, turn_id, role, content, tool_call_id,
-                        metadata_json, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        session_id,
-                        turn_id,
-                        message.role,
-                        message.content,
-                        message.tool_call_id,
-                        intermediate_metadata,
-                        now,
-                    ),
-                )
+            _insert_intermediate_messages(
+                connection,
+                turn_id,
+                session_id,
+                intermediate_messages,
+                now,
+            )
             cursor = connection.execute(
                 """
                 INSERT INTO messages (
@@ -436,6 +445,52 @@ class TurnRepository:
                 raise ConversationStateError("Turn cannot enter terminal state")
             row = connection.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
         return _turn_from_row(row)
+
+
+def _insert_intermediate_messages(
+    connection: sqlite3.Connection,
+    turn_id: int,
+    session_id: int,
+    messages: tuple[ModelMessage, ...],
+    created_at: str,
+) -> None:
+    """在调用方事务内保存合法的 Assistant/Tool 中间消息。"""
+    for message in messages:
+        if message.role == "assistant":
+            metadata = _json_text(
+                {
+                    "tool_calls": [
+                        {
+                            "call_id": call.call_id,
+                            "name": call.name,
+                            "arguments": call.arguments,
+                        }
+                        for call in message.tool_calls
+                    ],
+                    "reasoning_content": message.reasoning_content,
+                }
+            )
+        elif message.role == "tool":
+            metadata = "{}"
+        else:
+            raise ConversationStateError("intermediate message must be assistant or tool")
+        connection.execute(
+            """
+            INSERT INTO messages (
+                session_id, turn_id, role, content, tool_call_id,
+                metadata_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                turn_id,
+                message.role,
+                message.content,
+                message.tool_call_id,
+                metadata,
+                created_at,
+            ),
+        )
 
 
 def _session_from_row(row: sqlite3.Row) -> Session:

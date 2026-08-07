@@ -43,7 +43,7 @@ class ConversationRepositoryTest(unittest.TestCase):
         self.assertEqual(first.account_id, "local")
 
     def test_recent_messages_are_returned_oldest_to_newest_after_limit(self) -> None:
-        """SQL limit 应选择最新记录，但 Context 必须按对话时间正序接收。"""
+        """软上限选择最新记录，并补齐最早 Turn 后按时间正序返回。"""
         session = self.sessions.get_or_create_cli(self.owner.id, "default")
         for index in range(3):
             turn = self.turns.create_with_user_message(
@@ -69,11 +69,71 @@ class ConversationRepositoryTest(unittest.TestCase):
         self.assertEqual(
             [(message.role, message.content) for message in recent],
             [
+                ("user", "user-1"),
                 ("assistant", "assistant-1"),
                 ("user", "user-2"),
                 ("assistant", "assistant-2"),
             ],
         )
+
+    def test_recent_limit_never_splits_a_tool_turn(self) -> None:
+        """消息软上限命中 Tool Turn 中间时，必须补齐该 Turn 的前半段。"""
+        session = self.sessions.get_or_create_cli(self.owner.id, "turn-boundary")
+        tool_turn = self.turns.create_with_user_message(
+            session.id,
+            "event-tool",
+            "deepseek-v4-pro",
+            "查看配置",
+        )
+        self.turns.mark_running(tool_turn.id)
+        self.turns.complete_with_assistant_message(
+            tool_turn.id,
+            session.id,
+            "配置结果",
+            intermediate_messages=(
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(ToolCall("call_1", "system_info", {}),),
+                ),
+                ModelMessage(
+                    role="tool",
+                    content='{"ok":true}',
+                    tool_call_id="call_1",
+                ),
+            ),
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-tool",
+            iterations=2,
+            finish_reason="stop",
+        )
+        plain_turn = self.turns.create_with_user_message(
+            session.id,
+            "event-plain",
+            "deepseek-v4-pro",
+            "继续",
+        )
+        self.turns.mark_running(plain_turn.id)
+        self.turns.complete_with_assistant_message(
+            plain_turn.id,
+            session.id,
+            "好的",
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-plain",
+            iterations=1,
+            finish_reason="stop",
+        )
+
+        recent = self.messages.list_recent(session.id, limit=3)
+
+        self.assertEqual(
+            [message.role for message in recent],
+            ["user", "assistant", "tool", "assistant", "user", "assistant"],
+        )
+        self.assertEqual(recent[1].metadata["tool_calls"][0]["call_id"], "call_1")
+        self.assertEqual(recent[2].tool_call_id, "call_1")
 
     def test_completion_writes_assistant_usage_and_snapshot_atomically(self) -> None:
         """Assistant Message 与 completed Turn 必须在同一事务中可见。"""

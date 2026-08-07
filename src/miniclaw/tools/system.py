@@ -98,7 +98,7 @@ def _collect_system_info(sections: list[JsonValue]) -> dict[str, JsonValue]:
     if "cpu" in requested:
         model = hardware.get("chip") if system == "Darwin" else _linux_cpu_model()
         data["cpu"] = {"model": model or "unknown", "logical_cores": os.cpu_count()}
-        if system == "Darwin" and (not hardware_available or not model):
+        if not model:
             unavailable.append("cpu")
     if "memory" in requested:
         total = hardware.get("memory_bytes") if system == "Darwin" else _physical_memory_bytes()

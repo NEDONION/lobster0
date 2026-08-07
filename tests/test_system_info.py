@@ -142,6 +142,24 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
+    async def test_missing_linux_cpu_model_is_marked_unavailable(self) -> None:
+        """Linux 读取不到 CPU 型号时不能只返回 unknown 而假装分区完整。"""
+        tool = SystemInfoTool()
+        with (
+            mock.patch("miniclaw.tools.system.platform.system", return_value="Linux"),
+            mock.patch("miniclaw.tools.system._linux_cpu_model", return_value=None),
+            mock.patch("miniclaw.tools.system.os.cpu_count", return_value=4),
+        ):
+            result = await tool.execute(
+                self.context,
+                tool.validate({"sections": ["cpu"]}),
+            )
+
+        self.assertTrue(result.ok)
+        self.assertIsInstance(result.data, dict)
+        assert isinstance(result.data, dict)
+        self.assertEqual(result.data["unavailable_sections"], ["cpu"])
+
 
 if __name__ == "__main__":
     unittest.main()

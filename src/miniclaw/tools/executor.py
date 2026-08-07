@@ -62,12 +62,15 @@ class ToolExecutor:
         started = time.monotonic()
         try:
             result = await tool.execute(context, arguments)
+            if not isinstance(result, ToolResult):
+                raise TypeError("tool returned an invalid result")
+            model_text = result.to_model_text(call.name)
         except asyncio.CancelledError:
             self._runs.interrupt(run_id, _elapsed_ms(started))
             raise
         except Exception:  # noqa: BLE001 - 内部异常必须在 Tool 边界脱敏
             result = ToolResult.failure("tool_failed", "tool execution failed")
-        model_text = result.to_model_text(call.name)
+            model_text = result.to_model_text(call.name)
         if len(model_text) > self._result_max_chars:
             result = ToolResult.failure(
                 "tool_result_too_large",

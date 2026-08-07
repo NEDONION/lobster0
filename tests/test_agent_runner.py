@@ -189,6 +189,73 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(AgentError):
             await AgentRunner(provider, executor).run(request(*executor.schemas))
 
+    async def test_duplicate_tool_call_ids_in_one_batch_execute_nothing(self) -> None:
+        """同一模型响应复用 call ID 时必须在任何 Tool 执行前拒绝。"""
+        duplicate = (
+            ToolCall("call_same", "echo", {"text": "first"}),
+            ToolCall("call_same", "echo", {"text": "second"}),
+        )
+        provider = FakeProvider((response("", tool_calls=duplicate),))
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        with self.assertRaises(AgentError):
+            await AgentRunner(provider, executor).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+            )
+
+        self.assertEqual(tool.executions, 0)
+        with self.database.connect_read_only() as connection:
+            count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(count, 0)
+
+    async def test_later_round_cannot_reuse_previous_tool_call_id(self) -> None:
+        """后续模型轮次复用旧 call ID 时，不能再次执行同一动作。"""
+        call = ToolCall("call_reused", "echo", {"text": "once"})
+        provider = FakeProvider(
+            (
+                response("", tool_calls=(call,)),
+                response("", tool_calls=(call,)),
+            )
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        with self.assertRaises(AgentError):
+            await AgentRunner(provider, executor).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+            )
+
+        self.assertEqual(tool.executions, 1)
+        with self.database.connect_read_only() as connection:
+            count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(count, 1)
+
+    async def test_text_callback_only_receives_final_model_round(self) -> None:
+        """Tool 前的草稿 content 不能被 Channel 当成最终答案发送。"""
+        call = ToolCall("call_stream", "echo", {"text": "hello"})
+        provider = FakeProvider(
+            (
+                response("checking", tool_calls=(call,)),
+                response("done"),
+            )
+        )
+        executor = self.executor(_EchoTool())
+        visible: list[str] = []
+
+        async def on_text(chunk: str) -> None:
+            visible.append(chunk)
+
+        await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            on_text,
+            tool_context=self.tool_context,
+        )
+
+        self.assertEqual(visible, ["done"])
+
     async def test_unknown_tool_becomes_structured_result_then_model_can_finish(self) -> None:
         """未注册工具不能让进程崩溃，应作为确定性 Tool Result 回传模型。"""
         call = ToolCall("call_missing", "missing", {})

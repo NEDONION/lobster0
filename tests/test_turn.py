@@ -14,7 +14,12 @@ from miniclaw.bootstrap import initialize_state
 from miniclaw.config import WorkspaceConfig
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.engine import PolicyEngine
-from miniclaw.providers.base import ModelResponse, ProviderAuthenticationError, ToolCall
+from miniclaw.providers.base import (
+    ModelResponse,
+    ProviderAuthenticationError,
+    ProviderServerError,
+    ToolCall,
+)
 from miniclaw.storage.conversations import (
     ConversationDataError,
     MessageRepository,
@@ -207,6 +212,51 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ConversationDataError):
             _model_message(stored)
+
+    async def test_provider_failure_after_tool_keeps_executed_message_trace(self) -> None:
+        """第二轮模型失败时，已经执行的 Tool Call/Result 不能从回放中消失。"""
+        call = ToolCall("call_before_failure", "system_info", {})
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(call,),
+                    reasoning_content="need actual data",
+                    finish_reason="tool_calls",
+                    input_tokens=5,
+                    output_tokens=2,
+                    provider_request_id="req_tool",
+                ),
+                ProviderServerError("model provider server error"),
+            )
+        )
+        executor = ToolExecutor(
+            ToolRegistry((SystemInfoTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+        )
+        service = self.service(provider, AgentRunner(provider, executor))
+
+        with (
+            mock.patch(
+                "miniclaw.tools.system._collect_system_info",
+                return_value={"cpu": {"model": "Test CPU"}, "unavailable_sections": []},
+            ),
+            self.assertRaises(ProviderServerError),
+        ):
+            await service.handle(self.owner.id, "查看配置", "failed-after-tool")
+
+        session = self.sessions.get_or_create_cli(self.owner.id, "failed-after-tool")
+        turn = self.turns.list_recent(session.id, limit=1)[0]
+        history = self.messages.list_recent(session.id)
+        self.assertEqual(turn.status, "failed")
+        self.assertEqual(
+            [message.role for message in history],
+            ["user", "assistant", "tool"],
+        )
+        with self.database.connect_read_only() as connection:
+            tool_status = connection.execute("SELECT status FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool_status, "succeeded")
 
 
 if __name__ == "__main__":

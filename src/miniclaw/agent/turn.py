@@ -142,12 +142,16 @@ class TurnService:
                 request,
                 on_text,
                 tool_context=tool_context,
+                on_intermediate=lambda batch: self._turns.append_intermediate_messages(
+                    turn.id,
+                    session.id,
+                    batch,
+                ),
             )
             self._turns.complete_with_assistant_message(
                 turn.id,
                 session.id,
                 result.content,
-                intermediate_messages=result.intermediate_messages,
                 input_tokens=result.input_tokens,
                 output_tokens=result.output_tokens,
                 provider_request_id=result.provider_request_id,
