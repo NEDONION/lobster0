@@ -104,6 +104,16 @@ class ToolContractTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "duplicate tool name: echo"):
             ToolRegistry((_EchoTool(), _EchoTool()))
 
+    def test_run_command_schema_teaches_direct_execution_and_macos_app_launch(self) -> None:
+        """模型必须知道 run_command 只执行单个程序，并用 open -a 启动 macOS 应用。"""
+        schema = ToolRegistry((RunCommandTool(),)).schemas[0]
+        description = schema["function"]["description"].casefold()
+
+        self.assertIn("single executable", description)
+        self.assertIn("never use a shell", description)
+        self.assertIn("request approval", description)
+        self.assertIn("open -a", description)
+
     def test_tool_result_uses_stable_model_json_without_traceback(self) -> None:
         """成功和失败结果必须是模型可解析且不含内部异常的 JSON。"""
         success = json.loads(ToolResult.success({"value": 1}).to_model_text("echo"))

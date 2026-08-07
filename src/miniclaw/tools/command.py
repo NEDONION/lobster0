@@ -30,7 +30,12 @@ class RunCommandTool:
 
     definition = ToolDefinition(
         name="run_command",
-        description="Run an approved executable with exact arguments in the workspace.",
+        description=(
+            "Run a single executable directly with exact arguments in the workspace. "
+            "Never use a shell, pipeline, redirection, or inline code. Call this tool to "
+            "request approval when needed instead of claiming it is unavailable. On macOS, "
+            'launch an application with open -a: program "open", args ["-a", "Application"].'
+        ),
         parameters={
             "type": "object",
             "properties": {
