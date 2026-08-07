@@ -3,7 +3,9 @@
 import os
 import re
 import stat
+from bisect import insort
 from collections.abc import Iterator
+from heapq import nsmallest
 from pathlib import Path, PurePath
 
 from miniclaw.policy.workspace import WorkspaceAccessError, WorkspaceGuard
@@ -78,12 +80,10 @@ class GlobTool:
         except WorkspaceAccessError as error:
             return ToolResult.failure(error.code, str(error))
 
-        matches: list[str] = []
-        for display, _ in _candidate_files(context, guard, root, pattern):
-            matches.append(display)
-            if len(matches) > limit:
-                break
-        matches.sort()
+        matches = nsmallest(
+            limit + 1,
+            (display for display, _, _ in _candidates(context, guard, root, pattern)),
+        )
         return ToolResult.success(
             {"matches": matches[:limit], "truncated": len(matches) > limit}
         )
@@ -162,62 +162,88 @@ class GrepTool:
         matches: list[dict[str, JsonValue]] = []
         files_scanned = 0
         bytes_read = 0
-        for display, path in _candidate_files(context, guard, root, file_glob):
+        for display, path, is_file in _candidates(context, guard, root, file_glob):
+            if not is_file:
+                continue
             if files_scanned >= _MAX_GREP_FILES or bytes_read >= _MAX_GREP_TOTAL_BYTES:
-                return _grep_result(matches, truncated=True)
-            files_scanned += 1
-            text, consumed, budget_exhausted = _read_search_text(
+                return _grep_result(matches, limit, truncated=True)
+            text, consumed, budget_exhausted, was_read = _read_search_text(
                 path,
                 _MAX_GREP_TOTAL_BYTES - bytes_read,
             )
+            if was_read:
+                files_scanned += 1
             bytes_read += consumed
             if budget_exhausted:
-                return _grep_result(matches, truncated=True)
+                return _grep_result(matches, limit, truncated=True)
             if text is None:
                 continue
             for line_number, line in enumerate(text.splitlines(), start=1):
                 if regex.search(line) is None:
                     continue
-                matches.append(
-                    {"path": display, "line": line_number, "text": line[:_MAX_GREP_TEXT]}
+                insort(
+                    matches,
+                    {"path": display, "line": line_number, "text": line[:_MAX_GREP_TEXT]},
+                    key=_grep_sort_key,
                 )
-                if len(matches) >= limit:
-                    return _grep_result(matches, truncated=True)
-        return _grep_result(matches, truncated=False)
+                if len(matches) > limit + 1:
+                    matches.pop()
+        return _grep_result(matches, limit, truncated=len(matches) > limit)
 
 
-def _candidate_files(
+def _candidates(
     context: ToolContext,
     guard: WorkspaceGuard,
     root: Path,
     pattern: str,
-) -> Iterator[tuple[str, Path]]:
-    """稳定遍历匹配的安全普通文件，不跟随目录 symlink。"""
+) -> Iterator[tuple[str, Path, bool]]:
+    """稳定遍历匹配的安全文件与目录，并标记普通文件。"""
     for directory, directory_names, file_names in os.walk(
         root,
         followlinks=False,
         onerror=lambda _error: None,
     ):
         current = Path(directory)
-        directory_names[:] = sorted(
-            name for name in directory_names if not _unsafe_directory(current / name)
-        )
+        safe_directories: list[str] = []
+        for name in sorted(directory_names):
+            candidate = current / name
+            if _unsafe_directory(candidate):
+                continue
+            safe = _safe_candidate(context, guard, root, candidate)
+            if safe is None:
+                continue
+            display, resolved, mode = safe
+            if not stat.S_ISDIR(mode):
+                continue
+            safe_directories.append(name)
+            if _glob_matches(display, pattern):
+                yield display, resolved, False
+        directory_names[:] = safe_directories
         for name in sorted(file_names):
             candidate = current / name
-            try:
-                relative = candidate.relative_to(root).as_posix()
-            except ValueError:
+            safe = _safe_candidate(context, guard, root, candidate)
+            if safe is None:
                 continue
-            if not _glob_matches(relative, pattern):
+            display, resolved, mode = safe
+            if not stat.S_ISREG(mode) or not _glob_matches(display, pattern):
                 continue
-            try:
-                resolved = guard.resolve_read(context, str(candidate))
-                if not stat.S_ISREG(resolved.stat().st_mode):
-                    continue
-                display = guard.display(context, resolved, root=root)
-            except (OSError, ValueError, WorkspaceAccessError):
-                continue
-            yield display, resolved
+            yield display, resolved, True
+
+
+def _safe_candidate(
+    context: ToolContext,
+    guard: WorkspaceGuard,
+    root: Path,
+    candidate: Path,
+) -> tuple[str, Path, int] | None:
+    """通过 Guard 解析候选并返回 root 相对展示路径、规范路径和文件模式。"""
+    try:
+        resolved = guard.resolve_read(context, str(candidate))
+        mode = resolved.stat().st_mode
+        display = guard.display(context, resolved, root=root)
+    except (OSError, ValueError, WorkspaceAccessError):
+        return None
+    return display, resolved, mode
 
 
 def _unsafe_directory(path: Path) -> bool:
@@ -239,28 +265,63 @@ def _glob_matches(path: str, pattern: str) -> bool:
         pattern = pattern[3:]
 
 
-def _read_search_text(path: Path, remaining: int) -> tuple[str | None, int, bool]:
-    """在单文件和总字节上限内读取 UTF-8 文本，返回读取量与总量阻断标记。"""
+def _read_search_text(path: Path, remaining: int) -> tuple[str | None, int, bool, bool]:
+    """有界读取 UTF-8 文本，并返回读取量、总量阻断和实际读取标记。"""
     try:
         with path.open("rb") as file:
-            size = os.fstat(file.fileno()).st_size
-            if size > _MAX_GREP_FILE_BYTES:
-                return None, 0, False
-            if size > remaining:
-                return None, 0, True
-            content = file.read(min(size + 1, remaining))
+            before = os.fstat(file.fileno())
+            if before.st_size > _MAX_GREP_FILE_BYTES:
+                return None, 0, False, False
+            if before.st_size > remaining:
+                return None, 0, True, False
+            content = file.read(min(before.st_size + 1, remaining))
+            consumed = len(content)
+            try:
+                after = os.fstat(file.fileno())
+            except OSError:
+                return None, consumed, False, True
     except OSError:
-        return None, 0, False
-    consumed = len(content)
-    if consumed > _MAX_GREP_FILE_BYTES or b"\0" in content:
-        return None, consumed, False
+        return None, 0, False, False
+    if (
+        consumed != before.st_size
+        or consumed > _MAX_GREP_FILE_BYTES
+        or after.st_size > _MAX_GREP_FILE_BYTES
+        or _stable_file_metadata(before) != _stable_file_metadata(after)
+        or b"\0" in content
+    ):
+        return None, consumed, False, True
     try:
-        return content.decode("utf-8"), consumed, False
+        return content.decode("utf-8"), consumed, False, True
     except UnicodeDecodeError:
-        return None, consumed, False
+        return None, consumed, False, True
 
 
-def _grep_result(matches: list[dict[str, JsonValue]], *, truncated: bool) -> ToolResult:
+def _stable_file_metadata(value: os.stat_result) -> tuple[int, ...]:
+    """返回读取前后必须保持不变且排除 atime 的 fd metadata。"""
+    return (
+        value.st_dev,
+        value.st_ino,
+        value.st_mode,
+        value.st_nlink,
+        value.st_uid,
+        value.st_gid,
+        value.st_size,
+        value.st_mtime_ns,
+        value.st_ctime_ns,
+    )
+
+
+def _grep_sort_key(item: dict[str, JsonValue]) -> tuple[str, int]:
+    """返回 grep 结果的稳定路径与行号排序键。"""
+    return str(item["path"]), int(item["line"])
+
+
+def _grep_result(
+    matches: list[dict[str, JsonValue]],
+    limit: int,
+    *,
+    truncated: bool,
+) -> ToolResult:
     """按路径和行号稳定排序 grep 结果并设置截断标记。"""
-    matches.sort(key=lambda item: (str(item["path"]), int(item["line"])))
-    return ToolResult.success({"matches": matches, "truncated": truncated})
+    matches.sort(key=_grep_sort_key)
+    return ToolResult.success({"matches": matches[:limit], "truncated": truncated})

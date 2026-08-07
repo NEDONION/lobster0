@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from miniclaw.providers.base import JsonValue
@@ -65,9 +66,19 @@ class GlobToolTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(
             all_files.data["matches"],
-            ["nested/child.py", "nested/note.txt", "top.py"],
+            ["nested", "nested/child.py", "nested/note.txt", "top.py"],
         )
         self.assertEqual(python_files.data["matches"], ["nested/child.py", "top.py"])
+
+    async def test_glob_includes_safe_directories(self) -> None:
+        """glob 必须把安全目录与目录内的普通文件一起返回。"""
+        folder = self.workspace / "folder"
+        folder.mkdir()
+        (folder / "note.txt").write_text("text", encoding="utf-8")
+
+        result = await self._glob({"pattern": "**/*"})
+
+        self.assertEqual(result.data["matches"], ["folder", "folder/note.txt"])
 
     async def test_glob_enforces_result_limit_and_reports_truncation(self) -> None:
         """超过返回上限时只交付排序后的窗口并标记截断。"""
@@ -77,6 +88,19 @@ class GlobToolTest(unittest.IsolatedAsyncioTestCase):
         result = await self._glob({"pattern": "*.txt", "limit": 2})
 
         self.assertEqual(result.data, {"matches": ["a.txt", "b.txt"], "truncated": True})
+
+    async def test_glob_applies_limit_after_global_path_sort(self) -> None:
+        """遍历较晚的字典序小路径必须进入 glob 的有限结果窗口。"""
+        for name in ("a", "aa", "ab"):
+            (self.workspace / name).mkdir()
+        (self.workspace / "a" / "0.txt").write_text("", encoding="utf-8")
+
+        result = await self._glob({"pattern": "**/*", "limit": 2})
+
+        self.assertEqual(
+            result.data,
+            {"matches": ["a", "a/0.txt"], "truncated": True},
+        )
 
     def test_validate_defaults_definition_and_rejects_invalid_parameters(self) -> None:
         """公开 Schema、默认值和相对 glob 参数必须保持一致。"""
@@ -226,14 +250,23 @@ class GrepToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.data["matches"]), 1)
         self.assertEqual(result.data["matches"][0]["text"], line[:500])
 
-    async def test_match_limit_stops_search_and_marks_truncation(self) -> None:
-        """达到结果 limit 后必须立即停止并标记截断。"""
+    async def test_more_than_match_limit_marks_truncation(self) -> None:
+        """看到第 limit+1 个命中后必须标记截断。"""
         (self.workspace / "many.txt").write_text("hit\nhit\nhit\n", encoding="utf-8")
 
         result = await self._grep({"pattern": "hit", "limit": 2})
 
         self.assertEqual(len(result.data["matches"]), 2)
         self.assertTrue(result.data["truncated"])
+
+    async def test_exact_match_limit_is_not_truncated(self) -> None:
+        """命中数恰好等于 limit 时不能误报仍有未返回结果。"""
+        (self.workspace / "exact.txt").write_text("hit\nhit\n", encoding="utf-8")
+
+        result = await self._grep({"pattern": "hit", "limit": 2})
+
+        self.assertEqual(len(result.data["matches"]), 2)
+        self.assertFalse(result.data["truncated"])
 
     async def test_matches_are_sorted_by_path_then_line(self) -> None:
         """跨目录匹配结果必须按相对路径和行号稳定排序。"""
@@ -243,6 +276,24 @@ class GrepToolTest(unittest.IsolatedAsyncioTestCase):
         (nested / "a.txt").write_text("hit\n", encoding="utf-8")
 
         result = await self._grep({"pattern": "hit"})
+
+        self.assertEqual(
+            result.data["matches"],
+            [
+                {"path": "a/a.txt", "line": 1, "text": "hit"},
+                {"path": "z.txt", "line": 1, "text": "hit"},
+            ],
+        )
+
+    async def test_grep_applies_limit_after_global_match_sort(self) -> None:
+        """遍历较晚的字典序小命中必须进入 grep 的有限结果窗口。"""
+        (self.workspace / "z.txt").write_text("hit\n", encoding="utf-8")
+        (self.workspace / "zz.txt").write_text("hit\n", encoding="utf-8")
+        nested = self.workspace / "a"
+        nested.mkdir()
+        (nested / "a.txt").write_text("hit\n", encoding="utf-8")
+
+        result = await self._grep({"pattern": "hit", "limit": 2})
 
         self.assertEqual(
             result.data["matches"],
@@ -262,6 +313,23 @@ class GrepToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.data["matches"], [])
         self.assertTrue(result.data["truncated"])
 
+    async def test_only_actually_read_files_consume_file_limit(self) -> None:
+        """超大未读文件不能挤占 200 个实际读取文件的配额。"""
+        (self.workspace / "f000-large.txt").write_bytes(b"x" * (1024 * 1024 + 1))
+        for index in range(1, 201):
+            text = "needle" if index == 200 else "none"
+            (self.workspace / f"f{index:03}.txt").write_text(text, encoding="utf-8")
+
+        result = await self._grep({"pattern": "needle"})
+
+        self.assertEqual(
+            result.data,
+            {
+                "matches": [{"path": "f200.txt", "line": 1, "text": "needle"}],
+                "truncated": False,
+            },
+        )
+
     async def test_total_read_limit_stops_at_20_mib(self) -> None:
         """累计读取达到 20 MiB 后必须停止，不读取后续候选。"""
         content = b"x" * (1024 * 1024)
@@ -272,6 +340,75 @@ class GrepToolTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result.data["matches"], [])
         self.assertTrue(result.data["truncated"])
+
+    async def test_files_changed_during_read_are_skipped(self) -> None:
+        """fd 长度或稳定 metadata 在读取期间变化时不能搜索该内容。"""
+        candidate = self.workspace / "race.txt"
+        candidate.write_text("needle", encoding="utf-8")
+        actual = candidate.stat()
+        fields = (
+            "st_dev",
+            "st_ino",
+            "st_mode",
+            "st_nlink",
+            "st_uid",
+            "st_gid",
+            "st_size",
+            "st_mtime_ns",
+            "st_ctime_ns",
+        )
+
+        cases = (
+            (actual.st_size + 1, actual.st_size + 1, actual.st_mtime_ns),
+            (actual.st_size, actual.st_size + 1, actual.st_mtime_ns),
+            (actual.st_size, 1024 * 1024 + 1, actual.st_mtime_ns),
+            (actual.st_size, actual.st_size, actual.st_mtime_ns + 1),
+        )
+        for before_size, after_size, after_mtime in cases:
+            with self.subTest(
+                before_size=before_size,
+                after_size=after_size,
+                after_mtime=after_mtime,
+            ):
+                before = SimpleNamespace(**{field: getattr(actual, field) for field in fields})
+                after = SimpleNamespace(**{field: getattr(actual, field) for field in fields})
+                before.st_size = before_size
+                after.st_size = after_size
+                after.st_mtime_ns = after_mtime
+                with patch(
+                    "miniclaw.tools.search.os.fstat",
+                    side_effect=(before, after),
+                ):
+                    result = await self._grep({"pattern": "needle"})
+                self.assertEqual(result.data["matches"], [])
+
+    async def test_rejected_race_bytes_still_consume_total_budget(self) -> None:
+        """因 fd race 跳过的内容仍必须计入实际总读取字节。"""
+        race = self.workspace / "a-race.txt"
+        race.write_text("needle", encoding="utf-8")
+        (self.workspace / "z-good.txt").write_text("needle", encoding="utf-8")
+        before = race.stat()
+        fields = (
+            "st_dev",
+            "st_ino",
+            "st_mode",
+            "st_nlink",
+            "st_uid",
+            "st_gid",
+            "st_size",
+            "st_mtime_ns",
+            "st_ctime_ns",
+        )
+        after = SimpleNamespace(**{field: getattr(before, field) for field in fields})
+        after.st_mtime_ns += 1
+
+        with (
+            patch("miniclaw.tools.search.os.fstat", side_effect=(before, after)),
+            patch("miniclaw.tools.search._MAX_GREP_TOTAL_BYTES", 6),
+        ):
+            result = await self._grep({"pattern": "needle"})
+
+        self.assertEqual(result.data, {"matches": [], "truncated": True})
 
     async def test_disappearing_permission_and_symlink_loop_candidates_are_skipped(self) -> None:
         """候选 I/O 失败和 symlink loop 必须安全跳过且不泄露 OSError。"""
