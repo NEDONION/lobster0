@@ -12,6 +12,7 @@ from miniclaw.agent.turn import TurnService
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import AppConfig, load_config
 from miniclaw.evals.cases import EvalCase
+from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths, build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.policy.engine import PolicyEngine
@@ -27,6 +28,7 @@ from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
 from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
+from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
@@ -199,6 +201,7 @@ def _build_service(
     approvals: ApprovalRepository,
 ) -> TurnService:
     """按生产 CLI 的稳定顺序组装真实 Turn 与 Tool 依赖。"""
+    memory = MemoryStore(paths)
     executor = ToolExecutor(
         ToolRegistry(
             (
@@ -210,6 +213,8 @@ def _build_service(
                 GrepTool(),
                 HttpGetTool(),
                 RunCommandTool(),
+                ReadMemoryTool(memory),
+                ProposeMemoryTool(memory),
             )
         ),
         PolicyEngine(),
@@ -223,7 +228,7 @@ def _build_service(
         sessions=SessionRepository(database),
         messages=MessageRepository(database),
         turns=TurnRepository(database),
-        context=ContextBuilder(paths),
+        context=ContextBuilder(paths, memory),
         runner=AgentRunner(provider, executor, max_iterations=config.agent.max_tool_iterations),
         approvals=approvals,
         state_home=paths.home,
