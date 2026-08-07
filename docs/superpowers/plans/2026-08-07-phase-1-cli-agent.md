@@ -84,7 +84,7 @@ def test_invalid_dotenv_reports_line_without_secret_value(self) -> None:
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `.venv/bin/python -m unittest tests.test_env -v`  
+Run: `.venv/bin/python -m unittest tests.test_env -v`<br>
 Expected: import failure because `miniclaw.env` does not exist.
 
 - [ ] **Step 3: Implement the strict parser with the standard library**
@@ -134,9 +134,9 @@ Add a bootstrap assertion that a new state loads these exact values.
 
 - [ ] **Step 6: Run focused and full checks**
 
-Run: `.venv/bin/python -m unittest tests.test_env tests.test_bootstrap tests.test_config -v`  
-Expected: PASS.  
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/env.py tests/test_env.py src/miniclaw/bootstrap.py tests/test_bootstrap.py`  
+Run: `.venv/bin/python -m unittest tests.test_env tests.test_bootstrap tests.test_config -v`<br>
+Expected: PASS.<br>
+Run: `.venv/bin/ruff check --no-cache src/miniclaw/env.py tests/test_env.py src/miniclaw/bootstrap.py tests/test_bootstrap.py`<br>
 Expected: `All checks passed!`
 
 - [ ] **Step 7: Commit**
@@ -180,7 +180,7 @@ def test_model_contract_keeps_reasoning_for_tool_continuation(self) -> None:
 
 - [ ] **Step 2: Run the focused test and verify RED**
 
-Run: `.venv/bin/python -m unittest tests.test_provider_contracts -v`  
+Run: `.venv/bin/python -m unittest tests.test_provider_contracts -v`<br>
 Expected: import failure because `miniclaw.providers` does not exist.
 
 - [ ] **Step 3: Implement immutable contracts and narrow error hierarchy**
@@ -209,9 +209,9 @@ Validate only at the remote-data parser boundary; the dataclasses remain transpa
 
 - [ ] **Step 5: Run tests and Ruff, then commit**
 
-Run: `.venv/bin/python -m unittest tests.test_provider_contracts -v`  
-Expected: PASS.  
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/providers tests/test_provider_contracts.py`  
+Run: `.venv/bin/python -m unittest tests.test_provider_contracts -v`<br>
+Expected: PASS.<br>
+Run: `.venv/bin/ruff check --no-cache src/miniclaw/providers tests/test_provider_contracts.py`<br>
 Expected: PASS.
 
 ```bash
@@ -243,7 +243,7 @@ dependencies = [
 ]
 ```
 
-Run: `uv sync --extra dev`  
+Run: `uv sync --extra dev`<br>
 Expected: lock file updated and editable package installed.
 
 - [ ] **Step 2: Write the failing SSE request/response test**
@@ -281,7 +281,7 @@ The real callback is async; the test uses an async collector rather than `list.a
 
 - [ ] **Step 3: Run the SSE test and verify RED**
 
-Run: `.venv/bin/python -m unittest tests.test_openai_compatible_provider -v`  
+Run: `.venv/bin/python -m unittest tests.test_openai_compatible_provider -v`<br>
 Expected: import failure for `openai_compatible`.
 
 - [ ] **Step 4: Implement request serialization and SSE aggregation**
@@ -330,9 +330,9 @@ Map 401/403, 429, 5xx, timeout/connect, and other invalid responses to the exact
 
 - [ ] **Step 8: Run focused/full tests and commit**
 
-Run: `.venv/bin/python -m unittest tests.test_provider_contracts tests.test_openai_compatible_provider -v`  
-Expected: PASS.  
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/providers tests/test_provider_contracts.py tests/test_openai_compatible_provider.py`  
+Run: `.venv/bin/python -m unittest tests.test_provider_contracts tests.test_openai_compatible_provider -v`<br>
+Expected: PASS.<br>
+Run: `.venv/bin/ruff check --no-cache src/miniclaw/providers tests/test_provider_contracts.py tests/test_openai_compatible_provider.py`<br>
 Expected: PASS.
 
 ```bash
@@ -383,8 +383,8 @@ def test_context_orders_identity_files_before_history(self) -> None:
 
 - [ ] **Step 2: Verify RED, then implement minimal deterministic context**
 
-Run: `.venv/bin/python -m unittest tests.test_context -v`  
-Expected: import failure.  
+Run: `.venv/bin/python -m unittest tests.test_context -v`<br>
+Expected: import failure.<br>
 Implementation reads UTF-8 `SOUL.md` and `USER.md`, uses one built-in MiniClaw system preamble, preserves history order, and raises `ContextError` with paths but no file content on I/O errors.
 
 - [ ] **Step 3: Write AgentRunner failing tests**
@@ -406,8 +406,8 @@ Add separate tests for empty final content, unknown tool result, exactly eight t
 
 - [ ] **Step 4: Verify RED, then implement the bounded loop**
 
-Run: `.venv/bin/python -m unittest tests.test_agent_runner -v`  
-Expected: import failure.  
+Run: `.venv/bin/python -m unittest tests.test_agent_runner -v`<br>
+Expected: import failure.<br>
 The runner appends one Assistant `ModelMessage` per Provider response, awaits handlers sequentially, appends JSON Tool messages, and never catches `asyncio.CancelledError`.
 
 - [ ] **Step 5: Write both module engineering documents**
@@ -416,9 +416,9 @@ The runner appends one Assistant `ModelMessage` per Provider response, awaits ha
 
 - [ ] **Step 6: Run focused/full checks and commit**
 
-Run: `.venv/bin/python -m unittest tests.test_context tests.test_agent_runner -v`  
-Expected: PASS.  
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/agent tests/fakes tests/test_context.py tests/test_agent_runner.py`  
+Run: `.venv/bin/python -m unittest tests.test_context tests.test_agent_runner -v`<br>
+Expected: PASS.<br>
+Run: `.venv/bin/ruff check --no-cache src/miniclaw/agent tests/fakes tests/test_context.py tests/test_agent_runner.py`<br>
 Expected: PASS.
 
 ```bash
@@ -471,8 +471,8 @@ Also test Session idempotency, recent-message chronological order, failed status
 
 - [ ] **Step 2: Verify RED, then implement parameterized repositories**
 
-Run: `.venv/bin/python -m unittest tests.test_conversations -v`  
-Expected: import failure.  
+Run: `.venv/bin/python -m unittest tests.test_conversations -v`<br>
+Expected: import failure.<br>
 Use one `Database.connect()` transaction for each state transition. Store timestamps as timezone-aware UTC ISO strings and runtime snapshot as compact JSON containing only model and provider request ID.
 
 - [ ] **Step 3: Write failing TurnService tests with FakeProvider**
@@ -492,8 +492,8 @@ Add Provider error → failed Turn and CancelledError → cancelled Turn tests. 
 
 - [ ] **Step 4: Verify RED, then implement TurnService**
 
-Run: `.venv/bin/python -m unittest tests.test_turn -v`  
-Expected: import failure.  
+Run: `.venv/bin/python -m unittest tests.test_turn -v`<br>
+Expected: import failure.<br>
 Flow: session → queued Turn/user Message → running → recent history → ContextBuilder → AgentRunner → atomic Assistant/usage completion. Catch known Agent/Provider/Context errors only; cancel separately; let database/programming errors propagate after the repository rollback.
 
 - [ ] **Step 5: Write storage and Turn engineering documents**
@@ -502,9 +502,9 @@ Flow: session → queued Turn/user Message → running → recent history → Co
 
 - [ ] **Step 6: Run focused/full checks and commit**
 
-Run: `.venv/bin/python -m unittest tests.test_conversations tests.test_turn -v`  
-Expected: PASS.  
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/storage/conversations.py src/miniclaw/agent/turn.py tests/test_conversations.py tests/test_turn.py`  
+Run: `.venv/bin/python -m unittest tests.test_conversations tests.test_turn -v`<br>
+Expected: PASS.<br>
+Run: `.venv/bin/ruff check --no-cache src/miniclaw/storage/conversations.py src/miniclaw/agent/turn.py tests/test_conversations.py tests/test_turn.py`<br>
 Expected: PASS.
 
 ```bash
@@ -553,8 +553,8 @@ Assertions: exit 0, stdout is the model answer, SQLite has one completed Turn an
 
 - [ ] **Step 3: Verify RED, then assemble chat dependencies**
 
-Run: `.venv/bin/python -m unittest tests.test_cli_chat -v`  
-Expected: `chat` is not a recognized command.  
+Run: `.venv/bin/python -m unittest tests.test_cli_chat -v`<br>
+Expected: `chat` is not a recognized command.<br>
 Implementation loads `.env` only for chat, validates initialized state and key, creates one Provider, closes it in `finally`, maps stable errors to exit codes, and prints only final Assistant content.
 
 - [ ] **Step 4: Add the minimal interactive loop**

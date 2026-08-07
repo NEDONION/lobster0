@@ -1,8 +1,8 @@
 # MiniClaw Phase 1：CLI Agent 闭环设计
 
-> 状态：已实现并通过离线门禁与真实 DeepSeek 验证  
-> 日期：2026-08-07  
-> 基线：Phase 0，commit `8afad33`  
+> 状态：已实现并通过离线门禁与真实 DeepSeek 验证<br>
+> 日期：2026-08-07<br>
+> 基线：Phase 0，commit `8afad33`<br>
 > 当前开发分支：`phase-1-cli-agent`
 
 ## 1. 目标
