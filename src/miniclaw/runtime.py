@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
@@ -65,6 +66,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     )
     approvals = ApprovalRepository(database)
     rules = PolicyRuleRepository(database)
+    messages = MessageRepository(database)
     configured_command_rules = tuple(
         normalize_command(rule.program, rule.args, config.workspace.path)
         for rule in config.tools.run_command.allow_commands
@@ -118,15 +120,25 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     service = TurnService(
         model=config.agent.model,
         sessions=SessionRepository(database),
-        messages=MessageRepository(database),
+        messages=messages,
         turns=TurnRepository(database),
-        context=ContextBuilder(paths, memory),
+        context=ContextBuilder(
+            paths,
+            memory,
+            context_budget_tokens=config.agent.context_budget_tokens,
+        ),
         runner=AgentRunner(
             provider,
             executor,
             max_iterations=config.agent.max_tool_iterations,
         ),
         approvals=approvals,
+        compactor=ContextCompactor(
+            messages,
+            provider,
+            model=config.agent.model,
+            context_budget_tokens=config.agent.context_budget_tokens,
+        ),
         state_home=paths.home,
         workspace=config.workspace,
     )

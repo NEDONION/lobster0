@@ -1,6 +1,7 @@
 """CLI Session、Message 与 Turn 的参数化 SQLite Repository。"""
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -63,6 +64,20 @@ class StoredTurn:
     runtime_snapshot: dict[str, JsonValue]
     error_code: str | None
     error_message: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StoredCompaction:
+    """表示引用原消息范围的持久会话摘要。"""
+
+    message_id: int
+    session_id: int
+    first_message_id: int
+    last_message_id: int
+    summary: str
+    model: str
+    content_hash: str
+    created_at: datetime
 
 
 class SessionRepository:
@@ -158,6 +173,168 @@ class MessageRepository:
                 ).fetchall()
                 ordered = [*prefix, *ordered]
         return tuple(_message_from_row(row) for row in ordered)
+
+    def latest_compaction(self, session_id: int) -> StoredCompaction | None:
+        """读取一个 Session 最新且结构有效的 compaction summary。"""
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                "SELECT * FROM messages "
+                "WHERE session_id = ? AND role = 'system' ORDER BY id DESC",
+                (session_id,),
+            ).fetchall()
+        for row in rows:
+            metadata = _json_object(row["metadata_json"])
+            if metadata.get("kind") == "compaction":
+                return _compaction_from_row(row, metadata)
+        return None
+
+    def list_context(self, session_id: int, limit: int = 200) -> tuple[StoredMessage, ...]:
+        """返回最新摘要和其覆盖范围之后的原始消息。
+
+        Args:
+            session_id: 当前会话 ID。
+            limit: 摘要后最多恢复的最近原始消息数。
+
+        Returns:
+            摘要在前、未压缩原消息按 ID 正序排列的上下文。
+        """
+        if type(limit) is not int or limit <= 0:
+            raise ValueError("message limit must be a positive integer")
+        compaction = self.latest_compaction(session_id)
+        if compaction is None:
+            return self.list_recent(session_id, limit=limit)
+        with self._database.connect_read_only() as connection:
+            summary_row = connection.execute(
+                "SELECT * FROM messages WHERE id = ? AND session_id = ?",
+                (compaction.message_id, session_id),
+            ).fetchone()
+            rows = connection.execute(
+                "SELECT * FROM messages "
+                "WHERE session_id = ? AND id > ? AND role != 'system' "
+                "ORDER BY id DESC LIMIT ?",
+                (session_id, compaction.last_message_id, limit),
+            ).fetchall()
+            ordered = list(reversed(rows))
+            if ordered and ordered[0]["turn_id"] is not None:
+                prefix = connection.execute(
+                    "SELECT * FROM messages "
+                    "WHERE session_id = ? AND role != 'system' AND turn_id = ? "
+                    "AND id > ? AND id < ? ORDER BY id",
+                    (
+                        session_id,
+                        ordered[0]["turn_id"],
+                        compaction.last_message_id,
+                        ordered[0]["id"],
+                    ),
+                ).fetchall()
+                ordered = [*prefix, *ordered]
+        if summary_row is None:
+            raise ConversationDataError("compaction summary message is missing")
+        return (_message_from_row(summary_row), *(_message_from_row(row) for row in ordered))
+
+    def compaction_candidates(self, session_id: int) -> tuple[StoredMessage, ...]:
+        """选择摘要覆盖范围后的最旧连续且可压缩消息前缀。
+
+        最近两个 Turn 和任意 waiting approval Turn 都是保护边界；遇到第一个保护 Turn
+        后立即停止，不能跨过它继续覆盖后面的消息。
+        """
+        latest = self.latest_compaction(session_id)
+        covered_until = 0 if latest is None else latest.last_message_id
+        with self._database.connect_read_only() as connection:
+            recent = connection.execute(
+                "SELECT id FROM turns WHERE session_id = ? ORDER BY id DESC LIMIT 2",
+                (session_id,),
+            ).fetchall()
+            waiting = connection.execute(
+                "SELECT id FROM turns WHERE session_id = ? AND status = 'waiting_approval'",
+                (session_id,),
+            ).fetchall()
+            protected = {row[0] for row in (*recent, *waiting)}
+            rows = connection.execute(
+                "SELECT * FROM messages "
+                "WHERE session_id = ? AND id > ? AND role != 'system' ORDER BY id",
+                (session_id, covered_until),
+            ).fetchall()
+        candidates: list[StoredMessage] = []
+        for row in rows:
+            if row["turn_id"] in protected:
+                break
+            candidates.append(_message_from_row(row))
+        return tuple(candidates)
+
+    def save_compaction(
+        self,
+        session_id: int,
+        first_message_id: int,
+        last_message_id: int,
+        summary: str,
+        model: str,
+        content_hash: str,
+    ) -> StoredCompaction:
+        """原子插入一个引用原始消息范围的 system summary。
+
+        Raises:
+            ValueError: 覆盖范围、摘要、模型或哈希无效。
+            ConversationStateError: 范围不属于当前 Session 或与已有摘要倒退。
+        """
+        if (
+            type(first_message_id) is not int
+            or type(last_message_id) is not int
+            or first_message_id <= 0
+            or last_message_id < first_message_id
+            or not summary.strip()
+            or len(summary) > 20_000
+            or not model.strip()
+            or not re.fullmatch(r"[0-9a-f]{64}", content_hash)
+        ):
+            raise ValueError("invalid compaction summary")
+        now = _utc_now().isoformat()
+        metadata = _json_text(
+            {
+                "kind": "compaction",
+                "first_message_id": first_message_id,
+                "last_message_id": last_message_id,
+                "model": model,
+                "content_hash": content_hash,
+            }
+        )
+        with self._database.connect() as connection:
+            endpoints = connection.execute(
+                "SELECT id, role FROM messages "
+                "WHERE session_id = ? AND id IN (?, ?) ORDER BY id",
+                (session_id, first_message_id, last_message_id),
+            ).fetchall()
+            if (
+                len(endpoints) != (1 if first_message_id == last_message_id else 2)
+                or any(row["role"] == "system" for row in endpoints)
+            ):
+                raise ConversationStateError("compaction range is not valid")
+            rows = connection.execute(
+                "SELECT metadata_json FROM messages "
+                "WHERE session_id = ? AND role = 'system' ORDER BY id DESC",
+                (session_id,),
+            ).fetchall()
+            for row in rows:
+                previous = _json_object(row["metadata_json"])
+                if previous.get("kind") != "compaction":
+                    continue
+                previous_last = previous.get("last_message_id")
+                if type(previous_last) is not int or first_message_id > previous_last + 1:
+                    raise ConversationStateError("compaction range is not continuous")
+                if last_message_id <= previous_last:
+                    raise ConversationStateError("compaction range does not advance")
+                break
+            cursor = connection.execute(
+                "INSERT INTO messages ("
+                "session_id, role, content, metadata_json, created_at"
+                ") VALUES (?, 'system', ?, ?, ?)",
+                (session_id, summary.strip(), metadata, now),
+            )
+            row = connection.execute(
+                "SELECT * FROM messages WHERE id = ?",
+                (int(cursor.lastrowid),),
+            ).fetchone()
+        return _compaction_from_row(row, _json_object(row["metadata_json"]))
 
 
 class TurnRepository:
@@ -317,6 +494,7 @@ class TurnRepository:
         provider_request_id: str | None,
         iterations: int,
         finish_reason: str,
+        runtime_snapshot: dict[str, JsonValue] | None = None,
     ) -> StoredMessage:
         """在一个事务中插入 Assistant、Token、快照和 completed 状态。
 
@@ -341,6 +519,7 @@ class TurnRepository:
         now = _utc_now().isoformat()
         snapshot = _json_text(
             {
+                **(runtime_snapshot or {}),
                 "provider_request_id": provider_request_id,
                 "iterations": iterations,
                 "finish_reason": finish_reason,
@@ -395,10 +574,12 @@ class TurnRepository:
         output_tokens: int,
         provider_request_id: str | None,
         iterations: int,
+        runtime_snapshot: dict[str, JsonValue] | None = None,
     ) -> StoredTurn:
         """保存 waiting_approval 状态和恢复所需的最小运行快照。"""
         snapshot = _json_text(
             {
+                **(runtime_snapshot or {}),
                 "approval_id": approval_id,
                 "provider_request_id": provider_request_id,
                 "iterations": iterations,
@@ -584,6 +765,38 @@ def _message_from_row(row: sqlite3.Row) -> StoredMessage:
         provider_message_id=row["provider_message_id"],
         tool_call_id=row["tool_call_id"],
         metadata=_json_object(row["metadata_json"]),
+        created_at=datetime.fromisoformat(row["created_at"]),
+    )
+
+
+def _compaction_from_row(
+    row: sqlite3.Row,
+    metadata: dict[str, JsonValue],
+) -> StoredCompaction:
+    """把带 compaction metadata 的 system Message 收窄为强类型记录。"""
+    first = metadata.get("first_message_id")
+    last = metadata.get("last_message_id")
+    model = metadata.get("model")
+    content_hash = metadata.get("content_hash")
+    if (
+        type(first) is not int
+        or type(last) is not int
+        or first <= 0
+        or last < first
+        or not isinstance(model, str)
+        or not model
+        or not isinstance(content_hash, str)
+        or re.fullmatch(r"[0-9a-f]{64}", content_hash) is None
+    ):
+        raise ConversationDataError("compaction metadata is invalid")
+    return StoredCompaction(
+        message_id=row["id"],
+        session_id=row["session_id"],
+        first_message_id=first,
+        last_message_id=last,
+        summary=row["content"],
+        model=model,
+        content_hash=content_hash,
         created_at=datetime.fromisoformat(row["created_at"]),
     )
 

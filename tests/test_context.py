@@ -150,6 +150,50 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertIn("Instruction from charlie.", system)
         self.assertNotIn("Instruction from delta.", system)
 
+    def test_context_snapshot_records_memory_skills_and_compaction_hashes(self) -> None:
+        """进入模型的 Memory、Skill 与摘要版本必须同时进入可回放 snapshot。"""
+        summary = ModelMessage(
+            role="system",
+            content="Compacted goal and decisions.",
+            metadata={
+                "kind": "compaction",
+                "first_message_id": 1,
+                "last_message_id": 8,
+                "model": "deepseek-v4-pro",
+                "content_hash": "c" * 64,
+            },
+        )
+
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (summary, ModelMessage(role="user", content="请总结当前项目")),
+        )
+
+        snapshot = request.runtime_snapshot
+        self.assertEqual(len(snapshot["memory_hash"]), 64)
+        skills = snapshot["skills"]
+        assert isinstance(skills, list)
+        self.assertEqual(skills[0]["name"], "summarize")
+        self.assertEqual(len(skills[0]["content_hash"]), 64)
+        compaction = snapshot["compaction"]
+        assert isinstance(compaction, dict)
+        self.assertEqual(compaction["last_message_id"], 8)
+
+    def test_context_budget_drops_old_turns_but_never_current_user_message(self) -> None:
+        """摘要失败后的本地降级可以丢旧历史，但当前用户输入必须完整保留。"""
+        current = "current-user-message-must-stay"
+        request = ContextBuilder(self.paths, context_budget_tokens=400).build(
+            "deepseek-v4-pro",
+            (
+                ModelMessage(role="user", content="old-" + "x" * 2_000),
+                ModelMessage(role="assistant", content="old answer"),
+                ModelMessage(role="user", content=current),
+            ),
+        )
+
+        self.assertEqual(request.messages[-1].content, current)
+        self.assertFalse(any(message.content.startswith("old-") for message in request.messages))
+
     def test_visible_reasoning_follows_latest_user_language(self) -> None:
         """模型可见 reasoning 与回答应跟随 Owner 最新消息的主要语言。"""
         request = ContextBuilder(self.paths).build(

@@ -1,5 +1,6 @@
 """把 MiniClaw 身份文件和会话历史构造成模型请求。"""
 
+import json
 from pathlib import Path
 
 from miniclaw.memory.store import MemoryError, MemoryStore
@@ -37,15 +38,20 @@ class ContextBuilder:
         paths: StatePaths,
         memory: MemoryStore | None = None,
         skills: SkillLoader | None = None,
+        *,
+        context_budget_tokens: int = 32_000,
     ) -> None:
         """绑定一个已经初始化的 MiniClaw 状态目录。
 
         Args:
             paths: 提供 ``SOUL.md`` 与 ``USER.md`` 固定位置的路径集合。
         """
+        if type(context_budget_tokens) is not int or context_budget_tokens <= 0:
+            raise ValueError("context_budget_tokens must be a positive integer")
         self._paths = paths
         self._memory = memory or MemoryStore(paths)
         self._skills = skills or SkillLoader(paths.skills)
+        self._context_budget_tokens = context_budget_tokens
 
     def build(
         self,
@@ -95,7 +101,43 @@ class ContextBuilder:
                 + (f"\n\n## ACTIVE SKILLS\n{skill_text}" if skill_text else "")
             ),
         )
-        return ModelRequest(model=model, messages=(system, *history), tools=tools)
+        runtime_snapshot: dict[str, JsonValue] = {
+            "memory_hash": memory.content_hash,
+            "memory_documents": [
+                {
+                    "scope": document.scope,
+                    "content_hash": document.content_hash,
+                    "truncated": document.truncated,
+                }
+                for document in memory.documents
+            ],
+            "skills": [
+                {
+                    "name": skill.name,
+                    "version": skill.version,
+                    "content_hash": skill.content_hash,
+                }
+                for skill in skills
+            ],
+        }
+        compaction = _compaction_snapshot(history)
+        if compaction is not None:
+            runtime_snapshot["compaction"] = compaction
+        runtime_snapshot["context_estimated_tokens"] = _estimate_messages(
+            (system, *history),
+            tools,
+        )
+        return ModelRequest(
+            model=model,
+            messages=_fit_history(
+                system,
+                history,
+                tools,
+                input_limit=max(1, int(self._context_budget_tokens * 0.85)),
+            ),
+            tools=tools,
+            runtime_snapshot=runtime_snapshot,
+        )
 
     @staticmethod
     def _read_identity(path: Path) -> str:
@@ -104,3 +146,60 @@ class ContextBuilder:
             return path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
             raise ContextError(f"cannot read MiniClaw identity file {path}") from error
+
+
+def _compaction_snapshot(
+    history: tuple[ModelMessage, ...],
+) -> dict[str, JsonValue] | None:
+    """从最新持久 system message 提取有界 compaction 回放字段。"""
+    for message in reversed(history):
+        if message.role != "system" or message.metadata.get("kind") != "compaction":
+            continue
+        first = message.metadata.get("first_message_id")
+        last = message.metadata.get("last_message_id")
+        model = message.metadata.get("model")
+        content_hash = message.metadata.get("content_hash")
+        if (
+            type(first) is not int
+            or type(last) is not int
+            or not isinstance(model, str)
+            or not isinstance(content_hash, str)
+        ):
+            raise ContextError("compaction metadata is invalid")
+        return {
+            "first_message_id": first,
+            "last_message_id": last,
+            "model": model,
+            "content_hash": content_hash,
+        }
+    return None
+
+
+def _fit_history(
+    system: ModelMessage,
+    history: tuple[ModelMessage, ...],
+    tools: tuple[dict[str, JsonValue], ...],
+    *,
+    input_limit: int,
+) -> tuple[ModelMessage, ...]:
+    """按完整用户 Turn 丢弃最旧历史，同时保留摘要与当前用户消息。"""
+    prefix: list[ModelMessage] = []
+    tail = list(history)
+    while tail and tail[0].role == "system":
+        prefix.append(tail.pop(0))
+    while _estimate_messages((system, *prefix, *tail), tools) > input_limit:
+        user_indices = [index for index, message in enumerate(tail) if message.role == "user"]
+        if len(user_indices) < 2:
+            break
+        tail = tail[user_indices[1] :]
+    return (system, *prefix, *tail)
+
+
+def _estimate_messages(
+    messages: tuple[ModelMessage, ...],
+    tools: tuple[dict[str, JsonValue], ...],
+) -> int:
+    """估算消息正文与 Tool Schema 的总 Token。"""
+    characters = sum(len(message.content) for message in messages)
+    characters += len(json.dumps(tools, ensure_ascii=False, separators=(",", ":")))
+    return max(1, (characters + 3) // 4)

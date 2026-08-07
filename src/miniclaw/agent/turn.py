@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
+from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder, ContextError
 from miniclaw.agent.events import RunEvent, RunEventHandler, emit
 from miniclaw.agent.runner import (
@@ -67,6 +68,7 @@ class TurnService:
         context: ContextBuilder,
         runner: AgentRunner,
         approvals: ApprovalRepository | None = None,
+        compactor: ContextCompactor | None = None,
         state_home: Path,
         workspace: WorkspaceConfig,
     ) -> None:
@@ -89,6 +91,7 @@ class TurnService:
         self._context = context
         self._runner = runner
         self._approvals = approvals
+        self._compactor = compactor
         self._state_home = state_home
         self._workspace = workspace
 
@@ -138,13 +141,25 @@ class TurnService:
             )
             history = tuple(
                 _model_message(message)
-                for message in self._messages.list_recent(session.id, limit=20)
+                for message in self._messages.list_context(session.id)
             )
             request = self._context.build(
                 self._model,
                 history,
                 tools=self._runner.tool_schemas,
             )
+            if self._compactor is not None and self._compactor.should_compact(request):
+                compacted = await self._compactor.compact(session.id)
+                if compacted is not None:
+                    history = tuple(
+                        _model_message(message)
+                        for message in self._messages.list_context(session.id)
+                    )
+                    request = self._context.build(
+                        self._model,
+                        history,
+                        tools=self._runner.tool_schemas,
+                    )
             tool_context = ToolContext(
                 user_id=user_id,
                 session_id=session.id,
@@ -164,7 +179,12 @@ class TurnService:
                 ),
                 on_event=on_event,
             )
-            self._persist_result(turn.id, session.id, result)
+            self._persist_result(
+                turn.id,
+                session.id,
+                result,
+                request.runtime_snapshot,
+            )
             if result.status is AgentRunStatus.COMPLETED:
                 await emit(
                     on_event,
@@ -307,7 +327,12 @@ class TurnService:
                 ),
                 on_event=on_event,
             )
-            self._persist_result(child.id, parent.session_id, result)
+            self._persist_result(
+                child.id,
+                parent.session_id,
+                result,
+                request.runtime_snapshot,
+            )
             if result.status is AgentRunStatus.COMPLETED:
                 await emit(
                     on_event,
@@ -373,6 +398,7 @@ class TurnService:
         turn_id: int,
         session_id: int,
         result: AgentRunResult,
+        runtime_snapshot: dict[str, JsonValue],
     ) -> None:
         """把 Agent 正常完成或等待审批写为对应 Turn 状态。"""
         if result.status is AgentRunStatus.WAITING_APPROVAL:
@@ -385,6 +411,7 @@ class TurnService:
                 output_tokens=result.output_tokens,
                 provider_request_id=result.provider_request_id,
                 iterations=result.iterations,
+                runtime_snapshot=runtime_snapshot,
             )
             return
         self._turns.complete_with_assistant_message(
@@ -396,6 +423,7 @@ class TurnService:
             provider_request_id=result.provider_request_id,
             iterations=result.iterations,
             finish_reason=result.finish_reason,
+            runtime_snapshot=runtime_snapshot,
         )
 
 
@@ -474,6 +502,7 @@ def _model_message(message: StoredMessage) -> ModelMessage:
         tool_calls=tuple(calls),
         tool_call_id=message.tool_call_id,
         reasoning_content=reasoning_value,
+        metadata=message.metadata,
     )
 
 

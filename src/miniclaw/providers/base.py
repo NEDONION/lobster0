@@ -1,7 +1,7 @@
 """Agent Core 与模型服务之间的稳定异步数据契约。"""
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
@@ -49,6 +49,7 @@ class ModelMessage:
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
     reasoning_content: str | None = None
+    metadata: dict[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +61,7 @@ class ModelRequest:
     tools: tuple[dict[str, JsonValue], ...] = ()
     temperature: float | None = None
     max_output_tokens: int | None = None
+    runtime_snapshot: dict[str, JsonValue] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
