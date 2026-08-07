@@ -18,7 +18,7 @@ from miniclaw.agent.runner import (
     EmptyModelResponseError,
 )
 from miniclaw.config import WorkspaceConfig
-from miniclaw.policy.approvals import ApprovalError
+from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.providers.base import (
     JsonValue,
     ModelMessage,
@@ -219,7 +219,7 @@ class TurnService:
         user_id: int,
         approval_id: int,
         *,
-        approved: bool,
+        decision: ApprovalDecision,
         on_text: StreamHandler | None = None,
         on_event: RunEventHandler | None = None,
     ) -> TurnResult:
@@ -231,7 +231,9 @@ class TurnService:
         if parent.status != "waiting_approval":
             raise ApprovalError("already_decided", "approval Turn is not waiting")
 
+        approved = decision is not ApprovalDecision.DENY
         if approved:
+            self._approvals.validate_decision(user_id, approval_id, decision)
             if approval.status == "pending":
                 self._approvals.approve(user_id, approval_id)
             elif approval.status != "approved":
@@ -257,6 +259,8 @@ class TurnService:
                 model_text = await self._runner.execute_approved(
                     self._tool_context(user_id, parent.session_id, parent.id),
                     run,
+                    approval_id,
+                    decision,
                     on_event,
                 )
             else:

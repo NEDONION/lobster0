@@ -82,6 +82,12 @@ class NormalizedCommand:
     args: tuple[str, ...]
 
 
+def command_rule_is_persistable(command: NormalizedCommand) -> bool:
+    """只允许不携带 inline AppleScript 的精确命令成为持久规则。"""
+    name = Path(command.resolved_program).name.casefold()
+    return not (name == "osascript" and "-e" in command.args)
+
+
 def normalize_command(
     program: str,
     args: tuple[str, ...],

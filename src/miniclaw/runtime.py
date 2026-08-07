@@ -107,6 +107,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         runs,
         result_max_chars=config.agent.tool_result_max_chars,
         approvals=approvals,
+        policy_rules=rules,
         approval_ttl_seconds=config.tools.approval_ttl_seconds,
     )
     service = TurnService(

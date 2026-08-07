@@ -4,7 +4,12 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import cast
 
-from miniclaw.policy.command import CommandPolicyError, NormalizedCommand, normalize_command
+from miniclaw.policy.approvals import ApprovalDecision, available_approval_decisions
+from miniclaw.policy.command import (
+    CommandPolicyError,
+    NormalizedCommand,
+    normalize_command,
+)
 from miniclaw.policy.network import (
     NetworkPolicyError,
     NetworkRule,
@@ -36,6 +41,7 @@ class PolicyDecision:
     reason: str
     error_code: str = "denied"
     normalized_arguments: dict[str, JsonValue] | None = None
+    approval_modes: tuple[ApprovalDecision, ...] = ()
 
 
 class PolicyEngine:
@@ -56,8 +62,8 @@ class PolicyEngine:
             raise ValueError("invalid tool ask mode")
         self._security = security
         self._ask = ask
-        self._command_rules = frozenset(command_rules)
-        self._network_rules = frozenset(network_rules)
+        self._command_rules = set(command_rules)
+        self._network_rules = set(network_rules)
         self._network_resolver = network_resolver or default_resolver
 
     def authorize(
@@ -100,6 +106,10 @@ class PolicyEngine:
             PolicyAction.REQUIRE_APPROVAL,
             "approval_required",
             normalized_arguments=normalized_arguments,
+            approval_modes=available_approval_decisions(
+                definition.name,
+                normalized_arguments,
+            ),
         )
 
     def _authorize_command(
@@ -121,10 +131,16 @@ class PolicyEngine:
         }
         exact_match = normalized in self._command_rules
         action = self._supervised_action(exact_match)
+        approval_modes = (
+            available_approval_decisions("run_command", normalized_arguments)
+            if action is PolicyAction.REQUIRE_APPROVAL
+            else ()
+        )
         return PolicyDecision(
             action,
             "exact_command_rule" if exact_match else "command_policy",
             normalized_arguments=normalized_arguments,
+            approval_modes=approval_modes,
         )
 
     def _authorize_http(self, arguments: dict[str, JsonValue]) -> PolicyDecision:
@@ -143,11 +159,25 @@ class PolicyEngine:
             return PolicyDecision(PolicyAction.DENY, str(error), error.code)
         normalized_arguments = {**arguments, "url": target.url}
         exact_match = target.rule in self._network_rules
+        action = self._supervised_action(exact_match)
         return PolicyDecision(
-            self._supervised_action(exact_match),
+            action,
             "exact_hostname_rule" if exact_match else "network_policy",
             normalized_arguments=normalized_arguments,
+            approval_modes=(
+                available_approval_decisions("http_get", normalized_arguments)
+                if action is PolicyAction.REQUIRE_APPROVAL
+                else ()
+            ),
         )
+
+    def add_session_command(self, rule: NormalizedCommand) -> None:
+        """在当前 Runtime 内加入一条 exact-argv 规则。"""
+        self._command_rules.add(rule)
+
+    def add_session_network(self, rule: NetworkRule) -> None:
+        """在当前 Runtime 内加入一条 exact-hostname 规则。"""
+        self._network_rules.add(rule)
 
     def _supervised_action(self, exact_match: bool) -> PolicyAction:
         """实现 command/http 共用的 security × ask 状态表。"""

@@ -5,7 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.policy.command import CommandPolicyError, normalize_command
+from miniclaw.policy.command import (
+    CommandPolicyError,
+    command_rule_is_persistable,
+    normalize_command,
+)
 from miniclaw.policy.engine import PolicyAction, PolicyEngine
 from miniclaw.tools.base import ToolContext
 from miniclaw.tools.command import RunCommandTool
@@ -126,6 +130,21 @@ class CommandPolicyTest(unittest.TestCase):
                     engine.authorize(definition, context, arguments).action,
                     expected,
                 )
+
+    def test_persistent_command_rule_rejects_inline_applescript(self) -> None:
+        """Always 规则不能把动态 AppleScript 正文变成永久执行能力。"""
+        osascript = self.workspace / "osascript"
+        osascript.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        osascript.chmod(0o700)
+        inline = normalize_command(
+            str(osascript),
+            ("-e", 'tell application "Notes" to make new note'),
+            self.workspace,
+        )
+        safe = normalize_command(sys.executable, ("script.py",), self.workspace)
+
+        self.assertFalse(command_rule_is_persistable(inline))
+        self.assertTrue(command_rule_is_persistable(safe))
 
 if __name__ == "__main__":
     unittest.main()

@@ -10,11 +10,13 @@ from typing import cast
 from urllib.parse import urlsplit
 
 from miniclaw.policy.approvals import (
+    ApprovalDecision,
     ApprovalError,
+    available_approval_decisions,
     canonical_arguments_hash,
     canonical_arguments_json,
 )
-from miniclaw.policy.command import NormalizedCommand
+from miniclaw.policy.command import NormalizedCommand, command_rule_is_persistable
 from miniclaw.policy.engine import PolicyDecision
 from miniclaw.policy.network import NetworkPolicyError, NetworkRule, normalize_network_rule
 from miniclaw.providers.base import JsonValue, ToolCall
@@ -246,6 +248,31 @@ class ApprovalRepository:
         assert stored is not None
         return stored
 
+    def validate_decision(
+        self,
+        user_id: int,
+        approval_id: int,
+        decision: ApprovalDecision,
+    ) -> None:
+        """在任何批准或执行副作用前校验参数绑定的授权作用域。"""
+        self._expire_due(user_id, approval_id)
+        with self._database.connect_read_only() as connection:
+            row = _approval_join_row(connection, approval_id)
+        failure = _approval_access_error(row, user_id)
+        if failure is not None:
+            raise failure
+        if row["status"] not in {"pending", "approved"}:
+            raise ApprovalError("already_decided", "approval is not pending")
+        arguments = _decode_arguments(row["arguments_json"])
+        expected_hash = canonical_arguments_hash(row["tool_name"], arguments)
+        if (
+            expected_hash != row["arguments_hash"]
+            or expected_hash != row["tool_run_arguments_hash"]
+        ):
+            raise ApprovalError("hash_mismatch", "approval arguments no longer match")
+        if decision not in available_approval_decisions(row["tool_name"], arguments):
+            raise ApprovalError("scope_forbidden", "approval scope is not allowed")
+
     def deny(self, user_id: int, approval_id: int) -> StoredToolRun:
         """原子拒绝 pending Approval，并终止绑定 ToolRun。"""
         now = self._now()
@@ -437,6 +464,11 @@ class PolicyRuleRepository:
             ):
                 raise ApprovalError("hash_mismatch", "approval arguments no longer match")
             command = _command_from_arguments(arguments)
+            if not command_rule_is_persistable(command):
+                raise ApprovalError(
+                    "scope_forbidden",
+                    "approval command cannot become a persistent rule",
+                )
             rule_json = json.dumps(
                 {
                     "type": "exact_argv",

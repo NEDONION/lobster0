@@ -13,7 +13,7 @@ from miniclaw.bootstrap import initialize_state
 from miniclaw.config import AppConfig, load_config
 from miniclaw.evals.cases import EvalCase
 from miniclaw.paths import StatePaths, build_state_paths
-from miniclaw.policy.approvals import ApprovalError
+from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import (
     ModelRequest,
@@ -118,7 +118,7 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
                         await service.continue_approval(
                             initialized.owner.id,
                             approval_id,
-                            approved=True,
+                            decision=ApprovalDecision.ONCE,
                         )
                     ).content
                 elif action == "deny":
@@ -126,7 +126,7 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
                         await service.continue_approval(
                             initialized.owner.id,
                             approval_id,
-                            approved=False,
+                            decision=ApprovalDecision.DENY,
                         )
                     ).content
                 elif action == "tamper":
@@ -142,13 +142,13 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
                     await service.continue_approval(
                         initialized.owner.id,
                         approval_id,
-                        approved=True,
+                        decision=ApprovalDecision.ONCE,
                     )
                 else:
                     await service.continue_approval(
                         initialized.owner.id,
                         approval_id,
-                        approved=True,
+                        decision=ApprovalDecision.ONCE,
                     )
         except ApprovalError as error:
             execution_error_code = error.code

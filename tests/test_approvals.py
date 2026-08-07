@@ -9,7 +9,11 @@ from pathlib import Path
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import ApprovalError, canonical_arguments_hash
+from miniclaw.policy.approvals import (
+    ApprovalDecision,
+    ApprovalError,
+    canonical_arguments_hash,
+)
 from miniclaw.policy.engine import PolicyAction, PolicyDecision
 from miniclaw.policy.network import NetworkRule
 from miniclaw.providers.base import JsonValue, ToolCall
@@ -164,6 +168,23 @@ class ApprovalRepositoryTest(unittest.TestCase):
         self.assertEqual((approval_status, run_status), ("expired", "denied"))
         self.assertEqual(events, ["approval.created", "approval.expired"])
 
+    def test_disallowed_scope_is_rejected_before_approval_state_changes(self) -> None:
+        """write_file 的 Always 必须在批准和执行前失败关闭。"""
+        approval_id = self.create()
+
+        with self.assertRaises(ApprovalError) as rejected:
+            self.repository.validate_decision(
+                self.owner_id,
+                approval_id,
+                ApprovalDecision.ALWAYS,
+            )
+
+        self.assertEqual(rejected.exception.code, "scope_forbidden")
+        self.assertEqual(
+            self.repository.get(self.owner_id, approval_id).status,
+            "pending",
+        )
+
     def test_list_and_get_lazily_expire_without_executing_waiting_tool(self) -> None:
         """只读查询会结算过期状态，但绝不能消费或执行 ToolRun。"""
         approval_id = self.create(ttl_seconds=10)
@@ -274,6 +295,41 @@ class ApprovalRepositoryTest(unittest.TestCase):
             {"hostname": "example.com", "port": 443, "type": "exact_hostname"},
         )
         self.assertNotIn("secret", stored)
+
+    def test_inline_osascript_cannot_become_persistent_rule(self) -> None:
+        """即使绕过 TUI，Repository 也必须拒绝持久化 inline AppleScript。"""
+        program = self.paths.workspace / "osascript"
+        program.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        program.chmod(0o700)
+        arguments: dict[str, JsonValue] = {
+            "program": str(program),
+            "args": ["-e", 'display dialog "secret"'],
+            "timeout_seconds": 30,
+        }
+        approval = self.repository.create_waiting(
+            self.context,
+            ToolCall("osascript-1", "run_command", arguments),
+            arguments,
+            PolicyDecision(PolicyAction.REQUIRE_APPROVAL, "approval_required"),
+            ttl_seconds=600,
+            summary="run_command osascript",
+        )
+        self.repository.approve(self.owner_id, approval.id)
+        run = self.repository.consume(self.owner_id, approval.id)
+        ToolRunRepository(self.database).succeed(run.id, "{}", 1)
+
+        with self.assertRaises(ApprovalError) as rejected:
+            PolicyRuleRepository(self.database).add_command_from_approval(
+                self.owner_id,
+                approval.id,
+            )
+
+        self.assertEqual(rejected.exception.code, "scope_forbidden")
+        with self.database.connect_read_only() as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM policy_rules").fetchone()[0],
+                0,
+            )
 
     def test_stale_running_tool_is_interrupted_once_and_never_replayed(self) -> None:
         """崩溃遗留的旧 running 记录只转 interrupted，不执行原动作。"""

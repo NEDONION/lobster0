@@ -8,9 +8,21 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from miniclaw.agent.events import RunEvent, RunEventHandler, emit
+from miniclaw.policy.approvals import (
+    ApprovalDecision,
+    ApprovalError,
+    available_approval_decisions,
+)
+from miniclaw.policy.command import NormalizedCommand
 from miniclaw.policy.engine import PolicyAction, PolicyEngine
+from miniclaw.policy.network import NetworkRule, normalize_network_rule
 from miniclaw.providers.base import JsonValue, ToolCall
-from miniclaw.storage.tooling import ApprovalRepository, StoredToolRun, ToolRunRepository
+from miniclaw.storage.tooling import (
+    ApprovalRepository,
+    PolicyRuleRepository,
+    StoredToolRun,
+    ToolRunRepository,
+)
 from miniclaw.tools.base import Tool, ToolContext, ToolResult, ToolValidationError
 from miniclaw.tools.registry import ToolRegistry
 
@@ -21,6 +33,7 @@ class ToolExecution:
 
     model_text: str
     approval_id: int | None = None
+    succeeded: bool = False
 
 
 class ToolExecutor:
@@ -34,6 +47,7 @@ class ToolExecutor:
         *,
         result_max_chars: int = 20_000,
         approvals: ApprovalRepository | None = None,
+        policy_rules: PolicyRuleRepository | None = None,
         approval_ttl_seconds: int = 600,
     ) -> None:
         if type(result_max_chars) is not int or result_max_chars <= 0:
@@ -45,6 +59,7 @@ class ToolExecutor:
         self._runs = runs
         self._result_max_chars = result_max_chars
         self._approvals = approvals
+        self._policy_rules = policy_rules
         self._approval_ttl_seconds = approval_ttl_seconds
 
     @property
@@ -112,6 +127,9 @@ class ToolExecutor:
                             "summary": approval.summary,
                             "arguments": arguments,
                             "expires_at": approval.expires_at.isoformat(),
+                            "grant_modes": [
+                                mode.value for mode in decision.approval_modes
+                            ],
                         },
                     ),
                 )
@@ -150,11 +168,15 @@ class ToolExecutor:
         context: ToolContext,
         run: StoredToolRun,
         *,
+        approval_id: int,
+        decision: ApprovalDecision,
         on_event: RunEventHandler | None = None,
     ) -> ToolExecution:
         """执行已由 Approval 原子 claim 的唯一 running ToolRun。"""
         if run.status != "running":
             raise ValueError("approved ToolRun must be running")
+        if decision not in available_approval_decisions(run.tool_name, run.arguments):
+            raise ApprovalError("scope_forbidden", "approval scope is not allowed")
         tool = self._registry.get(run.tool_name)
         if tool is None:
             result = ToolResult.failure("tool_not_found", "approved tool is not available")
@@ -183,7 +205,7 @@ class ToolExecutor:
                 "failed",
                 on_event,
             )
-        return await self._execute_started(
+        execution = await self._execute_started(
             context,
             tool,
             arguments,
@@ -191,6 +213,45 @@ class ToolExecutor:
             run.tool_call_id,
             on_event,
         )
+        if execution.succeeded and decision in {
+            ApprovalDecision.SESSION,
+            ApprovalDecision.ALWAYS,
+        }:
+            self._apply_grant(context, approval_id, run, decision)
+        return execution
+
+    def _apply_grant(
+        self,
+        context: ToolContext,
+        approval_id: int,
+        run: StoredToolRun,
+        decision: ApprovalDecision,
+    ) -> None:
+        """成功后应用当前 Runtime 或持久 exact 规则。"""
+        persistent = decision is ApprovalDecision.ALWAYS
+        if run.tool_name == "run_command":
+            rule = _command_scope(run.arguments)
+            if persistent:
+                if self._policy_rules is None:
+                    raise ApprovalError("scope_unavailable", "persistent rules are unavailable")
+                self._policy_rules.add_command_from_approval(
+                    context.user_id,
+                    approval_id,
+                )
+            self._policy.add_session_command(rule)
+            return
+        if run.tool_name == "http_get":
+            rule = _network_scope(run.arguments)
+            if persistent:
+                if self._policy_rules is None:
+                    raise ApprovalError("scope_unavailable", "persistent rules are unavailable")
+                self._policy_rules.add_network_from_approval(
+                    context.user_id,
+                    approval_id,
+                )
+            self._policy.add_session_network(rule)
+            return
+        raise ApprovalError("scope_forbidden", "approval scope is not allowed")
 
     async def _execute_started(
         self,
@@ -247,7 +308,7 @@ class ToolExecutor:
                 },
             ),
         )
-        return ToolExecution(model_text)
+        return ToolExecution(model_text, succeeded=result.ok)
 
 
 async def _finish_unstarted(
@@ -306,3 +367,31 @@ def _approval_summary(tool_name: str, arguments: dict[str, JsonValue]) -> str:
     if isinstance(path, str):
         return f"{tool_name} {Path(path).name}"
     return f"{tool_name} request"
+
+
+def _command_scope(arguments: dict[str, JsonValue]) -> NormalizedCommand:
+    """从已验证且 hash 绑定的参数恢复 exact argv。"""
+    program = arguments.get("program")
+    args = arguments.get("args")
+    if not isinstance(program, str) or not isinstance(args, list) or any(
+        not isinstance(argument, str) for argument in args
+    ):
+        raise ApprovalError("hash_mismatch", "approval command arguments are invalid")
+    return NormalizedCommand(program, tuple(args))
+
+
+def _network_scope(arguments: dict[str, JsonValue]) -> NetworkRule:
+    """从已验证且 hash 绑定的 URL 恢复 exact authority。"""
+    url = arguments.get("url")
+    if not isinstance(url, str):
+        raise ApprovalError("hash_mismatch", "approval network arguments are invalid")
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        port = parsed.port or 443
+    except ValueError:
+        hostname = None
+    if hostname is None:
+        raise ApprovalError("hash_mismatch", "approval network arguments are invalid")
+    host_text = f"[{hostname}]" if ":" in hostname else hostname
+    return normalize_network_rule(host_text if port == 443 else f"{host_text}:{port}")

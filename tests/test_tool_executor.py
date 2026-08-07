@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sqlite3
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -10,11 +11,16 @@ from unittest.mock import patch
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
+from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
+from miniclaw.storage.tooling import (
+    ApprovalRepository,
+    PolicyRuleRepository,
+    ToolRunRepository,
+)
 from miniclaw.tools.base import (
     Tool,
     ToolContext,
@@ -23,9 +29,11 @@ from miniclaw.tools.base import (
     ToolRisk,
     ToolValidationError,
 )
+from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
+from miniclaw.tools.web import HttpGetTool
 
 
 class _EchoTool:
@@ -454,6 +462,241 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(row["approval_id"], outcome.approval_id)
         self.assertEqual(json.loads(row["arguments_json"])["path"], str(target))
+
+    async def test_approval_event_exposes_only_core_safe_grant_modes(self) -> None:
+        """TUI 只能显示 Core 根据归一化参数给出的授权范围。"""
+        osascript = self.context.workspace / "osascript"
+        osascript.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        osascript.chmod(0o700)
+        cases = (
+            (
+                RunCommandTool(),
+                PolicyEngine(),
+                ToolCall(
+                    "safe-command",
+                    "run_command",
+                    {
+                        "program": sys.executable,
+                        "args": ["script.py"],
+                        "timeout_seconds": 30,
+                    },
+                ),
+                ["once", "session", "always"],
+            ),
+            (
+                RunCommandTool(),
+                PolicyEngine(),
+                ToolCall(
+                    "inline-osascript",
+                    "run_command",
+                    {
+                        "program": str(osascript),
+                        "args": ["-e", "display dialog 1"],
+                        "timeout_seconds": 30,
+                    },
+                ),
+                ["once", "session"],
+            ),
+            (
+                HttpGetTool(resolver=lambda _host, _port: ("93.184.216.34",)),
+                PolicyEngine(
+                    network_resolver=lambda _host, _port: ("93.184.216.34",)
+                ),
+                ToolCall("https", "http_get", {"url": "https://example.com/data"}),
+                ["once", "session", "always"],
+            ),
+            (
+                WriteFileTool(),
+                PolicyEngine(),
+                ToolCall(
+                    "write",
+                    "write_file",
+                    {"path": "note.txt", "content": "private"},
+                ),
+                ["once"],
+            ),
+        )
+
+        for tool, policy, call, expected in cases:
+            with self.subTest(call=call.call_id):
+                events = []
+
+                async def capture(event, captured=events) -> None:
+                    captured.append(event)
+
+                executor = ToolExecutor(
+                    ToolRegistry((tool,)),
+                    policy,
+                    ToolRunRepository(self.database),
+                    approvals=ApprovalRepository(self.database),
+                )
+                await executor.execute(self.context, call, on_event=capture)
+                approval = next(
+                    event for event in events if event.kind == "approval_required"
+                )
+                self.assertEqual(approval.data["grant_modes"], expected)
+
+    async def test_session_command_grant_lasts_only_for_current_policy_engine(self) -> None:
+        """Session 只放行当前 Runtime 的同一条 exact argv，重建后立即失效。"""
+        program = self.context.workspace / "safe-command"
+        program.write_text("#!/bin/sh\nprintf ok\n", encoding="utf-8")
+        program.chmod(0o700)
+        arguments = {
+            "program": str(program),
+            "args": ["status"],
+            "timeout_seconds": 30,
+        }
+        approvals = ApprovalRepository(self.database)
+        policy = PolicyEngine()
+        executor = ToolExecutor(
+            ToolRegistry((RunCommandTool(),)),
+            policy,
+            ToolRunRepository(self.database),
+            approvals=approvals,
+            policy_rules=PolicyRuleRepository(self.database),
+        )
+        pending = await executor.execute(
+            self.context,
+            ToolCall("session-first", "run_command", arguments),
+        )
+        assert pending.approval_id is not None
+        approvals.approve(self.context.user_id, pending.approval_id)
+        run = approvals.consume(self.context.user_id, pending.approval_id)
+
+        approved = await executor.execute_approved(
+            self.context,
+            run,
+            approval_id=pending.approval_id,
+            decision=ApprovalDecision.SESSION,
+        )
+        repeated = await executor.execute(
+            self.context,
+            ToolCall("session-second", "run_command", arguments),
+        )
+        restarted = ToolExecutor(
+            ToolRegistry((RunCommandTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+            policy_rules=PolicyRuleRepository(self.database),
+        )
+        after_restart = await restarted.execute(
+            self.context,
+            ToolCall("session-third", "run_command", arguments),
+        )
+
+        self.assertTrue(approved.succeeded)
+        self.assertIsNone(repeated.approval_id)
+        self.assertIsNotNone(after_restart.approval_id)
+        with self.database.connect_read_only() as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM policy_rules").fetchone()[0],
+                0,
+            )
+
+    async def test_always_command_grant_persists_only_after_success(self) -> None:
+        """Always 必须在成功执行后落 exact 规则，并让新 Runtime 复用。"""
+        program = self.context.workspace / "persistent-command"
+        program.write_text("#!/bin/sh\nprintf ok\n", encoding="utf-8")
+        program.chmod(0o700)
+        arguments = {
+            "program": str(program),
+            "args": ["status"],
+            "timeout_seconds": 30,
+        }
+        approvals = ApprovalRepository(self.database)
+        rules = PolicyRuleRepository(self.database)
+        policy = PolicyEngine()
+        executor = ToolExecutor(
+            ToolRegistry((RunCommandTool(),)),
+            policy,
+            ToolRunRepository(self.database),
+            approvals=approvals,
+            policy_rules=rules,
+        )
+        pending = await executor.execute(
+            self.context,
+            ToolCall("always-first", "run_command", arguments),
+        )
+        assert pending.approval_id is not None
+        approvals.approve(self.context.user_id, pending.approval_id)
+        run = approvals.consume(self.context.user_id, pending.approval_id)
+
+        approved = await executor.execute_approved(
+            self.context,
+            run,
+            approval_id=pending.approval_id,
+            decision=ApprovalDecision.ALWAYS,
+        )
+        restarted = ToolExecutor(
+            ToolRegistry((RunCommandTool(),)),
+            PolicyEngine(command_rules=rules.command_rules(self.context.user_id)),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+            policy_rules=rules,
+        )
+        repeated = await restarted.execute(
+            self.context,
+            ToolCall("always-second", "run_command", arguments),
+        )
+
+        self.assertTrue(approved.succeeded)
+        self.assertIsNone(repeated.approval_id)
+        with self.database.connect_read_only() as connection:
+            stored = connection.execute(
+                "SELECT rule_json FROM policy_rules"
+            ).fetchall()
+            events = connection.execute(
+                "SELECT event_type, metadata_json FROM audit_events "
+                "WHERE event_type = 'policy_rule.created'"
+            ).fetchall()
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(len(events), 1)
+        self.assertNotIn("ok", stored[0]["rule_json"])
+        self.assertNotIn("status", events[0]["metadata_json"])
+
+    async def test_failed_command_never_creates_session_or_persistent_rule(self) -> None:
+        """执行失败时 Session/Always 都不能产生可复用规则。"""
+        program = self.context.workspace / "vanishing-command"
+        program.write_text("#!/bin/sh\nprintf ok\n", encoding="utf-8")
+        program.chmod(0o700)
+        arguments = {
+            "program": str(program),
+            "args": [],
+            "timeout_seconds": 30,
+        }
+        approvals = ApprovalRepository(self.database)
+        rules = PolicyRuleRepository(self.database)
+        policy = PolicyEngine()
+        executor = ToolExecutor(
+            ToolRegistry((RunCommandTool(),)),
+            policy,
+            ToolRunRepository(self.database),
+            approvals=approvals,
+            policy_rules=rules,
+        )
+        pending = await executor.execute(
+            self.context,
+            ToolCall("failed-always", "run_command", arguments),
+        )
+        assert pending.approval_id is not None
+        approvals.approve(self.context.user_id, pending.approval_id)
+        run = approvals.consume(self.context.user_id, pending.approval_id)
+        program.unlink()
+
+        failed = await executor.execute_approved(
+            self.context,
+            run,
+            approval_id=pending.approval_id,
+            decision=ApprovalDecision.ALWAYS,
+        )
+
+        self.assertFalse(failed.succeeded)
+        with self.database.connect_read_only() as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM policy_rules").fetchone()[0],
+                0,
+            )
 
     async def test_policy_deny_fails_closed_when_audit_write_fails(self) -> None:
         """拒绝审计无法落库时不能返回一个伪装正常的 Policy 结果。"""

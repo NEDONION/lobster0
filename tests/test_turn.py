@@ -15,7 +15,7 @@ from miniclaw.agent.turn import TurnService, _model_message
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import WorkspaceConfig, load_config
 from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import ApprovalError
+from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import (
     ModelRequest,
@@ -450,7 +450,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         result = await restarted.continue_approval(
             self.owner.id,
             approval.id,
-            approved=True,
+            decision=ApprovalDecision.ONCE,
         )
 
         child = self.turns.get(result.turn_id)
@@ -465,7 +465,11 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(provider.requests[1].messages[-1].tool_call_id, call.call_id)
         with self.assertRaises(ApprovalError) as repeated:
-            await restarted.continue_approval(self.owner.id, approval.id, approved=True)
+            await restarted.continue_approval(
+                self.owner.id,
+                approval.id,
+                decision=ApprovalDecision.ONCE,
+            )
         self.assertEqual(repeated.exception.code, "already_decided")
         self.assertEqual(target.read_text(encoding="utf-8"), "approved")
 
@@ -506,7 +510,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         result = await service.continue_approval(
             self.owner.id,
             approval.id,
-            approved=False,
+            decision=ApprovalDecision.DENY,
         )
 
         tool_payload = json.loads(provider.requests[1].messages[-1].content)
@@ -568,7 +572,11 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             )
 
         with self.assertRaises(ApprovalError) as changed:
-            await service.continue_approval(self.owner.id, approval.id, approved=True)
+            await service.continue_approval(
+                self.owner.id,
+                approval.id,
+                decision=ApprovalDecision.ONCE,
+            )
 
         self.assertEqual(changed.exception.code, "hash_mismatch")
         self.assertFalse(target.exists())
@@ -577,6 +585,54 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             [waiting.turn_id],
         )
         self.assertEqual(len(provider.requests), 1)
+
+    async def test_disallowed_always_scope_never_writes_or_creates_child(self) -> None:
+        """write_file 的 Always 必须在执行和 continuation 前失败关闭。"""
+        target = self.paths.workspace / "never-always.txt"
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "call_always_write",
+                            "write_file",
+                            {"path": target.name, "content": "no"},
+                        ),
+                    ),
+                    reasoning_content=None,
+                    finish_reason="tool_calls",
+                    input_tokens=2,
+                    output_tokens=1,
+                    provider_request_id="req-always-write",
+                ),
+            )
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+        )
+        service = self.service(provider, AgentRunner(provider, executor), approvals)
+        waiting = await service.handle(self.owner.id, "写入", "always-write")
+        approval = approvals.list(self.owner.id, status="pending")[0]
+
+        with self.assertRaises(ApprovalError) as rejected:
+            await service.continue_approval(
+                self.owner.id,
+                approval.id,
+                decision=ApprovalDecision.ALWAYS,
+            )
+
+        self.assertEqual(rejected.exception.code, "scope_forbidden")
+        self.assertFalse(target.exists())
+        self.assertEqual(approvals.get(self.owner.id, approval.id).status, "pending")
+        self.assertEqual(
+            [turn.id for turn in self.turns.list_recent(waiting.session_id)],
+            [waiting.turn_id],
+        )
 
     async def test_continuation_marks_later_same_batch_calls_not_executed(self) -> None:
         """首个调用待审批后，同批后续调用必须补齐失败结果且绝不执行。"""
@@ -618,7 +674,11 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         await service.handle(self.owner.id, "写两个文件", "batch")
         approval = approvals.list(self.owner.id, status="pending")[0]
 
-        await service.continue_approval(self.owner.id, approval.id, approved=True)
+        await service.continue_approval(
+            self.owner.id,
+            approval.id,
+            decision=ApprovalDecision.ONCE,
+        )
 
         continuation_tools = [
             message for message in provider.requests[1].messages if message.role == "tool"

@@ -1,11 +1,15 @@
 """执行有上限的模型与顺序 Tool Call 循环。"""
 
+from __future__ import annotations
+
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from miniclaw.agent.events import RunEvent, RunEventHandler, emit
+from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.providers.base import (
     JsonValue,
     ModelMessage,
@@ -17,7 +21,9 @@ from miniclaw.providers.base import (
 )
 from miniclaw.storage.tooling import StoredToolRun
 from miniclaw.tools.base import ToolContext
-from miniclaw.tools.executor import ToolExecutor
+
+if TYPE_CHECKING:
+    from miniclaw.tools.executor import ToolExecutor
 
 
 class AgentError(RuntimeError):
@@ -93,13 +99,21 @@ class AgentRunner:
         self,
         context: ToolContext,
         run: StoredToolRun,
+        approval_id: int,
+        decision: ApprovalDecision,
         on_event: RunEventHandler | None = None,
     ) -> str:
         """通过同一 Executor 执行已消费的绑定 ToolRun。"""
         if self._executor is None:
             raise AgentError("tool executor is required for approval continuation")
         return (
-            await self._executor.execute_approved(context, run, on_event=on_event)
+            await self._executor.execute_approved(
+                context,
+                run,
+                approval_id=approval_id,
+                decision=decision,
+                on_event=on_event,
+            )
         ).model_text
 
     async def run(

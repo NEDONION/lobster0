@@ -23,6 +23,7 @@ from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError, load_config
 from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.paths import StatePaths
+from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.runtime import create_runtime
 from miniclaw.storage.database import DatabaseError
 from miniclaw.storage.migrations import MigrationError
@@ -139,8 +140,8 @@ class ReasoningCard(Collapsible):
         )
 
 
-class ApprovalModal(ModalScreen[bool]):
-    """展示完整绑定参数，并只提供一次允许或拒绝。"""
+class ApprovalModal(ModalScreen[ApprovalDecision]):
+    """展示完整绑定参数，并只提供 Core 明确允许的授权范围。"""
 
     CSS = """
     ApprovalModal {
@@ -182,13 +183,21 @@ class ApprovalModal(ModalScreen[bool]):
         summary = event.data.get("summary")
         arguments = event.data.get("arguments")
         expires_at = event.data.get("expires_at")
+        grant_modes = event.data.get("grant_modes", [ApprovalDecision.ONCE.value])
         if (
             type(approval_id) is not int
             or not isinstance(tool_name, str)
             or not isinstance(summary, str)
             or not isinstance(arguments, dict)
             or not isinstance(expires_at, str)
+            or not isinstance(grant_modes, list)
         ):
+            raise ValueError("invalid approval event")
+        try:
+            self.grant_modes = tuple(ApprovalDecision(value) for value in grant_modes)
+        except (TypeError, ValueError):
+            raise ValueError("invalid approval event") from None
+        if ApprovalDecision.ONCE not in self.grant_modes:
             raise ValueError("invalid approval event")
         self.approval_id = approval_id
         self.tool_name = _terminal_safe(tool_name)
@@ -199,7 +208,21 @@ class ApprovalModal(ModalScreen[bool]):
         self.expires_at = _terminal_safe(expires_at)
 
     def compose(self) -> ComposeResult:
-        """生成带文字标签、滚动参数区和两个决定按钮的弹窗。"""
+        """生成带完整参数和 Core 授权按钮的弹窗。"""
+        buttons = [Button("Deny", id="approval-deny", variant="error")]
+        labels = {
+            ApprovalDecision.ONCE: "Allow once",
+            ApprovalDecision.SESSION: "Allow this session",
+            ApprovalDecision.ALWAYS: "Always allow",
+        }
+        buttons.extend(
+            Button(
+                labels[decision],
+                id=f"approval-{decision.value}",
+                variant="warning",
+            )
+            for decision in self.grant_modes
+        )
         yield Vertical(
             Static(f"Approval #{self.approval_id}", markup=False),
             Static(f"Tool: {self.tool_name}", markup=False),
@@ -210,8 +233,7 @@ class ApprovalModal(ModalScreen[bool]):
             ),
             Static(f"Expires: {self.expires_at}", markup=False),
             Horizontal(
-                Button("Deny", id="approval-deny", variant="error"),
-                Button("Allow once", id="approval-allow-once", variant="warning"),
+                *buttons,
                 id="approval-actions",
             ),
             id="approval-dialog",
@@ -222,13 +244,18 @@ class ApprovalModal(ModalScreen[bool]):
         self.query_one("#approval-deny", Button).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """关闭弹窗并返回唯一一次人工决定。"""
+        """关闭弹窗并返回显式人工决定。"""
         event.stop()
-        self.dismiss(event.button.id == "approval-allow-once")
+        value = event.button.id.removeprefix("approval-")
+        self.dismiss(
+            ApprovalDecision.DENY
+            if value == "deny"
+            else ApprovalDecision(value)
+        )
 
     def action_deny(self) -> None:
         """Esc 与显式 Deny 使用同一安全决定。"""
-        self.dismiss(False)
+        self.dismiss(ApprovalDecision.DENY)
 
 
 class MiniClawApp(App[int]):
@@ -554,23 +581,31 @@ class MiniClawApp(App[int]):
             return
         self.push_screen(
             modal,
-            lambda approved: self._start_approval(modal.approval_id, approved),
+            lambda decision: self._start_approval(modal.approval_id, decision),
         )
 
-    def _start_approval(self, approval_id: int, approved: bool | None) -> None:
+    def _start_approval(
+        self,
+        approval_id: int,
+        decision: ApprovalDecision | None,
+    ) -> None:
         """从 Modal 回调启动唯一 continuation Worker。"""
-        if approved is None or self.runtime is None:
+        if decision is None or self.runtime is None:
             return
         composer = self.query_one("#composer", Composer)
         composer.disabled = True
         self._active_worker = self.run_worker(
-            self._continue_approval(approval_id, approved),
+            self._continue_approval(approval_id, decision),
             group="turn",
             exclusive=True,
             exit_on_error=False,
         )
 
-    async def _continue_approval(self, approval_id: int, approved: bool) -> None:
+    async def _continue_approval(
+        self,
+        approval_id: int,
+        decision: ApprovalDecision,
+    ) -> None:
         """只经 TurnService 继续已绑定动作，并恢复输入框。"""
         assert self.runtime is not None
         completed = False
@@ -578,7 +613,7 @@ class MiniClawApp(App[int]):
             await self.runtime.service.continue_approval(
                 self.runtime.owner_id,
                 approval_id,
-                approved=approved,
+                decision=decision,
                 on_event=self.on_run_event,
             )
             completed = True

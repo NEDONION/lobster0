@@ -13,6 +13,7 @@ from textual.widgets import Button, Collapsible, Markdown, Static, TextArea
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.paths import build_state_paths
+from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.tools.base import ToolDefinition, ToolRisk
 from miniclaw.tui.app import (
     ApprovalModal,
@@ -62,7 +63,7 @@ class ApprovalTurnService:
     """先请求审批，再记录 TUI 通过同一 TurnService 的续跑决定。"""
 
     def __init__(self) -> None:
-        self.decisions: list[tuple[int, int, bool]] = []
+        self.decisions: list[tuple[int, int, ApprovalDecision]] = []
 
     async def handle(self, owner_id, text, conversation_id, *, on_event=None):
         assert on_event is not None
@@ -88,6 +89,7 @@ class ApprovalTurnService:
                     "summary": "write_file notes.txt",
                     "arguments": {"path": "/safe/workspace/notes.txt", "content": "hello"},
                     "expires_at": "2030-01-01T00:00:00+00:00",
+                    "grant_modes": ["once"],
                 },
             )
         )
@@ -97,10 +99,10 @@ class ApprovalTurnService:
         owner_id,
         approval_id,
         *,
-        approved,
+        decision,
         on_event=None,
     ):
-        self.decisions.append((owner_id, approval_id, approved))
+        self.decisions.append((owner_id, approval_id, decision))
         assert on_event is not None
         await on_event(
             RunEvent(
@@ -109,7 +111,11 @@ class ApprovalTurnService:
                 {
                     "call_id": "write-1",
                     "tool_name": "write_file",
-                    "status": "succeeded" if approved else "denied",
+                    "status": (
+                        "denied"
+                        if decision is ApprovalDecision.DENY
+                        else "succeeded"
+                    ),
                 },
             )
         )
@@ -237,14 +243,14 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("write_file notes.txt", visible)
             self.assertIn("/safe/workspace/notes.txt", visible)
             self.assertIn('"content": "hello"', visible)
-            self.assertEqual(len(modal.query("#approval-allow-once")), 1)
+            self.assertEqual(len(modal.query("#approval-once")), 1)
             self.assertEqual(len(modal.query("#approval-always")), 0)
 
-            await pilot.click("#approval-allow-once")
+            await pilot.click("#approval-once")
             await pilot.pause()
             await app.workers.wait_for_complete()
 
-            self.assertEqual(service.decisions, [(1, 7, True)])
+            self.assertEqual(service.decisions, [(1, 7, ApprovalDecision.ONCE)])
             self.assertEqual(app.query_one(ToolCard).status, "succeeded")
             self.assertEqual(app.query_one("#assistant-32", Markdown).source, "continued")
 
@@ -271,7 +277,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             await pilot.pause()
             await app.workers.wait_for_complete()
 
-            self.assertEqual(service.decisions, [(1, 7, False)])
+            self.assertEqual(service.decisions, [(1, 7, ApprovalDecision.DENY)])
             self.assertEqual(app.query_one(ToolCard).status, "denied")
 
     async def test_eighty_by_twenty_four_starts_with_one_focused_composer(self) -> None:
