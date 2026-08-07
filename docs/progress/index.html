@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · P2.1A reviewed · live provider pending</div>
+      <div class="branch">target: main · P2.1B verified · live provider file smoke pending</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">第一把真实本机工具已经接通：模型可读取脱敏电脑配置，并经过 Policy、ToolRun、Audit 和完整消息回放。</p>
+        <p class="lede">安全只读链路已扩展到 Workspace：模型可读取文本、找文件、查文本，仍要经过 Policy、ToolRun、Audit 和完整消息回放。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Offline exit gate</span>
-        <strong>P2.1A ✓</strong>
-        <p>Offline E2E + local collector verified · live DeepSeek pending authorization</p>
+        <strong>P2.1B ✓</strong>
+        <p>144 tests + Ruff verified · live DeepSeek file smoke still pending</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">99 <small>passing</small></span>
+        <span class="metric-value">144 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -377,7 +377,7 @@
     <section class="section" aria-labelledby="signal-title">
       <div class="section-head">
         <h2 id="signal-title">已经接通的信号链</h2>
-        <p class="section-note">每个节点都有离线测试与可观察结果；Tool 参数、权限、执行和持久化不能绕开统一入口。</p>
+        <p class="section-note">每个节点都有离线测试与可观察结果；Tool 参数、Workspace、执行和持久化不能绕开统一入口。</p>
       </div>
       <div class="signal">
         <div class="signal-node active">
@@ -397,13 +397,13 @@
         </div>
         <div class="signal-node active">
           <div class="signal-dot">04</div>
-          <div class="signal-label">System info</div>
-          <p>固定查询 + 脱敏</p>
+          <div class="signal-label">Workspace guard</div>
+          <p>路径 + 敏感文件</p>
         </div>
         <div class="signal-node active">
           <div class="signal-dot">05</div>
-          <div class="signal-label">Trace</div>
-          <p>ToolRun + Audit</p>
+          <div class="signal-label">Read tools</div>
+          <p>read / glob / grep</p>
         </div>
       </div>
     </section>
@@ -426,7 +426,7 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool 与安全</h3><p>P2.1A system_info 已完成；下一步是 Workspace 只读文件与搜索。</p></div>
+          <div><h3>Tool 与安全</h3><p>P2.1A system_info 与 P2.1B Workspace 只读工具已验证；下一步是 P2.2 写入与审批。</p></div>
           <span class="pill">IN PROGRESS</span>
         </article>
         <article class="phase queued">
@@ -459,16 +459,18 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 2.1A exit gate</p>
+        <p class="eyebrow">Phase 2.1B exit gate</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
           <li class="complete">Policy + ToolExecutor 唯一执行入口</li>
-          <li class="complete">脱敏 system_info 与固定 macOS 命令</li>
+          <li class="complete">脱敏 system_info 与固定本机查询</li>
+          <li class="complete">Workspace Guard：逃逸、符号链接与敏感路径拒绝</li>
+          <li class="complete">read_file、glob、grep 的有界只读结果</li>
           <li class="complete">ToolRun / Audit 原子状态迁移</li>
           <li class="complete">完整 Tool 消息持久化与恢复</li>
-          <li class="complete">CLI 两轮 HTTP/SSE 离线端到端测试</li>
-          <li class="complete">99 tests + Ruff 门禁</li>
+          <li class="complete">CLI / Agent 离线 Tool 集成验证</li>
+          <li class="complete">144 tests + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -477,14 +479,16 @@
         <div class="decision"><code>model</code><p>deepseek-v4-pro</p></div>
         <div class="decision"><code>credentials</code><p>本地 .env，0600，永不进入 Git。</p></div>
         <div class="decision"><code>runtime</code><p>单进程 asyncio + 一个 SQLite + 顺序 Tool Call。</p></div>
-        <div class="decision"><code>safety</code><p>固定命令、输入/输出白名单、异常脱敏、参数哈希审计。</p></div>
-        <div class="decision"><code>scope</code><p>P2.1A 只交付 system_info；文件工具、审批和飞书继续分阶段。</p></div>
+        <div class="decision"><code>safety</code><p>Workspace Guard、输入/输出上限、异常脱敏与参数哈希审计。</p></div>
+        <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
+        <div class="decision"><code>scope</code><p>P2.1B 只交付只读文件工具；写入、Shell、审批和飞书仍未实现。</p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/76b0999">76b0999</a> · <a href="https://github.com/NEDONION/miniclaw/commit/359e5fc">359e5fc</a> · <a href="https://github.com/NEDONION/miniclaw/commit/311c02f">311c02f</a> · <a href="https://github.com/NEDONION/miniclaw/commit/c8e7d80">c8e7d80</a> · <a href="https://github.com/NEDONION/miniclaw/commit/3a27688">3a27688</a> · <a href="https://github.com/NEDONION/miniclaw/commit/73bdec3">73bdec3</a> · <a href="https://github.com/NEDONION/miniclaw/commit/f599087">f599087</a> · <a href="https://github.com/NEDONION/miniclaw/commit/c3f8409">c3f8409</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-07 · 99 tests + offline E2E + local collector verified</span>
-      <a href="../engineering/phase-2/tool-runtime-and-system-info.md">查看 Phase 2.1A 工程文档</a>
+      <span>Last updated · 2026-08-07 · 144 tests + Ruff + offline Tool integration verified</span>
+      <span><a href="../engineering/phase-2/tool-runtime-and-system-info.md">P2.1A 文档</a> · <a href="../engineering/phase-2/workspace-read-tools.md">P2.1B 文档</a></span>
     </footer>
   </main>
 </body>
