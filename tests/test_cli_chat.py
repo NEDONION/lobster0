@@ -184,7 +184,7 @@ class CliChatTest(unittest.TestCase):
                     ]
                 )
 
-            with sqlite3.connect(home / "miniclaw.db") as connection:
+            with contextlib.closing(sqlite3.connect(home / "miniclaw.db")) as connection:
                 turn = connection.execute(
                     "SELECT status, model, input_tokens, output_tokens FROM turns"
                 ).fetchone()
@@ -255,7 +255,7 @@ class CliChatTest(unittest.TestCase):
                     ["chat", "--home", str(home), "--session", "interactive"]
                 )
 
-            with sqlite3.connect(home / "miniclaw.db") as connection:
+            with contextlib.closing(sqlite3.connect(home / "miniclaw.db")) as connection:
                 session_count = connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
                 turn_count = connection.execute("SELECT COUNT(*) FROM turns").fetchone()[0]
 
