@@ -89,7 +89,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("invalid TOML", error)
 
     def test_doctor_reports_healthy_initialized_state(self) -> None:
-        """doctor 应输出五项 PASS 并以 0 退出。"""
+        """doctor 应输出七项 PASS 并以 0 退出。"""
         with tempfile.TemporaryDirectory() as directory:
             run_cli(["init", "--home", directory])
 
@@ -97,7 +97,7 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(error, "")
-        self.assertEqual(output.count("[PASS]"), 5)
+        self.assertEqual(output.count("[PASS]"), 7)
 
     def test_doctor_returns_two_for_corrupt_config(self) -> None:
         """损坏配置应显示失败项并使用配置错误退出码 2。"""

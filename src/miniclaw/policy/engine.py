@@ -5,6 +5,13 @@ from enum import StrEnum
 from typing import cast
 
 from miniclaw.policy.command import CommandPolicyError, NormalizedCommand, normalize_command
+from miniclaw.policy.network import (
+    NetworkPolicyError,
+    NetworkRule,
+    Resolver,
+    default_resolver,
+    validate_https_target,
+)
 from miniclaw.policy.workspace import WorkspaceAccessError, WorkspaceGuard
 from miniclaw.providers.base import JsonValue
 from miniclaw.tools.base import ToolContext, ToolDefinition, ToolRisk
@@ -40,6 +47,8 @@ class PolicyEngine:
         security: str = "allowlist",
         ask: str = "on-miss",
         command_rules: tuple[NormalizedCommand, ...] = (),
+        network_rules: tuple[NetworkRule, ...] = (),
+        network_resolver: Resolver | None = None,
     ) -> None:
         if security not in {"deny", "allowlist", "full"}:
             raise ValueError("invalid tool security mode")
@@ -48,6 +57,8 @@ class PolicyEngine:
         self._security = security
         self._ask = ask
         self._command_rules = frozenset(command_rules)
+        self._network_rules = frozenset(network_rules)
+        self._network_resolver = network_resolver or default_resolver
 
     def authorize(
         self,
@@ -58,6 +69,8 @@ class PolicyEngine:
         """只自动放行 low-risk；critical 拒绝；其余要求审批。"""
         if definition.name == "run_command":
             return self._authorize_command(context, arguments)
+        if definition.name == "http_get":
+            return self._authorize_http(arguments)
         normalized_arguments = arguments
         path_argument = _READ_PATH_ARGUMENTS.get(definition.name)
         if path_argument is not None:
@@ -106,19 +119,44 @@ class PolicyEngine:
             "program": normalized.resolved_program,
             "args": list(normalized.args),
         }
-        if self._security == "deny":
-            return PolicyDecision(PolicyAction.DENY, "command execution is disabled")
         exact_match = normalized in self._command_rules
-        if self._ask == "always":
-            action = PolicyAction.REQUIRE_APPROVAL
-        elif self._security == "full" or exact_match:
-            action = PolicyAction.ALLOW
-        elif self._ask == "on-miss":
-            action = PolicyAction.REQUIRE_APPROVAL
-        else:
-            action = PolicyAction.DENY
+        action = self._supervised_action(exact_match)
         return PolicyDecision(
             action,
             "exact_command_rule" if exact_match else "command_policy",
             normalized_arguments=normalized_arguments,
         )
+
+    def _authorize_http(self, arguments: dict[str, JsonValue]) -> PolicyDecision:
+        """验证 HTTPS/DNS，并按精确 hostname + port 应用监督策略。"""
+        url = cast(str, arguments["url"])
+        allowed_ports = tuple(
+            sorted({443, *(rule.port for rule in self._network_rules)})
+        )
+        try:
+            target = validate_https_target(
+                url,
+                self._network_resolver,
+                allowed_ports=allowed_ports,
+            )
+        except NetworkPolicyError as error:
+            return PolicyDecision(PolicyAction.DENY, str(error), error.code)
+        normalized_arguments = {**arguments, "url": target.url}
+        exact_match = target.rule in self._network_rules
+        return PolicyDecision(
+            self._supervised_action(exact_match),
+            "exact_hostname_rule" if exact_match else "network_policy",
+            normalized_arguments=normalized_arguments,
+        )
+
+    def _supervised_action(self, exact_match: bool) -> PolicyAction:
+        """实现 command/http 共用的 security × ask 状态表。"""
+        if self._security == "deny":
+            return PolicyAction.DENY
+        if self._ask == "always":
+            return PolicyAction.REQUIRE_APPROVAL
+        if self._security == "full" or exact_match:
+            return PolicyAction.ALLOW
+        if self._ask == "on-miss":
+            return PolicyAction.REQUIRE_APPROVAL
+        return PolicyAction.DENY

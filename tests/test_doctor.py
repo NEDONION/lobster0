@@ -2,11 +2,18 @@
 
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.doctor import CheckStatus, run_local_checks
 from miniclaw.paths import build_state_paths
+from miniclaw.policy.engine import PolicyAction, PolicyDecision
+from miniclaw.providers.base import ToolCall
+from miniclaw.storage.conversations import SessionRepository, TurnRepository
+from miniclaw.storage.database import Database
+from miniclaw.storage.tooling import ApprovalRepository
+from miniclaw.tools.base import ToolContext
 
 
 class DoctorTest(unittest.TestCase):
@@ -19,14 +26,22 @@ class DoctorTest(unittest.TestCase):
         self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
 
     def test_initialized_state_passes_all_local_checks(self) -> None:
-        """完整初始化后五项本地检查都应实际通过。"""
+        """完整初始化后七项本地检查都应实际通过。"""
         initialize_state(self.paths)
 
         results = run_local_checks(self.paths, {})
 
         self.assertEqual(
             {result.name for result in results},
-            {"state_home", "config", "workspace", "database", "permissions"},
+            {
+                "state_home",
+                "config",
+                "workspace",
+                "database",
+                "permissions",
+                "tools",
+                "approvals",
+            },
         )
         self.assertTrue(all(result.status is CheckStatus.PASS for result in results))
 
@@ -62,6 +77,52 @@ class DoctorTest(unittest.TestCase):
         permission_result = next(result for result in results if result.name == "permissions")
 
         self.assertIs(permission_result.status, CheckStatus.FAIL)
+
+    def test_reports_pending_approval_without_executing_it_or_writing_database(self) -> None:
+        """doctor 只报告当前 pending 数，不消费动作也不更新任何 SQLite 行。"""
+        initialized = initialize_state(self.paths)
+        database = Database(self.paths.database)
+        session = SessionRepository(database).get_or_create_cli(
+            initialized.owner.id,
+            "doctor-approval",
+        )
+        turns = TurnRepository(database)
+        turn = turns.create_with_user_message(
+            session.id,
+            "doctor-event",
+            "test-model",
+            "write",
+        )
+        turns.mark_running(turn.id)
+        side_effect = self.paths.workspace / "doctor-must-not-write.txt"
+        arguments = {"path": str(side_effect), "content": "no", "overwrite": False}
+        ApprovalRepository(
+            database,
+            clock=lambda: datetime(2026, 8, 8, tzinfo=UTC),
+        ).create_waiting(
+            ToolContext(
+                initialized.owner.id,
+                session.id,
+                turn.id,
+                self.paths.home,
+                self.paths.workspace,
+                (),
+            ),
+            ToolCall("doctor-write", "write_file", arguments),
+            arguments,
+            PolicyDecision(PolicyAction.REQUIRE_APPROVAL, "approval_required"),
+            ttl_seconds=10**9,
+            summary="write_file doctor-must-not-write.txt",
+        )
+        before = self.paths.database.read_bytes()
+
+        results = run_local_checks(self.paths, {})
+
+        item = next(result for result in results if result.name == "approvals")
+        self.assertIs(item.status, CheckStatus.WARN)
+        self.assertIn("1 pending", item.message)
+        self.assertFalse(side_effect.exists())
+        self.assertEqual(self.paths.database.read_bytes(), before)
 
 
 if __name__ == "__main__":

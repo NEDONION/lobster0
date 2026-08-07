@@ -23,6 +23,7 @@ from miniclaw.paths import PathConfigurationError, StatePaths, build_state_paths
 from miniclaw.policy.approvals import ApprovalError
 from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
+from miniclaw.policy.network import normalize_network_rule
 from miniclaw.providers.base import ProviderAuthenticationError, ProviderError
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
 from miniclaw.storage.conversations import (
@@ -48,6 +49,7 @@ from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
+from miniclaw.tools.web import HttpGetTool
 
 _DEFAULT_CLI_SESSION = "default"
 
@@ -300,6 +302,11 @@ async def _continue_approval(
                     owner_id,
                     approval_id,
                 )
+            elif item.tool_name == "http_get":
+                PolicyRuleRepository(Database(paths.database)).add_network_from_approval(
+                    owner_id,
+                    approval_id,
+                )
             else:
                 raise ConfigError("--always rule is not implemented for this tool")
         if as_json:
@@ -476,10 +483,29 @@ def _create_runtime(
     database = Database(paths.database)
     apply_migrations(database)
     owner = OwnerRepository(database).get_or_create()
+    runs = ToolRunRepository(database)
+    runs.interrupt_stale_runs()
     provider = OpenAICompatibleProvider(
         config.provider.base_url,
         api_key,
         config.provider.timeout_seconds,
+    )
+    approvals = ApprovalRepository(database)
+    rules = PolicyRuleRepository(database)
+    configured_command_rules = tuple(
+        normalize_command(rule.program, rule.args, config.workspace.path)
+        for rule in config.tools.run_command.allow_commands
+    )
+    command_rules = tuple(
+        dict.fromkeys(
+            (*configured_command_rules, *rules.command_rules(owner.id))
+        )
+    )
+    configured_network_rules = tuple(
+        normalize_network_rule(value) for value in config.tools.http_get.allow_hosts
+    )
+    network_rules = tuple(
+        dict.fromkeys((*configured_network_rules, *rules.network_rules(owner.id)))
     )
     available_tools = (
         SystemInfoTool(),
@@ -488,20 +514,15 @@ def _create_runtime(
         EditFileTool(),
         GlobTool(),
         GrepTool(),
+        HttpGetTool(
+            timeout_seconds=config.tools.http_get.timeout_seconds,
+            max_response_bytes=config.tools.http_get.max_response_bytes,
+            allow_rules=network_rules,
+        ),
         RunCommandTool(
             timeout_seconds=config.tools.run_command.timeout_seconds,
             max_timeout_seconds=config.tools.run_command.max_timeout_seconds,
         ),
-    )
-    approvals = ApprovalRepository(database)
-    configured_command_rules = tuple(
-        normalize_command(rule.program, rule.args, config.workspace.path)
-        for rule in config.tools.run_command.allow_commands
-    )
-    command_rules = tuple(
-        dict.fromkeys(
-            (*configured_command_rules, *PolicyRuleRepository(database).command_rules(owner.id))
-        )
     )
     executor = ToolExecutor(
         ToolRegistry(
@@ -511,8 +532,9 @@ def _create_runtime(
             security=config.tools.security,
             ask=config.tools.ask,
             command_rules=command_rules,
+            network_rules=network_rules,
         ),
-        ToolRunRepository(database),
+        runs,
         result_max_chars=config.agent.tool_result_max_chars,
         approvals=approvals,
         approval_ttl_seconds=config.tools.approval_ttl_seconds,

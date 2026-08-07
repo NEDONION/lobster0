@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
+from urllib.parse import urlsplit
 
 from miniclaw.policy.approvals import (
     ApprovalError,
@@ -15,6 +16,7 @@ from miniclaw.policy.approvals import (
 )
 from miniclaw.policy.command import NormalizedCommand
 from miniclaw.policy.engine import PolicyDecision
+from miniclaw.policy.network import NetworkPolicyError, NetworkRule, normalize_network_rule
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.database import Database
 from miniclaw.tools.base import ToolContext
@@ -151,6 +153,7 @@ class ApprovalRepository:
             "consumed",
         }:
             raise ValueError("invalid approval status")
+        self._expire_due(user_id)
         query = "SELECT * FROM approvals WHERE user_id = ?"
         parameters: tuple[object, ...] = (user_id,)
         if status is not None:
@@ -163,6 +166,7 @@ class ApprovalRepository:
 
     def get(self, user_id: int, approval_id: int) -> StoredApproval:
         """读取一条 Approval，并区分不存在与 Owner 不匹配。"""
+        self._expire_due(user_id, approval_id)
         with self._database.connect_read_only() as connection:
             row = connection.execute(
                 "SELECT * FROM approvals WHERE id = ?",
@@ -173,6 +177,29 @@ class ApprovalRepository:
         if row["user_id"] != user_id:
             raise ApprovalError("not_owner", "approval belongs to a different owner")
         return _approval_from_row(row)
+
+    def _expire_due(self, user_id: int, approval_id: int | None = None) -> None:
+        """在查询前只结算当前 Owner 到期记录，不消费或执行任何 Tool。"""
+        now = self._now()
+        query = """
+            SELECT a.*, tr.tool_call_id, tr.arguments_json,
+                   tr.arguments_hash AS tool_run_arguments_hash,
+                   tr.status AS tool_run_status, t.session_id
+            FROM approvals a
+            JOIN tool_runs tr ON tr.id = a.tool_run_id
+            JOIN turns t ON t.id = a.turn_id
+            WHERE a.user_id = ? AND a.status IN ('pending', 'approved')
+              AND a.expires_at <= ?
+        """
+        parameters: tuple[object, ...] = (user_id, now.isoformat())
+        if approval_id is not None:
+            query += " AND a.id = ?"
+            parameters += (approval_id,)
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(query, parameters).fetchall()
+            for row in rows:
+                _expire_approval(connection, row, now)
 
     def approve(self, user_id: int, approval_id: int) -> StoredApproval:
         """把未过期 pending Approval 原子改为 approved。"""
@@ -371,6 +398,19 @@ class PolicyRuleRepository:
             ).fetchall()
         return tuple(_decode_command_rule(row["rule_json"]) for row in rows)
 
+    def network_rules(self, user_id: int) -> tuple[NetworkRule, ...]:
+        """读取当前 Owner 的 enabled exact-hostname 规则；损坏数据失败关闭。"""
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT rule_json FROM policy_rules
+                WHERE user_id = ? AND tool_name = 'http_get' AND enabled = 1
+                ORDER BY id
+                """,
+                (user_id,),
+            ).fetchall()
+        return tuple(_decode_network_rule(row["rule_json"]) for row in rows)
+
     def add_command_from_approval(self, user_id: int, approval_id: int) -> int:
         """从已成功消费的 run_command Approval 幂等创建 exact-argv 规则。"""
         now = datetime.now(UTC).isoformat()
@@ -440,6 +480,84 @@ class PolicyRuleRepository:
                             "approval_id": approval_id,
                             "policy_rule_id": rule_id,
                             "tool_name": "run_command",
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    now,
+                ),
+            )
+        return rule_id
+
+    def add_network_from_approval(self, user_id: int, approval_id: int) -> int:
+        """从成功 http_get Approval 幂等创建 exact hostname + port 规则。"""
+        now = datetime.now(UTC).isoformat()
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = _approval_join_row(connection, approval_id)
+            failure = _approval_access_error(row, user_id)
+            if failure is not None:
+                raise failure
+            if (
+                row["status"] != "consumed"
+                or row["tool_name"] != "http_get"
+                or row["tool_run_status"] != "succeeded"
+            ):
+                raise ApprovalError(
+                    "already_decided",
+                    "approval did not complete an HTTPS request successfully",
+                )
+            arguments = _decode_arguments(row["arguments_json"])
+            expected_hash = canonical_arguments_hash(row["tool_name"], arguments)
+            if (
+                expected_hash != row["arguments_hash"]
+                or expected_hash != row["tool_run_arguments_hash"]
+            ):
+                raise ApprovalError("hash_mismatch", "approval arguments no longer match")
+            rule = _network_from_arguments(arguments)
+            rule_json = json.dumps(
+                {
+                    "type": "exact_hostname",
+                    "hostname": rule.hostname,
+                    "port": rule.port,
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+            existing = connection.execute(
+                """
+                SELECT id FROM policy_rules
+                WHERE user_id = ? AND tool_name = 'http_get'
+                  AND rule_json = ? AND enabled = 1
+                """,
+                (user_id, rule_json),
+            ).fetchone()
+            if existing is not None:
+                return int(existing["id"])
+            cursor = connection.execute(
+                """
+                INSERT INTO policy_rules (
+                    user_id, tool_name, rule_json, source_approval_id, created_at
+                ) VALUES (?, 'http_get', ?, ?, ?)
+                """,
+                (user_id, rule_json, approval_id, now),
+            )
+            rule_id = int(cursor.lastrowid)
+            connection.execute(
+                """
+                INSERT INTO audit_events (
+                    event_type, user_id, turn_id, summary, metadata_json, created_at
+                ) VALUES ('policy_rule.created', ?, ?, 'Created exact hostname rule', ?, ?)
+                """,
+                (
+                    user_id,
+                    row["turn_id"],
+                    json.dumps(
+                        {
+                            "approval_id": approval_id,
+                            "policy_rule_id": rule_id,
+                            "tool_name": "http_get",
                         },
                         separators=(",", ":"),
                         sort_keys=True,
@@ -549,6 +667,66 @@ class ToolRunRepository:
     def interrupt(self, run_id: int, duration_ms: int) -> None:
         """把被取消的 running ToolRun 原子转为 interrupted。"""
         self._finish(run_id, "interrupted", None, duration_ms)
+
+    def interrupt_stale_runs(
+        self,
+        *,
+        stale_before: datetime | None = None,
+    ) -> tuple[int, ...]:
+        """把旧 running 记录终止并审计；永远不重放原始参数。"""
+        now = datetime.now(UTC)
+        cutoff = stale_before or (now - timedelta(minutes=5))
+        if cutoff.tzinfo is None:
+            raise ValueError("stale_before must be timezone-aware")
+        cutoff = cutoff.astimezone(UTC)
+        recovered: list[int] = []
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            rows = connection.execute(
+                """
+                SELECT tr.id, tr.tool_name, tr.arguments_hash, tr.turn_id,
+                       t.session_id, s.user_id
+                FROM tool_runs tr
+                JOIN turns t ON t.id = tr.turn_id
+                JOIN sessions s ON s.id = t.session_id
+                WHERE tr.status = 'running' AND tr.created_at < ?
+                ORDER BY tr.id
+                """,
+                (cutoff.isoformat(),),
+            ).fetchall()
+            for row in rows:
+                updated = connection.execute(
+                    """
+                    UPDATE tool_runs SET status = 'interrupted', completed_at = ?
+                    WHERE id = ? AND status = 'running'
+                    """,
+                    (now.isoformat(), row["id"]),
+                )
+                if updated.rowcount != 1:
+                    continue
+                recovered.append(int(row["id"]))
+                connection.execute(
+                    """
+                    INSERT INTO audit_events (
+                        event_type, user_id, session_id, turn_id,
+                        summary, metadata_json, created_at
+                    ) VALUES ('tool.interrupted', ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        row["user_id"],
+                        row["session_id"],
+                        row["turn_id"],
+                        f"Interrupted stale {row['tool_name']}",
+                        _metadata(
+                            row["id"],
+                            row["tool_name"],
+                            row["arguments_hash"],
+                            error_code="stale_recovery",
+                        ),
+                        now.isoformat(),
+                    ),
+                )
+        return tuple(recovered)
 
     def _finish(
         self,
@@ -776,6 +954,32 @@ def _command_from_arguments(arguments: dict[str, JsonValue]) -> NormalizedComman
     return NormalizedCommand(program, tuple(args))
 
 
+def _network_from_arguments(arguments: dict[str, JsonValue]) -> NetworkRule:
+    """从已规范化且 hash 绑定的 URL 提取精确 authority。"""
+    url = arguments.get("url")
+    timeout = arguments.get("timeout_seconds")
+    if (
+        set(arguments) != {"url", "timeout_seconds"}
+        or not isinstance(url, str)
+        or type(timeout) is not int
+    ):
+        raise ApprovalError("hash_mismatch", "approval network arguments are invalid")
+    try:
+        parsed = urlsplit(url)
+        hostname = parsed.hostname
+        port = parsed.port or 443
+    except ValueError:
+        raise ApprovalError("hash_mismatch", "approval network arguments are invalid") from None
+    if parsed.scheme != "https" or hostname is None:
+        raise ApprovalError("hash_mismatch", "approval network arguments are invalid")
+    host_text = f"[{hostname}]" if ":" in hostname else hostname
+    value = host_text if port == 443 else f"{host_text}:{port}"
+    try:
+        return normalize_network_rule(value)
+    except NetworkPolicyError:
+        raise ApprovalError("hash_mismatch", "approval network arguments are invalid") from None
+
+
 def _decode_command_rule(value: str) -> NormalizedCommand:
     """严格恢复持久 exact-argv 规则；未知类型或字段失败关闭。"""
     try:
@@ -799,6 +1003,34 @@ def _decode_command_rule(value: str) -> NormalizedCommand:
     ):
         raise ToolStateError("stored command policy rule is invalid")
     return NormalizedCommand(program, tuple(args))
+
+
+def _decode_network_rule(value: str) -> NetworkRule:
+    """严格恢复持久 exact hostname 规则；未知字段失败关闭。"""
+    try:
+        decoded = json.loads(value, parse_constant=_reject_json_constant)
+    except (json.JSONDecodeError, ValueError):
+        raise ToolStateError("stored network policy rule is invalid") from None
+    if not isinstance(decoded, dict) or set(decoded) != {"type", "hostname", "port"}:
+        raise ToolStateError("stored network policy rule is invalid")
+    hostname = decoded["hostname"]
+    port = decoded["port"]
+    if (
+        decoded["type"] != "exact_hostname"
+        or not isinstance(hostname, str)
+        or type(port) is not int
+        or not 1 <= port <= 65535
+    ):
+        raise ToolStateError("stored network policy rule is invalid")
+    host_text = f"[{hostname}]" if ":" in hostname else hostname
+    value = host_text if port == 443 else f"{host_text}:{port}"
+    try:
+        rule = normalize_network_rule(value)
+    except NetworkPolicyError:
+        raise ToolStateError("stored network policy rule is invalid") from None
+    if rule != NetworkRule(hostname, port):
+        raise ToolStateError("stored network policy rule is invalid")
+    return rule
 
 
 def _approval_from_row(row: sqlite3.Row) -> StoredApproval:

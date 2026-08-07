@@ -11,10 +11,15 @@ from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalError, canonical_arguments_hash
 from miniclaw.policy.engine import PolicyAction, PolicyDecision
+from miniclaw.policy.network import NetworkRule
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ApprovalRepository
+from miniclaw.storage.tooling import (
+    ApprovalRepository,
+    PolicyRuleRepository,
+    ToolRunRepository,
+)
 from miniclaw.tools.base import ToolContext
 
 
@@ -159,6 +164,23 @@ class ApprovalRepositoryTest(unittest.TestCase):
         self.assertEqual((approval_status, run_status), ("expired", "denied"))
         self.assertEqual(events, ["approval.created", "approval.expired"])
 
+    def test_list_and_get_lazily_expire_without_executing_waiting_tool(self) -> None:
+        """只读查询会结算过期状态，但绝不能消费或执行 ToolRun。"""
+        approval_id = self.create(ttl_seconds=10)
+        self.now += timedelta(seconds=11)
+
+        stored = self.repository.get(self.owner_id, approval_id)
+
+        self.assertEqual(stored.status, "expired")
+        self.assertEqual(self.repository.list(self.owner_id, status="pending"), ())
+        self.assertEqual(
+            [item.id for item in self.repository.list(self.owner_id, status="expired")],
+            [approval_id],
+        )
+        with self.database.connect_read_only() as connection:
+            run = connection.execute("SELECT status FROM tool_runs").fetchone()[0]
+        self.assertEqual(run, "denied")
+
     def test_changed_stored_arguments_fail_hash_check_without_consuming(self) -> None:
         """批准后任何参数 JSON 变化都不能消费原签名。"""
         approval_id = self.create()
@@ -218,6 +240,72 @@ class ApprovalRepositoryTest(unittest.TestCase):
             events,
             ["approval.created", "approval.approved", "approval.consumed"],
         )
+
+    def test_successful_http_approval_creates_exact_hostname_rule_without_path(self) -> None:
+        """HTTP always 规则只能保存小写 hostname + port，不能保存 query/path。"""
+        arguments: dict[str, JsonValue] = {
+            "url": "https://example.com/private/path?token=secret",
+            "timeout_seconds": 20,
+        }
+        approval = self.repository.create_waiting(
+            self.context,
+            ToolCall("http-1", "http_get", arguments),
+            arguments,
+            PolicyDecision(PolicyAction.REQUIRE_APPROVAL, "approval_required"),
+            ttl_seconds=600,
+            summary="http_get https://example.com:443",
+        )
+        self.repository.approve(self.owner_id, approval.id)
+        run = self.repository.consume(self.owner_id, approval.id)
+        ToolRunRepository(self.database).succeed(run.id, "{}", 1)
+        rules = PolicyRuleRepository(self.database)
+
+        first = rules.add_network_from_approval(self.owner_id, approval.id)
+        second = rules.add_network_from_approval(self.owner_id, approval.id)
+
+        self.assertEqual(first, second)
+        self.assertEqual(rules.network_rules(self.owner_id), (NetworkRule("example.com"),))
+        with self.database.connect_read_only() as connection:
+            stored = connection.execute(
+                "SELECT rule_json FROM policy_rules WHERE id = ?", (first,)
+            ).fetchone()[0]
+        self.assertEqual(
+            json.loads(stored),
+            {"hostname": "example.com", "port": 443, "type": "exact_hostname"},
+        )
+        self.assertNotIn("secret", stored)
+
+    def test_stale_running_tool_is_interrupted_once_and_never_replayed(self) -> None:
+        """崩溃遗留的旧 running 记录只转 interrupted，不执行原动作。"""
+        runs = ToolRunRepository(self.database)
+        run_id = runs.start(
+            self.context,
+            ToolCall("stale-1", "write_file", {"path": "never-created.txt"}),
+            {"path": "never-created.txt"},
+            PolicyDecision(PolicyAction.ALLOW, "test"),
+        )
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE tool_runs SET created_at = ? WHERE id = ?",
+                ((self.now - timedelta(hours=1)).isoformat(), run_id),
+            )
+
+        recovered = runs.interrupt_stale_runs(stale_before=self.now)
+        repeated = runs.interrupt_stale_runs(stale_before=self.now)
+
+        self.assertEqual(recovered, (run_id,))
+        self.assertEqual(repeated, ())
+        self.assertFalse((self.paths.workspace / "never-created.txt").exists())
+        with self.database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT status, completed_at FROM tool_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+            events = connection.execute(
+                "SELECT event_type FROM audit_events WHERE event_type = 'tool.interrupted'"
+            ).fetchall()
+        self.assertEqual(row["status"], "interrupted")
+        self.assertIsNotNone(row["completed_at"])
+        self.assertEqual(len(events), 1)
 
 
 if __name__ == "__main__":

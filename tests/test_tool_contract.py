@@ -10,10 +10,12 @@ from miniclaw.tools.base import (
     ToolResult,
     ToolRisk,
 )
+from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
+from miniclaw.tools.web import HttpGetTool
 
 
 class _EchoTool:
@@ -47,7 +49,7 @@ class _EchoTool:
 class ToolContractTest(unittest.TestCase):
     """验证模型可见 Schema 与 Tool Result 的稳定边界。"""
 
-    def test_builtin_registry_exposes_six_filesystem_tools_in_stable_order(self) -> None:
+    def test_builtin_registry_exposes_eight_tools_in_stable_order(self) -> None:
         """内置 Tool Schema 必须按名称稳定排序，避免模型请求漂移。"""
         registry = ToolRegistry(
             (
@@ -57,6 +59,8 @@ class ToolContractTest(unittest.TestCase):
                 EditFileTool(),
                 GlobTool(),
                 GrepTool(),
+                HttpGetTool(),
+                RunCommandTool(),
             )
         )
 
@@ -64,7 +68,16 @@ class ToolContractTest(unittest.TestCase):
 
         self.assertEqual(
             names,
-            ["edit_file", "glob", "grep", "read_file", "system_info", "write_file"],
+            [
+                "edit_file",
+                "glob",
+                "grep",
+                "http_get",
+                "read_file",
+                "run_command",
+                "system_info",
+                "write_file",
+            ],
         )
 
     def test_registry_emits_stable_openai_schema_and_rejects_duplicate_names(self) -> None:

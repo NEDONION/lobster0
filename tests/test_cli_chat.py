@@ -295,6 +295,7 @@ class CliChatTest(unittest.TestCase):
                 "edit_file",
                 "glob",
                 "grep",
+                "http_get",
                 "read_file",
                 "run_command",
                 "system_info",

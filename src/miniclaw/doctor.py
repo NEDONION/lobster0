@@ -4,10 +4,13 @@ import os
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import StrEnum
 
 from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.paths import StatePaths
+from miniclaw.policy.command import CommandPolicyError, normalize_command
+from miniclaw.policy.network import NetworkPolicyError, normalize_network_rule
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import LATEST_SCHEMA_VERSION
 
@@ -40,7 +43,7 @@ def run_local_checks(
         environ: 配置覆盖使用的环境变量；默认使用当前进程环境。
 
     Returns:
-        固定五项、按依赖顺序排列的安全诊断结果。
+        固定七项、按依赖顺序排列的安全诊断结果。
     """
     state_result = _check_state_home(paths)
     config_result, config = _check_config(paths, environ)
@@ -48,7 +51,9 @@ def run_local_checks(
         state_result,
         config_result,
         _check_workspace(config),
+        _check_tools(config),
         _check_database(paths),
+        _check_approvals(paths),
         _check_permissions(paths),
     )
 
@@ -116,6 +121,62 @@ def _check_database(paths: StatePaths) -> CheckResult:
             f"database schema is {version}; expected {LATEST_SCHEMA_VERSION}",
         )
     return CheckResult("database", CheckStatus.PASS, f"database schema {version} is healthy")
+
+
+def _check_tools(config: AppConfig | None) -> CheckResult:
+    """只解析本地 command/hostname 规则，不执行命令、DNS 或网络请求。"""
+    if config is None:
+        return CheckResult(
+            "tools",
+            CheckStatus.FAIL,
+            "tools cannot be checked without valid config",
+        )
+    try:
+        for rule in config.tools.run_command.allow_commands:
+            normalize_command(rule.program, rule.args, config.workspace.path)
+        for value in config.tools.http_get.allow_hosts:
+            normalize_network_rule(value)
+    except (CommandPolicyError, NetworkPolicyError):
+        return CheckResult(
+            "tools",
+            CheckStatus.FAIL,
+            "a configured tool allow rule is invalid or unavailable",
+        )
+    return CheckResult(
+        "tools",
+        CheckStatus.PASS,
+        (
+            f"{len(config.tools.enabled)} tools enabled; "
+            f"{len(config.tools.run_command.allow_commands)} command rules; "
+            f"{len(config.tools.http_get.allow_hosts)} hostname rules"
+        ),
+    )
+
+
+def _check_approvals(paths: StatePaths) -> CheckResult:
+    """只读统计尚未过期的 pending Approval，不触发 lazy expiry。"""
+    if not paths.database.is_file() or paths.database.is_symlink():
+        return CheckResult("approvals", CheckStatus.FAIL, "approval database is unavailable")
+    try:
+        with Database(paths.database).connect_read_only() as connection:
+            count = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM approvals
+                    WHERE status = 'pending' AND expires_at > ?
+                    """,
+                    (datetime.now(UTC).isoformat(),),
+                ).fetchone()[0]
+            )
+    except (DatabaseError, sqlite3.Error, OSError):
+        return CheckResult("approvals", CheckStatus.FAIL, "approvals cannot be inspected")
+    if count:
+        return CheckResult(
+            "approvals",
+            CheckStatus.WARN,
+            f"{count} pending approval(s); doctor did not execute them",
+        )
+    return CheckResult("approvals", CheckStatus.PASS, "0 pending approvals")
 
 
 def _check_permissions(paths: StatePaths) -> CheckResult:

@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import os
+import socket
 import sqlite3
 import sys
 import tempfile
@@ -14,6 +15,43 @@ from unittest import mock
 from miniclaw.cli import main
 from miniclaw.providers.base import ModelResponse, ToolCall
 from tests.fakes.fake_provider import FakeProvider
+
+
+class _HTTPSResponse:
+    """为 CLI 网络审批测试提供固定未压缩文本响应。"""
+
+    status = 200
+
+    def __init__(self) -> None:
+        self._body = io.BytesIO(b"PUBLIC-MARKER")
+
+    def getheader(self, name: str, default: str | None = None) -> str | None:
+        return "text/plain; charset=utf-8" if name.casefold() == "content-type" else default
+
+    def read(self, amount: int | None = None) -> bytes:
+        return self._body.read(amount)
+
+
+class _HTTPSConnection:
+    """阻止测试访问公网，同时保持 HttpGetTool 的真实读取路径。"""
+
+    def __init__(self, target: object, timeout: float) -> None:
+        del target, timeout
+
+    def request(self, method: str, target: str, body: object, headers: object) -> None:
+        del method, target, body, headers
+
+    def getresponse(self) -> _HTTPSResponse:
+        return _HTTPSResponse()
+
+    def close(self) -> None:
+        pass
+
+
+def _public_dns(*args: object, **kwargs: object) -> list[tuple[object, ...]]:
+    """把任意测试公网域名确定性解析到 TEST-NET 之外的全局地址。"""
+    del args, kwargs
+    return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
 
 
 def run_cli(arguments: list[str]) -> tuple[int, str, str]:
@@ -349,6 +387,139 @@ class CliApprovalTest(unittest.TestCase):
                 "(SELECT COUNT(*) FROM audit_events WHERE event_type = 'tool.denied')"
             ).fetchone()
         self.assertEqual(counts, (0, 0, 1))
+
+    def test_http_approve_always_persists_hostname_only_and_reuses_it(self) -> None:
+        """HTTP always 必须脱敏 path/query，后续仅同 authority 自动执行。"""
+        first_call = ToolCall(
+            "http-1",
+            "http_get",
+            {"url": "https://example.com/private/path?token=secret"},
+        )
+        waiting_provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(first_call,),
+                    reasoning_content=None,
+                    finish_reason="tool_calls",
+                    input_tokens=3,
+                    output_tokens=1,
+                    provider_request_id="req-http",
+                ),
+            )
+        )
+        waiting_provider.aclose = mock.AsyncMock()  # type: ignore[attr-defined]
+        with (
+            mock.patch.dict(os.environ, {"MINICLAW_MODEL_API_KEY": "offline"}, clear=True),
+            mock.patch("miniclaw.cli.OpenAICompatibleProvider", return_value=waiting_provider),
+            mock.patch("miniclaw.policy.network.socket.getaddrinfo", side_effect=_public_dns),
+        ):
+            waiting_code, _, waiting_error = run_cli(
+                ["chat", "--home", str(self.home), "--message", "读取网页"]
+            )
+        self.assertEqual((waiting_code, waiting_error), (0, ""))
+        with contextlib.closing(sqlite3.connect(self.home / "miniclaw.db")) as connection:
+            approval_id = connection.execute("SELECT id FROM approvals").fetchone()[0]
+        _, show_output, _ = run_cli(
+            ["approvals", "--home", str(self.home), "show", str(approval_id)]
+        )
+        self.assertIn("https://example.com:443", show_output)
+        self.assertNotIn("private", show_output)
+        self.assertNotIn("secret", show_output)
+
+        finish_provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="网页读取完成",
+                    tool_calls=(),
+                    reasoning_content=None,
+                    finish_reason="stop",
+                    input_tokens=5,
+                    output_tokens=1,
+                    provider_request_id="req-http-finish",
+                ),
+            )
+        )
+        finish_provider.aclose = mock.AsyncMock()  # type: ignore[attr-defined]
+        with (
+            mock.patch.dict(os.environ, {"MINICLAW_MODEL_API_KEY": "offline"}, clear=True),
+            mock.patch("miniclaw.cli.OpenAICompatibleProvider", return_value=finish_provider),
+            mock.patch("miniclaw.policy.network.socket.getaddrinfo", side_effect=_public_dns),
+            mock.patch("miniclaw.tools.web.PinnedHTTPSConnection", _HTTPSConnection),
+        ):
+            approve_code, approve_output, approve_error = run_cli(
+                [
+                    "approvals",
+                    "--home",
+                    str(self.home),
+                    "approve",
+                    str(approval_id),
+                    "--always",
+                ]
+            )
+        self.assertEqual(
+            (approve_code, approve_output, approve_error),
+            (0, "网页读取完成\n", ""),
+        )
+        approved_result = json.loads(finish_provider.requests[0].messages[-1].content)
+        self.assertEqual(approved_result["data"]["text"], "PUBLIC-MARKER")
+
+        repeat_provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "http-2",
+                            "http_get",
+                            {"url": "https://example.com/another?q=different"},
+                        ),
+                    ),
+                    reasoning_content=None,
+                    finish_reason="tool_calls",
+                    input_tokens=3,
+                    output_tokens=1,
+                    provider_request_id="req-http-repeat",
+                ),
+                ModelResponse(
+                    content="自动读取完成",
+                    tool_calls=(),
+                    reasoning_content=None,
+                    finish_reason="stop",
+                    input_tokens=4,
+                    output_tokens=1,
+                    provider_request_id="req-http-repeat-finish",
+                ),
+            )
+        )
+        repeat_provider.aclose = mock.AsyncMock()  # type: ignore[attr-defined]
+        with (
+            mock.patch.dict(os.environ, {"MINICLAW_MODEL_API_KEY": "offline"}, clear=True),
+            mock.patch("miniclaw.cli.OpenAICompatibleProvider", return_value=repeat_provider),
+            mock.patch("miniclaw.policy.network.socket.getaddrinfo", side_effect=_public_dns),
+            mock.patch("miniclaw.tools.web.PinnedHTTPSConnection", _HTTPSConnection),
+        ):
+            repeat_code, repeat_output, repeat_error = run_cli(
+                ["chat", "--home", str(self.home), "--message", "再次读取"]
+            )
+        self.assertEqual(
+            (repeat_code, repeat_output, repeat_error),
+            (0, "自动读取完成\n", ""),
+        )
+        with contextlib.closing(sqlite3.connect(self.home / "miniclaw.db")) as connection:
+            counts = connection.execute(
+                "SELECT (SELECT COUNT(*) FROM approvals), "
+                "(SELECT COUNT(*) FROM policy_rules), "
+                "(SELECT COUNT(*) FROM tool_runs WHERE status = 'succeeded')"
+            ).fetchone()
+            rule = json.loads(
+                connection.execute("SELECT rule_json FROM policy_rules").fetchone()[0]
+            )
+        self.assertEqual(counts, (1, 1, 2))
+        self.assertEqual(
+            rule,
+            {"hostname": "example.com", "port": 443, "type": "exact_hostname"},
+        )
 
     def test_write_file_cannot_create_always_rule(self) -> None:
         """文件审批只能 allow-once，不能扩大成永久写权限。"""
