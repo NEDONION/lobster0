@@ -158,6 +158,24 @@ class EvalCaseLoaderTest(unittest.TestCase):
         self.assertIn("broken.jsonl:1", str(captured.exception))
         self.assertNotIn(secret_text, str(captured.exception))
 
+    def test_rejects_non_standard_json_constants(self) -> None:
+        """NaN 和 Infinity 不是标准 JSON，不能进入 Tool arguments。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            case = valid_case()
+            response = case["offline"]["responses"][0]
+            response["tool_calls"] = [
+                {
+                    "call_id": "call_bad",
+                    "name": "system_info",
+                    "arguments": {"value": float("nan")},
+                }
+            ]
+            write_cases(root, "cases.jsonl", [case])
+
+            with self.assertRaisesRegex(EvalCaseError, "invalid JSON at cases.jsonl:1"):
+                load_cases(root)
+
 
 class RepositoryEvalSuiteTest(unittest.TestCase):
     """保证随代码提交的首批 Claw-like 场景始终可执行且可追溯。"""

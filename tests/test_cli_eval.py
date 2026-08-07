@@ -95,6 +95,16 @@ class CliEvalTest(unittest.TestCase):
         self.assertEqual((code, output), (2, ""))
         self.assertIn("error: eval root is not a directory", error)
 
+    def test_run_rejects_empty_offline_gate(self) -> None:
+        """没有 active offline case 时不能用 0/0 制造伪通过。"""
+        with tempfile.TemporaryDirectory() as directory:
+            code, output, error = run_cli(
+                ["eval", "run", "--suite", "offline", "--root", directory]
+            )
+
+        self.assertEqual((code, output), (2, ""))
+        self.assertEqual(error, "error: no active offline eval cases\n")
+
 
 if __name__ == "__main__":
     unittest.main()

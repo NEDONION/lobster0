@@ -121,8 +121,8 @@ def load_cases(root: Path) -> tuple[EvalCase, ...]:
                 continue
             source = f"{path.name}:{line_number}"
             try:
-                raw = json.loads(line)
-            except json.JSONDecodeError as error:
+                raw = json.loads(line, parse_constant=_reject_json_constant)
+            except (json.JSONDecodeError, ValueError) as error:
                 raise EvalCaseError(f"invalid JSON at {source}") from error
             case = _parse_case(raw, source)
             previous = seen.get(case.id)
@@ -133,6 +133,12 @@ def load_cases(root: Path) -> tuple[EvalCase, ...]:
             seen[case.id] = source
             cases.append(case)
     return tuple(cases)
+
+
+def _reject_json_constant(value: str) -> None:
+    """拒绝 Python JSON 扩展支持的 NaN 与 Infinity。"""
+    del value
+    raise ValueError("non-standard JSON constant")
 
 
 def _parse_case(raw: object, source: str) -> EvalCase:

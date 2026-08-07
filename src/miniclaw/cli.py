@@ -155,6 +155,9 @@ def _run_eval(arguments: argparse.Namespace) -> int:
     active = tuple(
         case for case in cases if case.status == "active" and "offline" in case.layers
     )
+    if not active:
+        print("error: no active offline eval cases", file=sys.stderr)
+        return 2
     suite = asyncio.run(run_offline_suite(active))
     for result in suite.cases:
         if result.passed:
