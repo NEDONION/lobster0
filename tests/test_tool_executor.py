@@ -14,7 +14,7 @@ from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ToolRunRepository
+from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
 from miniclaw.tools.base import (
     Tool,
     ToolContext,
@@ -203,20 +203,35 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
             read_only_roots=(),
         )
 
-    def executor(self, tool: Tool, *, result_max_chars: int = 20_000) -> ToolExecutor:
+    def executor(
+        self,
+        tool: Tool,
+        *,
+        result_max_chars: int = 20_000,
+        approvals: ApprovalRepository | None = None,
+    ) -> ToolExecutor:
         """使用真实 Registry、Policy 与 Repository 创建执行器。"""
+        if approvals is None:
+            return ToolExecutor(
+                ToolRegistry((tool,)),
+                PolicyEngine(),
+                ToolRunRepository(self.database),
+                result_max_chars=result_max_chars,
+            )
         return ToolExecutor(
             ToolRegistry((tool,)),
             PolicyEngine(),
             ToolRunRepository(self.database),
             result_max_chars=result_max_chars,
+            approvals=approvals,
+            approval_ttl_seconds=600,
         )
 
     async def test_low_risk_tool_executes_and_persists_succeeded_run(self) -> None:
         """low-risk Tool 必须记录 running/succeeded 审计轨迹。"""
         call = ToolCall("call_1", "echo", {"text": "hello"})
 
-        model_text = await self.executor(_EchoTool()).execute(self.context, call)
+        model_text = (await self.executor(_EchoTool()).execute(self.context, call)).model_text
 
         self.assertEqual(json.loads(model_text)["data"], {"text": "hello"})
         with self.database.connect_read_only() as connection:
@@ -233,10 +248,12 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_unexpected_tool_error_is_redacted_and_persisted(self) -> None:
         """内部异常只能变成稳定错误码，原始文本不得泄露。"""
-        result = await self.executor(_BrokenTool()).execute(
-            self.context,
-            ToolCall("call_broken", "broken", {}),
-        )
+        result = (
+            await self.executor(_BrokenTool()).execute(
+                self.context,
+                ToolCall("call_broken", "broken", {}),
+            )
+        ).model_text
 
         self.assertEqual(json.loads(result)["error"]["code"], "tool_failed")
         self.assertNotIn("private-test-value", result)
@@ -262,10 +279,12 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_oversized_result_becomes_bounded_failure(self) -> None:
         """过大的 Tool 输出不能直接塞进模型上下文。"""
-        result = await self.executor(_EchoTool(), result_max_chars=200).execute(
-            self.context,
-            ToolCall("call_large", "echo", {"text": "x" * 1000}),
-        )
+        result = (
+            await self.executor(_EchoTool(), result_max_chars=200).execute(
+                self.context,
+                ToolCall("call_large", "echo", {"text": "x" * 1000}),
+            )
+        ).model_text
 
         self.assertLessEqual(len(result), 200)
         self.assertEqual(json.loads(result)["error"]["code"], "tool_result_too_large")
@@ -286,7 +305,7 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         )
         for executor, call, expected_code in cases:
             with self.subTest(call=call):
-                result = await executor.execute(self.context, call)
+                result = (await executor.execute(self.context, call)).model_text
                 self.assertEqual(json.loads(result)["error"]["code"], expected_code)
 
         with self.database.connect_read_only() as connection:
@@ -295,10 +314,12 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_tool_result_is_redacted_and_marks_run_failed(self) -> None:
         """ToolResult 编码失败也必须收口，不能留下 running ToolRun。"""
-        result = await self.executor(_InvalidResultTool()).execute(
-            self.context,
-            ToolCall("call_invalid_result", "invalid_result", {}),
-        )
+        result = (
+            await self.executor(_InvalidResultTool()).execute(
+                self.context,
+                ToolCall("call_invalid_result", "invalid_result", {}),
+            )
+        ).model_text
 
         self.assertEqual(json.loads(result)["error"]["code"], "tool_failed")
         self.assertNotIn("NaN", result)
@@ -308,10 +329,12 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_workspace_policy_allows_safe_read_tool_before_starting_run(self) -> None:
         """合法 Workspace 路径必须通过预检并正常创建 ToolRun。"""
-        result = await self.executor(_WorkspaceReadTool("read_file", "path")).execute(
-            self.context,
-            ToolCall("call_read", "read_file", {"path": "notes.txt"}),
-        )
+        result = (
+            await self.executor(_WorkspaceReadTool("read_file", "path")).execute(
+                self.context,
+                ToolCall("call_read", "read_file", {"path": "notes.txt"}),
+            )
+        ).model_text
 
         self.assertTrue(json.loads(result)["ok"])
         with self.database.connect_read_only() as connection:
@@ -338,7 +361,7 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         )
         for tool, call, expected_code in cases:
             with self.subTest(tool=call.name):
-                result = await self.executor(tool).execute(self.context, call)
+                result = (await self.executor(tool).execute(self.context, call)).model_text
                 self.assertEqual(json.loads(result)["error"]["code"], expected_code)
 
         with self.database.connect_read_only() as connection:
@@ -370,14 +393,16 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_workspace_policy_hard_denies_sensitive_write_before_approval(self) -> None:
         """敏感写路径必须硬拒绝并审计，不能创建可批准的动作。"""
-        result = await self.executor(WriteFileTool()).execute(
-            self.context,
-            ToolCall(
-                "write_secret",
-                "write_file",
-                {"path": ".env", "content": "SECRET=value"},
-            ),
-        )
+        result = (
+            await self.executor(WriteFileTool()).execute(
+                self.context,
+                ToolCall(
+                    "write_secret",
+                    "write_file",
+                    {"path": ".env", "content": "SECRET=value"},
+                ),
+            )
+        ).model_text
 
         self.assertEqual(json.loads(result)["error"]["code"], "sensitive_path")
         with self.database.connect_read_only() as connection:
@@ -389,6 +414,46 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event["event_type"], "tool.denied")
         self.assertEqual(json.loads(event["metadata_json"])["error_code"], "sensitive_path")
         self.assertNotIn("SECRET=value", event["metadata_json"])
+
+    async def test_medium_write_creates_bound_approval_without_touching_file(self) -> None:
+        """安全写请求必须变成带 ID 的 waiting Approval，不能提前执行 Tool。"""
+        target = self.context.workspace / "approved-later.txt"
+        executor = self.executor(
+            WriteFileTool(),
+            approvals=ApprovalRepository(self.database),
+        )
+
+        outcome = await executor.execute(
+            self.context,
+            ToolCall(
+                "write_later",
+                "write_file",
+                {"path": "approved-later.txt", "content": "private-content"},
+            ),
+        )
+
+        self.assertIsNotNone(outcome.approval_id)
+        self.assertEqual(
+            json.loads(outcome.model_text)["error"]["code"],
+            "approval_required",
+        )
+        self.assertFalse(target.exists())
+        self.assertNotIn("private-content", outcome.model_text)
+        self.assertNotIn(str(self.paths.home), outcome.model_text)
+        with self.database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT tr.status AS run_status, tr.arguments_json,
+                       a.id AS approval_id, a.status AS approval_status
+                FROM tool_runs tr JOIN approvals a ON a.tool_run_id = tr.id
+                """
+            ).fetchone()
+        self.assertEqual(
+            (row["run_status"], row["approval_status"]),
+            ("waiting_approval", "pending"),
+        )
+        self.assertEqual(row["approval_id"], outcome.approval_id)
+        self.assertEqual(json.loads(row["arguments_json"])["path"], str(target))
 
     async def test_policy_deny_fails_closed_when_audit_write_fails(self) -> None:
         """拒绝审计无法落库时不能返回一个伪装正常的 Policy 结果。"""
@@ -420,10 +485,12 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         )
         for call in calls:
             with self.subTest(call=call.call_id):
-                result = await self.executor(_WorkspaceReadTool("read_file", "path")).execute(
-                    self.context,
-                    call,
-                )
+                result = (
+                    await self.executor(_WorkspaceReadTool("read_file", "path")).execute(
+                        self.context,
+                        call,
+                    )
+                ).model_text
                 self.assertEqual(json.loads(result)["error"]["code"], "workspace_escape")
                 self.assertNotIn(str(self.paths.home), result)
 

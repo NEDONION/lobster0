@@ -1,0 +1,224 @@
+"""参数绑定 Approval 的 SQLite 生命周期与并发消费测试。"""
+
+import json
+import tempfile
+import unittest
+from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+from miniclaw.bootstrap import initialize_state
+from miniclaw.paths import build_state_paths
+from miniclaw.policy.approvals import ApprovalError, canonical_arguments_hash
+from miniclaw.policy.engine import PolicyAction, PolicyDecision
+from miniclaw.providers.base import JsonValue, ToolCall
+from miniclaw.storage.conversations import SessionRepository, TurnRepository
+from miniclaw.storage.database import Database
+from miniclaw.storage.tooling import ApprovalRepository
+from miniclaw.tools.base import ToolContext
+
+
+class ApprovalRepositoryTest(unittest.TestCase):
+    """验证 Approval 跨进程可恢复、绑定参数并且只消费一次。"""
+
+    def setUp(self) -> None:
+        """创建带真实 Owner、Session 和 running Turn 的隔离数据库。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+        initialized = initialize_state(self.paths)
+        self.owner_id = initialized.owner.id
+        self.database = Database(self.paths.database)
+        self.session = SessionRepository(self.database).get_or_create_cli(
+            self.owner_id,
+            "approval-test",
+        )
+        turns = TurnRepository(self.database)
+        self.turn = turns.create_with_user_message(
+            self.session.id,
+            "approval-event",
+            "test-model",
+            "write a note",
+        )
+        turns.mark_running(self.turn.id)
+        self.context = ToolContext(
+            user_id=self.owner_id,
+            session_id=self.session.id,
+            turn_id=self.turn.id,
+            state_home=self.paths.home,
+            workspace=self.paths.workspace,
+            read_only_roots=(),
+        )
+        self.now = datetime(2026, 8, 8, 12, 0, tzinfo=UTC)
+        self.repository = ApprovalRepository(self.database, clock=lambda: self.now)
+
+    def create(
+        self,
+        *,
+        call_id: str = "write-1",
+        arguments: dict[str, JsonValue] | None = None,
+        ttl_seconds: int = 600,
+    ) -> int:
+        """创建一条默认 write_file waiting Approval 并返回 ID。"""
+        approval = self.repository.create_waiting(
+            self.context,
+            ToolCall(
+                call_id,
+                "write_file",
+                arguments
+                or {
+                    "path": str(self.paths.workspace / "note.txt"),
+                    "content": "private-content",
+                    "overwrite": False,
+                },
+            ),
+            arguments
+            or {
+                "path": str(self.paths.workspace / "note.txt"),
+                "content": "private-content",
+                "overwrite": False,
+            },
+            PolicyDecision(PolicyAction.REQUIRE_APPROVAL, "approval_required"),
+            ttl_seconds=ttl_seconds,
+            summary="write_file note.txt",
+        )
+        return approval.id
+
+    def test_canonical_hash_is_order_independent_tool_bound_and_standard_json(self) -> None:
+        """键顺序不能改变 hash，Tool 名或参数变化必须改变，NaN 必须拒绝。"""
+        left = canonical_arguments_hash("write_file", {"path": "x", "content": "a"})
+        right = canonical_arguments_hash("write_file", {"content": "a", "path": "x"})
+
+        self.assertEqual(left, right)
+        self.assertNotEqual(
+            left,
+            canonical_arguments_hash("edit_file", {"path": "x", "content": "a"}),
+        )
+        self.assertNotEqual(
+            left,
+            canonical_arguments_hash("write_file", {"path": "x", "content": "b"}),
+        )
+        with self.assertRaises(ValueError):
+            canonical_arguments_hash("write_file", {"value": float("nan")})
+
+    def test_create_waiting_persists_bound_run_approval_and_redacted_audit(self) -> None:
+        """创建操作必须原子保存 waiting ToolRun、pending Approval 和脱敏审计。"""
+        approval_id = self.create()
+
+        with self.database.connect_read_only() as connection:
+            approval = connection.execute("SELECT * FROM approvals").fetchone()
+            run = connection.execute("SELECT * FROM tool_runs").fetchone()
+            audit = connection.execute("SELECT * FROM audit_events").fetchone()
+        self.assertEqual(approval["id"], approval_id)
+        self.assertEqual(approval["status"], "pending")
+        self.assertEqual(run["status"], "waiting_approval")
+        self.assertEqual(run["policy_action"], "require_approval")
+        self.assertEqual(approval["arguments_hash"], run["arguments_hash"])
+        self.assertEqual(audit["event_type"], "approval.created")
+        self.assertNotIn("private-content", audit["summary"] + audit["metadata_json"])
+        self.assertEqual(
+            json.loads(run["arguments_json"])["path"],
+            str(self.paths.workspace / "note.txt"),
+        )
+
+    def test_pending_survives_repository_restart_and_lists_only_owner_records(self) -> None:
+        """新 Repository 实例必须从 SQLite 恢复 pending，不依赖内存单例。"""
+        approval_id = self.create()
+
+        restarted = ApprovalRepository(self.database, clock=lambda: self.now)
+        stored = restarted.get(self.owner_id, approval_id)
+
+        self.assertEqual(stored.status, "pending")
+        self.assertEqual([item.id for item in restarted.list(self.owner_id)], [approval_id])
+        self.assertEqual(restarted.list(self.owner_id + 1), ())
+
+    def test_non_owner_and_expired_approval_cannot_be_approved(self) -> None:
+        """Owner 不匹配和 TTL 到期都必须失败，过期 ToolRun 同时终止。"""
+        approval_id = self.create(ttl_seconds=10)
+
+        with self.assertRaises(ApprovalError) as wrong_owner:
+            self.repository.approve(self.owner_id + 1, approval_id)
+        self.assertEqual(wrong_owner.exception.code, "not_owner")
+
+        self.now += timedelta(seconds=11)
+        with self.assertRaises(ApprovalError) as expired:
+            self.repository.approve(self.owner_id, approval_id)
+        self.assertEqual(expired.exception.code, "expired")
+
+        with self.database.connect_read_only() as connection:
+            approval_status = connection.execute(
+                "SELECT status FROM approvals WHERE id = ?", (approval_id,)
+            ).fetchone()[0]
+            run_status = connection.execute("SELECT status FROM tool_runs").fetchone()[0]
+            events = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT event_type FROM audit_events ORDER BY id"
+                ).fetchall()
+            ]
+        self.assertEqual((approval_status, run_status), ("expired", "denied"))
+        self.assertEqual(events, ["approval.created", "approval.expired"])
+
+    def test_changed_stored_arguments_fail_hash_check_without_consuming(self) -> None:
+        """批准后任何参数 JSON 变化都不能消费原签名。"""
+        approval_id = self.create()
+        self.repository.approve(self.owner_id, approval_id)
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE tool_runs SET arguments_json = ? WHERE tool_call_id = 'write-1'",
+                ('{"content":"changed","overwrite":false,"path":"note.txt"}',),
+            )
+
+        with self.assertRaises(ApprovalError) as changed:
+            self.repository.consume(self.owner_id, approval_id)
+
+        self.assertEqual(changed.exception.code, "hash_mismatch")
+        with self.database.connect_read_only() as connection:
+            statuses = connection.execute(
+                "SELECT a.status, tr.status FROM approvals a "
+                "JOIN tool_runs tr ON tr.id = a.tool_run_id WHERE a.id = ?",
+                (approval_id,),
+            ).fetchone()
+        self.assertEqual(tuple(statuses), ("approved", "waiting_approval"))
+
+    def test_two_concurrent_consumers_have_exactly_one_winner(self) -> None:
+        """两个并发批准进程只能让一个 claim 获得 running ToolRun。"""
+        approval_id = self.create()
+        self.repository.approve(self.owner_id, approval_id)
+
+        def consume(_: int) -> str:
+            try:
+                ApprovalRepository(self.database, clock=lambda: self.now).consume(
+                    self.owner_id,
+                    approval_id,
+                )
+            except ApprovalError as error:
+                return error.code
+            return "consumed"
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            outcomes = list(pool.map(consume, range(2)))
+
+        self.assertEqual(outcomes.count("consumed"), 1)
+        self.assertEqual(outcomes.count("already_decided"), 1)
+        with self.database.connect_read_only() as connection:
+            statuses = connection.execute(
+                "SELECT a.status, tr.status FROM approvals a "
+                "JOIN tool_runs tr ON tr.id = a.tool_run_id WHERE a.id = ?",
+                (approval_id,),
+            ).fetchone()
+            events = [
+                row[0]
+                for row in connection.execute(
+                    "SELECT event_type FROM audit_events ORDER BY id"
+                ).fetchall()
+            ]
+        self.assertEqual(tuple(statuses), ("consumed", "running"))
+        self.assertEqual(
+            events,
+            ["approval.created", "approval.approved", "approval.consumed"],
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

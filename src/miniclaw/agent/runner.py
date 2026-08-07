@@ -3,6 +3,7 @@
 import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from enum import StrEnum
 
 from miniclaw.providers.base import (
     JsonValue,
@@ -13,6 +14,7 @@ from miniclaw.providers.base import (
     StreamHandler,
     ToolCall,
 )
+from miniclaw.storage.tooling import StoredToolRun
 from miniclaw.tools.base import ToolContext
 from miniclaw.tools.executor import ToolExecutor
 
@@ -29,6 +31,13 @@ class AgentLoopLimitError(AgentError):
     """表示模型在允许的最后一轮仍继续请求工具。"""
 
 
+class AgentRunStatus(StrEnum):
+    """区分最终回答与等待人工确认的正常业务结果。"""
+
+    COMPLETED = "completed"
+    WAITING_APPROVAL = "waiting_approval"
+
+
 @dataclass(frozen=True, slots=True)
 class AgentRunResult:
     """汇总一次 Agent Loop 的最终文本、轮数、用量和诊断 ID。"""
@@ -39,6 +48,8 @@ class AgentRunResult:
     output_tokens: int
     provider_request_id: str | None
     finish_reason: str
+    status: AgentRunStatus = AgentRunStatus.COMPLETED
+    approval_id: int | None = None
     intermediate_messages: tuple[ModelMessage, ...] = ()
 
 
@@ -72,6 +83,16 @@ class AgentRunner:
     def tool_schemas(self) -> tuple[dict[str, JsonValue], ...]:
         """返回当前执行器公开给模型的 Tool Schema。"""
         return () if self._executor is None else self._executor.schemas
+
+    async def execute_approved(
+        self,
+        context: ToolContext,
+        run: StoredToolRun,
+    ) -> str:
+        """通过同一 Executor 执行已消费的绑定 ToolRun。"""
+        if self._executor is None:
+            raise AgentError("tool executor is required for approval continuation")
+        return (await self._executor.execute_approved(context, run)).model_text
 
     async def run(
         self,
@@ -158,7 +179,21 @@ class AgentRunner:
             messages.append(assistant_message)
             intermediate_messages.append(assistant_message)
             for call in response.tool_calls:
-                tool_message = await self._execute_tool(call, tool_context)
+                tool_message, approval_id = await self._execute_tool(call, tool_context)
+                if approval_id is not None:
+                    if on_intermediate is not None:
+                        on_intermediate(tuple(intermediate_messages[batch_start:]))
+                    return AgentRunResult(
+                        content=f"Approval {approval_id} required for {call.name}.",
+                        iterations=iteration,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        provider_request_id=provider_request_id,
+                        finish_reason="approval_required",
+                        status=AgentRunStatus.WAITING_APPROVAL,
+                        approval_id=approval_id,
+                        intermediate_messages=tuple(intermediate_messages),
+                    )
                 messages.append(tool_message)
                 intermediate_messages.append(tool_message)
             if on_intermediate is not None:
@@ -170,7 +205,7 @@ class AgentRunner:
         self,
         call: ToolCall,
         context: ToolContext | None,
-    ) -> ModelMessage:
+    ) -> tuple[ModelMessage, int | None]:
         """执行已注册工具，或构造确定性未注册 Tool Result。"""
         if self._executor is None:
             result = json.dumps(
@@ -180,8 +215,14 @@ class AgentRunner:
             )
         else:
             assert context is not None
-            result = await self._executor.execute(context, call)
-        return ModelMessage(role="tool", content=result, tool_call_id=call.call_id)
+            outcome = await self._executor.execute(context, call)
+            result = outcome.model_text
+            if outcome.approval_id is not None:
+                return (
+                    ModelMessage(role="tool", content=result, tool_call_id=call.call_id),
+                    outcome.approval_id,
+                )
+        return ModelMessage(role="tool", content=result, tool_call_id=call.call_id), None
 
 
 def _assistant_tool_message(response: ModelResponse) -> ModelMessage:

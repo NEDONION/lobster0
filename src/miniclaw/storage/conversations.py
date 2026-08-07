@@ -52,6 +52,7 @@ class StoredTurn:
 
     id: int
     session_id: int
+    parent_turn_id: int | None
     inbound_event_id: str
     status: str
     model: str
@@ -242,6 +243,36 @@ class TurnRepository:
             row = connection.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
         return _turn_from_row(row)
 
+    def create_continuation(
+        self,
+        session_id: int,
+        approval_id: int,
+        parent_turn_id: int,
+        model: str,
+    ) -> StoredTurn:
+        """为 waiting Turn 创建没有伪造 User Message 的 queued child Turn。"""
+        with self._database.connect() as connection:
+            parent = connection.execute(
+                "SELECT status FROM turns WHERE id = ? AND session_id = ?",
+                (parent_turn_id, session_id),
+            ).fetchone()
+            if parent is None or parent["status"] != "waiting_approval":
+                raise ConversationStateError("Parent Turn is not waiting for approval")
+            cursor = connection.execute(
+                """
+                INSERT INTO turns (
+                    session_id, parent_turn_id, inbound_event_id, status,
+                    model, runtime_snapshot_json
+                ) VALUES (?, ?, ?, 'queued', ?, '{}')
+                """,
+                (session_id, parent_turn_id, f"approval:{approval_id}", model),
+            )
+            row = connection.execute(
+                "SELECT * FROM turns WHERE id = ?",
+                (int(cursor.lastrowid),),
+            ).fetchone()
+        return _turn_from_row(row)
+
     def append_intermediate_messages(
         self,
         turn_id: int,
@@ -353,6 +384,41 @@ class TurnRepository:
                 "SELECT * FROM messages WHERE id = ?", (message_id,)
             ).fetchone()
         return _message_from_row(row)
+
+    def wait_for_approval(
+        self,
+        turn_id: int,
+        session_id: int,
+        approval_id: int,
+        *,
+        input_tokens: int,
+        output_tokens: int,
+        provider_request_id: str | None,
+        iterations: int,
+    ) -> StoredTurn:
+        """保存 waiting_approval 状态和恢复所需的最小运行快照。"""
+        snapshot = _json_text(
+            {
+                "approval_id": approval_id,
+                "provider_request_id": provider_request_id,
+                "iterations": iterations,
+                "finish_reason": "approval_required",
+            }
+        )
+        with self._database.connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE turns SET
+                    status = 'waiting_approval', input_tokens = ?, output_tokens = ?,
+                    runtime_snapshot_json = ?
+                WHERE id = ? AND session_id = ? AND status = 'running'
+                """,
+                (input_tokens, output_tokens, snapshot, turn_id, session_id),
+            )
+            if updated.rowcount != 1:
+                raise ConversationStateError("Turn is not running")
+            row = connection.execute("SELECT * FROM turns WHERE id = ?", (turn_id,)).fetchone()
+        return _turn_from_row(row)
 
     def fail(self, turn_id: int, error_code: str, error_message: str) -> StoredTurn:
         """把 queued/running Turn 标记为 failed 并保存安全错误分类。
@@ -527,6 +593,7 @@ def _turn_from_row(row: sqlite3.Row) -> StoredTurn:
     return StoredTurn(
         id=row["id"],
         session_id=row["session_id"],
+        parent_turn_id=row["parent_turn_id"],
         inbound_event_id=row["inbound_event_id"],
         status=row["status"],
         model=row["model"],

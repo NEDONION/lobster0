@@ -27,6 +27,7 @@ class PolicyDecision:
     action: PolicyAction
     reason: str
     error_code: str = "denied"
+    normalized_arguments: dict[str, JsonValue] | None = None
 
 
 class PolicyEngine:
@@ -39,22 +40,33 @@ class PolicyEngine:
         arguments: dict[str, JsonValue],
     ) -> PolicyDecision:
         """只自动放行 low-risk；critical 拒绝；其余要求审批。"""
+        normalized_arguments = arguments
         path_argument = _READ_PATH_ARGUMENTS.get(definition.name)
         if path_argument is not None:
             raw_path = cast(str, arguments[path_argument])
             try:
-                WorkspaceGuard().resolve_read(context, raw_path)
+                resolved = WorkspaceGuard().resolve_read(context, raw_path)
             except WorkspaceAccessError as error:
                 return PolicyDecision(PolicyAction.DENY, str(error), error.code)
+            normalized_arguments = {**arguments, path_argument: str(resolved)}
         write_path_argument = _WRITE_PATH_ARGUMENTS.get(definition.name)
         if write_path_argument is not None:
             raw_path = cast(str, arguments[write_path_argument])
             try:
-                WorkspaceGuard().resolve_write(context, raw_path)
+                resolved = WorkspaceGuard().resolve_write(context, raw_path)
             except WorkspaceAccessError as error:
                 return PolicyDecision(PolicyAction.DENY, str(error), error.code)
+            normalized_arguments = {**arguments, write_path_argument: str(resolved)}
         if definition.risk is ToolRisk.LOW:
-            return PolicyDecision(PolicyAction.ALLOW, "built_in_read_only")
+            return PolicyDecision(
+                PolicyAction.ALLOW,
+                "built_in_read_only",
+                normalized_arguments=normalized_arguments,
+            )
         if definition.risk is ToolRisk.CRITICAL:
             return PolicyDecision(PolicyAction.DENY, "critical_action")
-        return PolicyDecision(PolicyAction.REQUIRE_APPROVAL, "approval_required")
+        return PolicyDecision(
+            PolicyAction.REQUIRE_APPROVAL,
+            "approval_required",
+            normalized_arguments=normalized_arguments,
+        )

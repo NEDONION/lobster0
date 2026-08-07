@@ -291,7 +291,7 @@ class CliChatTest(unittest.TestCase):
         assert isinstance(tools, list)
         self.assertEqual(
             [tool["function"]["name"] for tool in tools],
-            ["glob", "grep", "read_file", "system_info"],
+            ["edit_file", "glob", "grep", "read_file", "system_info", "write_file"],
         )
         second_messages = server.observations[1]["messages"]
         self.assertIsInstance(second_messages, list)

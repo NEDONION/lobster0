@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import json
 import os
 import sqlite3
 import sys
@@ -19,6 +20,7 @@ from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.evals.cases import EvalCaseError, load_cases
 from miniclaw.evals.runner import run_offline_suite
 from miniclaw.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
+from miniclaw.policy.approvals import ApprovalError
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import ProviderAuthenticationError, ProviderError
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
@@ -32,9 +34,9 @@ from miniclaw.storage.conversations import (
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import MigrationError, apply_migrations
 from miniclaw.storage.repositories import OwnerRepository
-from miniclaw.storage.tooling import ToolRunRepository
+from miniclaw.storage.tooling import ApprovalRepository, StoredApproval, ToolRunRepository
 from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.filesystem import ReadFileTool
+from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
@@ -75,6 +77,28 @@ def build_parser() -> argparse.ArgumentParser:
             help="directory containing versioned JSONL cases",
         )
     eval_run.add_argument("--suite", choices=("offline",), required=True)
+    approvals_parser = subparsers.add_parser("approvals", help="inspect and decide tool approvals")
+    approvals_parser.add_argument("--home", help="absolute MiniClaw state directory")
+    approval_commands = approvals_parser.add_subparsers(
+        dest="approval_command",
+        required=True,
+    )
+    approval_list = approval_commands.add_parser("list", help="list approval requests")
+    approval_list.add_argument(
+        "--status",
+        choices=("pending", "approved", "denied", "expired", "consumed"),
+    )
+    approval_list.add_argument("--json", action="store_true", dest="as_json")
+    approval_show = approval_commands.add_parser("show", help="show one approval")
+    approval_show.add_argument("approval_id", type=int)
+    approval_show.add_argument("--json", action="store_true", dest="as_json")
+    approval_approve = approval_commands.add_parser("approve", help="approve and continue")
+    approval_approve.add_argument("approval_id", type=int)
+    approval_approve.add_argument("--always", action="store_true")
+    approval_approve.add_argument("--json", action="store_true", dest="as_json")
+    approval_deny = approval_commands.add_parser("deny", help="deny and continue")
+    approval_deny.add_argument("approval_id", type=int)
+    approval_deny.add_argument("--json", action="store_true", dest="as_json")
     return parser
 
 
@@ -107,6 +131,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         for result in results:
             print(f"[{result.status.value.upper()}] {result.name}: {result.message}")
         return 2 if any(result.status is CheckStatus.FAIL for result in results) else 0
+
+    if arguments.command == "approvals":
+        return _run_approvals(arguments, paths)
 
     if arguments.command == "chat":
         if arguments.message is None and not sys.stdin.isatty():
@@ -169,6 +196,153 @@ def _run_eval(arguments: argparse.Namespace) -> int:
         f"{suite.failed} failed ({suite.duration_ms}ms)."
     )
     return 1 if suite.failed else 0
+
+
+def _run_approvals(arguments: argparse.Namespace, paths: StatePaths) -> int:
+    """查询或决定持久 Approval，并使用稳定退出码。"""
+    try:
+        _require_initialized_state(paths)
+        database = Database(paths.database)
+        apply_migrations(database)
+        owner = OwnerRepository(database).get_or_create()
+        approvals = ApprovalRepository(database)
+        if arguments.approval_command == "list":
+            items = approvals.list(owner.id, status=arguments.status)
+            _print_approvals(items, arguments.as_json)
+            return 0
+        if arguments.approval_command == "show":
+            item = approvals.get(owner.id, arguments.approval_id)
+            _print_approval(item, arguments.as_json)
+            return 0
+
+        load_dotenv(Path.cwd() / ".env")
+        config = load_config(paths)
+        api_key = os.environ.get(config.provider.api_key_env, "").strip()
+        if not api_key:
+            raise ConfigError(f"{config.provider.api_key_env} is not configured")
+        if arguments.approval_command == "approve" and arguments.always:
+            item = approvals.get(owner.id, arguments.approval_id)
+            if item.tool_name not in {"run_command", "http_get"}:
+                raise ConfigError("--always only supports exact command or hostname rules")
+        return asyncio.run(
+            _continue_approval(
+                config,
+                paths,
+                api_key,
+                owner.id,
+                arguments.approval_id,
+                approved=arguments.approval_command == "approve",
+                as_json=arguments.as_json,
+            )
+        )
+    except ProviderAuthenticationError as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 3
+    except (ProviderError, AgentError, ContextError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 4
+    except (ApprovalError, ConfigError, DotEnvError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    except (
+        ConversationDataError,
+        ConversationStateError,
+        DatabaseError,
+        MigrationError,
+        OSError,
+        sqlite3.Error,
+    ) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 5
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("Cancelled.", file=sys.stderr)
+        return 130
+
+
+async def _continue_approval(
+    config: AppConfig,
+    paths: StatePaths,
+    api_key: str,
+    owner_id: int,
+    approval_id: int,
+    *,
+    approved: bool,
+    as_json: bool,
+) -> int:
+    """创建运行期、继续一次审批，并确保关闭 Provider。"""
+    runtime_owner_id, provider, service = _create_runtime(config, paths, api_key)
+    if runtime_owner_id != owner_id:
+        await provider.aclose()
+        raise ApprovalError("not_owner", "approval belongs to a different owner")
+    try:
+        result = await service.continue_approval(
+            owner_id,
+            approval_id,
+            approved=approved,
+        )
+        if as_json:
+            print(
+                json.dumps(
+                    {
+                        "turn_id": result.turn_id,
+                        "session_id": result.session_id,
+                        "content": result.content,
+                    },
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
+            )
+        else:
+            print(result.content)
+        return 0
+    finally:
+        await provider.aclose()
+
+
+def _approval_payload(approval: StoredApproval) -> dict[str, object]:
+    """把不含原始 Tool 参数的 Approval 转为稳定 JSON object。"""
+    return {
+        "id": approval.id,
+        "tool": approval.tool_name,
+        "summary": approval.summary,
+        "status": approval.status,
+        "expires_at": approval.expires_at.isoformat(),
+        "created_at": approval.created_at.isoformat(),
+        "decided_at": (
+            approval.decided_at.isoformat() if approval.decided_at is not None else None
+        ),
+    }
+
+
+def _print_approvals(items: tuple[StoredApproval, ...], as_json: bool) -> None:
+    """打印稳定 JSON 或人类可扫读的列表。"""
+    if as_json:
+        print(
+            json.dumps(
+                [_approval_payload(item) for item in items],
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
+        return
+    print("ID STATUS TOOL EXPIRES SUMMARY")
+    for item in items:
+        print(
+            f"{item.id} {item.status} {item.tool_name} "
+            f"{item.expires_at.isoformat()} {item.summary}"
+        )
+
+
+def _print_approval(item: StoredApproval, as_json: bool) -> None:
+    """打印单条脱敏 Approval。"""
+    payload = _approval_payload(item)
+    if as_json:
+        print(json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True))
+        return
+    for key in ("id", "status", "tool", "summary", "created_at", "expires_at", "decided_at"):
+        print(f"{key}: {payload[key]}")
 
 
 def _run_chat(arguments: argparse.Namespace, paths: StatePaths) -> int:
@@ -259,6 +433,23 @@ async def _chat(
         DatabaseError: 本地数据库不可用。
         MigrationError: 数据库无法升级到当前 Schema。
     """
+    owner_id, provider, service = _create_runtime(config, paths, api_key)
+    try:
+        if message is not None:
+            result = await service.handle(owner_id, message, session)
+            print(result.content)
+            return 0
+        return await _interactive_chat(service, owner_id, session)
+    finally:
+        await provider.aclose()
+
+
+def _create_runtime(
+    config: AppConfig,
+    paths: StatePaths,
+    api_key: str,
+) -> tuple[int, OpenAICompatibleProvider, TurnService]:
+    """组装 chat 与 approval continuation 共用的唯一运行期。"""
     database = Database(paths.database)
     apply_migrations(database)
     owner = OwnerRepository(database).get_or_create()
@@ -267,18 +458,24 @@ async def _chat(
         api_key,
         config.provider.timeout_seconds,
     )
+    available_tools = (
+        SystemInfoTool(),
+        ReadFileTool(),
+        WriteFileTool(),
+        EditFileTool(),
+        GlobTool(),
+        GrepTool(),
+    )
+    approvals = ApprovalRepository(database)
     executor = ToolExecutor(
         ToolRegistry(
-            (
-                SystemInfoTool(),
-                ReadFileTool(),
-                GlobTool(),
-                GrepTool(),
-            )
+            tool for tool in available_tools if tool.definition.name in config.tools.enabled
         ),
         PolicyEngine(),
         ToolRunRepository(database),
         result_max_chars=config.agent.tool_result_max_chars,
+        approvals=approvals,
+        approval_ttl_seconds=config.tools.approval_ttl_seconds,
     )
     service = TurnService(
         model=config.agent.model,
@@ -291,17 +488,11 @@ async def _chat(
             executor,
             max_iterations=config.agent.max_tool_iterations,
         ),
+        approvals=approvals,
         state_home=paths.home,
         workspace=config.workspace,
     )
-    try:
-        if message is not None:
-            result = await service.handle(owner.id, message, session)
-            print(result.content)
-            return 0
-        return await _interactive_chat(service, owner.id, session)
-    finally:
-        await provider.aclose()
+    return owner.id, provider, service
 
 
 async def _interactive_chat(service: TurnService, owner_id: int, session: str) -> int:

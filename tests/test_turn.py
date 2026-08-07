@@ -17,6 +17,7 @@ from miniclaw.bootstrap import initialize_state
 from miniclaw.cli import _chat
 from miniclaw.config import WorkspaceConfig, load_config
 from miniclaw.paths import build_state_paths
+from miniclaw.policy.approvals import ApprovalError
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import (
     ModelRequest,
@@ -34,8 +35,9 @@ from miniclaw.storage.conversations import (
     TurnRepository,
 )
 from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ToolRunRepository
+from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
 from miniclaw.tools.executor import ToolExecutor
+from miniclaw.tools.filesystem import WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.system import SystemInfoTool
 from tests.fakes.fake_provider import FakeProvider
@@ -74,6 +76,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self,
         provider: FakeProvider,
         runner: AgentRunner | None = None,
+        approvals: ApprovalRepository | None = None,
     ) -> TurnService:
         """用真实 Repository/Context/Runner 和指定模型 Fake 构造服务。"""
         return TurnService(
@@ -83,6 +86,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             turns=self.turns,
             context=self.context,
             runner=runner or AgentRunner(provider),
+            approvals=approvals,
             state_home=self.paths.home,
             workspace=WorkspaceConfig(path=self.paths.workspace),
         )
@@ -202,6 +206,284 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         assistant_call = next(message for message in restored if message.tool_calls)
         self.assertEqual(assistant_call.tool_calls, (call,))
 
+    async def test_write_request_persists_waiting_turn_without_fake_tool_result(self) -> None:
+        """需审批写入只保存 Assistant 调用并暂停原 Turn。"""
+        target = self.paths.workspace / "approved.txt"
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "call_write",
+                            "write_file",
+                            {"path": "approved.txt", "content": "yes"},
+                        ),
+                    ),
+                    reasoning_content="need to write",
+                    finish_reason="tool_calls",
+                    input_tokens=5,
+                    output_tokens=2,
+                    provider_request_id="req_write",
+                ),
+            )
+        )
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=ApprovalRepository(self.database),
+        )
+
+        result = await self.service(provider, AgentRunner(provider, executor)).handle(
+            self.owner.id,
+            "写入文件",
+            "waiting",
+        )
+
+        saved = self.turns.get(result.turn_id)
+        history = self.messages.list_recent(result.session_id)
+        approval = ApprovalRepository(self.database).list(self.owner.id)[0]
+        self.assertEqual(result.content, f"Approval {approval.id} required for write_file.")
+        self.assertEqual(saved.status, "waiting_approval")
+        self.assertEqual(saved.runtime_snapshot["approval_id"], approval.id)
+        self.assertEqual([message.role for message in history], ["user", "assistant"])
+        self.assertFalse(target.exists())
+        self.assertEqual(len(provider.requests), 1)
+
+    async def test_approve_after_restart_creates_child_executes_once_and_finishes(self) -> None:
+        """批准后由 child Turn 执行绑定写入，重启后也不能重复消费。"""
+        target = self.paths.workspace / "approved.txt"
+        call = ToolCall(
+            "call_write",
+            "write_file",
+            {"path": "approved.txt", "content": "approved"},
+        )
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(call,),
+                    reasoning_content="need write",
+                    finish_reason="tool_calls",
+                    input_tokens=5,
+                    output_tokens=2,
+                    provider_request_id="req_write",
+                ),
+                final_response("写入完成"),
+            )
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+        )
+        service = self.service(provider, AgentRunner(provider, executor), approvals)
+        waiting = await service.handle(self.owner.id, "写入文件", "approve")
+        approval = approvals.list(self.owner.id, status="pending")[0]
+
+        restarted_approvals = ApprovalRepository(self.database)
+        restarted_executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=restarted_approvals,
+        )
+        restarted = self.service(
+            provider,
+            AgentRunner(provider, restarted_executor),
+            restarted_approvals,
+        )
+        result = await restarted.continue_approval(
+            self.owner.id,
+            approval.id,
+            approved=True,
+        )
+
+        child = self.turns.get(result.turn_id)
+        history = self.messages.list_recent(result.session_id)
+        self.assertEqual(result.content, "写入完成")
+        self.assertEqual(target.read_text(encoding="utf-8"), "approved")
+        self.assertEqual(child.parent_turn_id, waiting.turn_id)
+        self.assertEqual(child.status, "completed")
+        self.assertEqual(
+            [message.role for message in history],
+            ["user", "assistant", "tool", "assistant"],
+        )
+        self.assertEqual(provider.requests[1].messages[-1].tool_call_id, call.call_id)
+        with self.assertRaises(ApprovalError) as repeated:
+            await restarted.continue_approval(self.owner.id, approval.id, approved=True)
+        self.assertEqual(repeated.exception.code, "already_decided")
+        self.assertEqual(target.read_text(encoding="utf-8"), "approved")
+
+    async def test_deny_creates_tool_error_and_never_writes(self) -> None:
+        """拒绝必须让模型收到 approval_denied，并保持文件不存在。"""
+        target = self.paths.workspace / "denied.txt"
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "call_denied",
+                            "write_file",
+                            {"path": "denied.txt", "content": "no"},
+                        ),
+                    ),
+                    reasoning_content=None,
+                    finish_reason="tool_calls",
+                    input_tokens=2,
+                    output_tokens=1,
+                    provider_request_id="req_denied",
+                ),
+                final_response("已取消写入"),
+            )
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+        )
+        service = self.service(provider, AgentRunner(provider, executor), approvals)
+        await service.handle(self.owner.id, "不要真的写", "deny")
+        approval = approvals.list(self.owner.id, status="pending")[0]
+
+        result = await service.continue_approval(
+            self.owner.id,
+            approval.id,
+            approved=False,
+        )
+
+        tool_payload = json.loads(provider.requests[1].messages[-1].content)
+        self.assertEqual(result.content, "已取消写入")
+        self.assertEqual(tool_payload["error"]["code"], "approval_denied")
+        self.assertFalse(target.exists())
+        self.assertEqual(approvals.get(self.owner.id, approval.id).status, "denied")
+        with self.database.connect_read_only() as connection:
+            run_status = connection.execute("SELECT status FROM tool_runs").fetchone()[0]
+        self.assertEqual(run_status, "denied")
+
+    async def test_changed_approval_arguments_never_write_or_create_child(self) -> None:
+        """存储参数被改动后必须 fail closed，不能启动 continuation。"""
+        target = self.paths.workspace / "tampered.txt"
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "call_tampered",
+                            "write_file",
+                            {"path": "tampered.txt", "content": "original"},
+                        ),
+                    ),
+                    reasoning_content=None,
+                    finish_reason="tool_calls",
+                    input_tokens=2,
+                    output_tokens=1,
+                    provider_request_id="req-tampered",
+                ),
+            )
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+        )
+        service = self.service(provider, AgentRunner(provider, executor), approvals)
+        waiting = await service.handle(self.owner.id, "写入", "tampered")
+        approval = approvals.list(self.owner.id, status="pending")[0]
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE tool_runs SET arguments_json = ? WHERE tool_call_id = ?",
+                (
+                    json.dumps(
+                        {
+                            "path": str(target),
+                            "content": "changed",
+                            "overwrite": False,
+                        },
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    "call_tampered",
+                ),
+            )
+
+        with self.assertRaises(ApprovalError) as changed:
+            await service.continue_approval(self.owner.id, approval.id, approved=True)
+
+        self.assertEqual(changed.exception.code, "hash_mismatch")
+        self.assertFalse(target.exists())
+        self.assertEqual(
+            [turn.id for turn in self.turns.list_recent(waiting.session_id)],
+            [waiting.turn_id],
+        )
+        self.assertEqual(len(provider.requests), 1)
+
+    async def test_continuation_marks_later_same_batch_calls_not_executed(self) -> None:
+        """首个调用待审批后，同批后续调用必须补齐失败结果且绝不执行。"""
+        first = self.paths.workspace / "first.txt"
+        later = self.paths.workspace / "later.txt"
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "call_first",
+                            "write_file",
+                            {"path": "first.txt", "content": "one"},
+                        ),
+                        ToolCall(
+                            "call_later",
+                            "write_file",
+                            {"path": "later.txt", "content": "two"},
+                        ),
+                    ),
+                    reasoning_content=None,
+                    finish_reason="tool_calls",
+                    input_tokens=3,
+                    output_tokens=2,
+                    provider_request_id="req-batch",
+                ),
+                final_response("只执行了已批准项"),
+            )
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+        )
+        service = self.service(provider, AgentRunner(provider, executor), approvals)
+        await service.handle(self.owner.id, "写两个文件", "batch")
+        approval = approvals.list(self.owner.id, status="pending")[0]
+
+        await service.continue_approval(self.owner.id, approval.id, approved=True)
+
+        continuation_tools = [
+            message for message in provider.requests[1].messages if message.role == "tool"
+        ]
+        self.assertEqual(
+            [message.tool_call_id for message in continuation_tools[-2:]],
+            ["call_first", "call_later"],
+        )
+        self.assertEqual(
+            json.loads(continuation_tools[-1].content)["error"]["code"],
+            "not_executed",
+        )
+        self.assertEqual(first.read_text(encoding="utf-8"), "one")
+        self.assertFalse(later.exists())
+        self.assertEqual(len(approvals.list(self.owner.id)), 1)
+
     async def test_chat_bootstrap_executes_read_file_and_persists_full_trace(self) -> None:
         """真实 CLI 组装必须暴露 read_file，并持久化完整的两轮 Tool 轨迹。"""
         (self.paths.workspace / "README.md").write_text(
@@ -266,7 +548,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exit_code, 0)
         self.assertEqual(
             [schema["function"]["name"] for schema in provider.requests[0].tools],
-            ["glob", "grep", "read_file", "system_info"],
+            ["edit_file", "glob", "grep", "read_file", "system_info", "write_file"],
         )
         self.assertEqual((tool_message.role, tool_message.tool_call_id), ("tool", "call_readme"))
         self.assertEqual(
