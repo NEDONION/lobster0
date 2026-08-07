@@ -1,6 +1,7 @@
 """Tool 参数校验、Policy、执行和持久化的唯一入口。"""
 
 import asyncio
+import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -278,7 +279,16 @@ def _elapsed_ms(started: float) -> int:
 
 
 def _approval_summary(tool_name: str, arguments: dict[str, JsonValue]) -> str:
-    """生成不含写入内容或完整绝对路径的最小人工确认摘要。"""
+    """文件隐藏内容；命令使用无歧义 JSON argv 供 Owner 确认。"""
+    if tool_name == "run_command":
+        program = arguments.get("program")
+        args = arguments.get("args")
+        if isinstance(program, str) and isinstance(args, list):
+            return "run_command " + json.dumps(
+                [program, *args],
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
     path = arguments.get("path")
     if isinstance(path, str):
         return f"{tool_name} {Path(path).name}"

@@ -9,7 +9,7 @@
 <p align="center">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-0F766E" />
-  <img alt="Status Phase 2.2B verified" src="https://img.shields.io/badge/Status-Phase_2.2B_verified-0F766E" />
+  <img alt="Status Phase 2.3A verified" src="https://img.shields.io/badge/Status-Phase_2.3A_verified-0F766E" />
 </p>
 
 MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。目标是在同一个 Agent Core 后接入本地
@@ -17,13 +17,14 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 Phase 2.2B：裸 `miniclaw` 进入唯一的 Textual 全屏 TUI；同一个 `AgentRuntime`
-> 连接 DeepSeek、TurnService、SQLite、六个文件/系统 Tool 与参数绑定 Approval。TUI 支持流式回答、Tool
+> 当前仓库已完成 Phase 2.3A：裸 `miniclaw` 进入唯一的 Textual 全屏 TUI；同一个 `AgentRuntime`
+> 连接 DeepSeek、TurnService、SQLite、七个系统/文件/命令 Tool 与参数绑定 Approval。TUI 支持流式回答、Tool
 > 状态卡、Enter 发送、Shift+Enter 换行、Esc 取消、Slash Command，以及只允许一次的 Allow once / Deny
 > 审批弹窗。旧 `miniclaw chat`、`miniclaw tui`、one-shot REPL 和 `miniclaw approvals` 已移除。
-> Shell、HTTP Tool、真实 DeepSeek live eval 和飞书尚未完成；Phase 2.3 将实现受限 `run_command`，并把
-> `lark-cli` 作为第一条精确 allowlist 场景。
-> 当前回归基线为 **221 tests + 10/10 Agent cases**。Policy 拒绝只写脱敏审计，不创建 ToolRun。
+> P2.3A 已接入不经过 Shell 的 exact-argv `run_command`：固定 PATH、硬禁止清单、最小子进程环境、进程组
+> 超时和精确 allowlist；未命中规则时在同一 TUI 展示完整归一化参数并只允许一次。HTTP Tool、真实
+> `lark-cli`/Node 路径闭环、DeepSeek live eval 和飞书 Channel 尚未完成。
+> 当前回归基线为 **232 tests + 10/10 Agent cases**。Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
 
 ## Planned MVP
@@ -89,7 +90,8 @@ uv run python -m miniclaw --version
 TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`，也可在配置的
 Workspace 内调用 `read_file`、`glob`、`grep`；`write_file` / `edit_file` 会先生成参数绑定 Approval，只有
 Owner 在 TUI 中查看完整归一化参数并选择 **Allow once** 后才执行；Esc 和 **Deny** 都不会写入。模型仍不能运行
-Shell。`eval` 完全离线，不读取
+任意 Shell 字符串；`run_command` 只接收 `program + args[]`，安全命令未命中 exact rule 时也走同一审批弹窗。
+`eval` 完全离线，不读取
 `.env`、不需要 `init` 或 API Key，并通过真实 Agent/Policy/Tool/SQLite 链路运行版本化场景。
 
 审批续跑会创建没有假 User Message 的 child Turn，并让模型基于真实执行结果继续回答。Approval 绑定 Tool
@@ -107,6 +109,7 @@ uv run miniclaw
 # 请使用 read_file 读取 demo.txt。
 # 请使用 glob 找出 Workspace 的 txt 文件。
 # 请使用 grep 在 txt 文件中查找 MiniClaw。
+# 请使用 run_command 运行 git status --short。
 ```
 
 这三条命令只给模型提示和 Tool Schema，模型是否调用取决于 Provider；它们不是已完成的真实 DeepSeek 文件
@@ -165,6 +168,7 @@ miniclaw/
 | [Phase 2.2A 文件写入工程文档](docs/engineering/phase-2/filesystem-tools.md) | 严格 Tools 配置、Workspace 写边界、write/edit 原子性、错误码和测试矩阵 |
 | [Phase 2.2 Approval 生命周期](docs/engineering/phase-2/approval-lifecycle.md) | 参数 hash、waiting/child Turn、TTL、Owner、单次执行与审计 |
 | [Phase 2.2B 单入口 Textual TUI](docs/engineering/phase-2/single-entry-tui.md) | 技术选型、Runtime、RunEvent、Worker、Tool 卡、审批弹窗、入口迁移和测试矩阵 |
+| [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |

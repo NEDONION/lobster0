@@ -44,7 +44,7 @@ uv run miniclaw approvals deny 42
 | `approvals show ID [--json]` | 否 | 查看 Tool、摘要、状态和时间 |
 | `approvals approve ID [--json]` | 是 | 单次消费、执行 Tool、继续模型 |
 | `approvals deny ID [--json]` | 是 | 拒绝 Tool、继续模型解释 |
-| `approvals approve ID --always` | 视 Tool 而定 | 当前仅为 P2.3/P2.4 精确规则保留；文件 Tool 会拒绝 |
+| `approvals approve ID --always` | 视 Tool 而定 | 历史入口已移除；当前 TUI 只提供 Allow once / Deny |
 
 自定义状态目录时，`--home` 放在 `approvals` 后面：
 
@@ -123,12 +123,13 @@ Assistant(final answer, child turn)
 复现：
 
 ```bash
-uv run python -m unittest tests.test_cli_approvals tests.test_turn tests.test_approvals -v
+uv run python -m unittest tests.test_approvals tests.test_turn tests.test_tui -v
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
 ```
 
 ## 8. 下一阶段边界
 
-P2.3 会让 `run_command` 使用相同审批入口，但永久放行只保存“解析后的 executable + 完整 exact argv”；P2.4
+P2.3A 已让 `run_command` 复用相同 Approval/Turn/TUI Modal；长期规则只能由 Owner 在配置中显式写入
+“program + 完整 exact argv”。P2.4
 的 `http_get` 只保存精确 hostname。文件内容、任意命令字符串和 URL path 都不会成为宽泛的永久规则。

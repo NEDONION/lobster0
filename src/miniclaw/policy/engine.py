@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import cast
 
+from miniclaw.policy.command import CommandPolicyError, NormalizedCommand, normalize_command
 from miniclaw.policy.workspace import WorkspaceAccessError, WorkspaceGuard
 from miniclaw.providers.base import JsonValue
 from miniclaw.tools.base import ToolContext, ToolDefinition, ToolRisk
@@ -33,6 +34,21 @@ class PolicyDecision:
 class PolicyEngine:
     """采用安全默认值划分只读、需审批和禁止动作。"""
 
+    def __init__(
+        self,
+        *,
+        security: str = "allowlist",
+        ask: str = "on-miss",
+        command_rules: tuple[NormalizedCommand, ...] = (),
+    ) -> None:
+        if security not in {"deny", "allowlist", "full"}:
+            raise ValueError("invalid tool security mode")
+        if ask not in {"off", "on-miss", "always"}:
+            raise ValueError("invalid tool ask mode")
+        self._security = security
+        self._ask = ask
+        self._command_rules = frozenset(command_rules)
+
     def authorize(
         self,
         definition: ToolDefinition,
@@ -40,6 +56,8 @@ class PolicyEngine:
         arguments: dict[str, JsonValue],
     ) -> PolicyDecision:
         """只自动放行 low-risk；critical 拒绝；其余要求审批。"""
+        if definition.name == "run_command":
+            return self._authorize_command(context, arguments)
         normalized_arguments = arguments
         path_argument = _READ_PATH_ARGUMENTS.get(definition.name)
         if path_argument is not None:
@@ -68,5 +86,39 @@ class PolicyEngine:
         return PolicyDecision(
             PolicyAction.REQUIRE_APPROVAL,
             "approval_required",
+            normalized_arguments=normalized_arguments,
+        )
+
+    def _authorize_command(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> PolicyDecision:
+        """对解析后的 executable + exact argv 应用 security × ask。"""
+        program = cast(str, arguments["program"])
+        args = cast(list[str], arguments["args"])
+        try:
+            normalized = normalize_command(program, tuple(args), context.workspace)
+        except CommandPolicyError as error:
+            return PolicyDecision(PolicyAction.DENY, str(error), error.code)
+        normalized_arguments = {
+            **arguments,
+            "program": normalized.resolved_program,
+            "args": list(normalized.args),
+        }
+        if self._security == "deny":
+            return PolicyDecision(PolicyAction.DENY, "command execution is disabled")
+        exact_match = normalized in self._command_rules
+        if self._ask == "always":
+            action = PolicyAction.REQUIRE_APPROVAL
+        elif self._security == "full" or exact_match:
+            action = PolicyAction.ALLOW
+        elif self._ask == "on-miss":
+            action = PolicyAction.REQUIRE_APPROVAL
+        else:
+            action = PolicyAction.DENY
+        return PolicyDecision(
+            action,
+            "exact_command_rule" if exact_match else "command_policy",
             normalized_arguments=normalized_arguments,
         )

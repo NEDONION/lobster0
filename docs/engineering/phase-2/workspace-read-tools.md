@@ -223,7 +223,8 @@ Shell 看起来是最短路径，但对模型来说它会把“读取一个文�
 | `src/miniclaw/tools/executor.py` | 保持唯一顺序：`get → validate → policy → (deny audit 或 start → execute → finish)`；负责失败关闭、异常脱敏和结果上限。 |
 
 相关测试分别在 `tests/test_workspace_policy.py`、`tests/test_file_tools.py`、`tests/test_search_tools.py`，并由
-`tests/test_tool_executor.py`、`tests/test_turn.py`、`tests/test_cli_chat.py` 覆盖 Policy、消息轨迹和 CLI 装配。
+`tests/test_tool_executor.py`、`tests/test_turn.py`、`tests/test_runtime.py` 与 `tests/test_tui.py` 覆盖 Policy、消息
+轨迹、生产装配和唯一人类入口。
 
 ## 8. 本地调试与验证命令
 
@@ -232,7 +233,7 @@ Shell 看起来是最短路径，但对模型来说它会把“读取一个文�
 ```bash
 uv sync --extra dev
 uv run python -m unittest tests.test_workspace_policy tests.test_file_tools tests.test_search_tools -v
-uv run python -m unittest tests.test_turn tests.test_cli_chat -v
+uv run python -m unittest tests.test_turn tests.test_runtime tests.test_tui -v
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
 ```

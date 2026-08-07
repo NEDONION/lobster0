@@ -336,7 +336,7 @@ Commit: `feat(cli): 完成 approval continuation 与 list/show/approve/deny`
 - Produces: `RunCommandTool` and exact rule JSON `{type, resolved_program, args}`.
 - Consumes: Task 3/4 Approval for on-miss and `--always`.
 
-- [ ] **Step 1: Write command-policy RED tests**
+- [x] **Step 1: Write command-policy RED tests**
 
 ```python
 def test_shell_eval_delete_upload_privilege_and_git_push_are_hard_denied(self) -> None:
@@ -350,13 +350,13 @@ def test_shell_eval_delete_upload_privilege_and_git_push_are_hard_denied(self) -
 
 Also assert no `command` parameter exists, unknown executable fails closed, exact argv does not match extra args, and cwd cannot be supplied by the model.
 
-- [ ] **Step 2: Run RED and implement normalization with stdlib**
+- [x] **Step 2: Run RED and implement normalization with stdlib**
 
 Run: `uv run python -m unittest tests.test_command_policy -v`
 
 Use `shutil.which()` with a fixed minimal PATH; reject control/NUL characters, shell wrappers, inline-eval flags, and forbidden program/argv combinations.
 
-- [ ] **Step 3: Write execution RED tests**
+- [x] **Step 3: Write execution RED tests**
 
 ```python
 async def test_runs_exact_argv_in_workspace_without_secret_environment(self) -> None:
@@ -370,11 +370,11 @@ async def test_runs_exact_argv_in_workspace_without_secret_environment(self) -> 
 
 Also assert separated bounded stdout/stderr, timeout termination of the process group, no stdin/PTY/background, and timeout <=120.
 
-- [ ] **Step 4: Implement `asyncio.create_subprocess_exec` with `shell=False`**
+- [x] **Step 4: Implement `asyncio.create_subprocess_exec` with `shell=False`**
 
 Build a minimal environment from safe PATH/locale/platform variables. Start a new process group; on timeout TERM then KILL after two seconds. Bound each captured stream to 1 MiB and return `tool_timeout` without traceback.
 
-- [ ] **Step 5: Wire exact persistent rules and verify**
+- [x] **Step 5: Wire exact persistent rules and verify**
 
 Allowlist hit may execute without approval; miss creates Approval. `approve --always` stores only the normalized executable plus exact argv, sourced from that Approval.
 

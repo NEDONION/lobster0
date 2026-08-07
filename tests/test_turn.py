@@ -667,7 +667,15 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.content, "README says MiniClaw workspace README")
         self.assertEqual(
             [schema["function"]["name"] for schema in provider.requests[0].tools],
-            ["edit_file", "glob", "grep", "read_file", "system_info", "write_file"],
+            [
+                "edit_file",
+                "glob",
+                "grep",
+                "read_file",
+                "run_command",
+                "system_info",
+                "write_file",
+            ],
         )
         self.assertEqual((tool_message.role, tool_message.tool_call_id), ("tool", "call_readme"))
         self.assertEqual(

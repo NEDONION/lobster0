@@ -1,6 +1,6 @@
 # MiniClaw Phase 2：Tool、权限与安全执行设计
 
-> 状态：已评审，Phase 2 开发中；未验证的能力仍按目标描述
+> 状态：已评审；P2.1-P2.3 已实现，P2.4 HTTPS 与 P2.5 最终门禁仍按目标描述
 >
 > 目标版本：MiniClaw Phase 2
 >
@@ -294,9 +294,10 @@ Phase 2 分五个可独立验收的纵向切片：
 - 配置中的 Workspace 和 `read_only_roots`；
 - CLI `init`、`doctor`、`chat`。
 
-### 2.2 当前不能查看电脑配置的根因
+### 2.2 Phase 1 基线不能查看电脑配置的根因（已解决）
 
-不是 macOS 没有给 Python 权限，也不是 DeepSeek 模型能力不足。真正原因是：
+以下是进入 Phase 2 前的历史基线，不代表当前实现。P2.1 已接通 `system_info` 和只读文件 Tool，P2.2
+已接通文件审批续执行，P2.3 已接通 exact-argv 命令。原根因是：
 
 1. `AgentRunner` 虽支持 Tool Call，但 CLI 创建 Runner 时没有注册任何 Tool；
 2. `ModelRequest.tools` 没有真实 Tool Schema，模型不知道自己具有本机能力；

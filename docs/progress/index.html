@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · P2.2B single-entry Textual TUI verified · P2.3 lark-cli next</div>
+      <div class="branch">target: main · P2.3A exact-argv command verified · P2.3B lark-cli next</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 已成为唯一全屏入口：流式回答、Tool 卡、取消和一次性审批都经过同一个 AgentRuntime 与 SQLite。下一步实现 exact-argv run_command，并接入 lark-cli。</p>
+        <p class="lede">裸 miniclaw 已成为唯一全屏入口：流式回答、Tool 卡、取消、一次性审批和 exact-argv run_command 都经过同一个 AgentRuntime 与 SQLite。下一步跑通 NVM/Node 路径下的真实 lark-cli。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Single-entry TUI gate</span>
-        <strong>P2.2B ✓</strong>
-        <p>221 tests + 10/10 offline Agent cases + Ruff verified</p>
+        <span class="tag">Safe command gate</span>
+        <strong>P2.3A ✓</strong>
+        <p>232 tests + 10/10 offline Agent cases + Ruff verified</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">221 <small>passing</small></span>
+        <span class="metric-value">232 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -426,7 +426,7 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool、安全、TUI 与回归门禁</h3><p>P2.1 Tool、P2.2 写入/Approval 与 P2.2B 单入口 Textual TUI 均已验证；P2.3 命令在开发。</p></div>
+          <div><h3>Tool、安全、TUI 与回归门禁</h3><p>P2.1 Tool、P2.2 写入/Approval、P2.2B 单入口 TUI 与 P2.3A 安全命令均已验证；P2.3B lark-cli 在开发。</p></div>
           <span class="pill">IN PROGRESS</span>
         </article>
         <article class="phase queued">
@@ -459,7 +459,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 2.2B single-entry TUI gate</p>
+        <p class="eyebrow">Phase 2.3A TUI + safe command gate</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -490,7 +490,10 @@
           <li class="complete">Enter / Shift+Enter / Esc 与 exclusive Worker</li>
           <li class="complete">完整参数 Allow once / Deny 审批 Modal</li>
           <li class="complete">旧 chat / tui / approvals 入口已删除</li>
-          <li class="complete">221 tests + 10/10 Agent cases + Ruff 门禁</li>
+          <li class="complete">run_command：exact argv、固定 PATH 与硬禁止</li>
+          <li class="complete">最小子进程环境、输出上限与进程组超时</li>
+          <li class="complete">安全命令未命中规则时复用 TUI Allow once / Deny</li>
+          <li class="complete">232 tests + 10/10 Agent cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -502,14 +505,14 @@
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
         <div class="decision"><code>eval gate</code><p>每次提交跑 deterministic offline 100%；真实模型留给 release-only live suite。</p></div>
-        <div class="decision"><code>scope</code><p>TUI、六个 Tool 与 Approval 续执行已完成；Shell、HTTP、live eval 和飞书仍未完成。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/3fcb086">3fcb086</a> · <a href="https://github.com/NEDONION/miniclaw/commit/8a0207d">8a0207d</a> · <a href="https://github.com/NEDONION/miniclaw/commit/70319b6">70319b6</a> · <a href="https://github.com/NEDONION/miniclaw/commit/bab7ebf">bab7ebf</a></p></div>
+        <div class="decision"><code>scope</code><p>TUI、七个 Tool 与 Approval 续执行已完成；任意 Shell、HTTP、live eval、lark-cli 真实 smoke 和飞书 Channel 仍未完成。</p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/3fcb086">3fcb086</a> · <a href="https://github.com/NEDONION/miniclaw/commit/bab7ebf">bab7ebf</a> · <a href="https://github.com/NEDONION/miniclaw/commit/fb9d360">fb9d360</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 221 tests + 10/10 offline Agent cases + Ruff verified</span>
-      <span><a href="../engineering/phase-2/single-entry-tui.md">P2.2B TUI</a> · <a href="../engineering/phase-2/approval-lifecycle.md">Approval lifecycle</a> · <a href="../evals/releases/v0.1.0.md">v0.1.0 eval record</a></span>
+      <span>Last updated · 2026-08-08 · 232 tests + 10/10 offline Agent cases + Ruff verified</span>
+      <span><a href="../engineering/phase-2/single-entry-tui.md">P2.2B TUI</a> · <a href="../engineering/phase-2/command-execution.md">P2.3A command</a> · <a href="../evals/releases/v0.1.0.md">v0.1.0 eval record</a></span>
     </footer>
   </main>
 </body>

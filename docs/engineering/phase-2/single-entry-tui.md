@@ -1,6 +1,6 @@
 # Phase 2.2B：单入口 Textual TUI 工程文档
 
-> 状态：已实现并通过 221 项单元/集成测试与 10/10 离线 Agent 场景。
+> 状态：已实现；合并 P2.3A 后全仓通过 232 项单元/集成测试与 10/10 离线 Agent 场景。
 > 本文描述当前代码，不描述未来设想。
 
 ## 1. 这次解决了什么
@@ -59,7 +59,7 @@ flowchart LR
     RUNNER <--> MODEL["OpenAI-compatible Provider"]
     RUNNER --> EXEC["ToolExecutor"]
     EXEC --> POLICY["PolicyEngine"]
-    EXEC --> TOOL["6 built-in Tools"]
+    EXEC --> TOOL["7 built-in Tools"]
     TURN <--> DB[("SQLite")]
     TURN -. "RunEvent" .-> APP
     EXEC -. "Tool / Approval events" .-> APP
@@ -70,7 +70,7 @@ flowchart LR
 | 文件 | 责任 |
 | --- | --- |
 | `src/miniclaw/cli.py` | 解析裸入口与维护命令；做 TTY guard；不装配 Agent |
-| `src/miniclaw/runtime.py` | 唯一装配 Owner、Provider、TurnService、Policy、Approval 和六个 Tool |
+| `src/miniclaw/runtime.py` | 唯一装配 Owner、Provider、TurnService、Policy、Approval 和七个 Tool |
 | `src/miniclaw/agent/events.py` | 定义进程内 `RunEvent` 与安全交付函数 |
 | `src/miniclaw/agent/turn.py` | 在 SQLite 状态迁移后发 Turn 事件，并负责审批 continuation |
 | `src/miniclaw/agent/runner.py` | 发模型增量与 Tool requested 事件 |
@@ -93,13 +93,14 @@ flowchart TB
     RUNTIME --> CLOSE["aclose provider"]
 ```
 
-当前注册的六个 Tool 按名称稳定暴露：
+当前注册的七个 Tool 按名称稳定暴露：
 
 ```text
-edit_file, glob, grep, read_file, system_info, write_file
+edit_file, glob, grep, read_file, run_command, system_info, write_file
 ```
 
-`run_command` 与 `http_get` 已在配置 Schema 中预留名称，但实现尚未进入 Registry；Runtime 不伪装它们已完成。
+`run_command` 已由同一个 Runtime 接入 exact-argv Policy 与 TUI 审批；`http_get` 仍只在配置 Schema 中预留，
+尚未进入 Registry。
 
 ## 5. RunEvent 契约
 
@@ -249,13 +250,13 @@ flowchart TD
 | 层 | 主要断言 |
 | --- | --- |
 | CLI | 裸入口、`--home`、TTY guard、旧入口不存在、init/doctor/eval 保留 |
-| Runtime | 六个 Tool、Owner、model、workspace、Provider 生命周期 |
+| Runtime | 七个 Tool、Owner、model、workspace、Provider 生命周期 |
 | Event | 精确一次交付、异常脱敏、取消传播、持久化后顺序 |
 | TUI shell | 80x24 布局、唯一 Composer、默认焦点、终端控制字符过滤 |
 | Interaction | Enter、Shift+Enter、exclusive Worker、Esc 取消、焦点恢复 |
 | Projection | 单一流式 Assistant、Tool 卡状态/预览、动态 call ID 安全 |
 | Approval | 完整参数、Deny 默认焦点、Allow once、Esc=Deny、同一 Service 续跑 |
-| Full suite | 221/221 tests + Ruff + diff check |
+| Full suite | 232/232 tests + Ruff + diff check |
 | Agent gate | 10/10 active offline Claw-like cases |
 
 运行命令：
@@ -267,20 +268,21 @@ uv run miniclaw eval run --suite offline --root evals/scenarios
 git diff --check
 ```
 
-## 12. 当前边界与 Phase 2.3
+## 12. 当前边界与 Phase 2.3B
 
 本阶段没有实现：
 
-- `run_command`；
 - `http_get`；
 - 飞书 Channel；
+- NVM/Node 路径下 `lark-cli` 的真实 help/auth smoke；
 - TUI 历史记录浏览或多 Tab；
 - 自动恢复进程重启前尚未处理的审批 UI；
 - 永久审批规则；
 - Web 管理台。
 
-Phase 2.3 的最小目标是 exact-argv `run_command`：程序和参数必须命中本地 allowlist，不经过 shell 字符串；
-`lark-cli` 将作为第一条真实使用场景。高风险命令仍必须走同一 Approval/Turn continuation/TUI Modal 链路。
+Phase 2.3A 已实现 exact-argv `run_command`，不经过 shell 字符串；安全命令未命中精确规则时复用同一
+Approval/Turn continuation/TUI Modal 链路。Phase 2.3B 下一步处理本机 NVM `lark-cli` 的 Node 运行时路径、
+doctor 检查与 `auth status` 真实 smoke，不会把“已安装”误写成“Agent 已可稳定调用”。
 
 设计取舍与参考项目对比见
 [Gemini 风格 TUI 设计](../../superpowers/specs/2026-08-08-gemini-style-tui-and-lark-cli-design.md)，逐任务实现记录见

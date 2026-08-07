@@ -2,7 +2,7 @@
 
 > 状态：已实现并验证（R1 事故回归 + R2 离线场景门禁）
 >
-> 当前仓库事实：221/221 tests、10/10 active offline cases、Ruff PASS；v0.1.0 发布时基线为 177 tests
+> 当前仓库事实：232/232 tests、10/10 active offline cases、Ruff PASS；v0.1.0 发布时基线为 177 tests
 >
 > 不代表：真实 DeepSeek live benchmark、飞书 E2E 或自动演进已经完成
 
@@ -41,7 +41,7 @@ MiniClaw 因此分层：
 
 | 层 | 当前状态 | 运行时机 | 通过规则 |
 | --- | --- | --- | --- |
-| L0 单元/契约 | 已实现 | 每次提交 | 221/221 |
+| L0 单元/契约 | 已实现 | 每次提交 | 232/232 |
 | L1 offline Agent scenarios | 已实现 | 每次提交 | 10/10 active cases |
 | L2 live DeepSeek | R3 规划 | release/tag | capability 3 次中至少 2 次，安全 3/3 |
 | L3 Channel/soak | R4 规划 | IM release | 飞书真实投递、去重、重连与长时运行 |
@@ -239,7 +239,7 @@ uv run miniclaw eval run --suite offline --root evals/scenarios
 git diff --check
 ```
 
-当前仓库已验证结果是 221/221 tests、10/10 active cases 和 Ruff PASS。场景集首次发布时的 177 tests
+当前仓库已验证结果是 232/232 tests、10/10 active cases 和 Ruff PASS。场景集首次发布时的 177 tests
 版本证据见 [v0.1.0 release record](../../evals/releases/v0.1.0.md)。
 
 ## 13. 已知边界和下一步

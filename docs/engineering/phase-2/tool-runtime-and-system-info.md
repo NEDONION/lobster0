@@ -633,7 +633,7 @@ Tool Message 恢复 `tool_call_id`。如果 metadata 缺字段、类型错误，
 
 代码位置：`src/miniclaw/cli.py`
 
-P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册六个 Tool：
+P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册七个 Tool：
 
 ```python
 registry = ToolRegistry((SystemInfoTool(),))
@@ -650,7 +650,7 @@ runner = AgentRunner(
 )
 ```
 
-同一个 Executor 同时服务 one-shot 与交互 CLI。未来飞书 Adapter 应复用 TurnService，而不是重新实现一套
+当前同一个 Executor 服务唯一 Textual TUI。未来飞书 Adapter 应复用 TurnService，而不是重新实现一套
 Tool Calling。
 
 ## 15. 端到端数据流
@@ -702,7 +702,7 @@ flowchart TD
 | `test_context.py` | Tool Schema 和禁止编造规则 |
 | `test_conversations.py` | Tool 消息批次、最终回答、完整 Turn 边界历史 |
 | `test_turn.py` | 完整纵切、失败后轨迹、下一 Turn 恢复、损坏 metadata 拒绝 |
-| `test_cli_chat.py` | 真实 loopback HTTP/SSE 两轮调用与 SQLite 轨迹 |
+| `test_runtime.py` / `test_tui.py` | 真实生产装配、唯一入口、事件投影与审批 Modal |
 
 聚焦验证：
 
@@ -715,7 +715,8 @@ uv run python -m unittest \
   tests.test_context \
   tests.test_conversations \
   tests.test_turn \
-  tests.test_cli_chat -v
+  tests.test_runtime \
+  tests.test_tui -v
 ```
 
 完整验证：
@@ -795,7 +796,7 @@ sqlite3 ~/.miniclaw/miniclaw.db \
 - [x] critical 默认拒绝；
 - [ ] Approval 创建与消费（P2.2）；
 - [x] Workspace 路径逃逸防护（P2.1B）；
-- [ ] Shell allowlist/sandbox（P2.3）。
+- [x] Exact-argv `run_command` 与 allowlist（P2.3A；不等同 OS sandbox）。
 
 ## 21. 如何增加下一个 Tool
 

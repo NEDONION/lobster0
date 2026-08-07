@@ -8,14 +8,20 @@ from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
 from miniclaw.config import AppConfig
 from miniclaw.paths import StatePaths
+from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
 from miniclaw.storage.conversations import MessageRepository, SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.migrations import apply_migrations
 from miniclaw.storage.repositories import OwnerRepository
-from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
+from miniclaw.storage.tooling import (
+    ApprovalRepository,
+    PolicyRuleRepository,
+    ToolRunRepository,
+)
 from miniclaw.tools.base import ToolDefinition
+from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
@@ -40,7 +46,7 @@ class AgentRuntime:
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
-    """按已校验配置装配当前六个内置 Tool 和唯一 TurnService。"""
+    """按已校验配置装配当前七个内置 Tool 和唯一 TurnService。"""
     database = Database(paths.database)
     apply_migrations(database)
     owner = OwnerRepository(database).get_or_create()
@@ -56,14 +62,31 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         EditFileTool(),
         GlobTool(),
         GrepTool(),
+        RunCommandTool(
+            timeout_seconds=config.tools.run_command.timeout_seconds,
+            max_timeout_seconds=config.tools.run_command.max_timeout_seconds,
+        ),
     )
     tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
     )
     approvals = ApprovalRepository(database)
+    configured_command_rules = tuple(
+        normalize_command(rule.program, rule.args, config.workspace.path)
+        for rule in config.tools.run_command.allow_commands
+    )
+    command_rules = tuple(
+        dict.fromkeys(
+            (*configured_command_rules, *PolicyRuleRepository(database).command_rules(owner.id))
+        )
+    )
     executor = ToolExecutor(
         ToolRegistry(tools),
-        PolicyEngine(),
+        PolicyEngine(
+            security=config.tools.security,
+            ask=config.tools.ask,
+            command_rules=command_rules,
+        ),
         ToolRunRepository(database),
         result_max_chars=config.agent.tool_result_max_chars,
         approvals=approvals,

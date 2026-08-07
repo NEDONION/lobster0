@@ -15,9 +15,11 @@
 6. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证唯一 TUI。
 7. 阅读 [单入口 Textual TUI 工程文档](engineering/phase-2/single-entry-tui.md)，理解 Runtime、RunEvent、
    Worker、Tool 卡与审批 Modal。
-8. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
+8. 阅读 [exact-argv 命令执行工程文档](engineering/phase-2/command-execution.md)，理解 `run_command`、硬禁止、
+   精确规则、最小环境、超时和 TUI 审批。
+9. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
    跑离线 gate 并记录 baseline。
-9. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+10. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -62,6 +64,7 @@
 | 安全文件写入 | [filesystem-tools.md](engineering/phase-2/filesystem-tools.md) |
 | Approval 生命周期与续执行 | [approval-lifecycle.md](engineering/phase-2/approval-lifecycle.md) |
 | 单入口 Textual TUI、Runtime 与审批 Modal | [single-entry-tui.md](engineering/phase-2/single-entry-tui.md) |
+| Exact-argv 命令执行 | [command-execution.md](engineering/phase-2/command-execution.md) |
 | Approvals CLI（已迁移） | [cli-approvals.md](engineering/phase-2/cli-approvals.md) |
 
 ## 评测与版本证据
