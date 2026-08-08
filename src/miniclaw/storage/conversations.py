@@ -150,11 +150,20 @@ class MessageRepository:
                 (session_id, limit),
             ).fetchall()
             ordered = list(reversed(rows))
-            if ordered and ordered[0]["turn_id"] is not None:
+            if ordered and ordered[0]["role"] != "user":
+                boundary = connection.execute(
+                    "SELECT id FROM messages "
+                    "WHERE session_id = ? AND role = 'user' AND id < ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (session_id, ordered[0]["id"]),
+                ).fetchone()
+            else:
+                boundary = None
+            if boundary is not None:
                 prefix = connection.execute(
                     "SELECT * FROM messages "
-                    "WHERE session_id = ? AND turn_id = ? AND id < ? ORDER BY id",
-                    (session_id, ordered[0]["turn_id"], ordered[0]["id"]),
+                    "WHERE session_id = ? AND id >= ? AND id < ? ORDER BY id",
+                    (session_id, boundary["id"], ordered[0]["id"]),
                 ).fetchall()
                 ordered = [*prefix, *ordered]
         return tuple(_message_from_row(row) for row in ordered)

@@ -135,6 +135,87 @@ class ConversationRepositoryTest(unittest.TestCase):
         self.assertEqual(recent[1].metadata["tool_calls"][0]["call_id"], "call_1")
         self.assertEqual(recent[2].tool_call_id, "call_1")
 
+    def test_recent_limit_never_orphans_tool_result_from_approval_child(self) -> None:
+        """Approval 子 Turn 的 Tool Result 必须带回父 Turn 中匹配的 Tool Call。"""
+        session = self.sessions.get_or_create_cli(self.owner.id, "approval-boundary")
+        parent = self.turns.create_with_user_message(
+            session.id,
+            "event-parent",
+            "deepseek-v4-pro",
+            "查看进程",
+        )
+        self.turns.mark_running(parent.id)
+        self.turns.append_intermediate_messages(
+            parent.id,
+            session.id,
+            (
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(ToolCall("call_approval", "run_command", {}),),
+                ),
+            ),
+        )
+        self.turns.wait_for_approval(
+            parent.id,
+            session.id,
+            1,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-parent",
+            iterations=1,
+        )
+        child = self.turns.create_continuation(
+            session.id,
+            approval_id=1,
+            parent_turn_id=parent.id,
+            model="deepseek-v4-pro",
+        )
+        self.turns.mark_running(child.id)
+        self.turns.complete_with_assistant_message(
+            child.id,
+            session.id,
+            "进程结果",
+            intermediate_messages=(
+                ModelMessage(
+                    role="tool",
+                    content='{"ok":true}',
+                    tool_call_id="call_approval",
+                ),
+            ),
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-child",
+            iterations=1,
+            finish_reason="stop",
+        )
+        plain = self.turns.create_with_user_message(
+            session.id,
+            "event-plain-after-approval",
+            "deepseek-v4-pro",
+            "继续",
+        )
+        self.turns.mark_running(plain.id)
+        self.turns.complete_with_assistant_message(
+            plain.id,
+            session.id,
+            "好的",
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-plain",
+            iterations=1,
+            finish_reason="stop",
+        )
+
+        recent = self.messages.list_recent(session.id, limit=4)
+
+        self.assertEqual(
+            [message.role for message in recent],
+            ["user", "assistant", "tool", "assistant", "user", "assistant"],
+        )
+        self.assertEqual(recent[1].metadata["tool_calls"][0]["call_id"], "call_approval")
+        self.assertEqual(recent[2].tool_call_id, "call_approval")
+
     def test_completion_writes_assistant_usage_and_snapshot_atomically(self) -> None:
         """Assistant Message 与 completed Turn 必须在同一事务中可见。"""
         session = self.sessions.get_or_create_cli(self.owner.id, "default")

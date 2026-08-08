@@ -10,7 +10,7 @@ from unittest import mock
 
 from textual.containers import VerticalScroll
 from textual.events import Paste
-from textual.widgets import Button, Collapsible, Markdown, Static, TextArea
+from textual.widgets import Button, Collapsible, Static, TextArea
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.paths import build_state_paths
@@ -94,6 +94,23 @@ class FailingTurnService:
     async def handle(self, owner_id, text, conversation_id, *, on_event=None):
         del owner_id, text, conversation_id, on_event
         raise RuntimeError("provider failed")
+
+
+class ProtocolFailingTurnService:
+    """模拟 Core 已分类的协议失败，验证 TUI 只显示安全诊断。"""
+
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+        del owner_id, text, conversation_id
+        assert on_event is not None
+        await on_event(RunEvent("turn_started", 29, {}))
+        await on_event(
+            RunEvent(
+                "turn_failed",
+                29,
+                {"error_code": "provider_protocol", "duration_ms": 961},
+            )
+        )
+        raise RuntimeError("unsafe provider detail: secret-value")
 
 
 class ApprovalTurnService:
@@ -214,7 +231,9 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(composer.text, "")
             self.assertFalse(composer.disabled)
             self.assertIs(app.focused, composer)
-            self.assertEqual(app.query_one("#assistant-21", Markdown).source, "pong")
+            assistant = app.query_one("#assistant-21", Static)
+            self.assertIs(type(assistant), Static)
+            self.assertEqual(app._assistant_text[21], "pong")
             user_output = "\n".join(
                 str(message.render())
                 for message in app.query(".user-message .message-body")
@@ -302,6 +321,38 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(composer.text, text)
 
+    async def test_failed_turn_shows_safe_error_code_and_summary(self) -> None:
+        """Core 分类失败应显示可诊断摘要，但不能泄露底层异常正文。"""
+        runtime = cast(
+            "AgentRuntime",
+            SimpleNamespace(
+                owner_id=1,
+                model="deepseek-v4-pro",
+                workspace=self.paths.workspace,
+                ui_language="zh-CN",
+                context_budget_tokens=128_000,
+                service=ProtocolFailingTurnService(),
+                tool_definitions=(),
+            ),
+        )
+        app = MiniClawApp(self.paths, runtime=runtime)
+
+        async with app.run_test() as pilot:
+            composer = app.query_one("#composer", TextArea)
+            composer.load_text("你有我的记忆吗")
+            await pilot.press("enter")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            output = "\n".join(
+                str(message.render()) for message in app.query(".local-message")
+            )
+            self.assertIn("provider_protocol", output)
+            self.assertIn("模型请求或响应不符合协议", output)
+            self.assertNotIn("secret-value", output)
+            self.assertNotIn("RuntimeError", output)
+            self.assertEqual(composer.text, "你有我的记忆吗")
+
     async def test_approval_modal_shows_exact_arguments_and_allows_once(self) -> None:
         """审批只能在原 Turn 返回后，通过同一 Service 选择一次 Allow once。"""
         service = ApprovalTurnService()
@@ -341,7 +392,9 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
             self.assertEqual(service.decisions, [(1, 7, ApprovalDecision.ONCE)])
             self.assertEqual(app.query_one(ToolCard).status, "succeeded")
-            self.assertEqual(app.query_one("#assistant-32", Markdown).source, "continued")
+            assistant = app.query_one("#assistant-32", Static)
+            self.assertIs(type(assistant), Static)
+            self.assertEqual(app._assistant_text[32], "continued")
 
     async def test_approval_escape_denies_once(self) -> None:
         """审批默认焦点和 Esc 都必须走 Deny，不能静默留下待执行动作。"""
@@ -459,8 +512,9 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             await app.on_run_event(RunEvent("model_text_delta", 9, {"text": "好"}))
             await pilot.pause()
 
-            message = app.query_one("#assistant-9", Markdown)
-            self.assertEqual(message.source, "你好")
+            message = app.query_one("#assistant-9", Static)
+            self.assertIs(type(message), Static)
+            self.assertEqual(app._assistant_text[9], "你好")
             self.assertTrue(message.has_class("temporary"))
             self.assertEqual(len(app.query("#assistant-9")), 1)
 
@@ -473,8 +527,28 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             )
             await pilot.pause()
 
-            self.assertEqual(message.source, "你好")
+            self.assertEqual(app._assistant_text[9], "你好")
             self.assertFalse(message.has_class("temporary"))
+
+    async def test_stream_event_keeps_scroll_position_when_user_left_bottom(self) -> None:
+        """用户向上查看或拖选时，后台增量不能把 transcript 抢回底部。"""
+        app = MiniClawApp(self.paths, runtime=self.runtime)
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            for index in range(40):
+                await app._append_local_message(f"history-{index}\nsecond line")
+            transcript = app.query_one("#transcript", VerticalScroll)
+            transcript.scroll_home(animate=False)
+            await pilot.pause()
+            self.assertFalse(transcript.is_vertical_scroll_end)
+            before = transcript.scroll_y
+
+            await app.on_run_event(
+                RunEvent("model_text_delta", 90, {"text": "background delta"})
+            )
+            await pilot.pause()
+
+            self.assertEqual(transcript.scroll_y, before)
 
     async def test_tool_events_update_one_text_labelled_safe_card(self) -> None:
         """调用概要始终可见，参数与结果可以单独展开且不解释 ANSI。"""
@@ -565,7 +639,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
             reasoning = app.query_one(ReasoningCard)
             tool = app.query_one(ToolCard)
-            self.assertTrue(reasoning.collapsed)
+            self.assertFalse(reasoning.collapsed)
             self.assertTrue(tool.collapsed)
             self.assertTrue(reasoning.display)
             self.assertTrue(tool.display)

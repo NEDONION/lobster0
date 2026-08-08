@@ -9,12 +9,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from rich.markdown import Markdown as RichMarkdown
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Collapsible, Markdown, Static, TextArea
+from textual.widgets import Button, Collapsible, Static, TextArea
 from textual.worker import Worker
 
 from miniclaw import __version__
@@ -34,6 +35,34 @@ if TYPE_CHECKING:
 _DEFAULT_SESSION = "default"
 _TOOL_PREVIEW_CHARS = 2_000
 _TRACE_DETAIL_CHARS = 8_000
+_ERROR_SUMMARIES = {
+    "zh-CN": {
+        "provider_authentication": "模型服务认证失败",
+        "provider_rate_limit": "模型服务请求过于频繁",
+        "provider_timeout": "模型服务请求超时",
+        "provider_protocol": "模型请求或响应不符合协议",
+        "provider_server": "模型服务暂时不可用",
+        "empty_response": "模型返回了空响应",
+        "loop_limit": "Agent 达到工具循环上限",
+        "conversation_data": "会话历史数据不完整",
+        "context": "构造模型上下文失败",
+        "provider": "模型服务调用失败",
+        "agent": "Agent 执行失败",
+    },
+    "en": {
+        "provider_authentication": "model provider authentication failed",
+        "provider_rate_limit": "model provider rate limit exceeded",
+        "provider_timeout": "model provider request timed out",
+        "provider_protocol": "model request or response violated the protocol",
+        "provider_server": "model provider is temporarily unavailable",
+        "empty_response": "model provider returned an empty response",
+        "loop_limit": "Agent reached the tool iteration limit",
+        "conversation_data": "conversation history is incomplete",
+        "context": "model context construction failed",
+        "provider": "model provider request failed",
+        "agent": "Agent execution failed",
+    },
+}
 _TEXT = {
     "zh-CN": {
         "session": "会话",
@@ -137,10 +166,16 @@ def _t(language: str, key: str, **values: object) -> str:
     return _TEXT[language][key].format(**values)
 
 
+def _failure_label(language: str, code: str | None, error: Exception) -> str:
+    """把 Core 错误码映射为安全摘要，未知异常只显示类型。"""
+    summary = _ERROR_SUMMARIES[language].get(code or "")
+    return f"{code} · {summary}" if summary is not None else type(error).__name__
+
+
 class ConversationMessage(Vertical):
     """用稳定的角色标签和视觉边界包装一条对话消息。"""
 
-    def __init__(self, role: str, body: Static | Markdown, *, classes: str) -> None:
+    def __init__(self, role: str, body: Static, *, classes: str) -> None:
         super().__init__(
             Static(role, markup=False, classes="role"),
             body,
@@ -253,12 +288,12 @@ class ReasoningCard(Collapsible):
     """展示 Provider 明确返回的有界 reasoning，不代表内部思维链。"""
 
     def __init__(self, turn_id: int, text: str, *, language: str = "zh-CN") -> None:
-        """默认折叠详情，但始终保留可聚焦概要。"""
+        """默认展开弱化详情，并始终保留可聚焦概要。"""
         detail = _terminal_safe(text)[:_TRACE_DETAIL_CHARS]
         super().__init__(
             Static(detail, markup=False, classes="trace-detail"),
             title=_t(language, "reasoning", turn_id=turn_id),
-            collapsed=True,
+            collapsed=False,
             classes="trace-card reasoning-card",
         )
 
@@ -455,10 +490,16 @@ class MiniClawApp(App[int]):
     }
 
     .reasoning-card {
-        margin: 0 2;
+        margin: 0 3;
+        padding: 0;
         border: none;
         color: $text-muted;
         background: $surface-darken-1;
+    }
+
+    .reasoning-card .trace-detail {
+        padding: 0 1;
+        text-style: dim;
     }
 
     #onboarding {
@@ -493,7 +534,7 @@ class MiniClawApp(App[int]):
         self.session_id = _DEFAULT_SESSION
         self._state_ready = runtime is not None
         self._assistant_text: dict[int, str] = {}
-        self._assistant_widgets: dict[int, Markdown] = {}
+        self._assistant_widgets: dict[int, Static] = {}
         self._tool_cards: dict[str, ToolCard] = {}
         self._active_worker: Worker[None] | None = None
         self._pending_approval: RunEvent | None = None
@@ -504,6 +545,7 @@ class MiniClawApp(App[int]):
         self._iterations = 0
         self._duration_ms: int | None = None
         self._provider_request_id: str | None = None
+        self._last_error_code: str | None = None
 
     def compose(self) -> ComposeResult:
         """生成状态栏、可滚动记录、输入区和快捷键页脚。"""
@@ -573,6 +615,8 @@ class MiniClawApp(App[int]):
 
     async def on_run_event(self, event: RunEvent) -> None:
         """把 Core 事件投影到当前 Turn 的临时消息或 Tool 卡片。"""
+        transcript = self.query_one("#transcript", VerticalScroll)
+        follow = transcript.is_vertical_scroll_end
         if event.kind in {
             "turn_started",
             "model_usage",
@@ -594,7 +638,8 @@ class MiniClawApp(App[int]):
             await self._mark_tool_waiting(event)
         elif event.kind in {"tool_started", "tool_finished"}:
             await self._update_tool(event)
-        self.query_one("#transcript", VerticalScroll).scroll_end(animate=False)
+        if follow:
+            transcript.scroll_end(animate=False)
 
     def _update_telemetry(self, event: RunEvent) -> None:
         """用事件中的可信整数更新当前 Turn 指标。"""
@@ -606,6 +651,7 @@ class MiniClawApp(App[int]):
             self._iterations = 0
             self._duration_ms = None
             self._provider_request_id = None
+            self._last_error_code = None
         else:
             mappings = (
                 ("context_tokens", "_context_tokens"),
@@ -623,6 +669,9 @@ class MiniClawApp(App[int]):
             request_id = event.data.get("provider_request_id")
             if isinstance(request_id, str) and request_id:
                 self._provider_request_id = request_id
+            error_code = event.data.get("error_code")
+            if isinstance(error_code, str) and error_code in _ERROR_SUMMARIES["en"]:
+                self._last_error_code = error_code
         widgets = self.query("#telemetry")
         if widgets:
             widgets.first(Static).update(self._telemetry_text())
@@ -645,11 +694,11 @@ class MiniClawApp(App[int]):
         self._assistant_text[event.turn_id] = text
         message = self._assistant_widgets.get(event.turn_id)
         if message is None:
-            message = Markdown(
+            message = Static(
                 text,
                 id=f"assistant-{event.turn_id}",
                 classes="message-body temporary",
-                open_links=False,
+                markup=False,
             )
             self._assistant_widgets[event.turn_id] = message
             await self.query_one("#transcript", VerticalScroll).mount(
@@ -660,7 +709,7 @@ class MiniClawApp(App[int]):
                 )
             )
         else:
-            await message.update(text)
+            message.update(text)
 
     async def _finish_assistant(self, event: RunEvent) -> None:
         """用最终正文固化临时消息并移除 temporary 状态。"""
@@ -674,11 +723,10 @@ class MiniClawApp(App[int]):
         if message is None:
             if not content:
                 return
-            message = Markdown(
-                content,
+            message = Static(
+                RichMarkdown(content, hyperlinks=False),
                 id=f"assistant-{event.turn_id}",
                 classes="message-body",
-                open_links=False,
             )
             self._assistant_widgets[event.turn_id] = message
             await self.query_one("#transcript", VerticalScroll).mount(
@@ -689,7 +737,7 @@ class MiniClawApp(App[int]):
                 )
             )
         else:
-            await message.update(content)
+            message.update(RichMarkdown(content, hyperlinks=False))
             message.remove_class("temporary")
         self._assistant_text[event.turn_id] = content
 
@@ -842,7 +890,11 @@ class MiniClawApp(App[int]):
         except Exception as error:
             self._restore_draft(text)
             await self._append_local_message(
-                _t(self._language, "failed", error=type(error).__name__)
+                _t(
+                    self._language,
+                    "failed",
+                    error=_failure_label(self._language, self._last_error_code, error),
+                )
             )
         finally:
             composer = self.query_one("#composer", Composer)

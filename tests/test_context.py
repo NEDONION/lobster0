@@ -69,7 +69,7 @@ class ContextBuilderTest(unittest.TestCase):
 
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
-            (ModelMessage(role="user", content="查看配置"),),
+            (ModelMessage(role="user", content="Inspect system configuration"),),
             tools=(schema,),
         )
 
@@ -96,15 +96,26 @@ class ContextBuilderTest(unittest.TestCase):
         )
 
         system = request.messages[0].content
-        self.assertIn("local computer action", system)
-        self.assertIn("request approval", system)
-        self.assertIn("do not replace the tool call with manual instructions", system)
+        self.assertIn("本机动作", system)
+        self.assertIn("请求审批", system)
+        self.assertIn("不要用手工操作说明替代工具调用", system)
 
     def test_visible_reasoning_follows_latest_user_language(self) -> None:
         """模型可见 reasoning 与回答应跟随 Owner 最新消息的主要语言。"""
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (ModelMessage(role="user", content="帮我查看系统配置"),),
+        )
+
+        system = request.messages[0].content
+        self.assertIn("reasoning_content 必须使用中文", system)
+        self.assertIn("用户最新一条消息", system)
+
+    def test_english_user_keeps_english_system_language_rule(self) -> None:
+        """英文提问仍使用英文 System Prompt，不被中文默认界面影响。"""
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (ModelMessage(role="user", content="Who are you?"),),
         )
 
         system = request.messages[0].content
