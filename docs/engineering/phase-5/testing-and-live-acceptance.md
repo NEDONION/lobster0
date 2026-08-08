@@ -2,7 +2,7 @@
 
 > 当前结论：**IMPLEMENTATION PASS**
 >
-> 当前全仓自动化证据：531/531 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、
+> 当前全仓自动化证据：542/542 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、
 > 32/32 Channel cases、20 轮 640/640 Channel checks。
 >
 > Feishu：**FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
@@ -45,7 +45,7 @@ pnpm --dir tui test
 
 | Gate | Result |
 | --- | ---: |
-| Python | Phase 5 exit 483/483 PASS；当前全仓 531/531 PASS |
+| Python | Phase 5 exit 483/483 PASS；当前全仓 542/542 PASS |
 | TypeScript | 当前全仓 30/30 PASS |
 
 Python 全量覆盖 Config、Provider、Turn、十个 Tool、Approval、Memory、Skills、TUI fallback、三平台 Adapter/
@@ -238,7 +238,7 @@ Feishu Evidence 进一步使用 strict nested schema、0600、`O_EXCL` 和 `fsyn
 
 ```mermaid
 flowchart TD
-    A["531 Python + 30 TypeScript"] --> B["29 Agent + 32 Channel"]
+    A["542 Python + 30 TypeScript"] --> B["29 Agent + 32 Channel"]
     B --> C["640/640 local soak"]
     C --> F{"Feishu 15/15 real Bot?"}
     F -->|"No"| R["OWNER-DM VERIFIED / 15-CASE LIVE PENDING"]

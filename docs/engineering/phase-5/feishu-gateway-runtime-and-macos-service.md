@@ -207,7 +207,7 @@ VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy�
 
 | 证据 | 当前结果 | 能证明什么 |
 | --- | --- | --- |
-| Python 全量回归 | 531/531 | SDK 预加载、`connect_until_ready`、`post` 入站和既有 Core 无回归 |
+| Python 全量回归 | 542/542 | SDK 预加载、`connect_until_ready`、`post` 入站和既有 Core 无回归 |
 | TypeScript TUI | 30/30 | 本次没有破坏 pi-tui 协议与交互 |
 | Agent / Channel eval | 29/29、32/32 | 离线业务场景保持稳定 |
 | Channel local soak | 640/640 | 20 轮离线恢复与幂等语义保持稳定 |

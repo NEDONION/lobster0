@@ -1,7 +1,7 @@
 # Phase 3：Memory、Skills 与上下文压缩工程文档
 
 > 状态：已实现并通过阶段门禁。Phase 3 首次证据为 296/296 tests；当前合并基线为
-> 当前全仓 531/531 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS；
+> 当前全仓 542/542 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS；
 > 当前版本没有把历史 v0.2 DeepSeek live smoke 冒充 Phase 3 新结果。
 
 > [!IMPORTANT]
