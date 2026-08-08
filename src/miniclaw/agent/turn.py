@@ -355,7 +355,7 @@ class TurnService:
             )
             history = tuple(
                 _model_message(message)
-                for message in self._messages.list_recent(parent.session_id, limit=20)
+                for message in self._messages.list_context(parent.session_id, limit=20)
             )
             request = self._context.build(
                 self._model,
