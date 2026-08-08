@@ -1,6 +1,7 @@
 """裸 miniclaw 在 pi-tui 与 Textual fallback 之间选择的测试。"""
 
 import io
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -51,7 +52,7 @@ class TuiLauncherTest(unittest.TestCase):
         self.assertFalse(run.call_args.kwargs.get("shell", False))
         child_env = run.call_args.kwargs["env"]
         self.assertEqual(child_env["MINICLAW_HOME"], str(self.paths.home))
-        self.assertTrue(child_env["MINICLAW_PYTHON"].endswith("python"))
+        self.assertEqual(child_env["MINICLAW_PYTHON"], sys.executable)
 
     @mock.patch("miniclaw.tui_launcher.run_tui", return_value=7)
     @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
