@@ -92,6 +92,8 @@ def normalize_command(
     program: str,
     args: tuple[str, ...],
     workspace: Path,
+    *,
+    executable_path: str = SAFE_EXECUTABLE_PATH,
 ) -> NormalizedCommand:
     """解析 executable，保留参数边界，并拒绝 Shell/删除/远程/提权动作。"""
     if not isinstance(program, str) or not program or _has_control(program):
@@ -112,7 +114,7 @@ def normalize_command(
             raise CommandPolicyError("command_not_found", "program is not executable")
         resolved_program = str(resolved)
     else:
-        found = shutil.which(program, path=SAFE_EXECUTABLE_PATH)
+        found = shutil.which(program, path=executable_path)
         if found is None:
             raise CommandPolicyError("command_not_found", "program was not found")
         try:

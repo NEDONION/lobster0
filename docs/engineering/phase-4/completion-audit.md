@@ -6,7 +6,7 @@
 >
 > 真实飞书租户结论：**PENDING（缺 App ID / App Secret 与已配置企业应用）**
 >
-> 当前门禁：391/391 Python、25/25 TypeScript、24/24 Agent、12/12 Channel、20 轮 local soak 240/240、Ruff 与 build PASS
+> 当前门禁：483/483 Python、27/27 TypeScript、28/28 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
 
 ## 1. 先说结论
 
@@ -18,8 +18,8 @@ Phase 4 的代码、离线回归、恢复语义、安全边界、Gateway CLI、D
 ```mermaid
 flowchart LR
     D["Design requirements"] --> C["Code implementation"]
-    C --> U["391 Python + 25 TS tests"]
-    U --> E["24 Agent + 12 Channel evals"]
+    C --> U["412 Python + 27 TS tests"]
+    U --> E["28 Agent + 12 Channel evals"]
     E --> L{"真实飞书凭据可用?"}
     L -->|"否"| P["Implementation PASS\nLive PENDING"]
     L -->|"是"| R["20 轮 + Tool + Approval\nrestart + reconnect + soak"]
@@ -106,9 +106,9 @@ Provider 隐藏 reasoning 和异常原文。
 | Gate | 当前证据 | 结论 |
 | --- | --- | --- |
 | 设计、PRD、架构、工程文档一致 | Phase 4 文档组 + 本矩阵 | LOCAL PASS |
-| 全量 Python | `391/391` | PASS |
-| pi-tui / Bridge | `25/25` | PASS |
-| Agent 回归 | `24/24` | PASS |
+| 全量 Python | `483/483` | PASS |
+| pi-tui / Bridge | `27/27` | PASS |
+| Agent 回归 | `28/28` | PASS |
 | Feishu Channel 回归 | `12/12` | PASS |
 | Ruff | `All checks passed` | PASS |
 | wheel / sdist | `uv build` 两个 artifact 成功 | PASS |

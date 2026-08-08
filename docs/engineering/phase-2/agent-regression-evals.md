@@ -2,7 +2,7 @@
 
 > 状态：已实现并验证（R1 事故回归 + R2 Agent 门禁 + R4 Channel 确定性门禁）
 >
-> 当前仓库事实：391/391 Python tests、25/25 TypeScript tests、24/24 active offline Agent cases、12/12 Channel cases、Ruff PASS；v0.1.0 发布时基线为 177 tests
+> 当前仓库事实：483/483 Python tests、27/27 TypeScript tests、28/28 active offline Agent cases、32/32 Channel cases、Ruff PASS；v0.1.0 发布时基线为 177 tests
 >
 > 不代表：真实 DeepSeek live benchmark、飞书 E2E 或自动演进已经完成
 
@@ -41,8 +41,8 @@ MiniClaw 因此分层：
 
 | 层 | 当前状态 | 运行时机 | 通过规则 |
 | --- | --- | --- | --- |
-| L0 单元/契约 | 已实现 | 每次提交 | 391/391 Python + 25/25 TypeScript |
-| L1 offline Agent scenarios | 已实现 | 每次提交 | 24/24 active cases |
+| L0 单元/契约 | 已实现 | 每次提交 | 483/483 Python + 27/27 TypeScript |
+| L1 offline Agent scenarios | 已实现 | 每次提交 | 28/28 active cases |
 | L2 live DeepSeek | 单事故 planning probe；完整 R3 仍待实现 | release/tag | `ACTION-OPEN-APP-001` 3/3；完整 capability gate 待 CLI |
 | L3 deterministic Channel | 已实现 | 每次提交 | 12/12 Adapter/Inbox/Delivery/Approval/Gateway cases |
 | L4 live Channel/soak | harness 已实现，真实验收待执行 | IM release | 飞书真实投递、去重、重连与长时运行 |
@@ -196,7 +196,7 @@ uv run miniclaw eval run --suite channel --root evals/scenarios
 退出码：全部通过为 `0`；任一 case FAIL 为 `1`；场景目录、Schema 无效或所选 suite 没有 active case 为 `2`。
 空 gate 不能用 `0/0` 伪装通过。
 
-## 10. 当前 24 条 Agent query 与 12 条 Channel case
+## 10. 当前 28 条 Agent query 与 12 条 Channel case
 
 | ID | 用户场景 | 核心证明 |
 | --- | --- | --- |
@@ -267,7 +267,7 @@ uv run miniclaw eval run --suite channel --root evals/scenarios
 git diff --check
 ```
 
-当前仓库已验证结果是 391/391 Python tests、25/25 TypeScript tests、24/24 active Agent cases、12/12 Channel cases 和 Ruff PASS。场景集首次发布时的 177 tests
+当前仓库已验证结果是 483/483 Python tests、27/27 TypeScript tests、28/28 active Agent cases、32/32 Channel cases 和 Ruff PASS。场景集首次发布时的 177 tests
 版本证据见 [v0.1.0 release record](../../evals/releases/v0.1.0.md)。
 
 ## 13. 已知边界和下一步

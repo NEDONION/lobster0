@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · Phase 5 implementation pass · Telegram live pending · Discord live pending</div>
+      <div class="branch">target: main · Phase 5 + Personal Machine implementation pass · IM live gates pending</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui；飞书 WebSocket、Telegram long polling 与 Discord Gateway 已进入同一个 Python 进程。三条独立 pipeline 共享一个 AgentRuntime、十个 Tool、Policy、Approval、Markdown Memory、Skills 和 SQLite durable truth；一个平台 degraded 不会拖停其他平台。下一步是用真实测试账号完成三套 live exit gate，再进入 Phase 6 受控演进。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 已把普通 Home 文件、有限写根与用户 CLI 纳入同一安全边界。飞书 WebSocket、Telegram long polling 与 Discord Gateway 已进入一个 Python 进程，三条独立 pipeline 共享一个 AgentRuntime、十个 Tool、Policy、Approval、Memory、Skills 和 SQLite durable truth；一个平台 degraded 不会拖停其他平台。下一步是用真实测试账号完成三套 live exit gate，再进入 Phase 6 受控演进。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Phase 5 implementation pass</span>
         <strong>P5 CODE ✓</strong>
-        <p>462 Python + 25 TypeScript tests · Agent 24/24 · Channel 32/32 · local soak 640/640 · live pending</p>
+        <p>483 Python + 27 TypeScript tests · Agent 28/28 · Channel 32/32 · local soak 640/640 · live pending</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">462+25 <small>passing</small></span>
+        <span class="metric-value">483+27 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -426,7 +426,7 @@
         </article>
         <article class="phase done">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool、安全、pi-tui 与回归门禁</h3><p>P2.1 Tool、P2.2 写入/Approval、P2.3A 命令、P2.4 HTTPS、Python Core ↔ pi-tui Bridge 与终端稳定化均已验证；P2.3B lark-cli 作为独立待办保留。</p></div>
+          <div><h3>Tool、安全、pi-tui 与回归门禁</h3><p>P2.1 Tool、P2.2 写入/Approval、P2.3A exact argv、P2.3B Personal Machine 权限与用户 CLI 发现、P2.4 HTTPS、Python Core ↔ pi-tui Bridge 与终端稳定化均已验证。</p></div>
           <span class="pill">COMPLETED</span>
         </article>
         <article class="phase done">
@@ -441,7 +441,7 @@
         </article>
         <article class="phase done">
           <div class="phase-no">Phase 5</div>
-          <div><h3>Telegram 与 Discord</h3><p>两个 official Transport、严格 Adapter、neutral Approval、GatewaySupervisor、20 项 Doctor、20 条新场景和 640-check soak 均已完成；Telegram live pending，Discord live pending。</p></div>
+          <div><h3>Telegram 与 Discord</h3><p>两个 official Transport、严格 Adapter、neutral Approval、GatewaySupervisor、22 项 Doctor、20 条新场景和 640-check soak 均已完成；Telegram live pending，Discord live pending。</p></div>
           <span class="pill">CODE PASS</span>
         </article>
         <article class="phase current">
@@ -465,7 +465,7 @@
           <li class="complete">Tool Contract 与唯一 Registry</li>
           <li class="complete">Policy + ToolExecutor 唯一执行入口</li>
           <li class="complete">脱敏 system_info 与固定本机查询</li>
-          <li class="complete">Workspace Guard：逃逸、符号链接与敏感路径拒绝</li>
+          <li class="complete">Workspace/Personal Profile：多根读取、有限写根、逃逸、符号链接与敏感路径拒绝</li>
           <li class="complete">read_file、glob、grep 的有界只读结果</li>
           <li class="complete">ToolRun / Audit 原子状态迁移</li>
           <li class="complete">Policy deny 脱敏审计（无 denied ToolRun）</li>
@@ -473,7 +473,7 @@
           <li class="complete">AgentRuntime / Agent 离线 Tool 集成验证</li>
           <li class="complete">PROTO-001：empty tool arguments 事故回归</li>
           <li class="complete">ACTION-OPEN-APP-001：direct open -a 与 Approval 事故回归</li>
-          <li class="complete">严格 JSONL Schema 与 24 条 Claw-like query</li>
+          <li class="complete">严格 JSONL Schema 与 28 条 Claw-like query（含四条 Personal/CLI 权限事故）</li>
           <li class="complete">真实 Agent / Policy / Tool / SQLite offline runner</li>
           <li class="complete">miniclaw eval list / validate / run</li>
           <li class="complete">严格 [tools] / command / HTTP 配置边界</li>
@@ -504,13 +504,15 @@
           <li class="complete">上下文 / Token / Tool / 迭代 / 耗时真实审计栏</li>
           <li class="complete">Provider usage 缺失显示 N/A，/status 显示 request ID</li>
           <li class="complete">旧 chat / tui / approvals 入口已删除</li>
-          <li class="complete">run_command：exact argv、固定 PATH 与硬禁止</li>
+          <li class="complete">run_command：exact argv、确定性用户 PATH 与硬禁止</li>
+          <li class="complete">NVM、uv、pnpm、local、Cargo、Bun CLI 发现与 lark-cli wrapper 纵切</li>
+          <li class="complete">最小子进程环境：不继承 API Key、Cookie、Proxy 与 Python path</li>
           <li class="complete">最小子进程环境、输出上限与进程组超时</li>
           <li class="complete">安全命令未命中规则时复用 TUI scoped approvals</li>
           <li class="complete">应用名显式发现 + direct open -a 的 DeepSeek planning 3/3</li>
           <li class="complete">http_get：HTTPS-only、全部 DNS 公网校验与精确 authority</li>
           <li class="complete">固定 IP/TLS hostname、每跳重验与有界文本响应</li>
-          <li class="complete">stale ToolRun crash recovery 与 doctor 十三项只读检查</li>
+          <li class="complete">stale ToolRun crash recovery 与 Doctor 二十二项只读检查</li>
           <li class="complete">MEMORY.md + 今日/昨日 daily memory 稳定注入</li>
           <li class="complete">read_memory 只读与 propose_memory 参数绑定审批</li>
           <li class="complete">凭据双边界过滤、64 KiB 上限与 symlink fail closed</li>
@@ -529,8 +531,8 @@
           <li class="complete">Discord DM/Guild/Thread、minimal intents、Gateway resume 与 AllowedMentions.none</li>
           <li class="complete">一个 AgentRuntime + 三条独立 Channel pipeline + runtime fault isolation</li>
           <li class="complete">neutral Approval v2 envelope + Feishu v1 read compatibility</li>
-          <li class="complete">20 项 offline Doctor + 两个 15-step secret-free live harness</li>
-          <li class="complete">462 Python + 25 TypeScript tests + 24/24 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
+          <li class="complete">22 项 offline Doctor + 两个 15-step secret-free live harness</li>
+          <li class="complete">483 Python + 27 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -539,20 +541,20 @@
         <div class="decision"><code>model</code><p>deepseek-v4-pro</p></div>
         <div class="decision"><code>credentials</code><p>本地 .env，0600，永不进入 Git。</p></div>
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
-        <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
+        <div class="decision"><code>safety</code><p>Workspace/Personal 多根 Guard、敏感凭据硬拒绝、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 462 Python、25 TypeScript tests、24/24 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 483 Python、27 TypeScript tests、28/28 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
-        <div class="decision"><code>scope</code><p>pi-tui、十个 Tool、Memory、Skills、Compaction、Approval 和飞书/Telegram/Discord multi-channel 已完成；真实平台 live gates 必须用各自凭据单独验收。</p></div>
+        <div class="decision"><code>scope</code><p>pi-tui、十个 Tool、Personal Machine 权限、用户 CLI 发现、Memory、Skills、Compaction、Approval 和飞书/Telegram/Discord multi-channel 已完成；真实平台 live gates 必须用各自凭据单独验收。</p></div>
         <div class="decision"><code>live truth</code><p>Telegram live pending · Discord live pending · fake SDK 与 640/640 不冒充 production verified。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/0f18369">0f18369 live harness</a> · <a href="https://github.com/NEDONION/mini-claw/commit/49ee339">49ee339 32-case regression</a> · <a href="https://github.com/NEDONION/mini-claw/commit/7f133e7">7f133e7 doctor readiness</a></p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/7804341">7804341 Personal permissions</a> · <a href="https://github.com/NEDONION/mini-claw/commit/0f18369">0f18369 live harness</a> · <a href="https://github.com/NEDONION/mini-claw/commit/49ee339">49ee339 32-case regression</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 462 Python + 25 TypeScript tests + 24/24 Agent、32/32 Channel、640/640 soak</span>
-      <span><a href="../engineering/phase-5/telegram-discord-channels.md">Phase 5 engineering</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../engineering/phase-5/completion-audit.md">completion audit</a> · <a href="../evals/releases/v0.5.0.md">v0.5.0 record</a></span>
+      <span>Last updated · 2026-08-08 · 483 Python + 27 TypeScript tests + 28/28 Agent、32/32 Channel、640/640 soak</span>
+      <span><a href="../engineering/phase-2/personal-machine-permissions.md">Personal permissions</a> · <a href="../engineering/phase-5/telegram-discord-channels.md">Phase 5 engineering</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../engineering/phase-5/completion-audit.md">completion audit</a> · <a href="../evals/releases/v0.4.1.md">v0.4.1</a> · <a href="../evals/releases/v0.5.0.md">v0.5.0</a></span>
     </footer>
   </main>
 </body>

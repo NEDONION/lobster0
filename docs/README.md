@@ -19,13 +19,15 @@
    虚拟终端、跨进程、Textual fallback、PTY smoke 和每版本门禁。
 9. 阅读 [exact-argv 命令执行工程文档](engineering/phase-2/command-execution.md)，理解 `run_command`、硬禁止、
    精确规则、最小环境、超时和 TUI 审批。
-10. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/https-get-and-ssrf.md)，理解 URL/DNS 校验、
+10. 阅读 [Personal Machine 权限与 CLI 发现](engineering/phase-2/personal-machine-permissions.md)，理解
+   Workspace/Personal Profile、多根读写、敏感路径、NVM/uv/pnpm CLI 发现和最小子进程环境。
+11. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/https-get-and-ssrf.md)，理解 URL/DNS 校验、
    固定 IP/TLS hostname、重定向、响应预算和不可信内容边界。
-11. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
+12. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
    跑离线 gate 并记录 baseline。
-12. 阅读 [飞书 Channel Core](engineering/phase-4/feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
+13. 阅读 [飞书 Channel Core](engineering/phase-4/feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
    WebSocket Transport、Delivery 恢复、卡片审批和仍待完成的 Gateway E2E。
-13. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+14. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -74,6 +76,7 @@
 | TUI 双语、长文本、真实遥测与分级审批 | [tui-observability-and-scoped-approvals.md](engineering/phase-2/tui-observability-and-scoped-approvals.md) |
 | TUI Trace、虚拟终端与跨进程回归规范 | [tui-regression-testing.md](engineering/phase-2/tui-regression-testing.md) |
 | Exact-argv 命令执行 | [command-execution.md](engineering/phase-2/command-execution.md) |
+| Personal Machine 权限与 CLI 发现 | [personal-machine-permissions.md](engineering/phase-2/personal-machine-permissions.md) |
 | Pinned HTTPS 与 SSRF 防护 | [https-get-and-ssrf.md](engineering/phase-2/https-get-and-ssrf.md) |
 | Phase 2 回归、恢复与调试 | [testing-and-debugging.md](engineering/phase-2/testing-and-debugging.md) |
 | Approvals CLI（已迁移） | [cli-approvals.md](engineering/phase-2/cli-approvals.md) |
@@ -98,6 +101,7 @@
 | [Eval v0.1.0](evals/releases/v0.1.0.md) | 首个 offline-v1 基线：177 tests、10/10 Agent cases |
 | [Eval v0.2.0](evals/releases/v0.2.0.md) | Phase 2 历史基线：245 tests、20/20 Agent cases、DeepSeek live smoke |
 | [Eval v0.3.0](evals/releases/v0.3.0.md) | Phase 3 基线：296 tests、24/24 Agent cases、Memory/Skills/Compaction |
+| [Eval v0.4.1](evals/releases/v0.4.1.md) | Personal Machine 基线：412+27 tests、28+12 cases、lark-cli 只读纵切 |
 | [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md) | 对 OpenClaw/ZeroClaw/nanobot/RayClaw/Claw Bench/OpenJarvis 的方法映射 |
 | [R1/R2 实施计划](superpowers/plans/2026-08-08-agent-regression-benchmark.md) | TDD 任务、文件、命令与完成定义 |
 

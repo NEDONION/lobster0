@@ -4,7 +4,7 @@
 >
 > 发布口径：**IMPLEMENTATION PASS / LIVE PENDING**
 >
-> 当前门禁：462/462 Python（1 项预期 skip）、25/25 TypeScript、24/24 Agent、32/32 Channel、
+> 当前门禁：483/483 Python、27/27 TypeScript、28/28 Agent、32/32 Channel、
 > 640/640 local soak。
 
 这份表把 Phase 5 的要求逐项映射到代码、自动化证据和仍需真实平台完成的 evidence。它用于防止“代码文件存在”被
@@ -31,7 +31,7 @@
 | Token 只保存 env 变量名 | config + gateway preflight | repr/secret tests | PASS |
 | 可选 SDK extras | `pyproject.toml` | lazy import/package tests | PASS |
 | bootstrap 默认 disabled | `bootstrap.py` | bootstrap snapshot tests | PASS |
-| 离线 20 项 Doctor | `doctor.py` | `tests/test_doctor.py` | PASS |
+| 离线 22 项 Doctor | `doctor.py` | `tests/test_doctor.py` | PASS |
 
 ## 3. 平台无关 Core 边界
 
@@ -106,9 +106,9 @@ flowchart TB
 
 | Gate | Expected | Actual | Result |
 | --- | ---: | ---: | --- |
-| Python unittest | all pass | 462/462；1 expected skip | PASS |
+| Python unittest | all pass | 483/483 | PASS |
 | TypeScript | all pass | 25/25 | PASS |
-| Offline Agent | all active | 24/24 | PASS |
+| Offline Agent | all active | 28/28 | PASS |
 | Feishu Channel | retain old | 12/12 | PASS |
 | Telegram Channel | exact matrix | 10/10 | PASS |
 | Discord Channel | exact matrix | 10/10 | PASS |

@@ -24,7 +24,8 @@ class DoctorTest(unittest.TestCase):
         """为每个诊断场景创建独立状态路径。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+        self.root = Path(self.temporary_directory.name).resolve()
+        self.paths = build_state_paths(self.root)
         self.node = self.paths.home / "test-node"
         self.node.parent.mkdir(parents=True, exist_ok=True)
         self.node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
@@ -37,10 +38,18 @@ class DoctorTest(unittest.TestCase):
         }
 
     def test_initialized_state_passes_all_local_checks(self) -> None:
-        """完整初始化后三平台二十项离线检查都应实际通过。"""
+        """完整初始化后 Personal 权限与三平台二十二项检查都应通过。"""
         initialize_state(self.paths)
 
-        results = run_local_checks(self.paths, self.tui_environ)
+        owner_home = self.root / "owner"
+        nvm_bin = owner_home / ".config/nvm/versions/node/v20.19.0/bin"
+        nvm_bin.mkdir(parents=True)
+        lark_cli = nvm_bin / "lark-cli"
+        lark_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        lark_cli.chmod(0o700)
+
+        with mock.patch("miniclaw.doctor.Path.home", return_value=owner_home):
+            results = run_local_checks(self.paths, self.tui_environ)
 
         self.assertEqual(
             {result.name for result in results},
@@ -51,6 +60,8 @@ class DoctorTest(unittest.TestCase):
                 "database",
                 "permissions",
                 "tools",
+                "personal_permissions",
+                "executables",
                 "approvals",
                 "node",
                 "pi_tui",
@@ -68,6 +79,10 @@ class DoctorTest(unittest.TestCase):
             },
         )
         self.assertTrue(all(result.status is CheckStatus.PASS for result in results))
+        by_name = {result.name: result for result in results}
+        self.assertIn("profile personal", by_name["personal_permissions"].message)
+        self.assertIn("lark-cli available", by_name["executables"].message)
+        self.assertNotIn(str(owner_home), by_name["executables"].message)
 
     def test_old_node_reports_actionable_pi_tui_failure(self) -> None:
         """默认 pi-tui 遇到旧 Node 时必须给出最低版本，而不是启动后崩溃。"""
@@ -176,19 +191,32 @@ class DoctorTest(unittest.TestCase):
             "MINICLAW_FEISHU_APP_ID": "cli_test",
             "MINICLAW_FEISHU_APP_SECRET": secret,
         }
+        owner_home = self.root / "feishu-owner"
+        nvm_bin = owner_home / ".config/nvm/versions/node/v20.19.0/bin"
+        nvm_bin.mkdir(parents=True)
+        lark_cli = nvm_bin / "lark-cli"
+        lark_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        lark_cli.chmod(0o700)
 
-        with mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()):
+        def discovered_which(command: str, *, path: str | None = None) -> str | None:
+            if command == "lark-cli" and path is not None and str(nvm_bin) in path:
+                return str(lark_cli)
+            return None
+
+        with (
+            mock.patch("miniclaw.doctor.Path.home", return_value=owner_home),
+            mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()),
+            mock.patch("miniclaw.doctor.shutil.which", side_effect=discovered_which),
+        ):
             results = run_local_checks(self.paths, environment)
 
         by_name = {result.name: result for result in results}
         self.assertIs(by_name["feishu_config"].status, CheckStatus.PASS)
         self.assertIs(by_name["feishu_sdk"].status, CheckStatus.PASS)
         self.assertIs(by_name["channel_database"].status, CheckStatus.PASS)
-        self.assertIn(
-            by_name["feishu_runtime"].status,
-            {CheckStatus.PASS, CheckStatus.WARN},
-        )
+        self.assertIs(by_name["feishu_runtime"].status, CheckStatus.PASS)
         self.assertNotIn(secret, repr(results))
+        self.assertNotIn(str(owner_home), repr(results))
 
     def test_three_enabled_channels_are_checked_offline_and_worker_budget_warns(self) -> None:
         """Telegram/Discord 只查本地 SDK/Token；总 worker 超 8 给 WARN，不做认证网络。"""

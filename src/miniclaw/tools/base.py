@@ -51,6 +51,8 @@ class ToolContext:
     state_home: Path
     workspace: Path
     read_only_roots: tuple[Path, ...]
+    write_roots: tuple[Path, ...] = ()
+    owner_home: Path | None = None
 
 
 class ToolValidationError(ValueError):

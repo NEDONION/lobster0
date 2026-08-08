@@ -1,7 +1,7 @@
 # Phase 4：飞书 Channel 与 Gateway 工程文档
 
 > 状态：核心链路与 `miniclaw gateway` 离线生命周期已实现；真实飞书账号 E2E、部署与 soak 尚未完成
-> 当前全仓门禁：391/391 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS
+> 当前全仓门禁：483/483 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS
 
 ## 1. 现在完成到了哪里
 
@@ -154,7 +154,7 @@ Inbox 同时约束 event ID 和 message ID，但 `InboundEventRepository.record(
 - Inbox / Turn / Delivery correlation、耗时、Tool 数、attempt 与错误恢复 Audit；
 - Approval card、文本 fallback、Owner/hash/单次消费；
 - Gateway 启动顺序、双信号关闭、缺配置 fail closed 与凭据脱敏；
-- Doctor 的十三项离线诊断，不连接飞书也不输出 Secret；
+- Doctor 的十五项离线诊断，不连接飞书也不输出 Secret；
 - 最新 Python Core 与 pi-tui 的真实跨进程握手。
 
 发布前门禁：
@@ -171,8 +171,8 @@ uv build
 git diff --check
 ```
 
-当前结果：391/391 Python、25/25 TypeScript、24/24 offline Agent cases、12/12 Channel cases、20 轮
-Channel local soak 为 240/240、Ruff PASS，Python wheel/sdist 构建成功。
+当前结果：483/483 Python、27/27 TypeScript、28/28 offline Agent cases、32/32 Channel cases、20 轮
+全平台 Channel local soak 为 640/640、Ruff PASS，Python wheel/sdist 构建成功。
 
 ## 10. 尚未完成与下一步
 

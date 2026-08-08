@@ -1053,7 +1053,7 @@ git commit -m "test(live): 增加 secret-free Telegram/Discord acceptance harnes
 ### Step 13.1 — RED documentation fact scan
 
 - [x] 先建立检查命令，证明文档仍写 `DESIGN READY / IMPLEMENTATION PENDING`、12 cases、240 checks 或单 Feishu gateway。
-- [x] 运行新鲜全量门禁后记录实际 462 Python、25 TypeScript 和 implementation commit，不提前写预期数字。
+- [x] 运行新鲜全量门禁后记录合并后的实际 483 Python、27 TypeScript 和 implementation commit，不提前写预期数字。
 
 Run RED:
 
@@ -1073,7 +1073,7 @@ Expected RED: 至少命中 Phase 5 尚未实现的进度文本。
 - [x] 本地运行指南写 Telegram BotFather/Discord Developer Portal 的最小权限、Token 环境变量、allowlist 获取方式、启动和停止；没有真实 ID 或 Secret。
 - [x] completion audit 建立“要求 → 代码 → 测试 → evidence → 状态”逐项表；`docs/evals/README.md` 增加 v0.5.0 发布入口。
 - [x] `docs/evals/releases/v0.5.0.md` 写实际 commits/gates；无 live evidence 的平台保持 `LIVE PENDING`。
-- [x] 两个 progress HTML 同步 Phase 5、462+25、32/32、640/640、Phase 6 下一步和 commit links。
+- [x] 两个 progress HTML 同步 Phase 5、483+27、32/32、640/640、Phase 6 下一步和 commit links。
 - [x] `scripts/validate_docs.py` 使用 stdlib 检查 Markdown 相对链接、fence/Mermaid 配对、HTML 标签和 required facts；`tests/test_documentation.py` 覆盖坏链接、未闭合 Mermaid 与缺失 HTML closing tag。
 - [x] `AGENTS.md` 保留中英各半 commit 规范，并增加 Phase 5 gate 命令。
 - [x] 未修改用户拥有的 `docs/README.md`；工程索引使用 `docs/engineering/README.md`。
@@ -1148,19 +1148,19 @@ uv run python -m unittest tests.test_channel_contracts tests.test_channel_experi
 
 ### Step 14.2 — Full deterministic gates
 
-- [x] Python full suite：462/462 PASS：
+- [x] Python full suite：483/483 PASS（合并 `origin/main` 后）：
 
 ```bash
 uv run python -m unittest discover -s tests -v
 ```
 
-- [x] TypeScript compatibility：25/25 PASS（Node 24.14.0 / TypeScript 5.9.3）：
+- [x] TypeScript compatibility：27/27 PASS（Node 24.14.0 / TypeScript 5.9.3）：
 
 ```bash
 pnpm --dir tui test
 ```
 
-- [x] Agent and Channel regression：24/24、32/32、20 runs / 640/640 PASS：
+- [x] Agent and Channel regression：28/28、32/32、20 runs / 640/640 PASS：
 
 ```bash
 uv run miniclaw eval run --suite offline --root evals/scenarios

@@ -1,7 +1,7 @@
 # Phase 4：飞书生产 Channel 工程落地
 
 > 状态：代码与离线门禁已完成；真实企业应用验收待凭据
-> 基线：SQLite schema v2，Agent 回归 24/24，Channel 回归 12/12
+> 基线：SQLite schema v2，Agent 回归 28/28，Channel 回归 12/12
 > 入口：`miniclaw gateway`
 
 ## 1. 大白话说明

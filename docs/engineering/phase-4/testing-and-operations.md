@@ -1,13 +1,13 @@
 # Phase 4：飞书运行、测试与故障排查
 
 > 当前结论：implementation gate 已通过；真实企业应用 E2E、部署与 soak 待凭据。
-> 当前门禁：391/391 Python、25/25 TypeScript、Agent 24/24、Channel 12/12、20 轮 local soak 240/240、Ruff PASS。
+> 当前门禁：483/483 Python、27/27 TypeScript、Agent 28/28、Channel 32/32、20 轮 local soak 640/640、Ruff PASS。
 
 ## 1. 先理解四层证据
 
 ```mermaid
 flowchart TB
-    P["Python contracts / integration\n391 tests"] --> T["pi-tui / Bridge\n25 tests"]
+    P["Python contracts / integration\n412 tests"] --> T["pi-tui / Bridge\n27 tests"]
     T --> A["Agent regression\n24 / 24"]
     A --> C["Feishu Channel regression\n12 / 12"]
     C --> L["Live Feishu acceptance\n真实 App 凭据，当前待执行"]
@@ -144,7 +144,7 @@ uv build
 git diff --check
 ```
 
-必须得到 Python 391/391、TypeScript 25/25、Agent 24/24、Channel 12/12。以后新增测试时数字应上调，不能为了
+必须得到 Python 483/483、TypeScript 27/27、Agent 28/28、Channel 32/32。以后新增测试时数字应上调，不能为了
 保持文档旧数字删除测试。
 
 ## 8. 12 条飞书回归场景
@@ -257,7 +257,7 @@ uv sync --extra feishu
 
 ## 11. 当前完成度
 
-截至 2026-08-08，Phase 4 Core、Gateway、脱敏结构化日志/Audit、391 Python tests、25 TypeScript tests、24 条 Agent 回归、12 条
+截至 2026-08-08，Phase 4 Core、Gateway、脱敏结构化日志/Audit、412 Python tests、27 TypeScript tests、28 条 Agent 回归、12 条
 Channel 回归和 20 轮 local soak 已完成。本机 `.env` 没有飞书 App ID/App Secret，本地状态也未启用 Channel，因此
 真实飞书 E2E、常驻部署和真实 Gateway soak 明确待办。准确说法是：**Phase 4 implementation complete，live acceptance pending**。
 

@@ -6,6 +6,7 @@ from typing import cast
 
 from miniclaw.policy.approvals import ApprovalDecision, available_approval_decisions
 from miniclaw.policy.command import (
+    SAFE_EXECUTABLE_PATH,
     CommandPolicyError,
     NormalizedCommand,
     normalize_command,
@@ -55,6 +56,7 @@ class PolicyEngine:
         command_rules: tuple[NormalizedCommand, ...] = (),
         network_rules: tuple[NetworkRule, ...] = (),
         network_resolver: Resolver | None = None,
+        executable_path: str = SAFE_EXECUTABLE_PATH,
     ) -> None:
         if security not in {"deny", "allowlist", "full"}:
             raise ValueError("invalid tool security mode")
@@ -65,6 +67,7 @@ class PolicyEngine:
         self._command_rules = set(command_rules)
         self._network_rules = set(network_rules)
         self._network_resolver = network_resolver or default_resolver
+        self._executable_path = executable_path
 
     def authorize(
         self,
@@ -121,7 +124,12 @@ class PolicyEngine:
         program = cast(str, arguments["program"])
         args = cast(list[str], arguments["args"])
         try:
-            normalized = normalize_command(program, tuple(args), context.workspace)
+            normalized = normalize_command(
+                program,
+                tuple(args),
+                context.workspace,
+                executable_path=self._executable_path,
+            )
         except CommandPolicyError as error:
             return PolicyDecision(PolicyAction.DENY, str(error), error.code)
         normalized_arguments = {

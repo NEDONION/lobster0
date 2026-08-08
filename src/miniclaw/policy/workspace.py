@@ -29,6 +29,20 @@ _CONTAINER_SOCKET_NAMES = frozenset(
     {"docker.sock", "containerd.sock", "crio.sock", "podman.sock"}
 )
 _SENSITIVE_PATH_PAIRS = frozenset({(".config", "gcloud"), (".docker", "config.json")})
+_SENSITIVE_PATH_SEQUENCES = (
+    ("library", "keychains"),
+    ("library", "safari"),
+    ("library", "application support", "google", "chrome"),
+    ("library", "application support", "chromium"),
+    ("library", "application support", "firefox"),
+    ("library", "application support", "1password"),
+    ("library", "application support", "slack"),
+    ("library", "application support", "discord"),
+    ("library", "application support", "lark"),
+    ("library", "application support", "feishu"),
+    (".local", "share", "keyrings"),
+    (".config", "lark-cli"),
+)
 _STATE_FILE_NAMES = frozenset(
     {"config.toml", "miniclaw.db", "miniclaw.db-wal", "miniclaw.db-shm", "miniclaw.db-journal"}
 )
@@ -45,6 +59,30 @@ class WorkspaceAccessError(ValueError):
 
 class WorkspaceGuard:
     """统一解析模型提供的路径，并把结果限制在配置允许根内。"""
+
+    def read_root(self, context: ToolContext, path: Path) -> tuple[str, Path]:
+        """返回规范路径所属的稳定展示标签与配置读取根。"""
+        resolved = _resolve(path)
+        workspace = _resolve(context.workspace)
+        if _contains(workspace, resolved):
+            return "workspace", workspace
+        if context.owner_home is not None:
+            owner_home = _resolve(context.owner_home)
+            if _contains(owner_home, resolved):
+                return "home", owner_home
+        for index, configured_root in enumerate(context.read_only_roots, start=1):
+            allowed_root = _resolve(configured_root)
+            if _contains(allowed_root, resolved):
+                label = (
+                    "applications"
+                    if allowed_root == Path("/Applications")
+                    else f"root-{index}"
+                )
+                return label, allowed_root
+        raise WorkspaceAccessError(
+            _outside_code(context),
+            "path is outside the configured read roots",
+        )
 
     def resolve_read(self, context: ToolContext, raw_path: str) -> Path:
         """返回允许读取的规范路径；逃逸或敏感路径时抛出稳定异常。"""
@@ -65,13 +103,13 @@ class WorkspaceGuard:
         roots = (context.workspace, *context.read_only_roots)
         if not any(_contains(_resolve(root), resolved) for root in roots):
             raise WorkspaceAccessError(
-                "workspace_escape",
-                "path is outside the configured workspace",
+                _outside_code(context),
+                "path is outside the configured read roots",
             )
         return resolved
 
     def resolve_write(self, context: ToolContext, raw_path: str) -> Path:
-        """返回允许写入的 Workspace 路径；只读根和 symlink 一律拒绝。"""
+        """返回允许写入的路径；只读根和 symlink 一律拒绝。"""
         supplied = Path(raw_path)
         candidate = supplied if supplied.is_absolute() else context.workspace / supplied
         state_home = _resolve(context.state_home)
@@ -81,22 +119,25 @@ class WorkspaceGuard:
                 "path is sensitive and cannot be written",
             )
 
-        workspace = _resolve(context.workspace)
         lexical = _absolute_without_symlink_resolution(candidate)
-        for read_only_root in context.read_only_roots:
-            if _contains(_resolve(read_only_root), _resolve(candidate)):
+        write_roots = tuple(_resolve(root) for root in (context.workspace, *context.write_roots))
+        write_root = next((root for root in write_roots if _contains(root, lexical)), None)
+        if write_root is None:
+            if any(
+                _contains(_resolve(read_only_root), _resolve(candidate))
+                for read_only_root in context.read_only_roots
+            ) and not context.write_roots:
                 raise WorkspaceAccessError(
                     "read_only_path",
                     "path belongs to a read-only root",
                 )
-        if not _contains(workspace, lexical):
             raise WorkspaceAccessError(
-                "workspace_escape",
-                "path is outside the configured workspace",
+                _outside_code(context),
+                "path is outside the configured write roots",
             )
 
-        relative = lexical.relative_to(workspace)
-        current = workspace
+        relative = lexical.relative_to(write_root)
+        current = write_root
         try:
             for part in relative.parts:
                 current /= part
@@ -122,17 +163,25 @@ class WorkspaceGuard:
                 "sensitive_path",
                 "path is sensitive and cannot be written",
             )
-        if not _contains(workspace, resolved):
+        if not _contains(write_root, resolved):
             raise WorkspaceAccessError(
-                "workspace_escape",
-                "path is outside the configured workspace",
+                _outside_code(context),
+                "path is outside the configured write roots",
             )
         return resolved
 
     def display(self, context: ToolContext, path: Path, *, root: Path | None = None) -> str:
         """返回相对允许根的路径，不把本机 Home 目录暴露给模型。"""
-        base = _resolve(root or context.workspace)
-        return _resolve(path).relative_to(base).as_posix() or "."
+        resolved = _resolve(path)
+        if root is not None:
+            base = _resolve(root)
+            return resolved.relative_to(base).as_posix() or "."
+
+        label, base = self.read_root(context, resolved)
+        relative = resolved.relative_to(base).as_posix()
+        if label == "workspace":
+            return relative or "."
+        return f"{label}/{relative}" if relative else label
 
 
 def _contains(root: Path, path: Path) -> bool:
@@ -165,6 +214,13 @@ def _absolute_without_symlink_resolution(path: Path) -> Path:
         ) from None
 
 
+def _outside_code(context: ToolContext) -> str:
+    """旧 Workspace Profile 保持兼容，新 Personal Profile 使用更准确的错误码。"""
+    if context.owner_home is not None or context.write_roots:
+        return "path_outside_roots"
+    return "workspace_escape"
+
+
 def _is_sensitive(path: Path, state_home: Path) -> bool:
     """判断逻辑或规范路径是否指向凭据、状态或系统敏感文件。"""
     parts = tuple(part.casefold() for part in path.parts)
@@ -177,6 +233,8 @@ def _is_sensitive(path: Path, state_home: Path) -> bool:
         (left, right) in _SENSITIVE_PATH_PAIRS
         for left, right in zip(parts, parts[1:], strict=False)
     ):
+        return True
+    if any(_contains_sequence(parts, sequence) for sequence in _SENSITIVE_PATH_SEQUENCES):
         return True
     if (
         leaf in _PRIVATE_KEY_NAMES
@@ -198,3 +256,9 @@ def _is_sensitive(path: Path, state_home: Path) -> bool:
     ):
         return True
     return leaf in _CONTAINER_SOCKET_NAMES
+
+
+def _contains_sequence(parts: tuple[str, ...], sequence: tuple[str, ...]) -> bool:
+    """判断路径分段中是否包含连续的敏感目录序列。"""
+    width = len(sequence)
+    return any(parts[index : index + width] == sequence for index in range(len(parts) - width + 1))

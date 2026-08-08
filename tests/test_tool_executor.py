@@ -463,6 +463,50 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["approval_id"], outcome.approval_id)
         self.assertEqual(json.loads(row["arguments_json"])["path"], str(target))
 
+    async def test_personal_external_write_requires_once_then_creates_file(self) -> None:
+        """Personal 外部写根在批准前无副作用，Allow once 后才创建文件。"""
+        home = self.context.workspace.parent / "owner"
+        documents = home / "Documents"
+        documents.mkdir(parents=True)
+        target = documents / "approved.md"
+        context = ToolContext(
+            user_id=self.context.user_id,
+            session_id=self.context.session_id,
+            turn_id=self.context.turn_id,
+            state_home=self.context.state_home,
+            workspace=self.context.workspace,
+            read_only_roots=(home,),
+            write_roots=(documents,),
+            owner_home=home,
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = self.executor(WriteFileTool(), approvals=approvals)
+
+        pending = await executor.execute(
+            context,
+            ToolCall(
+                "personal-write",
+                "write_file",
+                {"path": str(target), "content": "approved\n"},
+            ),
+        )
+
+        self.assertIsNotNone(pending.approval_id)
+        self.assertFalse(target.exists())
+        assert pending.approval_id is not None
+        approvals.approve(context.user_id, pending.approval_id)
+        run = approvals.consume(context.user_id, pending.approval_id)
+        approved = await executor.execute_approved(
+            context,
+            run,
+            approval_id=pending.approval_id,
+            decision=ApprovalDecision.ONCE,
+        )
+
+        self.assertTrue(approved.succeeded)
+        self.assertEqual(target.read_text(encoding="utf-8"), "approved\n")
+        self.assertNotIn(str(home), approved.model_text)
+
     async def test_approval_event_exposes_only_core_safe_grant_modes(self) -> None:
         """TUI 只能显示 Core 根据归一化参数给出的授权范围。"""
         osascript = self.context.workspace / "osascript"

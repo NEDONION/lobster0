@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from miniclaw.tools.base import ToolContext, ToolValidationError
-from miniclaw.tools.command import RunCommandTool
+from miniclaw.tools.command import RunCommandTool, _safe_environment
 
 
 class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
@@ -58,6 +58,56 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("stdin=0", result.data["stdout"])
         self.assertNotIn("super-secret", str(result.data))
         self.assertEqual(result.data["stderr"].strip(), "separate-error")
+        self.assertEqual(result.data["exit_code"], 0)
+
+    def test_personal_environment_is_minimal_and_explicit(self) -> None:
+        """Personal 子进程只收到固定 PATH/Home/locale 和关闭通知器的变量。"""
+        owner_home = self.workspace / "owner"
+        owner_home.mkdir()
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "MINICLAW_MODEL_API_KEY": "secret",
+                "HTTP_PROXY": "http://private",
+                "PYTHONPATH": "/private/python",
+                "COOKIE": "private-cookie",
+            },
+            clear=False,
+        ):
+            environment = _safe_environment("/trusted/bin", owner_home)
+
+        self.assertEqual(
+            environment,
+            {
+                "PATH": "/trusted/bin",
+                "HOME": str(owner_home),
+                "LANG": "C.UTF-8",
+                "LC_ALL": "C.UTF-8",
+                "LARKSUITE_CLI_NO_UPDATE_NOTIFIER": "1",
+                "LARKSUITE_CLI_NO_SKILLS_NOTIFIER": "1",
+            },
+        )
+
+    async def test_discovered_lark_wrapper_finds_node_from_the_same_minimal_path(self) -> None:
+        """NVM wrapper 的 env node 必须从发现 PATH 启动，不依赖父 Shell。"""
+        executable_root = self.workspace / "nvm-bin"
+        executable_root.mkdir()
+        node = executable_root / "node"
+        node.write_text("#!/bin/sh\nprintf 'lark-cli 1.0.83\\n'\n", encoding="utf-8")
+        node.chmod(0o700)
+        lark_cli = executable_root / "lark-cli"
+        lark_cli.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+        lark_cli.chmod(0o700)
+        tool = RunCommandTool(executable_path=str(executable_root))
+
+        result = await tool.execute(
+            self.context,
+            tool.validate({"program": "lark-cli", "args": ["--version"]}),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["stdout"], "lark-cli 1.0.83\n")
         self.assertEqual(result.data["exit_code"], 0)
 
     async def test_stdout_and_stderr_are_independently_bounded(self) -> None:

@@ -107,6 +107,49 @@ class CommandPolicyTest(unittest.TestCase):
         self.assertEqual(exact.normalized_arguments["program"], rule.resolved_program)
         self.assertEqual(extra.action, PolicyAction.REQUIRE_APPROVAL)
 
+    def test_custom_executable_path_resolves_user_cli_for_policy(self) -> None:
+        """Policy 与规则必须使用同一条发现 PATH 解析 NVM 等用户 CLI。"""
+        executable_root = self.workspace / "nvm-bin"
+        executable_root.mkdir()
+        lark_cli = executable_root / "lark-cli"
+        lark_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        lark_cli.chmod(0o700)
+        executable_path = str(executable_root)
+        rule = normalize_command(
+            "lark-cli",
+            ("--version",),
+            self.workspace,
+            executable_path=executable_path,
+        )
+        engine = PolicyEngine(
+            command_rules=(rule,),
+            executable_path=executable_path,
+        )
+        context = ToolContext(1, 1, 1, self.workspace / "state", self.workspace, ())
+
+        exact = engine.authorize(
+            RunCommandTool().definition,
+            context,
+            {
+                "program": "lark-cli",
+                "args": ["--version"],
+                "timeout_seconds": 30,
+            },
+        )
+        extra = engine.authorize(
+            RunCommandTool().definition,
+            context,
+            {
+                "program": "lark-cli",
+                "args": ["--version", "--json"],
+                "timeout_seconds": 30,
+            },
+        )
+
+        self.assertEqual(exact.action, PolicyAction.ALLOW)
+        self.assertEqual(exact.normalized_arguments["program"], str(lark_cli))
+        self.assertEqual(extra.action, PolicyAction.REQUIRE_APPROVAL)
+
     def test_policy_security_and_ask_matrix_fail_closed(self) -> None:
         """deny/off/always/full 组合必须遵守显式配置而非泛化放行。"""
         context = ToolContext(1, 1, 1, self.workspace / "state", self.workspace, ())

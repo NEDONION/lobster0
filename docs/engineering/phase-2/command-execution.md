@@ -2,7 +2,7 @@
 
 > 状态：`run_command` 已进入 pi-tui 与 Textual fallback 共享的唯一 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
 >
-> 当前门禁：391/391 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS
+> 当前门禁：483/483 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS
 
 ## 1. 大白话解释
 
@@ -140,7 +140,7 @@ sequenceDiagram
     end
 ```
 
-环境只包含固定 PATH、locale 和必要 Windows 平台变量。API Key、Token、Cookie、Secret、代理和用户
+环境只包含 Runtime 确定性构造的 PATH、HOME、locale 和必要 Windows 平台变量。API Key、Token、Cookie、Secret、代理和用户
 `PYTHONPATH` 都不会继承。stdout/stderr 分开保留，各最多 1 MiB；进入模型前还受 Executor 全局 20,000 字符上限。
 
 ## 10. 结果与错误
@@ -196,5 +196,6 @@ Provider 选择，不经过 Executor，因此验证时不会启动应用。
 - 新进程组能终止正常后代；恶意程序主动重新 `setsid` 逃离进程组，需要 Phase 7 的 Seatbelt/container 级隔离。
 - 不提供后台任务、PTY、交互 stdin、任意 Shell、删除/移动或包安装。
 - Windows 进程组终止尚未作为当前 macOS/Linux MVP 的发布门禁。
-- P2.3B 尚未解决 NVM/Node 安装下的 `lark-cli` 发现、doctor 检查和真实 `auth status` smoke；本机已安装不等于
-  Agent 当前能在固定最小 PATH 中稳定执行。
+- P2.3B 已解决 NVM/Node 安装下的 `lark-cli` 确定性发现、Doctor 可用性检查和最小环境启动；真实
+  `auth status`、飞书 Scope 与企业权限仍需 live gate。详见
+  [Personal Machine 权限与 CLI 发现](personal-machine-permissions.md)。

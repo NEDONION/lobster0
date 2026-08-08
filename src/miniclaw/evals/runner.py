@@ -2,7 +2,7 @@
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -10,17 +10,19 @@ from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
 from miniclaw.bootstrap import initialize_state
-from miniclaw.config import AppConfig, load_config
+from miniclaw.config import AppConfig, load_config, resolve_permission_roots
 from miniclaw.evals.cases import EvalCase
 from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths, build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.policy.engine import PolicyEngine
+from miniclaw.policy.executables import discover_executables
 from miniclaw.providers.base import (
     ModelRequest,
     ModelResponse,
     ProviderProtocolError,
     StreamHandler,
+    ToolCall,
 )
 from miniclaw.storage.conversations import MessageRepository, SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
@@ -94,15 +96,28 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
         不含 Prompt、回答、路径或工具原始结果的判定。
     """
     started = time.monotonic()
-    provider = ScriptedProvider(case.responses)
     with TemporaryDirectory(prefix="miniclaw-eval-") as directory:
-        paths = build_state_paths(Path(directory) / "state")
+        fixture_root = Path(directory).resolve()
+        paths = build_state_paths(fixture_root / "state")
+        personal_home = fixture_root / "personal-home"
+        for name in ("Desktop", "Documents", "Downloads"):
+            (personal_home / name).mkdir(parents=True)
         initialized = initialize_state(paths)
         config = load_config(paths, environ={})
         _write_setup(paths.workspace, case.setup_files)
+        _write_setup(personal_home, case.setup_personal_files)
+        _write_executables(personal_home, case.setup_executables)
+        provider = ScriptedProvider(_materialize_responses(case.responses, personal_home))
         database = Database(paths.database)
         approvals = ApprovalRepository(database)
-        service = _build_service(database, paths, config, provider, approvals)
+        service = _build_service(
+            database,
+            paths,
+            config,
+            provider,
+            approvals,
+            personal_home,
+        )
         answer = ""
         execution_error_code: str | None = None
         try:
@@ -165,6 +180,7 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
             audit_events,
             approval_statuses,
             paths.workspace,
+            personal_home,
             execution_error_code,
         )
     return EvalCaseResult(
@@ -199,8 +215,28 @@ def _build_service(
     config: AppConfig,
     provider: ScriptedProvider,
     approvals: ApprovalRepository,
+    personal_home: Path,
 ) -> TurnService:
     """按生产 CLI 的稳定顺序组装真实 Turn 与 Tool 依赖。"""
+    permission_roots = resolve_permission_roots(
+        config.permissions,
+        config.workspace.path,
+        home=personal_home,
+        platform_name="darwin",
+    )
+    workspace = replace(
+        config.workspace,
+        read_only_roots=permission_roots.read_roots,
+        write_roots=permission_roots.write_roots,
+        owner_home=permission_roots.owner_home,
+    )
+    executables = discover_executables(
+        config.permissions.profile,
+        home=permission_roots.owner_home,
+        explicit_roots=config.permissions.executable_roots,
+        discover_user=config.permissions.discover_user_executables,
+        platform_name="darwin",
+    )
     memory = MemoryStore(paths)
     executor = ToolExecutor(
         ToolRegistry(
@@ -212,12 +248,15 @@ def _build_service(
                 GlobTool(),
                 GrepTool(),
                 HttpGetTool(),
-                RunCommandTool(),
+                RunCommandTool(
+                    executable_path=executables.path_value,
+                    owner_home=permission_roots.owner_home,
+                ),
                 ReadMemoryTool(memory),
                 ProposeMemoryTool(memory),
             )
         ),
-        PolicyEngine(),
+        PolicyEngine(executable_path=executables.path_value),
         ToolRunRepository(database),
         result_max_chars=config.agent.tool_result_max_chars,
         approvals=approvals,
@@ -232,7 +271,7 @@ def _build_service(
         runner=AgentRunner(provider, executor, max_iterations=config.agent.max_tool_iterations),
         approvals=approvals,
         state_home=paths.home,
-        workspace=config.workspace,
+        workspace=workspace,
     )
 
 
@@ -245,6 +284,49 @@ def _write_setup(workspace: Path, files: tuple[tuple[str, str], ...]) -> None:
             raise ValueError("eval setup path escaped workspace")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")
+
+
+def _write_executables(root: Path, files: tuple[tuple[str, str], ...]) -> None:
+    """创建仅供离线场景使用的真实可执行文本 fixture。"""
+    _write_setup(root, files)
+    for relative, _content in files:
+        (root / relative).chmod(0o700)
+
+
+def _materialize_responses(
+    responses: tuple[ModelResponse, ...],
+    personal_home: Path,
+) -> tuple[ModelResponse, ...]:
+    """只在临时内存中把场景 Personal Home 占位符替换为隔离路径。"""
+    marker = "{{PERSONAL_HOME}}"
+    return tuple(
+        replace(
+            response,
+            tool_calls=tuple(
+                ToolCall(
+                    call.call_id,
+                    call.name,
+                    _replace_marker(call.arguments, marker, str(personal_home)),
+                )
+                for call in response.tool_calls
+            ),
+        )
+        for response in responses
+    )
+
+
+def _replace_marker(value, marker: str, replacement: str):
+    """递归替换 Tool arguments 中的单一受控路径占位符。"""
+    if isinstance(value, str):
+        return value.replace(marker, replacement)
+    if isinstance(value, list):
+        return [_replace_marker(item, marker, replacement) for item in value]
+    if isinstance(value, dict):
+        return {
+            key: _replace_marker(item, marker, replacement)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _observations(
@@ -281,6 +363,7 @@ def _verify(
     audit_events: tuple[str, ...],
     approval_statuses: tuple[str, ...],
     workspace: Path,
+    personal_home: Path,
     execution_error_code: str | None,
 ) -> tuple[str, ...]:
     """执行不依赖自然语言 Judge 的稳定可观察断言。"""
@@ -320,6 +403,19 @@ def _verify(
             failures.append("file_mismatch")
     if any((workspace / relative).exists() for relative in expected.absent_files):
         failures.append("unexpected_file")
+    for relative, content in expected.personal_files:
+        try:
+            actual = (personal_home / relative).read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            failures.append("personal_file_mismatch")
+            continue
+        if actual != content:
+            failures.append("personal_file_mismatch")
+    if any(
+        (personal_home / relative).exists()
+        for relative in expected.absent_personal_files
+    ):
+        failures.append("unexpected_personal_file")
     return tuple(failures)
 
 

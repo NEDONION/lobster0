@@ -2,15 +2,25 @@
 
 import importlib.util
 import os
+import shutil
 import sqlite3
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from pathlib import Path
 
-from miniclaw.config import AppConfig, ConfigError, load_config
+from miniclaw.config import (
+    AppConfig,
+    ConfigError,
+    ResolvedPermissionRoots,
+    load_config,
+    resolve_permission_roots,
+)
 from miniclaw.paths import StatePaths
 from miniclaw.policy.command import CommandPolicyError, normalize_command
+from miniclaw.policy.executables import ExecutableEnvironment, discover_executables
 from miniclaw.policy.network import NetworkPolicyError, normalize_network_rule
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import LATEST_SCHEMA_VERSION
@@ -47,7 +57,7 @@ def run_local_checks(
         environ: 配置覆盖使用的环境变量；默认使用当前进程环境。
 
     Returns:
-        固定二十项、按依赖顺序排列的安全诊断结果。
+        固定二十二项、按依赖顺序排列的安全诊断结果。
     """
     state_result = _check_state_home(paths)
     config_result, config = _check_config(paths, environ)
@@ -59,6 +69,8 @@ def run_local_checks(
         config_result,
         _check_workspace(config),
         _check_tools(config),
+        _check_personal_permissions(config),
+        _check_executables(config),
         _check_database(paths),
         _check_approvals(paths),
         _check_permissions(paths),
@@ -201,11 +213,17 @@ def _check_tools(config: AppConfig | None) -> CheckResult:
             "tools cannot be checked without valid config",
         )
     try:
+        executables = _executable_environment(config)
         for rule in config.tools.run_command.allow_commands:
-            normalize_command(rule.program, rule.args, config.workspace.path)
+            normalize_command(
+                rule.program,
+                rule.args,
+                config.workspace.path,
+                executable_path=executables.path_value,
+            )
         for value in config.tools.http_get.allow_hosts:
             normalize_network_rule(value)
-    except (CommandPolicyError, NetworkPolicyError):
+    except (CommandPolicyError, NetworkPolicyError, OSError, ValueError):
         return CheckResult(
             "tools",
             CheckStatus.FAIL,
@@ -219,6 +237,83 @@ def _check_tools(config: AppConfig | None) -> CheckResult:
             f"{len(config.tools.run_command.allow_commands)} command rules; "
             f"{len(config.tools.http_get.allow_hosts)} hostname rules"
         ),
+    )
+
+
+def _check_personal_permissions(config: AppConfig | None) -> CheckResult:
+    """只展示 Profile 与 Root 数量，不暴露 Owner Home 或绝对目录。"""
+    if config is None:
+        return CheckResult(
+            "personal_permissions",
+            CheckStatus.FAIL,
+            "permission profile cannot be checked without valid config",
+        )
+    try:
+        roots = _permission_roots(config)
+    except (OSError, RuntimeError, ValueError):
+        return CheckResult(
+            "personal_permissions",
+            CheckStatus.FAIL,
+            "permission roots could not be resolved safely",
+        )
+    return CheckResult(
+        "personal_permissions",
+        CheckStatus.PASS,
+        (
+            f"profile {config.permissions.profile}; "
+            f"{len(roots.read_roots)} read root(s); "
+            f"{len(roots.write_roots)} write root(s)"
+        ),
+    )
+
+
+def _check_executables(config: AppConfig | None) -> CheckResult:
+    """离线报告可信 executable root 数量和 lark-cli 可用性。"""
+    if config is None:
+        return CheckResult(
+            "executables",
+            CheckStatus.FAIL,
+            "executables cannot be checked without valid config",
+        )
+    try:
+        environment = _executable_environment(config)
+    except (OSError, RuntimeError, ValueError):
+        return CheckResult(
+            "executables",
+            CheckStatus.FAIL,
+            "executable roots could not be resolved safely",
+        )
+    availability = (
+        "lark-cli available"
+        if shutil.which("lark-cli", path=environment.path_value) is not None
+        else "lark-cli unavailable"
+    )
+    return CheckResult(
+        "executables",
+        CheckStatus.PASS,
+        f"{len(environment.search_roots)} executable root(s); {availability}",
+    )
+
+
+def _permission_roots(config: AppConfig) -> ResolvedPermissionRoots:
+    """使用与 Runtime 相同的纯函数解析当前本机文件边界。"""
+    return resolve_permission_roots(
+        config.permissions,
+        config.workspace.path,
+        home=Path.home(),
+        platform_name=sys.platform,
+    )
+
+
+def _executable_environment(config: AppConfig) -> ExecutableEnvironment:
+    """使用与 Runtime 相同的发现器构造本机 CLI 搜索环境。"""
+    roots = _permission_roots(config)
+    return discover_executables(
+        config.permissions.profile,
+        home=roots.owner_home,
+        explicit_roots=config.permissions.executable_roots,
+        discover_user=config.permissions.discover_user_executables,
+        platform_name=sys.platform,
     )
 
 

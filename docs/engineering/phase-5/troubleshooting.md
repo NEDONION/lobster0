@@ -1,6 +1,6 @@
 # Phase 5：Telegram / Discord 故障排查手册
 
-> 当前状态：**IMPLEMENTATION PASS**；462 Python、25 TypeScript、32/32 Channel、640/640 local soak 均通过。
+> 当前状态：**IMPLEMENTATION PASS**；483 Python、27 TypeScript、32/32 Channel、640/640 local soak 均通过。
 >
 > Telegram 与 Discord 都是 **LIVE PENDING**，所以本页给出可执行排查路径，不声称已在真实账号验证。
 
@@ -208,5 +208,5 @@ uv run python -m unittest tests.test_channel_supervisor tests.test_channel_live_
 uv run ruff check .
 ```
 
-当前已验证基线是 462 Python、25 TypeScript、24/24 Agent、32/32 Channel、640/640 local soak，状态为
+当前已验证基线是 483 Python、27 TypeScript、28/28 Agent、32/32 Channel、640/640 local soak，状态为
 **IMPLEMENTATION PASS / LIVE PENDING**。

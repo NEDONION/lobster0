@@ -196,6 +196,32 @@ class ReadFileToolTest(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(result.data["truncated"])
                 self.assertNotIn("next_offset", result.data)
 
+    async def test_personal_home_read_uses_redacted_display_path(self) -> None:
+        """读取 Personal Home 文件时返回稳定标签，不暴露真实 Home 前缀。"""
+        home = self.workspace.parent / "owner"
+        documents = home / "Documents"
+        documents.mkdir(parents=True)
+        target = documents / "note.md"
+        target.write_text("personal\n", encoding="utf-8")
+        context = ToolContext(
+            user_id=self.context.user_id,
+            session_id=self.context.session_id,
+            turn_id=self.context.turn_id,
+            state_home=self.context.state_home,
+            workspace=self.context.workspace,
+            read_only_roots=(home,),
+            owner_home=home,
+        )
+
+        result = await ReadFileTool().execute(
+            context,
+            ReadFileTool().validate({"path": str(target)}),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(result.data["path"], "home/Documents/note.md")
+        self.assertNotIn(str(home), str(result.data))
+
 
 class WriteFileToolTest(unittest.IsolatedAsyncioTestCase):
     """验证 ``write_file`` 只做有限、原子且不隐式建目录的文本写入。"""
@@ -319,6 +345,35 @@ class WriteFileToolTest(unittest.IsolatedAsyncioTestCase):
                     {"path": raw_path, "content": "secret", "overwrite": True}
                 )
                 self.assertEqual(result.error_code, code)
+
+    async def test_personal_profile_writes_to_explicit_external_root(self) -> None:
+        """显式 Personal 写根可写，结果路径不得泄露真实 Home 绝对路径。"""
+        home = self.workspace.parent / "owner"
+        documents = home / "Documents"
+        documents.mkdir(parents=True)
+        context = ToolContext(
+            user_id=self.context.user_id,
+            session_id=self.context.session_id,
+            turn_id=self.context.turn_id,
+            state_home=self.context.state_home,
+            workspace=self.context.workspace,
+            read_only_roots=(home,),
+            write_roots=(documents,),
+            owner_home=home,
+        )
+        target = documents / "note.md"
+
+        result = await self.tool.execute(
+            context,
+            self.tool.validate({"path": str(target), "content": "personal\n"}),
+        )
+
+        self.assertTrue(result.ok)
+        self.assertEqual(target.read_text(encoding="utf-8"), "personal\n")
+        self.assertEqual(
+            result.data,
+            {"path": "home/Documents/note.md", "bytes": 9, "overwritten": False},
+        )
 
 
 class EditFileToolTest(unittest.IsolatedAsyncioTestCase):

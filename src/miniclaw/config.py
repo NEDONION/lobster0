@@ -28,13 +28,22 @@ BUILTIN_TOOL_NAMES = (
 )
 
 _TOP_LEVEL_KEYS = frozenset(
-    {"agent", "provider", "workspace", "tools", "ui", "channels"}
+    {"agent", "provider", "workspace", "permissions", "tools", "ui", "channels"}
 )
 _AGENT_KEYS = frozenset(
     {"model", "max_tool_iterations", "context_budget_tokens", "tool_result_max_chars"}
 )
 _PROVIDER_KEYS = frozenset({"base_url", "api_key_env", "timeout_seconds"})
 _WORKSPACE_KEYS = frozenset({"path", "read_only_roots"})
+_PERMISSION_KEYS = frozenset(
+    {
+        "profile",
+        "read_roots",
+        "write_roots",
+        "executable_roots",
+        "discover_user_executables",
+    }
+)
 _TOOLS_KEYS = frozenset(
     {"enabled", "security", "ask", "approval_ttl_seconds", "run_command", "http_get"}
 )
@@ -129,6 +138,28 @@ class WorkspaceConfig:
 
     path: Path
     read_only_roots: tuple[Path, ...] = ()
+    write_roots: tuple[Path, ...] = ()
+    owner_home: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class PermissionConfig:
+    """保存 Owner 明确选择的本机能力 Profile 与附加 Roots。"""
+
+    profile: str = "workspace"
+    read_roots: tuple[Path, ...] = ()
+    write_roots: tuple[Path, ...] = ()
+    executable_roots: tuple[Path, ...] = ()
+    discover_user_executables: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedPermissionRoots:
+    """保存一次 Runtime 使用的不可伪造文件 Roots 与 Owner Home。"""
+
+    owner_home: Path | None
+    read_roots: tuple[Path, ...]
+    write_roots: tuple[Path, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +278,7 @@ class AppConfig:
     agent: AgentConfig
     provider: ProviderConfig
     workspace: WorkspaceConfig
+    permissions: PermissionConfig = PermissionConfig()
     tools: ToolConfig = ToolConfig()
     ui: UIConfig = UIConfig()
     channels: ChannelConfig = ChannelConfig()
@@ -277,6 +309,7 @@ def load_config(
     agent_raw = _section(raw, "agent", _AGENT_KEYS)
     provider_raw = _section(raw, "provider", _PROVIDER_KEYS)
     workspace_raw = _section(raw, "workspace", _WORKSPACE_KEYS)
+    permissions_raw = _section(raw, "permissions", _PERMISSION_KEYS)
     tools_raw = _section(raw, "tools", _TOOLS_KEYS)
     ui_raw = _section(raw, "ui", _UI_KEYS)
     channels_raw = _section(raw, "channels", _CHANNELS_KEYS)
@@ -338,6 +371,34 @@ def load_config(
     read_only_roots = _absolute_path_list(
         workspace_raw.get("read_only_roots", []), "workspace.read_only_roots"
     )
+    permission_profile = _enum_string(
+        permissions_raw.get("profile", "workspace"),
+        "permissions.profile",
+        frozenset({"workspace", "personal"}),
+    )
+    permission_read_roots = _existing_root_list(
+        permissions_raw.get("read_roots", []), "permissions.read_roots"
+    )
+    permission_write_roots = _existing_root_list(
+        permissions_raw.get("write_roots", []), "permissions.write_roots"
+    )
+    permission_executable_roots = _existing_root_list(
+        permissions_raw.get("executable_roots", []),
+        "permissions.executable_roots",
+    )
+    discover_user_executables = _boolean(
+        permissions_raw.get("discover_user_executables", False),
+        "permissions.discover_user_executables",
+    )
+    if permission_profile == "workspace" and (
+        permission_read_roots
+        or permission_write_roots
+        or permission_executable_roots
+        or discover_user_executables
+    ):
+        raise ConfigError(
+            "permissions roots and discover_user_executables require personal profile"
+        )
     enabled_tools = _enabled_tools(tools_raw.get("enabled", list(BUILTIN_TOOL_NAMES)))
     tool_security = _enum_string(
         tools_raw.get("security", "allowlist"),
@@ -643,6 +704,13 @@ def load_config(
             timeout_seconds=timeout_seconds,
         ),
         workspace=WorkspaceConfig(path=workspace_path, read_only_roots=read_only_roots),
+        permissions=PermissionConfig(
+            profile=permission_profile,
+            read_roots=permission_read_roots,
+            write_roots=permission_write_roots,
+            executable_roots=permission_executable_roots,
+            discover_user_executables=discover_user_executables,
+        ),
         tools=ToolConfig(
             enabled=enabled_tools,
             security=tool_security,
@@ -1033,6 +1101,85 @@ def _absolute_path_list(value: object, name: str) -> tuple[Path, ...]:
     if not isinstance(value, list):
         raise ConfigError(f"{name} must be a list of absolute paths")
     return tuple(_absolute_path(item, name) for item in value)
+
+
+def _existing_root_list(value: object, name: str) -> tuple[Path, ...]:
+    """校验已存在、非 symlink 且不重复的绝对目录列表。"""
+    if not isinstance(value, list):
+        raise ConfigError(f"{name} must be a list of existing absolute directories")
+    roots: list[Path] = []
+    for item in value:
+        if not isinstance(item, (str, Path)):
+            raise ConfigError(f"{name} must contain existing absolute directories")
+        supplied = Path(item).expanduser()
+        if not supplied.is_absolute() or supplied.is_symlink() or not supplied.is_dir():
+            raise ConfigError(f"{name} must contain existing absolute directories")
+        root = supplied.resolve(strict=True)
+        if root in roots:
+            raise ConfigError(f"{name} must not contain duplicates")
+        roots.append(root)
+    return tuple(roots)
+
+
+def resolve_permission_roots(
+    permissions: PermissionConfig,
+    workspace: Path,
+    *,
+    home: Path | None = None,
+    platform_name: str | None = None,
+) -> ResolvedPermissionRoots:
+    """把 Profile 与显式配置解析成一次 Runtime 的稳定文件 Roots。
+
+    Args:
+        permissions: 已通过严格配置校验的权限设置。
+        workspace: 当前始终可读写的 Workspace。
+        home: 测试或 Runtime 明确提供的 Owner Home；默认使用 ``Path.home()``。
+        platform_name: 平台标识；默认使用 ``sys.platform`` 的等价值。
+
+    Returns:
+        去除不存在默认目录、Workspace 和重复项后的稳定 Roots。
+    """
+    if permissions.profile == "workspace":
+        return ResolvedPermissionRoots(None, (), ())
+
+    owner_home = (Path.home() if home is None else home).expanduser().resolve(strict=True)
+    platform = os.sys.platform if platform_name is None else platform_name
+    read_candidates: list[Path] = [owner_home, *permissions.read_roots]
+    write_candidates: list[Path] = []
+    if platform == "darwin":
+        read_candidates.extend(
+            Path(value) for value in ("/Applications", "/opt/homebrew", "/usr/local")
+        )
+        write_candidates.extend(
+            owner_home / name
+            for name in (
+                "Desktop",
+                "Documents",
+                "Downloads",
+                "PycharmProjects",
+                "WebstormProjects",
+            )
+        )
+    write_candidates.extend(permissions.write_roots)
+    return ResolvedPermissionRoots(
+        owner_home,
+        _existing_unique_roots(read_candidates, workspace),
+        _existing_unique_roots(write_candidates, workspace),
+    )
+
+
+def _existing_unique_roots(candidates: list[Path], workspace: Path) -> tuple[Path, ...]:
+    """保留真实目录并按规范路径去除 Workspace 和重复项。"""
+    workspace_root = workspace.resolve(strict=False)
+    roots: list[Path] = []
+    for candidate in candidates:
+        if candidate.is_symlink() or not candidate.is_dir():
+            continue
+        root = candidate.resolve(strict=True)
+        if root == workspace_root or root in roots:
+            continue
+        roots.append(root)
+    return tuple(roots)
 
 
 def _provider_url(value: object, name: str) -> str:

@@ -17,9 +17,9 @@
 
 ```mermaid
 flowchart LR
-    CHANGE["代码或 Prompt 变更"] --> UNIT["462 Python + 25 TypeScript"]
+    CHANGE["代码或 Prompt 变更"] --> UNIT["483 Python + 27 TypeScript"]
     UNIT --> VALIDATE["eval validate"]
-    VALIDATE --> OFFLINE["24 active offline cases"]
+    VALIDATE --> OFFLINE["28 active offline cases"]
     OFFLINE --> CHANNEL["32 active Channel cases"]
     CHANNEL --> SOAK["20 runs / 640 checks"]
     SOAK --> RUFF["Ruff + docs + diff check"]
@@ -27,7 +27,7 @@ flowchart LR
     LIVE --> RECORD["release record"]
 ```
 
-当前 Phase 5 门禁是 **IMPLEMENTATION PASS**：462/462 Python（1 项预期 skip）、25/25 TypeScript、24/24
+当前 Phase 5 门禁是 **IMPLEMENTATION PASS**：483/483 Python、27/27 TypeScript、28/28
 active offline Agent、32/32 Channel、640/640 local soak、Ruff 与 docs gate 全绿。Telegram 与 Discord 的真实
 验收均为 **LIVE PENDING**。
 Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已单独完成 3 次 planning probe。
@@ -47,4 +47,5 @@ Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已
 - [v0.2.0：Phase 2 Tool、安全、Approval 与 live smoke](releases/v0.2.0.md)
 - [v0.3.0：Phase 3 Memory、Skills 与 Compaction](releases/v0.3.0.md)
 - [v0.4.0：Phase 4 Feishu Channel](releases/v0.4.0.md)
+- [v0.4.1：Personal Machine 权限与本机 CLI 发现](releases/v0.4.1.md)
 - [v0.5.0：Phase 5 Telegram/Discord multi-channel](releases/v0.5.0.md)

@@ -16,6 +16,7 @@ class WorkspaceGuardTest(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         root = Path(self.temporary_directory.name).resolve()
+        self.root = root
         self.workspace = root / "workspace"
         self.read_only = root / "shared"
         self.outside = root / "outside"
@@ -224,6 +225,90 @@ class WorkspaceGuardTest(unittest.TestCase):
         with self.assertRaises(WorkspaceAccessError) as caught:
             self.guard.resolve_write(self.context, "missing/today.md")
         self.assertEqual(caught.exception.code, "parent_not_found")
+
+    def test_personal_profile_reads_home_without_exposing_the_owner_name(self) -> None:
+        """Personal Profile 可读 Home，并用稳定标签隐藏真实用户名。"""
+        home = self.root / "owner"
+        documents = home / "Documents"
+        documents.mkdir(parents=True)
+        note = documents / "note.md"
+        note.write_text("personal", encoding="utf-8")
+        context = ToolContext(
+            user_id=1,
+            session_id=1,
+            turn_id=1,
+            state_home=self.context.state_home,
+            workspace=self.workspace,
+            read_only_roots=(home,),
+            write_roots=(documents,),
+            owner_home=home,
+        )
+
+        self.assertEqual(self.guard.resolve_read(context, str(note)), note)
+        self.assertEqual(self.guard.display(context, note), "home/Documents/note.md")
+
+        with self.assertRaises(WorkspaceAccessError) as caught:
+            self.guard.resolve_read(context, str(self.outside / "outside.txt"))
+        self.assertEqual(caught.exception.code, "path_outside_roots")
+
+    def test_personal_profile_writes_only_workspace_and_explicit_write_roots(self) -> None:
+        """Personal Profile 的外部写入只能落在显式写根，不能扩大到整个 Home。"""
+        home = self.root / "owner"
+        documents = home / "Documents"
+        library = home / "Library"
+        documents.mkdir(parents=True)
+        library.mkdir()
+        context = ToolContext(
+            user_id=1,
+            session_id=1,
+            turn_id=1,
+            state_home=self.context.state_home,
+            workspace=self.workspace,
+            read_only_roots=(home,),
+            write_roots=(documents,),
+            owner_home=home,
+        )
+
+        target = documents / "note.md"
+        self.assertEqual(self.guard.resolve_write(context, str(target)), target)
+
+        with self.assertRaises(WorkspaceAccessError) as caught:
+            self.guard.resolve_write(context, str(library / "note.md"))
+        self.assertEqual(caught.exception.code, "path_outside_roots")
+
+    def test_personal_profile_denies_local_secrets_and_application_sessions(self) -> None:
+        """全局读取仍必须硬拒绝本地密钥库、浏览器会话和应用认证数据。"""
+        home = self.root / "owner"
+        home.mkdir()
+        context = ToolContext(
+            user_id=1,
+            session_id=1,
+            turn_id=1,
+            state_home=self.context.state_home,
+            workspace=self.workspace,
+            read_only_roots=(home,),
+            owner_home=home,
+        )
+        candidates = (
+            home / "Library" / "Keychains" / "login.keychain-db",
+            home / "Library" / "Safari" / "History.db",
+            home
+            / "Library"
+            / "Application Support"
+            / "Google"
+            / "Chrome"
+            / "Default"
+            / "Cookies",
+            home / "Library" / "Application Support" / "1Password" / "data",
+            home / ".local" / "share" / "keyrings" / "login.keyring",
+        )
+
+        for candidate in candidates:
+            with self.subTest(candidate=candidate), self.assertRaises(
+                WorkspaceAccessError
+            ) as caught:
+                self.guard.resolve_read(context, str(candidate))
+            self.assertEqual(caught.exception.code, "sensitive_path")
 
     def test_resolve_write_rejects_escape_symlinks_and_sensitive_paths(self) -> None:
         """写边界必须拒绝逻辑逃逸、任意 symlink 路径和凭据目标。"""
