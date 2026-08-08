@@ -23,7 +23,9 @@
    固定 IP/TLS hostname、重定向、响应预算和不可信内容边界。
 11. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
    跑离线 gate 并记录 baseline。
-12. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+12. 阅读 [飞书 Channel Core](engineering/phase-4/feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
+   WebSocket Transport、Delivery 恢复、卡片审批和仍待完成的 Gateway E2E。
+13. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -81,6 +83,12 @@
 | 模块 | 文档 |
 | --- | --- |
 | Memory、Skills 与上下文压缩 | [memory-skills-compaction.md](engineering/phase-3/memory-skills-compaction.md) |
+
+## Phase 4 模块工程文档
+
+| 模块 | 文档 |
+| --- | --- |
+| 飞书 Channel Core 与 Gateway 待办 | [feishu-channel-core.md](engineering/phase-4/feishu-channel-core.md) |
 
 ## 评测与版本证据
 

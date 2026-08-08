@@ -17,7 +17,7 @@
 | [TUI 回归测试规范](phase-2/tui-regression-testing.md) | 25 个 pi-tui 协议/虚拟终端/跨进程用例、Textual fallback 和发布门禁。 | live LLM 硬断言。 |
 | [Phase 2.3A：exact-argv 命令执行](phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确 argv 规则、最小环境、进程组超时、输出上限与 TUI 审批。 | 任意 Shell、真实 `lark-cli`/Node 路径 smoke、OS sandbox。 |
 | [Phase 2.4：Pinned HTTPS 与 SSRF 防护](phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 公网校验、固定 IP/TLS hostname、每跳重验、文本预算、审批与 crash recovery。 | 浏览器、认证 Header、任意方法、企业代理。 |
-| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 当前 318 Python + 25 TypeScript tests、24 场景、stale-run recovery、Doctor、历史 live smoke 和发布手册。 | 飞书 E2E、soak、自动 Prompt/Skill 演进。 |
+| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 当前 369 Python + 25 TypeScript tests、24 场景、stale-run recovery、Doctor、历史 live smoke 和发布手册。 | 飞书 E2E、soak、自动 Prompt/Skill 演进。 |
 | [Phase 2.2：Approvals CLI（历史迁移）](phase-2/cli-approvals.md) | 记录旧入口为何被单入口 TUI 取代。 | 当前可执行命令。 |
 
 ## Phase 3：Memory、Skills 与上下文预算
@@ -26,10 +26,18 @@
 | --- | --- | --- |
 | [Memory、Skills 与上下文压缩](phase-3/memory-skills-compaction.md) | Markdown Memory、审批写入、凭据过滤、Skill metadata/惰性正文、persistent compaction、runtime snapshot。 | 向量库、Skill 代码执行、自动修改 Prompt/Skill、飞书 Channel。 |
 
-功能主线已验证到 Phase 3（全仓 318 Python + 25 TypeScript tests + 24/24 Agent cases），默认 pi-tui、
+功能主线已验证到 Phase 3（全仓 369 Python + 25 TypeScript tests + 24/24 Agent cases），默认 pi-tui、
 Textual fallback、TUI 可观测/分级审批和 P2.4 HTTPS 安全能力继续保留。P2.3B 的真实 `lark-cli` 闭环仍是
-明确待办，不阻塞 Phase 3；下一条产品主线是 Phase 4 飞书 Channel，
-质量主线仍需补当前版本 R3 live DeepSeek release eval。
+明确待办，不阻塞后续主线。
+
+## Phase 4：飞书 Channel
+
+| 文档 | 已验证内容 | 不包含 |
+| --- | --- | --- |
+| [飞书 Channel Core](phase-4/feishu-channel-core.md) | allowlist、durable Inbox/Outbox、有限 Worker、官方 WebSocket Transport、Unicode 分片、恢复、streaming card 与审批。 | 正式 gateway CLI、真实飞书账号 E2E、部署/soak。 |
+
+Phase 4 Core 已进入代码，但 Gateway 进程入口和真实平台验收还没有完成；质量主线也仍需补当前版本 R3 live
+DeepSeek release eval。
 
 ## Phase 1：CLI Agent 闭环（历史实现）
 

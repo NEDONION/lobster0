@@ -325,7 +325,7 @@ Check Markdown fences, Mermaid syntax, relative links, HTML close tags and stale
 **Interfaces:**
 - Produces: green `main`, pushed `origin/main`, and local main at the same commit while preserving user dirty files.
 
-- [ ] **Step 1: Run fresh full gates**
+- [x] **Step 1: Run fresh full gates**
 
 ```bash
 uv run python -m unittest discover -s tests -v
@@ -338,11 +338,11 @@ uv build
 git diff --check
 ```
 
-- [ ] **Step 2: Run real offline smoke checks**
+- [x] **Step 2: Run real offline smoke checks**
 
 Use a temporary MiniClaw home to validate Bridge hello/shutdown, explicit Textual fallback, pi launcher with controlled Node path, and built TUI startup/exit. Do not call a real model or飞书。
 
-- [ ] **Step 3: Self-review requirements and security**
+- [x] **Step 3: Self-review requirements and security**
 
 Confirm every spec invariant has implementation/test evidence; scan for secrets, `shell:true`, raw Provider errors, unbounded protocol reads, stdout logs, stale test counts and generated junk.
 

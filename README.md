@@ -30,8 +30,9 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > exact hostname 写入脱敏规则，inline AppleScript 和文件写入不能持久放行。
 > Phase 3 已增加安全 Markdown Memory、经审批的 daily memory 写入、惰性 `SKILL.md` 激活，以及保留原始消息的
 > persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek
-> live eval runner、真实 `lark-cli` 业务闭环和飞书 Channel 尚未完成。当前回归基线以本文“测试”章节和进度页的
-> 合并后发布门禁为准。
+> live eval runner 和真实 `lark-cli` 业务闭环尚未完成。Phase 4 飞书 Channel Core、durable Inbox/Outbox、官方
+> WebSocket Transport、分片重试和卡片审批已经进入代码；正式 `miniclaw gateway` 入口与真实账号 E2E 仍待完成。
+> 当前回归基线为 **369 Python tests + 25 TypeScript tests + 24/24 Agent cases**。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
 > 保存在 [v0.2.0 release record](docs/evals/releases/v0.2.0.md)，不冒充当前 TUI 版本的新 live 结果。
@@ -229,6 +230,7 @@ miniclaw/
 | [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |
 | [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | Python + TypeScript tests、24 场景、crash recovery、Doctor、历史 live smoke 与发布手册 |
 | [Phase 3 Memory、Skills 与 Compaction](docs/engineering/phase-3/memory-skills-compaction.md) | Markdown 记忆、审批写入、Skill 惰性激活、持久化摘要、恢复和测试矩阵 |
+| [Phase 4 飞书 Channel Core](docs/engineering/phase-4/feishu-channel-core.md) | allowlist、durable Inbox/Outbox、WebSocket Transport、分片重试、streaming card 与审批；Gateway/E2E 边界 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |
