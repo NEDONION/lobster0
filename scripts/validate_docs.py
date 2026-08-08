@@ -26,6 +26,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/evals/releases/v0.5.0.md"),
     Path("docs/evals/releases/v0.5.1.md"),
     Path("docs/evals/releases/v0.5.2.md"),
+    Path("docs/evals/releases/v0.5.3.md"),
 )
 FACT_RELATIVE_DOCS = (
     Path("README.md"),
@@ -40,12 +41,12 @@ FACT_RELATIVE_DOCS = (
 )
 REQUIRED_FACTS = (
     "IMPLEMENTATION PASS",
-    "530",
+    "556",
     "30",
     "29/29",
     "32/32",
     "640/640",
-    "OWNER-DM DELIVERY VERIFIED",
+    "TARGETED CALLBACK LIVE VERIFIED",
     "15-CASE LIVE PENDING",
 )
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")

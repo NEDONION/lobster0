@@ -31,12 +31,12 @@ class Phase5DocumentationTest(unittest.TestCase):
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("530", content)
+                self.assertIn("556", content)
                 self.assertIn("30", content)
                 self.assertIn("29/29", content)
                 self.assertIn("32/32", content)
                 self.assertIn("640/640", content)
-                self.assertIn("OWNER-DM DELIVERY VERIFIED", content)
+                self.assertIn("TARGETED CALLBACK LIVE VERIFIED", content)
                 self.assertIn("15-CASE LIVE PENDING", content)
 
     def test_phase5_operational_documents_are_present_and_linked(self) -> None:
@@ -95,14 +95,14 @@ class Phase5DocumentationTest(unittest.TestCase):
         """可视化进度页必须能一眼区分代码完成与真实平台待验收。"""
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
-            "Phase 5 implementation pass",
-            "530 Python",
+            "Phase 5.3 implementation pass",
+            "556 Python",
             "30 TypeScript",
             "29/29",
             "IMPLEMENTATION PASS",
             "32/32",
             "640/640",
-            "OWNER-DM DELIVERY VERIFIED",
+            "TARGETED CALLBACK LIVE VERIFIED",
             "15-CASE LIVE PENDING",
             "Telegram live pending",
             "Discord live pending",

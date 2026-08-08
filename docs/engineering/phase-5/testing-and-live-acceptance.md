@@ -2,10 +2,10 @@
 
 > 当前结论：**IMPLEMENTATION PASS**
 >
-> 当前全仓自动化证据：530/530 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、
+> 当前全仓自动化证据：556/556 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、
 > 32/32 Channel cases、20 轮 640/640 Channel checks。
 >
-> Feishu：**FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
+> Feishu：**TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
 >
 > 外部证据：Telegram **LIVE PENDING**；Discord **LIVE PENDING**。
 
@@ -45,7 +45,7 @@ pnpm --dir tui test
 
 | Gate | Result |
 | --- | ---: |
-| Python | Phase 5 exit 483/483 PASS；当前全仓 530/530 PASS |
+| Python | Phase 5 exit 483/483 PASS；当前全仓 556/556 PASS |
 | TypeScript | 当前全仓 30/30 PASS |
 
 Python 全量覆盖 Config、Provider、Turn、十个 Tool、Approval、Memory、Skills、TUI fallback、三平台 Adapter/
@@ -177,6 +177,21 @@ uv run python scripts/feishu_live_smoke.py --confirm-live
 Feishu、worktree clean、没有旧 pending Approval，并在每个动作前捕获 checkpoint。完整说明见
 [真实飞书 Bot 与 Live E2E](feishu-live-e2e.md)。
 
+## 8. Phase 5.3 Card callback 发布门禁
+
+飞书审批 Live Gate 不能只检查“按钮能点”。每个 callback 必须同时证明：
+
+- callback 来源 `message_id` 命中当前账号唯一的 sent Approval Delivery；
+- envelope 与 payload 的 `approval_id` 完全一致；
+- Approval 从 pending 只消费一次，重复点击不重复执行；
+- ToolRun 成功或拒绝后，child Turn 产生对应终态；
+- Channel notice 不进入 Provider request；
+- 成功 continuation 有 sent result Delivery，失败只有稳定错误码。
+
+开发者后台增加或修改 `card.action.trigger` 后必须重新发布应用版本；仅看到 WebSocket ready 不能证明 callback
+已经生效。真实长期私聊只用于 targeted smoke，15-case release evidence 应使用专用测试会话，避免旧 Context、旧卡和
+其他自动化任务干扰结果。
+
 ## 6. Telegram / Discord 每个平台 15 项真实验收
 
 | Check | 人工动作与通过条件 |
@@ -231,14 +246,14 @@ Feishu 不复用上面两个通用人工清单，而是使用 `FEISHU-LIVE-001..
 
 Feishu Evidence 进一步使用 strict nested schema、0600、`O_EXCL` 和 `fsync`，并重新推导 count/release status 防止
 篡改。当前真实 Gateway handshake 和两条 Owner DM Delivery 已通过，但尚未生成完整 15/15 Evidence，所以状态必须
-保持 **OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。真实运行记录见
+保持 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。真实运行记录见
 [飞书 Gateway 运行时与 macOS 常驻](feishu-gateway-runtime-and-macos-service.md)。
 
 ## 9. 发布判定
 
 ```mermaid
 flowchart TD
-    A["530 Python + 30 TypeScript"] --> B["29 Agent + 32 Channel"]
+    A["556 Python + 30 TypeScript"] --> B["29 Agent + 32 Channel"]
     B --> C["640/640 local soak"]
     C --> F{"Feishu 15/15 real Bot?"}
     F -->|"No"| R["OWNER-DM VERIFIED / 15-CASE LIVE PENDING"]
@@ -249,5 +264,5 @@ flowchart TD
     E -->|"Yes"| V["PRODUCTION VERIFIED"]
 ```
 
-当前发布结论是 `IMPLEMENTATION PASS`；Feishu 是 `FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING`，Telegram 和
+当前发布结论是 `IMPLEMENTATION PASS`；Feishu 是 `TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING`，Telegram 和
 Discord 是 `LIVE PENDING`。不要用 fake SDK、32/32、640/640 或 Runner 自测替代真实平台 evidence。

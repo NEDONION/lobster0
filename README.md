@@ -17,7 +17,7 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 **Phase 5 IMPLEMENTATION PASS**：裸 `miniclaw` 默认进入 pi-tui，Textual 作为 onboarding/fallback；
+> 当前仓库已完成 **Phase 5.3 IMPLEMENTATION PASS**：裸 `miniclaw` 默认进入 pi-tui，Textual 作为 onboarding/fallback；
 > `miniclaw gateway` 可在一个 Python 进程内同时装配飞书 WebSocket、Telegram long polling 与 Discord Gateway，
 > 三个平台和 TUI 复用同一个 `AgentRuntime`、Provider、Memory、Skills、Policy、Approval 与 SQLite。
 > 消息先进入 SQLite Inbox，再由有界 Worker 处理；Telegram/Discord 与飞书文本 fallback 经 durable Outbox
@@ -41,11 +41,12 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > persistent compaction。Personal Profile 已接通 Home 普通文件只读、受控外部写入、NVM/uv/pnpm 等用户 CLI 的
 > 确定性发现和 `lark-cli --version` 离线纵切；`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning
 > probe。当前回归基线为
-> **530 Python tests + 30 TypeScript tests + 29/29 Agent cases + 32/32 Channel cases + 640/640 local soak**。
+> **556 Python tests + 30 TypeScript tests + 29/29 Agent cases + 32/32 Channel cases + 640/640 local soak**。
 > Feishu 的 15 条版本化真实场景、有界 Gateway Runner、只读 SQLite evidence、人工客户端 evidence 和 Secret scan
 > 已实现并通过本地契约门禁。专用企业应用、机器人、Scope、Owner allowlist 与 WebSocket 已完成真实配置；两条 Owner
-> 私聊已穿过 Inbox、Agent 和 Outbox，并各自一次 Delivery `sent`。当前准确状态是
-> **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；完整 15/15、群聊、审批、重连和常驻 soak 仍是显式
+> 私聊已穿过 Inbox、Agent 和 Outbox，并各自一次 Delivery `sent`。Card callback 已绑定 sent receipt、账号和
+> Approval ID；真实“仅本次”已经完成 Tool、child Turn 与结果 Delivery。当前准确状态是
+> **FEISHU TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；完整 15/15、专用测试群、非 Owner、重连和常驻 soak 仍是显式
 > live gate。Telegram 与 Discord 当前也都为 **LIVE PENDING**。离线 fake SDK
 > 通过不冒充 production verified。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
@@ -301,7 +302,8 @@ miniclaw/
 | [Eval v0.4.1 发布记录](docs/evals/releases/v0.4.1.md) | Personal Machine 权限、412+27 tests、28+12 回归与本机 lark-cli 只读纵切 |
 | [Eval v0.5.0 发布记录](docs/evals/releases/v0.5.0.md) | Phase 5 合并基线的 483+27 tests、28+32 回归、640 soak 与双平台 LIVE PENDING |
 | [Eval v0.5.1 发布记录](docs/evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与当时 REAL BOT PENDING 的历史证据口径 |
-| [Eval v0.5.2 发布记录](docs/evals/releases/v0.5.2.md) | 530+30 tests、29+32 场景、飞书单卡片与 direct lark-cli Skill |
+| [Eval v0.5.2 发布记录](docs/evals/releases/v0.5.2.md) | 当时的 530+30 tests、29+32 场景、飞书单卡片与 direct lark-cli Skill |
+| [Eval v0.5.3 发布记录](docs/evals/releases/v0.5.3.md) | 556 tests、Card callback receipt 绑定、Approval continuation 与 targeted Feishu live evidence |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

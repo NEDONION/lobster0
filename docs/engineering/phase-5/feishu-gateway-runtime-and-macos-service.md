@@ -1,6 +1,6 @@
 # Phase 5.1：飞书 Gateway 运行时、处理中表情与 macOS 常驻
 
-> 当前状态（2026-08-08）：**REAL BOT CONFIGURED / GATEWAY READY VERIFIED / OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
+> 当前状态（2026-08-09）：**REAL BOT CONFIGURED / TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
 >
 > 两条真实 Owner 私聊已依次经过 WebSocket、Adapter、durable Inbox、AgentRuntime、durable Outbox 和
 > DeliveryWorker；两条 Delivery 都是一次发送成功。全套 `FEISHU-LIVE-001..015` 尚未完成，所以不能写成
@@ -207,7 +207,7 @@ VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy�
 
 | 证据 | 当前结果 | 能证明什么 |
 | --- | --- | --- |
-| Python 全量回归 | 530/530 | SDK 预加载、`connect_until_ready`、`post` 入站和既有 Core 无回归 |
+| Python 全量回归 | 556/556 | SDK 预加载、`connect_until_ready`、`post` 入站和既有 Core 无回归 |
 | TypeScript TUI | 30/30 | 本次没有破坏 pi-tui 协议与交互 |
 | Agent / Channel eval | 29/29、32/32 | 离线业务场景保持稳定 |
 | Channel local soak | 640/640 | 20 轮离线恢复与幂等语义保持稳定 |
@@ -232,7 +232,7 @@ VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy�
 IMPLEMENTATION PASS
 REAL BOT CONFIGURED
 GATEWAY READY VERIFIED
-OWNER-DM DELIVERY VERIFIED
+TARGETED CALLBACK LIVE VERIFIED
 15-CASE LIVE PENDING
 ```
 

@@ -1,12 +1,13 @@
 # Phase 5.1：真实飞书 Bot 与 Live E2E 工程落地
 
-> 当前结论：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**
+> 当前结论：**IMPLEMENTATION PASS / TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**
 >
-> 新鲜本地基线：530 Python tests、30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、
+> 新鲜本地基线：556 Python tests、30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、
 > 20 轮 640/640 Channel checks。
 >
 > 这句话的意思是：专用飞书应用、机器人、事件订阅、同应用 Owner、真实 WebSocket 和两条 Owner 私聊回复已经
-> 打通；两条 Delivery 都是一次发送成功。完整 15/15 人工验收仍未执行，因此现在不能写 `FEISHU_E2E_VERIFIED`。
+> 打通；Card callback receipt 与 Approval continuation 也已完成 targeted live 验证。完整 15/15 人工验收仍未执行，
+> 因此现在不能写 `FEISHU_E2E_VERIFIED`。
 > SDK 运行时与常驻说明见 [Gateway 运行时与 macOS 常驻](feishu-gateway-runtime-and-macos-service.md)。
 
 这份文档是一份可以边看图、边照着操作的工程手册。它回答五个问题：
@@ -529,6 +530,70 @@ flowchart TD
 ```text
 IMPLEMENTATION PASS
 FEISHU E2E HARNESS PASS
-OWNER-DM DELIVERY VERIFIED
+TARGETED CALLBACK LIVE VERIFIED
 15-CASE LIVE PENDING
 ```
+
+## 15. Phase 5.3 真实审批事故与修复
+
+2026-08-09 的真实 Owner DM 验收补齐了开放平台 Callback Configuration，并发布
+`card.action.trigger`。这次验收发现两个只有真实卡片点击才能暴露的问题。
+
+### 15.1 Source card 必须绑定 Approval
+
+只校验按钮 payload 不够。生产 callback 同时带 `message_id`，MiniClaw 现在先用它反查 durable Delivery：
+
+```mermaid
+sequenceDiagram
+    participant F as Feishu
+    participant T as FeishuTransport
+    participant D as DeliveryRepository
+    participant A as ApprovalController
+    participant C as Core continuation
+
+    F->>T: card.action.trigger(message_id, value)
+    T->>D: 精确查 sent approval receipt
+    D-->>T: channel + account + card content
+    T->>A: value + expected_approval_id
+    alt payload 与来源卡不匹配
+        A-->>T: 无法识别；Core 不变
+    else 完全匹配且 Actor 是 Owner
+        A->>C: continue_approval once / deny
+        C-->>T: TurnResult
+    end
+```
+
+反向查找有五个 fail-closed 条件：
+
+1. `channel` 必须是 `feishu`；
+2. `account_id` 必须是当前 Gateway 账号；
+3. `delivery_kind` 必须是 `approval`；
+4. 状态必须是 `sent`，且 receipt 只能命中一行；
+5. 持久化 envelope 中的 ID 必须等于 callback payload 的 ID。
+
+因此旧卡重放、伪造 `message_id`、跨账号卡片和“旧卡批准新审批”都不能进入 Core。
+
+### 15.2 Channel notice 不是 Provider 历史
+
+审批卡为了兼容不支持卡片的客户端，会持久化一条 `channel_notice=true` 的 fallback 文本。它属于 IM
+投影视图，不是模型说过的话。旧实现的 approval continuation 使用通用 recent messages，导致顺序变成：
+
+```text
+assistant(tool_call) → assistant(channel notice) → tool(result)
+```
+
+OpenAI-compatible Provider 会把这视为非法 Tool 协议。现在 Provider-safe Context 先移除 Channel notice，再验证
+完整 Tool Call/Result 配对；continuation 使用同一 `list_context()` 边界，最终顺序恢复为：
+
+```text
+assistant(tool_call) → tool(result) → assistant(final)
+```
+
+### 15.3 已验证与仍待验证
+
+已真实观察：Gateway ready、Owner DM、三轮 Context、`system_info`、`read_file`、单 Approval card、
+Owner “仅本次”、绑定 ToolRun succeeded、child Turn completed 和结果 Delivery sent。
+
+完整 15-case 仍是 pending。长期个人私聊会混入旧上下文和额外审批，不适合作为最终 Release Gate；下一轮必须先
+创建专用测试群/会话，并准备非 Owner 测试账号。权威计数和状态见
+[Eval v0.5.3](../../evals/releases/v0.5.3.md)。
