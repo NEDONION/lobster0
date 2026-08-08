@@ -475,6 +475,54 @@ class OpenAICompatibleProviderTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ProviderProtocolError):
             await provider.complete(simple_request())
 
+    async def test_tool_arguments_object_is_normalized_for_compatible_provider(self) -> None:
+        """兼容服务直接返回 JSON object 时仍应生成受校验的 ToolCall。"""
+        compatible = sse(
+            {
+                "id": "chat_object_arguments",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_1",
+                                    "function": {
+                                        "name": "run_command",
+                                        "arguments": {
+                                            "program": "/usr/local/bin/lark-cli",
+                                            "args": ["doc", "list"],
+                                        },
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+        )
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=compatible,
+            )
+
+        provider = await self._provider(respond)
+        response = await provider.complete(simple_request())
+
+        self.assertEqual(response.tool_calls[0].name, "run_command")
+        self.assertEqual(
+            response.tool_calls[0].arguments,
+            {
+                "program": "/usr/local/bin/lark-cli",
+                "args": ["doc", "list"],
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

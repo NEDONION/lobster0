@@ -335,9 +335,19 @@ def _merge_tool_fragments(value: object, tools: dict[int, _ToolAccumulator]) -> 
             accumulator.name = _required_string(function.get("name"), "tool name")
         arguments = function.get("arguments")
         if arguments is not None:
-            if not isinstance(arguments, str):
+            if isinstance(arguments, str):
+                accumulator.argument_parts.append(arguments)
+            elif isinstance(arguments, dict) and all(
+                isinstance(key, str) for key in arguments
+            ):
+                # OpenAI 的正式协议要求 JSON 字符串，但部分兼容服务（包括
+                # 某些 DeepSeek 网关）会直接返回已经解码的 object。这里先
+                # 规范化为紧凑 JSON，再统一走 `_finish_tools` 的 object 校验。
+                accumulator.argument_parts.append(
+                    json.dumps(arguments, ensure_ascii=False, separators=(",", ":"))
+                )
+            else:
                 raise ProviderProtocolError("model provider tool arguments is invalid")
-            accumulator.argument_parts.append(arguments)
 
 
 def _finish_tools(tools: dict[int, _ToolAccumulator]) -> tuple[ToolCall, ...]:
