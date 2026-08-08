@@ -108,6 +108,10 @@ version: 1
 先给结论，再列决定、风险和 action items。
 ```
 
+当前 `init` 还会幂等安装两个业务 CLI Skill：`feishu-lark-cli` 把飞书请求映射到官方
+`lark-cli`，`github-cli` 把 GitHub 远端与本地仓库请求分别映射到 `gh` / `git`。GitHub Skill 要求先以
+`gh auth status` 验证真实认证状态，禁止无 Tool 证据地声称网络不可用，也禁止把 Token 放进命令参数。
+
 加载规则：
 
 1. 只扫描 `skills/<name>/SKILL.md`，不递归执行代码。

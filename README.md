@@ -53,6 +53,8 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 | 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel ledger；owner-only Markdown Memory 与 Skills。 |
 | 运维 | `init`、`doctor`、`gateway`、结构化脱敏日志、幂等恢复、离线 Eval 与版本化 Channel gate。 |
 
+`init` 会幂等安装 `feishu-lark-cli` 与 `github-cli` Skill：飞书业务请求走官方 `lark-cli`，GitHub 远端请求走本机 `gh`，本地仓库请求走 `git`；凭据不进入 Tool 参数或模型上下文。
+
 ### Permission Mode
 
 - `SAFE`：只读低风险动作自动执行，其余动作按 Policy 请求审批或拒绝。
