@@ -2,6 +2,25 @@
 
 这里记录 MiniClaw 已实现模块的工程说明。设计文档描述目标；工程文档只描述已经进入代码与验证的行为。
 
+## OpenClaw / Hermes 能力对齐（规划）
+
+> 以下文档是经过确认的后续工程路线，状态为 **PLANNED / NOT IMPLEMENTED**。它们不改变本页下方 Phase 2-5
+> 的真实完成状态，也不能作为 production evidence。
+
+| 文档 | 规划范围 | 当前事实 |
+| --- | --- | --- |
+| [能力 Gap 与演进路线](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 对照 OpenClaw、Hermes、nanobot、ZeroClaw、RayClaw，确定 Phase 5.2→9 的优先级与非目标。 | Gap 已确认，代码未实现。 |
+| [能力对齐工程落地总方案](openclaw-hermes-alignment-engineering-roadmap.md) | Service、Automation、Sandbox、Browser、Evolution、Memory v2、Skills、MCP、Provider、Sub-agent、Media 的模块/数据/测试设计。 | 工程边界已确认，等待逐 Phase TDD。 |
+| [Memory Autopilot 能力 Gap](../architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 跨渠道 Owner Memory、L0→L3、自动 Flush、晋升、冲突、遗忘和隐私。 | 设计已确认，代码未实现。 |
+| [Memory Autopilot 技术选型](memory-autopilot-best-practices-and-technology-selection.md) | Markdown Truth + SQLite Control Plane、接口、表、Crash Recovery、FTS5/CJK、测试矩阵。 | 工程方案已确认，等待实施计划与 TDD。 |
+| [Memory Autopilot 正式设计](../superpowers/specs/2026-08-08-memory-autopilot-design.md) | 产品语义、架构决策、失败策略、迁移和完成定义。 | APPROVED DESIGN / NOT IMPLEMENTED。 |
+| [Phase 5.2 实施计划](../superpowers/plans/2026-08-08-phase-5-2-production-hardening.md) | 系统服务、health、Docker、Feishu 15/15、24h soak。 | 下一实施 Phase。 |
+| [Phase 6 实施计划](../superpowers/plans/2026-08-08-phase-6-autonomy-runtime-and-sandbox.md) | Scheduler、Task Ledger、Heartbeat、Delivery、Budget、Sandbox、Checkpoint。 | 依赖 Phase 5.2。 |
+| [Phase 6.5 实施计划](../superpowers/plans/2026-08-08-phase-6-5-browser-agent.md) | 独立浏览器 Profile、snapshot/ref、Browser Policy、Artifact。 | 依赖 Phase 6 Sandbox。 |
+| [Phase 7 实施计划](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md) | Feedback、FTS5、Memory 治理、Proposal、Eval、Apply/Rollback。 | 依赖 Phase 6 Task/Eval 安全边界。 |
+| [Phase 8 实施计划](../superpowers/plans/2026-08-08-phase-8-skills-mcp-provider-resilience.md) | Skill 安装信任、MCP、Provider fallback、费用预算。 | 依赖 Phase 7 版本与审批账本。 |
+| [Phase 9 实施计划](../superpowers/plans/2026-08-08-phase-9-subagents-and-multimodal.md) | depth-1 Sub-agent、附件、Vision、可选语音。 | 依赖 Phase 6 Task/Sandbox 与 Phase 8 Provider。 |
+
 ## Phase 2：Tool 与安全
 
 | 文档 | 已验证内容 | 不包含 |
@@ -23,6 +42,9 @@
 | [Phase 2.2：Approvals CLI（历史迁移）](phase-2/cli-approvals.md) | 记录旧入口为何被单入口 TUI 取代。 | 当前可执行命令。 |
 
 ## Phase 3：Memory、Skills 与上下文预算
+
+> Phase 3 下表是当前实现。分级自动记忆、跨 Session 检索和周期 Markdown Flush 属于
+> [Memory Autopilot 规划](memory-autopilot-best-practices-and-technology-selection.md)，目前尚未进入代码。
 
 | 文档 | 已验证内容 | 不包含 |
 | --- | --- | --- |

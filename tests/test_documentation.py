@@ -56,6 +56,41 @@ class Phase5DocumentationTest(unittest.TestCase):
             self.assertTrue((PROJECT_ROOT / "docs/engineering/phase-5" / name).is_file())
             self.assertIn(name, engineering)
 
+    def test_openclaw_hermes_gap_and_phase_plans_are_linked_as_planned(self) -> None:
+        """后续能力路线必须完整可达，同时明确不能冒充当前实现。"""
+        gap = PROJECT_ROOT / (
+            "docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md"
+        )
+        engineering = PROJECT_ROOT / (
+            "docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md"
+        )
+        plans = (
+            "2026-08-08-phase-5-2-production-hardening.md",
+            "2026-08-08-phase-6-autonomy-runtime-and-sandbox.md",
+            "2026-08-08-phase-6-5-browser-agent.md",
+            "2026-08-08-phase-7-controlled-evolution-and-memory-v2.md",
+            "2026-08-08-phase-8-skills-mcp-provider-resilience.md",
+            "2026-08-08-phase-9-subagents-and-multimodal.md",
+        )
+
+        self.assertTrue(gap.is_file())
+        self.assertTrue(engineering.is_file())
+        engineering_text = engineering.read_text(encoding="utf-8")
+        self.assertIn("APPROVED ROADMAP / NOT IMPLEMENTED", engineering_text)
+        for name in plans:
+            with self.subTest(plan=name):
+                path = PROJECT_ROOT / "docs/superpowers/plans" / name
+                self.assertTrue(path.is_file())
+                content = path.read_text(encoding="utf-8")
+                self.assertIn("Implementation Plan", content)
+                self.assertIn("## Global Constraints", content)
+                self.assertIn("- [ ]", content)
+
+        for relative in ("README.md", "docs/README.md", "docs/engineering/README.md"):
+            content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("20260808_OpenClaw-Hermes能力Gap与演进路线.md", content)
+            self.assertIn("openclaw-hermes-alignment-engineering-roadmap.md", content)
+
     def test_progress_page_exposes_gate_and_live_truth(self) -> None:
         """可视化进度页必须能一眼区分代码完成与真实平台待验收。"""
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
