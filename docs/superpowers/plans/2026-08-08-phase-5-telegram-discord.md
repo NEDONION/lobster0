@@ -671,11 +671,11 @@ git commit -m "feat(discord): 增加 DM/Guild/Thread inbound Adapter"
 
 ### Step 8.1 — RED exact intents and lifecycle
 
-- [ ] Intents 只开启 `guilds`、`messages`、`message_content`、`dm_messages` 所需集合；禁用 members、presences 和不必要 privileged intents。
-- [ ] fake client 验证 login/start、ready、close、resume callback；`connect()` 只有在 ready 后返回。
-- [ ] `stop_receiving()` 让 on_message fail closed；`disconnect()` 幂等。
-- [ ] 单次 Gateway disconnect 交给 SDK resume/reconnect，不重建 AgentRuntime。
-- [ ] fatal close code（invalid token/intent）映射 non-retryable platform state，临时网络 close 标记 degraded/retryable。
+- [x] Intents 只开启 `guilds`、`messages`、`message_content`、`dm_messages` 所需集合；禁用 members、presences 和不必要 privileged intents。
+- [x] fake client 验证 login/start、ready、close、resume callback；`connect()` 只有在 ready 后返回。
+- [x] `stop_receiving()` 让 on_message fail closed；`disconnect()` 幂等。
+- [x] 单次 Gateway disconnect 交给 SDK resume/reconnect，不重建 AgentRuntime。
+- [x] fatal close code（invalid token/intent）映射 non-retryable platform state，临时网络 close 标记 degraded/retryable。
 
 Run RED:
 
@@ -688,22 +688,22 @@ Expected RED: Transport lifecycle 尚未实现。
 
 ### Step 8.2 — RED safe send and error mapping
 
-- [ ] 所有 send/reply/edit 使用 `AllowedMentions.none()`；MiniClaw 回复不能 ping 用户、角色或 everyone。
-- [ ] 2000 char 分片每 part 不超预算，emoji/中文/code fence 不丢字符。
-- [ ] 429/retry-after → retryable `discord_rate_limited`；5xx/network → retryable；403 → `discord_forbidden`；404 → `discord_target_not_found`；不确定 receipt → unknown。
-- [ ] SDK exception 的正文和 response body 不进入稳定错误。
+- [x] 所有 send/reply/edit 使用 `AllowedMentions.none()`；MiniClaw 回复不能 ping 用户、角色或 everyone。
+- [x] 2000 char 分片每 part 不超预算，emoji/中文/code fence 不丢字符。
+- [x] 429/retry-after → retryable `discord_rate_limited`；5xx/network → retryable；403 → `discord_forbidden`；404 → `discord_target_not_found`；不确定 receipt → unknown。
+- [x] SDK exception 的正文和 response body 不进入稳定错误。
 
 ### Step 8.3 — RED typing/progress
 
-- [ ] typing context 在 Turn 开始进入，finish/cancel 一定退出；renew interval 有界。
-- [ ] create progress 用 channel.send，update 用 Message.edit；完成/失败状态不会覆盖 durable final reply。
-- [ ] progress 更新失败只写 Observer/Audit，不改变 Inbox terminal state。
-- [ ] 若实现 Approval View，interaction 必须 defer/ack、验证 Owner、只调用 Controller；否则明确走 neutral fallback text。
+- [x] typing context 在 Turn 开始进入，finish/cancel 一定退出；renew interval 有界。
+- [x] create progress 用 channel.send，update 用 Message.edit；完成/失败状态不会覆盖 durable final reply。
+- [x] progress 更新失败只写 Observer/Audit，不改变 Inbox terminal state。
+- [x] 若实现 Approval View，interaction 必须 defer/ack、验证 Owner、只调用 Controller；否则明确走 neutral fallback text。
 
 ### Step 8.4 — Implement injected client facade
 
-- [ ] production default 在 factory 内 lazy import `discord`；tests 注入 fake client，不 monkeypatch全局 SDK。
-- [ ] SDK callback 先构造 narrow view，再调用 Adapter/Manager；Transport 不持久化 SDK object。
+- [x] production default 在 factory 内 lazy import `discord`；tests 注入 fake client，不 monkeypatch全局 SDK。
+- [x] SDK callback 先构造 narrow view，再调用 Adapter/Manager；Transport 不持久化 SDK object。
 
 Run GREEN:
 
