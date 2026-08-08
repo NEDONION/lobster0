@@ -61,6 +61,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
 
             runtime = create_runtime(config, paths, "test-key")
             try:
+                await runtime.astart()
                 self.assertEqual(runtime.owner_id, owner.id)
                 self.assertEqual(runtime.model, "deepseek-v4-pro")
                 self.assertEqual(runtime.workspace, paths.workspace)
@@ -87,6 +88,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                     ],
                 )
                 self.assertIsNotNone(runtime.service)
+                self.assertTrue(runtime.memory_worker.running)
                 limits = limits_for_channel(config, "feishu")
                 manager = create_channel_manager(
                     paths,
@@ -98,6 +100,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(manager.owner_id, runtime.owner_id)
             finally:
                 await runtime.aclose()
+            self.assertFalse(runtime.memory_worker.running)
 
     async def test_channel_limits_map_all_typed_config_without_secrets(self) -> None:
         """三个平台应稳定映射同一公共预算，不复制 Manager factory。"""

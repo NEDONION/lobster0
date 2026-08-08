@@ -53,6 +53,9 @@ class BridgeServer:
         Returns:
             正常 EOF 或显式关闭均返回退出码 0。
         """
+        runtime_start = getattr(self._runtime, "astart", None)
+        if callable(runtime_start):
+            await runtime_start()
         try:
             while True:
                 raw = await self._reader.readline()

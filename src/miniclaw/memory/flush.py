@@ -65,11 +65,15 @@ class MemoryCapture:
         *,
         wake: Callable[[], None] | None = None,
         policy: MemoryDisclosurePolicy | None = None,
+        wake_threshold: int = 5,
     ) -> None:
         """绑定 buffer、可选 worker wake-up 和 Disclosure Policy。"""
+        if type(wake_threshold) is not int or not 1 <= wake_threshold <= 100:
+            raise ValueError("memory wake_threshold must be between 1 and 100")
         self._buffers = buffers
         self._wake = wake
         self._policy = policy or MemoryDisclosurePolicy()
+        self._wake_threshold = wake_threshold
 
     def capture_completed(
         self,
@@ -92,9 +96,17 @@ class MemoryCapture:
             turn_id=turn_id,
             capture_scope="private",
         )
-        if self._wake is not None:
+        if (
+            self._wake is not None
+            and self._buffers.pending_count(owner_id) >= self._wake_threshold
+        ):
             self._wake()
         return receipt
+
+    def flush(self) -> None:
+        """为 `/new`、pre-compaction、显式 flush 和 shutdown 强制唤醒 Worker。"""
+        if self._wake is not None:
+            self._wake()
 
 
 class FlushCoordinator:

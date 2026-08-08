@@ -175,6 +175,57 @@ class MemoryMarkdownStore:
         finally:
             os.close(lock_descriptor)
 
+    def upsert(self, unit: MarkdownUnitDocument) -> MarkdownWrite:
+        """原子创建或替换一个完整 Unit block，供来源补充和状态晋升。"""
+        path = self.path_for_owner(unit.owner_id)
+        owner_directory = self._prepare_owner_directory(unit.owner_id)
+        lock_descriptor = _open_lock(owner_directory / ".memory.lock")
+        try:
+            fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
+            existing = _read_existing(path)
+            existing_hash = hashlib.sha256(existing).hexdigest()
+            manifest = self._manifests.find(unit.owner_id, _RELATIVE_PATH)
+            if manifest is not None and manifest.content_hash != existing_hash:
+                raise MarkdownMemoryError("memory Markdown changed outside the writer")
+            block = _unit_block(unit)
+            block_hash = hashlib.sha256(block).hexdigest()
+            start_marker = f"<!-- miniclaw:unit {unit.unit_id} -->".encode()
+            end_marker = f"<!-- miniclaw:end {unit.unit_id} -->".encode()
+            start = existing.find(start_marker)
+            if start < 0:
+                current = existing or _HEADER.encode("utf-8")
+                payload = current.rstrip() + b"\n\n" + block
+            else:
+                end = existing.find(end_marker, start)
+                if end < 0 or existing.find(start_marker, start + 1) >= 0:
+                    raise MarkdownMemoryError("memory Unit markers are invalid")
+                end += len(end_marker)
+                if end < len(existing) and existing[end : end + 1] == b"\n":
+                    end += 1
+                if existing[start:end] == block:
+                    return MarkdownWrite("duplicate", path, existing_hash, block_hash)
+                payload = existing[:start] + block + existing[end:]
+            content_hash = hashlib.sha256(payload).hexdigest()
+            _atomic_replace(path, payload)
+            metadata = path.stat()
+            self._manifests.upsert(
+                owner_id=unit.owner_id,
+                relative_path=_RELATIVE_PATH,
+                content_hash=content_hash,
+                last_valid_hash=content_hash,
+                mtime_ns=metadata.st_mtime_ns,
+                parser_version=_PARSER_VERSION,
+                status="current",
+                now=datetime.now(UTC),
+            )
+            return MarkdownWrite("recorded", path, content_hash, block_hash)
+        except MarkdownMemoryError:
+            raise
+        except (OSError, UnicodeError) as error:
+            raise MarkdownMemoryError("memory Markdown could not be stored") from error
+        finally:
+            os.close(lock_descriptor)
+
     def _prepare_owner_directory(self, owner_id: int) -> Path:
         """创建并验证 owners/Owner 两级真实 0700 目录。"""
         owners = self._paths.memory_dir / "owners"

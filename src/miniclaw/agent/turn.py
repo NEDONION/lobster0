@@ -213,6 +213,8 @@ class TurnService:
                 tools=self._runner.tool_schemas,
             )
             if self._compactor is not None and self._compactor.should_compact(request):
+                if self._memory_capture is not None:
+                    self._memory_capture.flush()
                 compacted = await self._compactor.compact(session.id)
                 if compacted is not None:
                     history = tuple(

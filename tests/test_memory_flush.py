@@ -60,7 +60,12 @@ class MemoryFlushTest(unittest.IsolatedAsyncioTestCase):
         self.sessions = SessionRepository(self.database)
         self.turns = TurnRepository(self.database)
 
-    async def complete_turn(self, text: str = "普通消息") -> None:
+    async def complete_turn(
+        self,
+        text: str = "普通消息",
+        *,
+        capture: MemoryCapture | None = None,
+    ) -> None:
         """用真实 TurnService 完成一次本地 Owner Turn。"""
         provider = FakeProvider(
             (
@@ -85,7 +90,7 @@ class MemoryFlushTest(unittest.IsolatedAsyncioTestCase):
             runner=AgentRunner(provider),
             state_home=self.paths.home,
             workspace=WorkspaceConfig(path=self.paths.workspace),
-            memory_capture=MemoryCapture(self.buffers),
+            memory_capture=capture or MemoryCapture(self.buffers),
         )
         result = await service.handle(self.owner.id, text, "memory-capture")
         self.assertEqual(result.content, "answer")
@@ -141,6 +146,21 @@ class MemoryFlushTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.status, "completed")
         self.assertEqual(handler.markdown_calls, 1)
         self.assertEqual(handler.projection_calls, 2)
+
+    async def test_worker_wakes_after_five_turns_but_capture_stays_nonblocking(self) -> None:
+        """前四条只落 durable buffer，第五条达到阈值才触发后台 wake。"""
+        wakes: list[bool] = []
+        capture = MemoryCapture(
+            self.buffers,
+            wake=lambda: wakes.append(True),
+            wake_threshold=5,
+        )
+
+        for index in range(5):
+            await self.complete_turn(f"普通消息 {index}", capture=capture)
+
+        self.assertEqual(self.buffers.pending_count(self.owner.id), 5)
+        self.assertEqual(wakes, [True])
 
 
 if __name__ == "__main__":

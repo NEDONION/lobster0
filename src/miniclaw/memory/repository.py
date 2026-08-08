@@ -516,6 +516,7 @@ class MemoryCandidateRepository:
                         sensitivity, status, source_ids_json, metadata_json,
                         created_at, updated_at
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'observed', ?, ?, ?, ?)
+                    ON CONFLICT(run_id, ordinal) DO NOTHING
                     """,
                     (
                         run_id,
@@ -539,6 +540,52 @@ class MemoryCandidateRepository:
                 (run_id, ordinal),
             ).fetchone()
         assert row is not None
+        result = _candidate(row)
+        if (
+            result.candidate_hash != candidate_hash
+            or result.text != normalized
+            or result.kind != category
+            or result.scope != scope
+            or result.source_message_ids != sources
+        ):
+            raise MemoryStateError("memory candidate idempotency key changed")
+        return result
+
+    def list_for_run(self, run_id: int) -> tuple[MemoryCandidate, ...]:
+        """按 ordinal 读取一个 Flush Run 已验证并持久化的候选。"""
+        _require_positive(run_id, "run_id")
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                "SELECT * FROM memory_candidates WHERE run_id = ? ORDER BY ordinal",
+                (run_id,),
+            ).fetchall()
+        return tuple(_candidate(row) for row in rows)
+
+    def mark_status(
+        self,
+        candidate_id: int,
+        status: str,
+        *,
+        now: datetime | None = None,
+    ) -> MemoryCandidate:
+        """把 observed Candidate 结算为 validated/rejected/committed。"""
+        _require_positive(candidate_id, "candidate_id")
+        if status not in {"validated", "rejected", "committed"}:
+            raise ValueError("memory candidate status is invalid")
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE memory_candidates SET status = ?, updated_at = ?
+                WHERE id = ? AND status IN ('observed', ?)
+                """,
+                (status, _utc_text(now or datetime.now(UTC)), candidate_id, status),
+            )
+            row = connection.execute(
+                "SELECT * FROM memory_candidates WHERE id = ?",
+                (candidate_id,),
+            ).fetchone()
+        if row is None:
+            raise MemoryStateError("memory candidate does not exist")
         return _candidate(row)
 
     def get(self, candidate_id: int) -> MemoryCandidate:
@@ -694,6 +741,95 @@ class MemoryUnitRepository:
         if unit is None:
             raise MemoryStateError("memory unit does not exist")
         return unit
+
+    def find_by_text(self, owner_id: int, text: str) -> MemoryUnit | None:
+        """按规范正文哈希查找同 Owner Unit，用于跨 Run 精确去重。"""
+        _require_positive(owner_id, "owner_id")
+        normalized = _require_text(text, "memory text", maximum=8_000)
+        digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT id FROM memory_units WHERE owner_id = ? AND text_hash = ?",
+                (owner_id, digest),
+            ).fetchone()
+        return None if row is None else self.get(owner_id, str(row[0]))
+
+    def active_for_key(self, owner_id: int, key: str) -> MemoryUnit | None:
+        """返回同 Owner/key 当前 active Unit；不存在时返回 None。"""
+        _require_positive(owner_id, "owner_id")
+        memory_key = _require_text(key, "memory key", maximum=200)
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT id FROM memory_units
+                WHERE owner_id = ? AND memory_key = ? AND status = 'active'
+                ORDER BY id LIMIT 1
+                """,
+                (owner_id, memory_key),
+            ).fetchone()
+        return None if row is None else self.get(owner_id, str(row[0]))
+
+    def merge_sources_and_status(
+        self,
+        *,
+        owner_id: int,
+        unit_id: str,
+        sources: tuple[SourceRef, ...],
+        status: str,
+        markdown_hash: str,
+        now: datetime | None = None,
+    ) -> MemoryUnit:
+        """为重复事实补来源，并把 short_term 合法晋升或保持既有状态。"""
+        _require_positive(owner_id, "owner_id")
+        identifier = _require_text(unit_id, "unit_id", maximum=160)
+        if status not in _UNIT_STATUSES:
+            raise ValueError("memory status is invalid")
+        digest = _require_hash(markdown_hash, "markdown_hash")
+        if not sources:
+            raise MemoryStateError("memory unit requires at least one source")
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT status FROM memory_units WHERE owner_id = ? AND id = ?",
+                (owner_id, identifier),
+            ).fetchone()
+            if row is None:
+                raise MemoryStateError("memory unit does not exist")
+            _validate_sources(connection, owner_id, sources)
+            current_status = str(row["status"])
+            target_status = current_status if current_status == "active" else status
+            connection.executemany(
+                """
+                INSERT INTO memory_sources (unit_id, message_id, session_id, channel, ordinal)
+                SELECT ?, ?, ?, ?, COALESCE(MAX(ordinal), -1) + 1
+                FROM memory_sources WHERE unit_id = ?
+                ON CONFLICT(unit_id, message_id) DO NOTHING
+                """,
+                (
+                    (
+                        identifier,
+                        source.message_id,
+                        source.session_id,
+                        source.channel,
+                        identifier,
+                    )
+                    for source in sources
+                ),
+            )
+            connection.execute(
+                """
+                UPDATE memory_units SET status = ?, markdown_hash = ?, updated_at = ?
+                WHERE owner_id = ? AND id = ?
+                """,
+                (
+                    target_status,
+                    digest,
+                    _utc_text(now or datetime.now(UTC)),
+                    owner_id,
+                    identifier,
+                ),
+            )
+        return self.get(owner_id, identifier)
 
 
 class MemoryReviewRepository:

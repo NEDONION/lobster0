@@ -67,6 +67,7 @@ class MemoryWorker:
         self._interval = float(interval)
         self._wake = asyncio.Event()
         self._stopping = asyncio.Event()
+        self._cycle_lock = asyncio.Lock()
         self._task: asyncio.Task[None] | None = None
 
     @property
@@ -110,15 +111,22 @@ class MemoryWorker:
         finally:
             self._task = None
 
+    async def flush_once(self, *, timeout: float = 5.0) -> bool:
+        """在 shutdown 等强触发点有界执行一轮，超时返回 False。"""
+        if type(timeout) not in {int, float} or timeout <= 0:
+            raise ValueError("memory flush timeout must be positive")
+        try:
+            await asyncio.wait_for(self._cycle(), timeout=float(timeout))
+        except TimeoutError:
+            return False
+        return True
+
     async def _run(self) -> None:
         """每次唤醒执行一轮，异常被局部化后等待下一次重试。"""
         while not self._stopping.is_set():
             self._wake.clear()
             try:
-                await self._coordinator.run_once(
-                    self._worker_id,
-                    now=datetime.now(UTC),
-                )
+                await self._cycle()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -129,3 +137,11 @@ class MemoryWorker:
                 await asyncio.wait_for(self._wake.wait(), timeout=self._interval)
             except TimeoutError:
                 continue
+
+    async def _cycle(self) -> None:
+        """串行执行一轮 Coordinator，避免 shutdown 与后台 task 双 claim。"""
+        async with self._cycle_lock:
+            await self._coordinator.run_once(
+                self._worker_id,
+                now=datetime.now(UTC),
+            )

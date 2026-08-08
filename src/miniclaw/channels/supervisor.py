@@ -124,6 +124,9 @@ class GatewaySupervisor:
 
     async def start(self, *, ready: Callable[[str], None]) -> None:
         """按固定 pipeline 内顺序启动，所有平台 ready 后才发全局 ready。"""
+        runtime_start = getattr(self.runtime, "astart", None)
+        if callable(runtime_start):
+            await runtime_start()
         for channel in self.channels:
             channel.state = "starting"
             try:

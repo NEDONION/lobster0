@@ -14,17 +14,25 @@ from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig, resolve_permission_roots
 from miniclaw.memory.buffer import MemoryBufferRepository
 from miniclaw.memory.console import MemoryConsole
-from miniclaw.memory.flush import MemoryCapture
+from miniclaw.memory.extractor import (
+    MEMORY_EXTRACTOR_PROMPT_HASH,
+    MEMORY_EXTRACTOR_VERSION,
+    MemoryExtractor,
+)
+from miniclaw.memory.flush import FlushCoordinator, MemoryCapture
 from miniclaw.memory.markdown_store import MemoryMarkdownStore
+from miniclaw.memory.pipeline import MemoryPipelineHandler
 from miniclaw.memory.repository import (
+    MemoryCandidateRepository,
     MemoryManifestRepository,
     MemoryReviewRepository,
+    MemoryRunRepository,
     MemoryUnitRepository,
 )
 from miniclaw.memory.retrieval import MemoryRetrieval
 from miniclaw.memory.service import MemoryService
 from miniclaw.memory.store import MemoryStore
-from miniclaw.memory.worker import MemoryFlushScheduler
+from miniclaw.memory.worker import MemoryFlushScheduler, MemoryWorker
 from miniclaw.paths import StatePaths
 from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
@@ -77,12 +85,23 @@ class AgentRuntime:
     permission_state: PermissionState
     service: TurnService
     memory_console: MemoryConsole
+    memory_worker: MemoryWorker = field(repr=False)
+    memory_scheduler: MemoryFlushScheduler = field(repr=False)
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
 
+    async def astart(self) -> None:
+        """幂等启动 Memory Worker，并立即恢复遗留 retry/checkpoint。"""
+        await self.memory_worker.start()
+
     async def aclose(self) -> None:
-        """关闭唯一 Provider 客户端。"""
-        await self.provider.aclose()
+        """有界 flush/停止 Memory Worker，再关闭唯一 Provider 客户端。"""
+        self.memory_scheduler.schedule()
+        try:
+            await self.memory_worker.flush_once(timeout=3.0)
+        finally:
+            await self.memory_worker.stop(timeout=3.0)
+            await self.provider.aclose()
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
@@ -148,12 +167,43 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     memory = MemoryStore(paths)
     memory_retrieval = MemoryRetrieval(database)
     memory_scheduler = MemoryFlushScheduler()
+    memory_buffers = MemoryBufferRepository(database)
+    memory_runs = MemoryRunRepository(database)
+    memory_candidates = MemoryCandidateRepository(database)
+    memory_units = MemoryUnitRepository(database)
+    memory_reviews = MemoryReviewRepository(database)
+    memory_markdown = MemoryMarkdownStore(
+        paths,
+        MemoryManifestRepository(database),
+    )
     memory_service = MemoryService(
-        MemoryMarkdownStore(paths, MemoryManifestRepository(database)),
-        MemoryUnitRepository(database),
-        MemoryReviewRepository(database),
+        memory_markdown,
+        memory_units,
+        memory_reviews,
         memory,
     )
+    memory_handler = MemoryPipelineHandler(
+        database,
+        MemoryExtractor(provider, model=config.agent.model),
+        memory_markdown,
+        memory_candidates,
+        memory_units,
+        memory_reviews,
+    )
+    memory_coordinator = FlushCoordinator(
+        database,
+        memory_buffers,
+        memory_runs,
+        memory_handler,
+        extractor=MEMORY_EXTRACTOR_VERSION,
+        prompt_hash=MEMORY_EXTRACTOR_PROMPT_HASH,
+    )
+    memory_worker = MemoryWorker(
+        memory_coordinator,
+        worker_id="runtime-memory-worker",
+        interval=600,
+    )
+    memory_scheduler.bind(memory_worker.notify)
     available_tools = (
         SystemInfoTool(),
         ReadFileTool(),
@@ -223,7 +273,11 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             model=config.agent.model,
             context_budget_tokens=config.agent.context_budget_tokens,
         ),
-        memory_capture=MemoryCapture(MemoryBufferRepository(database)),
+        memory_capture=MemoryCapture(
+            memory_buffers,
+            wake=memory_scheduler.schedule,
+            wake_threshold=5,
+        ),
         state_home=paths.home,
         workspace=effective_workspace,
     )
@@ -241,6 +295,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             memory_retrieval,
             memory_scheduler.schedule,
         ),
+        memory_worker=memory_worker,
+        memory_scheduler=memory_scheduler,
         tool_definitions=tuple(
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)
         ),

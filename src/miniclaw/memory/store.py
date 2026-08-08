@@ -231,7 +231,7 @@ class MemoryStore:
         """
         fact = _normalize_line(content, "memory content", maximum=2_000)
         origin = _normalize_line(source, "memory source", maximum=200)
-        if _contains_sensitive(fact) or _contains_sensitive(origin):
+        if contains_sensitive_memory(fact) or contains_sensitive_memory(origin):
             raise MemoryError(
                 "sensitive_memory",
                 "memory content looks sensitive and was not stored",
@@ -310,8 +310,10 @@ def _normalize_line(value: str, name: str, *, maximum: int) -> str:
     return normalized
 
 
-def _contains_sensitive(value: str) -> bool:
-    """识别不允许持久化到 Memory 的常见凭据形态。"""
+def contains_sensitive_memory(value: str) -> bool:
+    """识别不允许进入 Candidate、日志或 Markdown 的常见凭据形态。"""
+    if not isinstance(value, str):
+        raise TypeError("memory sensitivity input must be text")
     return any(pattern.search(value) for pattern in _SENSITIVE_PATTERNS)
 
 
