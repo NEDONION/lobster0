@@ -205,6 +205,36 @@ class EvalCaseLoaderTest(unittest.TestCase):
                 with self.assertRaises(EvalCaseError):
                     load_cases(root)
 
+    def test_channel_fixture_and_evidence_are_strict(self) -> None:
+        """Channel case 只能选择内置 fixture，并必须提供稳定证据。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            case = valid_case("FEISHU-DM-999")
+            case["layers"] = ["channel"]
+            case.pop("offline")
+            case["channel"] = {"fixture": "dm"}
+            case["expected"] = {"channel_evidence": ["inbound_admitted", "p2p"]}
+            write_cases(root, "channel.jsonl", [case])
+
+            loaded = load_cases(root)[0]
+
+        self.assertEqual(loaded.channel_fixture, "dm")
+        self.assertEqual(
+            loaded.expected.channel_evidence,
+            ("inbound_admitted", "p2p"),
+        )
+
+        for fixture in ("unknown", 1):
+            with self.subTest(fixture=fixture), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                case = valid_case("FEISHU-DM-998")
+                case["layers"] = ["channel"]
+                case.pop("offline")
+                case["channel"] = {"fixture": fixture}
+                write_cases(root, "channel.jsonl", [case])
+                with self.assertRaises(EvalCaseError):
+                    load_cases(root)
+
 
 class RepositoryEvalSuiteTest(unittest.TestCase):
     """保证随代码提交的首批 Claw-like 场景始终可执行且可追溯。"""
@@ -212,7 +242,16 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
     def test_active_repository_suite_matches_documented_gate(self) -> None:
         """仓库 active 场景数、能力覆盖和 README 门禁数必须一致。"""
         cases = load_cases(PROJECT_ROOT / "evals" / "scenarios")
-        active = [case for case in cases if case.status == "active"]
+        active = [
+            case
+            for case in cases
+            if case.status == "active" and "offline" in case.layers
+        ]
+        channel = [
+            case
+            for case in cases
+            if case.status == "active" and "channel" in case.layers
+        ]
         readme = (PROJECT_ROOT / "evals" / "README.md").read_text(encoding="utf-8")
         match = re.search(r"Active offline gate: (\d+) cases", readme)
 
@@ -236,6 +275,8 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
             },
         )
         self.assertTrue(all("offline" in case.layers and case.responses for case in active))
+        self.assertEqual(len(channel), 12)
+        self.assertTrue(all(case.channel_fixture for case in channel))
         self.assertEqual(len({case.id for case in cases}), len(cases))
 
     def test_proto_001_is_mapped_to_provider_regression(self) -> None:

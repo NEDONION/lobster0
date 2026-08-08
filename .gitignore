@@ -22,3 +22,4 @@ logs/
 workspace/
 .miniclaw/
 .worktrees/
+.local/

@@ -22,6 +22,7 @@ _CASE_FIELDS = {
     "expected",
     "introduced_by",
     "tags",
+    "channel",
 }
 _EXPECTATION_FIELDS = {
     "answer_contains",
@@ -35,6 +36,7 @@ _EXPECTATION_FIELDS = {
     "files",
     "absent_files",
     "error_code",
+    "channel_evidence",
 }
 _RESPONSE_FIELDS = {
     "content",
@@ -69,6 +71,20 @@ _CREDENTIAL_FIELDS = {
     "authorization",
 }
 _CASE_ID = re.compile(r"^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*-\d{3}$")
+_CHANNEL_FIXTURES = {
+    "dm",
+    "group_mention",
+    "group_no_mention",
+    "dedupe",
+    "read_tool",
+    "approval_approve",
+    "approval_deny",
+    "restart_queued",
+    "restart_running",
+    "delivery_retry",
+    "card_fallback",
+    "reconnect",
+}
 
 
 class EvalCaseError(ValueError):
@@ -90,6 +106,7 @@ class EvalExpectation:
     files: tuple[tuple[str, str], ...]
     absent_files: tuple[str, ...]
     error_code: str | None
+    channel_evidence: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +128,7 @@ class EvalCase:
     introduced_by: str
     tags: tuple[str, ...]
     source: str
+    channel_fixture: str | None
 
 
 def load_cases(root: Path) -> tuple[EvalCase, ...]:
@@ -187,6 +205,9 @@ def _parse_case(raw: object, source: str) -> EvalCase:
     responses = _parse_offline(value.get("offline"), source)
     if status == "active" and "offline" in layers and not responses:
         raise EvalCaseError(f"active offline case has no responses at {source}")
+    channel_fixture = _parse_channel(value.get("channel"), source)
+    if status == "active" and "channel" in layers and channel_fixture is None:
+        raise EvalCaseError(f"active channel case has no fixture at {source}")
     return EvalCase(
         schema_version=schema_version,
         id=case_id,
@@ -203,7 +224,20 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         introduced_by=_string(value.get("introduced_by"), source, "introduced_by"),
         tags=_strings(value.get("tags", []), source, "tags"),
         source=source,
+        channel_fixture=channel_fixture,
     )
+
+
+def _parse_channel(raw: object, source: str) -> str | None:
+    """解析确定性 Channel fixture；不提供任意函数或凭据字段。"""
+    if raw is None:
+        return None
+    value = _object(raw, source, "channel")
+    _reject_unknown(value, {"fixture"}, source)
+    fixture = _string(value.get("fixture"), source, "channel.fixture")
+    if fixture not in _CHANNEL_FIXTURES:
+        raise EvalCaseError(f"invalid channel fixture at {source}")
+    return fixture
 
 
 def _parse_setup(raw: object, source: str) -> tuple[tuple[str, str], ...]:
@@ -302,6 +336,11 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         files=files,
         absent_files=absent_files,
         error_code=_optional_string(value.get("error_code"), source),
+        channel_evidence=_strings(
+            value.get("channel_evidence", []),
+            source,
+            "channel_evidence",
+        ),
     )
 
 
