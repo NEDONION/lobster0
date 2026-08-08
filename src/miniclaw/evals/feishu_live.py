@@ -1,5 +1,6 @@
 """真实飞书 E2E 的只读 SQLite 证据与后续编排接口。"""
 
+import argparse
 import asyncio
 import json
 import os
@@ -7,12 +8,27 @@ import re
 import signal
 import sqlite3
 import stat
+import subprocess
 import sys
 from collections import deque
 from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from miniclaw.channels.supervisor import GatewaySecrets
+from miniclaw.config import AppConfig, ConfigError, load_config
+from miniclaw.doctor import CheckResult, CheckStatus, run_local_checks
+from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.evals.cases import EvalCase, EvalCaseError, load_feishu_live_cases
+from miniclaw.gateway import GatewayConfigError, validate_gateway_environment
+from miniclaw.paths import (
+    PathConfigurationError,
+    StatePaths,
+    build_state_paths,
+    resolve_home,
+)
 from miniclaw.storage.database import Database, DatabaseError
 
 
@@ -35,6 +51,7 @@ class DatabaseCheckpoint:
     approval_id: int
     delivery_id: int
     audit_event_id: int
+    pending_approval_ids: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,6 +72,27 @@ class FeishuCaseResult:
     local_failed: tuple[str, ...]
     human_statuses: tuple[tuple[str, str], ...]
     error_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class LivePreflight:
+    """保存显式确认后得到的只读静态输入与内存 Secret。"""
+
+    project_root: Path
+    paths: StatePaths
+    config: AppConfig
+    secrets: GatewaySecrets
+    cases: tuple[EvalCase, ...]
+    commit: str
+
+
+@dataclass(frozen=True, slots=True)
+class LiveExecution:
+    """保存 Gateway 运行结束后的封闭 case 与生命周期结论。"""
+
+    results: tuple[FeishuCaseResult, ...]
+    gateway_ready: bool
+    gateway_graceful_exit: bool
 
 
 _CASE_STATUSES = frozenset({"pass", "fail", "skip"})
@@ -106,6 +144,584 @@ _REPORT_KEYS = frozenset(
 )
 _MAX_SCAN_FILES = 1000
 _MAX_SCAN_FILE_BYTES = 1024 * 1024
+
+
+def run_feishu_live_harness(argv: Sequence[str] | None = None) -> int:
+    """运行显式确认、真实 Gateway、人工动作和自动 SQLite 取证闭环。"""
+    arguments = _build_live_parser().parse_args(argv)
+    if not arguments.confirm_live:
+        print(
+            "error: --confirm-live is required; no config, secret, state, or network was read",
+            file=sys.stderr,
+        )
+        return 2
+
+    project_root = Path(__file__).resolve().parents[3]
+    scenario_root = _confirmed_path(
+        arguments.root,
+        project_root / "evals" / "scenarios",
+    )
+    output_dir = _confirmed_path(
+        arguments.output_dir,
+        project_root / ".local" / "eval-results" / "feishu",
+    )
+    try:
+        preflight = _load_preflight(
+            project_root=project_root,
+            home=arguments.home,
+            root=scenario_root,
+        )
+    except FeishuLiveError as error:
+        print(f"error: {error.code}", file=sys.stderr)
+        return 2
+
+    started_at = _utc_timestamp()
+    runtime_error: str | None = None
+    try:
+        execution = asyncio.run(
+            _execute_live_cases(
+                preflight,
+                gateway_timeout=arguments.gateway_timeout,
+                case_timeout=arguments.case_timeout,
+                input_fn=input,
+                output_fn=print,
+            )
+        )
+    except FeishuLiveError as error:
+        runtime_error = error.code
+        execution = LiveExecution((), False, False)
+
+    needles = _sensitive_values(preflight)
+    try:
+        secret_matches = scan_secret_matches((preflight.paths.logs, output_dir), needles)
+    except FeishuLiveError:
+        secret_matches = 1
+    results = execution.results
+    if runtime_error is not None:
+        results = _record_runtime_failure(results, runtime_error)
+    if not _repository_unchanged(preflight.project_root, preflight.commit):
+        results = _force_case_failure(
+            results,
+            case_id="FEISHU-LIVE-015",
+            evidence_key="secret_scan_zero",
+            error_code="repository_changed",
+        )
+    if secret_matches and not any(result.case_id == "FEISHU-LIVE-015" for result in results):
+        results = (*results, _failed_secret_case("secret_scan_match"))
+
+    finished_at = _utc_timestamp()
+    try:
+        report = build_evidence_report(
+            commit=preflight.commit,
+            started_at=started_at,
+            finished_at=finished_at,
+            gateway_ready=execution.gateway_ready,
+            gateway_graceful_exit=execution.gateway_graceful_exit,
+            results=results,
+            secret_matches=secret_matches,
+        )
+        _prepare_output_directory(output_dir)
+        target = output_dir / (_filename_timestamp(finished_at) + ".json")
+        write_evidence(target, report)
+    except FeishuLiveError as error:
+        print(f"error: {error.code}", file=sys.stderr)
+        return 1
+
+    print(f"Saved redacted evidence: {target.name}")
+    if runtime_error is not None:
+        print(f"error: {runtime_error}", file=sys.stderr)
+    return 0 if report["release_status"] == "FEISHU_E2E_VERIFIED" else 1
+
+
+def _build_live_parser() -> argparse.ArgumentParser:
+    """创建未确认阶段只解析标量、不会解析或创建路径的 CLI parser。"""
+    parser = argparse.ArgumentParser(
+        description="Run human-driven Feishu Bot E2E with read-only local evidence."
+    )
+    parser.add_argument("--home", help="absolute MiniClaw state directory")
+    parser.add_argument("--root", help="versioned Feishu Live scenario directory")
+    parser.add_argument("--output-dir", help="ignored redacted evidence directory")
+    parser.add_argument(
+        "--confirm-live",
+        action="store_true",
+        help="confirm real interaction with the configured private Feishu Bot",
+    )
+    parser.add_argument(
+        "--gateway-timeout",
+        type=_bounded_seconds(5.0, 120.0),
+        default=30.0,
+    )
+    parser.add_argument(
+        "--case-timeout",
+        type=_bounded_seconds(5.0, 300.0),
+        default=60.0,
+    )
+    return parser
+
+
+def _bounded_seconds(minimum: float, maximum: float) -> Callable[[str], float]:
+    """构造 argparse 使用的有限正数解析器。"""
+
+    def parse(value: str) -> float:
+        try:
+            parsed = float(value)
+        except ValueError:
+            raise argparse.ArgumentTypeError("timeout must be a number") from None
+        if not minimum <= parsed <= maximum:
+            raise argparse.ArgumentTypeError(
+                f"timeout must be between {minimum:g} and {maximum:g} seconds"
+            )
+        return parsed
+
+    return parse
+
+
+def _confirmed_path(value: str | None, default: Path) -> Path:
+    """只在 confirm gate 之后展开并解析路径。"""
+    candidate = default if value is None else Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    return candidate.resolve(strict=False)
+
+
+def _load_preflight(*, project_root: Path, home: str | None, root: Path) -> LivePreflight:
+    """加载私密环境并在创建网络对象前完成全部 fail-closed 检查。"""
+    try:
+        environment = dict(os.environ)
+        load_dotenv(project_root / ".env", environment)
+        paths = build_state_paths(resolve_home(home, environment))
+        config = load_config(paths, environment)
+        cases = load_feishu_live_cases(root)
+        checks = run_local_checks(paths, environment)
+        commit, dirty = _repository_state(project_root)
+        pending = _pending_approval_count(paths.database)
+        _validate_preflight_state(
+            config=config,
+            checks=checks,
+            pending_approvals=pending,
+            commit=commit,
+            dirty=dirty,
+            cases=cases,
+        )
+        secrets = validate_gateway_environment(config, environment)
+        return LivePreflight(project_root, paths, config, secrets, cases, commit)
+    except FeishuLiveError:
+        raise
+    except (
+        ConfigError,
+        DatabaseError,
+        DotEnvError,
+        EvalCaseError,
+        GatewayConfigError,
+        OSError,
+        PathConfigurationError,
+        sqlite3.Error,
+        ValueError,
+    ):
+        raise FeishuLiveError("feishu_live_preflight_failed") from None
+
+
+def _validate_preflight_state(
+    *,
+    config: Any,
+    checks: Sequence[CheckResult],
+    pending_approvals: int,
+    commit: str,
+    dirty: bool,
+    cases: Sequence[object],
+) -> None:
+    """验证 Live evidence 需要的单 Channel、clean commit 与空审批状态。"""
+    channels = config.channels
+    if not channels.feishu.enabled:
+        raise FeishuLiveError("feishu_channel_disabled")
+    if channels.telegram.enabled or channels.discord.enabled:
+        raise FeishuLiveError("peer_channel_enabled")
+    if not _is_commit(commit):
+        raise FeishuLiveError("repository_commit_unavailable")
+    if dirty:
+        raise FeishuLiveError("repository_dirty")
+    if any(check.status is CheckStatus.FAIL for check in checks):
+        raise FeishuLiveError("doctor_preflight_failed")
+    if type(pending_approvals) is not int or pending_approvals < 0:
+        raise FeishuLiveError("approval_state_unavailable")
+    if pending_approvals:
+        raise FeishuLiveError("pending_approval_exists")
+    if len(cases) != 15:
+        raise FeishuLiveError("live_case_count_invalid")
+
+
+def _repository_state(project_root: Path) -> tuple[str, bool]:
+    """有界读取 HEAD 与 worktree 状态，不读取 diff 或文件正文。"""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=project_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown", True
+    commit = head.stdout.strip().lower()
+    if head.returncode != 0 or not _is_commit(commit) or status.returncode != 0:
+        return "unknown", True
+    return commit, bool(status.stdout.strip())
+
+
+def _repository_unchanged(project_root: Path, commit: str) -> bool:
+    """判断运行结束时 HEAD 未变化且 worktree 仍然干净。"""
+    current, dirty = _repository_state(project_root)
+    return current == commit and not dirty
+
+
+def _pending_approval_count(database: Path) -> int:
+    """只读统计所有旧 pending Approval，Runner 从不消费或决定它们。"""
+    try:
+        with Database(database).connect_read_only() as connection:
+            return int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM approvals WHERE status = 'pending'"
+                ).fetchone()[0]
+            )
+    except (DatabaseError, OSError, sqlite3.Error):
+        raise FeishuLiveError("approval_state_unavailable") from None
+
+
+async def _execute_live_cases(
+    preflight: LivePreflight,
+    *,
+    gateway_timeout: float,
+    case_timeout: float,
+    input_fn: Callable[[str], str],
+    output_fn: Callable[[str], None],
+) -> LiveExecution:
+    """启动唯一 production Gateway，逐案取证，并在任何路径 finally 停止。"""
+    gateway = await GatewayProcess.start(
+        project_root=preflight.project_root,
+        home=preflight.paths.home,
+        ready_timeout=gateway_timeout,
+    )
+    all_graceful = True
+    results: list[FeishuCaseResult] = []
+
+    async def restart_gateway() -> None:
+        """为 restart case 进行一次有界 stop/start，保留同一数据库与配置。"""
+        nonlocal gateway, all_graceful
+        exit_code = await gateway.stop()
+        all_graceful = all_graceful and exit_code == 0
+        gateway = await GatewayProcess.start(
+            project_root=preflight.project_root,
+            home=preflight.paths.home,
+            ready_timeout=gateway_timeout,
+        )
+
+    try:
+        output_fn("MiniClaw Feishu Live E2E")
+        output_fn("Use only the configured Owner DM and dedicated test group.")
+        for case in preflight.cases:
+            result = await _run_case(
+                case=case,
+                database=preflight.paths.database,
+                workspace=preflight.config.workspace.path,
+                gateway=gateway,
+                case_timeout=case_timeout,
+                input_fn=input_fn,
+                output_fn=output_fn,
+                restart_fn=restart_gateway if case.id == "FEISHU-LIVE-013" else None,
+            )
+            results.append(result)
+    finally:
+        exit_code = await gateway.stop()
+        all_graceful = all_graceful and exit_code == 0
+    return LiveExecution(tuple(results), True, all_graceful)
+
+
+async def _run_case(
+    *,
+    case: Any,
+    database: Path,
+    workspace: Path,
+    gateway: Any,
+    case_timeout: float,
+    input_fn: Callable[[str], str],
+    output_fn: Callable[[str], None],
+    restart_fn: Callable[[], Any] | None = None,
+) -> FeishuCaseResult:
+    """执行单 case 的 checkpoint→人工动作→自动证据→人工证据顺序。"""
+    _prepare_case_files(workspace, case.setup_files)
+    checkpoint = capture_checkpoint(database)
+    output_fn(f"\n{case.id}: {case.title}")
+    requirements = tuple(case.expected.live_local_evidence)
+    human_requirements = tuple(case.expected.live_human_evidence)
+
+    if case.id not in {"FEISHU-LIVE-001", "FEISHU-LIVE-015"}:
+        actions = (case.query, *case.turns)
+        for index, action in enumerate(actions):
+            if restart_fn is not None:
+                await restart_fn()
+            output_fn(f"Action {index + 1}: {action}")
+            if _read_action(input_fn) == "skip":
+                return FeishuCaseResult(
+                    case.id,
+                    "skip",
+                    (),
+                    (),
+                    tuple((key, "skip") for key in human_requirements),
+                    "operator_skipped",
+                )
+
+    if requirements == ("gateway_ready",):
+        evaluation = EvidenceEvaluation(
+            ("gateway_ready",) if gateway.ready else (),
+            () if gateway.ready else ("gateway_ready",),
+        )
+    elif requirements == ("secret_scan_zero",):
+        evaluation = EvidenceEvaluation(("secret_scan_zero",), ())
+    else:
+        evaluation = await _wait_for_local_evidence(
+            database=database,
+            checkpoint=checkpoint,
+            requirements=requirements,
+            timeout=case_timeout,
+        )
+    if evaluation.failed:
+        return FeishuCaseResult(
+            case.id,
+            "fail",
+            evaluation.passed,
+            evaluation.failed,
+            (),
+            "local_evidence_failed",
+        )
+
+    human_statuses = tuple(
+        (key, _read_human_status(input_fn, key)) for key in human_requirements
+    )
+    statuses = tuple(status for _, status in human_statuses)
+    if "fail" in statuses:
+        status, error_code = "fail", "human_evidence_failed"
+    elif "skip" in statuses:
+        status, error_code = "skip", "operator_skipped"
+    else:
+        status, error_code = "pass", None
+    return FeishuCaseResult(
+        case.id,
+        status,
+        evaluation.passed,
+        (),
+        human_statuses,
+        error_code,
+    )
+
+
+async def _wait_for_local_evidence(
+    *,
+    database: Path,
+    checkpoint: DatabaseCheckpoint,
+    requirements: tuple[str, ...],
+    timeout: float,
+) -> EvidenceEvaluation:
+    """在有限窗口内轮询正证据；静默证据必须等待完整窗口后再判断。"""
+    if "no_new_turn" in requirements:
+        await asyncio.sleep(timeout)
+        return evaluate_local_evidence(database, checkpoint, requirements)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    latest = EvidenceEvaluation((), requirements)
+    while True:
+        latest = evaluate_local_evidence(database, checkpoint, requirements)
+        if not latest.failed or loop.time() >= deadline:
+            return latest
+        await asyncio.sleep(min(0.25, max(0.0, deadline - loop.time())))
+
+
+def _read_action(input_fn: Callable[[str], str]) -> str:
+    """等待操作者完成动作，只允许 Enter 或明确 skip。"""
+    while True:
+        try:
+            value = input_fn(
+                "Complete the action, press Enter; or enter s to skip: "
+            ).strip().lower()
+        except (EOFError, StopIteration):
+            return "skip"
+        if value == "":
+            return "continue"
+        if value == "s":
+            return "skip"
+
+
+def _read_human_status(input_fn: Callable[[str], str], key: str) -> str:
+    """为一个 human evidence key 只接受 p/f/s。"""
+    while True:
+        try:
+            value = input_fn(f"{key} [p/f/s]: ").strip().lower()
+        except (EOFError, StopIteration):
+            return "skip"
+        if value in {"p", "f", "s"}:
+            return {"p": "pass", "f": "fail", "s": "skip"}[value]
+
+
+def _prepare_case_files(workspace: Path, files: Sequence[tuple[str, str]]) -> None:
+    """安全准备版本化合成 fixture；已有内容不一致时拒绝覆盖。"""
+    try:
+        root = workspace.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise FeishuLiveError("workspace_unavailable") from None
+    for relative, content in files:
+        target = root / relative
+        try:
+            lexical = Path(os.path.abspath(target))
+            if not lexical.is_relative_to(root):
+                raise FeishuLiveError("fixture_path_unsafe")
+            current = root
+            for part in lexical.relative_to(root).parts[:-1]:
+                current /= part
+                if current.is_symlink():
+                    raise FeishuLiveError("fixture_path_unsafe")
+                current.mkdir(mode=0o700, exist_ok=True)
+            if lexical.exists():
+                if lexical.is_symlink() or not lexical.is_file():
+                    raise FeishuLiveError("fixture_path_unsafe")
+                if lexical.read_text(encoding="utf-8") != content:
+                    raise FeishuLiveError("fixture_conflict")
+                continue
+            flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            descriptor = os.open(lexical, flags, 0o600)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(content)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except FeishuLiveError:
+            raise
+        except (OSError, UnicodeError):
+            raise FeishuLiveError("fixture_write_failed") from None
+
+
+def _sensitive_values(preflight: LivePreflight) -> tuple[str, ...]:
+    """只在内存汇总 Secret、外部 ID、正文和本机路径，供 exact scan 使用。"""
+    feishu = preflight.config.channels.feishu
+    candidates: list[object] = [
+        preflight.secrets.model_api_key,
+        preflight.secrets.feishu_app_id,
+        *preflight.secrets.channel_tokens.values(),
+        feishu.owner_open_id,
+        *feishu.allowed_open_ids,
+        *feishu.allowed_chat_ids,
+        str(preflight.paths.home),
+        str(Path.home()),
+    ]
+    for case in preflight.cases:
+        candidates.extend((case.query, *case.turns))
+        candidates.extend(content for _, content in getattr(case, "setup_files", ()))
+    return tuple(
+        dict.fromkeys(
+            value
+            for value in candidates
+            if isinstance(value, str) and len(value.encode("utf-8")) >= 4
+        )
+    )
+
+
+def _record_runtime_failure(
+    results: tuple[FeishuCaseResult, ...],
+    error_code: str,
+) -> tuple[FeishuCaseResult, ...]:
+    """把 Gateway/runner 稳定错误绑定到首个缺失 case，不保存 diagnostics。"""
+    if not _is_safe_error_code(error_code):
+        error_code = "live_runtime_failed"
+    existing = {result.case_id for result in results}
+    case_id = next(
+        (
+            f"FEISHU-LIVE-{index:03d}"
+            for index in range(1, 16)
+            if f"FEISHU-LIVE-{index:03d}" not in existing
+        ),
+        "FEISHU-LIVE-015",
+    )
+    if case_id in existing:
+        return _force_case_failure(
+            results,
+            case_id=case_id,
+            evidence_key="secret_scan_zero",
+            error_code=error_code,
+        )
+    evidence = "gateway_ready" if case_id == "FEISHU-LIVE-001" else "secret_scan_zero"
+    return (
+        *results,
+        FeishuCaseResult(case_id, "fail", (), (evidence,), (), error_code),
+    )
+
+
+def _force_case_failure(
+    results: tuple[FeishuCaseResult, ...],
+    *,
+    case_id: str,
+    evidence_key: str,
+    error_code: str,
+) -> tuple[FeishuCaseResult, ...]:
+    """以稳定错误码把一个已有或缺失 case 降级为失败。"""
+    replaced: list[FeishuCaseResult] = []
+    found = False
+    for result in results:
+        if result.case_id != case_id:
+            replaced.append(result)
+            continue
+        found = True
+        passed = tuple(key for key in result.local_passed if key != evidence_key)
+        failed = tuple(dict.fromkeys((*result.local_failed, evidence_key)))
+        replaced.append(
+            FeishuCaseResult(case_id, "fail", passed, failed, result.human_statuses, error_code)
+        )
+    if not found:
+        replaced.append(FeishuCaseResult(case_id, "fail", (), (evidence_key,), (), error_code))
+    return tuple(replaced)
+
+
+def _failed_secret_case(error_code: str) -> FeishuCaseResult:
+    """构造缺失 015 时的最终隐私失败结果。"""
+    return FeishuCaseResult(
+        "FEISHU-LIVE-015",
+        "fail",
+        (),
+        ("secret_scan_zero",),
+        (),
+        error_code,
+    )
+
+
+def _prepare_output_directory(path: Path) -> None:
+    """创建本地 ignored Evidence 目录并拒绝最终路径 symlink。"""
+    try:
+        if path.is_symlink():
+            raise FeishuLiveError("evidence_directory_unsafe")
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        if not path.is_dir() or path.is_symlink():
+            raise FeishuLiveError("evidence_directory_unsafe")
+    except FeishuLiveError:
+        raise
+    except OSError:
+        raise FeishuLiveError("evidence_write_failed") from None
+
+
+def _utc_timestamp() -> str:
+    """返回 Evidence 契约接受的微秒 UTC 时间。"""
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _filename_timestamp(value: str) -> str:
+    """把已验证 UTC 时间转换成不冲突的安全文件名。"""
+    return value.replace("-", "").replace(":", "").replace(".", "").removesuffix("Z") + "Z"
 
 
 def build_evidence_report(
@@ -680,6 +1296,12 @@ def capture_checkpoint(database: Path) -> DatabaseCheckpoint:
                 approval_id=_maximum(connection, "approvals", "id"),
                 delivery_id=_maximum(connection, "deliveries", "id"),
                 audit_event_id=_maximum(connection, "audit_events", "id"),
+                pending_approval_ids=tuple(
+                    int(row[0])
+                    for row in connection.execute(
+                        "SELECT id FROM approvals WHERE status = 'pending' ORDER BY id"
+                    )
+                ),
             )
     except (DatabaseError, OSError, sqlite3.Error):
         raise FeishuLiveError("evidence_database_unavailable") from None
@@ -824,7 +1446,7 @@ def _has_approval(status: str, tool_status: str) -> _EvidenceCheck:
     """构造审批和绑定 ToolRun 必须同时满足的检查。"""
 
     def check(connection: sqlite3.Connection, checkpoint: DatabaseCheckpoint) -> bool:
-        return _exists(
+        if _exists(
             connection,
             """
             SELECT 1 FROM approvals AS a
@@ -836,6 +1458,25 @@ def _has_approval(status: str, tool_status: str) -> _EvidenceCheck:
             LIMIT 1
             """,
             (checkpoint.approval_id, status, tool_status),
+        ):
+            return True
+        if status != "consumed":
+            return False
+        return any(
+            _exists(
+                connection,
+                """
+                SELECT 1 FROM approvals AS a
+                JOIN tool_runs AS r ON r.id = a.tool_run_id
+                JOIN turns AS t ON t.id = a.turn_id
+                JOIN sessions AS s ON s.id = t.session_id
+                WHERE a.id = ? AND s.channel = 'feishu'
+                  AND a.status = 'consumed' AND r.status = ?
+                LIMIT 1
+                """,
+                (approval_id, tool_status),
+            )
+            for approval_id in checkpoint.pending_approval_ids
         )
 
     return check

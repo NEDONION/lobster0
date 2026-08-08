@@ -9,9 +9,11 @@ import textwrap
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
+from unittest.mock import AsyncMock, patch
 
 from miniclaw.bootstrap import initialize_state
+from miniclaw.doctor import CheckResult, CheckStatus
 from miniclaw.paths import build_state_paths
 from miniclaw.storage.database import Database
 
@@ -159,6 +161,33 @@ class FeishuDatabaseProbeTest(unittest.TestCase):
         )
         self.assertEqual(noisy.failed, ("no_new_turn",))
 
+    def test_pending_approval_captured_before_action_can_transition_to_consumed(self) -> None:
+        """LIVE-007 必须识别上一 case 的 pending 行在本次动作后变成 consumed。"""
+        api = self._api()
+        session_id = self._insert_session("feishu", "cross_case_approval")
+        turn_id = self._insert_turn(session_id, "om_pending_before", status="waiting_approval")
+        tool_run_id = self._insert_tool_run(turn_id, "write_file", status="waiting_approval")
+        approval_id = self._insert_approval(turn_id, tool_run_id, status="pending")
+        checkpoint = api.capture_checkpoint(self.paths.database)
+
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE approvals SET status = 'consumed', decided_at = ? WHERE id = ?",
+                (self.now, approval_id),
+            )
+            connection.execute(
+                "UPDATE tool_runs SET status = 'succeeded', completed_at = ? WHERE id = ?",
+                (self.now, tool_run_id),
+            )
+
+        result = api.evaluate_local_evidence(
+            self.paths.database,
+            checkpoint,
+            ("approval_consumed_once",),
+        )
+        self.assertEqual(result.passed, ("approval_consumed_once",))
+        self.assertEqual(result.failed, ())
+
     def test_unknown_key_and_database_failure_return_only_stable_codes(self) -> None:
         """错误不能回显绝对数据库路径、SQL、正文或外部平台标识。"""
         api = self._api()
@@ -273,8 +302,8 @@ class FeishuDatabaseProbeTest(unittest.TestCase):
             )
             return int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
 
-    def _insert_approval(self, turn_id: int, tool_run_id: int, *, status: str) -> None:
-        """插入与 ToolRun 一对一绑定的审批事实。"""
+    def _insert_approval(self, turn_id: int, tool_run_id: int, *, status: str) -> int:
+        """插入与 ToolRun 一对一绑定的审批事实并返回内部 ID。"""
         with self.database.connect() as connection:
             connection.execute(
                 """
@@ -285,6 +314,7 @@ class FeishuDatabaseProbeTest(unittest.TestCase):
                 """,
                 (turn_id, tool_run_id, "a" * 64, status, self.now, self.now, self.now),
             )
+            return int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
 
     def _insert_message(self, turn_id: int, session_id: int) -> int:
         """插入内部 Assistant Message。"""
@@ -748,6 +778,352 @@ class FeishuEvidenceReportTest(unittest.TestCase):
         missing = tuple(name for name in required if not hasattr(api, name))
         if missing:
             self.fail(f"Feishu evidence API is missing: {missing}")
+        return api
+
+
+class FeishuLiveHarnessSafetyTest(unittest.TestCase):
+    """保证 Runner 先显式确认、再做静态 preflight，失败时零副作用。"""
+
+    def test_missing_confirmation_reads_nothing_and_creates_nothing(self) -> None:
+        """未给 confirm 时不能解析状态、加载 case、启动 Gateway 或建输出目录。"""
+        api = self._api("run_feishu_live_harness")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "must-not-exist-home"
+            scenarios = root / "must-not-exist-scenarios"
+            output = root / "must-not-exist-output"
+            with patch.object(api, "_load_preflight") as preflight:
+                code = api.run_feishu_live_harness(
+                    [
+                        "--home",
+                        str(home),
+                        "--root",
+                        str(scenarios),
+                        "--output-dir",
+                        str(output),
+                    ]
+                )
+
+            self.assertEqual(code, 2)
+            preflight.assert_not_called()
+            self.assertFalse(home.exists())
+            self.assertFalse(scenarios.exists())
+            self.assertFalse(output.exists())
+
+    def test_static_preflight_rejects_each_isolation_or_truth_failure(self) -> None:
+        """开关、peer Channel、commit、dirty、Doctor、旧审批和 case 数均失败关闭。"""
+        api = self._api("_validate_preflight_state")
+        passing_config = self._config(feishu=True)
+        passing_checks = (CheckResult("config", CheckStatus.PASS, "ok"),)
+        passing_cases = tuple(object() for _ in range(15))
+        scenarios = (
+            (self._config(feishu=False), passing_checks, 0, "a" * 40, False, passing_cases,
+             "feishu_channel_disabled"),
+            (self._config(feishu=True, telegram=True), passing_checks, 0, "a" * 40, False,
+             passing_cases, "peer_channel_enabled"),
+            (passing_config, passing_checks, 0, "unknown", False, passing_cases,
+             "repository_commit_unavailable"),
+            (passing_config, passing_checks, 0, "a" * 40, True, passing_cases,
+             "repository_dirty"),
+            (passing_config, (CheckResult("database", CheckStatus.FAIL, "private"),), 0,
+             "a" * 40, False, passing_cases, "doctor_preflight_failed"),
+            (passing_config, passing_checks, 1, "a" * 40, False, passing_cases,
+             "pending_approval_exists"),
+            (passing_config, passing_checks, 0, "a" * 40, False, passing_cases[:-1],
+             "live_case_count_invalid"),
+        )
+        for config, checks, pending, commit, dirty, cases, expected in scenarios:
+            with self.subTest(expected=expected), self.assertRaises(api.FeishuLiveError) as raised:
+                api._validate_preflight_state(
+                    config=config,
+                    checks=checks,
+                    pending_approvals=pending,
+                    commit=commit,
+                    dirty=dirty,
+                    cases=cases,
+                )
+            self.assertEqual(raised.exception.code, expected)
+
+    def test_confirmed_preflight_error_does_not_create_evidence(self) -> None:
+        """静态失败发生在 Gateway 和 mkdir 之前，只向终端输出稳定错误码。"""
+        api = self._api("run_feishu_live_harness")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "evidence"
+            with (
+                patch.object(
+                    api,
+                    "_load_preflight",
+                    side_effect=api.FeishuLiveError("feishu_channel_disabled"),
+                ),
+                patch("sys.stderr") as stderr,
+            ):
+                code = api.run_feishu_live_harness(
+                    ["--confirm-live", "--output-dir", str(output)]
+                )
+        self.assertEqual(code, 2)
+        self.assertFalse(output.exists())
+        rendered = "".join(str(call.args[0]) for call in stderr.write.call_args_list)
+        self.assertIn("feishu_channel_disabled", rendered)
+
+    @staticmethod
+    def _config(*, feishu: bool, telegram: bool = False, discord: bool = False):
+        """构造仅含 Channel 开关的静态配置。"""
+        return SimpleNamespace(
+            channels=SimpleNamespace(
+                feishu=SimpleNamespace(enabled=feishu),
+                telegram=SimpleNamespace(enabled=telegram),
+                discord=SimpleNamespace(enabled=discord),
+            )
+        )
+
+    def _api(self, required: str) -> ModuleType:
+        """导入模块并把缺失入口转换成清晰 RED。"""
+        api = importlib.import_module("miniclaw.evals.feishu_live")
+        if not hasattr(api, required):
+            self.fail(f"Feishu Live harness API is missing: {required}")
+        return api
+
+
+class FeishuCaseOrchestrationTest(unittest.IsolatedAsyncioTestCase):
+    """保证每个场景先 checkpoint、自动证据不可人工覆盖，且总能停止 Gateway。"""
+
+    def setUp(self) -> None:
+        """创建隔离 Workspace 与固定 checkpoint。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.root = Path(self.temporary_directory.name).resolve()
+        self.workspace = self.root / "workspace"
+        self.workspace.mkdir()
+        self.database = self.root / "miniclaw.db"
+
+    async def test_checkpoint_precedes_action_and_local_failure_skips_human_override(self) -> None:
+        """自动失败后不再询问 human pass，避免人工把失败强制改成通过。"""
+        api = self._api("_run_case")
+        events: list[str] = []
+        case = self._case(
+            local=("turn_completed",),
+            human=("reply_visible",),
+        )
+        checkpoint = api.DatabaseCheckpoint(0, 0, 0, 0, 0, 0)
+
+        def capture(_: Path):
+            events.append("checkpoint")
+            return checkpoint
+
+        def answer(_: str) -> str:
+            events.append("action")
+            return ""
+
+        with (
+            patch.object(api, "capture_checkpoint", side_effect=capture),
+            patch.object(
+                api,
+                "_wait_for_local_evidence",
+                new=AsyncMock(
+                    side_effect=lambda **_: (
+                        events.append("evaluate")
+                        or api.EvidenceEvaluation((), ("turn_completed",))
+                    )
+                ),
+            ),
+        ):
+            result = await api._run_case(
+                case=case,
+                database=self.database,
+                workspace=self.workspace,
+                gateway=SimpleNamespace(ready=True),
+                case_timeout=5.0,
+                input_fn=answer,
+                output_fn=lambda _: None,
+            )
+
+        self.assertEqual(events, ["checkpoint", "action", "evaluate"])
+        self.assertEqual(result.status, "fail")
+        self.assertEqual(result.local_failed, ("turn_completed",))
+        self.assertEqual(result.human_statuses, ())
+
+    async def test_local_and_human_pass_produce_pass_while_skip_stays_nonzero(self) -> None:
+        """自动证据通过后才收集 p/f/s，skip 永远保留为 skip。"""
+        api = self._api("_run_case")
+        case = self._case(
+            local=("delivery_sent",),
+            human=("reply_visible",),
+        )
+        checkpoint = api.DatabaseCheckpoint(0, 0, 0, 0, 0, 0)
+        with (
+            patch.object(api, "capture_checkpoint", return_value=checkpoint),
+            patch.object(
+                api,
+                "_wait_for_local_evidence",
+                new=AsyncMock(
+                    return_value=api.EvidenceEvaluation(("delivery_sent",), ())
+                ),
+            ),
+        ):
+            answers = iter(["", "p"])
+            passed = await api._run_case(
+                case=case,
+                database=self.database,
+                workspace=self.workspace,
+                gateway=SimpleNamespace(ready=True),
+                case_timeout=5.0,
+                input_fn=lambda _: next(answers),
+                output_fn=lambda _: None,
+            )
+            skipped = await api._run_case(
+                case=case,
+                database=self.database,
+                workspace=self.workspace,
+                gateway=SimpleNamespace(ready=True),
+                case_timeout=5.0,
+                input_fn=lambda _: "s",
+                output_fn=lambda _: None,
+            )
+
+        self.assertEqual(passed.status, "pass")
+        self.assertEqual(passed.human_statuses, (("reply_visible", "pass"),))
+        self.assertEqual(skipped.status, "skip")
+
+    async def test_gateway_is_stopped_when_case_execution_raises(self) -> None:
+        """任一 case 异常都必须穿过 finally 关闭同一个 Gateway。"""
+        api = self._api("_execute_live_cases")
+        gateway = SimpleNamespace(ready=True, stop=AsyncMock(return_value=0))
+        preflight = SimpleNamespace(
+            project_root=self.root,
+            paths=SimpleNamespace(home=self.root / "home", database=self.database),
+            config=SimpleNamespace(workspace=SimpleNamespace(path=self.workspace)),
+            cases=(self._case(local=("turn_completed",), human=()),),
+        )
+        with (
+            patch.object(api.GatewayProcess, "start", new=AsyncMock(return_value=gateway)),
+            patch.object(
+                api,
+                "_run_case",
+                new=AsyncMock(side_effect=api.FeishuLiveError("case_execution_failed")),
+            ),
+        ):
+            with self.assertRaises(api.FeishuLiveError):
+                await api._execute_live_cases(
+                    preflight,
+                    gateway_timeout=5.0,
+                    case_timeout=5.0,
+                    input_fn=lambda _: "",
+                    output_fn=lambda _: None,
+                )
+        gateway.stop.assert_awaited_once()
+
+    def _case(
+        self,
+        *,
+        local: tuple[str, ...],
+        human: tuple[str, ...],
+        case_id: str = "FEISHU-LIVE-002",
+    ):
+        """构造内部 orchestration 所需的最小严格 case。"""
+        return SimpleNamespace(
+            id=case_id,
+            title="synthetic live case",
+            query="perform synthetic action",
+            turns=(),
+            setup_files=(),
+            expected=SimpleNamespace(
+                live_local_evidence=local,
+                live_human_evidence=human,
+            ),
+        )
+
+    def _api(self, required: str) -> ModuleType:
+        """导入模块并把缺失编排接口转换成清晰 RED。"""
+        api = importlib.import_module("miniclaw.evals.feishu_live")
+        if not hasattr(api, required):
+            self.fail(f"Feishu case orchestration API is missing: {required}")
+        return api
+
+
+class FeishuLiveHarnessIntegrationTest(unittest.TestCase):
+    """保证 15/15 才返回 0，且运行中 repository 变化会降级 Evidence。"""
+
+    def test_verified_run_and_repository_change_have_truthful_exit_codes(self) -> None:
+        """同一组自动结果只有在 HEAD/dirty 不变时才能标为 VERIFIED。"""
+        api = self._api()
+        results = tuple(
+            api.FeishuCaseResult(
+                case_id=f"FEISHU-LIVE-{index:03d}",
+                status="pass",
+                local_passed=("secret_scan_zero" if index == 15 else "gateway_ready",),
+                local_failed=(),
+                human_statuses=(),
+                error_code=None,
+            )
+            for index in range(1, 16)
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            logs = root / "logs"
+            logs.mkdir()
+            preflight = SimpleNamespace(
+                project_root=root,
+                commit="b" * 40,
+                paths=SimpleNamespace(
+                    home=root / "home",
+                    database=root / "miniclaw.db",
+                    logs=logs,
+                ),
+                config=SimpleNamespace(
+                    workspace=SimpleNamespace(path=root / "workspace"),
+                    channels=SimpleNamespace(
+                        feishu=SimpleNamespace(
+                            owner_open_id="ou_synthetic",
+                            allowed_open_ids=("ou_synthetic",),
+                            allowed_chat_ids=("oc_synthetic",),
+                        )
+                    ),
+                ),
+                secrets=SimpleNamespace(
+                    model_api_key="MODEL_SECRET_SENTINEL",
+                    channel_tokens={"feishu": "CHANNEL_SECRET_SENTINEL"},
+                    feishu_app_id="cli_synthetic",
+                ),
+                cases=tuple(SimpleNamespace(query="synthetic", turns=()) for _ in range(15)),
+            )
+            execution = api.LiveExecution(
+                results=results,
+                gateway_ready=True,
+                gateway_graceful_exit=True,
+            )
+            for unchanged, expected_code, expected_release in (
+                (True, 0, "FEISHU_E2E_VERIFIED"),
+                (False, 1, "FEISHU_LIVE_FAILED"),
+            ):
+                output = root / f"evidence-{unchanged}"
+                with (
+                    self.subTest(unchanged=unchanged),
+                    patch.object(api, "_load_preflight", return_value=preflight),
+                    patch.object(
+                        api,
+                        "_execute_live_cases",
+                        new=AsyncMock(return_value=execution),
+                    ),
+                    patch.object(api, "scan_secret_matches", return_value=0),
+                    patch.object(api, "_repository_unchanged", return_value=unchanged),
+                ):
+                    code = api.run_feishu_live_harness(
+                        ["--confirm-live", "--output-dir", str(output)]
+                    )
+                files = list(output.glob("*.json"))
+                self.assertEqual(code, expected_code)
+                self.assertEqual(len(files), 1)
+                report = json.loads(files[0].read_text(encoding="utf-8"))
+                self.assertEqual(report["release_status"], expected_release)
+                if not unchanged:
+                    self.assertEqual(report["checks"][14]["error_code"], "repository_changed")
+
+    def _api(self) -> ModuleType:
+        """导入模块并要求集成编排数据结构存在。"""
+        api = importlib.import_module("miniclaw.evals.feishu_live")
+        for required in ("LiveExecution", "run_feishu_live_harness"):
+            if not hasattr(api, required):
+                self.fail(f"Feishu Live integration API is missing: {required}")
         return api
 
 
