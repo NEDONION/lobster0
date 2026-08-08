@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from miniclaw.channels import sdk_logging
 from miniclaw.channels.approvals import ChannelApprovalController
 from miniclaw.channels.delivery import DeliveryWorker, split_message
 from miniclaw.channels.discord import DiscordTransport
@@ -150,6 +151,7 @@ async def run_gateway(
     except (ConfigError, DotEnvError, GatewayConfigError):
         raise
     _configure_channel_logging()
+    sdk_logging.install_feishu_sdk_log_filter()
     shutdown_event = asyncio.Event()
     force_event = asyncio.Event()
     loop = asyncio.get_running_loop()

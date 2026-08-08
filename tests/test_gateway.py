@@ -5,12 +5,15 @@ import tempfile
 import unittest
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import load_config
 from miniclaw.gateway import (
     GatewayComponents,
     GatewayConfigError,
+    run_gateway,
     run_gateway_components,
     validate_gateway_environment,
 )
@@ -174,6 +177,47 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
                 "transport.disconnect",
                 "runtime.close",
             ],
+        )
+
+    async def test_sdk_filter_is_installed_before_supervisor_creation(self) -> None:
+        """上游 logger 必须在任何 Transport 构造和连接前获得脱敏 Filter。"""
+        events: list[str] = []
+
+        async def create_supervisor(*_args: object, **_kwargs: object) -> object:
+            """记录 Supervisor 创建顺序并返回立即退出的 fake。"""
+            events.append("supervisor.create")
+
+            async def run(**_values: object) -> None:
+                """模拟无网络 Supervisor 生命周期。"""
+                events.append("supervisor.run")
+
+            return SimpleNamespace(run=run)
+
+        with (
+            patch("miniclaw.gateway.load_dotenv"),
+            patch("miniclaw.gateway.load_config", return_value=self.config),
+            patch(
+                "miniclaw.gateway.validate_gateway_environment",
+                return_value=SimpleNamespace(),
+            ),
+            patch(
+                "miniclaw.gateway._configure_channel_logging",
+                side_effect=lambda: events.append("channel.logging"),
+            ),
+            patch(
+                "miniclaw.channels.sdk_logging.install_feishu_sdk_log_filter",
+                side_effect=lambda: events.append("sdk.filter"),
+            ),
+            patch(
+                "miniclaw.gateway.create_gateway_supervisor",
+                side_effect=create_supervisor,
+            ),
+        ):
+            await run_gateway(self.paths, environ={})
+
+        self.assertEqual(
+            events,
+            ["channel.logging", "sdk.filter", "supervisor.create", "supervisor.run"],
         )
 
     async def test_second_signal_cancels_blocked_shutdown_without_process_kill(self) -> None:
