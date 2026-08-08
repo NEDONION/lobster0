@@ -12,8 +12,9 @@ from miniclaw import __version__
 from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError
 from miniclaw.doctor import CheckStatus, run_local_checks
-from miniclaw.env import DotEnvError
+from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.evals.cases import EvalCaseError, load_cases
+from miniclaw.evals.channel import run_channel_suite
 from miniclaw.evals.runner import run_offline_suite
 from miniclaw.gateway import GatewayConfigError, GatewayRuntimeError, run_gateway
 from miniclaw.paths import PathConfigurationError, build_state_paths, resolve_home
@@ -64,7 +65,11 @@ def build_parser() -> argparse.ArgumentParser:
             default=Path.cwd() / "evals" / "scenarios",
             help="directory containing versioned JSONL cases",
         )
-    eval_run.add_argument("--suite", choices=("offline",), required=True)
+    eval_run.add_argument(
+        "--suite",
+        choices=("offline", "channel", "all"),
+        required=True,
+    )
     return parser
 
 
@@ -83,7 +88,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     if arguments.command == "doctor":
-        results = run_local_checks(paths)
+        environment = dict(os.environ)
+        try:
+            load_dotenv(Path.cwd() / ".env", environment)
+        except DotEnvError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        results = run_local_checks(paths, environment)
         for result in results:
             print(f"[{result.status.value.upper()}] {result.name}: {result.message}")
         return 2 if any(result.status is CheckStatus.FAIL for result in results) else 0
@@ -162,20 +173,42 @@ def _run_eval(arguments: argparse.Namespace) -> int:
         print(f"Validated {len(cases)} eval cases.")
         return 0
 
-    active = tuple(
+    offline = tuple(
         case for case in cases if case.status == "active" and "offline" in case.layers
     )
-    if not active:
+    channel = tuple(
+        case for case in cases if case.status == "active" and "channel" in case.layers
+    )
+    if arguments.suite in {"offline", "all"} and not offline:
         print("error: no active offline eval cases", file=sys.stderr)
         return 2
-    suite = asyncio.run(run_offline_suite(active))
-    for result in suite.cases:
-        if result.passed:
-            print(f"PASS {result.case_id} {result.duration_ms}ms")
-        else:
-            print(f"FAIL {result.case_id} {','.join(result.failures)}")
-    print(
-        f"Offline eval: {suite.passed}/{suite.total} passed, "
-        f"{suite.failed} failed ({suite.duration_ms}ms)."
-    )
-    return 1 if suite.failed else 0
+    if arguments.suite in {"channel", "all"} and not channel:
+        print("error: no active channel eval cases", file=sys.stderr)
+        return 2
+
+    failed = 0
+    if arguments.suite in {"offline", "all"}:
+        suite = asyncio.run(run_offline_suite(offline))
+        for result in suite.cases:
+            if result.passed:
+                print(f"PASS {result.case_id} {result.duration_ms}ms")
+            else:
+                print(f"FAIL {result.case_id} {','.join(result.failures)}")
+        print(
+            f"Offline eval: {suite.passed}/{suite.total} passed, "
+            f"{suite.failed} failed ({suite.duration_ms}ms)."
+        )
+        failed += suite.failed
+    if arguments.suite in {"channel", "all"}:
+        channel_suite = asyncio.run(run_channel_suite(channel))
+        for result in channel_suite.cases:
+            if result.passed:
+                print(f"PASS {result.case_id} {result.duration_ms}ms")
+            else:
+                print(f"FAIL {result.case_id} {','.join(result.failures)}")
+        print(
+            f"Channel eval: {channel_suite.passed}/{channel_suite.total} passed, "
+            f"{channel_suite.failed} failed ({channel_suite.duration_ms}ms)."
+        )
+        failed += channel_suite.failed
+    return 1 if failed else 0

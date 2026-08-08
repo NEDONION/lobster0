@@ -149,6 +149,40 @@ class CliTest(unittest.TestCase):
         self.assertIn("[FAIL] config", output)
         self.assertEqual(error, "")
 
+    def test_doctor_loads_private_dotenv_for_feishu_runtime_check(self) -> None:
+        """doctor 应与 gateway 一样读取当前目录的私密 .env，但不回显值。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state"
+            run_cli(["init", "--home", str(state)])
+            with (state / "config.toml").open("a", encoding="utf-8") as config_file:
+                config_file.write(
+                    "\n[channels.feishu]\n"
+                    "enabled = true\n"
+                    'owner_open_id = "ou_owner"\n'
+                    'allowed_open_ids = ["ou_owner"]\n'
+                )
+            secret = "doctor-dotenv-secret"
+            dotenv = root / ".env"
+            dotenv.write_text(
+                "MINICLAW_FEISHU_APP_ID=cli_test\n"
+                f"MINICLAW_FEISHU_APP_SECRET={secret}\n",
+                encoding="utf-8",
+            )
+            dotenv.chmod(0o600)
+
+            with (
+                mock.patch("miniclaw.cli.Path.cwd", return_value=root),
+                mock.patch.dict("miniclaw.cli.os.environ", {}, clear=True),
+            ):
+                exit_code, output, error = run_cli(
+                    ["doctor", "--home", str(state)]
+                )
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("missing environment", output)
+        self.assertNotIn(secret, output + error)
+
     def test_gateway_command_uses_selected_home_and_stable_exit_codes(self) -> None:
         """gateway 不要求 TTY，并把配置错误映射为 2。"""
         async def successful(paths):

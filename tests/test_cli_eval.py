@@ -36,7 +36,7 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((code, error), (0, ""))
         lines = output.splitlines()
-        self.assertEqual(len(lines), 24)
+        self.assertEqual(len(lines), 36)
         self.assertTrue(lines[0].startswith("CORE-001 active core "))
         self.assertTrue(any(line.startswith("PROTO-001 active provider ") for line in lines))
 
@@ -48,7 +48,7 @@ class CliEvalTest(unittest.TestCase):
                 ["eval", "validate", "--root", str(SCENARIO_ROOT)]
             )
 
-        self.assertEqual((code, output, error), (0, "Validated 24 eval cases.\n", ""))
+        self.assertEqual((code, output, error), (0, "Validated 36 eval cases.\n", ""))
         self.assertFalse(missing_home.exists())
 
     def test_run_offline_prints_pass_rows_and_summary(self) -> None:
@@ -83,6 +83,22 @@ class CliEvalTest(unittest.TestCase):
         self.assertEqual((code, error), (1, ""))
         self.assertIn("FAIL CORE-001 answer_missing", output)
         self.assertNotIn("NEVER_PRESENT", output)
+
+    def test_run_channel_and_all_print_independent_gate_summaries(self) -> None:
+        """Channel 12-case gate 可单跑，all 必须同时报告 Agent 与 Channel。"""
+        channel_code, channel_output, channel_error = run_cli(
+            ["eval", "run", "--suite", "channel", "--root", str(SCENARIO_ROOT)]
+        )
+        all_code, all_output, all_error = run_cli(
+            ["eval", "run", "--suite", "all", "--root", str(SCENARIO_ROOT)]
+        )
+
+        self.assertEqual((channel_code, channel_error), (0, ""))
+        self.assertIn("PASS FEISHU-DM-001", channel_output)
+        self.assertIn("Channel eval: 12/12 passed, 0 failed", channel_output)
+        self.assertEqual((all_code, all_error), (0, ""))
+        self.assertIn("Offline eval: 24/24 passed, 0 failed", all_output)
+        self.assertIn("Channel eval: 12/12 passed, 0 failed", all_output)
 
     def test_invalid_root_returns_configuration_exit_two(self) -> None:
         """无效场景目录必须给稳定错误和退出码 2。"""

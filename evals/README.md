@@ -1,6 +1,7 @@
 # MiniClaw Agent 回归场景集
 
 Active offline gate: 24 cases
+Active channel gate: 12 cases
 
 这里保存随代码版本化的 Claw-like 使用场景。它回答两个问题：
 
@@ -23,8 +24,9 @@ Active offline gate: 24 cases
 | HTTPS / SSRF | `HTTP-APPROVAL-001`、`HTTP-PRIVATE-001` |
 | Memory | `MEMORY-READ-001`、`MEMORY-PROPOSE-001` |
 | Skills | `SKILL-ACTIVATE-001` |
+| 飞书 Channel | `FEISHU-DM-001`、`FEISHU-GROUP-001/002`、`FEISHU-DEDUPE-001`、`FEISHU-TOOL-001`、`FEISHU-APPROVAL-001/002`、`FEISHU-RESTART-001/002`、`FEISHU-DELIVERY-001`、`FEISHU-CARD-001`、`FEISHU-RECONNECT-001` |
 
-所有 active offline case 必须 100% PASS。任何 skipped 都按失败处理。
+所有 active offline 与 channel case 必须分别 100% PASS。任何 skipped 都按失败处理。
 
 ## 常用命令
 
@@ -32,6 +34,8 @@ Active offline gate: 24 cases
 uv run miniclaw eval list --root evals/scenarios
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run miniclaw eval run --suite all --root evals/scenarios
 ```
 
 在 `miniclaw eval` 完成前，可以先运行契约测试：
@@ -57,6 +61,17 @@ flowchart LR
 
 `offline.responses` 只是模型边界的固定输出；Agent Loop、Policy、Tool 和 SQLite 都走生产实现。因此测试既
 不访问真实模型，也不会绕过最需要防回归的核心链路。
+
+`channel.fixture` 是固定枚举，不是可执行代码。Channel runner 会分别走 Adapter、Inbox、Manager、
+Delivery、Approval Controller、Workspace Tool 和 Transport 生命周期的有限纵切，并将实际得到的
+`channel_evidence` 与 JSONL 精确比较。它不读取 `.env`、不连接飞书，也不依赖个人账号。
+
+真实飞书验收单独使用人工驱动脚本。脚本不会主动向任何联系人发消息，只有显式确认后才会提示测试者
+逐条操作，并把脱敏计数保存到 Git 已忽略的 `.local/eval-results/feishu/`：
+
+```bash
+uv run python scripts/feishu_live_smoke.py --confirm-live
+```
 
 Phase 2 场景还可使用 `approval_actions` 的 `approve / deny / tamper / replay`，以及 `expected` 中的
 `approval_statuses / files / absent_files / error_code`。Runner 会走真实 waiting Turn、ApprovalRepository、child
