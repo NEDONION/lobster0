@@ -38,7 +38,17 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("# [channels.feishu]", template)
         self.assertIn('# app_id_env = "MINICLAW_FEISHU_APP_ID"', template)
         self.assertIn('# app_secret_env = "MINICLAW_FEISHU_APP_SECRET"', template)
+        self.assertIn("# [channels.telegram]", template)
+        self.assertIn('# bot_token_env = "MINICLAW_TELEGRAM_BOT_TOKEN"', template)
+        self.assertIn("# owner_user_id = 0", template)
+        self.assertIn("# [channels.discord]", template)
+        self.assertIn('# bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"', template)
         self.assertNotIn("cli_", template)
+        env_example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("MINICLAW_TELEGRAM_BOT_TOKEN=\n", env_example)
+        self.assertIn("MINICLAW_DISCORD_BOT_TOKEN=\n", env_example)
         self.assertEqual(
             set(result.created_files),
             {

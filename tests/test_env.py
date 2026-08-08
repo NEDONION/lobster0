@@ -104,6 +104,20 @@ class DotEnvTest(unittest.TestCase):
         with self.assertRaisesRegex(DotEnvError, "private"):
             load_dotenv(path, {})
 
+    def test_symbolic_link_file_is_rejected_before_reading_credentials(self) -> None:
+        """即使目标为 0600 regular file，也不能通过 symlink 重定向凭据读取。"""
+        target = self.root / "secrets.env"
+        target.write_text("MINICLAW_MODEL_API_KEY=never-load\n", encoding="utf-8")
+        target.chmod(0o600)
+        link = self.root / ".env"
+        link.symlink_to(target)
+        environ: dict[str, str] = {}
+
+        with self.assertRaisesRegex(DotEnvError, "private regular"):
+            load_dotenv(link, environ)
+
+        self.assertEqual(environ, {})
+
 
 if __name__ == "__main__":
     unittest.main()

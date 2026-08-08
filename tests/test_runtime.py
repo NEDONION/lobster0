@@ -16,21 +16,32 @@ from miniclaw.runtime import create_channel_manager, create_runtime
 class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
     """验证 CLI/TUI 共用同一套 Owner、Service 和 Tool Registry。"""
 
-    async def test_feishu_sdk_is_optional(self) -> None:
-        """核心 Runtime 不应强制导入飞书 SDK，但项目应提供受控 optional extra。"""
+    async def test_channel_sdks_are_optional(self) -> None:
+        """核心 Runtime 不应导入三套 Channel SDK，但应提供精确 optional extras。"""
         project_root = Path(__file__).resolve().parents[1]
         with (project_root / "pyproject.toml").open("rb") as project_file:
             project = tomllib.load(project_file)
 
         extras = project["project"]["optional-dependencies"]
         self.assertEqual(extras["feishu"], ["lark-channel-sdk>=1.2,<2"])
+        self.assertEqual(extras["telegram"], ["python-telegram-bot>=21,<23"])
+        self.assertEqual(extras["discord"], ["discord.py>=2.4,<3"])
+        self.assertEqual(
+            extras["channels"],
+            [
+                "lark-channel-sdk>=1.2,<2",
+                "python-telegram-bot>=21,<23",
+                "discord.py>=2.4,<3",
+            ],
+        )
 
         imported = subprocess.run(
             [
                 sys.executable,
                 "-c",
                 "import sys; import miniclaw.runtime; "
-                "raise SystemExit('lark_channel' in sys.modules)",
+                "raise SystemExit(any(name in sys.modules "
+                "for name in ('lark_channel', 'telegram', 'discord')))",
             ],
             cwd=project_root,
             check=False,

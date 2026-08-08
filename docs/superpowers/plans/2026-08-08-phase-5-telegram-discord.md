@@ -65,8 +65,8 @@
 
 ### Step 1.1 — Write RED configuration contracts
 
-- [ ] 在 `tests/test_config.py` 新增 Telegram/Discord 完整加载、disabled defaults、未知 key、bool-as-int、重复 ID、上下界和组合关系测试。
-- [ ] 测试以下类型必须存在且冻结：
+- [x] 在 `tests/test_config.py` 新增 Telegram/Discord 完整加载、disabled defaults、未知 key、bool-as-int、重复 ID、上下界和组合关系测试。
+- [x] 测试以下类型必须存在且冻结：
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -101,13 +101,13 @@ class DiscordConfig:
     typing_renew_interval: float = 8.0
 ```
 
-- [ ] Telegram user ID 必须是正整数；chat ID 接受非零 signed 64-bit，拒绝 bool、0 和越界值。
-- [ ] Discord snowflake 必须在 `1..2**64-1`；拒绝 bool、0、负数和越界值。
-- [ ] enabled 时 Owner 非零且必须在 allowed user list 中。
-- [ ] Telegram 开启群 mention 时 `allowed_chat_ids` 非空；Discord 开启 Guild mention 时 Guild 与 Channel allowlist 都非空。
-- [ ] `queue_size=1..1024`、`worker_count=1..8`、Telegram chars `1000..4096`、Discord chars `1000..2000`、interval `0.1..30.0`。
-- [ ] `AppConfig` 和 `repr(config)` 只包含 Token 环境变量名，不包含环境变量值。
-- [ ] Gateway 继续要求 `.env` 是 owner-only regular file；symlink、group/world-readable 文件在读取 Token 前失败。
+- [x] Telegram user ID 必须是正整数；chat ID 接受非零 signed 64-bit，拒绝 bool、0 和越界值。
+- [x] Discord snowflake 必须在 `1..2**64-1`；拒绝 bool、0、负数和越界值。
+- [x] enabled 时 Owner 非零且必须在 allowed user list 中。
+- [x] Telegram 开启群 mention 时 `allowed_chat_ids` 非空；Discord 开启 Guild mention 时 Guild 与 Channel allowlist 都非空。
+- [x] `queue_size=1..1024`、`worker_count=1..8`、Telegram chars `1000..4096`、Discord chars `1000..2000`、interval `0.1..30.0`。
+- [x] `AppConfig` 和 `repr(config)` 只包含 Token 环境变量名，不包含环境变量值。
+- [x] Gateway 继续要求 `.env` 是 owner-only regular file；symlink、group/world-readable 文件在读取 Token 前失败。
 
 Run RED:
 
@@ -121,10 +121,10 @@ Expected RED: `ChannelConfig` 没有 `telegram`/`discord`，`channels.telegram` 
 
 ### Step 1.2 — Implement strict parsing
 
-- [ ] 将 `_CHANNELS_KEYS` 扩展为 `feishu/telegram/discord`，分别定义 allowlist key set。
-- [ ] 新增 `_platform_integer_list`、`_signed_platform_id`、`_snowflake`、`_bounded_number` helpers；所有 helper 显式排除 `bool`。
-- [ ] `ChannelConfig` 同时持有三个 typed config；保持 Feishu 默认值不变。
-- [ ] validation 先做单字段，再做关系校验，错误信息只包含配置路径和规则，不回显 ID list。
+- [x] 将 `_CHANNELS_KEYS` 扩展为 `feishu/telegram/discord`，分别定义 allowlist key set。
+- [x] 新增 `_platform_integer_list`、signed chat ID、snowflake 与 `_bounded_number` helpers；所有 helper 显式排除 `bool`。
+- [x] `ChannelConfig` 同时持有三个 typed config；保持 Feishu 默认值不变。
+- [x] validation 先做单字段，再做关系校验，错误信息只包含配置路径和规则，不回显 ID list。
 
 目标装配：
 
@@ -138,13 +138,13 @@ channels=ChannelConfig(
 
 ### Step 1.3 — Add safe bootstrap and environment examples
 
-- [ ] `config.toml` bootstrap template 增加两个注释 section，默认 disabled、Owner 为 0、allowlist 为空。
-- [ ] `.env.example` 只增加空的 `MINICLAW_TELEGRAM_BOT_TOKEN=` 与 `MINICLAW_DISCORD_BOT_TOKEN=`，不写示例 Token。
-- [ ] 新增测试保证 bootstrap 结果不包含形似 Telegram bot token 或 Discord token 的值。
+- [x] `config.toml` bootstrap template 增加两个注释 section，默认 disabled、Owner 为 0、allowlist 为空。
+- [x] `.env.example` 只增加空的 `MINICLAW_TELEGRAM_BOT_TOKEN=` 与 `MINICLAW_DISCORD_BOT_TOKEN=`，不写示例 Token。
+- [x] 新增测试保证 bootstrap 结果不包含形似 Telegram bot token 或 Discord token 的值。
 
 ### Step 1.4 — Add optional extras and lazy-import tests
 
-- [ ] `pyproject.toml` 增加：
+- [x] `pyproject.toml` 增加：
 
 ```toml
 telegram = ["python-telegram-bot>=21,<23"]
@@ -156,8 +156,8 @@ channels = [
 ]
 ```
 
-- [ ] 普通 `import miniclaw.runtime`、TUI 和只启用飞书时不得在 `sys.modules` 中加载 `telegram`/`discord`。
-- [ ] 更新 lock，安装 dev + channels 以便本地跑全量，但 runtime 代码继续 lazy import。
+- [x] 普通 `import miniclaw.runtime`、TUI 和只启用飞书时不得在 `sys.modules` 中加载 `telegram`/`discord`。
+- [x] 更新 lock，安装 dev + channels 以便本地跑全量，但 runtime 代码继续 lazy import。
 
 Run GREEN:
 

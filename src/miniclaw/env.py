@@ -30,7 +30,7 @@ def load_dotenv(
         DotEnvError: 文件不私密、无法读取、编码错误或任一行格式无效。
     """
     try:
-        mode = path.stat().st_mode
+        mode = path.lstat().st_mode
     except FileNotFoundError:
         return ()
     except OSError as error:

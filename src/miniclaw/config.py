@@ -5,6 +5,7 @@ import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass
+from math import isfinite
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
@@ -42,7 +43,7 @@ _RUN_COMMAND_KEYS = frozenset(
 )
 _HTTP_GET_KEYS = frozenset({"allow_hosts", "timeout_seconds", "max_response_bytes"})
 _UI_KEYS = frozenset({"language"})
-_CHANNELS_KEYS = frozenset({"feishu"})
+_CHANNELS_KEYS = frozenset({"feishu", "telegram", "discord"})
 _FEISHU_KEYS = frozenset(
     {
         "enabled",
@@ -58,6 +59,38 @@ _FEISHU_KEYS = frozenset(
         "worker_count",
         "message_max_chars",
         "streaming_card",
+    }
+)
+_TELEGRAM_KEYS = frozenset(
+    {
+        "enabled",
+        "account_id",
+        "bot_token_env",
+        "owner_user_id",
+        "allowed_user_ids",
+        "allowed_chat_ids",
+        "allow_group_mentions",
+        "queue_size",
+        "worker_count",
+        "message_max_chars",
+        "progress_update_interval",
+    }
+)
+_DISCORD_KEYS = frozenset(
+    {
+        "enabled",
+        "account_id",
+        "bot_token_env",
+        "owner_user_id",
+        "allowed_user_ids",
+        "allowed_guild_ids",
+        "allowed_channel_ids",
+        "allow_guild_mentions",
+        "queue_size",
+        "worker_count",
+        "message_max_chars",
+        "progress_update_interval",
+        "typing_renew_interval",
     }
 )
 _OVERRIDE_KEYS = frozenset({"model", "base_url", "api_key_env", "workspace"})
@@ -163,10 +196,48 @@ class FeishuConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class TelegramConfig:
+    """保存 Telegram Bot 的非秘密配置、白名单与本地预算。"""
+
+    enabled: bool = False
+    account_id: str = "default"
+    bot_token_env: str = "MINICLAW_TELEGRAM_BOT_TOKEN"
+    owner_user_id: int = 0
+    allowed_user_ids: tuple[int, ...] = ()
+    allowed_chat_ids: tuple[int, ...] = ()
+    allow_group_mentions: bool = False
+    queue_size: int = 64
+    worker_count: int = 2
+    message_max_chars: int = 4096
+    progress_update_interval: float = 0.8
+
+
+@dataclass(frozen=True, slots=True)
+class DiscordConfig:
+    """保存 Discord Bot 的非秘密配置、白名单与体验预算。"""
+
+    enabled: bool = False
+    account_id: str = "default"
+    bot_token_env: str = "MINICLAW_DISCORD_BOT_TOKEN"
+    owner_user_id: int = 0
+    allowed_user_ids: tuple[int, ...] = ()
+    allowed_guild_ids: tuple[int, ...] = ()
+    allowed_channel_ids: tuple[int, ...] = ()
+    allow_guild_mentions: bool = False
+    queue_size: int = 64
+    worker_count: int = 2
+    message_max_chars: int = 2000
+    progress_update_interval: float = 1.0
+    typing_renew_interval: float = 8.0
+
+
+@dataclass(frozen=True, slots=True)
 class ChannelConfig:
     """汇总当前实例启用的 IM Channel 配置。"""
 
     feishu: FeishuConfig = FeishuConfig()
+    telegram: TelegramConfig = TelegramConfig()
+    discord: DiscordConfig = DiscordConfig()
 
 
 @dataclass(frozen=True, slots=True)
@@ -213,6 +284,18 @@ def load_config(
         channels_raw,
         "feishu",
         _FEISHU_KEYS,
+        parent="channels",
+    )
+    telegram_raw = _section(
+        channels_raw,
+        "telegram",
+        _TELEGRAM_KEYS,
+        parent="channels",
+    )
+    discord_raw = _section(
+        channels_raw,
+        "discord",
+        _DISCORD_KEYS,
         parent="channels",
     )
     run_command_raw = _section(
@@ -374,6 +457,148 @@ def load_config(
         allowed_chat_ids=feishu_allowed_chat_ids,
         allow_group_mentions=feishu_allow_group_mentions,
     )
+    telegram_enabled = _boolean(
+        telegram_raw.get("enabled", False),
+        "channels.telegram.enabled",
+    )
+    telegram_account_id = _account_id(
+        telegram_raw.get("account_id", "default"),
+        "channels.telegram.account_id",
+    )
+    telegram_bot_token_env = _environment_variable_name(
+        telegram_raw.get("bot_token_env", "MINICLAW_TELEGRAM_BOT_TOKEN"),
+        "channels.telegram.bot_token_env",
+    )
+    telegram_owner_user_id = _platform_integer(
+        telegram_raw.get("owner_user_id", 0),
+        "channels.telegram.owner_user_id",
+        minimum=0 if not telegram_enabled else 1,
+        maximum=2**63 - 1,
+    )
+    telegram_allowed_user_ids = _platform_integer_list(
+        telegram_raw.get("allowed_user_ids", []),
+        "channels.telegram.allowed_user_ids",
+        minimum=1,
+        maximum=2**63 - 1,
+    )
+    telegram_allowed_chat_ids = _signed_platform_integer_list(
+        telegram_raw.get("allowed_chat_ids", []),
+        "channels.telegram.allowed_chat_ids",
+    )
+    telegram_allow_group_mentions = _boolean(
+        telegram_raw.get("allow_group_mentions", False),
+        "channels.telegram.allow_group_mentions",
+    )
+    telegram_queue_size = _bounded_integer(
+        telegram_raw.get("queue_size", 64),
+        "channels.telegram.queue_size",
+        minimum=1,
+        maximum=1024,
+    )
+    telegram_worker_count = _bounded_integer(
+        telegram_raw.get("worker_count", 2),
+        "channels.telegram.worker_count",
+        minimum=1,
+        maximum=8,
+    )
+    telegram_message_max_chars = _bounded_integer(
+        telegram_raw.get("message_max_chars", 4096),
+        "channels.telegram.message_max_chars",
+        minimum=1000,
+        maximum=4096,
+    )
+    telegram_progress_update_interval = _bounded_number(
+        telegram_raw.get("progress_update_interval", 0.8),
+        "channels.telegram.progress_update_interval",
+        minimum=0.1,
+        maximum=30.0,
+    )
+    _validate_telegram_relationships(
+        enabled=telegram_enabled,
+        owner_user_id=telegram_owner_user_id,
+        allowed_user_ids=telegram_allowed_user_ids,
+        allowed_chat_ids=telegram_allowed_chat_ids,
+        allow_group_mentions=telegram_allow_group_mentions,
+    )
+
+    discord_enabled = _boolean(
+        discord_raw.get("enabled", False),
+        "channels.discord.enabled",
+    )
+    discord_account_id = _account_id(
+        discord_raw.get("account_id", "default"),
+        "channels.discord.account_id",
+    )
+    discord_bot_token_env = _environment_variable_name(
+        discord_raw.get("bot_token_env", "MINICLAW_DISCORD_BOT_TOKEN"),
+        "channels.discord.bot_token_env",
+    )
+    discord_owner_user_id = _platform_integer(
+        discord_raw.get("owner_user_id", 0),
+        "channels.discord.owner_user_id",
+        minimum=0 if not discord_enabled else 1,
+        maximum=2**64 - 1,
+    )
+    discord_allowed_user_ids = _platform_integer_list(
+        discord_raw.get("allowed_user_ids", []),
+        "channels.discord.allowed_user_ids",
+        minimum=1,
+        maximum=2**64 - 1,
+    )
+    discord_allowed_guild_ids = _platform_integer_list(
+        discord_raw.get("allowed_guild_ids", []),
+        "channels.discord.allowed_guild_ids",
+        minimum=1,
+        maximum=2**64 - 1,
+    )
+    discord_allowed_channel_ids = _platform_integer_list(
+        discord_raw.get("allowed_channel_ids", []),
+        "channels.discord.allowed_channel_ids",
+        minimum=1,
+        maximum=2**64 - 1,
+    )
+    discord_allow_guild_mentions = _boolean(
+        discord_raw.get("allow_guild_mentions", False),
+        "channels.discord.allow_guild_mentions",
+    )
+    discord_queue_size = _bounded_integer(
+        discord_raw.get("queue_size", 64),
+        "channels.discord.queue_size",
+        minimum=1,
+        maximum=1024,
+    )
+    discord_worker_count = _bounded_integer(
+        discord_raw.get("worker_count", 2),
+        "channels.discord.worker_count",
+        minimum=1,
+        maximum=8,
+    )
+    discord_message_max_chars = _bounded_integer(
+        discord_raw.get("message_max_chars", 2000),
+        "channels.discord.message_max_chars",
+        minimum=1000,
+        maximum=2000,
+    )
+    discord_progress_update_interval = _bounded_number(
+        discord_raw.get("progress_update_interval", 1.0),
+        "channels.discord.progress_update_interval",
+        minimum=0.1,
+        maximum=30.0,
+    )
+    discord_typing_renew_interval = _bounded_number(
+        discord_raw.get("typing_renew_interval", 8.0),
+        "channels.discord.typing_renew_interval",
+        minimum=0.1,
+        maximum=30.0,
+    )
+    _validate_discord_relationships(
+        enabled=discord_enabled,
+        owner_user_id=discord_owner_user_id,
+        allowed_user_ids=discord_allowed_user_ids,
+        allowed_guild_ids=discord_allowed_guild_ids,
+        allowed_channel_ids=discord_allowed_channel_ids,
+        allow_guild_mentions=discord_allow_guild_mentions,
+    )
 
     model = _environment_string(source, "MINICLAW_MODEL_NAME", model)
     max_tool_iterations = _environment_integer(
@@ -450,7 +675,35 @@ def load_config(
                 worker_count=feishu_worker_count,
                 message_max_chars=feishu_message_max_chars,
                 streaming_card=feishu_streaming_card,
-            )
+            ),
+            telegram=TelegramConfig(
+                enabled=telegram_enabled,
+                account_id=telegram_account_id,
+                bot_token_env=telegram_bot_token_env,
+                owner_user_id=telegram_owner_user_id,
+                allowed_user_ids=telegram_allowed_user_ids,
+                allowed_chat_ids=telegram_allowed_chat_ids,
+                allow_group_mentions=telegram_allow_group_mentions,
+                queue_size=telegram_queue_size,
+                worker_count=telegram_worker_count,
+                message_max_chars=telegram_message_max_chars,
+                progress_update_interval=telegram_progress_update_interval,
+            ),
+            discord=DiscordConfig(
+                enabled=discord_enabled,
+                account_id=discord_account_id,
+                bot_token_env=discord_bot_token_env,
+                owner_user_id=discord_owner_user_id,
+                allowed_user_ids=discord_allowed_user_ids,
+                allowed_guild_ids=discord_allowed_guild_ids,
+                allowed_channel_ids=discord_allowed_channel_ids,
+                allow_guild_mentions=discord_allow_guild_mentions,
+                queue_size=discord_queue_size,
+                worker_count=discord_worker_count,
+                message_max_chars=discord_message_max_chars,
+                progress_update_interval=discord_progress_update_interval,
+                typing_renew_interval=discord_typing_renew_interval,
+            ),
         ),
     )
 
@@ -533,6 +786,22 @@ def _bounded_integer(
     return value
 
 
+def _bounded_number(
+    value: object,
+    name: str,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    """校验有限浮点预算，并显式排除布尔值和非有限数。"""
+    if type(value) not in {int, float}:
+        raise ConfigError(f"{name} must be between {minimum} and {maximum}")
+    number = float(value)
+    if not isfinite(number) or number < minimum or number > maximum:
+        raise ConfigError(f"{name} must be between {minimum} and {maximum}")
+    return number
+
+
 def _boolean(value: object, name: str) -> bool:
     """严格接受 TOML 布尔值，拒绝整数等 Python 真值。"""
     if type(value) is not bool:
@@ -604,6 +873,51 @@ def _platform_id_list(
     return identifiers
 
 
+def _platform_integer(
+    value: object,
+    name: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int:
+    """校验一个严格整数平台 ID，避免 bool 冒充 ID。"""
+    if type(value) is not int or value < minimum or value > maximum:
+        raise ConfigError(f"{name} must be an integer between {minimum} and {maximum}")
+    return value
+
+
+def _platform_integer_list(
+    value: object,
+    name: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> tuple[int, ...]:
+    """校验唯一、顺序稳定且有界的平台整数 ID 列表。"""
+    if not isinstance(value, list):
+        raise ConfigError(f"{name} must be a list of platform identifiers")
+    identifiers = tuple(
+        _platform_integer(item, name, minimum=minimum, maximum=maximum)
+        for item in value
+    )
+    if len(set(identifiers)) != len(identifiers):
+        raise ConfigError(f"{name} must not contain duplicates")
+    return identifiers
+
+
+def _signed_platform_integer_list(value: object, name: str) -> tuple[int, ...]:
+    """校验 Telegram 可为负数、但不能为零的 signed 64-bit chat ID。"""
+    identifiers = _platform_integer_list(
+        value,
+        name,
+        minimum=-(2**63),
+        maximum=2**63 - 1,
+    )
+    if 0 in identifiers:
+        raise ConfigError(f"{name} must not contain zero")
+    return identifiers
+
+
 def _validate_feishu_relationships(
     *,
     enabled: bool,
@@ -625,6 +939,55 @@ def _validate_feishu_relationships(
     if allow_group_mentions and not allowed_chat_ids:
         raise ConfigError(
             "channels.feishu.allowed_chat_ids is required when group mentions are enabled"
+        )
+
+
+def _validate_telegram_relationships(
+    *,
+    enabled: bool,
+    owner_user_id: int,
+    allowed_user_ids: tuple[int, ...],
+    allowed_chat_ids: tuple[int, ...],
+    allow_group_mentions: bool,
+) -> None:
+    """校验 Telegram 开关、Owner 和群聊 allowlist 的组合关系。"""
+    if not enabled:
+        return
+    if owner_user_id not in allowed_user_ids:
+        raise ConfigError(
+            "channels.telegram.owner_user_id must be present in "
+            "channels.telegram.allowed_user_ids"
+        )
+    if allow_group_mentions and not allowed_chat_ids:
+        raise ConfigError(
+            "channels.telegram.allowed_chat_ids is required when group mentions are enabled"
+        )
+
+
+def _validate_discord_relationships(
+    *,
+    enabled: bool,
+    owner_user_id: int,
+    allowed_user_ids: tuple[int, ...],
+    allowed_guild_ids: tuple[int, ...],
+    allowed_channel_ids: tuple[int, ...],
+    allow_guild_mentions: bool,
+) -> None:
+    """校验 Discord Owner、Guild 和 Channel allowlist 的组合关系。"""
+    if not enabled:
+        return
+    if owner_user_id not in allowed_user_ids:
+        raise ConfigError(
+            "channels.discord.owner_user_id must be present in "
+            "channels.discord.allowed_user_ids"
+        )
+    if allow_guild_mentions and not allowed_guild_ids:
+        raise ConfigError(
+            "channels.discord.allowed_guild_ids is required when guild mentions are enabled"
+        )
+    if allow_guild_mentions and not allowed_channel_ids:
+        raise ConfigError(
+            "channels.discord.allowed_channel_ids is required when guild mentions are enabled"
         )
 
 

@@ -131,4 +131,30 @@ def _render_default_config(paths: StatePaths) -> str:
         "# worker_count = 2\n"
         "# message_max_chars = 30000\n"
         "# streaming_card = true\n"
+        "\n# [channels.telegram]\n"
+        "# enabled = false\n"
+        '# account_id = "default"\n'
+        '# bot_token_env = "MINICLAW_TELEGRAM_BOT_TOKEN"\n'
+        "# owner_user_id = 0\n"
+        "# allowed_user_ids = []\n"
+        "# allowed_chat_ids = []\n"
+        "# allow_group_mentions = false\n"
+        "# queue_size = 64\n"
+        "# worker_count = 2\n"
+        "# message_max_chars = 4096\n"
+        "# progress_update_interval = 0.8\n"
+        "\n# [channels.discord]\n"
+        "# enabled = false\n"
+        '# account_id = "default"\n'
+        '# bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"\n'
+        "# owner_user_id = 0\n"
+        "# allowed_user_ids = []\n"
+        "# allowed_guild_ids = []\n"
+        "# allowed_channel_ids = []\n"
+        "# allow_guild_mentions = false\n"
+        "# queue_size = 64\n"
+        "# worker_count = 2\n"
+        "# message_max_chars = 2000\n"
+        "# progress_update_interval = 1.0\n"
+        "# typing_renew_interval = 8.0\n"
     )

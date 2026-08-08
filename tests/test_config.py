@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 
 from miniclaw.config import ConfigError, load_config
@@ -54,6 +55,12 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.tools.run_command.timeout_seconds, 30)
         self.assertEqual(config.tools.http_get.max_response_bytes, 2 * 1024 * 1024)
         self.assertFalse(config.channels.feishu.enabled)
+        self.assertFalse(config.channels.telegram.enabled)
+        self.assertEqual(config.channels.telegram.bot_token_env, "MINICLAW_TELEGRAM_BOT_TOKEN")
+        self.assertEqual(config.channels.telegram.message_max_chars, 4096)
+        self.assertFalse(config.channels.discord.enabled)
+        self.assertEqual(config.channels.discord.bot_token_env, "MINICLAW_DISCORD_BOT_TOKEN")
+        self.assertEqual(config.channels.discord.message_max_chars, 2000)
         self.assertEqual(config.channels.feishu.account_id, "default")
         self.assertEqual(config.channels.feishu.owner_open_id, "")
         self.assertEqual(
@@ -316,6 +323,188 @@ class ConfigTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ConfigError, "workspace.read_only_roots"):
             load_config(self.paths, {}, {})
+
+
+class TelegramConfigTest(unittest.TestCase):
+    """验证 Telegram numeric identity、群聊关系和资源预算。"""
+
+    def setUp(self) -> None:
+        """为每条配置建立独立状态路径。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+
+    def test_complete_section_loads_typed_values_without_token(self) -> None:
+        """合法配置只保存 Token 变量名，并生成冻结的 typed config。"""
+        self.paths.config.write_text(
+            "[channels.telegram]\n"
+            "enabled = true\n"
+            'account_id = "personal"\n'
+            'bot_token_env = "MY_TELEGRAM_TOKEN"\n'
+            "owner_user_id = 123456\n"
+            "allowed_user_ids = [123456, 654321]\n"
+            "allowed_chat_ids = [-1001234567890, 123456]\n"
+            "allow_group_mentions = true\n"
+            "queue_size = 32\n"
+            "worker_count = 3\n"
+            "message_max_chars = 4000\n"
+            "progress_update_interval = 1.25\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(
+            self.paths,
+            {"MY_TELEGRAM_TOKEN": "123456:secret-must-stay-outside-config"},
+            {},
+        )
+
+        telegram = config.channels.telegram
+        self.assertTrue(telegram.enabled)
+        self.assertEqual(telegram.account_id, "personal")
+        self.assertEqual(telegram.bot_token_env, "MY_TELEGRAM_TOKEN")
+        self.assertEqual(telegram.owner_user_id, 123456)
+        self.assertEqual(telegram.allowed_user_ids, (123456, 654321))
+        self.assertEqual(telegram.allowed_chat_ids, (-1001234567890, 123456))
+        self.assertTrue(telegram.allow_group_mentions)
+        self.assertEqual((telegram.queue_size, telegram.worker_count), (32, 3))
+        self.assertEqual(telegram.message_max_chars, 4000)
+        self.assertEqual(telegram.progress_update_interval, 1.25)
+        self.assertNotIn("secret-must-stay-outside-config", repr(config))
+        with self.assertRaises(FrozenInstanceError):
+            telegram.owner_user_id = 999  # type: ignore[misc]
+
+    def test_invalid_telegram_configuration_fails_closed(self) -> None:
+        """未知字段、bool/越界 ID、重复 allowlist 和关系错误必须拒绝。"""
+        base = (
+            "[channels.telegram]\n"
+            "enabled = true\n"
+            "owner_user_id = 123456\n"
+            "allowed_user_ids = [123456]\n"
+            "allow_group_mentions = false\n"
+        )
+        invalid_configs = (
+            ("[channels.telegram]\nunknown = true\n", "channels.telegram.unknown"),
+            (base.replace("owner_user_id = 123456", "owner_user_id = true"), "owner_user_id"),
+            (base.replace("owner_user_id = 123456", "owner_user_id = 0"), "owner_user_id"),
+            (base.replace("[123456]", "[654321]"), "owner_user_id.*allowed_user_ids"),
+            (base.replace("[123456]", "[123456, 123456]"), "allowed_user_ids"),
+            (
+                base.replace("allow_group_mentions = false", "allow_group_mentions = true"),
+                "allowed_chat_ids",
+            ),
+            (base + "allowed_chat_ids = [0]\n", "allowed_chat_ids"),
+            (base + f"allowed_chat_ids = [{2**63}]\n", "allowed_chat_ids"),
+            (base + "message_max_chars = 4097\n", "message_max_chars"),
+            (base + "progress_update_interval = 0.05\n", "progress_update_interval"),
+            (base + "queue_size = true\n", "queue_size"),
+        )
+        for content, expected in invalid_configs:
+            with self.subTest(expected=expected):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
+
+
+class DiscordConfigTest(unittest.TestCase):
+    """验证 Discord snowflake、Guild admission 和体验预算。"""
+
+    def setUp(self) -> None:
+        """为每条配置建立独立状态路径。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+
+    def test_complete_section_loads_typed_values_without_token(self) -> None:
+        """合法 Discord section 应保留 snowflake allowlist，但不保存 Token。"""
+        self.paths.config.write_text(
+            "[channels.discord]\n"
+            "enabled = true\n"
+            'account_id = "personal"\n'
+            'bot_token_env = "MY_DISCORD_TOKEN"\n'
+            "owner_user_id = 111111111111111111\n"
+            "allowed_user_ids = [111111111111111111, 222222222222222222]\n"
+            "allowed_guild_ids = [333333333333333333]\n"
+            "allowed_channel_ids = [444444444444444444]\n"
+            "allow_guild_mentions = true\n"
+            "queue_size = 48\n"
+            "worker_count = 4\n"
+            "message_max_chars = 1900\n"
+            "progress_update_interval = 1.5\n"
+            "typing_renew_interval = 9.0\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(
+            self.paths,
+            {"MY_DISCORD_TOKEN": "secret-must-stay-outside-config"},
+            {},
+        )
+
+        discord = config.channels.discord
+        self.assertTrue(discord.enabled)
+        self.assertEqual(discord.account_id, "personal")
+        self.assertEqual(discord.bot_token_env, "MY_DISCORD_TOKEN")
+        self.assertEqual(discord.owner_user_id, 111111111111111111)
+        self.assertEqual(
+            discord.allowed_user_ids,
+            (111111111111111111, 222222222222222222),
+        )
+        self.assertEqual(discord.allowed_guild_ids, (333333333333333333,))
+        self.assertEqual(discord.allowed_channel_ids, (444444444444444444,))
+        self.assertTrue(discord.allow_guild_mentions)
+        self.assertEqual((discord.queue_size, discord.worker_count), (48, 4))
+        self.assertEqual(discord.message_max_chars, 1900)
+        self.assertEqual(discord.progress_update_interval, 1.5)
+        self.assertEqual(discord.typing_renew_interval, 9.0)
+        self.assertNotIn("secret-must-stay-outside-config", repr(config))
+
+    def test_invalid_discord_configuration_fails_closed(self) -> None:
+        """未知 key、非法 snowflake、缺 Guild/Channel allowlist 和预算必须拒绝。"""
+        base = (
+            "[channels.discord]\n"
+            "enabled = true\n"
+            "owner_user_id = 111111111111111111\n"
+            "allowed_user_ids = [111111111111111111]\n"
+            "allow_guild_mentions = false\n"
+        )
+        invalid_configs = (
+            ("[channels.discord]\nunknown = true\n", "channels.discord.unknown"),
+            (
+                base.replace(
+                    "owner_user_id = 111111111111111111", "owner_user_id = true"
+                ),
+                "owner_user_id",
+            ),
+            (
+                base.replace(
+                    "owner_user_id = 111111111111111111", "owner_user_id = -1"
+                ),
+                "owner_user_id",
+            ),
+            (
+                base.replace("[111111111111111111]", "[222222222222222222]"),
+                "owner_user_id.*allowed_user_ids",
+            ),
+            (base + f"allowed_guild_ids = [{2**64}]\n", "allowed_guild_ids"),
+            (
+                base.replace("allow_guild_mentions = false", "allow_guild_mentions = true"),
+                "allowed_guild_ids",
+            ),
+            (
+                base.replace("allow_guild_mentions = false", "allow_guild_mentions = true")
+                + "allowed_guild_ids = [333333333333333333]\n",
+                "allowed_channel_ids",
+            ),
+            (base + "allowed_channel_ids = [1, 1]\n", "allowed_channel_ids"),
+            (base + "message_max_chars = 2001\n", "message_max_chars"),
+            (base + "typing_renew_interval = 31.0\n", "typing_renew_interval"),
+            (base + "worker_count = 0\n", "worker_count"),
+        )
+        for content, expected in invalid_configs:
+            with self.subTest(expected=expected):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
 
 
 if __name__ == "__main__":

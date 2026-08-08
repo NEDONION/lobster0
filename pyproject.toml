@@ -22,6 +22,17 @@ dev = [
 feishu = [
   "lark-channel-sdk>=1.2,<2",
 ]
+telegram = [
+  "python-telegram-bot>=21,<23",
+]
+discord = [
+  "discord.py>=2.4,<3",
+]
+channels = [
+  "lark-channel-sdk>=1.2,<2",
+  "python-telegram-bot>=21,<23",
+  "discord.py>=2.4,<3",
+]
 
 [project.scripts]
 miniclaw = "miniclaw.cli:main"
