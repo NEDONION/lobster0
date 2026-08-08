@@ -191,7 +191,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    P52["Phase 5.2\n真实稳定化"] --> MEM["Memory Autopilot\n跨渠道连续性"]
+    P53["Phase 5.3\nLive Gate 收口"] --> MEM["Memory Autopilot A-E\n跨渠道连续性"]
     MEM --> P6["Phase 6\n自治运行 + Sandbox"]
     P6 --> P65["Phase 6.5\nBrowser Agent"]
     P65 --> P7["Phase 7\n受控学习 + Reflection"]
@@ -261,7 +261,7 @@ Agent Case 与 Skill 进化仍留在 Phase 7。
 - Prompt Injection 标记；
 - 虚拟站点和 live smoke。
 
-### Phase 7：受控学习与 Memory v2
+### Phase 7：受控学习与 Memory Reflection
 
 **用户能感受到的结果**：当你纠正 MiniClaw 后，它可以提出改进方案；只有测试通过并经你批准才会生效。
 

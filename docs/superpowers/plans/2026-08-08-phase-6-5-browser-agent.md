@@ -324,7 +324,7 @@ git commit -m "feat(browser): execute actions with untrusted provenance"
 **Files:**
 - Create: `src/miniclaw/artifacts/__init__.py`
 - Create: `src/miniclaw/artifacts/store.py`
-- Create: `src/miniclaw/storage/migrations/0004_artifacts.sql`
+- Create: `src/miniclaw/storage/migrations/0005_artifacts.sql`
 - Modify: `src/miniclaw/storage/migrations.py`
 - Modify: `browser-worker/src/actions.ts`
 - Test: `tests/test_artifact_store.py`
@@ -362,7 +362,7 @@ Run Python tests and `pnpm --dir browser-worker test`. Cover oversized download,
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/artifacts src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0004_artifacts.sql browser-worker/src/actions.ts browser-worker/test/downloads.test.ts tests/test_artifact_store.py
+git add src/miniclaw/artifacts src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0005_artifacts.sql browser-worker/src/actions.ts browser-worker/test/downloads.test.ts tests/test_artifact_store.py
 git commit -m "feat(browser): persist bounded browser artifacts"
 ```
 

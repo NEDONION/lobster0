@@ -2,7 +2,7 @@
 
 > 状态：`write_file`、`edit_file`、严格 `[tools]` 配置和 Workspace 写边界已经进入代码并通过测试
 >
-> 当前仓库门禁：530/530 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS；本模块首次退出门禁为 194 tests
+> 当前仓库门禁：531/531 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS；本模块首次退出门禁为 194 tests
 >
 > 当前入口：两个写 Tool 已注册到 pi-tui/Textual fallback 共享 Runtime，但只能在参数绑定 Approval 被 Owner 选择
 > Allow once 后执行

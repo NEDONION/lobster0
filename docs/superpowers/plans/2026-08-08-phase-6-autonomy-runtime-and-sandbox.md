@@ -89,7 +89,7 @@ git commit -m "feat(automation): define strict autonomy configuration"
 ### Task 2: Task schema and repository state machine
 
 **Files:**
-- Create: `src/miniclaw/storage/migrations/0003_autonomy.sql`
+- Create: `src/miniclaw/storage/migrations/0004_autonomy.sql`
 - Modify: `src/miniclaw/storage/migrations.py`
 - Create: `src/miniclaw/automation/__init__.py`
 - Create: `src/miniclaw/automation/models.py`
@@ -132,7 +132,7 @@ Expected: PASS for pause/resume/cancel, stale lease, interrupted recovery, waiti
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0003_autonomy.sql src/miniclaw/automation tests/test_automation_repository.py tests/test_storage.py
+git add src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0004_autonomy.sql src/miniclaw/automation tests/test_automation_repository.py tests/test_storage.py
 git commit -m "feat(automation): persist scheduled tasks and runs"
 ```
 

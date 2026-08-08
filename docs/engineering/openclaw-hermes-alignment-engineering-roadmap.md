@@ -4,7 +4,8 @@
 > 日期：2026-08-08
 > 事实基线：`main@729a801`
 > 配套 Gap：[MiniClaw 与 OpenClaw / Hermes 的能力 Gap 与演进路线](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)
-> 适用范围：Phase 5.2、6、6.5、7、8、9。
+> 适用范围：Phase 5.3、Memory Autopilot A～E、Phase 6、6.5、7、8、9。
+> Memory 施工入口：[Memory Autopilot A～E TDD 实施计划](../superpowers/plans/2026-08-09-memory-autopilot.md)
 
 ## 1. 文档怎么读
 
@@ -44,7 +45,7 @@ flowchart TB
     POLICY --> HOST["Host Tool Backend"]
     POLICY --> SANDBOX["Sandbox Tool Backend"]
     POLICY --> BROWSER["Browser Backend"]
-    AGENT --> MEMORY["Memory v2 / Session Search"]
+    AGENT --> MEMORY["Memory Autopilot A-E"]
     AGENT --> SKILLS["Skill Catalog / MCP"]
     AGENT --> CHILDREN["Sub-agent Runtime"]
     TASKS --> DELIVERY["现有 durable Delivery"]
@@ -72,7 +73,7 @@ flowchart TB
 11. 新功能必须加入 JSONL 场景和版本化 release record；
 12. fake/contract 测试不能冒充真实平台、真实浏览器或真实 Provider 证据。
 
-## 4. Phase 5.2：真实运行与发布闭环
+## 4. Phase 5.2 / 5.3：真实运行与 Live Gate 闭环
 
 ### 4.1 用户结果
 
@@ -176,7 +177,7 @@ sequenceDiagram
 
 ### 5.2 数据模型
 
-新 migration `0003_autonomy.sql`：
+Memory Foundation 先使用 `0003_memory_autopilot.sql`，因此本阶段新 migration 为 `0004_autonomy.sql`：
 
 ```sql
 CREATE TABLE scheduled_tasks (
@@ -238,7 +239,7 @@ ON task_runs(status, id);
 | `src/miniclaw/automation/heartbeat.py` | 合并检查、active hours、静默结果 |
 | `src/miniclaw/automation/hooks.py` | 受限生命周期事件到 Task 的映射 |
 | `src/miniclaw/tools/automation.py` | `manage_task` 单一 action-style Tool |
-| `src/miniclaw/storage/migrations/0003_autonomy.sql` | durable task schema |
+| `src/miniclaw/storage/migrations/0004_autonomy.sql` | durable task schema |
 
 ### 5.4 对模型公开的 Tool
 
@@ -565,53 +566,19 @@ candidate overlay
 - rollback 也是 Owner 操作；
 - 应用后新增 release record，后续版本继续跑全量回归。
 
-## 9. Phase 7：Memory v2 与 Session Search
+## 9. Phase 7：Memory Reflection
 
-### 9.1 分层
+跨渠道 Identity/Disclosure、durable buffer/flush、Markdown Truth、FTS5/CJK、Promotion、Review、Conflict、Forget、Reconcile 和 legacy migration 已前移到 Memory A～E，并且必须在 Phase 6 前完成。Phase 7 不重复建设这些基础能力。
 
-| 层 | 内容 | 是否每轮注入 |
-| --- | --- | --- |
-| `USER.md` | 稳定偏好、身份、长期约束 | 是，有预算 |
-| `MEMORY.md` | 经过晋升的决策和事实 | 是，有预算 |
-| daily memory | 最近观察和工作记录 | 只注入今天/昨天的有界摘要 |
-| session history | 全量历史消息 | 否，通过搜索按需读取 |
-| artifacts | 大文件、截图、报告 | 否，只保存 metadata/path/hash |
+Phase 7 只增加高级 Reflection：
 
-### 9.2 FTS5
+- 输入只能是已经接受、带来源的 Memory Unit，不直接扫描任意原始私人对话；
+- 输出只能是 Profile/Scenario 的候选 diff，不能直接改 active Memory；
+- 候选必须经过 Secret/Injection scanner、全量 Eval 和 Owner Approval；
+- apply 绑定 base/candidate/evaluation hash，Turn 边界 reload，失败原子回滚；
+- Skill Proposal 与 Memory Reflection 使用同一 Proposal ledger，但 namespace 和权限独立。
 
-新增 `session_messages_fts`，由 migration 从 `messages` 建 external-content FTS5 表和同步 trigger。搜索结果必须返回：
-
-- session id；
-- message id；
-- channel；
-- timestamp；
-- role；
-- 有界 snippet；
-- rank；
-- provenance。
-
-首版先实现 FTS5，不引入 Embedding。只有真实使用证明关键词搜索不足，再增加可选 Hybrid backend。
-
-### 9.3 Memory 治理
-
-结构化条目至少包含：
-
-```yaml
-- id: preference.language.response
-  value: 默认使用中文回答
-  status: active
-  observed_at: 2026-08-08
-  source: feedback:123
-  supersedes: null
-```
-
-规则：
-
-- 新偏好与旧偏好冲突时使用 `supersedes`，不追加两个 active 真相；
-- daily memory 只有在多次召回、Owner 明确要求或 Proposal 通过后晋升；
-- 过期条目不自动删除，只标记 `superseded`/`expired`；
-- 所有自动候选先进入 Proposal；
-- Session Search 不自动把任意历史注入系统 Prompt。
+具体任务见 [Phase 7 Controlled Evolution and Memory Reflection Plan](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md)。
 
 ## 10. Phase 8：Skill、MCP 与 Provider 韧性
 
@@ -858,8 +825,9 @@ Release candidate 额外执行当前 Phase 的 live/soak/sandbox/browser gate。
 
 ```mermaid
 flowchart TD
-    OPS["5.2 Production hardening"] --> AUTO["6 Automation ledger"]
-    OPS --> SANDBOX["6 Sandbox + checkpoint"]
+    OPS["5.3 Live Gate closure"] --> MEMORY["Memory A-E"]
+    MEMORY --> AUTO["6 Automation ledger"]
+    MEMORY --> SANDBOX["6 Sandbox + checkpoint"]
     AUTO --> BROWSER["6.5 Browser"]
     SANDBOX --> BROWSER
     AUTO --> EVOLVE["7 Controlled evolution"]
@@ -873,14 +841,15 @@ flowchart TD
 
 推荐串行主线：
 
-1. Phase 5.2：先证明能长期稳定运行；
-2. Phase 6A：Task Ledger + Scheduler + Delivery；
-3. Phase 6B：Sandbox + Checkpoint；
-4. Phase 6.5：Browser；
-5. Phase 7A：Feedback + Session Search；
-6. Phase 7B：Proposal + Eval + Apply/Rollback；
-7. Phase 8：Skill/MCP 与 Provider Router；
-8. Phase 9：Sub-agent、Vision、Voice。
+1. Phase 5.3：收口 Feishu/Discord 严格 Live Gate；
+2. Memory A～E：Identity/Disclosure、Flush、Recall、治理与 Reconcile；
+3. Phase 6A：Task Ledger + Scheduler + Delivery；
+4. Phase 6B：Sandbox + Checkpoint；
+5. Phase 6.5：Browser；
+6. Phase 7A：Feedback + Memory Reflection；
+7. Phase 7B：Proposal + Eval + Apply/Rollback；
+8. Phase 8：Skill/MCP 与 Provider Router；
+9. Phase 9：Sub-agent、Vision、Voice。
 
 ## 18. 总完成定义
 

@@ -4,7 +4,7 @@
 >
 > 日期：2026-08-09
 >
-> 当前基线：530/530 Python、30/30 TypeScript、29/29 offline Agent、32/32 Channel、640/640 local soak
+> 当前基线：531/531 Python、30/30 TypeScript、29/29 offline Agent、32/32 Channel、640/640 local soak
 >
 > 当前真实状态：Feishu Owner DM 与修复后单卡已验证；Feishu 完整 15-case、Discord 真实 Bot 均为 LIVE PENDING
 
@@ -32,7 +32,7 @@ Telegram IMPLEMENTATION PASS / LIVE PENDING
 - Discord DM、Guild mention、Thread、Approval、Delivery、Restart、Isolation 已有 10 条 versioned offline case；
 - Feishu 已有严格的 `FEISHU-LIVE-001..015` 场景集和半自动 Live Runner；
 - Telegram/Discord 已有共同的 15 项人工 Live Harness；
-- 530 Python、30 TypeScript、29 Agent、32 Channel 和 640-check soak 当前全绿。
+- 531 Python、30 TypeScript、29 Agent、32 Channel 和 640-check soak 当前全绿。
 
 因此本阶段不会新写第二个 Discord Adapter、第二套 Agent Loop 或新的平台无关抽象。
 
@@ -129,7 +129,7 @@ flowchart TD
     CFG --> DC["Discord 15-check live harness"]
     DC --> DCE{"15/15 + secret scan 0?"}
     DCE -->|否| STOP2["保持 Discord LIVE PENDING"]
-    DCE -->|是| GATE["重跑 530+ / Agent / Channel / soak"]
+    DCE -->|是| GATE["重跑 531+ / Agent / Channel / soak"]
     GATE --> DOCS["Release Record + docs + progress"]
 ```
 

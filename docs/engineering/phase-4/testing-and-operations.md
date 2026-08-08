@@ -1,7 +1,7 @@
 # Phase 4：飞书运行、测试与故障排查
 
 > 当前结论：implementation gate 已通过；真实企业应用 E2E、部署与 soak 待凭据。
-> 当前全仓门禁：530/530 Python、30/30 TypeScript、Agent 29/29、Channel 32/32、20 轮 local soak 640/640、Ruff PASS。
+> 当前全仓门禁：531/531 Python、30/30 TypeScript、Agent 29/29、Channel 32/32、20 轮 local soak 640/640、Ruff PASS。
 > Phase 5.1 已实现 Feishu Live Runner；真实状态仍是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
 
 ## 1. 先理解四层证据
@@ -145,7 +145,7 @@ uv build
 git diff --check
 ```
 
-当前必须得到 Python 530/530、TypeScript 30/30、Agent 29/29、Channel 32/32。以后新增测试时数字应上调，不能为了
+当前必须得到 Python 531/531、TypeScript 30/30、Agent 29/29、Channel 32/32。以后新增测试时数字应上调，不能为了
 保持文档旧数字删除测试。
 
 ## 8. 12 条飞书回归场景
@@ -259,7 +259,7 @@ fallback 才接管回复。Assistant Message 始终保存在 SQLite。
 
 ## 11. 当前完成度
 
-截至 2026-08-08，Phase 4 Core、Gateway、脱敏结构化日志/Audit、530 Python tests、30 TypeScript tests、29 条
+截至 2026-08-08，Phase 4 Core、Gateway、脱敏结构化日志/Audit、531 Python tests、30 TypeScript tests、29 条
 Agent 回归、12 条 Feishu Channel 回归、15 条 Feishu Live 场景和 20 轮 local soak 已完成。专用飞书 App/Bot、
 同应用 Owner、WebSocket ready 和两条 Owner 私聊 Delivery 已完成真实验证；完整 15-case、常驻部署与真实 Gateway
 soak 仍明确待办。

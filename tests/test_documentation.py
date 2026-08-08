@@ -18,6 +18,7 @@ class Phase5DocumentationTest(unittest.TestCase):
         """用户入口必须统一显示 implementation PASS 与当前真实门禁数字。"""
         paths = (
             "README.md",
+            "README_EN.md",
             "docs/architecture/20260807_系统架构.md",
             "docs/engineering/README.md",
             "docs/engineering/phase-5/telegram-discord-channels.md",
@@ -31,7 +32,7 @@ class Phase5DocumentationTest(unittest.TestCase):
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("530", content)
+                self.assertIn("531", content)
                 self.assertIn("30", content)
                 self.assertIn("29/29", content)
                 self.assertIn("32/32", content)
@@ -65,6 +66,7 @@ class Phase5DocumentationTest(unittest.TestCase):
             "docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md"
         )
         plans = (
+            "2026-08-09-memory-autopilot.md",
             "2026-08-08-phase-5-2-production-hardening.md",
             "2026-08-08-phase-6-autonomy-runtime-and-sandbox.md",
             "2026-08-08-phase-6-5-browser-agent.md",
@@ -86,17 +88,26 @@ class Phase5DocumentationTest(unittest.TestCase):
                 self.assertIn("## Global Constraints", content)
                 self.assertIn("- [ ]", content)
 
-        for relative in ("README.md", "docs/README.md", "docs/engineering/README.md"):
+        for relative in (
+            "README.md",
+            "README_EN.md",
+            "docs/README.md",
+            "docs/engineering/README.md",
+        ):
             content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
             self.assertIn("20260808_OpenClaw-Hermes能力Gap与演进路线.md", content)
             self.assertIn("openclaw-hermes-alignment-engineering-roadmap.md", content)
+
+        for relative in ("README.md", "README_EN.md", "docs/README.md"):
+            content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+            self.assertIn("2026-08-09-memory-autopilot.md", content)
 
     def test_progress_page_exposes_gate_and_live_truth(self) -> None:
         """可视化进度页必须能一眼区分代码完成与真实平台待验收。"""
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
             "Phase 5 implementation pass",
-            "530 Python",
+            "531 Python",
             "30 TypeScript",
             "29/29",
             "IMPLEMENTATION PASS",

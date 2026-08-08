@@ -2,7 +2,7 @@
 
 > 状态：已落地。本规范与 `tests/test_tui.py`、`tests/test_cli.py`、`tests/test_turn.py`、
 > `tests/test_agent_runner.py` 和 `tui/test/*.test.ts` 共同构成版本门禁。当前全仓基线：
-> 530/530 Python tests、30/30 TypeScript tests、29/29 offline
+> 531/531 Python tests、30/30 TypeScript tests、29/29 offline
 > Agent cases、32/32 Channel cases、Ruff PASS。
 
 ## 1. 为什么 TUI 必须单独回归

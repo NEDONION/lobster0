@@ -497,15 +497,16 @@ flowchart LR
 
 ## 16. 建议交付顺序
 
-Memory Autopilot 是跨渠道人格连续性的基础，建议在 Phase 5.2 生产稳定化之后、Phase 6 自治任务之前落地基础版本：
+Memory Autopilot 是跨渠道人格连续性的基础，建议在 Phase 5.3 Live Gate 收口之后、Phase 6 自治任务之前落地 A～E：
 
 ```mermaid
 flowchart LR
-    P52["Phase 5.2\n后台稳定化"] --> M1["Memory A\nIdentity + Disclosure"]
+    P53["Phase 5.3\nLive Gate 收口"] --> M1["Memory A\nIdentity + Disclosure"]
     M1 --> M2["Memory B\nBuffer + Flush + Markdown"]
     M2 --> M3["Memory C\nFTS Recall + Context"]
     M3 --> M4["Memory D\nPromotion + Review + Forget"]
-    M4 --> P6["Phase 6\n自治任务"]
+    M4 --> M5["Memory E\nReconcile + Migration"]
+    M5 --> P6["Phase 6\n自治任务"]
 ```
 
 Phase 7 仍负责更高级的自我进化、Memory Reflection 与 Skill 提案；不再承担“跨渠道完全失忆”这个基础缺口。
@@ -524,5 +525,6 @@ Phase 7 仍负责更高级的自我进化、Memory Reflection 与 Skill 提案�
 
 - [Memory Autopilot 最佳实践与技术选型](../engineering/memory-autopilot-best-practices-and-technology-selection.md)
 - [Memory Autopilot 正式设计 Spec](../superpowers/specs/2026-08-08-memory-autopilot-design.md)
+- [Memory Autopilot A～E TDD 实施计划](../superpowers/plans/2026-08-09-memory-autopilot.md)
 - [现有 Phase 3 Memory 实现](../engineering/phase-3/memory-skills-compaction.md)
 - [OpenClaw / Hermes 总体能力 Gap](20260808_OpenClaw-Hermes能力Gap与演进路线.md)

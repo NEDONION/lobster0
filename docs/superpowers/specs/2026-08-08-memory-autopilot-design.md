@@ -165,12 +165,13 @@ Every release records the exact scenario version, test counts and sanitized base
 4. automatic extraction/promotion + review/conflict/forget;
 5. direct-edit reconcile + legacy migration + maintenance review.
 
-The foundation is scheduled after Phase 5.2 stabilization and before Phase 6 autonomous tasks. Advanced Reflection and Agent Skill evolution remain Phase 7 work.
+The foundation is scheduled after the Phase 5.3 live gate closes and before Phase 6 autonomous tasks. Advanced Reflection and Agent Skill evolution remain Phase 7 work.
 
 ## 14. Detailed References
 
 - [Gap and target architecture](../../architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)
 - [Engineering best practices and technology selection](../../engineering/memory-autopilot-best-practices-and-technology-selection.md)
+- [Memory A–E TDD implementation plan](../plans/2026-08-09-memory-autopilot.md)
 - [Current Phase 3 implementation](../../engineering/phase-3/memory-skills-compaction.md)
 - [EverOS](https://github.com/EverMind-AI/EverOS)
 - [TencentDB Agent Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)

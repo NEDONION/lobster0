@@ -5,6 +5,7 @@
 > 事实基线：`main@729a801`，设计文档基线：`docs/memory-autopilot-design`
 > 读者：准备实现、Review、测试和维护 Memory 子系统的开发者
 > 上位设计：[Memory Autopilot 能力 Gap 与重构架构](../architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)
+> 落地计划：[Memory Autopilot A～E TDD 实施计划](../superpowers/plans/2026-08-09-memory-autopilot.md)
 
 ## 1. 工程目标
 
@@ -200,7 +201,7 @@ content_hash: sha256:...
 
 ## 7. SQLite Control Plane
 
-以下是逻辑表，实施计划阶段再固化具体 DDL 和 Migration 编号。
+以下是逻辑表；具体 DDL、状态机和 `0003_memory_autopilot.sql` 的实施顺序已在 A～E TDD 计划中固化。
 
 ### 7.1 表职责
 
