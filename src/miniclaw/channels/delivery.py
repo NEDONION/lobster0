@@ -20,8 +20,13 @@ from miniclaw.channels.observability import ChannelObserver
 from miniclaw.storage.channels import DeliveryRepository, StoredDelivery
 
 
-def split_message(content: str, *, max_chars: int) -> tuple[str, ...]:
-    """按段落、换行、空格和 Unicode 字符边界切分回复。"""
+def split_message(
+    content: str,
+    *,
+    max_chars: int,
+    preserve_code_fences: bool = False,
+) -> tuple[str, ...]:
+    """按 Unicode 边界切分回复，可为跨片 Markdown code fence 补配对标记。"""
     if not isinstance(content, str) or not content:
         raise ValueError("delivery content must not be empty")
     if type(max_chars) is not int or max_chars < 8:
@@ -33,7 +38,8 @@ def split_message(content: str, *, max_chars: int) -> tuple[str, ...]:
     chunks: tuple[str, ...] = ()
     for _ in range(12):
         prefix_length = len(f"[{estimated_parts}/{estimated_parts}] ")
-        budget = max_chars - prefix_length
+        fence_reserve = _fence_reserve(content) if preserve_code_fences else 0
+        budget = max_chars - prefix_length - fence_reserve
         if budget <= 0:
             raise ValueError("max_chars is too small for multipart prefix")
         chunks = _split_plain(content, budget)
@@ -44,11 +50,56 @@ def split_message(content: str, *, max_chars: int) -> tuple[str, ...]:
     else:
         raise ValueError("multipart prefix did not stabilize")
 
-    total = len(chunks)
-    parts = tuple(f"[{index}/{total}] {chunk}" for index, chunk in enumerate(chunks, 1))
+    rendered = _balance_code_fences(chunks) if preserve_code_fences else chunks
+    total = len(rendered)
+    parts = tuple(f"[{index}/{total}] {chunk}" for index, chunk in enumerate(rendered, 1))
     if any(len(part) > max_chars for part in parts):
         raise ValueError("multipart output exceeds max_chars")
     return parts
+
+
+def _balance_code_fences(chunks: tuple[str, ...]) -> tuple[str, ...]:
+    """仅添加 synthetic fence，不删除或重复原始代码正文。"""
+    rendered: list[str] = []
+    active_opener: str | None = None
+    for chunk in chunks:
+        started_inside = active_opener
+        active_opener = _fence_state_after(chunk, active_opener)
+        prefix = f"{started_inside}\n" if started_inside is not None else ""
+        suffix = "\n```" if active_opener is not None else ""
+        rendered.append(f"{prefix}{chunk}{suffix}")
+    return tuple(rendered)
+
+
+def _fence_reserve(content: str) -> int:
+    """预留 reopen + newline + closing fence 的最坏长度。"""
+    longest = 3
+    position = 0
+    while True:
+        fence = content.find("```", position)
+        if fence < 0:
+            break
+        line_end = content.find("\n", fence)
+        candidate = content[fence : line_end if line_end >= 0 else fence + 3]
+        longest = max(longest, min(64, len(candidate)))
+        position = fence + 3
+    return longest + 5
+
+
+def _fence_state_after(chunk: str, active: str | None) -> str | None:
+    """扫描原始 chunk 中的 fence，返回下一片需要重开的短 opener。"""
+    position = 0
+    while True:
+        fence = chunk.find("```", position)
+        if fence < 0:
+            return active
+        if active is None:
+            line_end = chunk.find("\n", fence)
+            candidate = chunk[fence : line_end if line_end >= 0 else fence + 3]
+            active = candidate if len(candidate) <= 64 else "```"
+        else:
+            active = None
+        position = fence + 3
 
 
 def _split_plain(content: str, budget: int) -> tuple[str, ...]:
@@ -317,8 +368,11 @@ class DeliveryWorker:
             return
         if error.retryable and delivery.attempts < self._max_attempts:
             exponent = max(0, delivery.attempts - 1)
-            delay = min(self._max_delay, self._base_delay * (2**exponent))
-            delay *= max(0.0, self._jitter())
+            if error.retry_after is None:
+                delay = min(self._max_delay, self._base_delay * (2**exponent))
+                delay *= max(0.0, self._jitter())
+            else:
+                delay = min(self._max_delay, max(0.0, error.retry_after))
             self._repository.mark_retry_wait(
                 delivery.id,
                 error.code,

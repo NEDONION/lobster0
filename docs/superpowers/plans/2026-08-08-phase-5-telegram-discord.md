@@ -534,11 +534,11 @@ git commit -m "feat(telegram): 增加 allowlisted inbound Adapter 与 topic iden
 
 ### Step 6.1 — RED lifecycle and SDK boundary
 
-- [ ] Fake SDK 记录 `initialize/start/start_polling/stop/shutdown` 的精确顺序。
-- [ ] `connect()` 先 `get_me()` 取得 bot ID/username，再注册 handler 并开始 polling；ready 前收到消息不得进入 Manager。
-- [ ] `stop_receiving()` 立即停止新 handler admission；`disconnect()` 幂等并完整释放 updater/application。
-- [ ] SDK 缺失只在构造 enabled Telegram runtime 时报告 `telegram_sdk_missing`。
-- [ ] SDK Update mapper 只复制 narrow fields，禁止把 Update 保存到实例、exception 或 callback queue。
+- [x] Fake SDK 记录 `initialize/start/start_polling/stop/shutdown` 的精确顺序。
+- [x] `connect()` 先 `get_me()` 取得 bot ID/username，再注册 handler 并开始 polling；ready 前收到消息不得进入 Manager。
+- [x] `stop_receiving()` 立即停止新 handler admission；`disconnect()` 幂等并完整释放 updater/application。
+- [x] SDK 缺失只在构造 enabled Telegram runtime 时报告 `telegram_sdk_missing`。
+- [x] SDK Update mapper 只复制 narrow fields，禁止把 Update 保存到实例、exception 或 callback queue。
 
 Run RED:
 
@@ -551,25 +551,25 @@ Expected RED: Transport 尚无 lifecycle。
 
 ### Step 6.2 — RED send, split and error map
 
-- [ ] `send()` 使用 `reply_text` 或 `bot.send_message`，默认禁用 link preview 且不用 MarkdownV2 parse mode；idempotency key 只用于本地 ledger，不伪称 Telegram 支持 HTTP 幂等。
-- [ ] `AllowedUpdates` 只订阅 message；edited/channel post/callback 只在对应能力开启后增加。
-- [ ] 4096 char 分片保留 Markdown code fence 可读性；任意 part `len <= 4096`，拼接去掉 prefix 后内容不丢失。
-- [ ] `RetryAfter` → `ChannelTransportError("telegram_rate_limited", retryable=True)`，并把 SDK retry-after 归一到 Delivery retry time。
-- [ ] `TimedOut/NetworkError` → retryable `telegram_poll_failed`/`telegram_send_failed`；`Forbidden` → non-retryable `telegram_permission_denied`；认证失败 → `telegram_auth_failed`；send 已发但 receipt 不确定 → `unknown=True`。
-- [ ] 错误对象的 message、Token 和目标 ID 不进入 `str/repr/log`。
+- [x] `send()` 使用 `reply_text` 或 `bot.send_message`，默认禁用 link preview 且不用 MarkdownV2 parse mode；idempotency key 只用于本地 ledger，不伪称 Telegram 支持 HTTP 幂等。
+- [x] `AllowedUpdates` 只订阅 message；edited/channel post/callback 只在对应能力开启后增加。
+- [x] 4096 char 分片保留 Markdown code fence 可读性；任意 part `len <= 4096`，拼接去掉 prefix 后内容不丢失。
+- [x] `RetryAfter` → `ChannelTransportError("telegram_rate_limited", retryable=True)`，并把 SDK retry-after 归一到 Delivery retry time。
+- [x] `TimedOut/NetworkError` → retryable `telegram_poll_failed`/`telegram_send_failed`；`Forbidden` → non-retryable `telegram_permission_denied`；认证失败 → `telegram_auth_failed`；send 已发但 receipt 不确定 → `unknown=True`。
+- [x] 错误对象的 message、Token 和目标 ID 不进入 `str/repr/log`。
 
 ### Step 6.3 — RED Experience behavior
 
-- [ ] typing 使用 `send_chat_action(TYPING)`；后台 renewal 有界，finish 必须取消 renewal task。
-- [ ] progress 第一帧发送普通消息，后续用 `edit_message_text`；更新频率不快于 config interval。
-- [ ] edit 返回 message-not-modified 视为成功；preview 失败后 final durable message 仍通过 DeliveryWorker 发送。
-- [ ] Telegram 不支持 rich approval 时至少提供文本 fallback；若实现 inline keyboard，callback 必须验证 Owner 和 envelope version。
+- [x] typing 使用 `send_chat_action(TYPING)`；后台 renewal 有界，finish 必须取消 renewal task。
+- [x] progress 第一帧发送普通消息，后续用 `edit_message_text`；更新频率不快于 config interval。
+- [x] edit 返回 message-not-modified 视为成功；preview 失败后 final durable message 仍通过 DeliveryWorker 发送。
+- [x] Telegram 不支持 rich approval 时至少提供文本 fallback；若实现 inline keyboard，callback 必须验证 Owner 和 envelope version。
 
 ### Step 6.4 — Implement with injected SDK facade
 
-- [ ] 生产构造函数允许传 `application_factory` 仅用于 tests；默认 factory 在函数体内 lazy import official SDK。
-- [ ] `connect()`/`disconnect()` 和 handler callback 都捕获 SDK 异常并映射成稳定短码。
-- [ ] on_inbound callback 返回值不回显给平台；queue full 由 durable Inbox feeder 恢复。
+- [x] 生产构造函数允许传 `application_factory` 仅用于 tests；默认 factory 在函数体内 lazy import official SDK。
+- [x] `connect()`/`disconnect()` 和 handler callback 都捕获 SDK 异常并映射成稳定短码。
+- [x] on_inbound callback 返回值不回显给平台；queue full 由 durable Inbox feeder 恢复。
 
 Run GREEN:
 

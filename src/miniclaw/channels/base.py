@@ -3,6 +3,7 @@
 import re
 from dataclasses import dataclass
 from datetime import datetime
+from math import isfinite
 from typing import Literal, Protocol, runtime_checkable
 
 type ChatType = Literal["p2p", "group"]
@@ -33,17 +34,26 @@ class ChannelTransportError(RuntimeError):
         *,
         retryable: bool = False,
         unknown: bool = False,
+        retry_after: float | None = None,
     ) -> None:
+        if retry_after is not None and (
+            type(retry_after) not in {int, float}
+            or not isfinite(retry_after)
+            or retry_after < 0
+        ):
+            raise ValueError("retry_after must be a finite non-negative number")
         super().__init__(code)
         self.code = code
         self.retryable = retryable
         self.unknown = unknown
+        self.retry_after = None if retry_after is None else float(retry_after)
 
     def __repr__(self) -> str:
         """仅显示稳定错误码和恢复属性。"""
         return (
             "ChannelTransportError("
-            f"code={self.code!r}, retryable={self.retryable!r}, unknown={self.unknown!r})"
+            f"code={self.code!r}, retryable={self.retryable!r}, "
+            f"unknown={self.unknown!r}, retry_after={self.retry_after!r})"
         )
 
 

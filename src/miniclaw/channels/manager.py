@@ -434,6 +434,7 @@ class ChannelManager:
                 contents=split_message(
                     result.content,
                     max_chars=self._message_max_chars,
+                    preserve_code_fences=self._channel == "telegram",
                 ),
             )
             return
@@ -495,6 +496,7 @@ class ChannelManager:
             contents=split_message(
                 notice.content,
                 max_chars=self._message_max_chars,
+                preserve_code_fences=self._channel == "telegram",
             ),
         )
 
@@ -511,6 +513,7 @@ class ChannelManager:
             contents=split_message(
                 notice.content,
                 max_chars=self._message_max_chars,
+                preserve_code_fences=self._channel == "telegram",
             ),
         )
 
@@ -553,6 +556,7 @@ class ChannelManager:
                     contents=split_message(
                         assistant.content,
                         max_chars=self._message_max_chars,
+                        preserve_code_fences=self._channel == "telegram",
                     ),
                 )
                 self._inbound.recover_running(event.key, "completed", None)

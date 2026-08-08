@@ -62,6 +62,24 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("".join(payloads), content)
         self.assertEqual(split_message("短回复", max_chars=14), ("短回复",))
 
+    def test_telegram_split_keeps_long_code_fence_parts_readable(self) -> None:
+        """长代码块跨片时每条消息都应 fence 配对，且正文行不丢不重。"""
+        lines = tuple(f"unique_line_{index:02d} = {index}" for index in range(16))
+        content = "说明\n```python\n" + "\n".join(lines) + "\n```\n结束"
+
+        parts = split_message(
+            content,
+            max_chars=90,
+            preserve_code_fences=True,
+        )
+
+        self.assertGreater(len(parts), 1)
+        self.assertTrue(all(len(part) <= 90 for part in parts))
+        self.assertTrue(all(part.count("```") % 2 == 0 for part in parts))
+        combined = "\n".join(parts)
+        for line in lines:
+            self.assertEqual(combined.count(line), 1)
+
     async def test_parts_send_in_order_and_permanent_failure_blocks_tail(self) -> None:
         """中间 part 永久失败后，后续 part 不得越过它继续发送。"""
         message_id = self._assistant_message()
@@ -118,6 +136,29 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent.attempts, 2)
         self.assertEqual(transport.sent[0][1], transport.sent[1][1])
         self.assertEqual(transport.sent[0][1], delivery.idempotency_key)
+
+    async def test_platform_retry_after_overrides_local_backoff_without_jitter(self) -> None:
+        """Telegram 429 的平台等待秒数应优先于本地指数退避，并受 max delay 约束。"""
+        delivery = self._delivery("rate-limited")
+        transport = FakeChannelTransport(
+            (
+                ChannelTransportError(
+                    "telegram_rate_limited",
+                    retryable=True,
+                    retry_after=7.5,
+                ),
+            )
+        )
+        worker = self._worker(transport, base_delay=30)
+
+        self.assertTrue(await worker.run_once())
+
+        waiting = self.repository.get(delivery.id)
+        self.assertEqual(waiting.status, "retry_wait")
+        self.assertEqual(
+            waiting.next_attempt_at,
+            self.clock.current + timedelta(seconds=7.5),
+        )
 
     async def test_timeout_unknown_is_recovered_with_same_uuid_after_restart(self) -> None:
         """无法判断平台是否收到时先记 unknown，重启后按相同 UUID 安全恢复。"""
