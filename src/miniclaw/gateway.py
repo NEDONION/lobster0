@@ -259,7 +259,7 @@ async def _create_components(
             observer=observer,
         )
         approval_controller = ChannelApprovalController(
-            owner_open_id=config.channels.feishu.owner_open_id,
+            owner_external_user_id=config.channels.feishu.owner_open_id,
             approvals=ApprovalRepository(database),
             service=runtime.service,
         )
@@ -275,7 +275,7 @@ async def _create_components(
             """把按钮决定交给 Core，并用 durable Delivery 发送 continuation。"""
             outcome = await approval_controller.handle_card_action(
                 user_id=runtime.owner_id,
-                actor_open_id=actor_open_id,
+                actor_external_user_id=actor_open_id,
                 value=value,
             )
             visible = outcome.result.content if outcome.result is not None else outcome.notice

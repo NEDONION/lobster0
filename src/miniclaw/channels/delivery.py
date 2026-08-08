@@ -6,7 +6,11 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
-from miniclaw.channels.approvals import parse_approval_delivery_payload
+from miniclaw.channels.approvals import (
+    ApprovalEnvelope,
+    feishu_approval_prompt,
+    parse_approval_delivery_payload,
+)
 from miniclaw.channels.base import (
     ChannelTransport,
     ChannelTransportError,
@@ -172,18 +176,48 @@ class DeliveryWorker:
     async def _send_approval(self, delivery: StoredDelivery) -> None:
         """发送 durable Approval card；平台不支持时原子创建 Markdown fallback。"""
         try:
-            prompt = parse_approval_delivery_payload(delivery.content)
+            parsed = parse_approval_delivery_payload(delivery.content)
         except ValueError:
             self._repository.mark_failed(
                 delivery.id,
                 "channel_approval_payload_invalid",
             )
             return
+        fallback_text = parsed.fallback_text
+        send_approval = getattr(self._transport, "send_approval", None)
+        if isinstance(parsed, ApprovalEnvelope) and callable(send_approval):
+            try:
+                receipt = await send_approval(
+                    conversation_id=delivery.external_conversation_id,
+                    reply_to_message_id=delivery.reply_to_message_id,
+                    envelope=parsed,
+                    idempotency_key=delivery.idempotency_key,
+                )
+            except asyncio.CancelledError:
+                self._repository.mark_unknown(delivery.id, "channel_delivery_unknown")
+                raise
+            except Exception:
+                self._fallback_approval(
+                    delivery,
+                    fallback_text,
+                    "channel_interactive_failed",
+                )
+                return
+            if not receipt.platform_message_id:
+                self._repository.mark_unknown(delivery.id, "channel_delivery_unknown")
+            else:
+                self._repository.mark_sent(delivery.id, receipt.platform_message_id)
+            return
+        prompt = (
+            feishu_approval_prompt(parsed)
+            if isinstance(parsed, ApprovalEnvelope)
+            else parsed
+        )
         send_card = getattr(self._transport, "send_card", None)
         if not callable(send_card):
             self._fallback_approval(
                 delivery,
-                prompt.fallback_text,
+                fallback_text,
                 "channel_interactive_unsupported",
             )
             return
@@ -203,7 +237,7 @@ class DeliveryWorker:
         except Exception:
             self._fallback_approval(
                 delivery,
-                prompt.fallback_text,
+                fallback_text,
                 "channel_interactive_failed",
             )
             return

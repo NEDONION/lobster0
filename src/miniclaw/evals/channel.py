@@ -11,7 +11,7 @@ from typing import Any
 from miniclaw.agent.turn import TurnResult
 from miniclaw.bootstrap import initialize_state
 from miniclaw.channels.approvals import (
-    ApprovalPrompt,
+    ApprovalEnvelope,
     ChannelApprovalController,
     approval_delivery_payload,
 )
@@ -288,13 +288,13 @@ async def _approval_evidence(case: EvalCase, *, approve: bool) -> tuple[str, ...
     """验证文本控制命令绕过模型并保留 Core decision 枚举。"""
     service = _ApprovalService()
     controller = ChannelApprovalController(
-        owner_open_id="ou_owner",
+        owner_external_user_id="ou_owner",
         approvals=_ApprovalRepository(),
         service=service,
     )
     outcome = await controller.handle_text(
         user_id=1,
-        actor_open_id="ou_owner",
+        actor_external_user_id="ou_owner",
         text=case.query,
     )
     expected = ApprovalDecision.ONCE if approve else ApprovalDecision.DENY
@@ -532,7 +532,15 @@ async def _card_fallback_evidence() -> tuple[str, ...]:
         repository = DeliveryRepository(database)
         message_id = _assistant_message(database, owner.id, "card")
         payload = approval_delivery_payload(
-            ApprovalPrompt({"header": {"title": "approval"}}, "/deny 7")
+            ApprovalEnvelope(
+                version=2,
+                approval_id=7,
+                tool_name="write_file",
+                summary="write_file note.txt",
+                decisions=(ApprovalDecision.ONCE, ApprovalDecision.DENY),
+                expires_at="2026-08-08T09:00:00+00:00",
+                fallback_text="/deny 7",
+            )
         )
         card = repository.create_parts(
             message_id=message_id,

@@ -304,7 +304,7 @@ git commit -m "refactor(channel): 抽取 shared limits、manager factory 与 del
 
 ### Step 3.1 — Define and RED-test the v2 envelope
 
-- [ ] 新增 frozen `ApprovalEnvelope`：
+- [x] 新增 frozen `ApprovalEnvelope`：
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -318,9 +318,9 @@ class ApprovalEnvelope:
     fallback_text: str
 ```
 
-- [ ] 序列化 JSON 使用固定字段和排序，正文有长度上限；拒绝额外 key、bool-as-int、未知 decision、过期格式、NUL、空 summary。
-- [ ] `repr` 只显示 version、approval_id、tool_name，不显示 summary/fallback。
-- [ ] 保留 v1 parser：读取旧 `card + fallback_text`，转换为中立 envelope 或 legacy delivery view；只读兼容，不再创建新 v1。
+- [x] 序列化 JSON 使用固定字段和排序，正文有长度上限；拒绝额外 key、bool-as-int、未知 decision、过期格式、NUL、空 summary。
+- [x] `repr` 只显示 version、approval_id、tool_name，不显示 summary/fallback。
+- [x] 保留 v1 parser：读取旧 `card + fallback_text`，转换为中立 envelope 或 legacy delivery view；只读兼容，不再创建新 v1。
 
 Run RED:
 
@@ -334,15 +334,15 @@ Expected RED: 当前 writer 只生成 Feishu v1 card payload。
 
 ### Step 3.2 — Separate Core decision from rendering
 
-- [ ] `ChannelApprovalController` 用 `owner_external_user_id` 代替 `owner_open_id`，`handle_text`/button handler 用 `actor_external_user_id`。
-- [ ] 文本命令格式保持 Core 统一：`approve <id> [once|always]` 和 `deny <id>`。
-- [ ] 新建平台 renderer 函数只把 envelope 转成平台 payload：Feishu card、Telegram inline keyboard 或纯文本、Discord view 或纯文本。
-- [ ] DeliveryWorker 优先调用可选 `send_approval(envelope, ...)`；平台不支持时原子 supersede 并创建 fallback Markdown parts。
+- [x] `ChannelApprovalController` 用 `owner_external_user_id` 代替 `owner_open_id`，`handle_text`/button handler 用 `actor_external_user_id`。
+- [x] 文本命令格式保持 Core 统一：`/approve <id> once|session|always` 和 `/deny <id>`。
+- [x] 新建平台 renderer 函数只把 envelope 转成平台 payload：Feishu card、Telegram/Discord 纯文本；平台 Transport 可在后续 Task 增加 inline keyboard/view。
+- [x] DeliveryWorker 优先调用可选 `send_approval(envelope, ...)`；平台不支持时原子 supersede 并创建 fallback Markdown parts。
 
 ### Step 3.3 — Prove old Feishu behavior
 
-- [ ] 旧 Feishu approve/deny、非 Owner 拒绝、expired、duplicate decision、card fallback 全通过。
-- [ ] v1 durable fixture 能在升级后的 DeliveryWorker 中完成或 fallback；不执行第二次 Tool。
+- [x] 旧 Feishu approve/deny、非 Owner 拒绝、expired、duplicate decision、card fallback 全通过。
+- [x] v1 durable fixture 能在升级后的 DeliveryWorker 中完成或 fallback；不执行第二次 Tool。
 
 Run GREEN:
 

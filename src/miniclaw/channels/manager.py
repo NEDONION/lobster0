@@ -12,7 +12,7 @@ from miniclaw.agent.events import RunEventHandler
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
     ApprovalCommandOutcome,
-    ApprovalPrompt,
+    ApprovalEnvelope,
     approval_delivery_payload,
 )
 from miniclaw.channels.base import DeliveryKind, InboundMessage
@@ -64,14 +64,14 @@ class ApprovalHandler(Protocol):
         self,
         *,
         user_id: int,
-        actor_open_id: str,
+        actor_external_user_id: str,
         text: str,
         on_event: RunEventHandler | None = None,
     ) -> ApprovalCommandOutcome:
         """识别并处理文本控制命令。"""
         ...
 
-    def prompt(self, *, user_id: int, approval_id: int) -> ApprovalPrompt:
+    def prompt(self, *, user_id: int, approval_id: int) -> ApprovalEnvelope:
         """构建 Core 已校验的审批展示。"""
         ...
 
@@ -306,7 +306,7 @@ class ChannelManager:
                 try:
                     command = await self._approvals.handle_text(
                         user_id=self.owner_id,
-                        actor_open_id=event.external_user_id,
+                        actor_external_user_id=event.external_user_id,
                         text=event.content,
                         on_event=None if activity is None else activity.on_event,
                     )
@@ -444,7 +444,7 @@ class ChannelManager:
         approval_id: int,
     ) -> None:
         """创建 durable Approval card，构造失败时退化为普通文本提示。"""
-        prompt: ApprovalPrompt | None = None
+        prompt: ApprovalEnvelope | None = None
         if self._approvals is not None:
             try:
                 prompt = self._approvals.prompt(

@@ -1,10 +1,10 @@
-"""飞书 Approval 的脱敏展示、严格命令解析与 Core continuation 路由。"""
+"""平台中立 Approval envelope、严格命令解析与 Core continuation 路由。"""
 
 import json
 import re
 from dataclasses import dataclass
-from datetime import UTC
-from typing import Any, Protocol
+from datetime import UTC, datetime
+from typing import Any, Literal, Protocol
 
 from miniclaw.agent.events import RunEventHandler
 from miniclaw.agent.turn import TurnResult
@@ -13,8 +13,20 @@ from miniclaw.storage.tooling import ApprovalPresentation
 
 _APPROVE = re.compile(r"/approve[ \t]+([1-9][0-9]*)[ \t]+(once|session|always)\Z")
 _DENY = re.compile(r"/deny[ \t]+([1-9][0-9]*)\Z")
-_ACTION_KEYS = frozenset({"miniclaw_action", "approval_id", "decision"})
+_ACTION_V1_KEYS = frozenset({"miniclaw_action", "approval_id", "decision"})
+_ACTION_V2_KEYS = frozenset({"version", "miniclaw_action", "approval_id", "decision"})
 _USAGE = "用法：/approve <编号> once|session|always，或 /deny <编号>。"
+_V2_KEYS = frozenset(
+    {
+        "version",
+        "approval_id",
+        "tool_name",
+        "summary",
+        "decisions",
+        "expires_at",
+        "fallback_text",
+    }
+)
 
 
 class ApprovalPresentationRepository(Protocol):
@@ -43,10 +55,55 @@ class ApprovalContinuationService(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ApprovalPrompt:
-    """保存卡片和始终可用的文本降级指令。"""
+    """保存 legacy/平台渲染后的 Card 和始终可用的文本降级指令。"""
 
     card: dict[str, Any]
     fallback_text: str
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class ApprovalEnvelope:
+    """保存可跨平台持久化的 v2 审批展示语义。"""
+
+    version: Literal[2]
+    approval_id: int
+    tool_name: str
+    summary: str
+    decisions: tuple[ApprovalDecision, ...]
+    expires_at: str
+    fallback_text: str
+
+    def __post_init__(self) -> None:
+        """拒绝松散 JSON、控制字符、重复决定和无时区时间。"""
+        if type(self.version) is not int or self.version != 2:
+            raise ValueError("invalid approval envelope version")
+        if type(self.approval_id) is not int or self.approval_id <= 0:
+            raise ValueError("invalid approval envelope id")
+        _bounded_visible(self.tool_name, "tool_name", maximum=100)
+        _bounded_visible(self.summary, "summary", maximum=500)
+        _bounded_visible(self.fallback_text, "fallback_text", maximum=2000)
+        if (
+            not isinstance(self.decisions, tuple)
+            or not self.decisions
+            or any(not isinstance(item, ApprovalDecision) for item in self.decisions)
+            or len(set(self.decisions)) != len(self.decisions)
+            or ApprovalDecision.DENY not in self.decisions
+        ):
+            raise ValueError("invalid approval envelope decisions")
+        try:
+            expires = datetime.fromisoformat(self.expires_at)
+        except (TypeError, ValueError):
+            raise ValueError("invalid approval envelope expiry") from None
+        if expires.tzinfo is None or expires.utcoffset() is None:
+            raise ValueError("invalid approval envelope expiry")
+
+    def __repr__(self) -> str:
+        """只显示版本、内部审批编号和 Tool 名，不显示操作摘要。"""
+        return (
+            "ApprovalEnvelope("
+            f"version={self.version}, approval_id={self.approval_id}, "
+            f"tool_name={self.tool_name!r})"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,27 +117,34 @@ class ApprovalCommandOutcome:
 
 
 class ChannelApprovalController:
-    """把飞书文本/按钮命令直接路由到唯一 Core Approval 状态机。"""
+    """把任意 Channel 的文本/按钮命令路由到唯一 Core Approval 状态机。"""
 
     def __init__(
         self,
         *,
-        owner_open_id: str,
+        owner_external_user_id: str,
         approvals: ApprovalPresentationRepository,
         service: ApprovalContinuationService,
     ) -> None:
-        if not owner_open_id:
-            raise ValueError("owner_open_id must not be empty")
-        self._owner_open_id = owner_open_id
+        if not owner_external_user_id:
+            raise ValueError("owner_external_user_id must not be empty")
+        self._owner_external_user_id = owner_external_user_id
         self._approvals = approvals
         self._service = service
 
-    def prompt(self, *, user_id: int, approval_id: int) -> ApprovalPrompt:
-        """从 Core presentation 构建有限按钮和文本降级说明。"""
+    def prompt(self, *, user_id: int, approval_id: int) -> ApprovalEnvelope:
+        """从 Core presentation 构建平台中立、可持久化的 v2 envelope。"""
         presentation = self._approvals.presentation(user_id, approval_id)
         fallback = _fallback_text(presentation)
-        return ApprovalPrompt(
-            card=_approval_card(presentation, fallback),
+        approval = presentation.approval
+        decisions = tuple(dict.fromkeys((*presentation.grant_modes, ApprovalDecision.DENY)))
+        return ApprovalEnvelope(
+            version=2,
+            approval_id=approval.id,
+            tool_name=approval.tool_name,
+            summary=approval.summary,
+            decisions=decisions,
+            expires_at=approval.expires_at.astimezone(UTC).isoformat(),
             fallback_text=fallback,
         )
 
@@ -88,7 +152,7 @@ class ChannelApprovalController:
         self,
         *,
         user_id: int,
-        actor_open_id: str,
+        actor_external_user_id: str,
         text: str,
         on_event: RunEventHandler | None = None,
     ) -> ApprovalCommandOutcome:
@@ -102,7 +166,7 @@ class ChannelApprovalController:
         approval_id, decision = parsed
         return await self._decide(
             user_id=user_id,
-            actor_open_id=actor_open_id,
+            actor_external_user_id=actor_external_user_id,
             approval_id=approval_id,
             decision=decision,
             on_event=on_event,
@@ -112,7 +176,7 @@ class ChannelApprovalController:
         self,
         *,
         user_id: int,
-        actor_open_id: str,
+        actor_external_user_id: str,
         value: Any,
         on_event: RunEventHandler | None = None,
     ) -> ApprovalCommandOutcome:
@@ -123,7 +187,7 @@ class ChannelApprovalController:
         approval_id, decision = parsed
         return await self._decide(
             user_id=user_id,
-            actor_open_id=actor_open_id,
+            actor_external_user_id=actor_external_user_id,
             approval_id=approval_id,
             decision=decision,
             on_event=on_event,
@@ -133,13 +197,13 @@ class ChannelApprovalController:
         self,
         *,
         user_id: int,
-        actor_open_id: str,
+        actor_external_user_id: str,
         approval_id: int,
         decision: ApprovalDecision,
         on_event: RunEventHandler | None,
     ) -> ApprovalCommandOutcome:
         """执行 Owner gate，并把稳定 Core 错误映射为短提示。"""
-        if actor_open_id != self._owner_open_id:
+        if actor_external_user_id != self._owner_external_user_id:
             return ApprovalCommandOutcome(
                 True,
                 notice="只有 Owner 可以处理这条审批。",
@@ -165,13 +229,19 @@ class ChannelApprovalController:
         )
 
 
-def approval_delivery_payload(prompt: ApprovalPrompt) -> str:
-    """把卡片与文本 fallback 编码为 DeliveryWorker 可验证的 JSON。"""
+def approval_delivery_payload(envelope: ApprovalEnvelope) -> str:
+    """把平台中立 v2 envelope 编码为 DeliveryWorker 可验证的 JSON。"""
+    if not isinstance(envelope, ApprovalEnvelope):
+        raise TypeError("approval_delivery_payload requires ApprovalEnvelope")
     return json.dumps(
         {
-            "version": 1,
-            "card": prompt.card,
-            "fallback_text": prompt.fallback_text,
+            "version": envelope.version,
+            "approval_id": envelope.approval_id,
+            "tool_name": envelope.tool_name,
+            "summary": envelope.summary,
+            "decisions": [decision.value for decision in envelope.decisions],
+            "expires_at": envelope.expires_at,
+            "fallback_text": envelope.fallback_text,
         },
         ensure_ascii=False,
         allow_nan=False,
@@ -180,22 +250,63 @@ def approval_delivery_payload(prompt: ApprovalPrompt) -> str:
     )
 
 
-def parse_approval_delivery_payload(content: str) -> ApprovalPrompt:
-    """严格解码持久化审批 payload，损坏数据失败关闭。"""
+def parse_approval_delivery_payload(content: str) -> ApprovalEnvelope | ApprovalPrompt:
+    """严格解码 v2 envelope，并只读兼容升级前的 v1 Feishu Card。"""
     try:
         value = json.loads(content)
     except (TypeError, json.JSONDecodeError):
         raise ValueError("invalid approval delivery payload") from None
-    if (
-        not isinstance(value, dict)
-        or set(value) != {"version", "card", "fallback_text"}
-        or value.get("version") != 1
-        or not isinstance(value.get("card"), dict)
-        or not isinstance(value.get("fallback_text"), str)
-        or not value["fallback_text"]
-    ):
+    if not isinstance(value, dict) or type(value.get("version")) is not int:
         raise ValueError("invalid approval delivery payload")
-    return ApprovalPrompt(value["card"], value["fallback_text"])
+    if value["version"] == 1:
+        if (
+            set(value) != {"version", "card", "fallback_text"}
+            or not isinstance(value.get("card"), dict)
+            or not _is_bounded_visible(value.get("fallback_text"), maximum=2000)
+        ):
+            raise ValueError("invalid approval delivery payload")
+        return ApprovalPrompt(value["card"], value["fallback_text"])
+    if value["version"] != 2 or set(value) != _V2_KEYS:
+        raise ValueError("invalid approval delivery payload")
+    decisions = value.get("decisions")
+    if not isinstance(decisions, list) or any(not isinstance(item, str) for item in decisions):
+        raise ValueError("invalid approval delivery payload")
+    try:
+        parsed_decisions = tuple(ApprovalDecision(item) for item in decisions)
+        return ApprovalEnvelope(
+            version=value["version"],
+            approval_id=value.get("approval_id"),
+            tool_name=value.get("tool_name"),
+            summary=value.get("summary"),
+            decisions=parsed_decisions,
+            expires_at=value.get("expires_at"),
+            fallback_text=value.get("fallback_text"),
+        )
+    except (TypeError, ValueError):
+        raise ValueError("invalid approval delivery payload") from None
+
+
+def feishu_approval_prompt(envelope: ApprovalEnvelope) -> ApprovalPrompt:
+    """把中立 envelope 渲染为 Feishu Card；持久层不保存该平台 payload。"""
+    if not isinstance(envelope, ApprovalEnvelope):
+        raise TypeError("feishu renderer requires ApprovalEnvelope")
+    return ApprovalPrompt(
+        card=_approval_card(envelope),
+        fallback_text=envelope.fallback_text,
+    )
+
+
+def text_approval_prompt(envelope: ApprovalEnvelope) -> str:
+    """把中立 envelope 渲染为 Telegram/Discord 都可发送的有限纯文本。"""
+    if not isinstance(envelope, ApprovalEnvelope):
+        raise TypeError("text renderer requires ApprovalEnvelope")
+    return (
+        f"MiniClaw 审批 #{envelope.approval_id}\n"
+        f"工具：{envelope.tool_name}\n"
+        f"操作：{envelope.summary}\n"
+        f"过期时间：{envelope.expires_at}\n"
+        f"{envelope.fallback_text}"
+    )
 
 
 def _parse_text_command(text: str) -> tuple[int, ApprovalDecision] | None:
@@ -210,8 +321,10 @@ def _parse_text_command(text: str) -> tuple[int, ApprovalDecision] | None:
 
 
 def _parse_card_action(value: Any) -> tuple[int, ApprovalDecision] | None:
-    """解析卡片 callback 的固定三字段 payload。"""
-    if not isinstance(value, dict) or set(value) != _ACTION_KEYS:
+    """解析 v2 callback，并兼容升级前的固定三字段 v1 payload。"""
+    if not isinstance(value, dict) or set(value) not in {_ACTION_V1_KEYS, _ACTION_V2_KEYS}:
+        return None
+    if "version" in value and (type(value["version"]) is not int or value["version"] != 2):
         return None
     if value.get("miniclaw_action") != "approval":
         return None
@@ -227,42 +340,49 @@ def _parse_card_action(value: Any) -> tuple[int, ApprovalDecision] | None:
 
 
 def _approval_card(
-    presentation: ApprovalPresentation,
-    fallback_text: str,
+    envelope: ApprovalEnvelope,
 ) -> dict[str, Any]:
-    """构造只含脱敏 summary、TTL 和 Core grant modes 的交互卡片。"""
-    approval = presentation.approval
+    """构造只含中立 envelope 字段的 Feishu 交互卡片。"""
     actions = [
         _button(
-            approval.id,
+            envelope.approval_id,
             mode,
             {
                 ApprovalDecision.ONCE: "仅本次",
                 ApprovalDecision.SESSION: "本会话",
                 ApprovalDecision.ALWAYS: "始终允许",
+                ApprovalDecision.DENY: "拒绝",
             }[mode],
             primary=mode is ApprovalDecision.ONCE,
+            danger=mode is ApprovalDecision.DENY,
         )
-        for mode in presentation.grant_modes
+        for mode in envelope.decisions
     ]
-    actions.append(_button(approval.id, ApprovalDecision.DENY, "拒绝", danger=True))
     return {
         "config": {"wide_screen_mode": True},
         "header": {
             "template": "orange",
-            "title": {"tag": "plain_text", "content": f"MiniClaw 审批 #{approval.id}"},
+            "title": {
+                "tag": "plain_text",
+                "content": f"MiniClaw 审批 #{envelope.approval_id}",
+            },
         },
         "elements": [
             {
                 "tag": "markdown",
                 "content": (
-                    f"**工具**：`{approval.tool_name}`\n"
-                    f"**操作**：{approval.summary}\n"
-                    f"**过期时间**：{approval.expires_at.astimezone(UTC).isoformat()}"
+                    f"**工具**：`{envelope.tool_name}`\n"
+                    f"**操作**：{envelope.summary}\n"
+                    f"**过期时间**：{envelope.expires_at}"
                 ),
             },
             {"tag": "action", "actions": actions},
-            {"tag": "note", "elements": [{"tag": "plain_text", "content": fallback_text}]},
+            {
+                "tag": "note",
+                "elements": [
+                    {"tag": "plain_text", "content": envelope.fallback_text}
+                ],
+            },
         ],
     }
 
@@ -282,6 +402,7 @@ def _button(
         "text": {"tag": "plain_text", "content": label},
         "type": kind,
         "value": {
+            "version": 2,
             "miniclaw_action": "approval",
             "approval_id": approval_id,
             "decision": decision.value,
@@ -297,6 +418,23 @@ def _fallback_text(presentation: ApprovalPresentation) -> str:
     ]
     commands.append(f"/deny {approval_id}")
     return "卡片不可用时发送：" + "；".join(commands)
+
+
+def _is_bounded_visible(value: object, *, maximum: int) -> bool:
+    """判断文本非空、有界且不含危险控制字符。"""
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and len(value) <= maximum
+        and not any(ord(character) < 32 and character not in "\n\t" for character in value)
+    )
+
+
+def _bounded_visible(value: object, name: str, *, maximum: int) -> str:
+    """校验 envelope 的有限可见文本，不在异常中回显原值。"""
+    if not _is_bounded_visible(value, maximum=maximum):
+        raise ValueError(f"invalid approval envelope {name}")
+    return value
 
 
 def _approval_error_notice(code: str) -> str:

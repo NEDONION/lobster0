@@ -7,10 +7,11 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.channels.approvals import ApprovalPrompt, approval_delivery_payload
+from miniclaw.channels.approvals import ApprovalEnvelope, approval_delivery_payload
 from miniclaw.channels.base import ChannelTransportError, SendReceipt
 from miniclaw.channels.delivery import DeliveryWorker, split_message
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.storage.channels import DeliveryRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.migrations import apply_migrations
@@ -195,12 +196,8 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_approval_card_success_or_failure_keeps_text_fallback(self) -> None:
         """审批卡成功记录 sent；失败则 supersede 并排队同一提示的 Markdown fallback。"""
-        payload = approval_delivery_payload(
-            ApprovalPrompt(
-                card={"header": {"title": "approval"}},
-                fallback_text="发送 /approve 7 once 或 /deny 7",
-            )
-        )
+        envelope = self._approval_envelope()
+        payload = approval_delivery_payload(envelope)
 
         successful_delivery = self.repository.create_parts(
             message_id=self._assistant_message(),
@@ -217,7 +214,8 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(await self._worker(successful_transport).run_once())
         self.assertEqual(self.repository.get(successful_delivery.id).status, "sent")
-        self.assertEqual(successful_transport.cards_sent[0][2], {"header": {"title": "approval"}})
+        rendered_card = successful_transport.cards_sent[0][2]
+        self.assertIn("MiniClaw 审批 #7", json.dumps(rendered_card, ensure_ascii=False))
 
         failed_message_id = self._assistant_message()
         failed_delivery = self.repository.create_parts(
@@ -291,9 +289,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
             "channel_approval_payload_invalid",
         )
 
-        valid_payload = approval_delivery_payload(
-            ApprovalPrompt(card={"header": {}}, fallback_text="approve 9 once")
-        )
+        valid_payload = approval_delivery_payload(self._approval_envelope())
         unsupported = self.repository.create_parts(
             message_id=self._assistant_message(),
             channel="telegram",
@@ -328,6 +324,78 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
             "channel_interactive_unsupported",
         )
 
+    async def test_v1_delivery_and_neutral_send_approval_paths(self) -> None:
+        """旧 Feishu row 仍能发送，新平台优先接收 typed v2 envelope。"""
+        legacy_payload = json.dumps(
+            {
+                "version": 1,
+                "card": {"header": {"title": "legacy"}},
+                "fallback_text": "/deny 7",
+            },
+            ensure_ascii=False,
+        )
+        legacy = self.repository.create_parts(
+            message_id=self._assistant_message(),
+            channel="feishu",
+            account_id="default",
+            external_conversation_id="oc_chat",
+            reply_to_message_id="om_legacy",
+            kind="approval",
+            contents=(legacy_payload,),
+        )[0]
+        legacy_transport = FakeChannelTransport(
+            (),
+            card_outcomes=(SendReceipt("om_legacy_sent"),),
+        )
+        self.assertTrue(await self._worker(legacy_transport).run_once())
+        self.assertEqual(self.repository.get(legacy.id).status, "sent")
+
+        envelope = self._approval_envelope()
+        neutral = self.repository.create_parts(
+            message_id=self._assistant_message(),
+            channel="telegram",
+            account_id="default",
+            external_conversation_id="chat",
+            reply_to_message_id="message",
+            kind="approval",
+            contents=(approval_delivery_payload(envelope),),
+        )[0]
+
+        class NeutralTransport:
+            received: ApprovalEnvelope | None = None
+
+            async def connect(self) -> None:
+                return None
+
+            async def disconnect(self) -> None:
+                return None
+
+            async def send(self, message, *, idempotency_key: str) -> SendReceipt:
+                return SendReceipt("fallback")
+
+            async def send_approval(
+                self,
+                *,
+                conversation_id: str,
+                reply_to_message_id: str,
+                envelope: ApprovalEnvelope,
+                idempotency_key: str,
+            ) -> SendReceipt:
+                self.received = envelope
+                return SendReceipt("telegram-approval")
+
+        neutral_transport = NeutralTransport()
+        neutral_worker = DeliveryWorker(
+            transport=neutral_transport,
+            repository=self.repository,
+            channel="telegram",
+            account_id="default",
+            poll_interval=0.01,
+        )
+        self.assertTrue(await neutral_worker.run_once())
+        self.assertEqual(self.repository.get(neutral.id).status, "sent")
+        self.assertEqual(neutral_transport.received, envelope)
+
     def _worker(
         self,
         transport: FakeChannelTransport,
@@ -349,6 +417,19 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
             clock=self.clock,
             poll_interval=0.01,
             observer=observer,
+        )
+
+    @staticmethod
+    def _approval_envelope() -> ApprovalEnvelope:
+        """返回 Delivery 测试共用的中立 v2 审批。"""
+        return ApprovalEnvelope(
+            version=2,
+            approval_id=7,
+            tool_name="write_file",
+            summary="write_file note.txt",
+            decisions=(ApprovalDecision.ONCE, ApprovalDecision.DENY),
+            expires_at="2026-08-08T09:00:00+00:00",
+            fallback_text="发送 /approve 7 once 或 /deny 7",
         )
 
     def _delivery(self, content: str):

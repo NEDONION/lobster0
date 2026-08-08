@@ -13,13 +13,14 @@ from miniclaw.agent.events import RunEvent
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
     ApprovalCommandOutcome,
-    ApprovalPrompt,
+    ApprovalEnvelope,
     approval_delivery_payload,
 )
 from miniclaw.channels.base import InboundMessage, SendReceipt
 from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
@@ -198,13 +199,13 @@ class ManagerApprovalController:
         self,
         *,
         user_id: int,
-        actor_open_id: str,
+        actor_external_user_id: str,
         text: str,
         on_event=None,
     ) -> ApprovalCommandOutcome:
         """只消费测试中的 /deny 命令并返回安全通知。"""
         del user_id, on_event
-        self.calls.append((actor_open_id, text))
+        self.calls.append((actor_external_user_id, text))
         if self.fail:
             raise RuntimeError("approval-controller-secret")
         if text == "/deny 7":
@@ -215,11 +216,16 @@ class ManagerApprovalController:
             )
         return ApprovalCommandOutcome(False)
 
-    def prompt(self, *, user_id: int, approval_id: int) -> ApprovalPrompt:
-        """返回固定卡片和文本 fallback。"""
+    def prompt(self, *, user_id: int, approval_id: int) -> ApprovalEnvelope:
+        """返回固定平台中立 envelope。"""
         del user_id
-        return ApprovalPrompt(
-            card={"header": {"title": f"approval-{approval_id}"}},
+        return ApprovalEnvelope(
+            version=2,
+            approval_id=approval_id,
+            tool_name="write_file",
+            summary=f"approval-{approval_id}",
+            decisions=(ApprovalDecision.ONCE, ApprovalDecision.DENY),
+            expires_at="2026-08-08T09:00:00+00:00",
             fallback_text=f"发送 /approve {approval_id} once 或 /deny {approval_id}",
         )
 

@@ -8,8 +8,13 @@ from typing import Any
 
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
+    ApprovalEnvelope,
+    ApprovalPrompt,
     ChannelApprovalController,
     approval_delivery_payload,
+    feishu_approval_prompt,
+    parse_approval_delivery_payload,
+    text_approval_prompt,
 )
 from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.storage.tooling import ApprovalPresentation, StoredApproval
@@ -85,7 +90,7 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
         continuation = service or FakeContinuationService()
         return (
             ChannelApprovalController(
-                owner_open_id="ou_owner",
+                owner_external_user_id="ou_owner",
                 approvals=repository or FakeApprovalRepository(),
                 service=continuation,
             ),
@@ -101,7 +106,8 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        prompt = controller.prompt(user_id=1, approval_id=7)
+        envelope = controller.prompt(user_id=1, approval_id=7)
+        prompt = feishu_approval_prompt(envelope)
         rendered = json.dumps(prompt.card, ensure_ascii=False)
 
         self.assertIn("run_command /usr/bin/open -a Feishu", rendered)
@@ -111,9 +117,12 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"decision": "deny"', rendered)
         self.assertNotIn("hash-private", rendered)
         self.assertIn("/approve 7 once", prompt.fallback_text)
-        payload = json.loads(approval_delivery_payload(prompt))
-        self.assertEqual(payload["fallback_text"], prompt.fallback_text)
-        self.assertEqual(payload["card"], prompt.card)
+        payload = json.loads(approval_delivery_payload(envelope))
+        self.assertEqual(payload["version"], 2)
+        self.assertEqual(payload["approval_id"], 7)
+        self.assertEqual(payload["tool_name"], "write_file")
+        self.assertEqual(payload["decisions"], ["once", "session", "deny"])
+        self.assertNotIn("card", payload)
 
     async def test_text_commands_bypass_model_and_map_all_decisions(self) -> None:
         """approve once/session/always 与 deny 均严格解析并直达 continuation。"""
@@ -127,7 +136,7 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
         for text, decision in commands:
             outcome = await controller.handle_text(
                 user_id=1,
-                actor_open_id="ou_owner",
+                actor_external_user_id="ou_owner",
                 text=text,
             )
             self.assertTrue(outcome.handled)
@@ -140,17 +149,17 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
 
         denied = await controller.handle_text(
             user_id=1,
-            actor_open_id="ou_friend",
+            actor_external_user_id="ou_friend",
             text="/approve 7 once",
         )
         malformed = await controller.handle_text(
             user_id=1,
-            actor_open_id="ou_owner",
+            actor_external_user_id="ou_owner",
             text="/approve 7 root",
         )
         unrelated = await controller.handle_text(
             user_id=1,
-            actor_open_id="ou_owner",
+            actor_external_user_id="ou_owner",
             text="帮我看看审批",
         )
 
@@ -166,6 +175,7 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
         )
         controller, service = self._controller(service=service)
         value: dict[str, Any] = {
+            "version": 2,
             "miniclaw_action": "approval",
             "approval_id": 7,
             "decision": "once",
@@ -173,12 +183,12 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
 
         outcome = await controller.handle_card_action(
             user_id=1,
-            actor_open_id="ou_owner",
+            actor_external_user_id="ou_owner",
             value=value,
         )
         malformed = await controller.handle_card_action(
             user_id=1,
-            actor_open_id="ou_owner",
+            actor_external_user_id="ou_owner",
             value={**value, "extra": "not-allowed"},
         )
 
@@ -188,6 +198,85 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(malformed.handled)
         self.assertIn("无法识别", malformed.notice or "")
         self.assertEqual(len(service.calls), 1)
+
+
+class ApprovalEnvelopeV2Test(unittest.TestCase):
+    """验证 durable Approval v2 是严格、平台中立且兼容旧 v1 的 envelope。"""
+
+    def _envelope(self) -> ApprovalEnvelope:
+        """返回稳定的合法 v2 fixture。"""
+        return ApprovalEnvelope(
+            version=2,
+            approval_id=7,
+            tool_name="write_file",
+            summary="write_file note.txt",
+            decisions=(ApprovalDecision.ONCE, ApprovalDecision.DENY),
+            expires_at="2026-08-08T09:00:00+00:00",
+            fallback_text="卡片不可用时发送：/approve 7 once；/deny 7",
+        )
+
+    def test_v2_round_trip_is_neutral_strict_and_redacted(self) -> None:
+        """新 writer 不得持久化平台 Card，parser 应恢复 typed envelope。"""
+        envelope = self._envelope()
+
+        payload = approval_delivery_payload(envelope)
+        decoded = json.loads(payload)
+        parsed = parse_approval_delivery_payload(payload)
+
+        self.assertEqual(parsed, envelope)
+        self.assertEqual(
+            set(decoded),
+            {
+                "version",
+                "approval_id",
+                "tool_name",
+                "summary",
+                "decisions",
+                "expires_at",
+                "fallback_text",
+            },
+        )
+        self.assertNotIn("card", decoded)
+        self.assertNotIn(envelope.summary, repr(envelope))
+        self.assertNotIn(envelope.fallback_text, repr(envelope))
+        text_prompt = text_approval_prompt(envelope)
+        self.assertIn("MiniClaw 审批 #7", text_prompt)
+        self.assertIn("/approve 7 once", text_prompt)
+
+    def test_v1_payload_remains_readable_but_is_not_written(self) -> None:
+        """升级前 pending Card 仍能恢复；再次编码只接受 v2 envelope。"""
+        legacy = json.dumps(
+            {
+                "version": 1,
+                "card": {"header": {"title": "legacy"}},
+                "fallback_text": "/deny 7",
+            },
+            ensure_ascii=False,
+        )
+
+        parsed = parse_approval_delivery_payload(legacy)
+
+        self.assertIsInstance(parsed, ApprovalPrompt)
+        self.assertEqual(parsed.fallback_text, "/deny 7")
+        with self.assertRaises(TypeError):
+            approval_delivery_payload(parsed)  # type: ignore[arg-type]
+
+    def test_invalid_v2_values_fail_closed(self) -> None:
+        """额外 key、bool ID、未知 decision、坏时间和控制字符全部拒绝。"""
+        valid = json.loads(approval_delivery_payload(self._envelope()))
+        invalid = (
+            {**valid, "extra": True},
+            {**valid, "version": True},
+            {**valid, "approval_id": True},
+            {**valid, "decisions": ["root", "deny"]},
+            {**valid, "expires_at": "tomorrow"},
+            {**valid, "summary": "unsafe\0summary"},
+            {**valid, "fallback_text": ""},
+        )
+        for value in invalid:
+            with self.subTest(keys=sorted(value)):
+                with self.assertRaises(ValueError):
+                    parse_approval_delivery_payload(json.dumps(value))
 
 
 if __name__ == "__main__":
