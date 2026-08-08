@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · Phase 5 + Autopilot permissions implementation pass · IM live gates pending</div>
+      <div class="branch">target: main · Phase 5.1 + Autopilot IMPLEMENTATION PASS · Feishu Live harness pass · real Bot pending</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 已把普通 Home 文件、有限写根与用户 CLI 纳入同一安全边界。safe / smart / autopilot / yolo 四档权限、Owner 私聊信任、动态切换和紧凑滚动审批框已经贯通 TUI 与三个 IM。飞书 WebSocket、Telegram long polling 与 Discord Gateway 在一个 Python 进程中共享 AgentRuntime、十个 Tool、Policy、Memory、Skills 和 SQLite durable truth；一个平台 degraded 不会拖停其他平台。下一步是用真实测试账号完成三套 live exit gate，再进入 Phase 6 受控演进。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 已把普通 Home 文件、有限写根与用户 CLI 纳入同一安全边界，safe / smart / autopilot / yolo 四档权限、Owner 私聊信任、动态切换和紧凑滚动审批框已经贯通 TUI 与三个 IM。飞书、Telegram 与 Discord 三条独立 pipeline 共享一个 AgentRuntime、十个 Tool、Policy、Approval、Memory、Skills 和 SQLite durable truth。Phase 5.1 已把 15 条飞书真实场景、production Gateway 启停、只读 SQLite evidence、人工客户端确认与 Secret scan 编排成安全 Runner。下一步是创建并发布专用真实飞书 Bot，完成 15/15，再进入 Phase 6 受控演进。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Phase 5 implementation pass</span>
-        <strong>P5 CODE ✓</strong>
-        <p>492 Python + 30 TypeScript tests · Agent 28/28 · Channel 32/32 · local soak 640/640 · live pending</p>
+        <span class="tag">Phase 5.1 + Autopilot pass</span>
+        <strong>BOT NEXT</strong>
+        <p>517 Python + 30 TypeScript tests · Agent 28/28 · Channel 32/32 · soak 640/640 · REAL BOT PENDING</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">492+30 <small>passing</small></span>
+        <span class="metric-value">517+30 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -436,12 +436,12 @@
         </article>
         <article class="phase done">
           <div class="phase-no">Phase 4</div>
-          <div><h3>飞书生产链路</h3><p>Channel contract、白名单、durable Inbox/Outbox、WebSocket、Gateway、分片重试、streaming card、审批与结构化 Audit 已实现；真实 E2E 仍独立待验。</p></div>
+          <div><h3>飞书生产链路</h3><p>Channel contract、白名单、durable Inbox/Outbox、WebSocket、Gateway、分片、卡片、审批和 Audit 已实现；15-case Live Runner 也已完成，真实 Bot 创建/发布与 15/15 Evidence 待执行。</p></div>
           <span class="pill">COMPLETED</span>
         </article>
         <article class="phase done">
           <div class="phase-no">Phase 5</div>
-          <div><h3>Telegram 与 Discord</h3><p>两个 official Transport、严格 Adapter、neutral Approval、GatewaySupervisor、22 项 Doctor、20 条新场景和 640-check soak 均已完成；Telegram live pending，Discord live pending。</p></div>
+          <div><h3>Multi-channel 与 Live gates</h3><p>Telegram/Discord official Transport、GatewaySupervisor、22 项 Doctor、32-case 与 640-check soak 已完成；Feishu harness pass，三个真实平台仍需各自 evidence。</p></div>
           <span class="pill">CODE PASS</span>
         </article>
         <article class="phase current">
@@ -459,7 +459,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 5 implementation pass</p>
+        <p class="eyebrow">Phase 5 implementation pass · Phase 5.1 live harness</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -536,7 +536,12 @@
           <li class="complete">一个 AgentRuntime + 三条独立 Channel pipeline + runtime fault isolation</li>
           <li class="complete">neutral Approval v2 envelope + Feishu v1 read compatibility</li>
           <li class="complete">22 项 offline Doctor + 两个 15-step secret-free live harness</li>
-          <li class="complete">492 Python + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
+          <li class="complete">FEISHU-LIVE-001..015 严格 scenario 与 evidence allowlist</li>
+          <li class="complete">read-only SQLite checkpoint：Inbox / Turn / Tool / Approval / Delivery / Audit</li>
+          <li class="complete">bounded Gateway：exact ready、并发 drain、两次 SIGTERM、无 SIGKILL</li>
+          <li class="complete">0600 O_EXCL redacted Evidence + bounded Secret scan</li>
+          <li class="complete">确认前零读取、单 Feishu preflight、自动证据不可人工覆盖</li>
+          <li class="complete">517 Python + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -547,19 +552,19 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace/Personal 多根 Guard、敏感凭据硬拒绝、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 492 Python、30 TypeScript tests、28/28 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 517 Python、30 TypeScript tests、28/28 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640，Feishu 另有 15-case real Bot gate。</p></div>
         <div class="decision"><code>permissions</code><p>Autopilot 只给本地与 Owner 私聊；群聊/其他成员降级。任何模式都不能绕过敏感路径、exact argv、SSRF 和资源硬边界。</p></div>
         <div class="decision"><code>approval</code><p>审批框固定头尾、只滚动参数；Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
         <div class="decision"><code>scope</code><p>pi-tui、十个 Tool、Personal Machine 权限、用户 CLI 发现、Memory、Skills、Compaction、Approval 和飞书/Telegram/Discord multi-channel 已完成；真实平台 live gates 必须用各自凭据单独验收。</p></div>
-        <div class="decision"><code>live truth</code><p>Telegram live pending · Discord live pending · fake SDK 与 640/640 不冒充 production verified。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/96dc16f">96dc16f permission modes</a> · <a href="https://github.com/NEDONION/miniclaw/commit/efeb4ef">efeb4ef trusted Owner</a> · <a href="https://github.com/NEDONION/miniclaw/commit/0e916d2">0e916d2 dynamic TUI mode</a> · <a href="https://github.com/NEDONION/miniclaw/commit/e92278b">e92278b compact approval</a></p></div>
+        <div class="decision"><code>live truth</code><p>FEISHU E2E HARNESS PASS / REAL BOT PENDING · Telegram live pending · Discord live pending · fake SDK 不冒充 verified。</p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/96dc16f">96dc16f permission modes</a> · <a href="https://github.com/NEDONION/mini-claw/commit/e92278b">e92278b compact approval</a> · <a href="https://github.com/NEDONION/mini-claw/commit/1301b31">1301b31 Feishu Live orchestrator</a> · <a href="https://github.com/NEDONION/mini-claw/commit/00d4477">00d4477 redacted evidence</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 492 Python + 30 TypeScript tests + 28/28 Agent、32/32 Channel、640/640 soak</span>
-      <span><a href="../engineering/phase-2/autopilot-permissions-and-approval-ui.md">Autopilot permissions</a> · <a href="../engineering/phase-2/personal-machine-permissions.md">Personal permissions</a> · <a href="../engineering/phase-5/telegram-discord-channels.md">Phase 5 engineering</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../engineering/phase-5/completion-audit.md">completion audit</a> · <a href="../evals/releases/v0.5.0.md">v0.5.0</a></span>
+      <span>Last updated · 2026-08-08 · 517 Python + 30 TypeScript · Agent 28/28 · Channel 32/32 · soak 640/640</span>
+      <span><a href="../engineering/phase-2/autopilot-permissions-and-approval-ui.md">Autopilot permissions</a> · <a href="../engineering/phase-2/personal-machine-permissions.md">Personal permissions</a> · <a href="../engineering/phase-5/feishu-live-e2e.md">Feishu Live E2E</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../evals/releases/v0.5.1.md">v0.5.1</a></span>
     </footer>
   </main>
 </body>

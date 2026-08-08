@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from miniclaw.evals import cases as case_module
 from miniclaw.evals.cases import load_cases
 from miniclaw.evals.channel import run_channel_suite
 
@@ -63,6 +64,23 @@ class FeishuChannelEvalTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(suite.passed, 12, suite.cases)
         self.assertEqual(suite.failed, 0)
         self.assertTrue(all(result.failures == () for result in suite.cases))
+
+    async def test_repository_has_exact_fifteen_live_e2e_cases(self) -> None:
+        """真实平台门禁必须固定 15 个有序 ID，且不能混入 offline/channel fixture。"""
+        self.assertTrue(
+            hasattr(case_module, "load_feishu_live_cases"),
+            "load_feishu_live_cases is missing",
+        )
+        live = case_module.load_feishu_live_cases(PROJECT_ROOT / "evals" / "scenarios")
+
+        self.assertEqual(
+            [case.id for case in live],
+            [f"FEISHU-LIVE-{index:03d}" for index in range(1, 16)],
+        )
+        self.assertTrue(all(case.layers == ("live",) for case in live))
+        self.assertTrue(all(case.responses == () for case in live))
+        self.assertTrue(all(case.channel_fixture is None for case in live))
+        self.assertTrue(all(case.expected.live_local_evidence for case in live))
 
     async def test_live_harness_requires_explicit_confirmation(self) -> None:
         """未传 --confirm-live 时脚本必须在任何诊断/网络/写文件前退出 2。"""

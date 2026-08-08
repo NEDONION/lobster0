@@ -28,8 +28,10 @@
 13. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
    跑离线 gate 并记录 baseline。
 14. 阅读 [飞书 Channel Core](engineering/phase-4/feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
-   WebSocket Transport、Delivery 恢复、卡片审批和仍待完成的 Gateway E2E。
-15. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+   WebSocket Transport、Delivery 恢复和卡片审批。
+15. 阅读 [真实飞书 Bot 与 Live E2E](engineering/phase-5/feishu-live-e2e.md)，按图完成 Scope、同应用 Owner
+   discovery、15 条真实场景和脱敏 Evidence。
+16. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -95,6 +97,7 @@
 | 模块 | 文档 |
 | --- | --- |
 | 飞书 Channel Core、Gateway 与真实 E2E 边界 | [feishu-channel-core.md](engineering/phase-4/feishu-channel-core.md) |
+| 真实飞书 Bot 创建、Scope、15 条 Live gate 与 Evidence | [feishu-live-e2e.md](engineering/phase-5/feishu-live-e2e.md) |
 
 ## 评测与版本证据
 
@@ -105,6 +108,7 @@
 | [Eval v0.2.0](evals/releases/v0.2.0.md) | Phase 2 历史基线：245 tests、20/20 Agent cases、DeepSeek live smoke |
 | [Eval v0.3.0](evals/releases/v0.3.0.md) | Phase 3 基线：296 tests、24/24 Agent cases、Memory/Skills/Compaction |
 | [Eval v0.4.1](evals/releases/v0.4.1.md) | Personal Machine 基线：412+27 tests、28+12 cases、lark-cli 只读纵切 |
+| [Eval v0.5.1](evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与 REAL BOT PENDING |
 | [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md) | 对 OpenClaw/ZeroClaw/nanobot/RayClaw/Claw Bench/OpenJarvis 的方法映射 |
 | [R1/R2 实施计划](superpowers/plans/2026-08-08-agent-regression-benchmark.md) | TDD 任务、文件、命令与完成定义 |
 

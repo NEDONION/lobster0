@@ -2,8 +2,10 @@
 
 > 当前结论：**IMPLEMENTATION PASS**
 >
-> 当前全仓自动化证据：492/492 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、
+> 当前全仓自动化证据：517/517 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、
 > 32/32 Channel cases、20 轮 640/640 Channel checks。
+>
+> Feishu：**FEISHU E2E HARNESS PASS / REAL BOT PENDING**。
 >
 > 外部证据：Telegram **LIVE PENDING**；Discord **LIVE PENDING**。
 
@@ -43,8 +45,8 @@ pnpm --dir tui test
 
 | Gate | Result |
 | --- | ---: |
-| Python | Phase 5 exit 483/483 PASS；当前全仓 492/492 PASS |
-| TypeScript | 25/25 PASS |
+| Python | Phase 5 exit 483/483 PASS；当前全仓 517/517 PASS |
+| TypeScript | 当前全仓 30/30 PASS |
 
 Python 全量覆盖 Config、Provider、Turn、十个 Tool、Approval、Memory、Skills、TUI fallback、三平台 Adapter/
 Transport、GatewaySupervisor、Doctor 和 eval harness。TypeScript 覆盖 pi-tui/Bridge 协议、长粘贴、选择、流式
@@ -138,7 +140,7 @@ uv run miniclaw eval run \
 
 ## 5. Live harness 的安全规则
 
-入口：
+Telegram/Discord 入口：
 
 ```bash
 uv run python scripts/telegram_live_smoke.py
@@ -165,7 +167,17 @@ uv run python scripts/discord_live_smoke.py --confirm-live
 6. 全 Gateway preflight 通过；
 7. 当前目录能解析出 40 位 commit。
 
-## 6. 每个平台 15 项真实验收
+Feishu 使用更严格的半自动 Runner，它自己管理 production Gateway，并只读验证 SQLite：
+
+```bash
+uv run python scripts/feishu_live_smoke.py --confirm-live
+```
+
+未给 `--confirm-live` 时，三个脚本都必须在读取 `.env`、状态目录和凭据前退出 2。Feishu 额外要求只启用
+Feishu、worktree clean、没有旧 pending Approval，并在每个动作前捕获 checkpoint。完整说明见
+[真实飞书 Bot 与 Live E2E](feishu-live-e2e.md)。
+
+## 6. Telegram / Discord 每个平台 15 项真实验收
 
 | Check | 人工动作与通过条件 |
 | --- | --- |
@@ -187,31 +199,53 @@ uv run python scripts/discord_live_smoke.py --confirm-live
 
 输入只接受 `p/f/s`。任意 `fail` 或 `skip` 返回 1；只有 15 个全 `pass` 才返回 0。
 
-## 7. Evidence 文件
+## 7. Feishu 15 条真实验收
+
+Feishu 不复用上面两个通用人工清单，而是使用 `FEISHU-LIVE-001..015` 版本化数据集：
+
+| 组 | Case | 主要证据 |
+| --- | --- | --- |
+| 连通 | `001..002` | exact Gateway ready、Inbox、Turn、Delivery、客户端回复 |
+| 上下文与 Tool | `003..005` | 同 Session 三轮、`system_info`、`read_file` |
+| Approval | `006..008` | pending、跨 case consumed once、deny |
+| Admission | `009..011` | 非 Owner/未 mention 静默、测试群 mention 回复 |
+| 恢复与输出 | `012..014` | Unicode 分片、两次重启、WebSocket reconnect |
+| 隐私 | `015` | Secret、平台 ID、正文与本机路径扫描为 0 |
+
+自动 evidence 来自 checkpoint 后的真实 SQLite；人工只判断客户端可见事实。自动失败时不会出现“输入 p 强制通过”的
+机会。Feishu 只有 15/15、Gateway 优雅退出、Secret scan 0、commit 未变化才返回 0。
+
+## 8. Evidence 文件
 
 默认目录：
 
 ```text
 .local/eval-results/telegram/<UTC>.json
 .local/eval-results/discord/<UTC>.json
+.local/eval-results/feishu/<UTC>.json
 ```
 
 `.local/` 已被 Git 忽略。JSON 只允许 channel、commit、起止时间、check name、pass/fail/skip 和匿名状态计数；不
 保存 Token、完整 user/chat/guild/message ID、username、群名、正文或截图。脚本还会把内存中的 Secret 与本地小型
 日志做精确字节匹配；发现命中时强制把 `secret_scan_zero` 改为 fail，但不会输出 Secret 内容。
 
-## 8. 发布判定
+Feishu Evidence 进一步使用 strict nested schema、0600、`O_EXCL` 和 `fsync`，并重新推导 count/release status 防止
+篡改。当前没有真实 Feishu Evidence，所以状态必须保持 **REAL BOT PENDING**。
+
+## 9. 发布判定
 
 ```mermaid
 flowchart TD
-    A["492 Python + 30 TypeScript"] --> B["28 Agent + 32 Channel"]
+    A["517 Python + 30 TypeScript"] --> B["28 Agent + 32 Channel"]
     B --> C["640/640 local soak"]
-    C --> D{"Telegram 15/15 live?"}
+    C --> F{"Feishu 15/15 real Bot?"}
+    F -->|"No"| R["FEISHU HARNESS PASS / REAL BOT PENDING"]
+    F -->|"Yes"| D{"Telegram 15/15 live?"}
     D -->|"No"| P["IMPLEMENTATION PASS / LIVE PENDING"]
     D -->|"Yes"| E{"Discord 15/15 live?"}
     E -->|"No"| L["LIVE PARTIAL"]
     E -->|"Yes"| V["PRODUCTION VERIFIED"]
 ```
 
-当前发布结论停在 `IMPLEMENTATION PASS / LIVE PENDING`。不要用 fake SDK、32/32 或 640/640 替代真实平台
-evidence。
+当前发布结论是 `IMPLEMENTATION PASS`；Feishu 是 `FEISHU E2E HARNESS PASS / REAL BOT PENDING`，Telegram 和
+Discord 是 `LIVE PENDING`。不要用 fake SDK、32/32、640/640 或 Runner 自测替代真实平台 evidence。

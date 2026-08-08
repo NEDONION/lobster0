@@ -15,28 +15,33 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/engineering/README.md"),
     Path("docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md"),
     Path("docs/engineering/phase-5/telegram-discord-channels.md"),
+    Path("docs/engineering/phase-5/feishu-live-e2e.md"),
     Path("docs/engineering/phase-5/testing-and-live-acceptance.md"),
     Path("docs/engineering/phase-5/troubleshooting.md"),
     Path("docs/engineering/phase-5/completion-audit.md"),
     Path("docs/getting-started/20260807_本地运行指南.md"),
     Path("docs/evals/README.md"),
+    Path("docs/evals/releases/v0.5.0.md"),
+    Path("docs/evals/releases/v0.5.1.md"),
 )
 FACT_RELATIVE_DOCS = (
     Path("README.md"),
-    Path("docs/product/20260807_产品需求文档.md"),
     Path("docs/architecture/20260807_系统架构.md"),
     Path("docs/engineering/README.md"),
     Path("docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md"),
     Path("docs/engineering/phase-5/telegram-discord-channels.md"),
     Path("docs/getting-started/20260807_本地运行指南.md"),
+    Path("docs/engineering/phase-5/testing-and-live-acceptance.md"),
+    Path("docs/engineering/phase-5/feishu-live-e2e.md"),
+    Path("docs/evals/releases/v0.5.1.md"),
 )
 REQUIRED_FACTS = (
     "IMPLEMENTATION PASS",
-    "492",
+    "517",
     "30",
     "32/32",
     "640/640",
-    "LIVE PENDING",
+    "REAL BOT PENDING",
 )
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 FENCE = re.compile(r"^\s*```([^`]*)$")
@@ -122,6 +127,11 @@ def main(argv: list[str] | None = None) -> int:
         failure = _html_failure(html)
         if failure is not None:
             failures.append(f"html:{_display(root, html)}:{failure}")
+            continue
+        content = html.read_text(encoding="utf-8")
+        for fact in REQUIRED_FACTS:
+            if fact not in content:
+                failures.append(f"html_fact:{_display(root, html)}:{fact}")
     if failures:
         for failure in sorted(set(failures)):
             print(f"Documentation validation: FAIL {failure}", file=sys.stderr)

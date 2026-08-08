@@ -6,7 +6,7 @@
 >
 > 真实飞书租户结论：**PENDING（缺 App ID / App Secret 与已配置企业应用）**
 >
-> 当前全仓门禁：492/492 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
+> 当前全仓门禁：517/517 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
 
 ## 1. 先说结论
 
@@ -106,8 +106,8 @@ Provider 隐藏 reasoning 和异常原文。
 | Gate | 当前证据 | 结论 |
 | --- | --- | --- |
 | 设计、PRD、架构、工程文档一致 | Phase 4 文档组 + 本矩阵 | LOCAL PASS |
-| 当前全量 Python | `492/492` | PASS |
-| pi-tui / Bridge | `27/27` | PASS |
+| 当前全量 Python | `517/517` | PASS |
+| pi-tui / Bridge | `30/30` | PASS |
 | Agent 回归 | `28/28` | PASS |
 | Feishu Channel 回归 | `12/12` | PASS |
 | Ruff | `All checks passed` | PASS |
