@@ -57,8 +57,8 @@ class CliTest(unittest.TestCase):
 
         self.assertIn("miniclaw 0.1.0", output.getvalue())
 
-    def test_help_lists_only_tui_maintenance_commands(self) -> None:
-        """帮助只保留 init/doctor/eval，不再公开 chat 或 approvals 分叉入口。"""
+    def test_help_lists_tui_gateway_and_maintenance_commands(self) -> None:
+        """帮助包含唯一 TUI、gateway 和维护命令，不恢复 chat/approval 分叉。"""
         output = io.StringIO()
 
         with contextlib.redirect_stdout(output):
@@ -69,6 +69,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("init", help_text)
         self.assertIn("doctor", help_text)
         self.assertIn("eval", help_text)
+        self.assertIn("gateway", help_text)
         self.assertNotIn("chat", help_text)
         self.assertNotIn("approvals", help_text)
 
@@ -113,7 +114,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("invalid TOML", error)
 
     def test_doctor_reports_healthy_initialized_state(self) -> None:
-        """doctor 应包含 Node/pi-tui 在内的九项 PASS 并以 0 退出。"""
+        """doctor 应输出 TUI 与飞书在内的十三项 PASS。"""
         with tempfile.TemporaryDirectory() as directory:
             run_cli(["init", "--home", directory])
             node = Path(directory) / "test-node"
@@ -134,7 +135,7 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(error, "")
-        self.assertEqual(output.count("[PASS]"), 9)
+        self.assertEqual(output.count("[PASS]"), 13)
 
     def test_doctor_returns_two_for_corrupt_config(self) -> None:
         """损坏配置应显示失败项并使用配置错误退出码 2。"""
@@ -147,6 +148,16 @@ class CliTest(unittest.TestCase):
         self.assertEqual(exit_code, 2)
         self.assertIn("[FAIL] config", output)
         self.assertEqual(error, "")
+
+    def test_gateway_command_uses_selected_home_and_stable_exit_codes(self) -> None:
+        """gateway 不要求 TTY，并把配置错误映射为 2。"""
+        async def successful(paths):
+            self.assertEqual(paths.home, Path(directory).resolve())
+
+        with tempfile.TemporaryDirectory() as directory:
+            with mock.patch("miniclaw.cli.run_gateway", side_effect=successful):
+                exit_code, output, error = run_cli(["gateway", "--home", directory])
+        self.assertEqual((exit_code, output, error), (0, "", ""))
 
 
 if __name__ == "__main__":

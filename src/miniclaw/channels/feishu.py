@@ -191,6 +191,10 @@ class FeishuTransport:
         except Exception as error:
             raise _transport_error(error) from None
 
+    def stop_receiving(self) -> None:
+        """解除入站回调但保持连接，供 Gateway drain 已接收工作。"""
+        self._unsubscribe_handler()
+
     async def send(
         self,
         message: OutboundMessage,

@@ -1,6 +1,8 @@
 """MiniClaw 状态目录的离线、只读本地诊断。"""
 
+import importlib.util
 import os
+import shutil
 import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -44,7 +46,7 @@ def run_local_checks(
         environ: 配置覆盖使用的环境变量；默认使用当前进程环境。
 
     Returns:
-        固定九项、按依赖顺序排列的安全诊断结果。
+        固定十三项、按依赖顺序排列的安全诊断结果。
     """
     state_result = _check_state_home(paths)
     config_result, config = _check_config(paths, environ)
@@ -59,6 +61,10 @@ def run_local_checks(
         _check_permissions(paths),
         node_result,
         pi_tui_result,
+        _check_feishu_config(config),
+        _check_feishu_sdk(config),
+        _check_feishu_database(paths),
+        _check_feishu_runtime(config, os.environ if environ is None else environ),
     )
 
 
@@ -252,3 +258,135 @@ def _check_permissions(paths: StatePaths) -> CheckResult:
             f"group/other permissions are enabled: {', '.join(insecure)}",
         )
     return CheckResult("permissions", CheckStatus.PASS, "state home and config are owner-only")
+
+
+def _check_feishu_config(config: AppConfig | None) -> CheckResult:
+    """离线报告飞书开关、账号和 allowlist 数量。"""
+    if config is None:
+        return CheckResult(
+            "feishu_config",
+            CheckStatus.FAIL,
+            "Feishu config cannot be checked without valid config",
+        )
+    feishu = config.channels.feishu
+    if not feishu.enabled:
+        return CheckResult(
+            "feishu_config",
+            CheckStatus.PASS,
+            "Feishu channel is disabled",
+        )
+    return CheckResult(
+        "feishu_config",
+        CheckStatus.PASS,
+        (
+            f"Feishu account {feishu.account_id} is enabled; "
+            f"{len(feishu.allowed_open_ids)} user(s), "
+            f"{len(feishu.allowed_chat_ids)} group(s) allowed"
+        ),
+    )
+
+
+def _check_feishu_sdk(config: AppConfig | None) -> CheckResult:
+    """只检查 official SDK 是否可导入，不构造 Client 或发网络请求。"""
+    if config is None:
+        return CheckResult(
+            "feishu_sdk",
+            CheckStatus.FAIL,
+            "Feishu SDK cannot be checked without valid config",
+        )
+    if not config.channels.feishu.enabled:
+        return CheckResult(
+            "feishu_sdk",
+            CheckStatus.PASS,
+            "official Feishu SDK is not required while channel is disabled",
+        )
+    if importlib.util.find_spec("lark_channel") is None:
+        return CheckResult(
+            "feishu_sdk",
+            CheckStatus.FAIL,
+            "official Feishu SDK is missing; run uv sync --extra feishu",
+        )
+    return CheckResult(
+        "feishu_sdk",
+        CheckStatus.PASS,
+        "official Feishu SDK is installed",
+    )
+
+
+def _check_feishu_database(paths: StatePaths) -> CheckResult:
+    """只读确认 Inbox/Outbox/Identity 三张 production 表存在。"""
+    if not paths.database.is_file() or paths.database.is_symlink():
+        return CheckResult(
+            "feishu_database",
+            CheckStatus.FAIL,
+            "Feishu database is unavailable",
+        )
+    required = {"channel_identities", "processed_events", "deliveries"}
+    try:
+        with Database(paths.database).connect_read_only() as connection:
+            tables = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+    except (DatabaseError, sqlite3.Error, OSError):
+        return CheckResult(
+            "feishu_database",
+            CheckStatus.FAIL,
+            "Feishu database cannot be inspected",
+        )
+    missing = sorted(required - tables)
+    if missing:
+        return CheckResult(
+            "feishu_database",
+            CheckStatus.FAIL,
+            f"Feishu tables are missing: {', '.join(missing)}",
+        )
+    return CheckResult(
+        "feishu_database",
+        CheckStatus.PASS,
+        "Feishu Inbox, Outbox and identity tables are ready",
+    )
+
+
+def _check_feishu_runtime(
+    config: AppConfig | None,
+    environ: Mapping[str, str],
+) -> CheckResult:
+    """检查变量存在性和可选 lark-cli 路径，不显示凭据值或联网。"""
+    if config is None:
+        return CheckResult(
+            "feishu_runtime",
+            CheckStatus.FAIL,
+            "Feishu runtime cannot be checked without valid config",
+        )
+    feishu = config.channels.feishu
+    if not feishu.enabled:
+        return CheckResult(
+            "feishu_runtime",
+            CheckStatus.PASS,
+            "Feishu runtime is not started by doctor",
+        )
+    missing = [
+        name
+        for name in (feishu.app_id_env, feishu.app_secret_env)
+        if not str(environ.get(name, "")).strip()
+    ]
+    if missing:
+        return CheckResult(
+            "feishu_runtime",
+            CheckStatus.FAIL,
+            f"missing environment variable(s): {', '.join(missing)}",
+        )
+    if shutil.which("lark-cli") is None:
+        return CheckResult(
+            "feishu_runtime",
+            CheckStatus.WARN,
+            "credentials are configured; optional lark-cli is not on PATH",
+        )
+    return CheckResult(
+        "feishu_runtime",
+        CheckStatus.PASS,
+        "credentials and optional lark-cli are available; no network check was run",
+    )

@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest import mock
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.doctor import CheckStatus, run_local_checks
@@ -36,7 +37,7 @@ class DoctorTest(unittest.TestCase):
         }
 
     def test_initialized_state_passes_all_local_checks(self) -> None:
-        """完整初始化后七项本地检查都应实际通过。"""
+        """完整初始化后十三项本地检查都应实际通过。"""
         initialize_state(self.paths)
 
         results = run_local_checks(self.paths, self.tui_environ)
@@ -53,6 +54,10 @@ class DoctorTest(unittest.TestCase):
                 "approvals",
                 "node",
                 "pi_tui",
+                "feishu_config",
+                "feishu_sdk",
+                "feishu_database",
+                "feishu_runtime",
             },
         )
         self.assertTrue(all(result.status is CheckStatus.PASS for result in results))
@@ -148,6 +153,35 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("1 pending", item.message)
         self.assertFalse(side_effect.exists())
         self.assertEqual(self.paths.database.read_bytes(), before)
+
+    def test_enabled_feishu_checks_are_offline_and_secret_redacted(self) -> None:
+        """飞书 Doctor 只查配置、SDK、表和变量存在性，不连接平台或打印值。"""
+        initialize_state(self.paths)
+        with self.paths.config.open("a", encoding="utf-8") as config_file:
+            config_file.write(
+                "\n[channels.feishu]\n"
+                "enabled = true\n"
+                'owner_open_id = "ou_owner"\n'
+                'allowed_open_ids = ["ou_owner"]\n'
+            )
+        secret = "doctor-secret-private"
+        environment = {
+            "MINICLAW_FEISHU_APP_ID": "cli_test",
+            "MINICLAW_FEISHU_APP_SECRET": secret,
+        }
+
+        with mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()):
+            results = run_local_checks(self.paths, environment)
+
+        by_name = {result.name: result for result in results}
+        self.assertIs(by_name["feishu_config"].status, CheckStatus.PASS)
+        self.assertIs(by_name["feishu_sdk"].status, CheckStatus.PASS)
+        self.assertIs(by_name["feishu_database"].status, CheckStatus.PASS)
+        self.assertIn(
+            by_name["feishu_runtime"].status,
+            {CheckStatus.PASS, CheckStatus.WARN},
+        )
+        self.assertNotIn(secret, repr(results))
 
 
 if __name__ == "__main__":

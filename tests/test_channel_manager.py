@@ -190,6 +190,7 @@ class ManagerApprovalController:
     """模拟已经过单元测试的 Approval Channel Controller。"""
 
     calls: list[tuple[str, str]] = field(default_factory=list)
+    fail: bool = False
 
     async def handle_text(
         self,
@@ -202,6 +203,8 @@ class ManagerApprovalController:
         """只消费测试中的 /deny 命令并返回安全通知。"""
         del user_id, on_event
         self.calls.append((actor_open_id, text))
+        if self.fail:
+            raise RuntimeError("approval-controller-secret")
         if text == "/deny 7":
             return ApprovalCommandOutcome(
                 True,
@@ -456,6 +459,31 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             card_delivery["content"],
             approval_delivery_payload(controller.prompt(user_id=self.owner.id, approval_id=7)),
         )
+
+    async def test_approval_controller_failure_creates_safe_durable_notice(self) -> None:
+        """控制层异常不能杀死 Worker，也不能让原始异常进入 SQLite。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=2, worker_count=1)
+        manager.attach_approvals(ManagerApprovalController(fail=True))
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_control_fail", "/deny 7"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.calls, [])
+        event = self.inbound.list_by_status("feishu", "default", "failed")[-1]
+        self.assertEqual(event.last_error_code, "channel_control_failed")
+        with self.database.connect_read_only() as connection:
+            dump = "\n".join(
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT content FROM messages UNION ALL SELECT content FROM deliveries"
+                )
+            )
+        self.assertIn("处理失败", dump)
+        self.assertNotIn("approval-controller-secret", dump)
 
     async def test_restart_marks_running_turn_failed_without_replay(self) -> None:
         """已有 running Turn 表明可能执行过 Tool，重启只能中断，不能再次调用 Service。"""
