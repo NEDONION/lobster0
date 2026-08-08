@@ -28,7 +28,9 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > 连接 DeepSeek、TurnService、SQLite、十个系统/文件/命令/HTTPS/Memory Tool 与参数绑定 Approval。TUI 支持流式回答、
 > Provider reasoning、可逐项展开的 Tool 参数/执行/结果 Trace、Enter 发送、Shift+Enter 换行、Esc 取消、
 > Ctrl+O 全展开/收起、Slash Command、默认中文/可切英文、失败草稿恢复，以及上下文/Token/Tool/迭代/耗时
-> 审计栏。审批弹窗由 Core 决定是否显示 Allow once、Allow this session、Always allow；文件写入仍只允许单次。
+> 审计栏。权限支持 `safe / smart / autopilot / yolo` 四档；推荐的 `autopilot` 只对本地 TUI 和经过验证的
+> Owner 私聊自动执行，群聊与其他白名单成员会自动降级。仍需审批时，弹窗最多 84 列、18 行，参数区可滚动且
+> Deny/Once/Session/Always 按钮常驻；文件写入的持久授权范围仍只允许单次。
 > 旧 `miniclaw chat`、`miniclaw tui`、one-shot REPL 和 `miniclaw approvals` 已移除。
 > P2.3A 已接入不经过 Shell 的 exact-argv `run_command`；P2.4 已接入只读 `http_get`，包含 HTTPS-only、
 > 全 DNS 公网校验、固定 IP/TLS hostname、每跳重验、响应预算和不可信内容标记。两类动作未命中精确规则时
@@ -38,7 +40,7 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > persistent compaction。Personal Profile 已接通 Home 普通文件只读、受控外部写入、NVM/uv/pnpm 等用户 CLI 的
 > 确定性发现和 `lark-cli --version` 离线纵切；`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning
 > probe。当前回归基线为
-> **483 Python tests + 27 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + 640/640 local soak**。
+> **492 Python tests + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + 640/640 local soak**。
 > 真实 `lark-cli auth status`、飞书 Scope 与企业权限仍是显式 live gate；Telegram 与 Discord 当前也都为
 > **LIVE PENDING**。本机三个 IM 的真实平台 WebSocket/Gateway、权限和 20 轮对话仍待人工验收。离线 fake SDK
 > 通过不冒充 production verified。
@@ -55,7 +57,7 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 | Agent Core | OpenAI-compatible 模型、原生 Tool Calling、最多 8 轮工具循环 |
 | 工具 | Workspace/Personal 文件、HTTPS GET、受控本机 CLI |
 | 数据 | SQLite 会话与审计、Markdown 长期记忆和 Skills |
-| 安全 | 用户白名单、Profile 多根边界、敏感路径硬拒绝、命令允许列表、危险操作审批 |
+| 安全 | 用户白名单、四档权限、Owner 私聊信任、Profile 多根边界、硬拒绝、危险操作审批 |
 | 演进 | 反馈、回放评测、Prompt/Skill 提案、人工批准和回滚 |
 
 ```mermaid
@@ -95,6 +97,7 @@ uv run miniclaw doctor
 uv run miniclaw
 # 在 TUI 中输入：你好，请介绍你自己
 # 在 TUI 中输入：帮我看看我的电脑是什么配置
+# 在 TUI 中输入：/permissions（查看当前权限模式）
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
 uv run miniclaw eval run --suite channel --root evals/scenarios
@@ -123,9 +126,12 @@ uv run python -m miniclaw --version
 TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`。新安装默认
 使用 `personal` Profile：`read_file`、`glob`、`grep` 可读取 Home 下普通文件以及存在的 Homebrew/Application 根，
 但 Keychain、浏览器登录库、私钥和应用凭据目录始终硬拒绝；旧配置缺少 `[permissions]` 时保持 Workspace-only。
-`write_file` / `edit_file` 只可写 Workspace 与 Documents/Desktop/Downloads/IDE 项目根，并会先生成参数绑定 Approval，只有
-Owner 在 TUI 中查看完整归一化参数并选择可用授权范围后才执行；Esc 和 **Deny** 都不会写入。文件写入只提供
-**Allow once**；安全 exact argv / exact hostname 可由 Core 提供 **Allow this session** 或 **Always allow**。模型仍不能运行
+`write_file` / `edit_file` 只可写 Workspace 与 Documents/Desktop/Downloads/IDE 项目根。新初始化明确使用
+`[tools] mode = "autopilot"`；旧配置缺少 `mode` 时保持 `safe`，不会升级后静默扩权。可信 Owner 可在 TUI 或
+三个 IM 私聊中用 `/permissions safe|smart|autopilot|yolo` 动态切换；群聊和其他白名单成员不能切换，也不会继承
+Personal 额外读写根。`safe`/`smart` 下写入会先生成参数绑定 Approval，Esc 和 **Deny** 都不会写入，文件写入只提供
+**Allow once**；安全 exact argv / exact hostname 可由 Core 提供 **Allow this session** 或 **Always allow**。`autopilot`
+只在完整硬校验通过后为可信 Owner 自动执行。模型仍不能运行
 任意 Shell 字符串；`run_command` 只接收 `program + args[]`，安全命令未命中 exact rule 时也走同一审批弹窗。
 macOS 应用名不确定时，模型可显式调用 `system_info` 的 `applications` 分区；该分区默认不读取，只返回固定
 `/Applications` 中有界、去路径的真实 `.app` 名称，再由 `run_command(open, [-a, Exact Name])` 请求审批。
@@ -182,7 +188,7 @@ uv run miniclaw
 # 请使用 glob 找出 Workspace 的 txt 文件。
 # 请使用 grep 在 txt 文件中查找 MiniClaw。
 # 请使用 run_command 运行 git status --short。
-# 请帮我打开飞书。  # macOS: direct open -a，执行前显示 Approval
+# 请帮我打开飞书。  # macOS: direct open -a；是否审批由权限模式决定
 # 请使用 http_get 读取 https://example.com/ 的公开文本。
 ```
 
@@ -249,8 +255,9 @@ miniclaw/
 | [Phase 2.2 Approval 生命周期](docs/engineering/phase-2/approval-lifecycle.md) | 参数 hash、waiting/child Turn、TTL、Owner、单次执行与审计 |
 | [Phase 2 单入口 TUI](docs/engineering/phase-2/single-entry-tui.md) | 历史 Textual 实现、当前 pi-tui 默认入口、Runtime、RunEvent 与审批链路 |
 | [Python Core + pi-tui Bridge](docs/engineering/phase-2/python-core-pi-tui-bridge.md) | 版本化 NDJSON、TypeScript 展示层、安装调试、长文本/选择/审批与跨进程测试 |
-| [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace、角色、长文本、双语、审计、选择、错误与审批的 25 个 pi-tui/跨进程用例和 Textual fallback 回归 |
+| [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace、长文本、权限状态、紧凑审批、跨进程与 Textual fallback 回归 |
 | [TUI 可观测与分级审批加固](docs/engineering/phase-2/tui-observability-and-scoped-approvals.md) | 真实 Token 遥测、Session/Always exact scope、双语消息层级与草稿恢复 |
+| [Autopilot 权限与紧凑审批 UI](docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md) | 四档权限、Owner 私聊信任、动态切换、审计、滚动审批框与回滚 |
 | [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
 | [Phase 2.3B Personal Machine 权限与 CLI 发现](docs/engineering/phase-2/personal-machine-permissions.md) | Workspace/Personal Profile、多根读写、敏感路径、NVM/uv/pnpm CLI 发现、最小环境、Doctor 与回归场景 |
 | [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |

@@ -1,7 +1,7 @@
 # Phase 4：飞书运行、测试与故障排查
 
 > 当前结论：implementation gate 已通过；真实企业应用 E2E、部署与 soak 待凭据。
-> 当前门禁：483/483 Python、27/27 TypeScript、Agent 28/28、Channel 32/32、20 轮 local soak 640/640、Ruff PASS。
+> 当前全仓门禁：492/492 Python、30/30 TypeScript、Agent 28/28、Channel 32/32、20 轮 local soak 640/640、Ruff PASS。
 
 ## 1. 先理解四层证据
 
@@ -144,7 +144,7 @@ uv build
 git diff --check
 ```
 
-必须得到 Python 483/483、TypeScript 27/27、Agent 28/28、Channel 32/32。以后新增测试时数字应上调，不能为了
+当前必须得到 Python 492/492、TypeScript 30/30、Agent 28/28、Channel 32/32。以后新增测试时数字应上调，不能为了
 保持文档旧数字删除测试。
 
 ## 8. 12 条飞书回归场景

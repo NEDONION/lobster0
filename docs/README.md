@@ -21,13 +21,15 @@
    精确规则、最小环境、超时和 TUI 审批。
 10. 阅读 [Personal Machine 权限与 CLI 发现](engineering/phase-2/personal-machine-permissions.md)，理解
    Workspace/Personal Profile、多根读写、敏感路径、NVM/uv/pnpm CLI 发现和最小子进程环境。
-11. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/https-get-and-ssrf.md)，理解 URL/DNS 校验、
+11. 阅读 [Autopilot 权限与紧凑审批 UI](engineering/phase-2/autopilot-permissions-and-approval-ui.md)，理解
+   四档模式、Owner 私聊信任、动态切换、脱敏审计与可滚动审批框。
+12. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/https-get-and-ssrf.md)，理解 URL/DNS 校验、
    固定 IP/TLS hostname、重定向、响应预算和不可信内容边界。
-12. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
+13. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
    跑离线 gate 并记录 baseline。
-13. 阅读 [飞书 Channel Core](engineering/phase-4/feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
+14. 阅读 [飞书 Channel Core](engineering/phase-4/feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
    WebSocket Transport、Delivery 恢复、卡片审批和仍待完成的 Gateway E2E。
-14. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+15. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -77,6 +79,7 @@
 | TUI Trace、虚拟终端与跨进程回归规范 | [tui-regression-testing.md](engineering/phase-2/tui-regression-testing.md) |
 | Exact-argv 命令执行 | [command-execution.md](engineering/phase-2/command-execution.md) |
 | Personal Machine 权限与 CLI 发现 | [personal-machine-permissions.md](engineering/phase-2/personal-machine-permissions.md) |
+| Autopilot 四档权限、Owner 信任与紧凑审批 | [autopilot-permissions-and-approval-ui.md](engineering/phase-2/autopilot-permissions-and-approval-ui.md) |
 | Pinned HTTPS 与 SSRF 防护 | [https-get-and-ssrf.md](engineering/phase-2/https-get-and-ssrf.md) |
 | Phase 2 回归、恢复与调试 | [testing-and-debugging.md](engineering/phase-2/testing-and-debugging.md) |
 | Approvals CLI（已迁移） | [cli-approvals.md](engineering/phase-2/cli-approvals.md) |

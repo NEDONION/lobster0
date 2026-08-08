@@ -327,7 +327,7 @@ flowchart TD
 | Reliability | 250,000 字符 bracketed paste 失败/取消逐字恢复、Runtime 缺失不丢输入 |
 | Language | 默认中文、`/lang zh|en`、按最新 User 消息选择中英文 System Prompt |
 | Telemetry | 真实 usage、N/A、Provider Request ID、Tool/迭代/耗时 |
-| Full suite | 483/483 Python + 27/27 TypeScript tests + Ruff + diff check |
+| Current full suite | 492/492 Python + 30/30 TypeScript tests + Ruff + diff check |
 | Agent gate | 28/28 active offline Claw-like cases |
 | Channel gate | 12/12 deterministic Feishu cases |
 

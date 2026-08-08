@@ -23,13 +23,14 @@ class Phase5DocumentationTest(unittest.TestCase):
             "docs/engineering/README.md",
             "docs/engineering/phase-5/telegram-discord-channels.md",
             "docs/getting-started/20260807_本地运行指南.md",
-            "docs/evals/releases/v0.5.0.md",
+            "docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md",
         )
         for relative in paths:
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("483", content)
+                self.assertIn("492", content)
+                self.assertIn("30", content)
                 self.assertIn("32/32", content)
                 self.assertIn("640/640", content)
                 self.assertIn("LIVE PENDING", content)
@@ -53,7 +54,8 @@ class Phase5DocumentationTest(unittest.TestCase):
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
             "Phase 5 implementation pass",
-            "483 Python",
+            "492 Python",
+            "30 TypeScript",
             "32/32",
             "640/640",
             "Telegram live pending",

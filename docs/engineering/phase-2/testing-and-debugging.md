@@ -2,7 +2,7 @@
 
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> 当前 Phase 5 基线：483/483 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS；历史 PTY smoke PASS
+> 当前全仓基线：492/492 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS；历史 PTY smoke PASS
 >
 > 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
@@ -301,7 +301,7 @@ uv run miniclaw
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
 - [x] Doctor 十五项且网络/命令/数据库修改为零；
-- [x] 483/483 Python tests + 27/27 TypeScript tests；
+- [x] 492/492 Python tests + 30/30 TypeScript tests；
 - [x] 28/28 offline Agent cases、32/32 Channel cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
 - [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
@@ -316,4 +316,4 @@ uv run miniclaw
 Phase 2 当前不包含：任意 Shell、删除/移动 Tool、后台任务、OS sandbox、多用户 RBAC、飞书审批卡片、Memory/Skills、
 自动修改部署源代码。这些不应在回归结果中被描述成已完成。
 
-TUI 专项分层、25 个 pi-tui/跨进程用例和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。
+TUI 专项分层、33 个稳定行为 ID 和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。

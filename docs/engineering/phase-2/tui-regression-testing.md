@@ -2,7 +2,7 @@
 
 > 状态：已落地。本规范与 `tests/test_tui.py`、`tests/test_cli.py`、`tests/test_turn.py`、
 > `tests/test_agent_runner.py` 和 `tui/test/*.test.ts` 共同构成版本门禁。当前全仓基线：
-> 483/483 Python tests、27/27 TypeScript tests、28/28 offline
+> 492/492 Python tests、30/30 TypeScript tests、28/28 offline
 > Agent cases、32/32 Channel cases、Ruff PASS。
 
 ## 1. 为什么 TUI 必须单独回归
@@ -16,6 +16,7 @@ TUI 不是“好看的 `print()`”。它同时承载五类约束：
 5. ANSI、控制字符、超长输出和动态 call ID 不能破坏终端。
 6. Provider usage 缺失不能被 UI 猜成 0；长粘贴失败不能丢草稿。
 7. Session/Always 按钮不能扩大 Core 给出的审批 scope。
+8. 权限徽标必须来自 Core，长审批详情不能把风险提示和按钮挤出屏幕。
 
 因此，“单元测试通过”不等于“TUI 可以发布”。每个版本要同时验证事件契约、无头交互、
 真实终端启动和 Agent 场景回归。
@@ -83,6 +84,8 @@ sequenceDiagram
 - 用户/Agent 始终有文字角色标签和不同结构；
 - 失败或取消后 Composer 逐字恢复本轮提交文本；
 - TUI 只显示 Core `grant_modes` 给出的 Once/Session/Always。
+- `/permissions` 只在 Core 切换成功后更新 Header；busy 时原模式保持不变。
+- 审批参数可滚动，但标题、风险提示和决策区在 80×24 中始终可见。
 
 ## 4. 稳定用例集
 
@@ -121,6 +124,8 @@ ID 固定，行为变更时更新原 ID；只有新增独立能力时才新增 I
 | `TUI-029` | pi-tui 审批 Overlay | 只渲染 grant_modes，按键决定准确回传 Core | `tui/test/approval.test.ts` / `input.test.ts` |
 | `TUI-030` | 跨语言 Bridge | Node Client 与真实 Python Core 完成 hello/shutdown | `python-bridge.test.ts` / `test_pi_tui_integration.py` |
 | `TUI-031` | 首次启动与回退 | 未初始化走 Textual onboarding；显式 pi 给出 init 提示 | `test_tui_launcher.py` |
+| `TUI-032` | 四档权限状态 | hello 返回模式；slash command 发精确 Bridge 请求；Header/status 更新 | `test_bridge_server.py` / `input.test.ts` |
+| `TUI-033` | 紧凑长审批 | 80 行参数不超过 18 行，首尾/翻页有效，风险提示和按钮常驻 | `approval.test.ts` |
 
 ## 5. 为什么只做有语义的虚拟终端快照
 
@@ -201,4 +206,5 @@ git diff --check
 
 本轮实现细节与 scope 表见
 [Python Core + pi-tui Bridge 工程文档](python-core-pi-tui-bridge.md)与
-[TUI 可观测、长文本与分级审批](tui-observability-and-scoped-approvals.md)。
+[TUI 可观测、长文本与分级审批](tui-observability-and-scoped-approvals.md)、
+[Autopilot 权限与紧凑审批 UI](autopilot-permissions-and-approval-ui.md)。

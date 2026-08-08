@@ -2,7 +2,7 @@
 
 > 当前结论：**IMPLEMENTATION PASS**
 >
-> 自动化证据：483/483 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、
+> 当前全仓自动化证据：492/492 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、
 > 32/32 Channel cases、20 轮 640/640 Channel checks。
 >
 > 外部证据：Telegram **LIVE PENDING**；Discord **LIVE PENDING**。
@@ -43,7 +43,7 @@ pnpm --dir tui test
 
 | Gate | Result |
 | --- | ---: |
-| Python | 483/483 PASS |
+| Python | Phase 5 exit 483/483 PASS；当前全仓 492/492 PASS |
 | TypeScript | 25/25 PASS |
 
 Python 全量覆盖 Config、Provider、Turn、十个 Tool、Approval、Memory、Skills、TUI fallback、三平台 Adapter/
@@ -204,7 +204,7 @@ uv run python scripts/discord_live_smoke.py --confirm-live
 
 ```mermaid
 flowchart TD
-    A["483 Python + 27 TypeScript"] --> B["28 Agent + 32 Channel"]
+    A["492 Python + 30 TypeScript"] --> B["28 Agent + 32 Channel"]
     B --> C["640/640 local soak"]
     C --> D{"Telegram 15/15 live?"}
     D -->|"No"| P["IMPLEMENTATION PASS / LIVE PENDING"]

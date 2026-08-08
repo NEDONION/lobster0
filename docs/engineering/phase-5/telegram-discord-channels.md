@@ -2,7 +2,7 @@
 
 > 当前状态：**IMPLEMENTATION PASS / LIVE PENDING**
 >
-> 当前证据：483/483 Python tests、27/27 TypeScript tests、28/28 Agent cases、
+> 当前全仓证据：492/492 Python tests、30/30 TypeScript tests、28/28 Agent cases、
 > 32/32 Channel cases、20 轮 640/640 local soak。
 >
 > 目标：Telegram 与 Discord 同时进入统一 Gateway，共享一个个人 Agent
@@ -413,7 +413,7 @@ Phase 5 production verified 还要求 Telegram、Discord 两边真实验收均�
 | GatewaySupervisor | IMPLEMENTATION PASS |
 | 20 条新回归 | 20/20 PASS；总 Channel 32/32 |
 | 20-run local soak | 640/640 PASS |
-| Python / TypeScript | 483/483 + 27/27 PASS |
+| Phase 5 合并时 Python / TypeScript | 483/483 + 27/27 PASS；当前总门禁见文首 |
 | 真实 Telegram | LIVE PENDING（当前无账号/凭据） |
 | 真实 Discord | LIVE PENDING（本轮未提供凭据） |
 
