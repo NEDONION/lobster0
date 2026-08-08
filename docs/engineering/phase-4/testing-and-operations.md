@@ -1,13 +1,13 @@
 # Phase 4：飞书运行、测试与故障排查
 
 > 当前结论：implementation gate 已通过；真实企业应用 E2E、部署与 soak 待凭据。
-> 当前门禁：382/382 Python、25/25 TypeScript、Agent 24/24、Channel 12/12、Ruff PASS。
+> 当前门禁：387/387 Python、25/25 TypeScript、Agent 24/24、Channel 12/12、Ruff PASS。
 
 ## 1. 先理解四层证据
 
 ```mermaid
 flowchart TB
-    P["Python contracts / integration\n382 tests"] --> T["pi-tui / Bridge\n25 tests"]
+    P["Python contracts / integration\n387 tests"] --> T["pi-tui / Bridge\n25 tests"]
     T --> A["Agent regression\n24 / 24"]
     A --> C["Feishu Channel regression\n12 / 12"]
     C --> L["Live Feishu acceptance\n真实 App 凭据，当前待执行"]
@@ -119,7 +119,19 @@ flowchart LR
     M --> READY["ready"]
 ```
 
-## 7. 每次提交的固定门禁
+## 7. 日志、Audit 与每次提交门禁
+
+Gateway 的 stderr 每行都是独立 JSON。可以按 `correlation_id` 串起连接、入站、Turn 和 Delivery，但完整 Open ID、
+Chat ID、Message ID、正文和原始异常不会出现。durable 副本保存在 SQLite `audit_events`：
+
+```bash
+uv run miniclaw gateway 2> .local/miniclaw-channel.jsonl
+sqlite3 ~/.miniclaw/miniclaw.db \
+  "SELECT event_type, metadata_json FROM audit_events WHERE event_type LIKE 'channel.%' ORDER BY id DESC LIMIT 20;"
+```
+
+日志里的 `audit_persisted=false` 表示本次结构化日志已输出，但 SQLite Audit 写入失败，应按高优先级排查数据库，
+不能把它当作普通网络重试。
 
 ```bash
 MINICLAW_NODE=/absolute/path/to/node-22-or-newer \
@@ -132,7 +144,7 @@ uv build
 git diff --check
 ```
 
-必须得到 Python 382/382、TypeScript 25/25、Agent 24/24、Channel 12/12。以后新增测试时数字应上调，不能为了
+必须得到 Python 387/387、TypeScript 25/25、Agent 24/24、Channel 12/12。以后新增测试时数字应上调，不能为了
 保持文档旧数字删除测试。
 
 ## 8. 12 条飞书回归场景
@@ -235,9 +247,10 @@ uv sync --extra feishu
 
 ## 11. 当前完成度
 
-截至 2026-08-08，Phase 4 Core、Gateway、382 Python tests、25 TypeScript tests、24 条 Agent 回归和 12 条
+截至 2026-08-08，Phase 4 Core、Gateway、脱敏结构化日志/Audit、387 Python tests、25 TypeScript tests、24 条 Agent 回归和 12 条
 Channel 回归已完成。本机 `.env` 没有飞书 App ID/App Secret，本地状态也未启用 Channel，因此真实飞书 E2E、
 部署和 soak 明确待办。准确说法是：**Phase 4 implementation complete，live acceptance pending**。
 
-完整模块说明见 [飞书 Channel 与 Gateway](feishu-channel-core.md)，设计决策见
+完整模块说明见 [飞书 Channel 与 Gateway](feishu-channel-core.md)，逐项状态见
+[完成性审计与证据矩阵](completion-audit.md)，设计决策见
 [Phase 4 设计规格](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)。

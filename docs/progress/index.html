@@ -350,12 +350,12 @@
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui：Codex 风格活动流、25 万字符粘贴、稳定选择、真实 Token 审计、十个 Tool、参数绑定审批、Markdown Memory、惰性 Skills 与 persistent compaction 共用同一个 Python AgentRuntime、Policy 和 SQLite；Textual 保留 onboarding/fallback。飞书 Channel Core、durable Inbox/Outbox、WebSocket、Gateway 生命周期、分片重试和卡片审批已进入代码；下一步是真实 E2E 与 soak。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui：Codex 风格活动流、25 万字符粘贴、稳定选择、真实 Token 审计、十个 Tool、参数绑定审批、Markdown Memory、惰性 Skills 与 persistent compaction 共用同一个 Python AgentRuntime、Policy 和 SQLite；Textual 保留 onboarding/fallback。飞书 Channel Core、durable Inbox/Outbox、WebSocket、Gateway 生命周期、分片重试、卡片审批、脱敏 JSON 日志与 durable Audit 已进入代码；下一步是真实 E2E 与 soak。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Phase 4 implementation gate</span>
         <strong>P4 CODE ✓</strong>
-        <p>382 Python + 25 TypeScript tests · Agent 24/24 · Channel 12/12 · live pending</p>
+        <p>387 Python + 25 TypeScript tests · Agent 24/24 · Channel 12/12 · live pending</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">382+25 <small>passing</small></span>
+        <span class="metric-value">387+25 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -436,7 +436,7 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 4</div>
-          <div><h3>飞书生产链路</h3><p>Channel contract、白名单、durable Inbox/Outbox、WebSocket、Gateway、分片重试、streaming card 与审批已实现；真实 E2E、部署/soak 待完成。</p></div>
+          <div><h3>飞书生产链路</h3><p>Channel contract、白名单、durable Inbox/Outbox、WebSocket、Gateway、分片重试、streaming card、审批与结构化 Audit 已实现；真实 E2E、部署/soak 待完成。</p></div>
           <span class="pill">GATEWAY READY</span>
         </article>
         <article class="phase queued">
@@ -523,7 +523,9 @@
           <li class="complete">官方 WebSocket Transport、Unicode 分片、重试与 unknown 恢复</li>
           <li class="complete">typing、streaming card、审批卡片与文本 fallback</li>
           <li class="complete">miniclaw gateway 生命周期、双信号关闭与离线飞书 Doctor</li>
-          <li class="complete">382 Python + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases + Ruff 门禁</li>
+          <li class="complete">Channel correlation、外部 ID 短哈希、JSON 日志与 SQLite Audit</li>
+          <li class="complete">WebSocket reconnect、Inbox/Turn/Delivery/Typing/Card 可观测状态</li>
+          <li class="complete">387 Python + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -534,17 +536,17 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 382 Python、25 TypeScript tests、24/24 offline Agent 与 12/12 Channel；live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 387 Python、25 TypeScript tests、24/24 offline Agent 与 12/12 Channel；live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
         <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；任意 Shell、当前版本 live eval、lark-cli smoke 和飞书真实 E2E 仍未完成。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/e109399">e109399</a> · <a href="https://github.com/NEDONION/miniclaw/commit/128179e">128179e</a> · <a href="https://github.com/NEDONION/miniclaw/commit/268a109">268a109</a> · <a href="https://github.com/NEDONION/miniclaw/commit/d612a5a">d612a5a</a> · <a href="https://github.com/NEDONION/miniclaw/commit/c19711f">c19711f</a></p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/c1069d4">c1069d4 observability</a> · <a href="https://github.com/NEDONION/mini-claw/commit/f70fb44">f70fb44 Phase 4 docs</a> · <a href="https://github.com/NEDONION/mini-claw/commit/dc10c71">dc10c71 eval harness</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 382 Python + 25 TypeScript tests + 24/24 offline Agent cases、12/12 Channel cases + Ruff</span>
-      <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-4/feishu-channel.md">Feishu engineering</a> · <a href="../engineering/phase-4/testing-and-operations.md">operations</a> · <a href="../evals/releases/v0.4.0.md">v0.4.0 record</a></span>
+      <span>Last updated · 2026-08-08 · 387 Python + 25 TypeScript tests + 24/24 offline Agent cases、12/12 Channel cases + Ruff</span>
+      <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-4/feishu-channel.md">Feishu engineering</a> · <a href="../engineering/phase-4/completion-audit.md">completion audit</a> · <a href="../engineering/phase-4/testing-and-operations.md">operations</a> · <a href="../evals/releases/v0.4.0.md">v0.4.0 record</a></span>
     </footer>
   </main>
 </body>

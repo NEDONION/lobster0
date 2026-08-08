@@ -42,6 +42,7 @@ flowchart LR
 | 官方 SDK | `channels/feishu.py` | 延迟导入、WebSocket 生命周期、错误码映射、卡片回调 |
 | 能力层 | `channels/capabilities.py` | Typing、公开文本进度卡、失败不阻断正式回复 |
 | 审批闭环 | `channels/approvals.py` | Owner gate、卡片按钮、严格文本命令、Core continuation |
+| 可观测性 | `channels/observability.py` | correlation、外部 ID 短哈希、JSON 日志、SQLite Audit |
 | 生产装配 | `gateway.py` | 单 Runtime、启动/反向清理、两段式信号停止 |
 | 离线诊断 | `doctor.py` | 配置、SDK、schema v2、凭据变量共 4 项飞书检查 |
 | 回归门禁 | `evals/channel.py` | 12 个飞书故障与恢复场景，不需要网络 |
@@ -216,6 +217,27 @@ Gateway 启动顺序：加载私密 `.env` → 读取 TOML → 校验三个凭�
 - Channel UI 只能展示 Core 返回的 `grant_modes`，不能自行扩大授权。
 - `lark-channel-sdk` 是可选依赖；未安装时 TUI 仍可使用，Gateway 明确失败。
 
+## 10.1 脱敏日志与 Audit
+
+Gateway 为每条消息生成跨重启稳定的本地 `correlation_id`，将 WebSocket 状态、admission、Inbox 去重、Turn、
+Delivery 与 Typing/Card 失败串成同一条链。相同事件同时进入一行 canonical JSON 运维日志和已有 SQLite
+`audit_events`，不引入第二套状态事实。
+
+```mermaid
+flowchart LR
+    W["transport state"] --> O["ChannelObserver"]
+    I["inbound accepted / ignored"] --> O
+    T["turn duration / tool count"] --> O
+    D["delivery attempt / retry"] --> O
+    C["typing / card failure"] --> O
+    O --> J["stderr JSON"]
+    O --> A[("audit_events")]
+```
+
+允许记录内部 row/session/turn/message/delivery ID、短哈希、毫秒耗时、计数、枚举状态和稳定错误码。完整 Open ID、
+Chat ID、Message ID、正文、Secret、token、Tool 参数、SDK raw event、异常原文和隐藏 reasoning 一律不进入该链路。
+完整逐项证据见 [Phase 4 完成性审计](completion-audit.md)。
+
 ## 11. 已知边界
 
 1. 当前是单进程 SQLite 模式，不支持两个 Gateway 同时消费同一状态目录。
@@ -227,6 +249,7 @@ Gateway 启动顺序：加载私密 `.env` → 读取 TOML → 校验三个凭�
 ## 12. 相关文档
 
 - [运行、测试与故障排查](testing-and-operations.md)
+- [完成性审计与证据矩阵](completion-audit.md)
 - [Phase 4 设计规格](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)
 - [Phase 4 实施计划](../../superpowers/plans/2026-08-08-phase-4-feishu-channel.md)
 - [系统架构](../../architecture/20260807_系统架构.md)

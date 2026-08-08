@@ -1,7 +1,7 @@
 # Phase 4：飞书 Channel 与 Gateway 工程文档
 
 > 状态：核心链路与 `miniclaw gateway` 离线生命周期已实现；真实飞书账号 E2E、部署与 soak 尚未完成
-> 当前全仓门禁：382/382 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS
+> 当前全仓门禁：387/387 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS
 
 ## 1. 现在完成到了哪里
 
@@ -13,6 +13,7 @@
 - 回复先写 SQLite Delivery Outbox，再由独立 Worker 投递；
 - WebSocket 重连、进程重启或发送结果未知时，不会简单重复执行 Agent；
 - typing、streaming card 和审批卡片是可降级体验层，失败后仍回到普通文本；
+- WebSocket、Inbox、Turn、Delivery 与能力失败共用脱敏 correlation、JSON 日志和 SQLite Audit；
 - Channel 不复制 Agent、Policy、Approval 或记忆逻辑。
 
 当前还不能把它称为“飞书生产发布”：仓库虽然已提供 `miniclaw gateway` 进程编排、安全启停与离线 Doctor，
@@ -27,6 +28,7 @@
 | `src/miniclaw/channels/manager.py` | durable Inbox、有限 Worker、按 Conversation 串行、Turn 与 Delivery 编排 |
 | `src/miniclaw/channels/delivery.py` | Unicode-safe 分片、Outbox claim、退避重试和 unknown 恢复 |
 | `src/miniclaw/channels/capabilities.py` | typing、streaming card 与普通文本降级 |
+| `src/miniclaw/channels/observability.py` | correlation、短哈希、结构化 JSON 日志和 durable Audit |
 | `src/miniclaw/channels/approvals.py` | 审批文本/卡片解析，只调用 Core continuation |
 | `src/miniclaw/storage/channels.py` | Identity、Inbound、Delivery Repository 与原子状态迁移 |
 | `src/miniclaw/storage/migrations/0002_feishu_channel.sql` | Channel Identity、Inbox、Outbox 和幂等约束 |
@@ -147,7 +149,9 @@ Inbox 同时约束 event ID 和 message ID，但 `InboundEventRepository.record(
 - crash recovery、重复事件与重复 Delivery；
 - Unicode 分片、retry/unknown/permanent failure；
 - Adapter admission、官方 SDK 配置与 WebSocket 生命周期；
+- official SDK reconnecting/reconnected 状态、过滤原因与连接状态观测；
 - typing、streaming card 降级；
+- Inbox / Turn / Delivery correlation、耗时、Tool 数、attempt 与错误恢复 Audit；
 - Approval card、文本 fallback、Owner/hash/单次消费；
 - Gateway 启动顺序、双信号关闭、缺配置 fail closed 与凭据脱敏；
 - Doctor 的十三项离线诊断，不连接飞书也不输出 Secret；
@@ -166,7 +170,7 @@ uv build
 git diff --check
 ```
 
-当前结果：382/382 Python、25/25 TypeScript、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS，Python wheel/sdist
+当前结果：387/387 Python、25/25 TypeScript、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS，Python wheel/sdist
 构建成功。
 
 ## 10. 尚未完成与下一步
@@ -179,6 +183,7 @@ Phase 4 的剩余工作不能用单元测试冒充：
 4. 再决定是否开放群聊和多账号，而不是提前泛化。
 
 配置、运行、12 条回归、真实 smoke 和排障步骤见
-[Phase 4 运行与测试手册](testing-and-operations.md)。设计约束见
+[Phase 4 运行与测试手册](testing-and-operations.md)。
+[Phase 4 完成性审计](completion-audit.md)逐项列出 requirement → code → test → live evidence；设计约束见
 [Phase 4 飞书 Channel 设计](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)，
 逐步实现记录见 [Phase 4 TDD 计划](../../superpowers/plans/2026-08-08-phase-4-feishu-channel.md)。

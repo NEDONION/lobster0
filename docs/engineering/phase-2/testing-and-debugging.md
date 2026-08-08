@@ -2,7 +2,7 @@
 
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> 当前 Phase 3 单入口 TUI 基线：382/382 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS；历史 PTY smoke PASS
+> 当前 Phase 4 基线：387/387 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS；历史 PTY smoke PASS
 >
 > 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
@@ -21,7 +21,7 @@ Phase 2 不只要求“某个 Tool 能跑”。每次版本都必须证明：
 
 ```mermaid
 flowchart TB
-    UNIT["Layer 1: 382 Python + 25 TypeScript tests"] --> OFFLINE["Layer 2: 24 versioned Agent cases"]
+    UNIT["Layer 1: 387 Python + 25 TypeScript tests"] --> OFFLINE["Layer 2: 24 versioned Agent cases"]
     OFFLINE --> CHANNEL["Layer 3: 12 deterministic Channel cases"]
     CHANNEL --> LIVE["Layer 4: release-only DeepSeek / Feishu smoke"]
     LIVE --> DOC["Release record + progress docs"]
@@ -301,7 +301,7 @@ uv run miniclaw
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
 - [x] Doctor 十三项且网络/命令/数据库修改为零；
-- [x] 382/382 Python tests + 25/25 TypeScript tests；
+- [x] 387/387 Python tests + 25/25 TypeScript tests；
 - [x] 24/24 offline Agent cases、12/12 Channel cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
 - [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；

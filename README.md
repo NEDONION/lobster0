@@ -20,7 +20,8 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > 当前仓库已完成 Phase 4 的代码与离线门禁：裸 `miniclaw` 默认进入 pi-tui，Textual 作为 onboarding/fallback；`miniclaw gateway`
 > 通过官方 `lark-channel-sdk` 接入飞书 WebSocket，私聊和白名单群 mention 与 TUI 复用同一个 `AgentRuntime`。
 > 消息先进入 SQLite Inbox，再由有界 Worker 处理；回复经 durable Outbox 分片、重试并使用稳定 UUID。Typing、
-> 安全进度卡、Owner 审批卡片/文本 fallback、重启恢复、断线映射和 13 项 Doctor 均已接线。
+> 安全进度卡、Owner 审批卡片/文本 fallback、重启恢复、断线映射、脱敏 JSON 日志、durable Channel Audit
+> 和 13 项 Doctor 均已接线。
 > 同一个 `AgentRuntime`
 > 连接 DeepSeek、TurnService、SQLite、十个系统/文件/命令/HTTPS/Memory Tool 与参数绑定 Approval。TUI 支持流式回答、
 > Provider reasoning、可逐项展开的 Tool 参数/执行/结果 Trace、Enter 发送、Shift+Enter 换行、Esc 取消、
@@ -34,7 +35,7 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > Phase 3 已增加安全 Markdown Memory、经审批的 daily memory 写入、惰性 `SKILL.md` 激活，以及保留原始消息的
 > persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek
 > live eval runner与真实 `lark-cli`/Node 路径闭环仍未完成。当前回归基线为
-> **382 Python tests + 25 TypeScript tests + 24/24 Agent cases + 12/12 Feishu Channel cases**。
+> **387 Python tests + 25 TypeScript tests + 24/24 Agent cases + 12/12 Feishu Channel cases**。
 > 本机尚未配置飞书 App ID/App Secret，因此真实平台 WebSocket、权限和 20 轮对话仍待人工验收；离线 fake SDK
 > 通过不冒充 production verified。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
@@ -241,11 +242,12 @@ miniclaw/
 | [Phase 4 飞书生产 Channel](docs/engineering/phase-4/feishu-channel.md) | WebSocket、白名单、durable Inbox/Outbox、Worker、进度卡与跨 Channel 审批 |
 | [Phase 4 Channel/Gateway 概览](docs/engineering/phase-4/feishu-channel-core.md) | 模块地图、Admission、状态机、恢复和真实 E2E 边界 |
 | [Phase 4 运行、测试与排障](docs/engineering/phase-4/testing-and-operations.md) | 配置、Gateway、12 条 Channel 回归、live smoke、故障恢复和发布门禁 |
+| [Phase 4 完成性审计](docs/engineering/phase-4/completion-audit.md) | 逐项 requirement → code → test → live evidence 矩阵与剩余外部验收门 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |
 | [Eval v0.3.0 发布记录](docs/evals/releases/v0.3.0.md) | Phase 3 的 296 tests、24/24 场景与已知边界 |
-| [Eval v0.4.0 发布记录](docs/evals/releases/v0.4.0.md) | Phase 4 的 382+25 tests、24+12 回归与真实飞书待验收项 |
+| [Eval v0.4.0 发布记录](docs/evals/releases/v0.4.0.md) | Phase 4 的 387+25 tests、24+12 回归与真实飞书待验收项 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

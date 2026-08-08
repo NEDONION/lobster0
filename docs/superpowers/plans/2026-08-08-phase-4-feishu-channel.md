@@ -20,7 +20,9 @@ mechanism. CLI and Feishu enter the same `TurnService`.
 `docs/superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md`
 
 **Execution status (2026-08-08):** Tasks 1–14 implementation and deterministic gates are complete.
-The repository passes 382 Python tests, 25 TypeScript tests, 24/24 Agent cases and 12/12 Channel cases. Task 15 live acceptance is
+The repository passes 387 Python tests, 25 TypeScript tests, 24/24 Agent cases and 12/12 Channel cases.
+Task 16 local audit also added the previously missing redacted structured Channel logs and durable Audit.
+Task 15 live acceptance is
 pending because the local project has no Feishu App ID/App Secret and the local state has not enabled the
 Channel. Task 16 may publish the implementation and honest pending status, but must not label it
 production-verified until Task 15 is completed.
