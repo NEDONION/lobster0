@@ -99,6 +99,8 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         saved = self.turns.get(result.turn_id)
         history = self.messages.list_recent(result.session_id)
         self.assertEqual(result.content, "world")
+        self.assertIsNotNone(result.message_id)
+        self.assertIsNone(result.approval_id)
         self.assertEqual(saved.status, "completed")
         self.assertEqual((saved.input_tokens, saved.output_tokens), (9, 3))
         self.assertEqual(
@@ -106,6 +108,64 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             [("user", "hello"), ("assistant", "world")],
         )
         self.assertEqual(provider.requests[0].messages[-1].content, "hello")
+        self.assertEqual(history[-1].id, result.message_id)
+
+    async def test_feishu_inbound_uses_stable_id_and_duplicate_reuses_result(self) -> None:
+        """Channel 重投同一消息不能产生第二个 Turn、User Message 或 Provider 请求。"""
+        provider = FakeProvider((final_response("飞书回复"),))
+        service = self.service(provider)
+
+        first = await service.handle_inbound(
+            user_id=self.owner.id,
+            channel="feishu",
+            account_id="default",
+            external_conversation_id="oc_personal",
+            inbound_event_id="om_stable",
+            text="飞书问题",
+        )
+        duplicate = await service.handle_inbound(
+            user_id=self.owner.id,
+            channel="feishu",
+            account_id="default",
+            external_conversation_id="oc_personal",
+            inbound_event_id="om_stable",
+            text="不得覆盖",
+        )
+
+        session = self.sessions.get_or_create(
+            self.owner.id,
+            "feishu",
+            "default",
+            "oc_personal",
+        )
+        history = self.messages.list_recent(session.id)
+        self.assertEqual(first, duplicate)
+        self.assertEqual(first.content, "飞书回复")
+        self.assertIsNotNone(first.message_id)
+        self.assertEqual(len(provider.requests), 1)
+        self.assertEqual(
+            [(message.role, message.content) for message in history],
+            [("user", "飞书问题"), ("assistant", "飞书回复")],
+        )
+        self.assertEqual(self.turns.get(first.turn_id).inbound_event_id, "om_stable")
+
+    async def test_channel_inbound_id_is_nonempty_bounded_and_control_free(self) -> None:
+        """不可信平台标识不能用控制字符或超长值污染 Turn 唯一键。"""
+        provider = FakeProvider(())
+        service = self.service(provider)
+
+        for inbound_id in ("", "om_bad\x00id", "x" * 257):
+            with self.subTest(inbound_id_length=len(inbound_id)):
+                with self.assertRaisesRegex(ValueError, "inbound_event_id"):
+                    await service.handle_inbound(
+                        user_id=self.owner.id,
+                        channel="feishu",
+                        account_id="default",
+                        external_conversation_id="oc_personal",
+                        inbound_event_id=inbound_id,
+                        text="hello",
+                    )
+        self.assertEqual(provider.requests, [])
 
     async def test_run_events_follow_persisted_turn_and_tool_states(self) -> None:
         """TUI 只能看到已落库的 Turn/Tool 状态，且顺序与真实执行一致。"""
@@ -233,6 +293,8 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(arguments["content"], "yes")
         self.assertEqual(arguments["path"], str(self.paths.workspace / "approved.txt"))
         self.assertEqual(self.turns.get(result.turn_id).status, "waiting_approval")
+        self.assertIsNone(result.message_id)
+        self.assertEqual(result.approval_id, approval_event.data["approval_id"])
         self.assertNotIn("turn_finished", [event.kind for event in events])
 
     async def test_second_turn_receives_previous_history_in_chronological_order(self) -> None:
