@@ -39,6 +39,8 @@ _EXPECTATION_FIELDS = {
     "channel_evidence",
     "personal_files",
     "absent_personal_files",
+    "live_local_evidence",
+    "live_human_evidence",
 }
 _RESPONSE_FIELDS = {
     "content",
@@ -92,6 +94,41 @@ _CHANNEL_FIXTURES = {
     "thread",
     "isolation",
 }
+_LIVE_LOCAL_EVIDENCE = frozenset(
+    {
+        "gateway_ready",
+        "inbox_completed",
+        "turn_completed",
+        "delivery_sent",
+        "one_session_three_turns",
+        "system_info_succeeded",
+        "read_file_succeeded",
+        "approval_pending",
+        "approval_consumed_once",
+        "approval_denied",
+        "no_new_turn",
+        "multiple_parts_sent",
+        "memory_survived_restart",
+        "transport_reconnected",
+        "secret_scan_zero",
+    }
+)
+_LIVE_HUMAN_EVIDENCE = frozenset(
+    {
+        "reply_visible",
+        "context_answer_correct",
+        "system_info_visible",
+        "sentinel_visible",
+        "approval_prompt_visible",
+        "approved_result_visible",
+        "denial_visible",
+        "bot_silent",
+        "group_reply_visible",
+        "long_content_intact",
+        "restart_answer_correct",
+        "reconnect_reply_visible",
+    }
+)
 
 
 class EvalCaseError(ValueError):
@@ -116,6 +153,8 @@ class EvalExpectation:
     absent_personal_files: tuple[str, ...]
     error_code: str | None
     channel_evidence: tuple[str, ...]
+    live_local_evidence: tuple[str, ...]
+    live_human_evidence: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,6 +221,28 @@ def load_cases(root: Path) -> tuple[EvalCase, ...]:
     return tuple(sorted(cases, key=lambda case: case.id))
 
 
+def load_feishu_live_cases(root: Path) -> tuple[EvalCase, ...]:
+    """加载固定十五条 active Feishu Live E2E 场景。
+
+    Args:
+        root: 版本化 JSONL 场景目录。
+
+    Returns:
+        按 ID 排序的十五条真实飞书场景。
+
+    Raises:
+        EvalCaseError: 数据集数量或任一通用场景字段无效。
+    """
+    cases = tuple(
+        case
+        for case in load_cases(root)
+        if case.status == "active" and case.capability == "feishu_e2e"
+    )
+    if len(cases) != 15:
+        raise EvalCaseError("feishu live suite must contain exactly 15 active cases")
+    return cases
+
+
 def _reject_json_constant(value: str) -> None:
     """拒绝 Python JSON 扩展支持的 NaN 与 Infinity。"""
     del value
@@ -222,13 +283,28 @@ def _parse_case(raw: object, source: str) -> EvalCase:
     channel_fixture = _parse_channel(value.get("channel"), source)
     if status == "active" and "channel" in layers and channel_fixture is None:
         raise EvalCaseError(f"active channel case has no fixture at {source}")
+    capability = _string(value.get("capability"), source, "capability")
+    expected = _parse_expectation(value.get("expected", {}), source)
+    if status == "active" and layers == ("live",) and capability != "feishu_e2e":
+        raise EvalCaseError(f"active live case must use feishu_e2e capability at {source}")
+    if capability == "feishu_e2e":
+        if status == "active" and layers != ("live",):
+            raise EvalCaseError(f"active Feishu Live case must use only live layer at {source}")
+        if responses or channel_fixture is not None:
+            raise EvalCaseError(
+                f"Feishu Live case cannot use offline or channel fixture at {source}"
+            )
+        if status == "active" and not (
+            expected.live_local_evidence or expected.live_human_evidence
+        ):
+            raise EvalCaseError(f"active Feishu Live case has no evidence at {source}")
     return EvalCase(
         schema_version=schema_version,
         id=case_id,
         title=_string(value.get("title"), source, "title"),
         status=status,
         layers=layers,
-        capability=_string(value.get("capability"), source, "capability"),
+        capability=capability,
         query=_string(value.get("query"), source, "query"),
         turns=_strings(value.get("turns", []), source, "turns"),
         approval_actions=approval_actions,
@@ -236,7 +312,7 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         setup_personal_files=setup_personal_files,
         setup_executables=setup_executables,
         responses=responses,
-        expected=_parse_expectation(value.get("expected", {}), source),
+        expected=expected,
         introduced_by=_string(value.get("introduced_by"), source, "introduced_by"),
         tags=_strings(value.get("tags", []), source, "tags"),
         source=source,
@@ -380,6 +456,18 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
     )
     if any(not _safe_relative_path(path) for path in absent_personal_files):
         raise EvalCaseError(f"expected personal file path is unsafe at {source}")
+    live_local_evidence = _parse_live_evidence(
+        value.get("live_local_evidence", []),
+        source,
+        "live local",
+        _LIVE_LOCAL_EVIDENCE,
+    )
+    live_human_evidence = _parse_live_evidence(
+        value.get("live_human_evidence", []),
+        source,
+        "live human",
+        _LIVE_HUMAN_EVIDENCE,
+    )
     return EvalExpectation(
         answer_contains=_strings(value.get("answer_contains", []), source, "answer_contains"),
         answer_excludes=_strings(value.get("answer_excludes", []), source, "answer_excludes"),
@@ -399,7 +487,24 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
             source,
             "channel_evidence",
         ),
+        live_local_evidence=live_local_evidence,
+        live_human_evidence=live_human_evidence,
     )
+
+
+def _parse_live_evidence(
+    raw: object,
+    source: str,
+    kind: str,
+    allowed: frozenset[str],
+) -> tuple[str, ...]:
+    """解析封闭且不重复的 Live evidence key。"""
+    values = _strings(raw, source, f"{kind} evidence")
+    if len(set(values)) != len(values):
+        raise EvalCaseError(f"duplicate {kind} evidence at {source}")
+    if any(value not in allowed for value in values):
+        raise EvalCaseError(f"invalid {kind} evidence at {source}")
+    return values
 
 
 def _parse_expected_files(

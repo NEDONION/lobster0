@@ -51,6 +51,27 @@ def valid_case(case_id: str = "CORE-001") -> dict[str, object]:
     }
 
 
+def live_case(case_id: str = "FEISHU-LIVE-001") -> dict[str, object]:
+    """返回不含平台身份和凭据的最小 Feishu Live 场景。"""
+    return {
+        "schema_version": 1,
+        "id": case_id,
+        "title": "gateway ready",
+        "status": "active",
+        "layers": ["live"],
+        "capability": "feishu_e2e",
+        "query": "启动 Gateway，等待真实 WebSocket ready。",
+        "turns": [],
+        "setup": {"files": {}},
+        "expected": {
+            "live_local_evidence": ["gateway_ready"],
+            "live_human_evidence": [],
+        },
+        "introduced_by": "phase-5.1",
+        "tags": ["feishu", "live", "gateway"],
+    }
+
+
 def write_cases(root: Path, name: str, rows: list[dict[str, object]]) -> Path:
     """把测试场景逐行写成 UTF-8 JSONL。"""
     path = root / name
@@ -277,6 +298,72 @@ class EvalCaseLoaderTest(unittest.TestCase):
                 case["channel"] = {"fixture": fixture}
                 write_cases(root, "channel.jsonl", [case])
                 with self.assertRaises(EvalCaseError):
+                    load_cases(root)
+
+    def test_loads_feishu_live_evidence_as_closed_typed_tuples(self) -> None:
+        """合法 Live 场景必须保留封闭的本地与人工证据，不被通用层丢弃。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            case = live_case()
+            case["expected"] = {
+                "live_local_evidence": ["inbox_completed", "delivery_sent"],
+                "live_human_evidence": ["reply_visible"],
+            }
+            write_cases(root, "feishu-live.jsonl", [case])
+
+            try:
+                loaded = load_cases(root)[0]
+            except EvalCaseError as error:
+                self.fail(f"valid Feishu Live case was rejected: {error}")
+
+        self.assertEqual(
+            loaded.expected.live_local_evidence,
+            ("inbox_completed", "delivery_sent"),
+        )
+        self.assertEqual(loaded.expected.live_human_evidence, ("reply_visible",))
+        self.assertEqual(loaded.layers, ("live",))
+        self.assertEqual(loaded.responses, ())
+        self.assertIsNone(loaded.channel_fixture)
+
+    def test_feishu_live_case_rejects_unknown_duplicate_and_empty_evidence(self) -> None:
+        """Live evidence 不能拼错、重复或全部为空，否则 Runner 可能误判成功。"""
+        mutations = (
+            (
+                lambda case: case["expected"].update(
+                    {"live_local_evidence": ["unknown_live_fact"]}
+                ),
+                "invalid live local evidence",
+            ),
+            (
+                lambda case: case["expected"].update(
+                    {"live_local_evidence": ["gateway_ready", "gateway_ready"]}
+                ),
+                "duplicate live local evidence",
+            ),
+            (
+                lambda case: case.update(
+                    {
+                        "expected": {
+                            "live_local_evidence": [],
+                            "live_human_evidence": [],
+                        }
+                    }
+                ),
+                "active Feishu Live case has no evidence",
+            ),
+            (
+                lambda case: case.update({"capability": "core"}),
+                "active live case must use feishu_e2e capability",
+            ),
+        )
+        for mutate, expected in mutations:
+            with self.subTest(expected=expected), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                case = live_case()
+                mutate(case)
+                write_cases(root, "feishu-live.jsonl", [case])
+
+                with self.assertRaisesRegex(EvalCaseError, expected):
                     load_cases(root)
 
 
