@@ -360,6 +360,20 @@ def _tool_summary(tool_name: str, arguments: dict[str, JsonValue]) -> tuple[str,
         return "更新记忆", "仅记录经安全校验的事实"
     if tool_name == "memory_remember":
         return "记住事实", "仅记录 Owner 明确要求的事实"
+    if tool_name == "memory_search":
+        return "搜索记忆", "仅搜索获准 Owner Memory"
+    if tool_name == "memory_get":
+        return "查看记忆", _safe_scalar(arguments.get("unit_id"), "Memory Unit")
+    if tool_name == "memory_forget":
+        return "提议遗忘", _safe_scalar(arguments.get("unit_id"), "Memory Unit")
+    if tool_name == "memory_correct":
+        return "提议纠错", _safe_scalar(arguments.get("unit_id"), "Memory Unit")
+    if tool_name == "memory_list":
+        return "列出记忆", "仅列出获准 Owner Memory"
+    if tool_name == "memory_review_list":
+        return "查看记忆审批", "仅列出待 Owner 决定的 Review"
+    if tool_name == "memory_flush":
+        return "整理记忆", "已调度后台 Memory flush"
     if tool_name == "system_info":
         return "查看系统信息", _safe_scalar(arguments.get("kind"), "本机公开信息")
     return "调用工具", safe_name

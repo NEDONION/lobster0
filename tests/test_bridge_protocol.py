@@ -120,6 +120,10 @@ class BridgeProtocolTest(unittest.TestCase):
             {"action": "list", "limit": 10},
             {"action": "search", "query": "中文回复", "limit": 5},
             {"action": "why", "unit_id": "mem-123"},
+            {"action": "review", "limit": 20},
+            {"action": "forget", "unit_id": "mem-123"},
+            {"action": "approve", "review_id": 7, "preview_hash": "a" * 64},
+            {"action": "reject", "review_id": 7, "preview_hash": "a" * 64},
         )
         for index, payload in enumerate(accepted):
             request = decode_request(
@@ -134,6 +138,9 @@ class BridgeProtocolTest(unittest.TestCase):
             {"action": "search", "query": "中文", "owner_id": 1},
             {"action": "search"},
             {"action": "why", "unit_id": ""},
+            {"action": "approve", "review_id": 7, "preview_hash": "short"},
+            {"action": "reject", "review_id": True, "preview_hash": "a" * 64},
+            {"action": "forget", "unit_id": "mem-123", "approve": True},
             {"action": "rebuild", "force": True},
         )
         for payload in rejected:

@@ -132,3 +132,28 @@ test("process exit rejects pending work with bounded diagnostics", async () => {
       !error.message.includes("sensitive provider"),
   );
 });
+
+test("shutdown waits for the Python process to finish cleanup", async () => {
+  const process = new FakeProcess();
+  const client = new BridgeClient(process);
+  const written: Buffer[] = [];
+  process.stdin.on("data", (chunk: Buffer) => written.push(chunk));
+
+  const shutdown = client.shutdown();
+  await new Promise((resolve) => setImmediate(resolve));
+  const request = JSON.parse(Buffer.concat(written).toString("utf8"));
+  process.stdout.write(
+    `${JSON.stringify({ v: 1, id: request.id, type: "response.ok", payload: {} })}\n`,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  let settled = false;
+  void shutdown.then(() => {
+    settled = true;
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+
+  process.emit("exit", 0, null);
+  await shutdown;
+  assert.equal(settled, true);
+});

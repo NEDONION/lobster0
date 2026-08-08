@@ -1,10 +1,12 @@
 """供 Bridge/TUI 使用的本地 Owner Memory Console。"""
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 
 from miniclaw.memory.models import DisclosureContext
 from miniclaw.memory.repository import MemoryUnit
 from miniclaw.memory.retrieval import MemoryRetrieval, SearchRequest
+from miniclaw.memory.review import MemoryReviewService, ReviewPreview
 from miniclaw.providers.base import JsonValue
 from miniclaw.storage.database import Database
 
@@ -17,12 +19,14 @@ class MemoryConsole:
         database: Database,
         owner_id: int,
         retrieval: MemoryRetrieval,
+        governance: MemoryReviewService,
         schedule_flush: Callable[[], None],
     ) -> None:
-        """绑定数据库、Owner、Retrieval 与非阻塞 Flush 信号。"""
+        """绑定数据库、Owner、Retrieval、Review 治理与非阻塞 Flush 信号。"""
         self._database = database
         self._owner_id = owner_id
         self._retrieval = retrieval
+        self._governance = governance
         self._schedule_flush = schedule_flush
         self._disclosure = DisclosureContext(owner_id, owner_id, "cli", "local", True)
 
@@ -33,8 +37,10 @@ class MemoryConsole:
         query: JsonValue = None,
         unit_id: JsonValue = None,
         limit: JsonValue = 10,
+        review_id: JsonValue = None,
+        preview_hash: JsonValue = None,
     ) -> dict[str, JsonValue]:
-        """执行已由 Bridge 校验的 status/list/search/why/flush 命令。"""
+        """执行已由 Bridge 校验的查询、Review、Forget 和 Flush 命令。"""
         if not isinstance(action, str):
             raise ValueError("memory action is invalid")
         if type(limit) is not int:
@@ -62,6 +68,38 @@ class MemoryConsole:
         if action == "why" and isinstance(unit_id, str):
             unit = self._retrieval.get(self._disclosure, unit_id)
             return {"item": None if unit is None else _unit_summary(unit)}
+        if action == "review":
+            return {
+                "items": [
+                    _review_summary(item)
+                    for item in self._governance.list(self._disclosure, limit=limit)
+                ]
+            }
+        if action == "forget" and isinstance(unit_id, str):
+            return _review_summary(
+                self._governance.preview_forget(
+                    self._disclosure,
+                    unit_id,
+                    now=datetime.now(UTC),
+                )
+            )
+        if (
+            action in {"approve", "reject"}
+            and type(review_id) is int
+            and isinstance(preview_hash, str)
+        ):
+            result = self._governance.decide(
+                self._disclosure,
+                review_id,
+                preview_hash,
+                approve=action == "approve",
+                now=datetime.now(UTC),
+            )
+            return {
+                "review_id": result.review_id,
+                "status": result.status,
+                "unit_ids": list(result.unit_ids),
+            }
         raise ValueError("memory action payload is invalid")
 
     def _status(self) -> dict[str, JsonValue]:
@@ -108,4 +146,17 @@ def _unit_summary(unit: MemoryUnit) -> dict[str, JsonValue]:
         "status": unit.status,
         "confidence": unit.confidence,
         "source_message_ids": [source.message_id for source in unit.sources],
+    }
+
+
+def _review_summary(review: ReviewPreview) -> dict[str, JsonValue]:
+    """编码 Owner 本地 UI 可见且被 hash 绑定的 Review 预览。"""
+    return {
+        "review_id": review.review_id,
+        "review_type": review.review_type,
+        "unit_id": review.unit_id,
+        "text": review.text,
+        "status": review.current_status,
+        "requested_transition": review.requested_transition,
+        "preview_hash": review.preview_hash,
     }

@@ -17,6 +17,7 @@ from miniclaw.memory.repository import (
     MemoryStateError,
     MemoryUnitRepository,
 )
+from miniclaw.memory.review import review_preview_hash
 from miniclaw.memory.store import MemoryError, MemoryStore
 
 _EXPLICIT_INTENT = re.compile(
@@ -114,10 +115,15 @@ class MemoryService:
                 "invalid_memory_source",
                 "memory source could not be verified",
             ) from error
-        status = "review_required" if _BEHAVIOR_RULE.search(fact) else "active"
-        kind, key = _classify(fact, behavior=status == "review_required")
+        behavior = _BEHAVIOR_RULE.search(fact) is not None
+        kind, key = _classify(fact, behavior=behavior)
+        active = self._units.active_for_key(request.disclosure.owner_id, key)
+        conflict = active is not None and active.text != fact
+        status = "review_required" if behavior or conflict else "active"
         unit_id = _unit_id(request.disclosure.owner_id, request.source, fact)
         existing = self._units.find(request.disclosure.owner_id, unit_id)
+        if existing is None:
+            existing = self._units.find_by_text(request.disclosure.owner_id, fact)
         if existing is not None:
             return RememberResult(
                 existing.id,
@@ -173,19 +179,33 @@ class MemoryService:
             unit = recovered
         review_id: int | None = None
         if status == "review_required":
-            preview_hash = hashlib.sha256(
-                f"{unit.id}\0{unit.text_hash}\0{status}".encode()
-            ).hexdigest()
+            review_type = "conflict" if conflict else "behavior"
+            preview_hash = review_preview_hash(
+                unit,
+                review_type=review_type,
+                requested_transition="active",
+            )
             review = self._reviews.create(
                 owner_id=request.disclosure.owner_id,
-                review_type="behavior",
+                review_type=review_type,
                 preview_hash=preview_hash,
                 requested_transition="active",
                 unit_id=unit.id,
-                payload={"unit_hash": unit.text_hash},
+                payload={
+                    "unit_hash": unit.text_hash,
+                    "active_unit_id": None if active is None else active.id,
+                },
                 now=request.now,
             )
             review_id = review.id
+            if conflict and active is not None:
+                self._units.record_conflict(
+                    owner_id=request.disclosure.owner_id,
+                    key=key,
+                    active_unit_id=active.id,
+                    incoming_unit_id=unit.id,
+                    now=request.now,
+                )
         return RememberResult(unit.id, unit.status, review_id, write.block_hash)
 
 
@@ -218,6 +238,6 @@ def _existing_review_id(
     owner_id: int,
     unit_id: str,
 ) -> int | None:
-    """为重复明确请求预留稳定 Review 恢复点；首版无列表时返回 None。"""
-    del reviews, owner_id, unit_id
-    return None
+    """为重复明确请求返回同 Unit 仍 pending 的稳定 Review ID。"""
+    review = reviews.pending_for_unit(owner_id, unit_id)
+    return None if review is None else review.id

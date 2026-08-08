@@ -24,7 +24,10 @@ _REQUEST_TYPES = frozenset(
 )
 _APPROVAL_DECISIONS = frozenset({"deny", "once", "session", "always"})
 _PERMISSION_MODES = frozenset({"safe", "smart", "autopilot", "yolo"})
-_MEMORY_ACTIONS = frozenset({"status", "list", "search", "why", "flush"})
+_MEMORY_ACTIONS = frozenset(
+    {"status", "list", "search", "why", "flush", "review", "forget", "approve", "reject"}
+)
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ProtocolError(RuntimeError):
@@ -205,17 +208,27 @@ def _validate_memory_command(payload: dict[str, JsonValue]) -> None:
         raise ProtocolError("invalid_memory_command", "Memory 命令字段不合法")
     if action in {"status", "flush"}:
         valid = set(payload) == {"action"}
-    elif action == "list":
+    elif action in {"list", "review"}:
         valid = set(payload).issubset({"action", "limit"})
     elif action == "search":
         valid = (
             set(payload).issubset({"action", "query", "limit"})
             and _bounded_string(payload.get("query"), 1, 1_000)
         )
-    else:
+    elif action in {"why", "forget"}:
         valid = (
             set(payload) == {"action", "unit_id"}
             and _bounded_string(payload.get("unit_id"), 1, 160)
+        )
+    else:
+        review_id = payload.get("review_id")
+        preview_hash = payload.get("preview_hash")
+        valid = (
+            set(payload) == {"action", "review_id", "preview_hash"}
+            and type(review_id) is int
+            and review_id > 0
+            and isinstance(preview_hash, str)
+            and _SHA256.fullmatch(preview_hash) is not None
         )
     limit = payload.get("limit", 10)
     if not valid or type(limit) is not int or not 1 <= limit <= 50:

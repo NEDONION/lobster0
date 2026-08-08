@@ -50,9 +50,17 @@ export class BridgeClient {
   private readonly fatalHandlers = new Set<BridgeFatalHandler>();
   private sequence = 0;
   private closed = false;
+  private exited = false;
+  private readonly exitPromise: Promise<void>;
 
   public constructor(process: BridgeProcess) {
     this.process = process;
+    this.exitPromise = new Promise((resolve) => {
+      process.on("exit", () => {
+        this.exited = true;
+        resolve();
+      });
+    });
     process.stdout.on("data", (chunk: Buffer | string) => this.consume(chunk));
     process.stdout.on("end", () => this.finishStream());
     process.stdout.on("error", () => this.failAll("bridge_stream", "Bridge 输出流失败"));
@@ -173,6 +181,17 @@ export class BridgeClient {
     }
     await this.request("bridge.shutdown", {});
     this.closed = true;
+    await Promise.race([
+      this.exitPromise,
+      new Promise<void>((resolve) => setTimeout(resolve, 2_000)),
+    ]);
+    if (!this.exited) {
+      this.process.kill("SIGTERM");
+      await Promise.race([
+        this.exitPromise,
+        new Promise<void>((resolve) => setTimeout(resolve, 500)),
+      ]);
+    }
   }
 
   public kill(): void {

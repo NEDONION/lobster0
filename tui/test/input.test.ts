@@ -139,6 +139,33 @@ test("memory slash command uses the typed bridge surface and renders results", a
   app.stop();
 });
 
+test("memory review decisions carry the exact preview hash", async () => {
+  const { app, bridge, terminal } = await createApp();
+  const previewHash = "a".repeat(64);
+  app.editor.setText(`/memory approve 7 ${previewHash}`);
+
+  terminal.send("\r");
+  await app.whenIdle();
+
+  assert.deepEqual(bridge.memoryCommands, [
+    { action: "approve", review_id: 7, preview_hash: previewHash },
+  ]);
+  app.stop();
+});
+
+test("memory forget only creates a preview request", async () => {
+  const { app, bridge, terminal } = await createApp();
+  app.editor.setText("/memory forget mem-language");
+
+  terminal.send("\r");
+  await app.whenIdle();
+
+  assert.deepEqual(bridge.memoryCommands, [
+    { action: "forget", unit_id: "mem-language" },
+  ]);
+  app.stop();
+});
+
 test("shift enter inserts a newline without starting a turn", async () => {
   const { app, bridge, terminal } = await createApp();
   app.editor.setText("第一行");

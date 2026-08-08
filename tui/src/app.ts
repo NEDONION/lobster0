@@ -295,7 +295,7 @@ export class MiniClawTui {
         await this.runMemoryCommand(arguments_);
         break;
       case "/help":
-        this.appendLocal("/copy · /lang zh|en · /trace all|compact|编号 · /permissions [safe|smart|autopilot|yolo] · /memory status|list|search|why|flush · /status · /new · /clear · /quit");
+        this.appendLocal("/copy · /lang zh|en · /trace all|compact|编号 · /permissions [safe|smart|autopilot|yolo] · /memory status|list|search|why|review|forget|approve|reject|flush · /status · /new · /clear · /quit");
         break;
       case "/quit":
       case "/exit":
@@ -313,15 +313,22 @@ export class MiniClawTui {
     let payload: Record<string, JsonValue>;
     if (action === "status" || action === "flush") {
       payload = { action };
-    } else if (action === "list") {
+    } else if (action === "list" || action === "review") {
       const limit = values[0] && /^\d+$/.test(values[0]) ? Number(values[0]) : 20;
       payload = { action, limit };
     } else if (action === "search" && values.length > 0) {
       payload = { action, query: values.join(" "), limit: 10 };
-    } else if (action === "why" && values.length === 1) {
+    } else if ((action === "why" || action === "forget") && values.length === 1) {
       payload = { action, unit_id: values[0]! };
+    } else if (
+      (action === "approve" || action === "reject")
+      && values.length === 2
+      && /^\d+$/.test(values[0]!)
+      && /^[0-9a-f]{64}$/.test(values[1]!)
+    ) {
+      payload = { action, review_id: Number(values[0]), preview_hash: values[1]! };
     } else {
-      this.appendLocal("用法: /memory status | list [数量] | search <查询> | why <unit_id> | flush", "error");
+      this.appendLocal("用法: /memory status | list [数量] | search <查询> | why <unit_id> | review [数量] | forget <unit_id> | approve|reject <review_id> <preview_hash> | flush", "error");
       return;
     }
     try {
@@ -514,9 +521,11 @@ function formatMemoryResponse(response: Record<string, JsonValue>): string {
       .map((item) => {
         if (typeof item !== "object" || item === null || Array.isArray(item)) return "Memory: ?";
         const id = typeof item.unit_id === "string" ? item.unit_id : "?";
+        const reviewId = typeof item.review_id === "number" ? `review#${item.review_id} ` : "";
         const text = typeof item.text === "string" ? item.text : "";
         const status = typeof item.status === "string" ? ` (${item.status})` : "";
-        return `[${id}] ${text}${status}`;
+        const preview = typeof item.preview_hash === "string" ? ` hash=${item.preview_hash}` : "";
+        return `${reviewId}[${id}] ${text}${status}${preview}`;
       })
       .join("\n");
   }
@@ -528,6 +537,11 @@ function formatMemoryResponse(response: Record<string, JsonValue>): string {
       ? item.source_message_ids.join(",")
       : "";
     return `[${id}] ${text}\nsources=${sources}`;
+  }
+  if (typeof response.review_id === "number" && typeof response.preview_hash === "string") {
+    const id = typeof response.unit_id === "string" ? response.unit_id : "?";
+    const text = typeof response.text === "string" ? response.text : "";
+    return `review#${response.review_id} [${id}] ${text}\nhash=${response.preview_hash}`;
   }
   return JSON.stringify(response, null, 2);
 }

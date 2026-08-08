@@ -1,5 +1,4 @@
-"""Memory Autopilot v2 的来源绑定模型 Tool。"""
-
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -7,16 +6,22 @@ from miniclaw.memory.models import SourceRef
 from miniclaw.memory.policy import MemoryDisclosurePolicy, MemoryPolicyError
 from miniclaw.memory.repository import MemoryUnit
 from miniclaw.memory.retrieval import MemoryRetrieval, SearchRequest
+from miniclaw.memory.review import MemoryReviewService
 from miniclaw.memory.service import ExplicitMemoryRequest, MemoryService
 from miniclaw.memory.store import MemoryError
 from miniclaw.providers.base import JsonValue
-from miniclaw.storage.conversations import MessageRepository
+from miniclaw.storage.conversations import MessageRepository, StoredMessage
 from miniclaw.tools.base import (
     ToolContext,
     ToolDefinition,
     ToolResult,
     ToolRisk,
     ToolValidationError,
+)
+
+_FORGET_INTENT = re.compile(
+    r"(?:忘掉|忘记|删除.{0,6}记忆|forget|remove.{0,8}memory)",
+    re.IGNORECASE,
 )
 
 
@@ -298,6 +303,207 @@ class MemoryFlushTool:
         return ToolResult.success({"scheduled": True})
 
 
+class MemoryForgetTool:
+    """把明确 Owner forget 请求转换成 preview-bound Review。"""
+
+    definition = ToolDefinition(
+        name="memory_forget",
+        description="Preview forgetting one owner memory; final approval is owner-only in UI.",
+        parameters={
+            "type": "object",
+            "properties": {"unit_id": {"type": "string", "maxLength": 160}},
+            "required": ["unit_id"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(
+        self,
+        governance: MemoryReviewService,
+        messages: MessageRepository,
+    ) -> None:
+        """绑定 Review Service 与当前 Turn 消息来源。"""
+        self._governance = governance
+        self._messages = messages
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """只接受一个 Unit ID，拒绝 Owner/decision/hash 参数。"""
+        if set(arguments) != {"unit_id"}:
+            raise ToolValidationError("memory_forget requires only unit_id")
+        unit_id = arguments.get("unit_id")
+        if not isinstance(unit_id, str) or not unit_id.strip() or len(unit_id) > 160:
+            raise ToolValidationError("memory_forget unit_id is invalid")
+        return {"unit_id": unit_id.strip()}
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """校验当前消息的明确 forget 意图，并只创建 Review。"""
+        source = _current_user_message(self._messages, context)
+        if (
+            context.disclosure is None
+            or source is None
+            or _FORGET_INTENT.search(source.content) is None
+        ):
+            return ToolResult.failure(
+                "memory_forget_intent_required",
+                "memory forget requires explicit owner intent",
+            )
+        unit_id = arguments.get("unit_id")
+        assert isinstance(unit_id, str)
+        try:
+            preview = self._governance.preview_forget(
+                context.disclosure,
+                unit_id,
+                now=datetime.now(UTC),
+            )
+        except MemoryError as error:
+            return ToolResult.failure(error.code, str(error))
+        return ToolResult.success(
+            {
+                "review_id": preview.review_id,
+                "preview_hash": preview.preview_hash,
+                "unit_id": preview.unit_id,
+                "requested_transition": preview.requested_transition,
+            }
+        )
+
+
+class MemoryCorrectTool:
+    """从明确纠错 User Message 创建 source-bound Correction Review。"""
+
+    definition = ToolDefinition(
+        name="memory_correct",
+        description="Propose a correction; creates a new sourced unit requiring owner review.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "unit_id": {"type": "string", "maxLength": 160},
+                "text": {"type": "string", "maxLength": 2000},
+            },
+            "required": ["unit_id", "text"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(
+        self,
+        governance: MemoryReviewService,
+        messages: MessageRepository,
+    ) -> None:
+        """绑定 Review Service 与当前 Turn User source。"""
+        self._governance = governance
+        self._messages = messages
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """只接受 Unit ID 与新文本。"""
+        if set(arguments) != {"unit_id", "text"}:
+            raise ToolValidationError("memory_correct requires unit_id and text")
+        unit_id = arguments.get("unit_id")
+        text = arguments.get("text")
+        if not isinstance(unit_id, str) or not unit_id.strip() or len(unit_id) > 160:
+            raise ToolValidationError("memory_correct unit_id is invalid")
+        if not isinstance(text, str) or not text.strip() or len(text) > 2_000:
+            raise ToolValidationError("memory_correct text is invalid")
+        return {"unit_id": unit_id.strip(), "text": text.strip()}
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """绑定当前 User Message 为纠错来源，新 Unit 等待 UI Review。"""
+        source = _current_user_message(self._messages, context)
+        if context.disclosure is None or source is None:
+            return ToolResult.failure(
+                "memory_disclosure_denied",
+                "memory correction is unavailable in this conversation",
+            )
+        unit_id = arguments.get("unit_id")
+        text = arguments.get("text")
+        assert isinstance(unit_id, str) and isinstance(text, str)
+        try:
+            preview = self._governance.propose_correction(
+                context.disclosure,
+                unit_id,
+                text,
+                source=SourceRef(
+                    source.id,
+                    source.session_id,
+                    context.disclosure.channel,
+                ),
+                latest_user_text=source.content,
+                now=datetime.now(UTC),
+            )
+        except MemoryError as error:
+            return ToolResult.failure(error.code, str(error))
+        return ToolResult.success(
+            {
+                "review_id": preview.review_id,
+                "preview_hash": preview.preview_hash,
+                "unit_id": preview.unit_id,
+                "status": preview.current_status,
+            }
+        )
+
+
+class MemoryReviewListTool:
+    """向获准 Owner Context 列出 pending Review，但不能代表 Owner 决策。"""
+
+    definition = ToolDefinition(
+        name="memory_review_list",
+        description="List pending owner memory reviews; this tool cannot approve or reject.",
+        parameters={"type": "object", "properties": {}, "additionalProperties": False},
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self, governance: MemoryReviewService) -> None:
+        """绑定只读 Review Service。"""
+        self._governance = governance
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """拒绝所有参数，尤其是 decision/owner。"""
+        if arguments:
+            raise ToolValidationError("memory_review_list accepts no arguments")
+        return {}
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """列出 pending Review 摘要，Disclosure 拒绝时返回稳定失败。"""
+        del arguments
+        if context.disclosure is None:
+            return ToolResult.failure(
+                "memory_disclosure_denied",
+                "memory review is unavailable in this conversation",
+            )
+        try:
+            previews = self._governance.list(context.disclosure)
+        except MemoryError as error:
+            return ToolResult.failure(error.code, str(error))
+        return ToolResult.success(
+            {
+                "items": [
+                    {
+                        "review_id": item.review_id,
+                        "review_type": item.review_type,
+                        "unit_id": item.unit_id,
+                        "text": item.text,
+                        "status": item.current_status,
+                        "preview_hash": item.preview_hash,
+                    }
+                    for item in previews
+                ]
+            }
+        )
+
+
 def _unit_data(unit: MemoryUnit) -> dict[str, JsonValue]:
     """把 Unit 编码为不含外部平台用户 ID 的稳定 Tool payload。"""
     return {
@@ -309,3 +515,18 @@ def _unit_data(unit: MemoryUnit) -> dict[str, JsonValue]:
         "confidence": unit.confidence,
         "source_message_ids": [source.message_id for source in unit.sources],
     }
+
+
+def _current_user_message(
+    messages: MessageRepository,
+    context: ToolContext,
+) -> StoredMessage | None:
+    """返回当前 Turn 最新 User Message；缺失时返回 None。"""
+    return next(
+        (
+            message
+            for message in reversed(messages.list_recent(context.session_id, limit=20))
+            if message.role == "user" and message.turn_id == context.turn_id
+        ),
+        None,
+    )

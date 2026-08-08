@@ -30,6 +30,9 @@ BUILTIN_TOOL_NAMES = (
     "memory_get",
     "memory_list",
     "memory_flush",
+    "memory_forget",
+    "memory_correct",
+    "memory_review_list",
 )
 DEFAULT_TOOL_MODE = "autopilot"
 

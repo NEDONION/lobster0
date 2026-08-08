@@ -831,6 +831,56 @@ class MemoryUnitRepository:
             )
         return self.get(owner_id, identifier)
 
+    def record_conflict(
+        self,
+        *,
+        owner_id: int,
+        key: str,
+        active_unit_id: str,
+        incoming_unit_id: str,
+        now: datetime | None = None,
+    ) -> int:
+        """幂等记录同 key active/incoming Unit 冲突并返回内部 ID。"""
+        _require_positive(owner_id, "owner_id")
+        memory_key = _require_text(key, "memory key", maximum=200)
+        active = _require_text(active_unit_id, "active_unit_id", maximum=160)
+        incoming = _require_text(incoming_unit_id, "incoming_unit_id", maximum=160)
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO memory_conflicts (
+                    owner_id, memory_key, active_unit_id, incoming_unit_id,
+                    status, created_at
+                )
+                SELECT ?, ?, ?, ?, 'pending', ?
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM memory_conflicts
+                    WHERE owner_id = ? AND active_unit_id = ?
+                        AND incoming_unit_id = ? AND status = 'pending'
+                )
+                """,
+                (
+                    owner_id,
+                    memory_key,
+                    active,
+                    incoming,
+                    _utc_text(now or datetime.now(UTC)),
+                    owner_id,
+                    active,
+                    incoming,
+                ),
+            )
+            row = connection.execute(
+                """
+                SELECT id FROM memory_conflicts
+                WHERE owner_id = ? AND active_unit_id = ? AND incoming_unit_id = ?
+                """,
+                (owner_id, active, incoming),
+            ).fetchone()
+        if row is None:
+            raise MemoryStateError("memory conflict could not be recorded")
+        return int(row[0])
+
 
 class MemoryReviewRepository:
     """持久化与 Owner、预览哈希和目标转换绑定的 Review。"""
@@ -909,6 +959,37 @@ class MemoryReviewRepository:
         if row is None:
             raise MemoryStateError("memory review does not exist")
         return _review(row)
+
+    def list_pending(self, owner_id: int, *, limit: int = 50) -> tuple[MemoryReview, ...]:
+        """按 ID 列出 Owner 的有界 pending Review。"""
+        _require_positive(owner_id, "owner_id")
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("memory review limit must be between 1 and 100")
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM memory_reviews
+                WHERE owner_id = ? AND status = 'pending'
+                ORDER BY id LIMIT ?
+                """,
+                (owner_id, limit),
+            ).fetchall()
+        return tuple(_review(row) for row in rows)
+
+    def pending_for_unit(self, owner_id: int, unit_id: str) -> MemoryReview | None:
+        """返回 Unit 最新 pending Review，供幂等明确请求恢复 review id。"""
+        _require_positive(owner_id, "owner_id")
+        identifier = _require_text(unit_id, "unit_id", maximum=160)
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM memory_reviews
+                WHERE owner_id = ? AND unit_id = ? AND status = 'pending'
+                ORDER BY id DESC LIMIT 1
+                """,
+                (owner_id, identifier),
+            ).fetchone()
+        return None if row is None else _review(row)
 
 
 class MemoryManifestRepository:

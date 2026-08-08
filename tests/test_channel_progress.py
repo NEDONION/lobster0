@@ -87,6 +87,14 @@ class ProgressProjectorTest(unittest.TestCase):
             ("grep", {"pattern": "token", "root": "src"}, "搜索文件内容", "src"),
             ("http_get", {"url": "https://example.com/a?q=secret"}, "访问公开网页", "example.com"),
             ("read_memory", {"scope": "recent"}, "查看记忆", "recent"),
+            ("memory_get", {"unit_id": "mem-language"}, "查看记忆", "mem-language"),
+            (
+                "memory_correct",
+                {"unit_id": "mem-language", "text": "secret preference"},
+                "提议纠错",
+                "mem-language",
+            ),
+            ("memory_review_list", {}, "查看记忆审批", "Owner"),
             ("unknown", {"password": "secret"}, "调用工具", "unknown"),
         )
         for tool_name, arguments, title, expected in cases:

@@ -114,6 +114,16 @@ class MarkdownWrite:
     block_hash: str
 
 
+@dataclass(frozen=True, slots=True)
+class MarkdownBatchWrite:
+    """描述一次原子多 Unit 更新及每个最终 block hash。"""
+
+    status: str
+    path: Path
+    content_hash: str
+    block_hashes: dict[str, str]
+
+
 class MemoryMarkdownStore:
     """在 ``memory/owners/<owner>/memory.md`` 原子追加稳定 Unit block。"""
 
@@ -226,6 +236,62 @@ class MemoryMarkdownStore:
         finally:
             os.close(lock_descriptor)
 
+    def upsert_many(
+        self,
+        units: tuple[MarkdownUnitDocument, ...],
+    ) -> MarkdownBatchWrite:
+        """在一次 fsync/replace 中原子创建或替换同 Owner 的多个完整 Unit。"""
+        if not units:
+            raise ValueError("memory batch requires at least one Unit")
+        owner_id = units[0].owner_id
+        if any(unit.owner_id != owner_id for unit in units):
+            raise ValueError("memory batch Units must share one owner")
+        if len({unit.unit_id for unit in units}) != len(units):
+            raise ValueError("memory batch Unit ids must be unique")
+        path = self.path_for_owner(owner_id)
+        owner_directory = self._prepare_owner_directory(owner_id)
+        lock_descriptor = _open_lock(owner_directory / ".memory.lock")
+        try:
+            fcntl.flock(lock_descriptor, fcntl.LOCK_EX)
+            existing = _read_existing(path)
+            existing_hash = hashlib.sha256(existing).hexdigest()
+            manifest = self._manifests.find(owner_id, _RELATIVE_PATH)
+            if manifest is not None and manifest.content_hash != existing_hash:
+                raise MarkdownMemoryError("memory Markdown changed outside the writer")
+            payload = existing or _HEADER.encode("utf-8")
+            block_hashes: dict[str, str] = {}
+            for unit in units:
+                block = _unit_block(unit)
+                block_hashes[unit.unit_id] = hashlib.sha256(block).hexdigest()
+                payload = _replace_or_append(payload, unit.unit_id, block)
+            content_hash = hashlib.sha256(payload).hexdigest()
+            if payload == existing:
+                return MarkdownBatchWrite(
+                    "duplicate",
+                    path,
+                    existing_hash,
+                    block_hashes,
+                )
+            _atomic_replace(path, payload)
+            metadata = path.stat()
+            self._manifests.upsert(
+                owner_id=owner_id,
+                relative_path=_RELATIVE_PATH,
+                content_hash=content_hash,
+                last_valid_hash=content_hash,
+                mtime_ns=metadata.st_mtime_ns,
+                parser_version=_PARSER_VERSION,
+                status="current",
+                now=datetime.now(UTC),
+            )
+            return MarkdownBatchWrite("recorded", path, content_hash, block_hashes)
+        except MarkdownMemoryError:
+            raise
+        except (OSError, UnicodeError) as error:
+            raise MarkdownMemoryError("memory Markdown could not be stored") from error
+        finally:
+            os.close(lock_descriptor)
+
     def _prepare_owner_directory(self, owner_id: int) -> Path:
         """创建并验证 owners/Owner 两级真实 0700 目录。"""
         owners = self._paths.memory_dir / "owners"
@@ -273,6 +339,24 @@ def _unit_block(unit: MarkdownUnitDocument) -> bytes:
         "```\n"
         f"<!-- miniclaw:end {unit.unit_id} -->\n"
     ).encode()
+
+
+def _replace_or_append(payload: bytes, unit_id: str, block: bytes) -> bytes:
+    """在内存中的完整 Markdown 文档替换一个 block，缺失时追加。"""
+    start_marker = f"<!-- miniclaw:unit {unit_id} -->".encode()
+    end_marker = f"<!-- miniclaw:end {unit_id} -->".encode()
+    start = payload.find(start_marker)
+    if start < 0:
+        return payload.rstrip() + b"\n\n" + block
+    end = payload.find(end_marker, start)
+    if end < 0 or payload.find(start_marker, start + 1) >= 0:
+        raise MarkdownMemoryError("memory Unit markers are invalid")
+    end += len(end_marker)
+    if end < len(payload) and payload[end : end + 1] == b"\n":
+        end += 1
+    if payload[start:end] == block:
+        return payload
+    return payload[:start] + block + payload[end:]
 
 
 def _ensure_private_directory(path: Path) -> None:

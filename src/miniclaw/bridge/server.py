@@ -6,6 +6,7 @@ from typing import Protocol
 
 from miniclaw import __version__
 from miniclaw.agent.events import RunEvent
+from miniclaw.memory.store import MemoryError
 from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.providers.base import JsonValue
 from miniclaw.runtime import AgentRuntime
@@ -165,10 +166,17 @@ class BridgeServer:
                     retryable=True,
                 )
                 return True
-            await self._ok(
-                request.request_id,
-                self._runtime.memory_console.command(**request.payload),
-            )
+            try:
+                result = self._runtime.memory_console.command(**request.payload)
+            except MemoryError as error:
+                await self._error(
+                    request.request_id,
+                    error.code,
+                    str(error),
+                    retryable=False,
+                )
+                return True
+            await self._ok(request.request_id, result)
             return True
         await self._cancel_active()
         await self._ok(request.request_id, {})

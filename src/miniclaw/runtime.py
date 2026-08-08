@@ -30,6 +30,7 @@ from miniclaw.memory.repository import (
     MemoryUnitRepository,
 )
 from miniclaw.memory.retrieval import MemoryRetrieval
+from miniclaw.memory.review import MemoryReviewService
 from miniclaw.memory.service import MemoryService
 from miniclaw.memory.store import MemoryStore
 from miniclaw.memory.worker import MemoryFlushScheduler, MemoryWorker
@@ -61,10 +62,13 @@ from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
 from miniclaw.tools.memory_v2 import (
+    MemoryCorrectTool,
     MemoryFlushTool,
+    MemoryForgetTool,
     MemoryGetTool,
     MemoryListTool,
     MemoryRememberTool,
+    MemoryReviewListTool,
     MemorySearchTool,
 )
 from miniclaw.tools.registry import ToolRegistry
@@ -182,6 +186,13 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         memory_reviews,
         memory,
     )
+    memory_governance = MemoryReviewService(
+        database,
+        memory_markdown,
+        memory_units,
+        memory_reviews,
+        memory,
+    )
     memory_handler = MemoryPipelineHandler(
         database,
         MemoryExtractor(provider, model=config.agent.model),
@@ -229,6 +240,9 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         MemoryGetTool(memory_retrieval),
         MemoryListTool(memory_retrieval),
         MemoryFlushTool(memory_scheduler.schedule),
+        MemoryForgetTool(memory_governance, messages),
+        MemoryCorrectTool(memory_governance, messages),
+        MemoryReviewListTool(memory_governance),
     )
     tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
@@ -293,6 +307,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             database,
             owner.id,
             memory_retrieval,
+            memory_governance,
             memory_scheduler.schedule,
         ),
         memory_worker=memory_worker,

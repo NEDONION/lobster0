@@ -19,6 +19,7 @@ from miniclaw.memory.repository import (
     MemoryUnit,
     MemoryUnitRepository,
 )
+from miniclaw.memory.review import review_preview_hash
 from miniclaw.memory.validator import MemoryCandidateValidator
 from miniclaw.storage.database import Database
 
@@ -259,9 +260,11 @@ class MemoryPipelineHandler:
             if active is not None and active.id != unit.id
             else "behavior" if unit.kind == "behavior_rule" else "sensitivity"
         )
-        preview_hash = hashlib.sha256(
-            f"{unit.id}\0{unit.text_hash}\0{review_type}\0active".encode()
-        ).hexdigest()
+        preview_hash = review_preview_hash(
+            unit,
+            review_type=review_type,
+            requested_transition="active",
+        )
         self._reviews.create(
             owner_id=run.owner_id,
             review_type=review_type,
