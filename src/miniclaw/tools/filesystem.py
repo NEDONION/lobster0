@@ -105,13 +105,8 @@ class ReadFileTool:
             return ToolResult.failure("binary_file", "file is not valid UTF-8 text")
         except OSError:
             return ToolResult.failure("file_read_failed", "file could not be read")
-        root = next(
-            root
-            for root in (context.workspace, *context.read_only_roots)
-            if resolved.is_relative_to(root.resolve(strict=False))
-        )
         data: dict[str, JsonValue] = {
-            "path": guard.display(context, resolved, root=root),
+            "path": guard.display(context, resolved),
             "content": content,
             "offset": offset,
             "lines": lines,

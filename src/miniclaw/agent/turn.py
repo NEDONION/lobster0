@@ -204,6 +204,8 @@ class TurnService:
                 state_home=self._state_home,
                 workspace=self._workspace.path,
                 read_only_roots=self._workspace.read_only_roots,
+                write_roots=self._workspace.write_roots,
+                owner_home=self._workspace.owner_home,
             )
             result = await self._runner.run(
                 request,
@@ -432,6 +434,8 @@ class TurnService:
             state_home=self._state_home,
             workspace=self._workspace.path,
             read_only_roots=self._workspace.read_only_roots,
+            write_roots=self._workspace.write_roots,
+            owner_home=self._workspace.owner_home,
         )
 
     def _persist_result(
