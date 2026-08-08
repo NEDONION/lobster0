@@ -118,7 +118,7 @@ Provider 隐藏 reasoning 和异常原文。
 | 真实 20 轮 / Tool / Approval | 需要企业应用凭据 | LIVE PENDING |
 | restart / reconnect / card fallback live | 需要真实 Bot 和网络控制 | LIVE PENDING |
 | soak | 需要可长期运行的真实 Gateway | LIVE PENDING |
-| mixed CN/EN commit、main、push | 发布步骤执行 | 待最终提交 |
+| mixed CN/EN commit、main、push | `c1069d4` code + `85ad45b` docs，最终门禁后推送 `main` | PASS |
 
 ## 6. 为什么不自动填假凭据
 
