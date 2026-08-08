@@ -46,7 +46,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     gateway_parser = subparsers.add_parser(
         "gateway",
-        help="run the long-lived Feishu gateway",
+        help="run all enabled IM channels with one long-lived Agent runtime",
     )
     gateway_parser.add_argument(
         "--home",

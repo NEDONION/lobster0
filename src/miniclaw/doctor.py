@@ -2,9 +2,8 @@
 
 import importlib.util
 import os
-import shutil
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -38,6 +37,8 @@ class CheckResult:
 def run_local_checks(
     paths: StatePaths,
     environ: Mapping[str, str] | None = None,
+    *,
+    find_spec: Callable[[str], object | None] | None = None,
 ) -> tuple[CheckResult, ...]:
     """检查状态、配置、Workspace、数据库和权限且不修改任何数据。
 
@@ -46,11 +47,13 @@ def run_local_checks(
         environ: 配置覆盖使用的环境变量；默认使用当前进程环境。
 
     Returns:
-        固定十三项、按依赖顺序排列的安全诊断结果。
+        固定二十项、按依赖顺序排列的安全诊断结果。
     """
     state_result = _check_state_home(paths)
     config_result, config = _check_config(paths, environ)
     node_result, pi_tui_result = _check_pi_tui(environ)
+    source = os.environ if environ is None else environ
+    module_spec = find_spec or importlib.util.find_spec
     return (
         state_result,
         config_result,
@@ -62,9 +65,16 @@ def run_local_checks(
         node_result,
         pi_tui_result,
         _check_feishu_config(config),
-        _check_feishu_sdk(config),
-        _check_feishu_database(paths),
-        _check_feishu_runtime(config, os.environ if environ is None else environ),
+        _check_channel_sdk(config, "feishu", "lark_channel", module_spec),
+        _check_channel_runtime(config, "feishu", source),
+        _check_telegram_config(config),
+        _check_channel_sdk(config, "telegram", "telegram", module_spec),
+        _check_channel_runtime(config, "telegram", source),
+        _check_discord_config(config),
+        _check_channel_sdk(config, "discord", "discord", module_spec),
+        _check_channel_runtime(config, "discord", source),
+        _check_channel_database(paths),
+        _check_channel_workers(config),
     )
 
 
@@ -286,107 +296,201 @@ def _check_feishu_config(config: AppConfig | None) -> CheckResult:
     )
 
 
-def _check_feishu_sdk(config: AppConfig | None) -> CheckResult:
-    """只检查 official SDK 是否可导入，不构造 Client 或发网络请求。"""
+def _check_telegram_config(config: AppConfig | None) -> CheckResult:
+    """报告 Telegram 开关和 allowlist 规模，不显示 user/chat ID。"""
     if config is None:
         return CheckResult(
-            "feishu_sdk",
+            "telegram_config",
             CheckStatus.FAIL,
-            "Feishu SDK cannot be checked without valid config",
+            "Telegram config cannot be checked without valid config",
         )
-    if not config.channels.feishu.enabled:
+    selected = config.channels.telegram
+    if not selected.enabled:
         return CheckResult(
-            "feishu_sdk",
+            "telegram_config",
             CheckStatus.PASS,
-            "official Feishu SDK is not required while channel is disabled",
-        )
-    if importlib.util.find_spec("lark_channel") is None:
-        return CheckResult(
-            "feishu_sdk",
-            CheckStatus.FAIL,
-            "official Feishu SDK is missing; run uv sync --extra feishu",
+            "Telegram channel is disabled; configuration is not required",
         )
     return CheckResult(
-        "feishu_sdk",
+        "telegram_config",
         CheckStatus.PASS,
-        "official Feishu SDK is installed",
+        (
+            f"Telegram account {selected.account_id} is enabled; "
+            f"{len(selected.allowed_user_ids)} user(s), "
+            f"{len(selected.allowed_chat_ids)} group(s) allowed"
+        ),
     )
 
 
-def _check_feishu_database(paths: StatePaths) -> CheckResult:
-    """只读确认 Inbox/Outbox/Identity 三张 production 表存在。"""
-    if not paths.database.is_file() or paths.database.is_symlink():
+def _check_discord_config(config: AppConfig | None) -> CheckResult:
+    """报告 Discord 开关和 allowlist 规模，不显示 snowflake。"""
+    if config is None:
         return CheckResult(
-            "feishu_database",
+            "discord_config",
             CheckStatus.FAIL,
-            "Feishu database is unavailable",
+            "Discord config cannot be checked without valid config",
         )
-    required = {"channel_identities", "processed_events", "deliveries"}
+    selected = config.channels.discord
+    if not selected.enabled:
+        return CheckResult(
+            "discord_config",
+            CheckStatus.PASS,
+            "Discord channel is disabled; configuration is not required",
+        )
+    return CheckResult(
+        "discord_config",
+        CheckStatus.PASS,
+        (
+            f"Discord account {selected.account_id} is enabled; "
+            f"{len(selected.allowed_user_ids)} user(s), "
+            f"{len(selected.allowed_guild_ids)} guild(s), "
+            f"{len(selected.allowed_channel_ids)} channel(s) allowed"
+        ),
+    )
+
+
+def _check_channel_sdk(
+    config: AppConfig | None,
+    channel: str,
+    module: str,
+    find_spec: Callable[[str], object | None],
+) -> CheckResult:
+    """只调用 module discovery；不实例化 SDK Client 或执行认证。"""
+    name = f"{channel}_sdk"
+    display = channel.capitalize()
+    if config is None:
+        return CheckResult(
+            name,
+            CheckStatus.FAIL,
+            f"{display} SDK cannot be checked without valid config",
+        )
+    selected = getattr(config.channels, channel)
+    if not selected.enabled:
+        return CheckResult(
+            name,
+            CheckStatus.PASS,
+            f"official {display} SDK is not required while channel is disabled",
+        )
+    if find_spec(module) is None:
+        return CheckResult(
+            name,
+            CheckStatus.FAIL,
+            f"official {display} SDK is missing; run uv sync --extra {channel}",
+        )
+    return CheckResult(
+        name,
+        CheckStatus.PASS,
+        f"official {display} SDK is installed; no network check was run",
+    )
+
+
+def _check_channel_runtime(
+    config: AppConfig | None,
+    channel: str,
+    environ: Mapping[str, str],
+) -> CheckResult:
+    """只验证凭据变量存在，不调用 get_me/login/DNS/HTTP。"""
+    name = f"{channel}_runtime"
+    display = channel.capitalize()
+    if config is None:
+        return CheckResult(
+            name,
+            CheckStatus.FAIL,
+            f"{display} runtime cannot be checked without valid config",
+        )
+    selected = getattr(config.channels, channel)
+    if not selected.enabled:
+        return CheckResult(
+            name,
+            CheckStatus.PASS,
+            f"{display} runtime is not started by doctor",
+        )
+    variables = (
+        (selected.app_id_env, selected.app_secret_env)
+        if channel == "feishu"
+        else (selected.bot_token_env,)
+    )
+    missing = [
+        variable
+        for variable in variables
+        if not str(environ.get(variable, "")).strip()
+    ]
+    if missing:
+        return CheckResult(
+            name,
+            CheckStatus.FAIL,
+            f"missing environment variable(s): {', '.join(missing)}",
+        )
+    return CheckResult(
+        name,
+        CheckStatus.PASS,
+        f"{display} credentials are locally ready; no authentication check was run",
+    )
+
+
+def _check_channel_database(paths: StatePaths) -> CheckResult:
+    """只读确认共享 Inbox/Outbox/Identity 表和关键索引存在。"""
+    name = "channel_database"
+    if not paths.database.is_file() or paths.database.is_symlink():
+        return CheckResult(name, CheckStatus.FAIL, "Channel database is unavailable")
+    required_tables = {"channel_identities", "processed_events", "deliveries"}
+    required_indexes = {"processed_events_status_idx", "deliveries_status_idx"}
     try:
         with Database(paths.database).connect_read_only() as connection:
-            tables = {
-                str(row[0])
+            objects = {
+                (str(row[0]), str(row[1]))
                 for row in connection.execute(
-                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    "SELECT type, name FROM sqlite_master "
+                    "WHERE type IN ('table', 'index')"
                 )
             }
     except (DatabaseError, sqlite3.Error, OSError):
         return CheckResult(
-            "feishu_database",
+            name,
             CheckStatus.FAIL,
-            "Feishu database cannot be inspected",
+            "Channel database cannot be inspected",
         )
-    missing = sorted(required - tables)
+    tables = {object_name for kind, object_name in objects if kind == "table"}
+    indexes = {object_name for kind, object_name in objects if kind == "index"}
+    missing = sorted((required_tables - tables) | (required_indexes - indexes))
     if missing:
         return CheckResult(
-            "feishu_database",
+            name,
             CheckStatus.FAIL,
-            f"Feishu tables are missing: {', '.join(missing)}",
+            f"Channel schema objects are missing: {', '.join(missing)}",
         )
     return CheckResult(
-        "feishu_database",
+        name,
         CheckStatus.PASS,
-        "Feishu Inbox, Outbox and identity tables are ready",
+        "shared Channel Inbox, Outbox, identity tables and indexes are ready",
     )
 
 
-def _check_feishu_runtime(
-    config: AppConfig | None,
-    environ: Mapping[str, str],
-) -> CheckResult:
-    """检查变量存在性和可选 lark-cli 路径，不显示凭据值或联网。"""
+def _check_channel_workers(config: AppConfig | None) -> CheckResult:
+    """报告 enabled pipelines 的总 worker 预算，不阻止显式高并发配置。"""
     if config is None:
         return CheckResult(
-            "feishu_runtime",
+            "channel_workers",
             CheckStatus.FAIL,
-            "Feishu runtime cannot be checked without valid config",
+            "Channel worker budget cannot be checked without valid config",
         )
-    feishu = config.channels.feishu
-    if not feishu.enabled:
-        return CheckResult(
-            "feishu_runtime",
-            CheckStatus.PASS,
-            "Feishu runtime is not started by doctor",
+    total = sum(
+        selected.worker_count
+        for selected in (
+            config.channels.feishu,
+            config.channels.telegram,
+            config.channels.discord,
         )
-    missing = [
-        name
-        for name in (feishu.app_id_env, feishu.app_secret_env)
-        if not str(environ.get(name, "")).strip()
-    ]
-    if missing:
+        if selected.enabled
+    )
+    if total > 8:
         return CheckResult(
-            "feishu_runtime",
-            CheckStatus.FAIL,
-            f"missing environment variable(s): {', '.join(missing)}",
-        )
-    if shutil.which("lark-cli") is None:
-        return CheckResult(
-            "feishu_runtime",
+            "channel_workers",
             CheckStatus.WARN,
-            "credentials are configured; optional lark-cli is not on PATH",
+            f"{total} enabled Channel workers exceed the recommended personal limit of 8",
         )
     return CheckResult(
-        "feishu_runtime",
+        "channel_workers",
         CheckStatus.PASS,
-        "credentials and optional lark-cli are available; no network check was run",
+        f"{total} enabled Channel worker(s) are within the local budget",
     )

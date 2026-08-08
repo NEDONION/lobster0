@@ -837,12 +837,12 @@ git commit -m "feat(gateway): 增加 single-runtime multi-pipeline Supervisor"
 
 ### Step 10.1 — RED the result matrix
 
-- [ ] 新增固定检查：`telegram_config/sdk/runtime`、`discord_config/sdk/runtime`，保留 Feishu checks 和 `channel_database`。
-- [ ] disabled：PASS + `not required/not started`；enabled 正确：PASS + `locally ready`；SDK/Token/关系错误：对应 FAIL。
-- [ ] 检查不调用 Telegram `get_me()`、Discord login、DNS 或 HTTP；fake function 断言网络调用数 0。
-- [ ] 输出不显示 Token value、完整 Owner/Chat/Guild/Channel ID。
-- [ ] schema 检查继续验证 v2 表和索引；不无理由升级版本。
-- [ ] 所有 enabled Channel 的 `worker_count` 总和超过 8 时 Doctor 给 WARN，不阻止个人用户显式配置；默认三平台总并发为 6。
+- [x] 新增固定检查：`telegram_config/sdk/runtime`、`discord_config/sdk/runtime`，保留 Feishu checks 和 `channel_database`。
+- [x] disabled：PASS + `not required/not started`；enabled 正确：PASS + `locally ready`；SDK/Token/关系错误：对应 FAIL。
+- [x] 检查不调用 Telegram `get_me()`、Discord login、DNS 或 HTTP；fake function 断言网络调用数 0。
+- [x] 输出不显示 Token value、完整 Owner/Chat/Guild/Channel ID。
+- [x] schema 检查继续验证 v2 表和索引；不无理由升级版本。
+- [x] 所有 enabled Channel 的 `worker_count` 总和超过 8 时 Doctor 给 WARN，不阻止个人用户显式配置；默认三平台总并发为 6。
 
 Run RED:
 
@@ -854,8 +854,8 @@ Expected RED: Doctor 没有 Telegram/Discord checks，旧固定 count 断言失�
 
 ### Step 10.2 — Implement per-channel pure checks
 
-- [ ] 用 channel config + injected `find_spec` + environment mapping 生成结果，不实例化 Transport。
-- [ ] CLI help 说明 `gateway` 会启动所有 enabled Channels，Doctor 只证明 local readiness。
+- [x] 用 channel config + injected `find_spec` + environment mapping 生成结果，不实例化 Transport。
+- [x] CLI help 说明 `gateway` 会启动所有 enabled Channels，Doctor 只证明 local readiness。
 
 Run GREEN:
 

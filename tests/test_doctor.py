@@ -37,7 +37,7 @@ class DoctorTest(unittest.TestCase):
         }
 
     def test_initialized_state_passes_all_local_checks(self) -> None:
-        """完整初始化后十三项本地检查都应实际通过。"""
+        """完整初始化后三平台二十项离线检查都应实际通过。"""
         initialize_state(self.paths)
 
         results = run_local_checks(self.paths, self.tui_environ)
@@ -56,8 +56,15 @@ class DoctorTest(unittest.TestCase):
                 "pi_tui",
                 "feishu_config",
                 "feishu_sdk",
-                "feishu_database",
                 "feishu_runtime",
+                "telegram_config",
+                "telegram_sdk",
+                "telegram_runtime",
+                "discord_config",
+                "discord_sdk",
+                "discord_runtime",
+                "channel_database",
+                "channel_workers",
             },
         )
         self.assertTrue(all(result.status is CheckStatus.PASS for result in results))
@@ -176,12 +183,68 @@ class DoctorTest(unittest.TestCase):
         by_name = {result.name: result for result in results}
         self.assertIs(by_name["feishu_config"].status, CheckStatus.PASS)
         self.assertIs(by_name["feishu_sdk"].status, CheckStatus.PASS)
-        self.assertIs(by_name["feishu_database"].status, CheckStatus.PASS)
+        self.assertIs(by_name["channel_database"].status, CheckStatus.PASS)
         self.assertIn(
             by_name["feishu_runtime"].status,
             {CheckStatus.PASS, CheckStatus.WARN},
         )
         self.assertNotIn(secret, repr(results))
+
+    def test_three_enabled_channels_are_checked_offline_and_worker_budget_warns(self) -> None:
+        """Telegram/Discord 只查本地 SDK/Token；总 worker 超 8 给 WARN，不做认证网络。"""
+        initialize_state(self.paths)
+        with self.paths.config.open("a", encoding="utf-8") as config_file:
+            config_file.write(
+                "\n[channels.feishu]\n"
+                "enabled = true\n"
+                'owner_open_id = "ou_owner"\n'
+                'allowed_open_ids = ["ou_owner"]\n'
+                "worker_count = 3\n"
+                "\n[channels.telegram]\n"
+                "enabled = true\n"
+                "owner_user_id = 300\n"
+                "allowed_user_ids = [300]\n"
+                "worker_count = 3\n"
+                "\n[channels.discord]\n"
+                "enabled = true\n"
+                "owner_user_id = 300\n"
+                "allowed_user_ids = [300]\n"
+                "worker_count = 3\n"
+            )
+        environment = {
+            **self.tui_environ,
+            "MINICLAW_FEISHU_APP_ID": "cli_private",
+            "MINICLAW_FEISHU_APP_SECRET": "feishu-private",
+            "MINICLAW_TELEGRAM_BOT_TOKEN": "telegram-private",
+            "MINICLAW_DISCORD_BOT_TOKEN": "discord-private",
+        }
+        spec_calls: list[str] = []
+
+        def find_spec(name: str):
+            spec_calls.append(name)
+            return object()
+
+        results = run_local_checks(
+            self.paths,
+            environment,
+            find_spec=find_spec,
+        )
+
+        by_name = {result.name: result for result in results}
+        for channel in ("feishu", "telegram", "discord"):
+            self.assertIs(by_name[f"{channel}_config"].status, CheckStatus.PASS)
+            self.assertIs(by_name[f"{channel}_sdk"].status, CheckStatus.PASS)
+            self.assertIs(by_name[f"{channel}_runtime"].status, CheckStatus.PASS)
+            self.assertIn("locally ready", by_name[f"{channel}_runtime"].message)
+        self.assertEqual(spec_calls, ["lark_channel", "telegram", "discord"])
+        self.assertIs(by_name["channel_workers"].status, CheckStatus.WARN)
+        self.assertIn("9", by_name["channel_workers"].message)
+        for name, value in environment.items():
+            if name.startswith("MINICLAW_") and name not in {
+                "MINICLAW_NODE",
+                "MINICLAW_TUI_ENTRY",
+            }:
+                self.assertNotIn(value, repr(results))
 
 
 if __name__ == "__main__":
