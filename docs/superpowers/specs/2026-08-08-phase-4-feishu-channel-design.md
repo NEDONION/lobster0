@@ -197,10 +197,11 @@ streaming_card = true
 
 ```toml
 [project.optional-dependencies]
-feishu = ["lark-channel-sdk>=...兼容下限,<下一主版本"]
+feishu = ["lark-channel-sdk>=1.2,<2"]
 ```
 
-准确版本在实施时从官方 PyPI 元数据锁定，并由 `uv.lock` 固化。
+设计时官方 PyPI 最新稳定版为 1.2.0；兼容范围固定在 1.2 至下一主版本之前，并由 `uv.lock` 固化
+实际解析版本。
 
 ## 9. SQLite 与 Migration v2
 
