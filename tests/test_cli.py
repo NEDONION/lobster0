@@ -207,6 +207,33 @@ class CliTest(unittest.TestCase):
                 exit_code, output, error = run_cli(["gateway", "--home", directory])
         self.assertEqual((exit_code, output, error), (0, "", ""))
 
+    def test_gateway_preloads_channel_sdk_before_starting_asyncio(self) -> None:
+        """飞书 SDK 必须在主循环启动前加载，避免捕获正在运行的 loop。"""
+        events: list[str] = []
+
+        def prepare() -> None:
+            events.append("prepare")
+
+        async def successful(paths) -> None:
+            del paths
+            events.append("run")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch(
+                    "miniclaw.cli.prepare_gateway_sdk_runtime",
+                    create=True,
+                    side_effect=prepare,
+                ),
+                mock.patch("miniclaw.cli.run_gateway", side_effect=successful),
+            ):
+                exit_code, output, error = run_cli(
+                    ["gateway", "--home", directory]
+                )
+
+        self.assertEqual((exit_code, output, error), (0, "", ""))
+        self.assertEqual(events, ["prepare", "run"])
+
 
 if __name__ == "__main__":
     unittest.main()

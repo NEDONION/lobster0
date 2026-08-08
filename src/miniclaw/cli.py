@@ -19,7 +19,12 @@ from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.evals.cases import EvalCaseError, load_cases
 from miniclaw.evals.channel import run_channel_suite
 from miniclaw.evals.runner import run_offline_suite
-from miniclaw.gateway import GatewayConfigError, GatewayRuntimeError, run_gateway
+from miniclaw.gateway import (
+    GatewayConfigError,
+    GatewayRuntimeError,
+    prepare_gateway_sdk_runtime,
+    run_gateway,
+)
 from miniclaw.paths import PathConfigurationError, build_state_paths, resolve_home
 from miniclaw.storage.database import DatabaseError
 from miniclaw.storage.migrations import MigrationError
@@ -130,6 +135,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.command == "gateway":
         try:
+            prepare_gateway_sdk_runtime()
             asyncio.run(run_gateway(paths))
         except (ConfigError, DotEnvError, GatewayConfigError, ValueError) as error:
             print(f"error: {error}", file=sys.stderr)

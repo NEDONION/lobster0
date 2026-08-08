@@ -63,7 +63,7 @@ class FeishuAdapter:
         """把官方 SDK 消息变成内部消息，拒绝所有未明确允许的输入。"""
         if message.sender_is_bot or message.sender_type in {"app", "bot", "system"}:
             return IgnoredInbound("bot_message")
-        if message.raw_content_type != "text":
+        if message.raw_content_type not in {"text", "post"}:
             return IgnoredInbound("unsupported_message")
         if not self._valid_identifiers(message):
             return IgnoredInbound("invalid_message")
@@ -190,7 +190,12 @@ class FeishuTransport:
             )
         )
         try:
-            await self._channel.connect()
+            connect_until_ready = getattr(
+                self._channel,
+                "connect_until_ready",
+                self._channel.connect,
+            )
+            await connect_until_ready()
         except Exception as error:
             self._unsubscribe_handler()
             mapped = _transport_error(error)

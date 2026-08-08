@@ -201,6 +201,8 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
 
         await transport.connect()
         self.assertTrue(sdk.channel.connected)
+        self.assertTrue(sdk.channel.connect_until_ready_called)
+        self.assertFalse(sdk.channel.legacy_connect_called)
         await sdk.channel.handlers["message"](
             SimpleNamespace(
                 id="om_inbound",

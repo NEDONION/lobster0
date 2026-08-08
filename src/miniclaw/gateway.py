@@ -1,6 +1,8 @@
 """MiniClaw Feishu Gateway 的生产装配、信号与有界生命周期。"""
 
 import asyncio
+import importlib
+import importlib.util
 import logging
 import os
 import signal
@@ -40,6 +42,17 @@ from miniclaw.storage.tooling import ApprovalRepository
 
 class GatewayRuntimeError(RuntimeError):
     """表示已完成配置校验后的启动或运行失败。"""
+
+
+def prepare_gateway_sdk_runtime() -> None:
+    """在 asyncio.run 前加载会捕获进程事件循环的飞书 SDK。"""
+    try:
+        if importlib.util.find_spec("lark_channel") is not None:
+            importlib.import_module("lark_channel")
+    except (ImportError, RuntimeError) as error:
+        raise GatewayConfigError(
+            "official Feishu SDK could not be initialized"
+        ) from error
 
 
 class RuntimeComponent(Protocol):

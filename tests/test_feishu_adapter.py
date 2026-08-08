@@ -41,6 +41,19 @@ class FeishuAdapterTest(unittest.TestCase):
         self.assertEqual(result.reply_to_message_id, "om_test")
         self.assertFalse(hasattr(result, "raw"))
 
+    def test_private_post_uses_sdk_flattened_safe_text(self) -> None:
+        """飞书客户端生成的 post 应使用 SDK 已安全扁平化的正文进入 Agent。"""
+        result = self.adapter.normalize(
+            FakeFeishuMessage(
+                raw_content_type="post",
+                body_text="你好，请回复 MiniClaw 飞书链路已打通",
+            )
+        )
+
+        self.assertIsInstance(result, InboundMessage)
+        assert isinstance(result, InboundMessage)
+        self.assertEqual(result.text, "你好，请回复 MiniClaw 飞书链路已打通")
+
     def test_group_requires_allowlisted_chat_sender_and_bot_mention(self) -> None:
         """群聊只有 Chat、发送者和明确 mention 三道门同时通过才可进入。"""
         allowed = FakeFeishuMessage(
