@@ -35,7 +35,7 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > Phase 3 已增加安全 Markdown Memory、经审批的 daily memory 写入、惰性 `SKILL.md` 激活，以及保留原始消息的
 > persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek
 > live eval runner与真实 `lark-cli`/Node 路径闭环仍未完成。当前回归基线为
-> **387 Python tests + 25 TypeScript tests + 24/24 Agent cases + 12/12 Feishu Channel cases**。
+> **391 Python tests + 25 TypeScript tests + 24/24 Agent cases + 12/12 Feishu Channel cases**。
 > 本机尚未配置飞书 App ID/App Secret，因此真实平台 WebSocket、权限和 20 轮对话仍待人工验收；离线 fake SDK
 > 通过不冒充 production verified。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
@@ -90,6 +90,7 @@ uv run miniclaw
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
 uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
 uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 ```
@@ -103,7 +104,7 @@ uv run miniclaw doctor [--home /absolute/path]
 uv run miniclaw gateway [--home /absolute/path]
 uv run miniclaw eval list [--root evals/scenarios]
 uv run miniclaw eval validate [--root evals/scenarios]
-uv run miniclaw eval run --suite offline|channel|all [--root evals/scenarios]
+uv run miniclaw eval run --suite offline|channel|all [--repeat 1..1000] [--root evals/scenarios]
 uv run python -m miniclaw --version
 ```
 
@@ -118,7 +119,8 @@ Owner 在 TUI 中查看完整归一化参数并选择可用授权范围后才执
 macOS 应用名不确定时，模型可显式调用 `system_info` 的 `applications` 分区；该分区默认不读取，只返回固定
 `/Applications` 中有界、去路径的真实 `.app` 名称，再由 `run_command(open, [-a, Exact Name])` 请求审批。
 `eval` 完全离线，不读取 `.env`、不需要 `init` 或 API Key；`offline` 通过真实 Agent/Policy/Tool/SQLite 链路，
-`channel` 通过真实 Adapter/Inbox/Worker/Approval/Outbox 运行版本化场景。`doctor` 会安全读取当前目录的私密
+`channel` 通过真实 Adapter/Inbox/Worker/Approval/Outbox 运行版本化场景；`--repeat` 可形成有界的本地 endurance
+gate，不能代替真实平台验收。`doctor` 会安全读取当前目录的私密
 `.env` 以检查飞书变量存在性，但不会联网或显示变量值。
 
 ### Memory、Skills 与长对话
@@ -247,7 +249,7 @@ miniclaw/
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |
 | [Eval v0.3.0 发布记录](docs/evals/releases/v0.3.0.md) | Phase 3 的 296 tests、24/24 场景与已知边界 |
-| [Eval v0.4.0 发布记录](docs/evals/releases/v0.4.0.md) | Phase 4 的 387+25 tests、24+12 回归与真实飞书待验收项 |
+| [Eval v0.4.0 发布记录](docs/evals/releases/v0.4.0.md) | Phase 4 的 391+25 tests、24+12 回归与真实飞书待验收项 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

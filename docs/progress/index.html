@@ -355,7 +355,7 @@
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Phase 4 implementation gate</span>
         <strong>P4 CODE ✓</strong>
-        <p>387 Python + 25 TypeScript tests · Agent 24/24 · Channel 12/12 · live pending</p>
+        <p>391 Python + 25 TypeScript tests · Agent 24/24 · Channel 12/12 · local soak 240/240 · live pending</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">387+25 <small>passing</small></span>
+        <span class="metric-value">391+25 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -525,7 +525,7 @@
           <li class="complete">miniclaw gateway 生命周期、双信号关闭与离线飞书 Doctor</li>
           <li class="complete">Channel correlation、外部 ID 短哈希、JSON 日志与 SQLite Audit</li>
           <li class="complete">WebSocket reconnect、Inbox/Turn/Delivery/Typing/Card 可观测状态</li>
-          <li class="complete">387 Python + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases + Ruff 门禁</li>
+          <li class="complete">391 Python + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases + local soak 240/240 + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -536,16 +536,16 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 387 Python、25 TypeScript tests、24/24 offline Agent 与 12/12 Channel；live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 391 Python、25 TypeScript tests、24/24 offline Agent 与 12/12 Channel；20 轮 local soak 已通过，live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
         <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；任意 Shell、当前版本 live eval、lark-cli smoke 和飞书真实 E2E 仍未完成。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/85ad45b">85ad45b completion docs</a> · <a href="https://github.com/NEDONION/mini-claw/commit/c1069d4">c1069d4 observability</a> · <a href="https://github.com/NEDONION/mini-claw/commit/dc10c71">dc10c71 eval harness</a></p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/269f8dd">269f8dd fail-safe + local soak</a> · <a href="https://github.com/NEDONION/mini-claw/commit/85ad45b">85ad45b completion docs</a> · <a href="https://github.com/NEDONION/mini-claw/commit/c1069d4">c1069d4 observability</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 387 Python + 25 TypeScript tests + 24/24 offline Agent cases、12/12 Channel cases + Ruff</span>
+      <span>Last updated · 2026-08-08 · 391 Python + 25 TypeScript tests + 24/24 offline Agent cases、12/12 Channel cases、local soak 240/240 + Ruff</span>
       <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-4/feishu-channel.md">Feishu engineering</a> · <a href="../engineering/phase-4/completion-audit.md">completion audit</a> · <a href="../engineering/phase-4/testing-and-operations.md">operations</a> · <a href="../evals/releases/v0.4.0.md">v0.4.0 record</a></span>
     </footer>
   </main>

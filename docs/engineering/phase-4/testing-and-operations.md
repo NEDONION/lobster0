@@ -1,13 +1,13 @@
 # Phase 4：飞书运行、测试与故障排查
 
 > 当前结论：implementation gate 已通过；真实企业应用 E2E、部署与 soak 待凭据。
-> 当前门禁：387/387 Python、25/25 TypeScript、Agent 24/24、Channel 12/12、Ruff PASS。
+> 当前门禁：391/391 Python、25/25 TypeScript、Agent 24/24、Channel 12/12、20 轮 local soak 240/240、Ruff PASS。
 
 ## 1. 先理解四层证据
 
 ```mermaid
 flowchart TB
-    P["Python contracts / integration\n387 tests"] --> T["pi-tui / Bridge\n25 tests"]
+    P["Python contracts / integration\n391 tests"] --> T["pi-tui / Bridge\n25 tests"]
     T --> A["Agent regression\n24 / 24"]
     A --> C["Feishu Channel regression\n12 / 12"]
     C --> L["Live Feishu acceptance\n真实 App 凭据，当前待执行"]
@@ -144,7 +144,7 @@ uv build
 git diff --check
 ```
 
-必须得到 Python 387/387、TypeScript 25/25、Agent 24/24、Channel 12/12。以后新增测试时数字应上调，不能为了
+必须得到 Python 391/391、TypeScript 25/25、Agent 24/24、Channel 12/12。以后新增测试时数字应上调，不能为了
 保持文档旧数字删除测试。
 
 ## 8. 12 条飞书回归场景
@@ -172,6 +172,16 @@ Repository、ChannelManager、Approval Controller、DeliveryWorker 和 Transport
 ```bash
 uv run miniclaw eval run --suite channel --root evals/scenarios
 ```
+
+本地 endurance gate 可重复跑同一套真实纵切；`--repeat` 只接受 `1..1000`，遇到首轮失败即停止，避免无界任务：
+
+```bash
+uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
+```
+
+当前证据是 `Channel local soak: 240/240 checks passed across 20/20 runs`。它反复覆盖 Adapter、SQLite
+Inbox/Outbox、Worker、审批、重启、Delivery 恢复和 Transport 重连状态机，但不连接飞书，不能替代下一节的真实
+WebSocket、平台权限、卡片 API、断网恢复与长时间 Gateway soak。
 
 ## 9. 真实飞书验收
 
@@ -247,9 +257,9 @@ uv sync --extra feishu
 
 ## 11. 当前完成度
 
-截至 2026-08-08，Phase 4 Core、Gateway、脱敏结构化日志/Audit、387 Python tests、25 TypeScript tests、24 条 Agent 回归和 12 条
-Channel 回归已完成。本机 `.env` 没有飞书 App ID/App Secret，本地状态也未启用 Channel，因此真实飞书 E2E、
-部署和 soak 明确待办。准确说法是：**Phase 4 implementation complete，live acceptance pending**。
+截至 2026-08-08，Phase 4 Core、Gateway、脱敏结构化日志/Audit、391 Python tests、25 TypeScript tests、24 条 Agent 回归、12 条
+Channel 回归和 20 轮 local soak 已完成。本机 `.env` 没有飞书 App ID/App Secret，本地状态也未启用 Channel，因此
+真实飞书 E2E、常驻部署和真实 Gateway soak 明确待办。准确说法是：**Phase 4 implementation complete，live acceptance pending**。
 
 完整模块说明见 [飞书 Channel 与 Gateway](feishu-channel-core.md)，逐项状态见
 [完成性审计与证据矩阵](completion-audit.md)，设计决策见

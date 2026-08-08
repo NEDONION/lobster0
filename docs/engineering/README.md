@@ -17,7 +17,7 @@
 | [TUI 回归测试规范](phase-2/tui-regression-testing.md) | 25 个 pi-tui 协议/虚拟终端/跨进程用例、Textual fallback 和发布门禁。 | live LLM 硬断言。 |
 | [Phase 2.3A：exact-argv 命令执行](phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确 argv 规则、最小环境、进程组超时、输出上限与 TUI 审批。 | 任意 Shell、真实 `lark-cli`/Node 路径 smoke、OS sandbox。 |
 | [Phase 2.4：Pinned HTTPS 与 SSRF 防护](phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 公网校验、固定 IP/TLS hostname、每跳重验、文本预算、审批与 crash recovery。 | 浏览器、认证 Header、任意方法、企业代理。 |
-| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 当前 387 Python + 25 TypeScript tests、24 Agent + 12 Channel 场景、恢复、Doctor 和发布手册。 | 真实飞书 E2E、soak、自动 Prompt/Skill 演进。 |
+| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 当前 391 Python + 25 TypeScript tests、24 Agent + 12 Channel 场景、恢复、Doctor 和发布手册。 | 真实飞书 E2E、soak、自动 Prompt/Skill 演进。 |
 | [Phase 2.2：Approvals CLI（历史迁移）](phase-2/cli-approvals.md) | 记录旧入口为何被单入口 TUI 取代。 | 当前可执行命令。 |
 
 ## Phase 3：Memory、Skills 与上下文预算
@@ -32,10 +32,10 @@
 | --- | --- | --- |
 | [飞书 Channel 与 Gateway 概览](phase-4/feishu-channel-core.md) | 模块地图、数据流、Admission、状态机和当前完成度。 | 真实飞书账号 E2E、部署/soak。 |
 | [飞书生产 Channel 工程落地](phase-4/feishu-channel.md) | official WebSocket SDK、严格 Adapter、schema v2 Inbox/Outbox、Worker、Delivery、Typing/进度卡、Approval 与 Gateway。 | Telegram/Discord、多用户、文件消息、真实账号验收。 |
-| [运行、测试与故障排查](phase-4/testing-and-operations.md) | 13 项 Doctor、387+25 tests、24+12 回归、live smoke、重启/断线/审批验收规范。 | 未配置凭据时的真实平台结论。 |
+| [运行、测试与故障排查](phase-4/testing-and-operations.md) | 13 项 Doctor、391+25 tests、24+12 回归、local soak、live smoke、重启/断线/审批验收规范。 | 未配置凭据时的真实平台结论。 |
 | [完成性审计与证据矩阵](phase-4/completion-audit.md) | Section 4/22 逐项映射到代码、自动化测试和 live gate，明确本地 PASS 与真实平台 PENDING。 | 没有凭据时伪造 production verified。 |
 
-功能主线已完成 Phase 4 implementation（387 Python + 25 TypeScript tests + 24/24 Agent + 12/12 Channel）。
+功能主线已完成 Phase 4 implementation（391 Python + 25 TypeScript tests + 24/24 Agent + 12/12 Channel）。
 本机尚未配置飞书 App ID/App Secret，因此 production live acceptance 仍待执行；P2.3B 的真实 `lark-cli` 闭环与
 当前版本 live DeepSeek release eval 也是独立待办。准确状态是“代码与离线门禁完成”，不是“真实飞书已验证”。
 

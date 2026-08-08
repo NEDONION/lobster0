@@ -22,7 +22,7 @@ Phase 0 至 Phase 3 已经完成：
 - OpenAI-compatible Provider、Agent Loop 与统一 TurnService；
 - 十个 Tool、Policy、Approval、审计与崩溃恢复；
 - Textual TUI、Trace、Memory、Skills、上下文压缩；
-- 387 条 Python、25 条 TypeScript 确定性测试、24 条 active Agent 回归和 12 条 Channel 回归基线。
+- 391 条 Python、25 条 TypeScript 确定性测试、24 条 active Agent 回归、12 条 Channel 回归和 20 轮 local soak 基线。
 
 当前缺口不是 Agent 不会思考，而是它只在本地前台进程中可用。Phase 4 的价值是把它变成一个长期在线、
 可从 IM 随时访问的个人 Agent，同时验证现有 Core 是否真的与 Channel 解耦。

@@ -6,7 +6,7 @@
 >
 > 真实飞书租户结论：**PENDING（缺 App ID / App Secret 与已配置企业应用）**
 >
-> 当前门禁：387/387 Python、25/25 TypeScript、24/24 Agent、12/12 Channel、Ruff 与 build PASS
+> 当前门禁：391/391 Python、25/25 TypeScript、24/24 Agent、12/12 Channel、20 轮 local soak 240/240、Ruff 与 build PASS
 
 ## 1. 先说结论
 
@@ -18,7 +18,7 @@ Phase 4 的代码、离线回归、恢复语义、安全边界、Gateway CLI、D
 ```mermaid
 flowchart LR
     D["Design requirements"] --> C["Code implementation"]
-    C --> U["387 Python + 25 TS tests"]
+    C --> U["391 Python + 25 TS tests"]
     U --> E["24 Agent + 12 Channel evals"]
     E --> L{"真实飞书凭据可用?"}
     L -->|"否"| P["Implementation PASS\nLive PENDING"]
@@ -63,7 +63,7 @@ flowchart LR
 | 21 | `miniclaw gateway` | CLI 子命令 + `run_gateway()` | CLI / gateway tests、help smoke | LOCAL PASS |
 | 22 | SIGINT / SIGTERM 优雅停止 | stop receiving → manager drain → delivery → transport → runtime | gateway lifecycle / second-signal test | LOCAL PASS；真实长连接 LIVE PENDING |
 | 23 | Doctor 区分 disabled / misconfigured / locally ready | 4 个 Feishu check | doctor tests | LOCAL PASS；Doctor 不冒充联网验证 |
-| 24 | 脱敏结构化日志 | `ChannelObserver` canonical JSON + Gateway stderr handler | `test_channel_observability.py` | LOCAL PASS |
+| 24 | 脱敏结构化日志 | `ChannelObserver` canonical JSON + Gateway stderr handler；Audit 不可写时 `audit_persisted=false` 并 fail open | `test_channel_observability.py`、transport observer failure test | LOCAL PASS |
 | 25 | durable Channel Audit | 复用 `audit_events`，记录 correlation、内部 ID、耗时、Tool、审批、attempt | Observer、Manager、Delivery、Capability tests | LOCAL PASS |
 | 26 | 忽略、失败、重试只保存稳定码 | Adapter reason、Transport error mapping、Observer enum/code gate | transport / delivery / observer tests | LOCAL PASS |
 | 27 | fake SDK 契约与恢复测试 | injectable official SDK facade | transport、storage、manager、delivery suites | LOCAL PASS |
@@ -106,7 +106,7 @@ Provider 隐藏 reasoning 和异常原文。
 | Gate | 当前证据 | 结论 |
 | --- | --- | --- |
 | 设计、PRD、架构、工程文档一致 | Phase 4 文档组 + 本矩阵 | LOCAL PASS |
-| 全量 Python | `387/387` | PASS |
+| 全量 Python | `391/391` | PASS |
 | pi-tui / Bridge | `25/25` | PASS |
 | Agent 回归 | `24/24` | PASS |
 | Feishu Channel 回归 | `12/12` | PASS |
@@ -117,8 +117,9 @@ Provider 隐藏 reasoning 和异常原文。
 | Secret scan | 发布前对 staged diff、`.env` 边界和日志 fixture 检查 | 待最终提交前复验 |
 | 真实 20 轮 / Tool / Approval | 需要企业应用凭据 | LIVE PENDING |
 | restart / reconnect / card fallback live | 需要真实 Bot 和网络控制 | LIVE PENDING |
-| soak | 需要可长期运行的真实 Gateway | LIVE PENDING |
-| mixed CN/EN commit、main、push | `c1069d4` code + `85ad45b` docs，最终门禁后推送 `main` | PASS |
+| local Channel soak | `--repeat 20`，240/240 个状态机纵切 | PASS |
+| 真实 Gateway soak | 需要真实 Bot、网络与常驻运行环境 | LIVE PENDING |
+| mixed CN/EN commit、main、push | `c1069d4` observability + `269f8dd` fail-safe/local soak + `85ad45b` docs | PASS |
 
 ## 6. 为什么不自动填假凭据
 

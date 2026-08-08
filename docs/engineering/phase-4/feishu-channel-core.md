@@ -1,7 +1,7 @@
 # Phase 4：飞书 Channel 与 Gateway 工程文档
 
 > 状态：核心链路与 `miniclaw gateway` 离线生命周期已实现；真实飞书账号 E2E、部署与 soak 尚未完成
-> 当前全仓门禁：387/387 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS
+> 当前全仓门禁：391/391 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS
 
 ## 1. 现在完成到了哪里
 
@@ -165,20 +165,21 @@ MINICLAW_NODE=/absolute/node-22-or-newer \
 pnpm --dir tui test
 uv run miniclaw eval run --suite offline --root evals/scenarios
 uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
 uv run ruff check .
 uv build
 git diff --check
 ```
 
-当前结果：387/387 Python、25/25 TypeScript、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS，Python wheel/sdist
-构建成功。
+当前结果：391/391 Python、25/25 TypeScript、24/24 offline Agent cases、12/12 Channel cases、20 轮
+Channel local soak 为 240/240、Ruff PASS，Python wheel/sdist 构建成功。
 
 ## 10. 尚未完成与下一步
 
 Phase 4 的剩余工作不能用单元测试冒充：
 
 1. 用真实测试 App 完成 WebSocket 收消息、文本回复、卡片审批和断线重连 E2E；
-2. 验证 macOS/Linux 常驻部署、SIGTERM drain、SQLite 重启恢复和至少数小时 soak；
+2. 验证 macOS/Linux 常驻部署、SIGTERM drain 和真实 Gateway 至少数小时 soak；本地状态机 20 轮 soak 已通过；
 3. 形成不含消息正文、Open ID 或凭据的 Phase 4 release record；
 4. 再决定是否开放群聊和多账号，而不是提前泛化。
 
