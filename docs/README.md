@@ -88,7 +88,7 @@
 
 | 模块 | 文档 |
 | --- | --- |
-| 飞书 Channel Core 与 Gateway 待办 | [feishu-channel-core.md](engineering/phase-4/feishu-channel-core.md) |
+| 飞书 Channel Core、Gateway 与真实 E2E 边界 | [feishu-channel-core.md](engineering/phase-4/feishu-channel-core.md) |
 
 ## 评测与版本证据
 

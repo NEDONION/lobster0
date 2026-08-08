@@ -2,7 +2,7 @@
 
 > 状态：`http_get` 已进入 pi-tui 与 Textual fallback 共享的唯一 `AgentRuntime`
 >
-> 当前门禁：369/369 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、Ruff PASS
+> 当前门禁：376/376 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 

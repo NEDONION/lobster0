@@ -350,12 +350,12 @@
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui：Codex 风格活动流、25 万字符粘贴、稳定选择、真实 Token 审计、十个 Tool、参数绑定审批、Markdown Memory、惰性 Skills 与 persistent compaction 共用同一个 Python AgentRuntime、Policy 和 SQLite；Textual 保留 onboarding/fallback。飞书 Channel Core、durable Inbox/Outbox、WebSocket、分片重试和卡片审批已进入代码；下一步补 gateway CLI 与真实 E2E。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui：Codex 风格活动流、25 万字符粘贴、稳定选择、真实 Token 审计、十个 Tool、参数绑定审批、Markdown Memory、惰性 Skills 与 persistent compaction 共用同一个 Python AgentRuntime、Policy 和 SQLite；Textual 保留 onboarding/fallback。飞书 Channel Core、durable Inbox/Outbox、WebSocket、Gateway 生命周期、分片重试和卡片审批已进入代码；下一步是真实 E2E 与 soak。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">pi-tui / Phase 3 / Channel Core gate</span>
-        <strong>P4 CORE ✓</strong>
-        <p>369 Python + 25 TypeScript tests · 24/24 Agent cases · Ruff</p>
+        <span class="tag">pi-tui / Phase 3 / Channel Gateway gate</span>
+        <strong>P4 GATEWAY ✓</strong>
+        <p>376 Python + 25 TypeScript tests · 24/24 Agent cases · Ruff</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">369+25 <small>passing</small></span>
+        <span class="metric-value">376+25 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -436,8 +436,8 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 4</div>
-          <div><h3>飞书生产链路</h3><p>Channel contract、白名单、durable Inbox/Outbox、WebSocket、分片重试、streaming card 与审批已实现；gateway CLI、真实 E2E、部署/soak 待完成。</p></div>
-          <span class="pill">CORE READY</span>
+          <div><h3>飞书生产链路</h3><p>Channel contract、白名单、durable Inbox/Outbox、WebSocket、Gateway、分片重试、streaming card 与审批已实现；真实 E2E、部署/soak 待完成。</p></div>
+          <span class="pill">GATEWAY READY</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 5</div>
@@ -510,7 +510,7 @@
           <li class="complete">应用名显式发现 + direct open -a 的 DeepSeek planning 3/3</li>
           <li class="complete">http_get：HTTPS-only、全部 DNS 公网校验与精确 authority</li>
           <li class="complete">固定 IP/TLS hostname、每跳重验与有界文本响应</li>
-          <li class="complete">stale ToolRun crash recovery 与 doctor 九项只读检查</li>
+          <li class="complete">stale ToolRun crash recovery 与 doctor 十三项只读检查</li>
           <li class="complete">MEMORY.md + 今日/昨日 daily memory 稳定注入</li>
           <li class="complete">read_memory 只读与 propose_memory 参数绑定审批</li>
           <li class="complete">凭据双边界过滤、64 KiB 上限与 symlink fail closed</li>
@@ -522,7 +522,8 @@
           <li class="complete">有限 Worker、同会话串行、crash recovery 与幂等 Delivery</li>
           <li class="complete">官方 WebSocket Transport、Unicode 分片、重试与 unknown 恢复</li>
           <li class="complete">typing、streaming card、审批卡片与文本 fallback</li>
-          <li class="complete">369 Python + 25 TypeScript tests + 24/24 Agent cases + Ruff 门禁</li>
+          <li class="complete">miniclaw gateway 生命周期、双信号关闭与离线飞书 Doctor</li>
+          <li class="complete">376 Python + 25 TypeScript tests + 24/24 Agent cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -533,16 +534,16 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 369 Python、25 TypeScript tests 与 24/24 offline；完整 live DeepSeek runner 仍待实现。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 376 Python、25 TypeScript tests 与 24/24 offline；完整 live DeepSeek runner 仍待实现。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
-        <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel Core 已完成；任意 Shell、当前版本 live eval、lark-cli smoke、gateway CLI 和飞书真实 E2E 仍未完成。</p></div>
+        <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；任意 Shell、当前版本 live eval、lark-cli smoke 和飞书真实 E2E 仍未完成。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/e109399">e109399</a> · <a href="https://github.com/NEDONION/miniclaw/commit/128179e">128179e</a> · <a href="https://github.com/NEDONION/miniclaw/commit/268a109">268a109</a> · <a href="https://github.com/NEDONION/miniclaw/commit/d612a5a">d612a5a</a> · <a href="https://github.com/NEDONION/miniclaw/commit/c19711f">c19711f</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 369 Python + 25 TypeScript tests + 24/24 offline Agent cases + Ruff</span>
+      <span>Last updated · 2026-08-08 · 376 Python + 25 TypeScript tests + 24/24 offline Agent cases + Ruff</span>
       <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-3/memory-skills-compaction.md">Phase 3 engineering</a> · <a href="../engineering/phase-4/feishu-channel-core.md">Feishu Core</a> · <a href="../engineering/phase-2/testing-and-debugging.md">release gate</a></span>
     </footer>
   </main>

@@ -1,7 +1,7 @@
 # Phase 2：单入口 TUI（pi-tui 默认，Textual fallback）
 
 > 状态：pi-tui 已成为裸 miniclaw 默认展示层；Textual 暂作首次 onboarding 和运行时 fallback。
-> 当前全仓通过 369 项 Python、25 项 TypeScript 测试与 24/24 离线 Agent 场景。
+> 当前全仓通过 376 项 Python、25 项 TypeScript 测试与 24/24 离线 Agent 场景。
 > 本文第 3–11 节保留 Textual fallback 的实现记录；当前跨语言架构见
 > [Python Core + pi-tui Bridge 工程文档](python-core-pi-tui-bridge.md)。
 
@@ -327,7 +327,7 @@ flowchart TD
 | Reliability | 250,000 字符 bracketed paste 失败/取消逐字恢复、Runtime 缺失不丢输入 |
 | Language | 默认中文、`/lang zh|en`、按最新 User 消息选择中英文 System Prompt |
 | Telemetry | 真实 usage、N/A、Provider Request ID、Tool/迭代/耗时 |
-| Full suite | 369/369 Python + 25/25 TypeScript tests + Ruff + diff check |
+| Full suite | 376/376 Python + 25/25 TypeScript tests + Ruff + diff check |
 | Agent gate | 24/24 active offline Claw-like cases |
 
 运行命令：

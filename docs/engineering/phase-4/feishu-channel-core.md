@@ -1,7 +1,7 @@
-# Phase 4：飞书 Channel Core 工程文档
+# Phase 4：飞书 Channel 与 Gateway 工程文档
 
-> 状态：核心链路已实现并通过离线回归；正式 `miniclaw gateway` 启动器、真实飞书账号 E2E、部署与 soak 尚未完成
-> 当前全仓门禁：369/369 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、Ruff PASS
+> 状态：核心链路与 `miniclaw gateway` 离线生命周期已实现；真实飞书账号 E2E、部署与 soak 尚未完成
+> 当前全仓门禁：376/376 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、Ruff PASS
 
 ## 1. 现在完成到了哪里
 
@@ -15,8 +15,8 @@
 - typing、streaming card 和审批卡片是可降级体验层，失败后仍回到普通文本；
 - Channel 不复制 Agent、Policy、Approval 或记忆逻辑。
 
-当前还不能把它称为“飞书生产发布”：仓库尚未提供正式 `miniclaw gateway` 进程编排入口，也没有使用真实 App
-凭据完成连接、回调、权限、卡片与重启 E2E。因此进度页把 Phase 4 标成“Core ready / Gateway E2E next”。
+当前还不能把它称为“飞书生产发布”：仓库虽然已提供 `miniclaw gateway` 进程编排、安全启停与离线 Doctor，
+但尚未使用真实 App 凭据完成连接、回调、权限、卡片与重启 E2E。因此进度页标成“Gateway ready / real E2E next”。
 
 ## 2. 模块地图
 
@@ -31,6 +31,9 @@
 | `src/miniclaw/storage/channels.py` | Identity、Inbound、Delivery Repository 与原子状态迁移 |
 | `src/miniclaw/storage/migrations/0002_feishu_channel.sql` | Channel Identity、Inbox、Outbox 和幂等约束 |
 | `src/miniclaw/runtime.py` | `create_channel_manager()`，复用唯一 `AgentRuntime` |
+| `src/miniclaw/gateway.py` | 凭据/SDK 预检、Transport 就绪后启 Worker、SIGTERM drain 与安全关闭 |
+| `src/miniclaw/cli.py` | 暴露非 TTY 的 `miniclaw gateway` 维护入口 |
+| `src/miniclaw/doctor.py` | 离线检查 TUI 与飞书配置、SDK、表结构和环境变量存在性 |
 
 ## 3. 端到端数据流
 
@@ -145,6 +148,8 @@ Inbox 使用 `(channel, account_id, event_id)` 等数据库约束防止重连重
 - Adapter admission、官方 SDK 配置与 WebSocket 生命周期；
 - typing、streaming card 降级；
 - Approval card、文本 fallback、Owner/hash/单次消费；
+- Gateway 启动顺序、双信号关闭、缺配置 fail closed 与凭据脱敏；
+- Doctor 的十三项离线诊断，不连接飞书也不输出 Secret；
 - 最新 Python Core 与 pi-tui 的真实跨进程握手。
 
 发布前门禁：
@@ -159,19 +164,17 @@ uv build
 git diff --check
 ```
 
-当前结果：369/369 Python、25/25 TypeScript、24/24 offline Agent cases、Ruff PASS，Python wheel/sdist
+当前结果：376/376 Python、25/25 TypeScript、24/24 offline Agent cases、Ruff PASS，Python wheel/sdist
 构建成功。
 
 ## 10. 尚未完成与下一步
 
 Phase 4 的剩余工作不能用单元测试冒充：
 
-1. 增加正式 `miniclaw gateway` 进程入口，装配 Transport、Manager、DeliveryWorker、Capabilities 和 Approval；
-2. `doctor` 增加飞书配置、可选依赖和凭据存在性检查，但不发网络请求；
-3. 用真实测试 App 完成 WebSocket 收消息、文本回复、卡片审批和断线重连 E2E；
-4. 验证 macOS/Linux 常驻部署、SIGTERM drain、SQLite 重启恢复和至少数小时 soak；
-5. 形成不含消息正文、Open ID 或凭据的 Phase 4 release record；
-6. 再决定是否开放群聊和多账号，而不是提前泛化。
+1. 用真实测试 App 完成 WebSocket 收消息、文本回复、卡片审批和断线重连 E2E；
+2. 验证 macOS/Linux 常驻部署、SIGTERM drain、SQLite 重启恢复和至少数小时 soak；
+3. 形成不含消息正文、Open ID 或凭据的 Phase 4 release record；
+4. 再决定是否开放群聊和多账号，而不是提前泛化。
 
 设计约束见 [Phase 4 飞书 Channel 设计](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)，
 逐步实现记录见 [Phase 4 TDD 计划](../../superpowers/plans/2026-08-08-phase-4-feishu-channel.md)。
