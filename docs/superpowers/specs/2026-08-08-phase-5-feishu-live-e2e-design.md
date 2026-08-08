@@ -1,9 +1,9 @@
 # MiniClaw Phase 5：真实飞书机器人与 Live E2E 设计
 
-> 状态：设计已确认，等待书面评审后进入实施计划  
-> 日期：2026-08-08  
-> 目标：创建一个真实飞书企业自建机器人，跑通“飞书 → MiniClaw → Tool/Approval → 飞书”基础 E2E  
-> 当前基线：Python 483/483、TypeScript 27/27、Agent 28/28、Channel 32/32、local soak 640/640  
+> 状态：设计已确认，等待书面评审后进入实施计划
+> 日期：2026-08-08
+> 目标：创建一个真实飞书企业自建机器人，跑通“飞书 → MiniClaw → Tool/Approval → 飞书”基础 E2E
+> 当前基线：Python 483/483、TypeScript 27/27、Agent 28/28、Channel 32/32、local soak 640/640
 > 当前真实状态：`channels.feishu` 未启用，真实机器人、凭据、Scope 与 Live Evidence 尚未完成
 
 ## 1. 一句话目标
