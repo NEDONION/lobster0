@@ -9,12 +9,12 @@
 2. 阅读 [PRD](product/20260807_产品需求文档.md)，确认 v0.1 范围、非目标和验收标准。
 3. 阅读 [OpenClaw / Hermes 能力 Gap 与演进路线](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)，
    用大白话了解当前已经有什么、还缺什么、为什么按 Phase 5.3 → 9 推进。
-4. 阅读 [Memory Autopilot 能力 Gap 与重构架构](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)，
-   了解为什么新飞书 Session 会像失忆，以及跨渠道分级自动记忆的目标方案。
+4. 阅读 [Memory Autopilot 工程实现](engineering/phase-5/memory-autopilot.md)，了解当前跨渠道 Owner Memory、
+   Markdown Truth、SQLite Control Plane、治理和恢复边界。
 5. 阅读 [Memory Autopilot 最佳实践与技术选型](engineering/memory-autopilot-best-practices-and-technology-selection.md)，
    查看 Markdown/SQLite 职责、Flush、检索、隐私和完整测试施工图。
-6. 按 [Memory Autopilot A～E TDD 实施计划](superpowers/plans/2026-08-09-memory-autopilot.md)，
-   从 Identity/Disclosure 到 Reconcile/Migration 逐任务执行 RED→GREEN。
+6. 用 [Memory Autopilot A～E TDD 实施计划](superpowers/plans/2026-08-09-memory-autopilot.md)追溯从
+   Identity/Disclosure 到 Reconcile/Migration 的 RED→GREEN 施工记录。
 7. 阅读 [OpenClaw / Hermes 能力对齐工程落地总方案](engineering/openclaw-hermes-alignment-engineering-roadmap.md)，
    查看自治任务、Sandbox、Browser、自我进化、MCP、Provider、Sub-agent 与多模态的模块和测试边界。
 8. 阅读 [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)，确认 v1.0
@@ -55,6 +55,7 @@
 | [Memory Autopilot 能力 Gap](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 当前失忆根因、EverOS/Tencent/OpenClaw 映射、L0→L3、跨渠道与分级自动治理 |
 | [Memory Autopilot 正式设计](superpowers/specs/2026-08-08-memory-autopilot-design.md) | 已确认的产品语义、存储决策、安全边界、失败策略与验收门槛 |
 | [Memory Autopilot A～E 实施计划](superpowers/plans/2026-08-09-memory-autopilot.md) | 10 个 TDD 任务、精确文件/接口/命令、Crash Matrix 与完成定义 |
+| [Memory Autopilot 工程实现](engineering/phase-5/memory-autopilot.md) | 已实现的数据流、隐私、恢复、治理、迁移和运维入口 |
 | [能力对齐工程落地总方案](engineering/openclaw-hermes-alignment-engineering-roadmap.md) | 模块、数据模型、配置、错误码、测试矩阵与各 Phase 退出条件 |
 
 ## 使用与开发
@@ -105,13 +106,13 @@
 
 ## Phase 3 模块工程文档
 
-> 下表第一项记录当前已实现的 Phase 3；第二项是已确认但**尚未实现**的 Memory Autopilot 重构，不能把规划
-> 当作当前能力。
+> Phase 3 的 legacy 接口继续兼容；Memory Autopilot 已成为当前主路径。
 
 | 模块 | 文档 |
 | --- | --- |
 | Memory、Skills 与上下文压缩 | [memory-skills-compaction.md](engineering/phase-3/memory-skills-compaction.md) |
-| Memory Autopilot 最佳实践与技术选型（规划） | [memory-autopilot-best-practices-and-technology-selection.md](engineering/memory-autopilot-best-practices-and-technology-selection.md) |
+| Memory Autopilot 最佳实践与技术选型 | [memory-autopilot-best-practices-and-technology-selection.md](engineering/memory-autopilot-best-practices-and-technology-selection.md) |
+| Memory Autopilot A～E 工程实现 | [memory-autopilot.md](engineering/phase-5/memory-autopilot.md) |
 
 ## Phase 4 模块工程文档
 
@@ -132,6 +133,7 @@
 | [Eval v0.4.1](evals/releases/v0.4.1.md) | Personal Machine 基线：412+27 tests、28+12 cases、lark-cli 只读纵切 |
 | [Eval v0.5.1](evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与当时 REAL BOT PENDING 的历史证据 |
 | [Eval v0.5.2](evals/releases/v0.5.2.md) | 530+30 tests、29+32 场景、飞书单卡片与 direct lark-cli Skill |
+| [Eval v0.6.0](evals/releases/v0.6.0.md) | 644+35 tests、39+32 场景、Memory Autopilot A～E 与恢复矩阵 |
 | [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md) | 对 OpenClaw/ZeroClaw/nanobot/RayClaw/Claw Bench/OpenJarvis 的方法映射 |
 | [R1/R2 实施计划](superpowers/plans/2026-08-08-agent-regression-benchmark.md) | TDD 任务、文件、命令与完成定义 |
 

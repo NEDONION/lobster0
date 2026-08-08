@@ -300,6 +300,51 @@ class EvalCaseLoaderTest(unittest.TestCase):
                 with self.assertRaises(EvalCaseError):
                     load_cases(root)
 
+    def test_memory_fixture_and_evidence_are_closed_and_script_free(self) -> None:
+        """Memory case 只能选择白名单 fixture 与 evidence，不能携带 Provider 脚本。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            case = valid_case("MEM-AUTO-999")
+            case["capability"] = "memory_autopilot"
+            case.pop("offline")
+            case["memory"] = {"fixture": "cross_channel_disclosure"}
+            case["expected"] = {
+                "memory_evidence": [
+                    "owner_space_shared",
+                    "group_denied",
+                    "non_owner_denied",
+                ]
+            }
+            write_cases(root, "memory.jsonl", [case])
+
+            loaded = load_cases(root)[0]
+
+        self.assertEqual(loaded.memory_fixture, "cross_channel_disclosure")
+        self.assertEqual(
+            loaded.expected.memory_evidence,
+            ("owner_space_shared", "group_denied", "non_owner_denied"),
+        )
+        self.assertEqual(loaded.responses, ())
+
+        for mutation in (
+            lambda value: value["memory"].update({"fixture": "arbitrary_script"}),
+            lambda value: value["expected"].update(
+                {"memory_evidence": ["private_text_copied"]}
+            ),
+            lambda value: value.update({"offline": valid_case()["offline"]}),
+        ):
+            with self.subTest(), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                invalid = valid_case("MEM-AUTO-998")
+                invalid["capability"] = "memory_autopilot"
+                invalid.pop("offline")
+                invalid["memory"] = {"fixture": "cross_channel_disclosure"}
+                invalid["expected"] = {"memory_evidence": ["owner_space_shared"]}
+                mutation(invalid)
+                write_cases(root, "memory.jsonl", [invalid])
+                with self.assertRaises(EvalCaseError):
+                    load_cases(root)
+
     def test_loads_feishu_live_evidence_as_closed_typed_tuples(self) -> None:
         """合法 Live 场景必须保留封闭的本地与人工证据，不被通用层丢弃。"""
         with tempfile.TemporaryDirectory() as directory:
@@ -398,6 +443,7 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
                 "error",
                 "network",
                 "memory",
+                "memory_autopilot",
                 "provider",
                 "safety",
                 "state",
@@ -405,7 +451,16 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
                 "tools",
             },
         )
-        self.assertTrue(all("offline" in case.layers and case.responses for case in active))
+        self.assertTrue(
+            all(
+                "offline" in case.layers
+                and (case.responses or case.memory_fixture is not None)
+                for case in active
+            )
+        )
+        memory = [case for case in active if case.memory_fixture is not None]
+        self.assertEqual(len(memory), 10)
+        self.assertTrue(all(case.expected.memory_evidence for case in memory))
         self.assertEqual(len(channel), 32)
         self.assertTrue(all(case.channel_fixture for case in channel))
         self.assertEqual(len({case.id for case in cases}), len(cases))

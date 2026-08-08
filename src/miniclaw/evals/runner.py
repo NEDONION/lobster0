@@ -12,6 +12,7 @@ from miniclaw.agent.turn import TurnService
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import AppConfig, load_config, resolve_permission_roots
 from miniclaw.evals.cases import EvalCase
+from miniclaw.evals.memory import run_memory_fixture
 from miniclaw.memory.markdown_store import MemoryMarkdownStore
 from miniclaw.memory.repository import (
     MemoryManifestRepository,
@@ -57,6 +58,7 @@ class EvalCaseResult:
     audit_events: tuple[str, ...]
     approval_statuses: tuple[str, ...]
     request_count: int
+    memory_evidence: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +106,8 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
         不含 Prompt、回答、路径或工具原始结果的判定。
     """
     started = time.monotonic()
+    if case.memory_fixture is not None:
+        return await _run_memory_case(case, started)
     with TemporaryDirectory(prefix="miniclaw-eval-") as directory:
         fixture_root = Path(directory).resolve()
         paths = build_state_paths(fixture_root / "state")
@@ -201,6 +205,33 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
         audit_events=audit_events,
         approval_statuses=approval_statuses,
         request_count=len(provider.requests),
+        memory_evidence=(),
+    )
+
+
+async def _run_memory_case(case: EvalCase, started: float) -> EvalCaseResult:
+    """运行一个固定 Memory fixture，并只暴露 evidence key 与稳定短码。"""
+    evidence: tuple[str, ...] = ()
+    failures: tuple[str, ...] = ()
+    try:
+        assert case.memory_fixture is not None
+        with TemporaryDirectory(prefix="miniclaw-memory-eval-") as directory:
+            outcome = await run_memory_fixture(case.memory_fixture, Path(directory))
+        evidence = outcome.evidence
+        if evidence != case.expected.memory_evidence:
+            failures = ("memory_evidence_mismatch",)
+    except Exception:  # noqa: BLE001 - eval 边界不得回显 Memory 正文或内部路径
+        failures = ("execution_error",)
+    return EvalCaseResult(
+        case_id=case.id,
+        passed=not failures,
+        duration_ms=max(0, round((time.monotonic() - started) * 1000)),
+        failures=failures,
+        tool_runs=(),
+        audit_events=(),
+        approval_statuses=(),
+        request_count=0,
+        memory_evidence=evidence,
     )
 
 

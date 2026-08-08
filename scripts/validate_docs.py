@@ -21,11 +21,13 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/engineering/phase-5/testing-and-live-acceptance.md"),
     Path("docs/engineering/phase-5/troubleshooting.md"),
     Path("docs/engineering/phase-5/completion-audit.md"),
+    Path("docs/engineering/phase-5/memory-autopilot.md"),
     Path("docs/getting-started/20260807_本地运行指南.md"),
     Path("docs/evals/README.md"),
     Path("docs/evals/releases/v0.5.0.md"),
     Path("docs/evals/releases/v0.5.1.md"),
     Path("docs/evals/releases/v0.5.2.md"),
+    Path("docs/evals/releases/v0.6.0.md"),
 )
 FACT_RELATIVE_DOCS = (
     Path("README.md"),

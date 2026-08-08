@@ -24,7 +24,8 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 > 当前代码已完成 Phase 5 的本地实现门禁；Feishu/Telegram/Discord 的完整真实 Live Gate 仍按各自证据单独标记。
 > 飞书正常回答由一张 `Claw Trail` Agent Card 承载，展示脱敏步骤、Tool、安全目标、状态、耗时、过程摘要和最终回答。
 > 缺少 `tools.mode` 的配置默认使用 `autopilot`，但只对本地入口和经过验证的 Owner 私聊生效；硬安全边界不变。
-> Memory 当前是手工/审批式 v1；Memory Autopilot 已完成设计和 A～E 实施计划，**尚未开发**。本文严格区分“已经实现”和“规划中”。
+> Memory Autopilot A～E 已完成本地实现：四入口共享一个 Owner Memory Space，Markdown 保存语义真相，SQLite
+> 保存 durable buffer、来源、治理和可重建 FTS5 Projection；真实 IM 平台能力仍只按各自 Live evidence 标记。
 
 ## 为什么是 MiniClaw
 
@@ -32,7 +33,7 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 | --- | --- |
 | 私有与可控 | 状态、会话、审批和审计保存在本机；Secret 不进入 Prompt、日志或 Memory。 |
 | 小而完整 | 一个 Python Core、一个主 TUI、一个 OpenAI-compatible Provider，不提前堆叠服务。 |
-| 真正能行动 | 10 个内置 Tool 覆盖系统信息、文件、搜索、HTTPS、exact-argv CLI 和 Memory。 |
+| 真正能行动 | 18 个内置 Tool 覆盖系统信息、文件、搜索、HTTPS、exact-argv CLI 和 Memory。 |
 | 默认可追溯 | Turn、ToolRun、Approval、Delivery 与 Channel Inbox/Outbox 都有 SQLite 状态。 |
 | 多入口同一 Core | TUI、Feishu、Telegram、Discord 复用同一个 `AgentRuntime`；Transport 和故障域隔离。 |
 | 先验证再扩张 | `unittest`、TypeScript test、Agent/Channel JSONL、20 轮 soak 和文档校验共同守门。 |
@@ -45,11 +46,11 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 | --- | --- |
 | Agent Loop | OpenAI-compatible 流式响应、Tool Loop、token/latency telemetry、错误归一化、Context compaction。 |
 | TUI | 默认 pi-tui、中文/英文、流式对话、Tool 状态、紧凑审批卡、四档 Permission Mode、Textual fallback。 |
-| Tool | `system_info`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`、`http_get`、`run_command`、`read_memory`、`propose_memory`。 |
+| Tool | 系统、文件、搜索、HTTPS、exact-argv CLI，以及 remember/search/get/list/flush/forget/correct/review Memory surface。 |
 | 安全 | Workspace Guard、敏感路径硬拒绝、exact argv、最小子进程环境、HTTPS/DNS/SSRF 校验、参数绑定 Approval。 |
 | Channel | Feishu 用单张 `Claw Trail` Agent Card 展示脱敏步骤和最终回答；三平台各自独立 Transport/Delivery/Manager/queue/recovery，共享 Agent Runtime。 |
-| 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel ledger；owner-only Markdown Memory 与 Skills。 |
-| 运维 | `init`、`doctor`、`gateway`、结构化脱敏日志、幂等恢复、离线 Eval 与版本化 Channel gate。 |
+| 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel/Memory control plane；owner-only Markdown Truth 与 Skills。 |
+| 运维 | `init`、23 项 `doctor`、`gateway`、Memory rebuild、结构化脱敏日志、幂等恢复与版本化 Eval。 |
 
 ### Permission Mode
 
@@ -163,23 +164,26 @@ flowchart LR
 5. 执行结果写入 ToolRun/Audit，返回 Agent 继续完成回答；
 6. Turn、消息、审批与 Channel Delivery 都能在重启后恢复或解释。
 
-## Memory：当前与规划
+## Memory Autopilot：已实现的混合方案
 
-| 能力 | 当前 Memory v1 | Memory Autopilot（规划） |
-| --- | --- | --- |
-| 真相源 | `MEMORY.md` + 今日/昨日 daily Markdown | 已接受 Unit 仍以 Markdown 为真相源 |
-| 写入 | Owner 明确请求后 `propose_memory` + Approval | 普通事实自动进入短期；明确“记住”直接持久化 |
-| 检索 | 固定 long-term/today/recent 注入 | owner-scoped FTS5/CJK、来源下钻、严格预算 |
-| 治理 | Secret 拒绝、大小/路径/权限保护 | Promotion、Review、冲突、纠错、forget、expiry |
-| 跨渠道 | Session 历史隔离，不能跨 Session 自动回忆 | 四入口共享同一 Owner Memory Space |
-| 隐私 | Tool/Channel 安全边界已存在 | 群聊、非 Owner、身份不明默认禁止私人召回 |
+| 能力 | 当前实现 |
+| --- | --- |
+| 真相源 | 已接受 Unit 写入 `memory/owners/<owner>/memory.md`；SQLite Projection 可重建 |
+| 写入 | 普通 Turn 非阻塞 capture/flush；明确“记住”原子落盘后才报告成功 |
+| 检索 | owner-scoped FTS5/CJK、完整来源链、有效期过滤与固定 Recall 预算 |
+| 治理 | short-term、重复晋升、Review、冲突、纠错、forget、TTL 与 weekly review |
+| 跨渠道 | TUI、Feishu、Telegram、Discord 的已验证 Owner 私聊共享一个 Memory Space |
+| 隐私 | 群聊、非 Owner、未知/冲突身份 fail closed；Secret 在 Candidate 前拒绝 |
+| 维护 | Markdown direct edit 对账、`/memory rebuild`、legacy 只读 hash 迁移、Doctor drift 检查 |
 
-设计和施工入口：
+架构、实现和证据入口：
 
 - [Memory Autopilot 能力 Gap 与重构架构](docs/architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)
 - [正式设计 Spec](docs/superpowers/specs/2026-08-08-memory-autopilot-design.md)
 - [最佳实践与技术选型](docs/engineering/memory-autopilot-best-practices-and-technology-selection.md)
 - [Memory A～E TDD 实施计划](docs/superpowers/plans/2026-08-09-memory-autopilot.md)
+- [Memory Autopilot 工程实现](docs/engineering/phase-5/memory-autopilot.md)
+- [v0.6.0 发布证据](docs/evals/releases/v0.6.0.md)
 
 ## 安全边界
 
@@ -197,16 +201,17 @@ flowchart LR
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Python | 562/562 `unittest` PASS |
-| TUI | 30/30 TypeScript tests + build PASS |
-| Agent | 29/29 active offline cases PASS |
+| Python | 644/644 `unittest` PASS |
+| TUI | 35/35 TypeScript tests + build PASS |
+| Agent | 39/39 active offline cases PASS（含 `MEM-AUTO-001..010`） |
 | Channel | 32/32 versioned cases PASS |
 | 稳定性 | 20 轮 local Channel soak，640/640 PASS |
 | Feishu | OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS；真实平台 Live Gate 仍 pending |
-| Memory Autopilot | APPROVED DESIGN + A～E PLAN；NOT IMPLEMENTED |
+| Memory Autopilot | A～E IMPLEMENTATION PASS；真实 IM Live 结论沿用各平台 gate |
 
 本地 fake SDK、离线场景和 640/640 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
+Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；当前发布数字以上表和 v0.6.0 为准。
 
 ### 验证命令
 
@@ -224,19 +229,16 @@ git diff --check
 
 ```mermaid
 flowchart LR
-    P53["Phase 5.3\nLive Gate"] --> MA["Memory A\nIdentity + Disclosure"]
-    MA --> MB["Memory B\nBuffer + Flush"]
-    MB --> MC["Memory C\nFTS Recall"]
-    MC --> MD["Memory D\nGovernance"]
-    MD --> ME["Memory E\nReconcile"]
-    ME --> P6["Phase 6\nAutomation + Sandbox"]
+    P53["Phase 5.3\nLive Gate"] --> MA["Memory A-E\nIMPLEMENTED"]
+    MA --> P6["Phase 6\nAutomation + Sandbox"]
     P6 --> P65["Phase 6.5\nBrowser Agent"]
     P65 --> P7["Phase 7\nControlled Evolution"]
     P7 --> P8["Phase 8\nSkills + MCP + Provider"]
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-最近已完成 Owner `AUTOPILOT` 默认值与飞书 `Claw Trail` Agent Card；下一步收口 Feishu/Discord Live Gate，随后实现 Memory A～E，再进入自治任务。路线图不代表相应代码已经存在。
+Owner `AUTOPILOT` 默认值、飞书 `Claw Trail` Agent Card 与 Memory A～E 已实现；下一步继续收口真实平台
+Live Gate，再进入 Phase 6 自治任务。路线图中后续节点不代表相应代码已经存在。
 
 ## 仓库结构
 
@@ -244,11 +246,11 @@ flowchart LR
 src/miniclaw/
 ├── agent/       # Context、Runner、Turn、Compaction
 ├── channels/    # Feishu / Telegram / Discord adapters and pipelines
-├── memory/      # 当前 owner-only Markdown Memory v1
+├── memory/      # Markdown Truth、buffer/flush、FTS5、治理、对账与迁移
 ├── policy/      # Workspace、Command、Network、Permission、Approval
 ├── providers/   # OpenAI-compatible Provider
 ├── storage/     # SQLite schema, repositories and migrations
-├── tools/       # 10 个内置 Tool
+├── tools/       # 18 个内置 Tool
 └── tui/         # Textual fallback；默认 pi-tui 在仓库 tui/
 
 tui/             # Node.js pi-tui + Python Bridge client
@@ -270,6 +272,7 @@ tests/           # Python unittest
 | [OpenClaw / Hermes Gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 竞品能力映射与 Phase 5.3→9 路线 |
 | [能力对齐工程落地总方案](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | Phase 5.3→9 的模块、数据和测试边界 |
 | [Memory A～E 实施计划](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | 可直接执行的 RED→GREEN 施工计划 |
+| [Memory Autopilot 工程实现](docs/engineering/phase-5/memory-autopilot.md) | 当前数据流、安全边界、恢复和运维入口 |
 
 ## 参与开发
 

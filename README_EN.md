@@ -21,7 +21,7 @@
 MiniClaw brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
-> The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. Full live acceptance remains evidence-specific for each messaging platform. Memory is currently the manual, approval-based v1; Memory Autopilot has an approved design and an A–E implementation plan, but **has not been implemented**. This README keeps current behavior separate from planned work.
+> The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. Memory Autopilot A–E is now implemented locally: all four verified private entry points share one Owner Memory Space, Markdown stores semantic truth, and SQLite stores the durable control plane and rebuildable FTS5 projection. Live acceptance remains evidence-specific for each messaging platform.
 
 ## Why MiniClaw
 
@@ -29,7 +29,7 @@ MiniClaw brings the model, tools, permissions, approvals, persistence, and multi
 | --- | --- |
 | Private and controlled | State, conversations, approvals, and audit stay local; secrets do not enter prompts, logs, or Memory. |
 | Small but complete | One Python Core, one primary TUI, and one OpenAI-compatible Provider before adding services. |
-| Able to act | Ten built-in tools cover system information, files, search, HTTPS, exact-argv CLIs, and Memory. |
+| Able to act | Eighteen built-in tools cover system information, files, search, HTTPS, exact-argv CLIs, and Memory. |
 | Explainable by default | Turn, ToolRun, Approval, Delivery, and Channel Inbox/Outbox state is persisted in SQLite. |
 | One Core, many entry points | TUI, Feishu, Telegram, and Discord reuse one `AgentRuntime`; transports and failure domains stay isolated. |
 | Evidence before expansion | Python and TypeScript tests, versioned Agent/Channel cases, 20-round soak, and docs validation gate changes. |
@@ -42,11 +42,11 @@ MiniClaw is not a chat box wired directly to a shell. The model proposes a Tool 
 | --- | --- |
 | Agent Loop | OpenAI-compatible streaming, Tool Loop, token/latency telemetry, normalized errors, and context compaction. |
 | TUI | pi-tui by default, Chinese/English UI, streaming turns, Tool status, compact approval cards, four permission modes, Textual fallback. |
-| Tools | `system_info`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `http_get`, `run_command`, `read_memory`, `propose_memory`. |
+| Tools | System, files, search, HTTPS, exact-argv CLI, plus remember/search/get/list/flush/forget/correct/review Memory surfaces. |
 | Safety | Workspace Guard, hard-denied sensitive paths, exact argv, minimal child environment, HTTPS/DNS/SSRF validation, parameter-bound approvals. |
 | Channels | Feishu uses one `Claw Trail` Agent Card for redacted progress, Tool state, and the final answer; all three platforms keep isolated Transport/Delivery/Manager/queue/recovery pipelines while sharing one Agent Runtime. |
-| Data | SQLite Session/Message/Turn/ToolRun/Approval/Channel ledgers; owner-only Markdown Memory and Skills. |
-| Operations | `init`, `doctor`, `gateway`, redacted structured logs, idempotent recovery, offline Eval, and versioned Channel gates. |
+| Data | SQLite Session/Message/Turn/ToolRun/Approval/Channel/Memory control plane; owner-only Markdown Truth and Skills. |
+| Operations | `init`, 23-check `doctor`, `gateway`, Memory rebuild, redacted logs, idempotent recovery, and versioned Eval gates. |
 
 ### Permission modes
 
@@ -160,23 +160,26 @@ A typical local action follows this path:
 5. The Tool result is persisted as ToolRun/Audit and returned to the Agent Loop.
 6. Turns, messages, approvals, and Channel deliveries remain recoverable and explainable after restart.
 
-## Memory: current and planned
+## Memory Autopilot: implemented hybrid architecture
 
-| Capability | Current Memory v1 | Memory Autopilot (planned) |
-| --- | --- | --- |
-| Source of truth | `MEMORY.md` plus today/yesterday daily Markdown | Accepted semantic Units remain Markdown truth |
-| Writes | Explicit Owner request through `propose_memory` and Approval | Low-risk facts enter short-term automatically; explicit “remember” persists directly |
-| Retrieval | Fixed long-term/today/recent context | Owner-scoped FTS5/CJK, evidence drill-down, strict budgets |
-| Governance | Secret rejection plus size/path/permission protection | Promotion, review, conflict, correction, forget, expiry |
-| Cross-channel | Session history is isolated and cannot recall across sessions | All four entry points share one Owner Memory Space |
-| Privacy | Tool and Channel safety boundaries exist | Groups, non-Owners, and uncertain identities cannot access private recall |
+| Capability | Current implementation |
+| --- | --- |
+| Source of truth | Accepted Units live in `memory/owners/<owner>/memory.md`; SQLite projections are rebuildable |
+| Writes | Normal turns capture asynchronously; explicit “remember” succeeds only after atomic persistence |
+| Retrieval | Owner-scoped FTS5/CJK, complete source chains, validity filters, fixed Recall budget |
+| Governance | Short-term, repeat promotion, review, conflict, correction, forget, TTL, weekly review |
+| Cross-channel | Verified Owner DMs across TUI, Feishu, Telegram, and Discord share one Memory Space |
+| Privacy | Groups, non-Owners, and uncertain/conflicting identities fail closed; secrets are rejected before Candidate persistence |
+| Maintenance | Direct-edit reconciliation, `/memory rebuild`, read-only hash-based legacy import, Doctor drift checks |
 
-Design and delivery references:
+Architecture, implementation, and evidence references:
 
 - [Memory Autopilot capability gap and architecture](docs/architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)
 - [Approved design spec](docs/superpowers/specs/2026-08-08-memory-autopilot-design.md)
 - [Best practices and technology selection](docs/engineering/memory-autopilot-best-practices-and-technology-selection.md)
 - [Memory A–E TDD implementation plan](docs/superpowers/plans/2026-08-09-memory-autopilot.md)
+- [Memory Autopilot engineering implementation](docs/engineering/phase-5/memory-autopilot.md)
+- [v0.6.0 release evidence](docs/evals/releases/v0.6.0.md)
 
 ## Security boundaries
 
@@ -194,16 +197,17 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 
 | Gate | Current evidence |
 | --- | --- |
-| Python | 562/562 `unittest` PASS |
-| TUI | 30/30 TypeScript tests and build PASS |
-| Agent | 29/29 active offline cases PASS |
+| Python | 644/644 `unittest` PASS |
+| TUI | 35/35 TypeScript tests and build PASS |
+| Agent | 39/39 active offline cases PASS, including `MEM-AUTO-001..010` |
 | Channel | 32/32 versioned cases PASS |
 | Stability | 20 local Channel rounds, 640/640 PASS |
 | Feishu | OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS; real-platform Live Gates pending |
-| Memory Autopilot | APPROVED DESIGN + A–E PLAN; NOT IMPLEMENTED |
+| Memory Autopilot | A–E IMPLEMENTATION PASS; live conclusions remain platform-specific |
 
 Fake SDKs, offline scenarios, and the 640/640 local soak only establish **IMPLEMENTATION PASS**. They never masquerade as a live-platform PASS. Historical evidence lives under [`docs/evals/releases/`](docs/evals/releases/).
+The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent; current release figures are in the table above and v0.6.0.
 
 ### Verification
 
@@ -221,19 +225,15 @@ git diff --check
 
 ```mermaid
 flowchart LR
-    P53["Phase 5.3\nLive Gate"] --> MA["Memory A\nIdentity + Disclosure"]
-    MA --> MB["Memory B\nBuffer + Flush"]
-    MB --> MC["Memory C\nFTS Recall"]
-    MC --> MD["Memory D\nGovernance"]
-    MD --> ME["Memory E\nReconcile"]
-    ME --> P6["Phase 6\nAutomation + Sandbox"]
+    P53["Phase 5.3\nLive Gate"] --> MA["Memory A-E\nIMPLEMENTED"]
+    MA --> P6["Phase 6\nAutomation + Sandbox"]
     P6 --> P65["Phase 6.5\nBrowser Agent"]
     P65 --> P7["Phase 7\nControlled Evolution"]
     P7 --> P8["Phase 8\nSkills + MCP + Provider"]
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-Owner-scoped `AUTOPILOT` defaults and the Feishu `Claw Trail` Agent Card are now implemented. The immediate work is to close the Feishu/Discord Live Gate, implement Memory A–E, and only then begin autonomous tasks. Roadmap nodes do not imply that their code already exists.
+Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, and Memory A–E are implemented. The next work is to close the real-platform Live Gates before Phase 6 autonomous tasks. Later roadmap nodes do not imply implementation.
 
 ## Repository layout
 
@@ -241,11 +241,11 @@ Owner-scoped `AUTOPILOT` defaults and the Feishu `Claw Trail` Agent Card are now
 src/miniclaw/
 ├── agent/       # Context, Runner, Turn, Compaction
 ├── channels/    # Feishu / Telegram / Discord adapters and pipelines
-├── memory/      # current owner-only Markdown Memory v1
+├── memory/      # Markdown Truth, buffer/flush, FTS5, governance, reconcile, migration
 ├── policy/      # Workspace, Command, Network, Permission, Approval
 ├── providers/   # OpenAI-compatible Provider
 ├── storage/     # SQLite schema, repositories, migrations
-├── tools/       # ten built-in Tools
+├── tools/       # eighteen built-in Tools
 └── tui/         # Textual fallback; default pi-tui lives in repository tui/
 
 tui/             # Node.js pi-tui and Python Bridge client
@@ -267,6 +267,7 @@ tests/           # Python unittest suite
 | [OpenClaw / Hermes gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | Capability mapping and the Phase 5.3–9 roadmap |
 | [Capability-alignment engineering roadmap](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | Module, data, and test boundaries for Phase 5.3–9 |
 | [Memory A–E plan](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | Executable RED→GREEN delivery plan |
+| [Memory Autopilot implementation](docs/engineering/phase-5/memory-autopilot.md) | Current data flow, safety boundaries, recovery, and operations |
 
 ## Contributing
 

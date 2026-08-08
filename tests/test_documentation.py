@@ -57,6 +57,30 @@ class Phase5DocumentationTest(unittest.TestCase):
             self.assertTrue((PROJECT_ROOT / "docs/engineering/phase-5" / name).is_file())
             self.assertIn(name, engineering)
 
+    def test_memory_autopilot_status_and_release_evidence_are_consistent(self) -> None:
+        """Memory A～E 用户入口必须统一为已实现，并引用十条 versioned case。"""
+        paths = (
+            "README.md",
+            "README_EN.md",
+            "docs/product/20260807_产品需求文档.md",
+            "docs/architecture/20260807_系统架构.md",
+            "docs/engineering/README.md",
+            "docs/engineering/phase-5/memory-autopilot.md",
+            "docs/evals/releases/v0.6.0.md",
+            "docs/progress/index.html",
+        )
+        for relative in paths:
+            with self.subTest(path=relative):
+                content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
+                self.assertIn("Memory Autopilot", content)
+                self.assertNotIn("Memory Autopilot（规划）", content)
+                self.assertNotIn("Memory Autopilot (planned)", content)
+        release = (PROJECT_ROOT / "docs/evals/releases/v0.6.0.md").read_text(
+            encoding="utf-8"
+        )
+        for fact in ("644/644", "35/35", "39/39", "MEM-AUTO-001", "MEM-AUTO-010"):
+            self.assertIn(fact, release)
+
     def test_openclaw_hermes_gap_and_phase_plans_are_linked_as_planned(self) -> None:
         """后续能力路线必须完整可达，同时明确不能冒充当前实现。"""
         gap = PROJECT_ROOT / (

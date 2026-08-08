@@ -4,17 +4,17 @@
 
 ## OpenClaw / Hermes 能力对齐（规划）
 
-> 以下文档是经过确认的后续工程路线，状态为 **PLANNED / NOT IMPLEMENTED**。它们不改变本页下方 Phase 2-5
-> 的真实完成状态，也不能作为 production evidence。
+> 以下路线除 Memory Autopilot A～E 已实现外，仍为 **PLANNED / NOT IMPLEMENTED**。设计与计划本身不能作为
+> production evidence；Memory 的当前事实以实现文档和 v0.6.0 release record 为准。
 
 | 文档 | 规划范围 | 当前事实 |
 | --- | --- | --- |
 | [能力 Gap 与演进路线](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 对照 OpenClaw、Hermes、nanobot、ZeroClaw、RayClaw，确定 Phase 5.3→9 的优先级与非目标。 | Gap 已确认，代码未实现。 |
 | [能力对齐工程落地总方案](openclaw-hermes-alignment-engineering-roadmap.md) | Service、Automation、Sandbox、Browser、Evolution、Memory v2、Skills、MCP、Provider、Sub-agent、Media 的模块/数据/测试设计。 | 工程边界已确认，等待逐 Phase TDD。 |
-| [Memory Autopilot 能力 Gap](../architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 跨渠道 Owner Memory、L0→L3、自动 Flush、晋升、冲突、遗忘和隐私。 | 设计已确认，代码未实现。 |
-| [Memory Autopilot 技术选型](memory-autopilot-best-practices-and-technology-selection.md) | Markdown Truth + SQLite Control Plane、接口、表、Crash Recovery、FTS5/CJK、测试矩阵。 | 工程方案已确认，代码未实现。 |
-| [Memory Autopilot 正式设计](../superpowers/specs/2026-08-08-memory-autopilot-design.md) | 产品语义、架构决策、失败策略、迁移和完成定义。 | APPROVED DESIGN / NOT IMPLEMENTED。 |
-| [Memory Autopilot A～E 实施计划](../superpowers/plans/2026-08-09-memory-autopilot.md) | Identity/Disclosure、Flush、FTS5、治理、Reconcile 的逐任务 RED→GREEN 计划。 | 计划已落地，代码未实现。 |
+| [Memory Autopilot 能力 Gap](../architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 跨渠道 Owner Memory、L0→L3、自动 Flush、晋升、冲突、遗忘和隐私。 | A～E 已实现；后续反思仍属 Phase 7。 |
+| [Memory Autopilot 技术选型](memory-autopilot-best-practices-and-technology-selection.md) | Markdown Truth + SQLite Control Plane、接口、表、Crash Recovery、FTS5/CJK、测试矩阵。 | 核心方案已落地。 |
+| [Memory Autopilot 正式设计](../superpowers/specs/2026-08-08-memory-autopilot-design.md) | 产品语义、架构决策、失败策略、迁移和完成定义。 | A～E IMPLEMENTATION PASS。 |
+| [Memory Autopilot A～E 实施计划](../superpowers/plans/2026-08-09-memory-autopilot.md) | Identity/Disclosure、Flush、FTS5、治理、Reconcile 的逐任务 RED→GREEN 计划。 | 已按任务提交并通过门禁。 |
 | [Phase 5.2 实施计划](../superpowers/plans/2026-08-08-phase-5-2-production-hardening.md) | 系统服务、health、Docker、Feishu 15/15、24h soak。 | Core hardening 已落地，严格 live evidence 未闭环。 |
 | [Phase 5.3 Live Gate 设计](../superpowers/specs/2026-08-09-phase-5-3-feishu-discord-live-gate-design.md) | SDK 日志、Gateway lease、受管进程、Feishu/Discord 真实证据边界。 | APPROVED DESIGN / NOT IMPLEMENTED。 |
 | [Phase 5.3 实施计划](../superpowers/plans/2026-08-09-phase-5-3-feishu-discord-live-gate.md) | 逐任务修复、15/15 Live Gate、脱敏 evidence 和 release record。 | 当前下一实施计划。 |
@@ -46,8 +46,8 @@
 
 ## Phase 3：Memory、Skills 与上下文预算
 
-> Phase 3 下表是当前实现。分级自动记忆、跨 Session 检索和周期 Markdown Flush 属于
-> [Memory Autopilot 规划](memory-autopilot-best-practices-and-technology-selection.md)，目前尚未进入代码。
+> Phase 3 的 legacy Memory/Skills/Compaction 继续兼容；分级自动记忆、跨 Session 检索与周期 Flush 已由
+> [Memory Autopilot 工程实现](phase-5/memory-autopilot.md)替代为当前主路径。
 
 | 文档 | 已验证内容 | 不包含 |
 | --- | --- | --- |
@@ -78,12 +78,17 @@ WebSocket ready 与两条 Owner 私聊回复已经得到真实平台证据；完
 | [测试与 live acceptance](phase-5/testing-and-live-acceptance.md) | 562 Python、30 TypeScript、29 Agent、32 Channel、640 soak、三平台 live gate。 | 三个平台真实 evidence。 |
 | [故障排查手册](phase-5/troubleshooting.md) | SDK/Token、Telegram 409、Discord intents/403、限流、degraded、Approval、恢复和 Secret scan。 | 平台侧实际权限工单。 |
 | [完成性审计](phase-5/completion-audit.md) | requirement → code → automated/live evidence 矩阵。 | production verified exit gate。 |
+| [Memory Autopilot A～E](phase-5/memory-autopilot.md) | Owner Disclosure、durable Flush、Markdown Truth、FTS5/CJK、治理、对账、迁移与 versioned gate。 | 真实 IM 平台结论仍按各自 Live Gate。 |
 
 Phase 5 当前是 **IMPLEMENTATION PASS**：562 Python tests、30/30 TypeScript、29/29 Agent、32/32 Channel 与
 640/640 local soak。Feishu 是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Telegram/Discord 是
 **LIVE PENDING**。详细权威规格见
 [Phase 5 Telegram/Discord 工程设计](../superpowers/specs/2026-08-08-phase-5-telegram-discord-design.md)，逐项开发步骤见
 [Phase 5 Telegram/Discord Implementation Plan](../superpowers/plans/2026-08-08-phase-5-telegram-discord.md)。
+
+Memory Autopilot A～E 的当前全仓门禁为 **644 Python、35/35 TypeScript、39/39 Agent、32/32 Channel 与
+640/640 local soak**。这是 **IMPLEMENTATION PASS**，不改变 Feishu/Telegram/Discord 的 Live 状态。发布证据见
+[v0.6.0 Eval Record](../evals/releases/v0.6.0.md)。
 
 ## Phase 1：CLI Agent 闭环（历史实现）
 

@@ -17,9 +17,9 @@
 
 ```mermaid
 flowchart LR
-    CHANGE["代码或 Prompt 变更"] --> UNIT["562 Python + 30 TypeScript"]
+    CHANGE["代码或 Prompt 变更"] --> UNIT["644 Python + 35 TypeScript"]
     UNIT --> VALIDATE["eval validate"]
-    VALIDATE --> OFFLINE["29 active offline cases"]
+    VALIDATE --> OFFLINE["39 active offline cases"]
     OFFLINE --> CHANNEL["32 active Channel cases"]
     CHANNEL --> SOAK["20 runs / 640 checks"]
     SOAK --> RUFF["Ruff + docs + diff check"]
@@ -27,7 +27,7 @@ flowchart LR
     LIVE --> RECORD["release record"]
 ```
 
-当前 Phase 5 门禁是 **IMPLEMENTATION PASS**：562/562 Python tests、30/30 TypeScript、29/29 active offline Agent、
+当前全仓门禁是 **IMPLEMENTATION PASS**：644/644 Python tests、35/35 TypeScript、39/39 active offline Agent、
 32/32 Channel、640/640 local soak。Feishu 是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Telegram 与
 Discord 的真实验收均为 **LIVE PENDING**。
 Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已单独完成 3 次 planning probe。
@@ -51,3 +51,4 @@ Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已
 - [v0.5.0：Phase 5 Telegram/Discord multi-channel](releases/v0.5.0.md)
 - [v0.5.1：Phase 5.1 Feishu real Bot Live E2E gate](releases/v0.5.1.md)
 - [v0.5.2：Phase 5.2 Feishu single-card + direct lark-cli Skill](releases/v0.5.2.md)
+- [v0.6.0：Memory Autopilot A～E](releases/v0.6.0.md)

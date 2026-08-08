@@ -23,6 +23,7 @@ _CASE_FIELDS = {
     "introduced_by",
     "tags",
     "channel",
+    "memory",
 }
 _EXPECTATION_FIELDS = {
     "answer_contains",
@@ -41,6 +42,7 @@ _EXPECTATION_FIELDS = {
     "absent_personal_files",
     "live_local_evidence",
     "live_human_evidence",
+    "memory_evidence",
 }
 _RESPONSE_FIELDS = {
     "content",
@@ -94,6 +96,57 @@ _CHANNEL_FIXTURES = {
     "thread",
     "isolation",
 }
+_MEMORY_FIXTURES = frozenset(
+    {
+        "cross_channel_disclosure",
+        "explicit_restart_forget",
+        "secret_and_source_rejection",
+        "short_term_repeat_promotion",
+        "sensitive_and_behavior_review",
+        "conflict_correction_supersede",
+        "provider_failure_retry",
+        "checkpoint_and_lease_recovery",
+        "direct_edit_and_legacy_migration",
+        "chinese_recall_integrity",
+    }
+)
+_MEMORY_EVIDENCE = frozenset(
+    {
+        "owner_space_shared",
+        "group_denied",
+        "non_owner_denied",
+        "explicit_persisted",
+        "restart_recalled",
+        "forget_archived",
+        "rebuild_absent",
+        "secret_rejected",
+        "fabricated_source_rejected",
+        "zero_rejected_persistence",
+        "first_observation_short_term",
+        "independent_repeat_active",
+        "duplicate_unit_zero",
+        "sensitive_review_required",
+        "behavior_review_required",
+        "model_cannot_approve",
+        "conflict_review_required",
+        "old_unit_superseded",
+        "correction_source_preserved",
+        "provider_failure_sanitized",
+        "source_range_retryable",
+        "markdown_not_duplicated",
+        "projection_resumed",
+        "stale_lease_reclaimed",
+        "buffer_completed_once",
+        "manual_edit_reconciled",
+        "invalid_edit_fail_closed",
+        "legacy_hash_idempotent",
+        "legacy_source_untouched",
+        "recall_top5_bounded",
+        "chinese_unit_recalled",
+        "all_units_sourced",
+        "unit_ids_unique",
+    }
+)
 _LIVE_LOCAL_EVIDENCE = frozenset(
     {
         "gateway_ready",
@@ -155,6 +208,7 @@ class EvalExpectation:
     channel_evidence: tuple[str, ...]
     live_local_evidence: tuple[str, ...]
     live_human_evidence: tuple[str, ...]
+    memory_evidence: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +233,7 @@ class EvalCase:
     tags: tuple[str, ...]
     source: str
     channel_fixture: str | None
+    memory_fixture: str | None
 
 
 def load_cases(root: Path) -> tuple[EvalCase, ...]:
@@ -278,13 +333,25 @@ def _parse_case(raw: object, source: str) -> EvalCase:
     if any(action not in _APPROVAL_ACTIONS for action in approval_actions):
         raise EvalCaseError(f"invalid approval action at {source}")
     responses = _parse_offline(value.get("offline"), source)
-    if status == "active" and "offline" in layers and not responses:
+    memory_fixture = _parse_memory(value.get("memory"), source)
+    if status == "active" and "offline" in layers and not responses and memory_fixture is None:
         raise EvalCaseError(f"active offline case has no responses at {source}")
     channel_fixture = _parse_channel(value.get("channel"), source)
     if status == "active" and "channel" in layers and channel_fixture is None:
         raise EvalCaseError(f"active channel case has no fixture at {source}")
     capability = _string(value.get("capability"), source, "capability")
     expected = _parse_expectation(value.get("expected", {}), source)
+    if memory_fixture is not None:
+        if (
+            status != "active"
+            or layers != ("offline",)
+            or capability != "memory_autopilot"
+        ):
+            raise EvalCaseError(
+                f"memory fixture must be active offline memory_autopilot at {source}"
+            )
+        if responses or channel_fixture is not None or not expected.memory_evidence:
+            raise EvalCaseError(f"memory fixture has invalid execution fields at {source}")
     if status == "active" and layers == ("live",) and capability != "feishu_e2e":
         raise EvalCaseError(f"active live case must use feishu_e2e capability at {source}")
     if capability == "feishu_e2e":
@@ -317,6 +384,7 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         tags=_strings(value.get("tags", []), source, "tags"),
         source=source,
         channel_fixture=channel_fixture,
+        memory_fixture=memory_fixture,
     )
 
 
@@ -329,6 +397,18 @@ def _parse_channel(raw: object, source: str) -> str | None:
     fixture = _string(value.get("fixture"), source, "channel.fixture")
     if fixture not in _CHANNEL_FIXTURES:
         raise EvalCaseError(f"invalid channel fixture at {source}")
+    return fixture
+
+
+def _parse_memory(raw: object, source: str) -> str | None:
+    """解析封闭 Memory fixture，不接受任意脚本或敏感参数。"""
+    if raw is None:
+        return None
+    value = _object(raw, source, "memory")
+    _reject_unknown(value, {"fixture"}, source)
+    fixture = _string(value.get("fixture"), source, "memory.fixture")
+    if fixture not in _MEMORY_FIXTURES:
+        raise EvalCaseError(f"invalid memory fixture at {source}")
     return fixture
 
 
@@ -468,6 +548,12 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         "live human",
         _LIVE_HUMAN_EVIDENCE,
     )
+    memory_evidence = _parse_live_evidence(
+        value.get("memory_evidence", []),
+        source,
+        "memory",
+        _MEMORY_EVIDENCE,
+    )
     return EvalExpectation(
         answer_contains=_strings(value.get("answer_contains", []), source, "answer_contains"),
         answer_excludes=_strings(value.get("answer_excludes", []), source, "answer_excludes"),
@@ -489,6 +575,7 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         ),
         live_local_evidence=live_local_evidence,
         live_human_evidence=live_human_evidence,
+        memory_evidence=memory_evidence,
     )
 
 

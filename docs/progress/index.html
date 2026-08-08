@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · Phase 5.2 IMPLEMENTATION PASS · Feishu single-card fix · post-fix live pending</div>
+      <div class="branch">target: main · Memory Autopilot A-E IMPLEMENTATION PASS · platform live gates unchanged</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 已把普通 Home 文件、有限写根与用户 CLI 纳入同一安全边界，safe / smart / autopilot / yolo 四档权限、Owner 私聊信任、动态切换和紧凑滚动审批框已经贯通 TUI 与三个 IM。飞书、Telegram 与 Discord 三条独立 pipeline 共享一个 AgentRuntime、十个 Tool、Policy、Approval、Memory、Skills 和 SQLite durable truth。Phase 5.2 已让飞书短回答只保留一张 12px completed card，超长回答只把未展示后缀回复到卡片下方，restart 复用稳定 UUID，tool-call preview 先缓冲、waiting approval 只留审批卡；feishu-lark-cli Skill 把云文档等业务 Query 映射到通用 run_command。专用飞书 App/Bot、WebSocket ready 和两条 Owner 私聊回复已经真实打通；下一步是人工确认新卡片体验，再完成完整 15/15。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 与四档权限已贯通 TUI 和三个 IM。飞书、Telegram 与 Discord 三条隔离 pipeline 共享一个 AgentRuntime、十八个 Tool、Policy、Approval、Skills 和 SQLite durable truth。Memory Autopilot A～E 现已采用 Markdown Truth + SQLite Control Plane：四个已验证私人入口共享一个 Owner Memory Space，普通 Turn 非阻塞 capture/flush，明确 remember 原子持久化，FTS5/CJK 召回、Review、冲突、纠错、遗忘、对账和 legacy 迁移均已落地。专用飞书 App/Bot、WebSocket ready 和两条 Owner 私聊回复已经真实打通；完整平台 Live Gate 仍按原证据单独待验。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Phase 5.2 implementation pass</span>
-        <strong>CARD FIXED</strong>
-        <p>562 Python + 30 TypeScript tests · Agent 29/29 · Channel 32/32 · Owner DM verified · post-fix live pending</p>
+        <span class="tag">Memory A-E implementation pass</span>
+        <strong>MEMORY LIVE</strong>
+        <p>644 Python + 35 TypeScript tests · Agent 39/39 · Channel 32/32 · Owner DM verified · platform live gates unchanged</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">562+30 <small>passing</small></span>
+        <span class="metric-value">644+35 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -449,10 +449,10 @@
           <div><h3>Feishu / Discord Live Gate 收口</h3><p>SDK 日志脱敏、单 Gateway lease、受管 live runner，以及 Feishu/Discord 各自严格 15/15 Evidence。</p></div>
           <span class="pill">PLANNED</span>
         </article>
-        <article class="phase queued">
+        <article class="phase done">
           <div class="phase-no">Memory Foundation</div>
-          <div><h3>跨渠道 Memory Autopilot A～E</h3><p>Owner Disclosure、durable Flush、Markdown 真相源、FTS5/CJK、分级自动晋升、冲突、遗忘与 Reconcile；设计和 TDD 实施计划已确认，代码未实现。</p></div>
-          <span class="pill">DESIGN + PLAN</span>
+          <div><h3>跨渠道 Memory Autopilot A～E</h3><p>Owner Disclosure、durable Flush、Markdown Truth、FTS5/CJK、分级晋升、Review、冲突、纠错、遗忘、Reconcile、legacy migration 与十条 versioned case 已实现。</p></div>
+          <span class="pill">CODE PASS</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 6</div>
@@ -484,7 +484,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 5 implementation pass · Phase 5.2 single card + lark-cli Skill</p>
+        <p class="eyebrow">Memory Autopilot A-E implementation pass · platform live truth unchanged</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -570,7 +570,11 @@
           <li class="complete">飞书 12px completed card；超限只回复后缀；restart UUID 恢复；tool-call preview 缓冲后 waiting approval 只留审批卡</li>
           <li class="complete">feishu-lark-cli Skill：复用 run_command + official lark-cli，不新增重复 API Tool</li>
           <li class="complete">Provider 兼容流式 Tool Call 的 empty-name continuation</li>
-          <li class="complete">562 Python + 30 TypeScript tests + 29/29 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
+          <li class="complete">Owner Disclosure：四入口同一 Memory Space，群聊/非 Owner/未知身份 fail closed</li>
+          <li class="complete">durable buffer/lease/Flush、Markdown-first checkpoint 与重启恢复</li>
+          <li class="complete">FTS5/CJK Recall、short-term 晋升、Review、冲突、纠错、forget 与 TTL</li>
+          <li class="complete">direct-edit reconcile、legacy hash migration、23 项 Doctor 与 /memory rebuild</li>
+          <li class="complete">644 Python + 35 TypeScript tests + 39/39 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -581,7 +585,8 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace/Personal 多根 Guard、敏感凭据硬拒绝、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 562 Python、30 TypeScript tests、29/29 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640，Feishu 另有 15-case real Bot gate。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 644 Python、35 TypeScript tests、39/39 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640，Feishu 另有 15-case real Bot gate。</p></div>
+        <div class="decision"><code>memory</code><p>Markdown 是已接受语义真相；SQLite 保存 buffer、lease、来源、Review、审计与可重建 FTS5。Memory 不能扩大 Policy 权限。</p></div>
         <div class="decision"><code>permissions</code><p>Autopilot 只给本地与 Owner 私聊；群聊/其他成员降级。任何模式都不能绕过敏感路径、exact argv、SSRF 和资源硬边界。</p></div>
         <div class="decision"><code>approval</code><p>审批框固定头尾、只滚动参数；Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
@@ -593,8 +598,9 @@
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-09 · 562 Python + 30 TypeScript · Agent 29/29 · Channel 32/32 · Feishu card fix pending live confirmation</span>
-      <span><a href="../engineering/phase-2/autopilot-permissions-and-approval-ui.md">Autopilot permissions</a> · <a href="../engineering/phase-2/personal-machine-permissions.md">Personal permissions</a> · <a href="../engineering/phase-5/feishu-live-e2e.md">Feishu Live E2E</a> · <a href="../engineering/phase-5/feishu-gateway-runtime-and-macos-service.md">Feishu runtime</a> · <a href="../engineering/phase-5/feishu-single-card-and-lark-cli.md">single card + lark-cli</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../evals/releases/v0.5.2.md">v0.5.2</a></span>
+      <span>Last updated · 2026-08-09 · 644 Python + 35 TypeScript · Agent 39/39 · Channel 32/32 · Memory A-E implementation pass</span>
+      <span>Historical Phase 5 implementation pass baseline · 562 Python · 30 TypeScript · Agent 29/29 · Channel 32/32 · local soak 640/640.</span>
+      <span><a href="../engineering/phase-5/memory-autopilot.md">Memory Autopilot</a> · <a href="../engineering/phase-2/autopilot-permissions-and-approval-ui.md">Autopilot permissions</a> · <a href="../engineering/phase-5/feishu-live-e2e.md">Feishu Live E2E</a> · <a href="../engineering/phase-5/feishu-gateway-runtime-and-macos-service.md">Feishu runtime</a> · <a href="../engineering/phase-5/feishu-single-card-and-lark-cli.md">single card + lark-cli</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../evals/releases/v0.6.0.md">v0.6.0</a></span>
     </footer>
   </main>
 </body>

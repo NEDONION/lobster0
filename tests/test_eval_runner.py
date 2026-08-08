@@ -109,6 +109,17 @@ class OfflineEvalRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.tool_runs, (("write_file", "succeeded"),))
         self.assertEqual(result.approval_statuses, ("consumed",))
 
+    async def test_memory_autopilot_case_runs_fixed_production_fixture(self) -> None:
+        """Memory versioned case 必须执行封闭 fixture 并返回脱敏 evidence。"""
+        result = await run_offline_case(repository_case("MEM-AUTO-001"))
+
+        self.assertTrue(result.passed, result.failures)
+        self.assertEqual(
+            result.memory_evidence,
+            ("owner_space_shared", "group_denied", "non_owner_denied"),
+        )
+        self.assertEqual(result.request_count, 0)
+
     async def test_all_repository_cases_pass_offline_gate(self) -> None:
         """当前发布的所有 active offline case 必须 100% 通过。"""
         cases = tuple(
@@ -119,8 +130,8 @@ class OfflineEvalRunnerTest(unittest.IsolatedAsyncioTestCase):
 
         suite = await run_offline_suite(cases)
 
-        self.assertEqual(suite.total, 29)
-        self.assertEqual(suite.passed, 29, suite.cases)
+        self.assertEqual(suite.total, 39)
+        self.assertEqual(suite.passed, 39, suite.cases)
         self.assertEqual(suite.failed, 0)
 
 
