@@ -620,12 +620,12 @@ class DiscordMessageView:
     replied_to_bot: bool = False
 ```
 
-- [ ] Owner DM admitted；非 allowlisted author ignored。
-- [ ] Guild message 同时满足 user/guild/channel allowlist，并且 mention 或 reply-to-bot；Thread 继承 parent channel allowlist，但 conversation key 使用 thread ID。
-- [ ] bot/webhook/system/empty/control-only/oversized ignored，使用稳定 reason。
-- [ ] `event_id == message_id == str(snowflake)`；DM conversation `channel:<id>`，Guild channel `guild:<g>:channel:<c>`，Thread 再加 `:thread:<t>`。
-- [ ] mention stripping 只处理 `<@bot_id>`/`<@!bot_id>`，不删其他用户 mention。
-- [ ] raw SDK message、正文、完整 snowflake 不进入 repr/log。
+- [x] Owner DM admitted；非 allowlisted author ignored。
+- [x] Guild message 同时满足 user/guild/channel allowlist，并且 mention 或 reply-to-bot；Thread 继承 parent channel allowlist，但 conversation key 使用 thread ID。
+- [x] bot/webhook/system/empty/control-only/oversized ignored，使用稳定 reason。
+- [x] `event_id == message_id == str(snowflake)`；DM conversation `channel:<id>`，Guild channel `guild:<g>:channel:<c>`，Thread 再加 `:thread:<t>`。
+- [x] mention stripping 只处理 `<@bot_id>`/`<@!bot_id>`，不删其他用户 mention。
+- [x] raw SDK message、正文、完整 snowflake 不进入 repr/log。
 
 Run RED:
 
@@ -637,9 +637,9 @@ Expected RED: `DiscordAdapter` 不存在。
 
 ### Step 7.2 — Implement pure normalization
 
-- [ ] `DiscordAdapter(config, bot_user_id)` 缓存 immutable allowlist。
-- [ ] 只接受 timezone-aware created_at 和严格 snowflake。
-- [ ] 统一输出 `chat_type="p2p" | "group"`，不把 Guild 对象传入 Core。
+- [x] `DiscordAdapter(config, bot_user_id)` 缓存 immutable allowlist。
+- [x] 只接受 timezone-aware created_at 和严格 snowflake。
+- [x] 统一输出 `chat_type="p2p" | "group"`，不把 Guild 对象传入 Core。
 
 Run GREEN:
 
