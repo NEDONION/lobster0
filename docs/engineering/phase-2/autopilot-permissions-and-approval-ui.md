@@ -246,7 +246,7 @@ mode = "safe"
 
 | 层 | 覆盖重点 | 当前证据 |
 | --- | --- | --- |
-| Python Policy | 四档状态表、trusted/untrusted、hard deny、审计失败关闭 | 全量 Python 519/519 |
+| Python Policy | 四档状态表、trusted/untrusted、hard deny、审计失败关闭 | 全量 Python 520/520 |
 | Channel | Owner 私聊、Owner 群聊、其他白名单、命令绕过模型 | 32/32 deterministic cases |
 | Bridge | 精确枚举、握手、idle 切换、busy 拒绝、真实子进程 | Python/Node bridge tests |
 | pi-tui | 状态徽标、slash command、80×24 长审批、滚动与按钮常驻 | TypeScript 30/30 |

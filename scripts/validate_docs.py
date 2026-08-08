@@ -38,7 +38,7 @@ FACT_RELATIVE_DOCS = (
 )
 REQUIRED_FACTS = (
     "IMPLEMENTATION PASS",
-    "519",
+    "520",
     "30",
     "32/32",
     "640/640",

@@ -2,7 +2,7 @@
 
 > 当前结论：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**
 >
-> 新鲜本地基线：519 Python tests、30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、
+> 新鲜本地基线：520 Python tests、30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、
 > 20 轮 640/640 Channel checks。
 >
 > 这句话的意思是：专用飞书应用、机器人、事件订阅、同应用 Owner、真实 WebSocket 和两条 Owner 私聊回复已经

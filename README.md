@@ -40,7 +40,7 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > persistent compaction。Personal Profile 已接通 Home 普通文件只读、受控外部写入、NVM/uv/pnpm 等用户 CLI 的
 > 确定性发现和 `lark-cli --version` 离线纵切；`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning
 > probe。当前回归基线为
-> **519 Python tests + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + 640/640 local soak**。
+> **520 Python tests + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + 640/640 local soak**。
 > Feishu 的 15 条版本化真实场景、有界 Gateway Runner、只读 SQLite evidence、人工客户端 evidence 和 Secret scan
 > 已实现并通过本地契约门禁。专用企业应用、机器人、Scope、Owner allowlist 与 WebSocket 已完成真实配置；两条 Owner
 > 私聊已穿过 Inbox、Agent 和 Outbox，并各自一次 Delivery `sent`。当前准确状态是
@@ -248,6 +248,8 @@ miniclaw/
 | [文档中心](docs/README.md) | 全部产品、架构、运行和开发文档入口 |
 | [产品需求文档](docs/product/20260807_产品需求文档.md) | v0.1 范围、流程图、架构图、验收标准和里程碑 |
 | [系统架构](docs/architecture/20260807_系统架构.md) | 核心边界、数据流和计划中的包布局 |
+| [OpenClaw / Hermes 能力 Gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 已有能力、仍缺能力、开源参考、优先级和 Phase 5.2→9 演进路线 |
+| [能力对齐工程落地总方案](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | 自治任务、Sandbox、Browser、受控进化、MCP、Provider、Sub-agent 与多模态施工图 |
 | [本地运行指南](docs/getting-started/20260807_本地运行指南.md) | 安装、凭据、初始化、CLI 对话、诊断和测试命令 |
 | [工程文档索引](docs/engineering/README.md) | 已实现模块的工程说明入口 |
 | [Phase 1 模块工程文档](docs/engineering/phase-1/cli-chat.md) | CLI、Provider、Runner、Storage 等逐模块实现说明 |

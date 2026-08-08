@@ -4,7 +4,7 @@
 >
 > 发布口径：**IMPLEMENTATION PASS / LIVE PENDING**
 >
-> 当前全仓门禁：519/519 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、
+> 当前全仓门禁：520/520 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、
 > 640/640 local soak。
 
 这份表把 Phase 5 的要求逐项映射到代码、自动化证据和仍需真实平台完成的 evidence。它用于防止“代码文件存在”被
@@ -106,7 +106,7 @@ flowchart TB
 
 | Gate | Expected | Actual | Result |
 | --- | ---: | ---: | --- |
-| Python unittest | all pass | Phase 5 exit 483/483；当前 519/519 | PASS |
+| Python unittest | all pass | Phase 5 exit 483/483；当前 520/520 | PASS |
 | TypeScript | all pass | 30/30 | PASS |
 | Offline Agent | all active | 28/28 | PASS |
 | Feishu Channel | retain old | 12/12 | PASS |
@@ -153,8 +153,17 @@ Secret 或外部 ID。
 2. Discord 真实 Bot 15/15；
 3. 飞书完整 15-case（群聊、审批、重连、长消息、重启与隐私扫描）；
 4. 长期 VPS soak 与平台 SLA 观察；
-5. Phase 6 反馈→提案→评测→人工批准的受控演进；
-6. Phase 7 Docker/VPS 发布闭环。
+5. Phase 5.2 系统服务、非 root Docker、24 小时 soak 与完整发布闭环；
+6. Phase 6 Cron/Heartbeat/Task Ledger、主动投递、Sandbox 与 Checkpoint；
+7. Phase 6.5 独立 Browser Agent；
+8. Phase 7 反馈→提案→评测→人工批准→应用/回滚的受控演进；
+9. Phase 8 Skill/MCP/Provider 韧性；
+10. Phase 9 Sub-agent 与多模态。
+
+权威后续路线见
+[OpenClaw / Hermes 能力 Gap](../../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)和
+[能力对齐工程落地总方案](../openclaw-hermes-alignment-engineering-roadmap.md)。上述项目均为 `PLANNED`，不改变本
+文的 Phase 5 事实状态。
 
 因此当前唯一准确写法是：**Phase 5 IMPLEMENTATION PASS；Feishu OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE
 PENDING；Telegram LIVE PENDING；Discord LIVE PENDING；整体不是 PRODUCTION VERIFIED。**
