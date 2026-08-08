@@ -235,6 +235,7 @@ feishu = ["lark-channel-sdk>=1.2,<2"]
 
 - `reply_to_message_id`；
 - `delivery_kind`：`message/card/approval/typing`；
+- `content`：已经分片且可在重启后直接重发的正文；
 - `idempotency_key`；
 - `updated_at`；
 - `next_attempt_at`；

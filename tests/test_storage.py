@@ -206,6 +206,7 @@ class StorageTest(unittest.TestCase):
             {
                 "reply_to_message_id",
                 "delivery_kind",
+                "content",
                 "idempotency_key",
                 "updated_at",
                 "next_attempt_at",

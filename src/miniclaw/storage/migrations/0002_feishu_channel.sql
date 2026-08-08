@@ -46,6 +46,7 @@ CREATE TABLE deliveries (
         'message', 'card', 'approval', 'typing'
     )),
     part_index INTEGER NOT NULL CHECK(part_index >= 0),
+    content TEXT NOT NULL,
     content_hash TEXT NOT NULL,
     idempotency_key TEXT NOT NULL,
     platform_message_id TEXT,
@@ -72,6 +73,7 @@ INSERT INTO deliveries (
     reply_to_message_id,
     delivery_kind,
     part_index,
+    content,
     content_hash,
     idempotency_key,
     platform_message_id,
@@ -91,6 +93,7 @@ SELECT
     '',
     'message',
     part_index,
+    '',
     content_hash,
     printf('legacy-%016x', id),
     platform_message_id,
