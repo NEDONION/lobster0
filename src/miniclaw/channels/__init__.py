@@ -2,6 +2,7 @@
 
 from miniclaw.channels.base import (
     ChannelTransport,
+    ChannelTransportError,
     IgnoredInbound,
     InboundMessage,
     OutboundMessage,
@@ -10,6 +11,7 @@ from miniclaw.channels.base import (
 
 __all__ = [
     "ChannelTransport",
+    "ChannelTransportError",
     "IgnoredInbound",
     "InboundMessage",
     "OutboundMessage",

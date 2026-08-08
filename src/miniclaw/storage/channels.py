@@ -674,6 +674,37 @@ class DeliveryRepository:
             )
         return int(updated.rowcount)
 
+    def recover_unknown(
+        self,
+        channel: str,
+        account_id: str,
+        *,
+        max_attempts: int,
+    ) -> int:
+        """用相同 UUID 重新排队未达上限的 unknown，并终止耗尽项。"""
+        now = self._clock().isoformat()
+        with self._database.connect() as connection:
+            requeued = connection.execute(
+                """
+                UPDATE deliveries
+                SET status = 'queued', next_attempt_at = NULL, updated_at = ?
+                WHERE channel = ? AND account_id = ? AND status = 'unknown'
+                  AND attempts < ?
+                """,
+                (now, channel, account_id, max_attempts),
+            )
+            connection.execute(
+                """
+                UPDATE deliveries
+                SET status = 'failed', last_error_code = 'feishu_send_failed',
+                    updated_at = ?
+                WHERE channel = ? AND account_id = ? AND status = 'unknown'
+                  AND attempts >= ?
+                """,
+                (now, channel, account_id, max_attempts),
+            )
+        return int(requeued.rowcount)
+
     def _transition_from_sending(
         self,
         delivery_id: int,

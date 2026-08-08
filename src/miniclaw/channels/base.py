@@ -9,6 +9,29 @@ type MessageType = Literal["text"]
 type DeliveryKind = Literal["message", "card", "approval", "typing"]
 
 
+class ChannelTransportError(RuntimeError):
+    """表示已经映射为稳定码且不包含 SDK 原始正文的平台错误。"""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        retryable: bool = False,
+        unknown: bool = False,
+    ) -> None:
+        super().__init__(code)
+        self.code = code
+        self.retryable = retryable
+        self.unknown = unknown
+
+    def __repr__(self) -> str:
+        """仅显示稳定错误码和恢复属性。"""
+        return (
+            "ChannelTransportError("
+            f"code={self.code!r}, retryable={self.retryable!r}, unknown={self.unknown!r})"
+        )
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class InboundMessage:
     """保存通过平台校验和清洗后的单条用户消息。"""

@@ -183,4 +183,5 @@ def create_channel_manager(
         account_id=feishu.account_id,
         queue_size=feishu.queue_size,
         worker_count=feishu.worker_count,
+        message_max_chars=feishu.message_max_chars,
     )

@@ -9,6 +9,7 @@ from typing import Protocol
 from miniclaw.agent.events import RunEventHandler
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.base import InboundMessage
+from miniclaw.channels.delivery import split_message
 from miniclaw.providers.base import StreamHandler
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
@@ -81,10 +82,16 @@ class ChannelManager:
         account_id: str,
         queue_size: int,
         worker_count: int,
+        message_max_chars: int = 30_000,
         feeder_interval: float = 0.25,
     ) -> None:
         """绑定唯一 Runtime、Repository 与不可由平台消息改变的并发预算。"""
-        if queue_size <= 0 or worker_count <= 0 or feeder_interval <= 0:
+        if (
+            queue_size <= 0
+            or worker_count <= 0
+            or message_max_chars < 8
+            or feeder_interval <= 0
+        ):
             raise ValueError("ChannelManager limits must be positive")
         self.owner_id = owner_id
         self.service = service
@@ -97,6 +104,7 @@ class ChannelManager:
         self._channel = channel
         self._account_id = account_id
         self._worker_count = worker_count
+        self._message_max_chars = message_max_chars
         self._feeder_interval = feeder_interval
         self._queue: asyncio.Queue[InboundEventKey] = asyncio.Queue(maxsize=queue_size)
         self._enqueued: set[InboundEventKey] = set()
@@ -259,7 +267,10 @@ class ChannelManager:
                     external_conversation_id=event.external_conversation_id,
                     reply_to_message_id=event.reply_to_message_id,
                     kind="message",
-                    contents=(result.content,),
+                    contents=split_message(
+                        result.content,
+                        max_chars=self._message_max_chars,
+                    ),
                 )
             elif result.approval_id is not None:
                 notice = self._messages.create_channel_notice(
@@ -273,7 +284,10 @@ class ChannelManager:
                     external_conversation_id=event.external_conversation_id,
                     reply_to_message_id=event.reply_to_message_id,
                     kind="approval",
-                    contents=(notice.content,),
+                    contents=split_message(
+                        notice.content,
+                        max_chars=self._message_max_chars,
+                    ),
                 )
             self._inbound.mark_completed(event.key)
 
@@ -287,7 +301,10 @@ class ChannelManager:
             external_conversation_id=event.external_conversation_id,
             reply_to_message_id=event.reply_to_message_id,
             kind="message",
-            contents=(notice.content,),
+            contents=split_message(
+                notice.content,
+                max_chars=self._message_max_chars,
+            ),
         )
 
     def _recover_stale(self) -> None:
@@ -326,7 +343,10 @@ class ChannelManager:
                     external_conversation_id=event.external_conversation_id,
                     reply_to_message_id=event.reply_to_message_id,
                     kind="message",
-                    contents=(assistant.content,),
+                    contents=split_message(
+                        assistant.content,
+                        max_chars=self._message_max_chars,
+                    ),
                 )
                 self._inbound.recover_running(event.key, "completed", None)
                 continue
