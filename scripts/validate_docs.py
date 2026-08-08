@@ -30,7 +30,7 @@ FACT_RELATIVE_DOCS = (
     Path("docs/getting-started/20260807_本地运行指南.md"),
     Path("docs/evals/releases/v0.5.0.md"),
 )
-REQUIRED_FACTS = ("IMPLEMENTATION PASS", "456", "32/32", "640/640", "LIVE PENDING")
+REQUIRED_FACTS = ("IMPLEMENTATION PASS", "462", "32/32", "640/640", "LIVE PENDING")
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 FENCE = re.compile(r"^\s*```([^`]*)$")
 VOID_TAGS = frozenset(

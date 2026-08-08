@@ -44,11 +44,11 @@
 | 文档 | 已验证内容 | 仍待外部证据 |
 | --- | --- | --- |
 | [Telegram 与 Discord 工程落地说明](phase-5/telegram-discord-channels.md) | 单 Runtime/多 Pipeline、GatewaySupervisor、long polling、Discord Gateway、身份/会话、Typing/Preview、Approval、分片和故障隔离。 | 两个平台真实账号验收。 |
-| [测试与 live acceptance](phase-5/testing-and-live-acceptance.md) | 456 Python、25 TypeScript、24 Agent、32 Channel、640 soak、15 项安全 live harness。 | Telegram/Discord 15/15 evidence。 |
+| [测试与 live acceptance](phase-5/testing-and-live-acceptance.md) | 462 Python、25 TypeScript、24 Agent、32 Channel、640 soak、15 项安全 live harness。 | Telegram/Discord 15/15 evidence。 |
 | [故障排查手册](phase-5/troubleshooting.md) | SDK/Token、Telegram 409、Discord intents/403、限流、degraded、Approval、恢复和 Secret scan。 | 平台侧实际权限工单。 |
 | [完成性审计](phase-5/completion-audit.md) | requirement → code → automated/live evidence 矩阵。 | production verified exit gate。 |
 
-Phase 5 当前是 **IMPLEMENTATION PASS / LIVE PENDING**：456/456 Python tests（1 项预期 skip）、25/25 TypeScript、
+Phase 5 当前是 **IMPLEMENTATION PASS / LIVE PENDING**：462/462 Python tests（1 项预期 skip）、25/25 TypeScript、
 24/24 Agent、32/32 Channel 与 640/640 local soak 已通过。详细权威规格见
 [Phase 5 Telegram/Discord 工程设计](../superpowers/specs/2026-08-08-phase-5-telegram-discord-design.md)，逐项开发步骤见
 [Phase 5 Telegram/Discord Implementation Plan](../superpowers/plans/2026-08-08-phase-5-telegram-discord.md)。

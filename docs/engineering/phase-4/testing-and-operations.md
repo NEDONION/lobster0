@@ -43,7 +43,7 @@ uv run miniclaw init
 ```dotenv
 MINICLAW_MODEL_API_KEY=your-model-key
 MINICLAW_FEISHU_APP_ID=cli_xxx
-MINICLAW_FEISHU_APP_SECRET=your-app-secret
+MINICLAW_FEISHU_APP_SECRET=
 ```
 
 ```bash

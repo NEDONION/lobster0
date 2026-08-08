@@ -4,7 +4,7 @@
 >
 > 发布口径：**IMPLEMENTATION PASS / LIVE PENDING**
 >
-> 当前门禁：456/456 Python（1 项预期 skip）、25/25 TypeScript、24/24 Agent、32/32 Channel、
+> 当前门禁：462/462 Python（1 项预期 skip）、25/25 TypeScript、24/24 Agent、32/32 Channel、
 > 640/640 local soak。
 
 这份表把 Phase 5 的要求逐项映射到代码、自动化证据和仍需真实平台完成的 evidence。它用于防止“代码文件存在”被
@@ -17,7 +17,7 @@
 | Telegram | 完整 | PASS | PENDING | IMPLEMENTATION PASS |
 | Discord | 完整 | PASS | PENDING | IMPLEMENTATION PASS |
 | Single-runtime Gateway | 完整 | PASS | 三平台并发待凭据 | IMPLEMENTATION PASS |
-| 飞书兼容性 | 保持 | 12/12 PASS | 仍 PENDING | 无自动化回归 |
+| 飞书兼容性 | 保持 | 12/12 PASS | 仍 PENDING | 兼容回归 PASS |
 | Phase 5 总体 | 完整 | PASS | 两个平台 PENDING | 非 production verified |
 
 ## 2. Config、安装与 Doctor
@@ -106,7 +106,7 @@ flowchart TB
 
 | Gate | Expected | Actual | Result |
 | --- | ---: | ---: | --- |
-| Python unittest | all pass | 456/456；1 expected skip | PASS |
+| Python unittest | all pass | 462/462；1 expected skip | PASS |
 | TypeScript | all pass | 25/25 | PASS |
 | Offline Agent | all active | 24/24 | PASS |
 | Feishu Channel | retain old | 12/12 | PASS |

@@ -601,7 +601,7 @@ git commit -m "feat(telegram): 打通 long polling、delivery 与 progress exper
 
 ### Step 7.1 — RED the Discord admission matrix
 
-- [ ] 定义不依赖 SDK 的 narrow view：
+- [x] 定义不依赖 SDK 的 narrow view：
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -1053,7 +1053,7 @@ git commit -m "test(live): 增加 secret-free Telegram/Discord acceptance harnes
 ### Step 13.1 — RED documentation fact scan
 
 - [x] 先建立检查命令，证明文档仍写 `DESIGN READY / IMPLEMENTATION PENDING`、12 cases、240 checks 或单 Feishu gateway。
-- [x] 运行新鲜全量门禁后记录实际 456 Python、25 TypeScript 和 implementation commit，不提前写预期数字。
+- [x] 运行新鲜全量门禁后记录实际 462 Python、25 TypeScript 和 implementation commit，不提前写预期数字。
 
 Run RED:
 
@@ -1073,7 +1073,7 @@ Expected RED: 至少命中 Phase 5 尚未实现的进度文本。
 - [x] 本地运行指南写 Telegram BotFather/Discord Developer Portal 的最小权限、Token 环境变量、allowlist 获取方式、启动和停止；没有真实 ID 或 Secret。
 - [x] completion audit 建立“要求 → 代码 → 测试 → evidence → 状态”逐项表；`docs/evals/README.md` 增加 v0.5.0 发布入口。
 - [x] `docs/evals/releases/v0.5.0.md` 写实际 commits/gates；无 live evidence 的平台保持 `LIVE PENDING`。
-- [x] 两个 progress HTML 同步 Phase 5、456+25、32/32、640/640、Phase 6 下一步和 commit links。
+- [x] 两个 progress HTML 同步 Phase 5、462+25、32/32、640/640、Phase 6 下一步和 commit links。
 - [x] `scripts/validate_docs.py` 使用 stdlib 检查 Markdown 相对链接、fence/Mermaid 配对、HTML 标签和 required facts；`tests/test_documentation.py` 覆盖坏链接、未闭合 Mermaid 与缺失 HTML closing tag。
 - [x] `AGENTS.md` 保留中英各半 commit 规范，并增加 Phase 5 gate 命令。
 - [x] 未修改用户拥有的 `docs/README.md`；工程索引使用 `docs/engineering/README.md`。
@@ -1125,19 +1125,19 @@ git commit -m "docs(phase5): 同步 multi-channel 架构、运维与真实进度
 
 ### Step 14.1 — Focused platform gates
 
-- [ ] Telegram:
+- [x] Telegram：focused 15/15 PASS（合并兼容门禁共 89/89）：
 
 ```bash
 uv run python -m unittest tests.test_telegram_adapter tests.test_telegram_transport -v
 ```
 
-- [ ] Discord:
+- [x] Discord：focused 14/14 PASS（合并兼容门禁共 89/89）：
 
 ```bash
 uv run python -m unittest tests.test_discord_adapter tests.test_discord_transport -v
 ```
 
-- [ ] Shared Core / Feishu compatibility:
+- [x] Shared Core / Feishu compatibility：focused 60/60 PASS：
 
 ```bash
 uv run python -m unittest tests.test_channel_contracts tests.test_channel_experience \
@@ -1148,27 +1148,27 @@ uv run python -m unittest tests.test_channel_contracts tests.test_channel_experi
 
 ### Step 14.2 — Full deterministic gates
 
-- [ ] Python full suite:
+- [x] Python full suite：462/462 PASS：
 
 ```bash
 uv run python -m unittest discover -s tests -v
 ```
 
-- [ ] TypeScript compatibility:
+- [x] TypeScript compatibility：25/25 PASS（Node 24.14.0 / TypeScript 5.9.3）：
 
 ```bash
 pnpm --dir tui test
 ```
 
-- [ ] Agent and Channel regression:
+- [x] Agent and Channel regression：24/24、32/32、20 runs / 640/640 PASS：
 
 ```bash
-uv run miniclaw eval run --suite agent --root evals/scenarios
+uv run miniclaw eval run --suite offline --root evals/scenarios
 uv run miniclaw eval run --suite channel --root evals/scenarios
 uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
 ```
 
-- [ ] Static/build/docs:
+- [x] Static/build/docs：Ruff、sdist/wheel、documentation 6/6、仓库与外部 HTML validation PASS：
 
 ```bash
 uv run ruff check .
@@ -1181,16 +1181,17 @@ uv run python scripts/validate_docs.py --root . \
 
 ### Step 14.3 — Security and clean-diff gates
 
-- [ ] Secret scan 只报告变量名，禁止打印命中的 value：
+- [x] Secret scan 只报告文件名，禁止打印命中的 value；placeholder allowlist 后零命中：
 
 ```bash
-git grep -n -E '(bot[0-9]{6,}:|MINICLAW_(TELEGRAM|DISCORD)_BOT_TOKEN=.+|app_secret=.+)' \
-  -- ':!uv.lock'
+git grep -l -E \
+  '([0-9]{6,}:[A-Za-z0-9_-]{30,}|MINICLAW_(TELEGRAM|DISCORD)_BOT_TOKEN=[^[:space:]]+|MINICLAW_FEISHU_APP_SECRET=[^[:space:]]+)' \
+  -- . ':!tests/**' ':!docs/superpowers/plans/**' ':!uv.lock'
 ```
 
 Expected: 无命中。
 
-- [ ] 检查本次 diff 不包含用户文件：
+- [x] 检查本次 diff 不包含用户文件：
 
 ```bash
 git diff --check
@@ -1198,24 +1199,24 @@ git status --short
 git diff --name-only d0e5031..HEAD
 ```
 
-- [ ] 确认 `docs/README.md` 和两份架构草稿仍未被 stage/commit。
+- [x] 确认 `docs/README.md` 和两份架构草稿仍未被 stage/commit。
 
 ### Step 14.4 — Requirement-by-requirement audit
 
-- [ ] 配置/extras/Doctor：Task 1、10 的 tests 和文档证据。
-- [ ] 公共契约/Approval/Experience：Task 2–4 的 tests。
-- [ ] Telegram Adapter/Transport：Task 5–6 的 tests。
-- [ ] Discord Adapter/Transport：Task 7–8 的 tests。
-- [ ] one Runtime/multi pipeline/failure isolation：Task 9 tests。
-- [ ] 20 新 cases、≥32/32、≥640/640：Task 11 output。
-- [ ] live harness 与诚实状态：Task 12、release record。
-- [ ] 全文档和双 progress：Task 13 mechanical checks。
-- [ ] 将每项写入 `docs/evals/releases/v0.5.0.md` 的 exit table，缺证据就不能勾选。
+- [x] 配置/extras/Doctor：Task 1、10 的 tests 和文档证据。
+- [x] 公共契约/Approval/Experience：Task 2–4 的 tests。
+- [x] Telegram Adapter/Transport：Task 5–6 的 tests。
+- [x] Discord Adapter/Transport：Task 7–8 的 tests。
+- [x] one Runtime/multi pipeline/failure isolation：Task 9 tests。
+- [x] 20 新 cases、≥32/32、≥640/640：Task 11 output。
+- [x] live harness 与诚实状态：Task 12、release record。
+- [x] 全文档和双 progress：Task 13 mechanical checks。
+- [x] 将每项写入 `docs/evals/releases/v0.5.0.md` 的 exit table，缺证据就不能勾选。
 
 ### Step 14.5 — Record final actuals and commit
 
-- [ ] 把本计划所有已完成项改为 `[x]`，填入实际 Python/TS/eval/soak 数字和 commits。
-- [ ] 将 progress 页从 `IMPLEMENTATION IN PROGRESS` 更新为真实状态：
+- [x] 把本计划所有已完成项改为 `[x]`，填入实际 Python/TS/eval/soak 数字和 commits。
+- [x] 将 progress 页从 `IMPLEMENTATION IN PROGRESS` 更新为真实状态：
   - deterministic gates 全绿：`IMPLEMENTATION PASS`；
   - Telegram/Discord 未做 live：分别保留 `LIVE PENDING`；
   - 只有两平台 15 项真实验收都通过，才允许 `PRODUCTION VERIFIED`。

@@ -37,7 +37,7 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > Phase 3 已增加安全 Markdown Memory、经审批的 daily memory 写入、惰性 `SKILL.md` 激活，以及保留原始消息的
 > persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek
 > live eval runner与真实 `lark-cli`/Node 路径闭环仍未完成。当前回归基线为
-> **456 Python tests + 25 TypeScript tests + 24/24 Agent cases + 32/32 Channel cases + 640/640 local soak**。
+> **462 Python tests + 25 TypeScript tests + 24/24 Agent cases + 32/32 Channel cases + 640/640 local soak**。
 > Telegram 与 Discord 当前都为 **LIVE PENDING**；本机飞书真实 WebSocket、权限和 20 轮对话也仍待人工验收。离线 fake SDK
 > 通过不冒充 production verified。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
@@ -261,7 +261,7 @@ miniclaw/
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |
 | [Eval v0.3.0 发布记录](docs/evals/releases/v0.3.0.md) | Phase 3 的 296 tests、24/24 场景与已知边界 |
 | [Eval v0.4.0 发布记录](docs/evals/releases/v0.4.0.md) | Phase 4 的 391+25 tests、24+12 回归与真实飞书待验收项 |
-| [Eval v0.5.0 发布记录](docs/evals/releases/v0.5.0.md) | Phase 5 的 456+25 tests、24+32 回归、640 soak 与双平台 LIVE PENDING |
+| [Eval v0.5.0 发布记录](docs/evals/releases/v0.5.0.md) | Phase 5 的 462+25 tests、24+32 回归、640 soak 与双平台 LIVE PENDING |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

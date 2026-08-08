@@ -17,7 +17,7 @@
 
 ```mermaid
 flowchart LR
-    CHANGE["代码或 Prompt 变更"] --> UNIT["456 Python + 25 TypeScript"]
+    CHANGE["代码或 Prompt 变更"] --> UNIT["462 Python + 25 TypeScript"]
     UNIT --> VALIDATE["eval validate"]
     VALIDATE --> OFFLINE["24 active offline cases"]
     OFFLINE --> CHANNEL["32 active Channel cases"]
@@ -27,7 +27,7 @@ flowchart LR
     LIVE --> RECORD["release record"]
 ```
 
-当前 Phase 5 门禁是 **IMPLEMENTATION PASS**：456/456 Python（1 项预期 skip）、25/25 TypeScript、24/24
+当前 Phase 5 门禁是 **IMPLEMENTATION PASS**：462/462 Python（1 项预期 skip）、25/25 TypeScript、24/24
 active offline Agent、32/32 Channel、640/640 local soak、Ruff 与 docs gate 全绿。Telegram 与 Discord 的真实
 验收均为 **LIVE PENDING**。
 Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已单独完成 3 次 planning probe。
