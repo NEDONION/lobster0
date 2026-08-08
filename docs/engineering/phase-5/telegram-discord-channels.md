@@ -6,6 +6,9 @@
 >
 > 说明：本文描述已经锁定的落地方案，不把尚未开发的功能写成已实现
 
+逐文件、逐测试、逐提交的执行步骤见
+[Phase 5 Telegram/Discord Implementation Plan](../../superpowers/plans/2026-08-08-phase-5-telegram-discord.md)。
+
 ## 1. 大白话说明
 
 Phase 4 已经让 MiniClaw 能把飞书消息安全地送进 Agent。Phase 5 不是再写两个聊天机器人，而是把同一条生产

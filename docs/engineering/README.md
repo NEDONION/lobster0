@@ -46,7 +46,8 @@
 | [Telegram 与 Discord 工程落地说明](phase-5/telegram-discord-channels.md) | 单 Runtime/多 Pipeline、GatewaySupervisor、long polling、Discord Gateway、身份/会话、Typing/Preview、Approval、分片、故障隔离、32-case gate 与 live 口径。 | Telegram/Discord 生产代码、20 条新场景、真实平台验收。 |
 
 Phase 5 当前是 **DESIGN READY / IMPLEMENTATION PENDING**。详细权威规格见
-[Phase 5 Telegram/Discord 工程设计](../superpowers/specs/2026-08-08-phase-5-telegram-discord-design.md)。
+[Phase 5 Telegram/Discord 工程设计](../superpowers/specs/2026-08-08-phase-5-telegram-discord-design.md)，逐项开发步骤见
+[Phase 5 Telegram/Discord Implementation Plan](../superpowers/plans/2026-08-08-phase-5-telegram-discord.md)。
 
 ## Phase 1：CLI Agent 闭环（历史实现）
 
