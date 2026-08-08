@@ -15,6 +15,7 @@ from miniclaw.doctor import CheckStatus, run_local_checks
 from miniclaw.env import DotEnvError
 from miniclaw.evals.cases import EvalCaseError, load_cases
 from miniclaw.evals.runner import run_offline_suite
+from miniclaw.gateway import GatewayConfigError, GatewayRuntimeError, run_gateway
 from miniclaw.paths import PathConfigurationError, build_state_paths, resolve_home
 from miniclaw.storage.database import DatabaseError
 from miniclaw.storage.migrations import MigrationError
@@ -38,6 +39,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     doctor_parser = subparsers.add_parser("doctor", help="check local MiniClaw state")
     doctor_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute MiniClaw state directory",
+    )
+    gateway_parser = subparsers.add_parser(
+        "gateway",
+        help="run the long-lived Feishu gateway",
+    )
+    gateway_parser.add_argument(
         "--home",
         dest="command_home",
         help="absolute MiniClaw state directory",
@@ -80,6 +90,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.command == "init":
         return _run_init(paths)
+
+    if arguments.command == "gateway":
+        try:
+            asyncio.run(run_gateway(paths))
+        except (ConfigError, DotEnvError, GatewayConfigError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        except (GatewayRuntimeError, DatabaseError, MigrationError, OSError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 5
+        except KeyboardInterrupt:
+            print("Cancelled.", file=sys.stderr)
+            return 130
+        return 0
 
     if not _is_tui_terminal():
         print("error: MiniClaw TUI requires an interactive terminal", file=sys.stderr)

@@ -289,12 +289,24 @@ class ChannelManager:
             if activity is not None:
                 await activity.start()
             if self._approvals is not None:
-                command = await self._approvals.handle_text(
-                    user_id=self.owner_id,
-                    actor_open_id=event.external_user_id,
-                    text=event.content,
-                    on_event=None if activity is None else activity.on_event,
-                )
+                try:
+                    command = await self._approvals.handle_text(
+                        user_id=self.owner_id,
+                        actor_open_id=event.external_user_id,
+                        text=event.content,
+                        on_event=None if activity is None else activity.on_event,
+                    )
+                except asyncio.CancelledError:
+                    if activity is not None:
+                        await activity.finish(content=None, failed=True)
+                    self._fail_running_event(event.key, "channel_turn_interrupted")
+                    raise
+                except Exception:
+                    if activity is not None:
+                        await activity.finish(content=None, failed=True)
+                    self._create_failure_delivery(session.id, event)
+                    self._inbound.mark_failed(event.key, "channel_control_failed")
+                    return
                 if command.handled:
                     visible = (
                         command.result.content
