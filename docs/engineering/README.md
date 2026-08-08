@@ -39,6 +39,15 @@
 本机尚未配置飞书 App ID/App Secret，因此 production live acceptance 仍待执行；P2.3B 的真实 `lark-cli` 闭环与
 当前版本 live DeepSeek release eval 也是独立待办。准确状态是“代码与离线门禁完成”，不是“真实飞书已验证”。
 
+## Phase 5：Telegram 与 Discord
+
+| 文档 | 已锁定设计 | 尚未实现 |
+| --- | --- | --- |
+| [Telegram 与 Discord 工程落地说明](phase-5/telegram-discord-channels.md) | 单 Runtime/多 Pipeline、GatewaySupervisor、long polling、Discord Gateway、身份/会话、Typing/Preview、Approval、分片、故障隔离、32-case gate 与 live 口径。 | Telegram/Discord 生产代码、20 条新场景、真实平台验收。 |
+
+Phase 5 当前是 **DESIGN READY / IMPLEMENTATION PENDING**。详细权威规格见
+[Phase 5 Telegram/Discord 工程设计](../superpowers/specs/2026-08-08-phase-5-telegram-discord-design.md)。
+
 ## Phase 1：CLI Agent 闭环（历史实现）
 
 > `miniclaw chat` 与 line REPL 已移除。下表用于理解演进历史；当前入口以 P2.2B 文档为准。

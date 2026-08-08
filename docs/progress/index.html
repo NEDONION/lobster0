@@ -343,7 +343,7 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · Phase 4 implementation complete · live Feishu E2E / soak pending</div>
+      <div class="branch">target: main · Phase 4 implementation complete · Phase 5 design ready · live gates pending</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
@@ -441,8 +441,8 @@
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 5</div>
-          <div><h3>Telegram 与 Discord</h3><p>复用统一 Channel 契约与同一 Agent Core。</p></div>
-          <span class="pill">PLANNED</span>
+          <div><h3>Telegram 与 Discord</h3><p>单 Runtime/多 Pipeline、GatewaySupervisor、long polling、Discord Gateway、Approval、故障隔离与 32-case gate 已完成详细设计；生产代码待 TDD 落地。</p></div>
+          <span class="pill">DESIGN READY</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 6</div>
@@ -539,14 +539,14 @@
         <div class="decision"><code>eval gate</code><p>每次提交跑 391 Python、25 TypeScript tests、24/24 offline Agent 与 12/12 Channel；20 轮 local soak 已通过，live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
-        <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；任意 Shell、当前版本 live eval、lark-cli smoke 和飞书真实 E2E 仍未完成。</p></div>
+        <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；Phase 5 Telegram/Discord 设计已锁定但生产代码未开始；任意 Shell、当前版本 live eval、lark-cli smoke 和飞书真实 E2E 仍未完成。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/2d4d032">2d4d032 docs + progress</a> · <a href="https://github.com/NEDONION/mini-claw/commit/269f8dd">269f8dd fail-safe + local soak</a> · <a href="https://github.com/NEDONION/mini-claw/commit/c1069d4">c1069d4 observability</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
       <span>Last updated · 2026-08-08 · 391 Python + 25 TypeScript tests + 24/24 offline Agent cases、12/12 Channel cases、local soak 240/240 + Ruff</span>
-      <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-4/feishu-channel.md">Feishu engineering</a> · <a href="../engineering/phase-4/completion-audit.md">completion audit</a> · <a href="../engineering/phase-4/testing-and-operations.md">operations</a> · <a href="../evals/releases/v0.4.0.md">v0.4.0 record</a></span>
+      <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-4/feishu-channel.md">Feishu engineering</a> · <a href="../engineering/phase-5/telegram-discord-channels.md">Phase 5 design</a> · <a href="../engineering/phase-4/completion-audit.md">completion audit</a> · <a href="../evals/releases/v0.4.0.md">v0.4.0 record</a></span>
     </footer>
   </main>
 </body>
