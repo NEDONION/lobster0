@@ -234,6 +234,6 @@ Core 必须发送 turn_finished/turn_failed/turn_cancelled。未知异常由 Bri
 
 - dist 尚不进入 Git；源码安装后需要一次 pnpm build；
 - Textual 尚未删除；
-- 真实 lark-cli P2.3B、飞书 Channel、Telegram、Discord 尚未因本次 TUI 迁移自动完成；
+- lark-cli P2.3B 与飞书 Channel 已由后续阶段完成；Telegram、Discord 尚未实现；
 - 桌面版尚未实现；
 - 不公开模型隐藏思维链，只展示 Provider 明确返回的 Reasoning 和 MiniClaw 可审计活动。

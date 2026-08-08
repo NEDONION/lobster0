@@ -2,7 +2,7 @@
 
 > 状态：`write_file`、`edit_file`、严格 `[tools]` 配置和 Workspace 写边界已经进入代码并通过测试
 >
-> 当前仓库门禁：391/391 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS；本模块首次退出门禁为 194 tests
+> 当前仓库门禁：412/412 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、12/12 Channel cases、Ruff PASS；本模块首次退出门禁为 194 tests
 >
 > 当前入口：两个写 Tool 已注册到 pi-tui/Textual fallback 共享 Runtime，但只能在参数绑定 Approval 被 Owner 选择
 > Allow once 后执行
@@ -225,4 +225,4 @@ git diff --check
 - 当前不支持创建目录、删除、移动、regex replace、模糊 patch 或批量编辑。
 - 当前 AgentRuntime 注册 4 个只读系统/文件 Tool、2 个需审批文件 Tool、`run_command` 与 `http_get`，共 8 个。
 - 参数绑定 `ApprovalRepository + ToolExecution.approval_id`、waiting/child Turn 和 TUI Modal 已完成；命令与
-  HTTPS 复用同一生命周期，下一缺口是 P2.3B 真实 `lark-cli` 闭环。
+  HTTPS 复用同一生命周期；P2.3B 后续已完成 Personal 多根与 `lark-cli` 发现，真实认证仍走 live gate。

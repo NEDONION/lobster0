@@ -1,7 +1,7 @@
 # Phase 2 加固：TUI 可观测、长文本与分级审批
 
 > 状态：已实现并验证
-> 当前门禁：391/391 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS
+> 当前门禁：412/412 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、12/12 Channel cases、Ruff PASS
 > 范围：当前 pi-tui 与迁移期 Textual fallback；不代表 `lark-cli` 或飞书 Channel 已完成
 
 ## 1. 大白话结论
@@ -199,14 +199,14 @@ flowchart TD
 git diff --check
 ```
 
-当前全仓结果：391/391 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS。
+当前全仓结果：412/412 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、12/12 Channel cases、Ruff PASS。
 
 ## 10. 仍未完成
 
-- NVM/Node 下真实 `lark-cli` help/auth/runtime 闭环；
-- 飞书消息 Channel 与交互卡片；
+- NVM/Node 下 `lark-cli` 发现与 runtime 已完成；真实认证、Scope 和企业权限仍需 live gate；
+- 飞书消息 Channel 与交互卡片代码已完成，真实平台 E2E 仍待凭据验收；
 - 当前 TUI 版本的 DeepSeek live release smoke；
 - 持久规则的图形化查看/撤销；
 - 草稿跨进程持久化和长历史虚拟化。
 
-这些能力继续放在 P2.3B、Phase 4 或后续 UX 阶段，不因为本轮按钮和 UI 已完成而提前声明。
+这些剩余能力继续放在 Phase 4 live gate 或后续 UX 阶段，不因为离线代码完成而提前声明生产验证。

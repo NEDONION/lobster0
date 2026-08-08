@@ -21,7 +21,7 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > 通过官方 `lark-channel-sdk` 接入飞书 WebSocket，私聊和白名单群 mention 与 TUI 复用同一个 `AgentRuntime`。
 > 消息先进入 SQLite Inbox，再由有界 Worker 处理；回复经 durable Outbox 分片、重试并使用稳定 UUID。Typing、
 > 安全进度卡、Owner 审批卡片/文本 fallback、重启恢复、断线映射、脱敏 JSON 日志、durable Channel Audit
-> 和 13 项 Doctor 均已接线。
+> 和 15 项 Doctor 均已接线。
 > 同一个 `AgentRuntime`
 > 连接 DeepSeek、TurnService、SQLite、十个系统/文件/命令/HTTPS/Memory Tool 与参数绑定 Approval。TUI 支持流式回答、
 > Provider reasoning、可逐项展开的 Tool 参数/执行/结果 Trace、Enter 发送、Shift+Enter 换行、Esc 取消、
@@ -33,9 +33,10 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > 都在同一 TUI 接受参数绑定审批。Session 规则只活在当前 Runtime；Always 只在成功后为安全 exact argv 或
 > exact hostname 写入脱敏规则，inline AppleScript 和文件写入不能持久放行。
 > Phase 3 已增加安全 Markdown Memory、经审批的 daily memory 写入、惰性 `SKILL.md` 激活，以及保留原始消息的
-> persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek
-> live eval runner与真实 `lark-cli`/Node 路径闭环仍未完成。当前回归基线为
-> **391 Python tests + 25 TypeScript tests + 24/24 Agent cases + 12/12 Feishu Channel cases**。
+> persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；Personal Profile
+> 已接通 Home 普通文件只读、受控外部写入、NVM/uv/pnpm 等用户 CLI 的确定性发现和 `lark-cli --version` 离线
+> 纵切。当前回归基线为 **412 Python tests + 27 TypeScript tests + 28/28 Agent cases + 12/12 Feishu Channel cases**。
+> 真实 `lark-cli auth status`、飞书 Scope 与企业权限仍是显式 live gate，不由离线测试冒充。
 > 本机尚未配置飞书 App ID/App Secret，因此真实平台 WebSocket、权限和 20 轮对话仍待人工验收；离线 fake SDK
 > 通过不冒充 production verified。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
@@ -49,9 +50,9 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 | --- | --- |
 | 交互入口 | 本地 CLI、飞书机器人私聊 |
 | Agent Core | OpenAI-compatible 模型、原生 Tool Calling、最多 8 轮工具循环 |
-| 工具 | Workspace 文件、HTTPS GET、受限 Shell |
+| 工具 | Workspace/Personal 文件、HTTPS GET、受控本机 CLI |
 | 数据 | SQLite 会话与审计、Markdown 长期记忆和 Skills |
-| 安全 | 用户白名单、Workspace 边界、命令允许列表、危险操作审批 |
+| 安全 | 用户白名单、Profile 多根边界、敏感路径硬拒绝、命令允许列表、危险操作审批 |
 | 演进 | 反馈、回放评测、Prompt/Skill 提案、人工批准和回滚 |
 
 ```mermaid
@@ -111,13 +112,17 @@ uv run python -m miniclaw --version
 飞书 Gateway 还需安装可选依赖：`uv sync --extra feishu`。`init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md`、`MEMORY.md` 或已有 Skill；它会为新环境
 创建一个 `skills/summarize/SKILL.md` 示例。`doctor`
 只执行离线检查，不连接模型或 IM 平台；Node/pi-tui 检查同样只读。裸 `miniclaw` 从当前目录的私密 `.env` 读取 Key，并要求真实
-TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`，也可在配置的
-Workspace 内调用 `read_file`、`glob`、`grep`；`write_file` / `edit_file` 会先生成参数绑定 Approval，只有
+TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`。新安装默认
+使用 `personal` Profile：`read_file`、`glob`、`grep` 可读取 Home 下普通文件以及存在的 Homebrew/Application 根，
+但 Keychain、浏览器登录库、私钥和应用凭据目录始终硬拒绝；旧配置缺少 `[permissions]` 时保持 Workspace-only。
+`write_file` / `edit_file` 只可写 Workspace 与 Documents/Desktop/Downloads/IDE 项目根，并会先生成参数绑定 Approval，只有
 Owner 在 TUI 中查看完整归一化参数并选择可用授权范围后才执行；Esc 和 **Deny** 都不会写入。文件写入只提供
 **Allow once**；安全 exact argv / exact hostname 可由 Core 提供 **Allow this session** 或 **Always allow**。模型仍不能运行
 任意 Shell 字符串；`run_command` 只接收 `program + args[]`，安全命令未命中 exact rule 时也走同一审批弹窗。
 macOS 应用名不确定时，模型可显式调用 `system_info` 的 `applications` 分区；该分区默认不读取，只返回固定
 `/Applications` 中有界、去路径的真实 `.app` 名称，再由 `run_command(open, [-a, Exact Name])` 请求审批。
+Personal Profile 会在启动时确定性构造 PATH，发现系统目录、显式 executable roots、NVM、uv、pnpm、
+`~/.local/bin`、Cargo 与 Bun；不 source shell rc，也不继承 API Key、Cookie、Proxy 等环境变量。
 `eval` 完全离线，不读取 `.env`、不需要 `init` 或 API Key；`offline` 通过真实 Agent/Policy/Tool/SQLite 链路，
 `channel` 通过真实 Adapter/Inbox/Worker/Approval/Outbox 运行版本化场景；`--repeat` 可形成有界的本地 endurance
 gate，不能代替真实平台验收。`doctor` 会安全读取当前目录的私密
@@ -175,8 +180,9 @@ uv run miniclaw
 
 这三条命令只给模型提示和 Tool Schema，模型是否调用取决于 Provider；它们不是已完成的真实 DeepSeek 文件
 smoke。可以在 `config.toml` 的 `[workspace].path` 或绝对 `MINICLAW_WORKSPACE` 环境变量中设置其他 Workspace。
-`.env`、`.git-credentials`、`.pypirc`、`.docker/config.json`、私钥、MiniClaw 数据库及 sidecar、
-状态文件和 Workspace 外路径会被拒绝。`read_file` 按完整行跨 512 KiB 分页；单行超过该上限时返回
+`.env`、`.git-credentials`、`.pypirc`、`.docker/config.json`、私钥、MiniClaw 数据库及 sidecar 和状态文件
+始终拒绝；Workspace Profile 额外拒绝 Workspace 外路径，Personal Profile 则按已解析的读取根放行普通文件。
+`read_file` 按完整行跨 512 KiB 分页；单行超过该上限时返回
 `line_too_large`，不会发布可能丢数据的 cursor。
 
 ## Repository Layout
@@ -237,9 +243,10 @@ miniclaw/
 | [Python Core + pi-tui Bridge](docs/engineering/phase-2/python-core-pi-tui-bridge.md) | 版本化 NDJSON、TypeScript 展示层、安装调试、长文本/选择/审批与跨进程测试 |
 | [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace、角色、长文本、双语、审计、选择、错误与审批的 25 个 pi-tui/跨进程用例和 Textual fallback 回归 |
 | [TUI 可观测与分级审批加固](docs/engineering/phase-2/tui-observability-and-scoped-approvals.md) | 真实 Token 遥测、Session/Always exact scope、双语消息层级与草稿恢复 |
-| [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
+| [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
+| [Phase 2.3B Personal Machine 权限与 CLI 发现](docs/engineering/phase-2/personal-machine-permissions.md) | Workspace/Personal Profile、多根读写、敏感路径、NVM/uv/pnpm CLI 发现、最小环境、Doctor 与回归场景 |
 | [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |
-| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | Python + TypeScript tests、24+12 场景、crash recovery、Doctor 与发布手册 |
+| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | Python + TypeScript tests、28+12 场景、crash recovery、Doctor 与发布手册 |
 | [Phase 3 Memory、Skills 与 Compaction](docs/engineering/phase-3/memory-skills-compaction.md) | Markdown 记忆、审批写入、Skill 惰性激活、持久化摘要、恢复和测试矩阵 |
 | [Phase 4 飞书生产 Channel](docs/engineering/phase-4/feishu-channel.md) | WebSocket、白名单、durable Inbox/Outbox、Worker、进度卡与跨 Channel 审批 |
 | [Phase 4 Channel/Gateway 概览](docs/engineering/phase-4/feishu-channel-core.md) | 模块地图、Admission、状态机、恢复和真实 E2E 边界 |
@@ -250,6 +257,7 @@ miniclaw/
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |
 | [Eval v0.3.0 发布记录](docs/evals/releases/v0.3.0.md) | Phase 3 的 296 tests、24/24 场景与已知边界 |
 | [Eval v0.4.0 发布记录](docs/evals/releases/v0.4.0.md) | Phase 4 的 391+25 tests、24+12 回归与真实飞书待验收项 |
+| [Eval v0.4.1 发布记录](docs/evals/releases/v0.4.1.md) | Personal Machine 权限、412+27 tests、28+12 回归与本机 lark-cli 只读纵切 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

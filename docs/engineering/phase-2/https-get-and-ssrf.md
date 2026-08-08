@@ -2,7 +2,7 @@
 
 > 状态：`http_get` 已进入 pi-tui 与 Textual fallback 共享的唯一 `AgentRuntime`
 >
-> 当前门禁：391/391 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS
+> 当前门禁：412/412 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、12/12 Channel cases、Ruff PASS
 
 ## 1. 大白话解释
 
@@ -229,4 +229,4 @@ hostname、每跳重验、跨 host 拒绝、第四跳、类型/编码/字节预�
 - 当前使用每个请求一个 stdlib HTTPS connection；有测量到吞吐瓶颈后再考虑连接池。
 - 多公网 IP 当前固定排序后的第一个地址；没有健康探测或故障切换。
 - DNSSEC、企业代理、mTLS 与自定义 CA 不在个人 MVP 范围。
-- P2.3B 的 `lark-cli` 仍是独立本机命令集成；不能用 `http_get` 代替飞书认证 API 调用。
+- P2.3B 已完成 `lark-cli` 发现与只读版本纵切；不能用 `http_get` 代替飞书认证、Scope 或 OpenAPI 调用。

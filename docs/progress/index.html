@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · Phase 4 implementation complete · Phase 5 implementation plan ready · live gates pending</div>
+      <div class="branch">target: main · Phase 4 + Personal Machine permissions complete · live gates pending</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui：Codex 风格活动流、25 万字符粘贴、稳定选择、真实 Token 审计、十个 Tool、参数绑定审批、Markdown Memory、惰性 Skills 与 persistent compaction 共用同一个 Python AgentRuntime、Policy 和 SQLite；Textual 保留 onboarding/fallback。飞书 Channel Core、durable Inbox/Outbox、WebSocket、Gateway 生命周期、分片重试、卡片审批、脱敏 JSON 日志与 durable Audit 已进入代码；下一步是真实 E2E 与 soak。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui：Codex 风格活动流、25 万字符粘贴、稳定选择、真实 Token 审计、十个 Tool、参数绑定审批、Markdown Memory、惰性 Skills 与 persistent compaction 共用同一个 Python AgentRuntime、Policy 和 SQLite。Personal Profile 已让普通 Home 文件、有限写根与 NVM/uv/pnpm 等用户 CLI 进入同一受控链路，敏感凭据目录保持硬拒绝；下一步是真实飞书 E2E。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Phase 4 implementation gate</span>
         <strong>P4 CODE ✓</strong>
-        <p>391 Python + 25 TypeScript tests · Agent 24/24 · Channel 12/12 · local soak 240/240 · live pending</p>
+        <p>412 Python + 27 TypeScript tests · Agent 28/28 · Channel 12/12 · local soak 240/240 · live pending</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">391+25 <small>passing</small></span>
+        <span class="metric-value">412+27 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -426,7 +426,7 @@
         </article>
         <article class="phase done">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool、安全、pi-tui 与回归门禁</h3><p>P2.1 Tool、P2.2 写入/Approval、P2.3A 命令、P2.4 HTTPS、Python Core ↔ pi-tui Bridge 与终端稳定化均已验证；P2.3B lark-cli 作为独立待办保留。</p></div>
+          <div><h3>Tool、安全、pi-tui 与回归门禁</h3><p>P2.1 Tool、P2.2 写入/Approval、P2.3A exact argv、P2.3B Personal Machine 权限与用户 CLI 发现、P2.4 HTTPS、Python Core ↔ pi-tui Bridge 与终端稳定化均已验证。</p></div>
           <span class="pill">COMPLETED</span>
         </article>
         <article class="phase done">
@@ -465,7 +465,7 @@
           <li class="complete">Tool Contract 与唯一 Registry</li>
           <li class="complete">Policy + ToolExecutor 唯一执行入口</li>
           <li class="complete">脱敏 system_info 与固定本机查询</li>
-          <li class="complete">Workspace Guard：逃逸、符号链接与敏感路径拒绝</li>
+          <li class="complete">Workspace/Personal Profile：多根读取、有限写根、逃逸、符号链接与敏感路径拒绝</li>
           <li class="complete">read_file、glob、grep 的有界只读结果</li>
           <li class="complete">ToolRun / Audit 原子状态迁移</li>
           <li class="complete">Policy deny 脱敏审计（无 denied ToolRun）</li>
@@ -473,7 +473,7 @@
           <li class="complete">AgentRuntime / Agent 离线 Tool 集成验证</li>
           <li class="complete">PROTO-001：empty tool arguments 事故回归</li>
           <li class="complete">ACTION-OPEN-APP-001：direct open -a 与 Approval 事故回归</li>
-          <li class="complete">严格 JSONL Schema 与 24 条 Claw-like query</li>
+          <li class="complete">严格 JSONL Schema 与 28 条 Claw-like query（含四条 Personal/CLI 权限事故）</li>
           <li class="complete">真实 Agent / Policy / Tool / SQLite offline runner</li>
           <li class="complete">miniclaw eval list / validate / run</li>
           <li class="complete">严格 [tools] / command / HTTP 配置边界</li>
@@ -504,13 +504,15 @@
           <li class="complete">上下文 / Token / Tool / 迭代 / 耗时真实审计栏</li>
           <li class="complete">Provider usage 缺失显示 N/A，/status 显示 request ID</li>
           <li class="complete">旧 chat / tui / approvals 入口已删除</li>
-          <li class="complete">run_command：exact argv、固定 PATH 与硬禁止</li>
+          <li class="complete">run_command：exact argv、确定性用户 PATH 与硬禁止</li>
+          <li class="complete">NVM、uv、pnpm、local、Cargo、Bun CLI 发现与 lark-cli wrapper 纵切</li>
+          <li class="complete">最小子进程环境：不继承 API Key、Cookie、Proxy 与 Python path</li>
           <li class="complete">最小子进程环境、输出上限与进程组超时</li>
           <li class="complete">安全命令未命中规则时复用 TUI scoped approvals</li>
           <li class="complete">应用名显式发现 + direct open -a 的 DeepSeek planning 3/3</li>
           <li class="complete">http_get：HTTPS-only、全部 DNS 公网校验与精确 authority</li>
           <li class="complete">固定 IP/TLS hostname、每跳重验与有界文本响应</li>
-          <li class="complete">stale ToolRun crash recovery 与 doctor 十三项只读检查</li>
+          <li class="complete">stale ToolRun crash recovery 与 doctor 十五项只读检查</li>
           <li class="complete">MEMORY.md + 今日/昨日 daily memory 稳定注入</li>
           <li class="complete">read_memory 只读与 propose_memory 参数绑定审批</li>
           <li class="complete">凭据双边界过滤、64 KiB 上限与 symlink fail closed</li>
@@ -525,7 +527,7 @@
           <li class="complete">miniclaw gateway 生命周期、双信号关闭与离线飞书 Doctor</li>
           <li class="complete">Channel correlation、外部 ID 短哈希、JSON 日志与 SQLite Audit</li>
           <li class="complete">WebSocket reconnect、Inbox/Turn/Delivery/Typing/Card 可观测状态</li>
-          <li class="complete">391 Python + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases + local soak 240/240 + Ruff 门禁</li>
+          <li class="complete">412 Python + 27 TypeScript tests + 28/28 Agent cases + 12/12 Channel cases + local soak 240/240 + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -534,19 +536,19 @@
         <div class="decision"><code>model</code><p>deepseek-v4-pro</p></div>
         <div class="decision"><code>credentials</code><p>本地 .env，0600，永不进入 Git。</p></div>
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
-        <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
+        <div class="decision"><code>safety</code><p>Workspace/Personal 多根 Guard、敏感凭据硬拒绝、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 391 Python、25 TypeScript tests、24/24 offline Agent 与 12/12 Channel；20 轮 local soak 已通过，live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 412 Python、27 TypeScript tests、28/28 offline Agent 与 12/12 Channel；20 轮 local soak 已通过，live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
-        <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；Phase 5 Telegram/Discord 设计与逐文件 TDD 实施计划已锁定，生产代码进入 Task 1；真实平台 live gates 仍必须用凭据单独验收。</p></div>
+        <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Personal Machine 权限、用户 CLI 发现、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；Phase 5 Telegram/Discord 设计已锁定；真实平台 live gates 仍必须用凭据单独验收。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/e049098">e049098 Phase 5 implementation plan</a> · <a href="https://github.com/NEDONION/mini-claw/commit/d0e5031">d0e5031 Phase 5 design</a> · <a href="https://github.com/NEDONION/mini-claw/commit/269f8dd">269f8dd fail-safe + local soak</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 391 Python + 25 TypeScript tests + 24/24 offline Agent cases、12/12 Channel cases、local soak 240/240 + Ruff</span>
-      <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-4/feishu-channel.md">Feishu engineering</a> · <a href="../engineering/phase-5/telegram-discord-channels.md">Phase 5 design</a> · <a href="../superpowers/plans/2026-08-08-phase-5-telegram-discord.md">Phase 5 implementation plan</a> · <a href="../engineering/phase-4/completion-audit.md">completion audit</a> · <a href="../evals/releases/v0.4.0.md">v0.4.0 record</a></span>
+      <span>Last updated · 2026-08-08 · 412 Python + 27 TypeScript tests + 28/28 offline Agent cases、12/12 Channel cases、local soak 240/240 + Ruff</span>
+      <span><a href="../engineering/phase-2/personal-machine-permissions.md">Personal permissions</a> · <a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-4/feishu-channel.md">Feishu engineering</a> · <a href="../engineering/phase-5/telegram-discord-channels.md">Phase 5 design</a> · <a href="../engineering/phase-4/completion-audit.md">completion audit</a> · <a href="../evals/releases/v0.4.1.md">v0.4.1 record</a></span>
     </footer>
   </main>
 </body>

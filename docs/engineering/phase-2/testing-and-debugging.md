@@ -2,7 +2,7 @@
 
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> 当前 Phase 4 基线：391/391 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS；历史 PTY smoke PASS
+> 当前 Phase 4 基线：412/412 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、12/12 Channel cases、Ruff PASS；历史 PTY smoke PASS
 >
 > 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
@@ -21,7 +21,7 @@ Phase 2 不只要求“某个 Tool 能跑”。每次版本都必须证明：
 
 ```mermaid
 flowchart TB
-    UNIT["Layer 1: 391 Python + 25 TypeScript tests"] --> OFFLINE["Layer 2: 24 versioned Agent cases"]
+    UNIT["Layer 1: 412 Python + 27 TypeScript tests"] --> OFFLINE["Layer 2: 28 versioned Agent cases"]
     OFFLINE --> CHANNEL["Layer 3: 12 deterministic Channel cases"]
     CHANNEL --> LIVE["Layer 4: release-only DeepSeek / Feishu smoke"]
     LIVE --> DOC["Release record + progress docs"]
@@ -48,7 +48,7 @@ git diff --check
 - diff check 无空白错误；
 - 文档中的计数来自这次新鲜输出，不手算、不预测。
 
-## 3. 24 条 Claw-like 回归场景
+## 3. 28 条 Claw-like 回归场景
 
 ### 3.1 Phase 1 / P2.1 基线
 
@@ -280,7 +280,7 @@ uv run miniclaw
 
 - `command_forbidden`：命中 Shell/删除/远程/提权等硬禁止，不能审批；
 - `approval_required`：合法 exact argv 等待 Owner；
-- `command_not_found`：固定 PATH 中找不到程序；
+- `command_not_found`：当前 Profile 的确定性 PATH 中找不到程序；
 - `tool_timeout`：整个进程组超过预算并已回收。
 
 ### HTTP 被拒绝
@@ -300,9 +300,9 @@ uv run miniclaw
 - [x] Approval 绑定 owner、TTL、Tool 名和规范参数 hash；
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
-- [x] Doctor 十三项且网络/命令/数据库修改为零；
-- [x] 391/391 Python tests + 25/25 TypeScript tests；
-- [x] 24/24 offline Agent cases、12/12 Channel cases；
+- [x] Doctor 十五项且网络/命令/数据库修改为零；
+- [x] 412/412 Python tests + 27/27 TypeScript tests；
+- [x] 28/28 offline Agent cases、12/12 Channel cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
 - [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
 - [x] Provider reasoning、Tool 参数/状态/耗时/结果可展开回归；

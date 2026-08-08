@@ -42,3 +42,5 @@ Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已
 - [v0.1.0：offline-v1 首个 Agent 场景基线](releases/v0.1.0.md)
 - [v0.2.0：Phase 2 Tool、安全、Approval 与 live smoke](releases/v0.2.0.md)
 - [v0.3.0：Phase 3 Memory、Skills 与 Compaction](releases/v0.3.0.md)
+- [v0.4.0：Phase 4 飞书 Channel implementation gate](releases/v0.4.0.md)
+- [v0.4.1：Personal Machine 权限与本机 CLI 发现](releases/v0.4.1.md)
