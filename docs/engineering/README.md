@@ -12,12 +12,12 @@
 | [Phase 2.2A：安全写边界与原子文件 Tool](phase-2/filesystem-tools.md) | 严格 Tools 配置、`resolve_write`、`write_file`、`edit_file`、原子发布与失败保护。 | Runtime/TUI 接线、Shell、HTTP、飞书。 |
 | [Phase 2.2：参数绑定 Approval 与续执行](phase-2/approval-lifecycle.md) | canonical hash、waiting/child Turn、Owner/TTL、approve/deny、重启恢复、单次消费与审计。 | Shell、HTTP、飞书卡片。 |
 | [Phase 2：单入口 TUI](phase-2/single-entry-tui.md) | pi-tui 默认入口与 Textual onboarding/fallback 的迁移关系。 | 飞书、历史虚拟化。 |
-| [Python Core + pi-tui Bridge](phase-2/python-core-pi-tui-bridge.md) | NDJSON v1、Node 子进程、紧凑活动流、长文本/选择/审批、安装调试和跨进程回归。 | 发布包内置构建产物、删除 fallback。 |
+| [Python Core + pi-tui Bridge](phase-2/python-core-pi-tui-bridge.md) | NDJSON v1、Node 子进程、长文本/选择/审批、安装调试和跨进程回归。 | 发布包内置构建产物、删除 fallback。 |
 | [TUI 可观测、长文本与分级审批](phase-2/tui-observability-and-scoped-approvals.md) | 默认中文/可切英文、草稿恢复、真实 Token 审计、Session/Always exact scope。 | lark-cli、飞书 Channel、规则管理 UI。 |
 | [TUI 回归测试规范](phase-2/tui-regression-testing.md) | 25 个 pi-tui 协议/虚拟终端/跨进程用例、Textual fallback 和发布门禁。 | live LLM 硬断言。 |
 | [Phase 2.3A：exact-argv 命令执行](phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确 argv 规则、最小环境、进程组超时、输出上限与 TUI 审批。 | 任意 Shell、真实 `lark-cli`/Node 路径 smoke、OS sandbox。 |
 | [Phase 2.4：Pinned HTTPS 与 SSRF 防护](phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 公网校验、固定 IP/TLS hostname、每跳重验、文本预算、审批与 crash recovery。 | 浏览器、认证 Header、任意方法、企业代理。 |
-| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 当前 382 Python + 25 TypeScript tests、24 个 Agent 与 12 个 Channel 场景、stale-run recovery、Doctor、历史 live smoke 和发布手册。 | 真实飞书 E2E、soak、自动 Prompt/Skill 演进。 |
+| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 当前 382 Python + 25 TypeScript tests、24 Agent + 12 Channel 场景、恢复、Doctor 和发布手册。 | 真实飞书 E2E、soak、自动 Prompt/Skill 演进。 |
 | [Phase 2.2：Approvals CLI（历史迁移）](phase-2/cli-approvals.md) | 记录旧入口为何被单入口 TUI 取代。 | 当前可执行命令。 |
 
 ## Phase 3：Memory、Skills 与上下文预算
@@ -26,18 +26,17 @@
 | --- | --- | --- |
 | [Memory、Skills 与上下文压缩](phase-3/memory-skills-compaction.md) | Markdown Memory、审批写入、凭据过滤、Skill metadata/惰性正文、persistent compaction、runtime snapshot。 | 向量库、Skill 代码执行、自动修改 Prompt/Skill、飞书 Channel。 |
 
-功能主线已验证到 Phase 3（全仓 382 Python + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases），默认 pi-tui、
-Textual fallback、TUI 可观测/分级审批和 P2.4 HTTPS 安全能力继续保留。P2.3B 的真实 `lark-cli` 闭环仍是
-明确待办，不阻塞后续主线。
-
-## Phase 4：飞书 Channel
+## Phase 4：飞书生产 Channel
 
 | 文档 | 已验证内容 | 不包含 |
 | --- | --- | --- |
-| [飞书 Channel 与 Gateway](phase-4/feishu-channel-core.md) | allowlist、durable Inbox/Outbox、有限 Worker、官方 WebSocket Transport、Gateway 生命周期、Unicode 分片、恢复、streaming card 与审批。 | 真实飞书账号 E2E、部署/soak。 |
+| [飞书 Channel 与 Gateway 概览](phase-4/feishu-channel-core.md) | 模块地图、数据流、Admission、状态机和当前完成度。 | 真实飞书账号 E2E、部署/soak。 |
+| [飞书生产 Channel 工程落地](phase-4/feishu-channel.md) | official WebSocket SDK、严格 Adapter、schema v2 Inbox/Outbox、Worker、Delivery、Typing/进度卡、Approval 与 Gateway。 | Telegram/Discord、多用户、文件消息、真实账号验收。 |
+| [运行、测试与故障排查](phase-4/testing-and-operations.md) | 13 项 Doctor、382+25 tests、24+12 回归、live smoke、重启/断线/审批验收规范。 | 未配置凭据时的真实平台结论。 |
 
-Phase 4 Core 与 Gateway 进程入口已进入代码，但真实平台验收还没有完成；质量主线也仍需补当前版本 R3 live
-DeepSeek release eval。
+功能主线已完成 Phase 4 implementation（382 Python + 25 TypeScript tests + 24/24 Agent + 12/12 Channel）。
+本机尚未配置飞书 App ID/App Secret，因此 production live acceptance 仍待执行；P2.3B 的真实 `lark-cli` 闭环与
+当前版本 live DeepSeek release eval 也是独立待办。准确状态是“代码与离线门禁完成”，不是“真实飞书已验证”。
 
 ## Phase 1：CLI Agent 闭环（历史实现）
 

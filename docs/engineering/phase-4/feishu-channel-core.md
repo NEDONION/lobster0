@@ -73,7 +73,7 @@ sequenceDiagram
 - 私聊只允许 `allowed_open_ids`；Owner 必须显式包含在 allowlist；
 - 群聊默认关闭；打开后只允许 `allowed_chat_ids`，且必须 @机器人；
 - 只接受文本消息；机器人、自发消息、空标识和超长文本被忽略；
-- `event_id` 优先来自事件头，缺失时才退化到 message id；
+- `event_id` 保留用于事件冲突诊断；`message_id` 是业务幂等键，不能用一次投递的 event ID 代替；
 - `repr()`、异常与审计不包含消息正文、App Secret 或平台标识。
 
 飞书身份映射到一个本地 Owner 与稳定 Session。平台字段不能提供本地 `user_id`、Workspace、Tool 权限或
@@ -81,7 +81,8 @@ Approval scope。
 
 ## 5. Inbox、并发和幂等
 
-Inbox 使用 `(channel, account_id, event_id)` 等数据库约束防止重连重复事件。`ChannelManager.receive()` 的顺序是：
+Inbox 同时约束 event ID 和 message ID，但 `InboundEventRepository.record()` 先按
+`(channel, account_id, external_message_id)` 判断重复业务消息。`ChannelManager.receive()` 的顺序是：
 
 1. 原子记录事件；
 2. 重复事件立即返回，不再次执行 Agent；
@@ -110,10 +111,10 @@ Inbox 使用 `(channel, account_id, event_id)` 等数据库约束防止重连重
 这些能力不能改变事实层：
 
 - typing reaction 是 best effort，添加或移除失败不影响 Turn；
-- streaming card 只消费 Core 已发布的 RunEvent；创建/更新失败后降级到普通消息；
+- streaming progress card 只消费公开 `model_text_delta`；reasoning、Tool 参数和内部 Trace 不进入卡片；
 - Approval card 只显示 Core 允许的 grant modes；
 - 卡片 payload 绑定 Approval ID、Owner 和原参数 hash；
-- 不支持卡片或发送失败时，原卡片 Delivery 标记 `superseded`，再原子创建 Markdown 文本 fallback；
+- 进度卡不是权威结果；最终 Markdown 始终提前进入 durable Outbox，卡片失败不会决定最终回复是否存在；
 - 文本 `approve/deny` 与 card action 都进入同一个 `continue_approval()`，不会复制执行逻辑。
 
 ## 8. 配置与凭据
@@ -177,5 +178,7 @@ Phase 4 的剩余工作不能用单元测试冒充：
 3. 形成不含消息正文、Open ID 或凭据的 Phase 4 release record；
 4. 再决定是否开放群聊和多账号，而不是提前泛化。
 
-设计约束见 [Phase 4 飞书 Channel 设计](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)，
+配置、运行、12 条回归、真实 smoke 和排障步骤见
+[Phase 4 运行与测试手册](testing-and-operations.md)。设计约束见
+[Phase 4 飞书 Channel 设计](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)，
 逐步实现记录见 [Phase 4 TDD 计划](../../superpowers/plans/2026-08-08-phase-4-feishu-channel.md)。

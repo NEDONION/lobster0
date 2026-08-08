@@ -1,7 +1,7 @@
 # Phase 4：飞书生产 Channel 工程设计
 
 > 日期：2026-08-08
-> 状态：Approved for implementation
+> 状态：Implementation complete / live acceptance pending
 > 目标分支：`main`
 > 适用范围：单用户、自托管 MiniClaw；飞书企业自建应用
 
@@ -22,7 +22,7 @@ Phase 0 至 Phase 3 已经完成：
 - OpenAI-compatible Provider、Agent Loop 与统一 TurnService；
 - 十个 Tool、Policy、Approval、审计与崩溃恢复；
 - Textual TUI、Trace、Memory、Skills、上下文压缩；
-- 296 条确定性测试和 24 条 active Agent 回归基线。
+- 382 条 Python、25 条 TypeScript 确定性测试、24 条 active Agent 回归和 12 条 Channel 回归基线。
 
 当前缺口不是 Agent 不会思考，而是它只在本地前台进程中可用。Phase 4 的价值是把它变成一个长期在线、
 可从 IM 随时访问的个人 Agent，同时验证现有 Core 是否真的与 Channel 解耦。
@@ -367,15 +367,19 @@ stateDiagram-v2
 - Typing 失败只写脱敏 Audit，不能让正式 Turn 失败；
 - 重启清理不依赖内存 token，过期 Typing 由平台自然结束。
 
-### 14.2 流式卡片
+### 14.2 流式进度卡片
 
 - Provider 可见文本 delta 通过现有 `RunEvent` 聚合；
 - 限频更新同一张卡片，不为每个 token 调 API；
 - reasoning、Tool 参数、密钥和内部错误不进入卡片正文；
 - Tool Trace 只显示安全摘要；
-- 卡片创建或更新失败时，标记原卡片 Delivery `superseded`，最终内容改发普通 Markdown；
+- 卡片创建或更新失败时停止本轮进度视图；最终普通 Markdown 始终提前进入 durable Outbox，不以卡片成功为前提；
 - Provider 在已经显示部分文本后失败，卡片明确标注未完成，不把半段内容伪装成成功；
 - 配置 `streaming_card=false` 时只发送最终普通消息。
+
+实现阶段作出一个更安全的收敛：进度卡不是权威 Delivery。无论卡片是否创建、更新或完成，最终 Markdown
+都由 Outbox 独立发送。这样进程崩溃后只需恢复 durable Markdown，不需要从易变卡片状态猜测用户是否已经
+收到完整结果。
 
 ## 15. Approval 跨 Channel 闭环
 
