@@ -105,6 +105,10 @@ async def run_channel_suite(cases: tuple[EvalCase, ...]) -> ChannelEvalSuiteResu
 
 async def _run_fixture(case: EvalCase) -> tuple[str, ...]:
     """把有限 fixture 名映射到真实 Adapter/SQLite/Worker 纵切。"""
+    if case.id.startswith(("TELEGRAM-", "DISCORD-")):
+        from miniclaw.evals.multi_channel import run_multi_channel_fixture
+
+        return await run_multi_channel_fixture(case)
     fixture = case.channel_fixture
     if fixture == "dm":
         result = _adapter().normalize(_MessageView(body_text=case.query))

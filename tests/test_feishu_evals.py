@@ -20,7 +20,9 @@ class FeishuChannelEvalTest(unittest.IsolatedAsyncioTestCase):
         cases = tuple(
             case
             for case in load_cases(PROJECT_ROOT / "evals" / "scenarios")
-            if case.status == "active" and "channel" in case.layers
+            if case.id.startswith("FEISHU-")
+            and case.status == "active"
+            and "channel" in case.layers
         )
 
         self.assertEqual(
@@ -50,7 +52,9 @@ class FeishuChannelEvalTest(unittest.IsolatedAsyncioTestCase):
         cases = tuple(
             case
             for case in load_cases(PROJECT_ROOT / "evals" / "scenarios")
-            if case.status == "active" and "channel" in case.layers
+            if case.id.startswith("FEISHU-")
+            and case.status == "active"
+            and "channel" in case.layers
         )
 
         suite = await run_channel_suite(cases)

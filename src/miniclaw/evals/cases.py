@@ -84,6 +84,11 @@ _CHANNEL_FIXTURES = {
     "delivery_retry",
     "card_fallback",
     "reconnect",
+    "group_reply",
+    "guild_mention",
+    "guild_no_mention",
+    "thread",
+    "isolation",
 }
 
 
@@ -138,7 +143,7 @@ def load_cases(root: Path) -> tuple[EvalCase, ...]:
         root: 只读场景目录。
 
     Returns:
-        按文件名和行号稳定排序的场景。
+        按 case ID 稳定排序的场景。
 
     Raises:
         EvalCaseError: 目录、编码、JSON 或任一场景字段无效。
@@ -168,7 +173,7 @@ def load_cases(root: Path) -> tuple[EvalCase, ...]:
                 )
             seen[case.id] = source
             cases.append(case)
-    return tuple(cases)
+    return tuple(sorted(cases, key=lambda case: case.id))
 
 
 def _reject_json_constant(value: str) -> None:

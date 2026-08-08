@@ -64,17 +64,17 @@ def write_cases(root: Path, name: str, rows: list[dict[str, object]]) -> Path:
 class EvalCaseLoaderTest(unittest.TestCase):
     """验证版本化场景在进入 runner 前已严格且安全地收窄。"""
 
-    def test_loads_valid_files_in_stable_file_and_line_order(self) -> None:
-        """多个 JSONL 必须按文件名和行号产生稳定顺序与来源。"""
+    def test_loads_valid_files_in_stable_case_id_order(self) -> None:
+        """多个 JSONL 必须按 case ID 产生稳定顺序，同时保留真实来源。"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            write_cases(root, "b.jsonl", [valid_case("CORE-003")])
-            write_cases(root, "a.jsonl", [valid_case("CORE-001"), valid_case("CORE-002")])
+            write_cases(root, "a.jsonl", [valid_case("CORE-003")])
+            write_cases(root, "b.jsonl", [valid_case("CORE-001"), valid_case("CORE-002")])
 
             cases = load_cases(root)
 
         self.assertEqual([case.id for case in cases], ["CORE-001", "CORE-002", "CORE-003"])
-        self.assertEqual(cases[0].source, "a.jsonl:1")
+        self.assertEqual(cases[0].source, "b.jsonl:1")
         self.assertEqual(cases[0].setup_files, (("notes/hello.txt", "MINICLAW_SENTINEL"),))
         self.assertEqual(cases[0].responses[0].content, "我是 MiniClaw。")
 
@@ -275,7 +275,7 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
             },
         )
         self.assertTrue(all("offline" in case.layers and case.responses for case in active))
-        self.assertEqual(len(channel), 12)
+        self.assertEqual(len(channel), 32)
         self.assertTrue(all(case.channel_fixture for case in channel))
         self.assertEqual(len({case.id for case in cases}), len(cases))
 

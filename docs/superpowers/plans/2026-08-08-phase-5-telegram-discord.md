@@ -885,16 +885,18 @@ git commit -m "feat(doctor): 增加 Telegram/Discord offline readiness diagnosti
 - Create: `evals/scenarios/discord-channel.v1.jsonl`
 - Create: `src/miniclaw/evals/multi_channel.py`
 - Modify: `src/miniclaw/evals/cases.py`
-- Modify: `src/miniclaw/evals/runner.py`
+- Modify: `src/miniclaw/evals/channel.py`
+- Modify: `src/miniclaw/cli.py`
 - Create: `tests/test_multi_channel_evals.py`
 - Modify: `tests/test_eval_cases.py`
-- Modify: `tests/test_eval_runner.py`
+- Modify: `tests/test_feishu_evals.py`
+- Modify: `tests/test_cli_eval.py`
 
 ### Step 11.1 — RED versioned fixture loading
 
-- [ ] Loader 发现并按 case ID 排序加载新 JSONL；重复 ID、未知 fixture、缺字段、额外字段、错误 version fail closed。
-- [ ] 两个文件各精确 10 条，不删除或改写原 12 条 Feishu cases。
-- [ ] 固定 ID：
+- [x] Loader 发现并按 case ID 排序加载新 JSONL；重复 ID、未知 fixture、缺字段、额外字段、错误 version fail closed。
+- [x] 两个文件各精确 10 条，不删除或改写原 12 条 Feishu cases。
+- [x] 固定 ID：
 
 ```text
 TELEGRAM-DM-001
@@ -931,19 +933,21 @@ Expected RED: loader 只认识现有 Feishu channel fixture。
 
 ### Step 11.2 — Implement real local vertical fixtures
 
-- [ ] Adapter cases 调用真实 pure adapter。
-- [ ] dedupe/restart 调用真实 SQLite repositories 与 Manager recovery。
-- [ ] Tool case 调用真实 `ReadFileTool + WorkspaceGuard + Policy`。
-- [ ] Approval case 调用真实 neutral v2 parser/controller，验证 once/deny 与非 Owner。
-- [ ] Delivery case 调用真实 splitter、DeliveryWorker 和 fake platform error。
-- [ ] Isolation case 同时起两个 fake ChannelRuntime：一个失败，另一个完成 durable reply。
-- [ ] evidence 只使用稳定短语，不包含正文、路径、Secret 或外部 ID。
+- [x] Adapter cases 调用真实 pure adapter。
+- [x] dedupe/restart 调用真实 SQLite repositories 与 Manager recovery。
+- [x] Tool case 调用真实 `ReadFileTool + WorkspaceGuard + Policy`。
+- [x] Approval case 调用真实 neutral v2 parser/controller，验证 once 与非 Owner；既有飞书 deny case 继续覆盖 deny。
+- [x] Delivery case 调用真实 splitter、DeliveryWorker 和 fake platform error。
+- [x] Isolation case 同时起两个 fake ChannelRuntime：一个降级，另一个完成 durable reply。
+- [x] evidence 只使用稳定短语，不包含正文、路径、Secret 或外部 ID。
 
 ### Step 11.3 — Make repeat semantics explicit
 
-- [ ] `--suite channel --repeat 20` 每轮重新创建临时 state，不能让上一轮 SQLite 数据影响下一轮。
-- [ ] 汇总必须报告 `cases_per_run=32`、`repeat=20`、`checks=640`；任一 case 失败返回非零。
-- [ ] `--json` 输出包含 commit、suite version、case IDs、passed/failed/duration，不包含环境或原始消息。
+- [x] `--suite channel --repeat 20` 每轮重新创建临时 state，不能让上一轮 SQLite 数据影响下一轮。
+- [x] 汇总报告 `cases_per_run=32`、`repeat=20`、`checks=640`；任一 case 失败返回非零。
+- [x] `--json` 输出包含 commit、suite version、case IDs、passed/failed/duration，不包含环境或原始消息。
+
+Actual gate (2026-08-08): `32/32` Channel cases、`640/640` checks、相关 37 tests 与 Ruff 全部通过；20-run JSON report 的 `failed=0`、`duration_ms=6866`。
 
 Run GREEN and soak:
 
@@ -961,8 +965,9 @@ Expected GREEN: 至少 `32/32`，soak 至少 `640/640`。
 ```bash
 git add evals/scenarios/telegram-channel.v1.jsonl \
   evals/scenarios/discord-channel.v1.jsonl src/miniclaw/evals/multi_channel.py \
-  src/miniclaw/evals/cases.py src/miniclaw/evals/runner.py \
-  tests/test_multi_channel_evals.py tests/test_eval_cases.py tests/test_eval_runner.py
+  src/miniclaw/evals/cases.py src/miniclaw/evals/channel.py src/miniclaw/cli.py \
+  tests/test_multi_channel_evals.py tests/test_eval_cases.py \
+  tests/test_feishu_evals.py tests/test_cli_eval.py
 git commit -m "test(channel): 固化 20 个 Telegram/Discord regression scenarios"
 ```
 

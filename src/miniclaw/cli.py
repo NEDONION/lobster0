@@ -2,8 +2,11 @@
 
 import argparse
 import asyncio
+import json
 import os
+import re
 import sqlite3
+import subprocess
 import sys
 from collections.abc import Sequence
 from pathlib import Path
@@ -75,6 +78,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=_bounded_eval_repeat,
         default=1,
         help="repeat the selected suite 1..1000 times for a local endurance gate",
+    )
+    eval_run.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="emit one redacted machine-readable report",
     )
     return parser
 
@@ -203,7 +212,11 @@ def _run_eval(arguments: argparse.Namespace) -> int:
         print("error: no active channel eval cases", file=sys.stderr)
         return 2
 
+    json_output = bool(arguments.json_output)
     failed = 0
+    passed = 0
+    checks = 0
+    duration_ms = 0
     if arguments.suite in {"offline", "all"}:
         offline_passed = 0
         offline_total = 0
@@ -214,8 +227,11 @@ def _run_eval(arguments: argparse.Namespace) -> int:
             offline_passed += suite.passed
             offline_total += suite.total
             offline_duration += suite.duration_ms
+            passed += suite.passed
+            checks += suite.total
+            duration_ms += suite.duration_ms
             offline_runs = iteration
-            if arguments.repeat == 1 or suite.failed:
+            if not json_output and (arguments.repeat == 1 or suite.failed):
                 for result in suite.cases:
                     if result.passed:
                         print(f"PASS {result.case_id} {result.duration_ms}ms")
@@ -227,7 +243,9 @@ def _run_eval(arguments: argparse.Namespace) -> int:
             failed += suite.failed
             if suite.failed:
                 break
-        if arguments.repeat == 1:
+        if json_output:
+            pass
+        elif arguments.repeat == 1:
             print(
                 f"Offline eval: {offline_passed}/{offline_total} passed, "
                 f"{failed} failed ({offline_duration}ms)."
@@ -248,8 +266,11 @@ def _run_eval(arguments: argparse.Namespace) -> int:
             channel_passed += channel_suite.passed
             channel_total += channel_suite.total
             channel_duration += channel_suite.duration_ms
+            passed += channel_suite.passed
+            checks += channel_suite.total
+            duration_ms += channel_suite.duration_ms
             channel_runs = iteration
-            if arguments.repeat == 1 or channel_suite.failed:
+            if not json_output and (arguments.repeat == 1 or channel_suite.failed):
                 for result in channel_suite.cases:
                     if result.passed:
                         print(f"PASS {result.case_id} {result.duration_ms}ms")
@@ -262,7 +283,9 @@ def _run_eval(arguments: argparse.Namespace) -> int:
             failed += channel_suite.failed
             if channel_suite.failed:
                 break
-        if arguments.repeat == 1:
+        if json_output:
+            pass
+        elif arguments.repeat == 1:
             print(
                 f"Channel eval: {channel_passed}/{channel_total} passed, "
                 f"{channel_failed} failed ({channel_duration}ms)."
@@ -272,4 +295,51 @@ def _run_eval(arguments: argparse.Namespace) -> int:
                 f"Channel local soak: {channel_passed}/{channel_total} checks passed "
                 f"across {channel_runs}/{arguments.repeat} runs ({channel_duration}ms)."
             )
+    if json_output:
+        selected = (
+            offline
+            if arguments.suite == "offline"
+            else channel
+            if arguments.suite == "channel"
+            else (*offline, *channel)
+        )
+        print(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "suite": arguments.suite,
+                    "suite_version": 1,
+                    "commit": _repository_commit(),
+                    "case_ids": [case.id for case in selected],
+                    "cases_per_run": len(selected),
+                    "repeat": arguments.repeat,
+                    "checks": checks,
+                    "passed": passed,
+                    "failed": failed,
+                    "duration_ms": duration_ms,
+                },
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            )
+        )
     return 1 if failed else 0
+
+
+def _repository_commit() -> str:
+    """best-effort 读取当前本地 commit；失败时返回稳定占位符。"""
+    project_root = Path(__file__).resolve().parents[2]
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=project_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+    commit = result.stdout.strip().lower()
+    return commit if re.fullmatch(r"[0-9a-f]{40}", commit) else "unknown"
