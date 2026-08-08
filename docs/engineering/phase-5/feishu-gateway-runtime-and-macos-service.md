@@ -1,4 +1,6 @@
-# Phase 5.1：飞书 Gateway 运行时、处理中表情与 macOS 常驻
+# v0.5.1 Stabilization：飞书 Gateway 运行时、处理中表情与 macOS 常驻
+
+> 编号说明：历史材料曾称“Phase 5.1”；它属于 Feishu 运行加固，不改变架构 Phase 5 的 Telegram/Discord 定义。
 
 > 当前状态（2026-08-08）：**REAL BOT CONFIGURED / GATEWAY READY VERIFIED / OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
 >

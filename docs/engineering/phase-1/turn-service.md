@@ -1,5 +1,11 @@
 # Phase 1 工程文档：TurnService
 
+> 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 Turn 闭环）
+>
+> 当前替代：TurnService 已持久化完整 Tool transcript、Approval 续执行、crash recovery、Session lock 与
+> runtime snapshot；当前 Tool 事务见[Tool Runtime](../phase-2/tool-runtime-and-system-info.md)，上下文恢复见
+> [Memory、Skills 与上下文压缩](../phase-3/memory-skills-compaction.md)。
+
 ## 1. 模块目的
 
 `src/miniclaw/agent/turn.py` 是所有 Channel 最终进入 Agent Core 的用例边界。Phase 1 由 CLI 调用；飞书、
@@ -97,8 +103,8 @@ ModelMessage(
 )
 ```
 
-Phase 1 数据库只保存 User 和最终 Assistant，因此不需要恢复历史 Tool Calls/reasoning。Phase 2 若需要在
-未完成工具流程中恢复，必须从 `tool_runs` 重建，不把 reasoning 混入普通 Message content。
+Phase 1 快照中的数据库只保存 User 和最终 Assistant，因此当时不恢复历史 Tool Calls/reasoning。当前实现已经
+持久化完整 Tool transcript，并在异常历史恢复时 fail closed；reasoning 仍不混入普通 Message content。
 
 ## 7. 终态保证
 
@@ -224,11 +230,11 @@ Phase 4 Gateway 会增加：
 
 这些能力应包在 TurnService 外围或扩展输入契约，不复制 AgentRunner。
 
-## 15. 已知限制与升级条件
+## 15. Phase 1 当时的限制与后续升级
 
-- 只接受 CLI conversation ID，没有统一 InboundMessage；Phase 4 升级。
-- 没有 Session 锁；当前 CLI 串行足够。
-- 用户输入写入成功而进程硬崩时可能留下 queued/running；Gateway Phase 增加启动恢复。
-- 历史最多 20 条 Message，不做压缩。
-- 中间 Tool Runs 不持久化；Phase 2 实现。
-- TurnService 不负责 Delivery；Channel 发送状态由后续 deliveries Repository 管理。
+- Phase 1 只接受 CLI conversation ID；统一 InboundMessage 已由 Phase 4/5 Channel 实现。
+- Phase 1 没有 Session 锁；当前实现已经为 Channel 并发增加相应串行边界。
+- Phase 1 硬崩可能留下 queued/running；当前启动恢复会把过期运行记录转成稳定终态。
+- Phase 1 历史最多 20 条且不压缩；Phase 3 已实现持久化 compaction。
+- Phase 1 不持久化中间 Tool Runs；Phase 2 已实现完整事务与恢复。
+- TurnService 仍不负责平台 Delivery；Channel Outbox/Delivery Repository 负责发送状态。

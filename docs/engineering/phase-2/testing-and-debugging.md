@@ -1,5 +1,7 @@
 # Phase 2 工程文档：回归门禁、恢复与调试手册
 
+> 文档性质：`CURRENT` 全仓 Gate 手册 + `HISTORICAL SNAPSHOT` Phase 2 release 证据；段落中的阶段范围均明确标注。
+>
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
 > 当前 Phase 5.2 全仓基线：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS；历史 PTY smoke PASS
@@ -313,7 +315,8 @@ uv run miniclaw
 - [x] Ruff 与 diff check；
 - [x] README、架构、工程索引、进度页、TUI 回归规范和 v0.2.0 release record 同步。
 
-Phase 2 当前不包含：任意 Shell、删除/移动 Tool、后台任务、OS sandbox、多用户 RBAC、飞书审批卡片、Memory/Skills、
-自动修改部署源代码。这些不应在回归结果中被描述成已完成。
+Phase 2 的阶段交付当时不包含：任意 Shell、删除/移动 Tool、后台任务、OS sandbox、多用户 RBAC、飞书审批卡片、
+Memory/Skills 和自动修改部署源代码。当前仓库后来已经实现飞书审批卡片与 Memory/Skills；其余项目仍不能因为
+Phase 2 Gate 全绿而描述成已完成。
 
 TUI 专项分层、33 个稳定行为 ID 和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。

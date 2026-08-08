@@ -22,6 +22,8 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 
 > [!IMPORTANT]
 > 当前代码已完成 Phase 5 的本地实现门禁；Feishu/Telegram/Discord 的完整真实 Live Gate 仍按各自证据单独标记。
+> v0.5.3 Core 已加入 SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner 与异常 Tool 历史恢复；
+> Feishu/Discord 严格 15/15 仍为 Live Pending。
 > 飞书正常回答由一张 `Claw Trail` Agent Card 承载，展示脱敏步骤、Tool、安全目标、状态、耗时、过程摘要和最终回答。
 > 缺少 `tools.mode` 的配置默认使用 `autopilot`，但只对本地入口和经过验证的 Owner 私聊生效；硬安全边界不变。
 > Memory 当前是手工/审批式 v1；Memory Autopilot 已完成设计和 A～E 实施计划，**尚未开发**。本文严格区分“已经实现”和“规划中”。
@@ -224,7 +226,7 @@ git diff --check
 
 ```mermaid
 flowchart LR
-    P53["Phase 5.3\nLive Gate"] --> MA["Memory A\nIdentity + Disclosure"]
+    P53["v0.5.3\nLive Evidence 收口"] --> MA["Memory A\nIdentity + Disclosure"]
     MA --> MB["Memory B\nBuffer + Flush"]
     MB --> MC["Memory C\nFTS Recall"]
     MC --> MD["Memory D\nGovernance"]
@@ -236,7 +238,9 @@ flowchart LR
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-最近已完成 Owner `AUTOPILOT` 默认值与飞书 `Claw Trail` Agent Card；下一步收口 Feishu/Discord Live Gate，随后实现 Memory A～E，再进入自治任务。路线图不代表相应代码已经存在。
+Owner `AUTOPILOT` 默认值、飞书 `Claw Trail` Agent Card 与 v0.5.3 Core hardening 已完成。当前需要收口
+Feishu/Discord 严格 Live Evidence；下一条功能实现主线是 Memory A～E，完成后再进入自治任务。路线图不代表
+相应代码已经存在。
 
 ## 仓库结构
 
@@ -266,9 +270,10 @@ tests/           # Python unittest
 | [系统架构](docs/architecture/20260807_系统架构.md) | 模块边界、数据流与安全原则 |
 | [本地运行指南](docs/getting-started/20260807_本地运行指南.md) | 安装、配置、TUI、Gateway 与排障 |
 | [工程文档索引](docs/engineering/README.md) | 已实现模块与规划文档的边界 |
+| [开发与交付时间线](docs/engineering/development-timeline.md) | 架构 Phase、真实版本顺序与证据状态的对应关系 |
 | [开发进度页](docs/progress/index.html) | 当前 Phase、证据和下一步 |
-| [OpenClaw / Hermes Gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 竞品能力映射与 Phase 5.3→9 路线 |
-| [能力对齐工程落地总方案](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | Phase 5.3→9 的模块、数据和测试边界 |
+| [OpenClaw / Hermes Gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 竞品能力映射与 v0.5.3 Evidence→Memory A～E→Phase 6～9 路线 |
+| [能力对齐工程落地总方案](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | 后续交付的模块、数据和测试边界 |
 | [Memory A～E 实施计划](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | 可直接执行的 RED→GREEN 施工计划 |
 
 ## 参与开发

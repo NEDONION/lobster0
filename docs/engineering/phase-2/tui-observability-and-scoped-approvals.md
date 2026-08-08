@@ -2,7 +2,8 @@
 
 > 状态：已实现并验证
 > 当前门禁：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS
-> 范围：当前 pi-tui 与迁移期 Textual fallback；不代表 `lark-cli` 或飞书 Channel 已完成
+> 范围：本文只证明 pi-tui 与 Textual fallback 的这次加固；`lark-cli` 和飞书 Channel 后来已由独立交付完成，
+> 不能由本文的历史阶段 Gate 单独证明。
 
 ## 1. 大白话结论
 

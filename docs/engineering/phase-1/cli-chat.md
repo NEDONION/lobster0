@@ -1,13 +1,13 @@
 # Phase 1 工程文档：CLI Chat
 
 > [!WARNING]
-> 本文是 Phase 1 历史实现快照。Phase 2.2B 已移除 `miniclaw chat`、one-shot 与 `input()` REPL；当前唯一
-> 本文记录 Phase 1 历史 CLI；当前人类对话入口是裸 `miniclaw` 的默认 pi-tui，Textual 仅作 fallback。请优先阅读
+> 文档性质：`HISTORICAL SNAPSHOT`。Phase 2.2B 已移除 `miniclaw chat`、one-shot 与 `input()` REPL。
+> 当前人类对话入口是裸 `miniclaw` 的默认 pi-tui，Textual 仅作 fallback。请优先阅读
 > [单入口 TUI 工程文档](../phase-2/single-entry-tui.md)。
 
 ## 1. 模块目的
 
-`src/miniclaw/cli.py` 是 MiniClaw 当前唯一的用户入口。Phase 1 在已有 `init`、`doctor` 之上增加：
+`src/miniclaw/cli.py` 是 Phase 1 当时的用户入口。该阶段在已有 `init`、`doctor` 之上增加：
 
 ```bash
 miniclaw chat --message TEXT [--session ID] [--home /absolute/path]

@@ -22,6 +22,7 @@ MiniClaw brings the model, tools, permissions, approvals, persistence, and multi
 
 > [!IMPORTANT]
 > The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. Full live acceptance remains evidence-specific for each messaging platform. Memory is currently the manual, approval-based v1; Memory Autopilot has an approved design and an A–E implementation plan, but **has not been implemented**. This README keeps current behavior separate from planned work.
+> The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Strict Feishu/Discord 15/15 evidence is still pending.
 
 ## Why MiniClaw
 
@@ -221,7 +222,7 @@ git diff --check
 
 ```mermaid
 flowchart LR
-    P53["Phase 5.3\nLive Gate"] --> MA["Memory A\nIdentity + Disclosure"]
+    P53["v0.5.3\nLive Evidence closure"] --> MA["Memory A\nIdentity + Disclosure"]
     MA --> MB["Memory B\nBuffer + Flush"]
     MB --> MC["Memory C\nFTS Recall"]
     MC --> MD["Memory D\nGovernance"]
@@ -233,7 +234,7 @@ flowchart LR
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-Owner-scoped `AUTOPILOT` defaults and the Feishu `Claw Trail` Agent Card are now implemented. The immediate work is to close the Feishu/Discord Live Gate, implement Memory A–E, and only then begin autonomous tasks. Roadmap nodes do not imply that their code already exists.
+Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, and v0.5.3 Core hardening are now implemented. The immediate evidence work is to close the strict Feishu/Discord Live Gate; the next feature implementation is Memory A–E, followed by autonomous tasks. Roadmap nodes do not imply that their code already exists.
 
 ## Repository layout
 
@@ -263,9 +264,10 @@ tests/           # Python unittest suite
 | [System architecture](docs/architecture/20260807_系统架构.md) | Module boundaries, data flow, and safety principles |
 | [Local setup guide](docs/getting-started/20260807_本地运行指南.md) | Installation, config, TUI, Gateway, troubleshooting |
 | [Engineering index](docs/engineering/README.md) | Implemented modules versus planned designs |
+| [Development timeline](docs/engineering/development-timeline.md) | Mapping between architecture phases, delivery versions, and evidence states |
 | [Progress page](docs/progress/index.html) | Current phase, evidence, and next work |
-| [OpenClaw / Hermes gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | Capability mapping and the Phase 5.3–9 roadmap |
-| [Capability-alignment engineering roadmap](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | Module, data, and test boundaries for Phase 5.3–9 |
+| [OpenClaw / Hermes gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | The v0.5.3 evidence → Memory A–E → Phase 6–9 roadmap |
+| [Capability-alignment engineering roadmap](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | Module, data, and test boundaries for future deliveries |
 | [Memory A–E plan](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | Executable RED→GREEN delivery plan |
 
 ## Contributing

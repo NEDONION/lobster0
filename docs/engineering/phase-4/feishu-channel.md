@@ -1,6 +1,6 @@
 # Phase 4：飞书生产 Channel 工程落地
 
-> 状态：代码与离线门禁已完成；真实企业应用验收待凭据
+> 状态：`IMPLEMENTATION PASS / OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING`
 > 基线：SQLite schema v2，Agent 回归 29/29，Channel 回归 12/12
 > 入口：`miniclaw gateway`
 

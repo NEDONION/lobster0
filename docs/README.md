@@ -8,7 +8,7 @@
 1. 打开 [开发进度页](progress/index.html)，查看当前 Phase、验证状态和下一步交付。
 2. 阅读 [PRD](product/20260807_产品需求文档.md)，确认 v0.1 范围、非目标和验收标准。
 3. 阅读 [OpenClaw / Hermes 能力 Gap 与演进路线](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)，
-   用大白话了解当前已经有什么、还缺什么、为什么按 Phase 5.3 → 9 推进。
+   用大白话了解当前已经有什么、还缺什么，以及 v0.5.3 Evidence → Memory A～E → Phase 6～9 的顺序。
 4. 阅读 [Memory Autopilot 能力 Gap 与重构架构](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)，
    了解为什么新飞书 Session 会像失忆，以及跨渠道分级自动记忆的目标方案。
 5. 阅读 [Memory Autopilot 最佳实践与技术选型](engineering/memory-autopilot-best-practices-and-technology-selection.md)，
@@ -51,7 +51,8 @@
 | --- | --- |
 | [产品需求文档](product/20260807_产品需求文档.md) | 定位、用户流程、功能范围、图解、验收标准和里程碑 |
 | [系统架构](architecture/20260807_系统架构.md) | 运行边界、主链路、计划包结构和安全原则 |
-| [OpenClaw / Hermes 能力 Gap](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 当前能力、竞品方法映射、优先级、Phase 5.3→9 路线与非目标 |
+| [OpenClaw / Hermes 能力 Gap](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 当前能力、竞品方法映射、优先级、v0.5.3 Evidence→Memory A～E→Phase 6～9 路线与非目标 |
+| [开发与交付时间线](engineering/development-timeline.md) | Capability Phase 与真实 Git/Release 交付顺序的对应关系 |
 | [Memory Autopilot 能力 Gap](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 当前失忆根因、EverOS/Tencent/OpenClaw 映射、L0→L3、跨渠道与分级自动治理 |
 | [Memory Autopilot 正式设计](superpowers/specs/2026-08-08-memory-autopilot-design.md) | 已确认的产品语义、存储决策、安全边界、失败策略与验收门槛 |
 | [Memory Autopilot A～E 实施计划](superpowers/plans/2026-08-09-memory-autopilot.md) | 10 个 TDD 任务、精确文件/接口/命令、Crash Matrix 与完成定义 |
@@ -132,13 +133,14 @@
 | [Eval v0.4.1](evals/releases/v0.4.1.md) | Personal Machine 基线：412+27 tests、28+12 cases、lark-cli 只读纵切 |
 | [Eval v0.5.1](evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与当时 REAL BOT PENDING 的历史证据 |
 | [Eval v0.5.2](evals/releases/v0.5.2.md) | 530+30 tests、29+32 场景、飞书单卡片与 direct lark-cli Skill |
+| [Eval v0.5.3 Core](evals/releases/v0.5.3.md) | 562+30 tests、SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner；严格双平台 Live Pending |
 | [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md) | 对 OpenClaw/ZeroClaw/nanobot/RayClaw/Claw Bench/OpenJarvis 的方法映射 |
 | [R1/R2 实施计划](superpowers/plans/2026-08-08-agent-regression-benchmark.md) | TDD 任务、文件、命令与完成定义 |
 
 ## 设计与实施记录
 
-- [Phase 5.3 Feishu / Discord Live Gate 计划](superpowers/plans/2026-08-09-phase-5-3-feishu-discord-live-gate.md)：
-  SDK 日志脱敏、Gateway lease、受管 live runner 与两平台严格 15/15 Evidence。
+- [v0.5.3 Feishu / Discord Live Gate 计划](superpowers/plans/2026-08-09-phase-5-3-feishu-discord-live-gate.md)：
+  SDK 日志脱敏、Gateway lease/provenance 与受管 live runner 已实现；两平台严格 15/15 Evidence 待完成。
 - [Memory Autopilot A～E TDD 计划](superpowers/plans/2026-08-09-memory-autopilot.md)：
   跨渠道 Identity/Disclosure、Durable Flush、FTS5、自动治理、Reconcile 与 legacy migration。
 - [Phase 5.2 生产稳定化计划](superpowers/plans/2026-08-08-phase-5-2-production-hardening.md)：

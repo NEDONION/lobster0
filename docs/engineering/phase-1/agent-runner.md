@@ -1,7 +1,9 @@
 # Phase 1 工程文档：AgentRunner
 
-> 本文记录 Phase 1 当时的 Runner。Phase 2.1A 已删除临时 `ToolHandler` Mapping，改为 Policy 控制的
-> `ToolExecutor`，并持久化中间消息；当前实现见
+> 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 交付状态）
+>
+> 当前替代：Phase 2.1A 已删除临时 `ToolHandler` Mapping，改为 Policy 控制的 `ToolExecutor`，并持久化
+> 中间消息；当前实现见
 > [Tool Runtime 与 system_info](../phase-2/tool-runtime-and-system-info.md)。
 
 ## 1. 模块目的

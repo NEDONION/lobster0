@@ -1,21 +1,23 @@
 # Phase 4：飞书运行、测试与故障排查
 
-> 当前结论：implementation gate 已通过；真实企业应用 E2E、部署与 soak 待凭据。
+> 当前结论：implementation gate 已通过；真实 Bot、WebSocket 和 Owner DM Delivery 已验证；完整 15-case、
+> 部署与 soak 仍待独立 Live Evidence。
 > 当前全仓门禁：562/562 Python、30/30 TypeScript、Agent 29/29、Channel 32/32、20 轮 local soak 640/640、Ruff PASS。
-> Phase 5.1 已实现 Feishu Live Runner；真实状态仍是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
+> v0.5.1 Stabilization 已实现 Feishu Live Runner；真实状态仍是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
 
 ## 1. 先理解四层证据
 
 ```mermaid
 flowchart TB
-    P["Python contracts / integration\n412 tests"] --> T["pi-tui / Bridge\n27 tests"]
-    T --> A["Agent regression\n24 / 24"]
-    A --> C["Feishu Channel regression\n12 / 12"]
-    C --> L["Live Feishu acceptance\n真实 App 凭据，当前待执行"]
+    P["Current Python contracts / integration\n562 tests"] --> T["pi-tui / Bridge\n30 tests"]
+    T --> A["Agent regression\n29 / 29"]
+    A --> C["All Channel regression\n32 / 32"]
+    C --> L["Feishu strict acceptance\nOwner DM verified / 15-case pending"]
 ```
 
-前四层可以在 CI 和任意开发机重复，证明本地 Core、Channel 状态机和 UI Bridge 没有回归。最后一层才证明
-飞书租户权限、事件订阅、WebSocket、卡片和消息 API 真正可用。fake SDK 通过不能写成“生产验证完成”。
+前四层可以在 CI 和任意开发机重复，证明本地 Core、Channel 状态机和 UI Bridge 没有回归。真实 Owner DM 已证明
+基础租户权限、WebSocket 与消息 Delivery；完整 15-case 才能继续证明群聊、审批、重启、重连等严格边界。
+fake SDK 通过不能写成“生产验证完成”。
 
 ## 2. 准备飞书企业应用
 

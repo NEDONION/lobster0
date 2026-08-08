@@ -17,11 +17,11 @@ Phase 4 的代码、离线回归、恢复语义、安全边界、Gateway CLI、D
 ```mermaid
 flowchart LR
     D["Design requirements"] --> C["Code implementation"]
-    C --> U["412 Python + 27 TS tests"]
-    U --> E["29 Agent + 12 Channel evals"]
-    E --> L{"真实飞书凭据可用?"}
-    L -->|"否"| P["Implementation PASS\nLive PENDING"]
-    L -->|"是"| R["20 轮 + Tool + Approval\nrestart + reconnect + soak"]
+    C --> U["562 Python + 30 TS tests"]
+    U --> E["29 Agent + 32 Channel evals"]
+    E --> L{"严格 15-case evidence 完整?"}
+    L -->|"否"| P["Owner DM verified\n15-case pending"]
+    L -->|"是"| R["Tool + Approval\nrestart + reconnect + soak"]
     R --> X["Production verified"]
 ```
 
@@ -39,9 +39,9 @@ flowchart LR
 
 | # | 需求 | 实现证据 | 测试 / 回归证据 | 结论 |
 | --- | --- | --- | --- | --- |
-| 1 | official Feishu WebSocket，不开放入站端口 | `channels/feishu.py` 的 `FeishuChannel` + `TransportConfig(kind="ws")` | `test_feishu_transport.py` strict constructor contract | LOCAL PASS；真实握手 LIVE PENDING |
+| 1 | official Feishu WebSocket，不开放入站端口 | `channels/feishu.py` 的 `FeishuChannel` + `TransportConfig(kind="ws")` | `test_feishu_transport.py` strict constructor contract | LOCAL PASS；真实握手已由 Owner DM 纵切验证 |
 | 2 | App ID / Secret 只从环境读取 | `config.py`、`gateway.validate_gateway_environment()`、private `.env` loader | `test_gateway.py`、`test_env.py`、`test_doctor.py` | LOCAL PASS |
-| 3 | Owner 私聊文本 | `FeishuAdapter.normalize()` | `test_feishu_adapter.py`、`FEISHU-DM-001` | LOCAL PASS；真实消息 LIVE PENDING |
+| 3 | Owner 私聊文本 | `FeishuAdapter.normalize()` | `test_feishu_adapter.py`、`FEISHU-DM-001` | OWNER-DM DELIVERY VERIFIED |
 | 4 | 允许群聊必须白名单且明确 mention | `FeishuAdapter._validate_group()` + SDK `PolicyConfig` | group adapter tests、`FEISHU-GROUP-001/002` | LOCAL PASS；真实群 LIVE PENDING |
 | 5 | Open ID / Chat ID allowlist | 强类型 `FeishuConfig` + SDK / local 双层 admission | config、adapter、transport tests | LOCAL PASS |
 | 6 | bot / self 消息过滤 | SDK `drop_self_sent` + Adapter fail closed | adapter / transport tests | LOCAL PASS |
@@ -52,7 +52,7 @@ flowchart LR
 | 11 | 同会话串行、跨会话有界并发 | conversation lock + `worker_count` | 两条并发 / 串行 manager tests | LOCAL PASS |
 | 12 | CLI / TUI / Feishu 共享 Agent Core | `runtime.create_runtime()` + `create_channel_manager()` | runtime、turn、manager integration tests | LOCAL PASS |
 | 13 | Typing best effort | `ChannelCapabilities.start()/finish()` | capability success/failure tests | LOCAL PASS；平台 reaction 权限 LIVE PENDING |
-| 14 | streaming card + Markdown fallback | progress card 只读公开 delta；成功 completed card 为唯一回复，失败进 durable Outbox | capability、delivery、`FEISHU-CARD-001` | LOCAL PASS；修复后客户端确认 PENDING |
+| 14 | streaming card + Markdown fallback | progress card 只读公开 delta；成功 completed card 为唯一回复，失败进 durable Outbox | capability、delivery、`FEISHU-CARD-001` | LOCAL PASS；修复后 Owner DM 单卡已确认，完整场景仍 PENDING |
 | 15 | 平台终态不重复 | SQLite 保存 Assistant Message；Manager 仅在 card 未完成时创建文本 Delivery | manager success/failure + delivery tests | LOCAL PASS |
 | 16 | 长回复 Unicode 安全分片 | `split_message()` | 中文、emoji、前缀预算测试 | LOCAL PASS；真实平台顺序 LIVE PENDING |
 | 17 | Outbox 稳定 UUID、retry、unknown | `DeliveryRepository` + `DeliveryWorker` | retry / timeout / max-attempt tests、`FEISHU-DELIVERY-001` | LOCAL PASS |
@@ -66,7 +66,7 @@ flowchart LR
 | 25 | durable Channel Audit | 复用 `audit_events`，记录 correlation、内部 ID、耗时、Tool、审批、attempt | Observer、Manager、Delivery、Capability tests | LOCAL PASS |
 | 26 | 忽略、失败、重试只保存稳定码 | Adapter reason、Transport error mapping、Observer enum/code gate | transport / delivery / observer tests | LOCAL PASS |
 | 27 | fake SDK 契约与恢复测试 | injectable official SDK facade | transport、storage、manager、delivery suites | LOCAL PASS |
-| 28 | 真实飞书验收记录 | `scripts/feishu_live_smoke.py` + `v0.4.0.md` 模板 | harness confirmation test | LIVE PENDING |
+| 28 | 真实飞书验收记录 | `scripts/feishu_live_smoke.py` + release records | harness confirmation test | Owner DM evidence 已有；严格 15-case LIVE PENDING |
 
 ## 4. 一条消息现在如何被观测
 
@@ -116,7 +116,7 @@ Provider 隐藏 reasoning 和异常原文。
 | Secret scan | 发布前对 staged diff、`.env` 边界和日志 fixture 检查 | 待最终提交前复验 |
 | 真实 20 轮 / Tool / Approval | 需要企业应用凭据 | LIVE PENDING |
 | restart / reconnect / card fallback live | 需要真实 Bot 和网络控制 | LIVE PENDING |
-| local Channel soak | `--repeat 20`，240/240 个状态机纵切 | PASS |
+| local Channel soak | Phase 4 exit 为 240/240；当前三平台为 640/640 | PASS |
 | 真实 Gateway soak | 需要真实 Bot、网络与常驻运行环境 | LIVE PENDING |
 | mixed CN/EN commit、main、push | `c1069d4` observability + `269f8dd` fail-safe/local soak + `2d4d032` docs | PASS |
 

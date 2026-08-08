@@ -1,5 +1,7 @@
 # Phase 2.3B：Personal Machine 权限与本机 CLI 发现
 
+> 文档性质：`CURRENT` 能力说明；v0.4.1 表格保留首次 release 状态，后续真实 smoke 单独标注。
+
 ## 1. 这次解决了什么
 
 以前 MiniClaw 只认识一个 Workspace，也只在一条固定系统 `PATH` 里找命令。因此即使 Mac 上已经安装
@@ -30,7 +32,8 @@ Phase 2.3B 增加了一个显式的 `personal` 权限 Profile：
 | `lark-cli` wrapper + `env node` 离线纵切 | 已实现 |
 | 命令审批中的 OS 权限提示 | 已实现，中英文 |
 | Personal 回归场景 | 4 条，28/28 offline gate |
-| 真实飞书账号 `auth status` | 尚未作为发布证据执行 |
+| 当前用户 `lark-cli auth status --verify` | 已验证；不代表所有业务 Scope 均可用 |
+| direct read-only Drive search | 已验证；真实文档标题和内容不进入仓库证据 |
 | OS 级 sandbox / 容器隔离 | 尚未实现 |
 
 ## 3. 两个 Profile

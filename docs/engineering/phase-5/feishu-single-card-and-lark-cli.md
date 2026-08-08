@@ -1,8 +1,10 @@
-# Phase 5.2：飞书单卡片回复与 lark-cli Skill 工程落地
+# v0.5.2 Stabilization：飞书单卡片回复与 lark-cli Skill 工程落地
 
-> 状态：代码与离线回归已完成；真实 Bot 的修复后人工确认待 Owner 明确授权
+> 编号说明：历史材料曾称“Phase 5.2”；它是稳定化交付版本，不是新的架构 Phase。
+
+> 状态：代码与离线回归已完成；修复后 Owner DM 单卡已确认，完整 15-case 仍为 LIVE PENDING
 > 当前基线：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、640/640 local soak
-> 适用版本：Phase 5.2
+> 适用版本：v0.5.2 Stabilization
 
 ## 1. 这次到底修了什么
 

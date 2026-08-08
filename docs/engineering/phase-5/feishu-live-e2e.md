@@ -1,4 +1,6 @@
-# Phase 5.1：真实飞书 Bot 与 Live E2E 工程落地
+# v0.5.1 Stabilization：真实飞书 Bot 与 Live E2E 工程落地
+
+> 编号说明：历史材料曾称“Phase 5.1”；它是架构 Phase 5 之后的稳定化版本，不是新的能力 Phase。
 
 > 当前结论：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**
 >

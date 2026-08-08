@@ -3,6 +3,7 @@
 > 状态：已实现；pi-tui 为默认展示层，Textual 为迁移期 fallback
 > 协议：MiniClaw stdio NDJSON protocol v1
 > 运行时：Python 3.12、Node.js >= 22.19.0、pnpm、pi-tui 0.84.1
+> 时间说明：本文按 Phase 2 的 TUI 交付组织；其中“后续阶段”只表示当时顺序，当前能力以工程索引为准。
 
 ## 1. 大白话说明
 
@@ -234,6 +235,7 @@ Core 必须发送 turn_finished/turn_failed/turn_cancelled。未知异常由 Bri
 
 - dist 尚不进入 Git；源码安装后需要一次 pnpm build；
 - Textual 尚未删除；
-- lark-cli P2.3B 与飞书 Channel 已由后续阶段完成；Telegram、Discord 尚未实现；
+- lark-cli P2.3B 与飞书 Channel 已由后续阶段完成；Telegram、Discord 也已在架构 Phase 5 完成
+  implementation，三个外部平台仍按各自 Live Evidence 独立验收；
 - 桌面版尚未实现；
 - 不公开模型隐藏思维链，只展示 Provider 明确返回的 Reasoning 和 MiniClaw 可审计活动。

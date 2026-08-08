@@ -1,5 +1,10 @@
 # Phase 1 工程文档：Model Provider 公共契约
 
+> 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 契约首次交付）
+>
+> 当前替代：Provider Protocol 仍是 Agent Core 边界，但请求/响应字段已随 Tool、usage、reasoning 和
+> compaction 扩展；当前全仓状态从[工程文档索引](../README.md)进入。
+
 ## 1. 模块目的
 
 `src/miniclaw/providers/base.py` 是 Agent Core 与任意模型服务之间唯一稳定边界。AgentRunner 只认识

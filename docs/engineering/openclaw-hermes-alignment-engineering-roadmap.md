@@ -1,15 +1,18 @@
 # OpenClaw / Hermes 能力对齐工程落地总方案
 
-> 状态：**APPROVED ROADMAP / NOT IMPLEMENTED**
+> 状态：**APPROVED ROADMAP**；v0.5.3 Core hardening 已实现，其余章节按各自状态执行
+> 未实现范围：Memory A～E 与 Phase 6～9 仍为 **APPROVED ROADMAP / NOT IMPLEMENTED**
 > 日期：2026-08-08
-> 事实基线：`main@729a801`
+> 事实基线：`main@54db7b0`
 > 配套 Gap：[MiniClaw 与 OpenClaw / Hermes 的能力 Gap 与演进路线](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)
 > 适用范围：Phase 5.3、Memory Autopilot A～E、Phase 6、6.5、7、8、9。
 > Memory 施工入口：[Memory Autopilot A～E TDD 实施计划](../superpowers/plans/2026-08-09-memory-autopilot.md)
 
 ## 1. 文档怎么读
 
-这不是“已经完成”的工程文档，而是后续开发的总施工图。每个 Phase 开始前，应从本方案生成独立的 TDD 实施计划；每个 Phase 合并后，再把对应章节更新成真实代码和真实测试证据。
+这是一份跨版本总施工图，不代表所有章节均已实现。v0.5.3 的 SDK 日志脱敏、Gateway lease/provenance、受管
+Live Runner 与异常 Tool 历史恢复已经进入 `main`；严格 Live Evidence、Memory A～E 和 Phase 6～9 仍按各自
+计划执行。每个交付合并后，都必须用 Release Record 和当前工程文档记录真实证据。
 
 大白话理解：
 
@@ -74,6 +77,9 @@ flowchart TB
 12. fake/contract 测试不能冒充真实平台、真实浏览器或真实 Provider 证据。
 
 ## 4. Phase 5.2 / 5.3：真实运行与 Live Gate 闭环
+
+> 当前更新：v0.5.3 Core hardening 已实现；Feishu/Discord 严格 15/15、系统服务、完整部署和长期 soak 仍为
+> `LIVE PENDING` 或 `PLANNED`。本节下方“计划新增”的 Service/health/Docker 文件不能解释成已存在。
 
 ### 4.1 用户结果
 

@@ -1,5 +1,10 @@
 # Phase 1 工程文档：OpenAI-compatible Provider
 
+> 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 Provider 首次交付）
+>
+> 当前替代：公共 Provider 契约仍有效，当前请求历史还包含完整 Tool 消息、Memory/Skills 与 compaction；
+> 最新整体链路从[工程文档索引](../README.md)进入。
+
 ## 1. 模块目的
 
 `src/miniclaw/providers/openai_compatible.py` 把 MiniClaw 的稳定 `ModelRequest` 转换成 OpenAI Chat

@@ -16,8 +16,9 @@
 - WebSocket、Inbox、Turn、Delivery 与能力失败共用脱敏 correlation、JSON 日志和 SQLite Audit；
 - Channel 不复制 Agent、Policy、Approval 或记忆逻辑。
 
-当前还不能把它称为“飞书生产发布”：仓库虽然已提供 `miniclaw gateway` 进程编排、安全启停与离线 Doctor，
-但尚未使用真实 App 凭据完成连接、回调、权限、卡片与重启 E2E。因此进度页标成“Gateway ready / real E2E next”。
+当前还不能把它称为“飞书生产发布”：真实 App、Scope、WebSocket ready、Owner DM Delivery 与修复后单卡已经
+验证，但群聊、审批、重启、重连和长期 soak 尚未完成严格 15-case Evidence。因此准确状态是
+`OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING`。
 
 ## 2. 模块地图
 
@@ -180,7 +181,7 @@ git diff --check
 
 Phase 4 的剩余工作不能用单元测试冒充：
 
-1. 用真实测试 App 完成 WebSocket 收消息、文本回复、卡片审批和断线重连 E2E；
+1. 在已验证 Owner DM 的基础上完成严格 15-case，包括群聊、卡片审批、重启和断线重连；
 2. 验证 macOS/Linux 常驻部署、SIGTERM drain 和真实 Gateway 至少数小时 soak；本地状态机 20 轮 soak 已通过；
 3. 形成不含消息正文、Open ID 或凭据的 Phase 4 release record；
 4. 再决定是否开放群聊和多账号，而不是提前泛化。

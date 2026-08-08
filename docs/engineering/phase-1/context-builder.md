@@ -1,5 +1,10 @@
 # Phase 1 工程文档：ContextBuilder
 
+> 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 最小上下文）
+>
+> 当前替代：ContextBuilder 已接入 Memory、Skills、persistent compaction、runtime snapshot 与精确预算；
+> 当前行为见 [Memory、Skills 与上下文压缩](../phase-3/memory-skills-compaction.md)。
+
 ## 1. 模块目的
 
 `src/miniclaw/agent/context.py` 把 MiniClaw 的固定身份和 Storage 已筛选的会话历史组合成
@@ -14,8 +19,8 @@ Phase 1 的上下文是可运行闭环所需的最小版本：
 → 最近会话消息（包含当前用户消息）
 ```
 
-Memory、Skills、Workspace `AGENTS.md`、压缩摘要和精确 Token Budget 在 Phase 3 插入，不在当前模块放置
-空 Loader。
+在 Phase 1 快照中，Memory、Skills、Workspace `AGENTS.md`、压缩摘要和精确 Token Budget 尚未接入；
+这些能力后来由 Phase 3 落地。本段只描述当时不提前放置空 Loader 的决定。
 
 ## 2. 职责边界
 

@@ -1,12 +1,17 @@
-# MiniClaw Phase 5.3：Feishu / Discord Live Gate 收口设计
+# MiniClaw v0.5.3 Stabilization：Feishu / Discord Live Gate 收口设计
 
-> 状态：书面设计已确认，等待实施计划
+> 编号说明：历史路线称“Phase 5.3”；本页按交付版本展示，架构 Phase 5 仍专指 Telegram/Discord Channel。
+
+> 状态：设计与实施计划已确认；Core hardening 已实现，严格双平台 Live Gate 待完成
 >
 > 日期：2026-08-09
 >
 > 当前基线：562/562 Python、30/30 TypeScript、29/29 offline Agent、32/32 Channel、640/640 local soak
 >
 > 当前真实状态：Feishu Owner DM 与修复后单卡已验证；Feishu 完整 15-case、Discord 真实 Bot 均为 LIVE PENDING
+
+> 实施更新：SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner 与异常 Tool 历史恢复已经合并；
+> 本设计的完成定义仍要求 Feishu/Discord 各自 15/15，因此 Phase 5.3 整体尚未完成。
 
 ## 1. 一句话目标
 
@@ -439,5 +444,6 @@ Phase 5.3 只有同时满足以下条件才完成：
 
 ## 16. 进入 Phase 6 的条件
 
-Phase 5.3 完成后才编写 Phase 6A Feedback + Replay 的详细规格。Phase 6 可以消费真实失败 case 的脱敏结构，但不能
-读取或复制 Live Evidence 中被禁止的数据，也不能把一次人工验收结果直接当成自动 Prompt/Skill 修改授权。
+Phase 5.3 的真实 Evidence 收口后，下一条功能主线是 Memory Autopilot A～E；完成跨渠道 Identity、Disclosure、
+Flush、Recall 与治理基础后，再执行 Phase 6 自治运行计划。Phase 6 可以消费真实失败 case 的脱敏结构，但不能读取
+或复制 Live Evidence 中被禁止的数据，也不能把一次人工验收结果直接当成自动 Prompt/Skill 修改授权。

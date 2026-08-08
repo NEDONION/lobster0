@@ -1,6 +1,8 @@
 # Phase 1 工程文档：Conversation Storage
 
-> 本文记录 Phase 1 当时的存储能力。Phase 2.1A 已增加 ToolRun/Audit 和完整工具消息事务；当前实现见
+> 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 会话存储）
+>
+> 当前替代：Phase 2.1A 已增加 ToolRun/Audit 和完整工具消息事务；当前实现见
 > [Tool Runtime 与 system_info](../phase-2/tool-runtime-and-system-info.md)。
 
 ## 1. 模块目的
