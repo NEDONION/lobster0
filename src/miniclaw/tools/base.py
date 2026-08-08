@@ -8,6 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
+from miniclaw.memory.models import DisclosureContext
 from miniclaw.providers.base import JsonValue
 
 
@@ -54,6 +55,7 @@ class ToolContext:
     write_roots: tuple[Path, ...] = ()
     owner_home: Path | None = None
     trusted_owner: bool = True
+    disclosure: DisclosureContext | None = None
 
 
 class ToolValidationError(ValueError):

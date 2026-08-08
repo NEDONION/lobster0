@@ -113,6 +113,7 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
         service = _build_service(
             database,
             paths,
+            initialized.owner.id,
             config,
             provider,
             approvals,
@@ -212,6 +213,7 @@ async def run_offline_suite(cases: tuple[EvalCase, ...]) -> EvalSuiteResult:
 def _build_service(
     database: Database,
     paths: StatePaths,
+    owner_id: int,
     config: AppConfig,
     provider: ScriptedProvider,
     approvals: ApprovalRepository,
@@ -263,6 +265,7 @@ def _build_service(
         approval_ttl_seconds=config.tools.approval_ttl_seconds,
     )
     return TurnService(
+        owner_id=owner_id,
         model=config.agent.model,
         sessions=SessionRepository(database),
         messages=MessageRepository(database),

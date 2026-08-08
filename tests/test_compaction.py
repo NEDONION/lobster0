@@ -226,6 +226,7 @@ class ContextCompactorTest(unittest.IsolatedAsyncioTestCase):
             context_budget_tokens=400,
         )
         service = TurnService(
+            owner_id=self.owner_id,
             model="test-model",
             sessions=self.sessions,
             messages=self.messages,

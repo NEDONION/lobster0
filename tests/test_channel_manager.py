@@ -52,6 +52,8 @@ class TrackingTurnService:
     emit_event: bool = True
     calls: list[tuple[str, str]] = field(init=False, default_factory=list)
     trusted_calls: list[bool] = field(init=False, default_factory=list)
+    conversation_kinds: list[str] = field(init=False, default_factory=list)
+    verified_identity_calls: list[bool] = field(init=False, default_factory=list)
     active: int = field(init=False, default=0)
     max_active: int = field(init=False, default=0)
     reached_concurrency: asyncio.Event = field(init=False)
@@ -71,10 +73,14 @@ class TrackingTurnService:
         on_text=None,
         on_event=None,
         trusted_owner: bool = False,
+        conversation_kind: str = "unknown",
+        identity_verified: bool = False,
     ) -> TurnResult:
         """模拟共享 TurnService，保留真实持久化边界。"""
         self.calls.append((external_conversation_id, inbound_event_id))
         self.trusted_calls.append(trusted_owner)
+        self.conversation_kinds.append(conversation_kind)
+        self.verified_identity_calls.append(identity_verified)
         session = self.sessions.get_or_create(
             user_id,
             channel,
@@ -278,6 +284,8 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             await manager.stop()
 
         self.assertEqual(service.trusted_calls, [True, False, False])
+        self.assertEqual(service.conversation_kinds, ["direct", "group", "direct"])
+        self.assertEqual(service.verified_identity_calls, [True, True, False])
 
     async def test_permissions_command_is_owner_private_only_and_bypasses_agent(self) -> None:
         """Owner 私聊可切换/查询模式；群聊和其他成员不能切换或进入模型。"""

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from miniclaw.agent.context import ContextBuilder, ContextError
 from miniclaw.bootstrap import initialize_state
+from miniclaw.memory.models import DisclosureContext
 from miniclaw.paths import build_state_paths
 from miniclaw.providers.base import ModelMessage
 
@@ -19,6 +20,7 @@ class ContextBuilderTest(unittest.TestCase):
         self.addCleanup(self.temporary_directory.cleanup)
         self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
         initialize_state(self.paths)
+        self.disclosure = DisclosureContext(1, 1, "cli", "local", True)
 
     def test_identity_files_precede_history_without_reordering_messages(self) -> None:
         """System/SOUL/USER 必须位于历史前，历史中的当前用户消息保持最后。"""
@@ -30,7 +32,11 @@ class ContextBuilderTest(unittest.TestCase):
             ModelMessage(role="user", content="current"),
         )
 
-        request = ContextBuilder(self.paths).build("deepseek-v4-pro", history)
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            history,
+            disclosure=self.disclosure,
+        )
 
         self.assertEqual(request.model, "deepseek-v4-pro")
         self.assertEqual(request.messages[0].role, "system")
@@ -51,6 +57,7 @@ class ContextBuilderTest(unittest.TestCase):
             ContextBuilder(self.paths).build(
                 "deepseek-v4-pro",
                 (ModelMessage(role="user", content="hello"),),
+                disclosure=self.disclosure,
             )
 
         self.assertIn(str(self.paths.soul), str(caught.exception))
@@ -70,6 +77,7 @@ class ContextBuilderTest(unittest.TestCase):
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (ModelMessage(role="user", content="Inspect system configuration"),),
+            disclosure=self.disclosure,
             tools=(schema,),
         )
 
@@ -83,6 +91,7 @@ class ContextBuilderTest(unittest.TestCase):
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (ModelMessage(role="user", content="你能帮我打开飞书吗"),),
+            disclosure=self.disclosure,
             tools=(
                 {
                     "type": "function",
@@ -105,6 +114,7 @@ class ContextBuilderTest(unittest.TestCase):
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (ModelMessage(role="user", content="用飞书 CLI 查看文档"),),
+            disclosure=self.disclosure,
         )
 
         system = request.messages[0].content
@@ -124,6 +134,7 @@ class ContextBuilderTest(unittest.TestCase):
                     content="你帮我看看我最近更改的飞书文档是哪两个",
                 ),
             ),
+            disclosure=self.disclosure,
         )
 
         system = request.messages[0].content
@@ -146,6 +157,7 @@ class ContextBuilderTest(unittest.TestCase):
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (ModelMessage(role="user", content="记住我喜欢简洁回答"),),
+            disclosure=self.disclosure,
         )
 
         system = request.messages[0].content
@@ -154,6 +166,25 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertNotIn("must not load arbitrary old daily notes", system)
         self.assertIn("propose_memory", system)
         self.assertIn("明确要求记住", system)
+
+    def test_owner_group_request_never_reads_private_memory_into_provider_context(self) -> None:
+        """即使发言者是 Owner，群聊也不能向 Provider 披露私人 Markdown。"""
+        sentinel = "private-memory-sentinel"
+        self.paths.memory_file.write_text(sentinel, encoding="utf-8")
+        group = DisclosureContext(1, 1, "discord", "group", True)
+
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (ModelMessage(role="user", content="我喜欢什么？"),),
+            disclosure=group,
+        )
+
+        self.assertNotIn(sentinel, request.messages[0].content)
+        self.assertEqual(request.runtime_snapshot["memory_documents"], [])
+        self.assertEqual(
+            request.runtime_snapshot["memory_disclosure_reason"],
+            "verified_owner_group",
+        )
 
     def test_query_activates_at_most_three_skill_bodies_after_memory(self) -> None:
         """当前用户 query 只激活最匹配的三个 Skill，并保持 Memory 在前。"""
@@ -176,6 +207,7 @@ class ContextBuilderTest(unittest.TestCase):
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (ModelMessage(role="user", content="summarize this project report"),),
+            disclosure=self.disclosure,
         )
 
         system = request.messages[0].content
@@ -202,6 +234,7 @@ class ContextBuilderTest(unittest.TestCase):
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (summary, ModelMessage(role="user", content="请总结当前项目")),
+            disclosure=self.disclosure,
         )
 
         snapshot = request.runtime_snapshot
@@ -224,6 +257,7 @@ class ContextBuilderTest(unittest.TestCase):
                 ModelMessage(role="assistant", content="old answer"),
                 ModelMessage(role="user", content=current),
             ),
+            disclosure=self.disclosure,
         )
 
         self.assertEqual(request.messages[-1].content, current)
@@ -234,6 +268,7 @@ class ContextBuilderTest(unittest.TestCase):
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (ModelMessage(role="user", content="帮我查看系统配置"),),
+            disclosure=self.disclosure,
         )
 
         system = request.messages[0].content
@@ -245,6 +280,7 @@ class ContextBuilderTest(unittest.TestCase):
         request = ContextBuilder(self.paths).build(
             "deepseek-v4-pro",
             (ModelMessage(role="user", content="Who are you?"),),
+            disclosure=self.disclosure,
         )
 
         system = request.messages[0].content

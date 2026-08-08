@@ -20,6 +20,7 @@ from miniclaw.agent.runner import (
     EmptyModelResponseError,
 )
 from miniclaw.config import WorkspaceConfig
+from miniclaw.memory.models import ConversationKind, DisclosureContext
 from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.providers.base import (
     JsonValue,
@@ -65,6 +66,7 @@ class TurnService:
     def __init__(
         self,
         *,
+        owner_id: int,
         model: str,
         sessions: SessionRepository,
         messages: MessageRepository,
@@ -79,6 +81,7 @@ class TurnService:
         """绑定一次应用运行期共用的模型配置和协作组件。
 
         Args:
+            owner_id: 当前 Memory Space 的唯一 Owner 数据库 ID。
             model: 所有新 Turn 固定使用并记录的模型 ID。
             sessions: 负责 CLI Session 幂等解析的 Repository。
             messages: 负责按顺序读取最近历史的 Repository。
@@ -88,6 +91,9 @@ class TurnService:
             state_home: 当前实例的状态根目录。
             workspace: 当前可写与额外只读文件边界。
         """
+        if type(owner_id) is not int or owner_id <= 0:
+            raise ValueError("owner_id must be a positive integer")
+        self._owner_id = owner_id
         self._model = model
         self._sessions = sessions
         self._messages = messages
@@ -136,6 +142,8 @@ class TurnService:
             on_text=on_text,
             on_event=on_event,
             trusted_owner=True,
+            conversation_kind="local",
+            identity_verified=True,
         )
 
     async def handle_inbound(
@@ -150,11 +158,20 @@ class TurnService:
         on_text: StreamHandler | None = None,
         on_event: RunEventHandler | None = None,
         trusted_owner: bool = False,
+        conversation_kind: ConversationKind = "unknown",
+        identity_verified: bool = False,
     ) -> TurnResult:
-        """执行任意 Channel 消息，并把入口信任收窄到不可伪造的 ToolContext。"""
+        """执行 Channel 消息，并分别绑定自动化信任与 Memory 披露边界。"""
         if not text.strip():
             raise ValueError("message must not be empty")
         _validate_inbound_event_id(inbound_event_id)
+        disclosure = DisclosureContext(
+            owner_id=self._owner_id,
+            requester_user_id=user_id if identity_verified else None,
+            channel=channel,
+            conversation_kind=conversation_kind,
+            identity_verified=identity_verified,
+        )
         session = self._sessions.get_or_create(
             user_id,
             channel,
@@ -185,6 +202,7 @@ class TurnService:
             request = self._context.build(
                 self._model,
                 history,
+                disclosure=disclosure,
                 tools=self._runner.tool_schemas,
             )
             if self._compactor is not None and self._compactor.should_compact(request):
@@ -197,6 +215,7 @@ class TurnService:
                     request = self._context.build(
                         self._model,
                         history,
+                        disclosure=disclosure,
                         tools=self._runner.tool_schemas,
                     )
             tool_context = ToolContext(
@@ -211,6 +230,7 @@ class TurnService:
                 write_roots=self._workspace.write_roots if trusted_owner else (),
                 owner_home=self._workspace.owner_home if trusted_owner else None,
                 trusted_owner=trusted_owner,
+                disclosure=disclosure,
             )
             result = await self._runner.run(
                 request,
@@ -315,6 +335,10 @@ class TurnService:
             self._model,
         )
         self._turns.mark_running(child.id)
+        disclosure = self._continuation_disclosure(
+            parent.runtime_snapshot,
+            user_id=user_id,
+        )
         started = time.monotonic()
         try:
             await emit(
@@ -323,7 +347,12 @@ class TurnService:
             )
             if approved:
                 model_text = await self._runner.execute_approved(
-                    self._tool_context(user_id, parent.session_id, parent.id),
+                    self._tool_context(
+                        user_id,
+                        parent.session_id,
+                        parent.id,
+                        disclosure,
+                    ),
                     run,
                     approval_id,
                     decision,
@@ -360,12 +389,18 @@ class TurnService:
             request = self._context.build(
                 self._model,
                 history,
+                disclosure=disclosure,
                 tools=self._runner.tool_schemas,
             )
             result = await self._runner.run(
                 request,
                 on_text,
-                tool_context=self._tool_context(user_id, parent.session_id, child.id),
+                tool_context=self._tool_context(
+                    user_id,
+                    parent.session_id,
+                    child.id,
+                    disclosure,
+                ),
                 on_intermediate=lambda batch: self._turns.append_intermediate_messages(
                     child.id,
                     parent.session_id,
@@ -430,8 +465,14 @@ class TurnService:
             approval_id=result.approval_id,
         )
 
-    def _tool_context(self, user_id: int, session_id: int, turn_id: int) -> ToolContext:
-        """构造模型无法覆盖的统一 Tool 运行边界。"""
+    def _tool_context(
+        self,
+        user_id: int,
+        session_id: int,
+        turn_id: int,
+        disclosure: DisclosureContext,
+    ) -> ToolContext:
+        """构造模型无法覆盖的统一 Tool 与 Memory 运行边界。"""
         return ToolContext(
             user_id=user_id,
             session_id=session_id,
@@ -441,6 +482,37 @@ class TurnService:
             read_only_roots=self._workspace.read_only_roots,
             write_roots=self._workspace.write_roots,
             owner_home=self._workspace.owner_home,
+            disclosure=disclosure,
+        )
+
+    def _continuation_disclosure(
+        self,
+        snapshot: dict[str, JsonValue],
+        *,
+        user_id: int,
+    ) -> DisclosureContext:
+        """从 Parent Turn 的安全元数据恢复审批 continuation 披露边界。"""
+        channel = snapshot.get("memory_channel")
+        kind = snapshot.get("memory_conversation_kind")
+        if channel in {"cli", "feishu", "telegram", "discord"} and kind in {
+            "local",
+            "direct",
+            "group",
+            "unknown",
+        }:
+            return DisclosureContext(
+                owner_id=self._owner_id,
+                requester_user_id=user_id,
+                channel=cast(str, channel),
+                conversation_kind=cast(ConversationKind, kind),
+                identity_verified=user_id == self._owner_id,
+            )
+        return DisclosureContext(
+            owner_id=self._owner_id,
+            requester_user_id=None,
+            channel="feishu",
+            conversation_kind="unknown",
+            identity_verified=False,
         )
 
     def _persist_result(

@@ -10,6 +10,7 @@ from unittest import mock
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import load_config
+from miniclaw.memory.models import DisclosureContext
 from miniclaw.paths import build_state_paths
 from miniclaw.runtime import create_channel_manager, create_runtime, limits_for_channel
 
@@ -147,6 +148,13 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                     initialized.owner.id,
                     1,
                     1,
+                    DisclosureContext(
+                        initialized.owner.id,
+                        initialized.owner.id,
+                        "cli",
+                        "local",
+                        True,
+                    ),
                 )
                 self.assertEqual(context.owner_home, owner_home)
                 self.assertIn(owner_home, context.read_only_roots)

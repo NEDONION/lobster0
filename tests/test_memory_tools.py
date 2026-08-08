@@ -3,10 +3,12 @@
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
 from miniclaw.bootstrap import initialize_state
+from miniclaw.memory.models import DisclosureContext
 from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision
@@ -46,6 +48,7 @@ class MemoryToolTest(unittest.IsolatedAsyncioTestCase):
             state_home=self.paths.home,
             workspace=self.paths.workspace,
             read_only_roots=(),
+            disclosure=DisclosureContext(owner.id, owner.id, "cli", "local", True),
         )
         self.store = MemoryStore(self.paths, today=lambda: date(2026, 8, 8))
         self.approvals = ApprovalRepository(self.database)
@@ -76,6 +79,32 @@ class MemoryToolTest(unittest.IsolatedAsyncioTestCase):
                 "SELECT policy_action, status FROM tool_runs WHERE tool_call_id = 'read_1'"
             ).fetchone()
         self.assertEqual(tuple(row), ("allow", "succeeded"))
+
+    async def test_group_read_memory_returns_only_denial_without_private_bytes(self) -> None:
+        """Owner 群聊即使主动调用旧 Tool，也只能得到稳定拒绝而非私人正文。"""
+        sentinel = "private-memory-tool-sentinel"
+        self.paths.memory_file.write_text(sentinel, encoding="utf-8")
+        group = replace(
+            self.context,
+            trusted_owner=False,
+            disclosure=DisclosureContext(
+                self.context.user_id,
+                self.context.user_id,
+                "discord",
+                "group",
+                True,
+            ),
+        )
+
+        outcome = await self.executor().execute(
+            group,
+            ToolCall("read_group", "read_memory", {"scope": "long_term"}),
+        )
+
+        payload = json.loads(outcome.model_text)
+        self.assertFalse(payload["ok"])
+        self.assertEqual(payload["error"]["code"], "memory_disclosure_denied")
+        self.assertNotIn(sentinel, outcome.model_text)
 
     async def test_propose_memory_writes_only_after_bound_approval(self) -> None:
         """候选事实未批准不能落盘，批准消费后只执行原始绑定参数。"""

@@ -167,6 +167,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         approval_ttl_seconds=config.tools.approval_ttl_seconds,
     )
     service = TurnService(
+        owner_id=owner.id,
         model=config.agent.model,
         sessions=SessionRepository(database),
         messages=messages,

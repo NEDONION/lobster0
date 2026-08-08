@@ -20,6 +20,7 @@ from miniclaw.channels.delivery import split_message
 from miniclaw.channels.experience import ChannelExperience
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.channels.progress import progress_from_metadata, progress_to_metadata
+from miniclaw.memory.models import ConversationKind
 from miniclaw.policy.modes import PermissionMode, PermissionState
 from miniclaw.providers.base import StreamHandler
 from miniclaw.storage.channels import (
@@ -55,6 +56,8 @@ class TurnHandler(Protocol):
         on_text: StreamHandler | None = None,
         on_event: RunEventHandler | None = None,
         trusted_owner: bool = False,
+        conversation_kind: ConversationKind = "unknown",
+        identity_verified: bool = False,
     ) -> TurnResult:
         """处理一条已经完成 Channel 校验的消息。"""
         ...
@@ -425,6 +428,8 @@ class ChannelManager:
                     text=event.content,
                     on_event=None if activity is None else activity.on_event,
                     trusted_owner=self._trusted_owner(event),
+                    conversation_kind=self._conversation_kind(event),
+                    identity_verified=self._verified_owner(event),
                 )
             except asyncio.CancelledError:
                 if activity is not None:
@@ -496,10 +501,20 @@ class ChannelManager:
 
     def _trusted_owner(self, event: StoredInboundEvent) -> bool:
         """只有配置 Owner 的点对点消息可以携带自动化信任。"""
-        return (
-            event.external_user_id == self._owner_external_user_id
-            and event.chat_type == "p2p"
-        )
+        return self._verified_owner(event) and event.chat_type == "p2p"
+
+    def _verified_owner(self, event: StoredInboundEvent) -> bool:
+        """只依据 Core 配置的外部身份映射判断发言者是否为 Owner。"""
+        return event.external_user_id == self._owner_external_user_id
+
+    @staticmethod
+    def _conversation_kind(event: StoredInboundEvent) -> ConversationKind:
+        """把平台已校验 chat_type 收窄为 Memory 的封闭会话类型。"""
+        if event.chat_type == "p2p":
+            return "direct"
+        if event.chat_type == "group":
+            return "group"
+        return "unknown"
 
     def _permission_notice(self, event: StoredInboundEvent) -> str | None:
         """处理不进入模型的权限查询/切换命令，并返回可投递提示。"""

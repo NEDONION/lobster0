@@ -112,6 +112,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
     ) -> TurnService:
         """用真实 Repository/Context/Runner 和指定模型 Fake 构造服务。"""
         return TurnService(
+            owner_id=self.owner.id,
             model="deepseek-v4-pro",
             sessions=self.sessions,
             messages=self.messages,
@@ -230,6 +231,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             ToolRunRepository(self.database),
         )
         service = TurnService(
+            owner_id=self.owner.id,
             model="deepseek-v4-pro",
             sessions=self.sessions,
             messages=self.messages,
@@ -254,6 +256,8 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 inbound_event_id="om_friend",
                 text="inspect",
                 trusted_owner=False,
+                conversation_kind="direct",
+                identity_verified=False,
             )
         except TypeError:
             self.fail("TurnService.handle_inbound must accept trusted_owner")
@@ -261,10 +265,14 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(probe.contexts), 2)
         self.assertFalse(probe.contexts[0].trusted_owner)
+        self.assertEqual(probe.contexts[0].disclosure.conversation_kind, "direct")
+        self.assertFalse(probe.contexts[0].disclosure.identity_verified)
         self.assertEqual(probe.contexts[0].read_only_roots, ())
         self.assertEqual(probe.contexts[0].write_roots, ())
         self.assertIsNone(probe.contexts[0].owner_home)
         self.assertTrue(probe.contexts[1].trusted_owner)
+        self.assertEqual(probe.contexts[1].disclosure.conversation_kind, "local")
+        self.assertTrue(probe.contexts[1].disclosure.identity_verified)
         self.assertEqual(probe.contexts[1].read_only_roots, (read_root,))
         self.assertEqual(probe.contexts[1].write_roots, (write_root,))
         self.assertEqual(probe.contexts[1].owner_home, self.paths.home)

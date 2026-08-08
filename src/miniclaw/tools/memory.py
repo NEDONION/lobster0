@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 
+from miniclaw.memory.policy import MemoryDisclosurePolicy, MemoryPolicyError
 from miniclaw.memory.store import MemoryError, MemoryStore
 from miniclaw.providers.base import JsonValue
 from miniclaw.tools.base import (
@@ -57,7 +58,9 @@ class ReadMemoryTool:
         arguments: dict[str, JsonValue],
     ) -> ToolResult:
         """异步读取有界 Memory 文本和可回放哈希。"""
-        del context
+        denied = _private_memory_denial(context, require_capture=False)
+        if denied is not None:
+            return denied
         scope = arguments["scope"]
         assert isinstance(scope, str)
         try:
@@ -119,6 +122,9 @@ class ProposeMemoryTool:
         arguments: dict[str, JsonValue],
     ) -> ToolResult:
         """把 Policy 已放行的绑定事实追加到当前 UTC 日期文件。"""
+        denied = _private_memory_denial(context, require_capture=True)
+        if denied is not None:
+            return denied
         content = arguments["content"]
         source = arguments["source"]
         assert isinstance(content, str)
@@ -139,3 +145,34 @@ class ProposeMemoryTool:
                 "content_hash": result.content_hash,
             }
         )
+
+
+def _private_memory_denial(
+    context: ToolContext,
+    *,
+    require_capture: bool,
+) -> ToolResult | None:
+    """在旧 Memory Tool 执行前应用与 Context 相同的 Core 披露策略。"""
+    if context.disclosure is None:
+        return ToolResult.failure(
+            "memory_disclosure_denied",
+            "private memory is not disclosed in this conversation",
+        )
+    try:
+        decision = MemoryDisclosurePolicy().decide(context.disclosure)
+    except MemoryPolicyError:
+        return ToolResult.failure(
+            "memory_disclosure_denied",
+            "private memory is not disclosed in this conversation",
+        )
+    allowed = (
+        decision.capture_scope == "private"
+        if require_capture
+        else decision.private_access == "full"
+    )
+    if allowed:
+        return None
+    return ToolResult.failure(
+        "memory_disclosure_denied",
+        "private memory is not disclosed in this conversation",
+    )

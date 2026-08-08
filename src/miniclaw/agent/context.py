@@ -1,9 +1,12 @@
 """把 MiniClaw 身份文件和会话历史构造成模型请求。"""
 
+import hashlib
 import json
 from pathlib import Path
 
-from miniclaw.memory.store import MemoryError, MemoryStore
+from miniclaw.memory.models import DisclosureContext
+from miniclaw.memory.policy import MemoryDisclosurePolicy, MemoryPolicyError
+from miniclaw.memory.store import MemoryError, MemorySnapshot, MemoryStore
 from miniclaw.paths import StatePaths
 from miniclaw.providers.base import JsonValue, ModelMessage, ModelRequest
 from miniclaw.skills.loader import SkillError, SkillLoader
@@ -60,6 +63,7 @@ class ContextBuilder:
         paths: StatePaths,
         memory: MemoryStore | None = None,
         skills: SkillLoader | None = None,
+        disclosure_policy: MemoryDisclosurePolicy | None = None,
         *,
         context_budget_tokens: int = 32_000,
     ) -> None:
@@ -73,6 +77,7 @@ class ContextBuilder:
         self._paths = paths
         self._memory = memory or MemoryStore(paths)
         self._skills = skills or SkillLoader(paths.skills)
+        self._disclosure_policy = disclosure_policy or MemoryDisclosurePolicy()
         self._context_budget_tokens = context_budget_tokens
 
     def build(
@@ -80,6 +85,7 @@ class ContextBuilder:
         model: str,
         history: tuple[ModelMessage, ...],
         *,
+        disclosure: DisclosureContext,
         tools: tuple[dict[str, JsonValue], ...] = (),
     ) -> ModelRequest:
         """构造身份在前、会话历史在后的模型请求。
@@ -87,18 +93,26 @@ class ContextBuilder:
         Args:
             model: 当前配置选中的 Provider 模型 ID。
             history: Storage 已按时间筛选并排序的最近消息，包含当前用户消息。
+            disclosure: Core 根据入口身份和会话类型构造的披露边界。
             tools: 当前安全执行入口公开的模型 Tool Schema。
 
         Returns:
             包含身份、历史和可用 Tool Schema 的模型请求。
 
         Raises:
-            ContextError: SOUL 或 USER 文件无法读取为 UTF-8 文本。
+            ContextError: 身份、披露策略或允许读取的 Memory 无法安全处理。
         """
         soul = self._read_identity(self._paths.soul)
         user = self._read_identity(self._paths.user)
         try:
-            memory = self._memory.snapshot()
+            decision = self._disclosure_policy.decide(disclosure)
+            memory = (
+                self._memory.snapshot()
+                if decision.private_access == "full"
+                else _empty_memory_snapshot()
+            )
+        except MemoryPolicyError as error:
+            raise ContextError("cannot authorize MiniClaw memory disclosure") from error
         except MemoryError as error:
             raise ContextError("cannot read MiniClaw memory files") from error
         query = next(
@@ -125,6 +139,11 @@ class ContextBuilder:
         )
         runtime_snapshot: dict[str, JsonValue] = {
             "memory_hash": memory.content_hash,
+            "memory_disclosure_reason": decision.reason_code,
+            "memory_private_access": decision.private_access,
+            "memory_capture_scope": decision.capture_scope,
+            "memory_channel": disclosure.channel,
+            "memory_conversation_kind": disclosure.conversation_kind,
             "memory_documents": [
                 {
                     "scope": document.scope,
@@ -168,6 +187,11 @@ class ContextBuilder:
             return path.read_text(encoding="utf-8")
         except (OSError, UnicodeError) as error:
             raise ContextError(f"cannot read MiniClaw identity file {path}") from error
+
+
+def _empty_memory_snapshot() -> MemorySnapshot:
+    """返回未披露场景的稳定空快照，且不触碰私人 Memory 文件。"""
+    return MemorySnapshot((), "", hashlib.sha256(b"").hexdigest())
 
 
 def _system_preamble(history: tuple[ModelMessage, ...]) -> str:
