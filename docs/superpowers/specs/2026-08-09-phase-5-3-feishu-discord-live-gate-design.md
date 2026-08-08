@@ -325,6 +325,7 @@ Harness 的 Evidence 只记录 check/status、起止 UTC、commit 和 SQLite 匿
 - schema/version；
 - channel；
 - 40 位 commit；
+- 本地 Gateway PID 与启动 UTC（仅用于证明运行来源，不进入 Git 文档）；
 - case/check ID；
 - pass/fail/skip；
 - 起止 UTC 和有界耗时；
