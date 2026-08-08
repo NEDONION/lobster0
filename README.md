@@ -3,25 +3,27 @@
 <p align="center"><strong>A tiny self-hosted personal agent with a Python Core and TypeScript pi-tui.</strong></p>
 
 <p align="center">
-  用一套可阅读、可调试、默认安全的 Python 代码，学习个人 Agent 从 CLI、飞书到工具、记忆和受控演进的完整链路。
+  用一套可阅读、可调试、默认安全的 Python 代码，学习个人 Agent 从 CLI、飞书、Telegram、Discord 到工具、记忆和受控演进的完整链路。
 </p>
 
 <p align="center">
   <img alt="Python 3.12+" src="https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white" />
   <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-0F766E" />
-  <img alt="Status Phase 4 implementation complete" src="https://img.shields.io/badge/Status-Phase_4_code_complete-0F766E" />
+  <img alt="Status Phase 5 implementation pass" src="https://img.shields.io/badge/Status-Phase_5_implementation_pass-0F766E" />
 </p>
 
-MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。目标是在同一个 Agent Core 后接入本地
-CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆、Skills、安全审批和评测驱动的受控
+MiniClaw 是一个面向个人学习与日常使用的开源 personal agent。它在同一个 Agent Core 后接入本地
+CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Markdown 记忆、Skills、安全审批和评测驱动的受控
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 Phase 4 的代码与离线门禁：裸 `miniclaw` 默认进入 pi-tui，Textual 作为 onboarding/fallback；`miniclaw gateway`
-> 通过官方 `lark-channel-sdk` 接入飞书 WebSocket，私聊和白名单群 mention 与 TUI 复用同一个 `AgentRuntime`。
+> 当前仓库已完成 **Phase 5 IMPLEMENTATION PASS**：裸 `miniclaw` 默认进入 pi-tui，Textual 作为 onboarding/fallback；
+> `miniclaw gateway` 可在一个 Python 进程内同时装配飞书 WebSocket、Telegram long polling 与 Discord Gateway，
+> 三个平台和 TUI 复用同一个 `AgentRuntime`、Provider、Memory、Skills、Policy、Approval 与 SQLite。
 > 消息先进入 SQLite Inbox，再由有界 Worker 处理；回复经 durable Outbox 分片、重试并使用稳定 UUID。Typing、
 > 安全进度卡、Owner 审批卡片/文本 fallback、重启恢复、断线映射、脱敏 JSON 日志、durable Channel Audit
-> 和 13 项 Doctor 均已接线。
+> 和 20 项 Doctor 均已接线。每个平台拥有独立 Transport、DeliveryWorker、ChannelManager、queue 和故障状态；
+> 一个平台运行期 degraded 不会关闭其余平台。
 > 同一个 `AgentRuntime`
 > 连接 DeepSeek、TurnService、SQLite、十个系统/文件/命令/HTTPS/Memory Tool 与参数绑定 Approval。TUI 支持流式回答、
 > Provider reasoning、可逐项展开的 Tool 参数/执行/结果 Trace、Enter 发送、Shift+Enter 换行、Esc 取消、
@@ -35,19 +37,19 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > Phase 3 已增加安全 Markdown Memory、经审批的 daily memory 写入、惰性 `SKILL.md` 激活，以及保留原始消息的
 > persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek
 > live eval runner与真实 `lark-cli`/Node 路径闭环仍未完成。当前回归基线为
-> **391 Python tests + 25 TypeScript tests + 24/24 Agent cases + 12/12 Feishu Channel cases**。
-> 本机尚未配置飞书 App ID/App Secret，因此真实平台 WebSocket、权限和 20 轮对话仍待人工验收；离线 fake SDK
+> **456 Python tests + 25 TypeScript tests + 24/24 Agent cases + 32/32 Channel cases + 640/640 local soak**。
+> Telegram 与 Discord 当前都为 **LIVE PENDING**；本机飞书真实 WebSocket、权限和 20 轮对话也仍待人工验收。离线 fake SDK
 > 通过不冒充 production verified。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
 > 保存在 [v0.2.0 release record](docs/evals/releases/v0.2.0.md)，不冒充当前 TUI 版本的新 live 结果。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
 
-## Planned MVP
+## Current MVP
 
 | 能力 | v0.1 目标 |
 | --- | --- |
-| 交互入口 | 本地 CLI、飞书机器人私聊 |
+| 交互入口 | 本地 TUI、飞书、Telegram、Discord |
 | Agent Core | OpenAI-compatible 模型、原生 Tool Calling、最多 8 轮工具循环 |
 | 工具 | Workspace 文件、HTTPS GET、受限 Shell |
 | 数据 | SQLite 会话与审计、Markdown 长期记忆和 Skills |
@@ -58,8 +60,12 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 flowchart LR
     USER["个人用户"] --> CLI["CLI"]
     USER --> FEISHU["飞书私聊"]
+    USER --> TELEGRAM["Telegram"]
+    USER --> DISCORD["Discord"]
     CLI --> CORE["MiniClaw Agent Core"]
     FEISHU --> CORE
+    TELEGRAM --> CORE
+    DISCORD --> CORE
     CORE <--> MODEL["Model Provider"]
     CORE --> POLICY["Policy Engine"]
     POLICY --> TOOLS["受控工具"]
@@ -74,7 +80,7 @@ flowchart LR
 
 ```bash
 uv venv
-uv sync --extra dev
+uv sync --extra dev --extra channels
 corepack enable
 pnpm --dir tui install --frozen-lockfile
 pnpm --dir tui build
@@ -108,7 +114,8 @@ uv run miniclaw eval run --suite offline|channel|all [--repeat 1..1000] [--root 
 uv run python -m miniclaw --version
 ```
 
-飞书 Gateway 还需安装可选依赖：`uv sync --extra feishu`。`init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md`、`MEMORY.md` 或已有 Skill；它会为新环境
+单个平台可只安装 `--extra feishu`、`--extra telegram` 或 `--extra discord`；`--extra channels` 一次安装三个 official SDK。
+`init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md`、`MEMORY.md` 或已有 Skill；它会为新环境
 创建一个 `skills/summarize/SKILL.md` 示例。`doctor`
 只执行离线检查，不连接模型或 IM 平台；Node/pi-tui 检查同样只读。裸 `miniclaw` 从当前目录的私密 `.env` 读取 Key，并要求真实
 TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`，也可在配置的
@@ -119,9 +126,9 @@ Owner 在 TUI 中查看完整归一化参数并选择可用授权范围后才执
 macOS 应用名不确定时，模型可显式调用 `system_info` 的 `applications` 分区；该分区默认不读取，只返回固定
 `/Applications` 中有界、去路径的真实 `.app` 名称，再由 `run_command(open, [-a, Exact Name])` 请求审批。
 `eval` 完全离线，不读取 `.env`、不需要 `init` 或 API Key；`offline` 通过真实 Agent/Policy/Tool/SQLite 链路，
-`channel` 通过真实 Adapter/Inbox/Worker/Approval/Outbox 运行版本化场景；`--repeat` 可形成有界的本地 endurance
+`channel` 通过真实三平台 Adapter/Inbox/Worker/Approval/Outbox 运行版本化场景；`--repeat` 可形成有界的本地 endurance
 gate，不能代替真实平台验收。`doctor` 会安全读取当前目录的私密
-`.env` 以检查飞书变量存在性，但不会联网或显示变量值。
+`.env` 以检查 enabled IM 的变量存在性，但不会联网或显示变量值。
 
 ### Memory、Skills 与长对话
 
@@ -245,11 +252,16 @@ miniclaw/
 | [Phase 4 Channel/Gateway 概览](docs/engineering/phase-4/feishu-channel-core.md) | 模块地图、Admission、状态机、恢复和真实 E2E 边界 |
 | [Phase 4 运行、测试与排障](docs/engineering/phase-4/testing-and-operations.md) | 配置、Gateway、12 条 Channel 回归、live smoke、故障恢复和发布门禁 |
 | [Phase 4 完成性审计](docs/engineering/phase-4/completion-audit.md) | 逐项 requirement → code → test → live evidence 矩阵与剩余外部验收门 |
+| [Phase 5 Telegram/Discord 工程落地](docs/engineering/phase-5/telegram-discord-channels.md) | 单 Runtime/多 Pipeline、两个 official Transport、身份、审批、恢复与故障隔离 |
+| [Phase 5 测试与真实验收](docs/engineering/phase-5/testing-and-live-acceptance.md) | 32-case、640-check、15 项 live harness 与证据口径 |
+| [Phase 5 故障排查](docs/engineering/phase-5/troubleshooting.md) | SDK/Token、Telegram 409、Discord intents/403、限流、恢复与 Secret scan |
+| [Phase 5 完成性审计](docs/engineering/phase-5/completion-audit.md) | requirement → code → automated/live evidence 矩阵 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |
 | [Eval v0.3.0 发布记录](docs/evals/releases/v0.3.0.md) | Phase 3 的 296 tests、24/24 场景与已知边界 |
 | [Eval v0.4.0 发布记录](docs/evals/releases/v0.4.0.md) | Phase 4 的 391+25 tests、24+12 回归与真实飞书待验收项 |
+| [Eval v0.5.0 发布记录](docs/evals/releases/v0.5.0.md) | Phase 5 的 456+25 tests、24+32 回归、640 soak 与双平台 LIVE PENDING |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

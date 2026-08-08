@@ -30,6 +30,13 @@ uv run ruff check .
 
 # CLI 冒烟验证
 uv run miniclaw --version
+
+# 三平台 versioned Channel gate 与 20 轮稳定性门禁
+uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+
+# 当前发布文档、链接、Mermaid 与 HTML 一致性
+uv run python scripts/validate_docs.py
 ```
 
 - 优先使用项目 `.venv` 或 `uv run`，不要假设系统 Python 的依赖状态。
@@ -56,7 +63,8 @@ uv run miniclaw --version
 
 ## 架构边界
 
-- `channels`：CLI、飞书等外部消息与内部消息互转，不包含 Agent 推理逻辑。
+- `channels`：飞书、Telegram、Discord 等外部消息与内部消息互转，不包含 Agent 推理逻辑；三个平台共享一个
+  AgentRuntime，但 Transport、Delivery、Manager、queue 与运行期故障状态相互隔离。
 - `agent`：管理模型与工具循环，不知道消息来自哪个渠道。
 - `providers`：封装模型协议，v0.1 只实现一个 OpenAI-compatible Provider。
 - `tools`：声明并执行文件、HTTP 和受限命令；不得绕过 Policy。
@@ -69,8 +77,10 @@ uv run miniclaw --version
 
 - 新功能测试正常路径和关键边界；缺陷修复必须带回归测试。
 - 测试名称描述可观察行为，断言公共结果，不绑定私有实现。
-- 外部模型、飞书、文件系统和时钟边界使用最小 fake 或临时目录，不访问真实网络和个人数据。
+- 外部模型、IM 平台、文件系统和时钟边界使用最小 fake 或临时目录，不访问真实网络和个人数据。
 - 不通过删除断言、放宽安全条件或跳过测试让检查通过。
+- Phase 5 Channel 语义变化必须保留飞书 12 条场景，并让 Telegram/Discord 各 10 条 versioned case 全部通过；
+  fake SDK 与 640/640 local soak 只能标 `IMPLEMENTATION PASS`，不能冒充 live PASS。
 
 ## 安全与仓库卫生
 
@@ -107,6 +117,8 @@ uv run miniclaw --version
 2. 新增行为有测试，相关文档已同步。
 3. `uv run python -m unittest discover -s tests -v` 通过。
 4. `uv run ruff check .` 通过。
-5. `git diff --check` 无空白错误，diff 中无密钥、调试输出或意外大文件。
+5. Channel 改动运行 `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios`。
+6. 文档改动运行 `uv run python scripts/validate_docs.py`。
+7. `git diff --check` 无空白错误，diff 中无密钥、调试输出或意外大文件。
 
 若某项检查因环境或外部依赖无法执行，必须在最终说明中列出命令、原因和剩余风险。

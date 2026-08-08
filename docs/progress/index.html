@@ -343,30 +343,30 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · Phase 4 implementation complete · Phase 5 implementation plan ready · live gates pending</div>
+      <div class="branch">target: main · Phase 5 implementation pass · Telegram live pending · Discord live pending</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui：Codex 风格活动流、25 万字符粘贴、稳定选择、真实 Token 审计、十个 Tool、参数绑定审批、Markdown Memory、惰性 Skills 与 persistent compaction 共用同一个 Python AgentRuntime、Policy 和 SQLite；Textual 保留 onboarding/fallback。飞书 Channel Core、durable Inbox/Outbox、WebSocket、Gateway 生命周期、分片重试、卡片审批、脱敏 JSON 日志与 durable Audit 已进入代码；下一步是真实 E2E 与 soak。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui；飞书 WebSocket、Telegram long polling 与 Discord Gateway 已进入同一个 Python 进程。三条独立 pipeline 共享一个 AgentRuntime、十个 Tool、Policy、Approval、Markdown Memory、Skills 和 SQLite durable truth；一个平台 degraded 不会拖停其他平台。下一步是用真实测试账号完成三套 live exit gate，再进入 Phase 6 受控演进。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Phase 4 implementation gate</span>
-        <strong>P4 CODE ✓</strong>
-        <p>391 Python + 25 TypeScript tests · Agent 24/24 · Channel 12/12 · local soak 240/240 · live pending</p>
+        <span class="tag">Phase 5 implementation pass</span>
+        <strong>P5 CODE ✓</strong>
+        <p>456 Python + 25 TypeScript tests · Agent 24/24 · Channel 32/32 · local soak 640/640 · live pending</p>
       </aside>
     </section>
 
     <section class="metrics" aria-label="项目指标">
       <div class="metric">
         <span class="metric-label">Completed phases</span>
-        <span class="metric-value">4 <small>/ 8</small></span>
+        <span class="metric-value">5 <small>/ 8</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">391+25 <small>passing</small></span>
+        <span class="metric-value">456+25 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -434,17 +434,17 @@
           <div><h3>Memory、Skills 与压缩</h3><p>安全 Markdown Memory、审批写入、按需 Skills、runtime snapshot 与持久化摘要。</p></div>
           <span class="pill">COMPLETED</span>
         </article>
-        <article class="phase current">
+        <article class="phase done">
           <div class="phase-no">Phase 4</div>
-          <div><h3>飞书生产链路</h3><p>Channel contract、白名单、durable Inbox/Outbox、WebSocket、Gateway、分片重试、streaming card、审批与结构化 Audit 已实现；真实 E2E、部署/soak 待完成。</p></div>
-          <span class="pill">GATEWAY READY</span>
+          <div><h3>飞书生产链路</h3><p>Channel contract、白名单、durable Inbox/Outbox、WebSocket、Gateway、分片重试、streaming card、审批与结构化 Audit 已实现；真实 E2E 仍独立待验。</p></div>
+          <span class="pill">COMPLETED</span>
         </article>
-        <article class="phase queued">
+        <article class="phase done">
           <div class="phase-no">Phase 5</div>
-          <div><h3>Telegram 与 Discord</h3><p>详细设计和 1259 行 TDD implementation plan 已完成：14 个任务、189 个验收项覆盖 Config、公共层、Telegram、Discord、Supervisor、32-case gate 与 640-check soak；生产代码从 Task 1 开始落地。</p></div>
-          <span class="pill">PLAN READY</span>
+          <div><h3>Telegram 与 Discord</h3><p>两个 official Transport、严格 Adapter、neutral Approval、GatewaySupervisor、20 项 Doctor、20 条新场景和 640-check soak 均已完成；Telegram live pending，Discord live pending。</p></div>
+          <span class="pill">CODE PASS</span>
         </article>
-        <article class="phase queued">
+        <article class="phase current">
           <div class="phase-no">Phase 6</div>
           <div><h3>受控自我迭代</h3><p>反馈、回放评测、提案、人工应用与回滚。</p></div>
           <span class="pill">PLANNED</span>
@@ -459,7 +459,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 4 implementation gate</p>
+        <p class="eyebrow">Phase 5 implementation pass</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -525,7 +525,12 @@
           <li class="complete">miniclaw gateway 生命周期、双信号关闭与离线飞书 Doctor</li>
           <li class="complete">Channel correlation、外部 ID 短哈希、JSON 日志与 SQLite Audit</li>
           <li class="complete">WebSocket reconnect、Inbox/Turn/Delivery/Typing/Card 可观测状态</li>
-          <li class="complete">391 Python + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases + local soak 240/240 + Ruff 门禁</li>
+          <li class="complete">Telegram numeric allowlist、DM/group/topic、official long polling 与 safe delivery</li>
+          <li class="complete">Discord DM/Guild/Thread、minimal intents、Gateway resume 与 AllowedMentions.none</li>
+          <li class="complete">一个 AgentRuntime + 三条独立 Channel pipeline + runtime fault isolation</li>
+          <li class="complete">neutral Approval v2 envelope + Feishu v1 read compatibility</li>
+          <li class="complete">20 项 offline Doctor + 两个 15-step secret-free live harness</li>
+          <li class="complete">456 Python + 25 TypeScript tests + 24/24 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -536,17 +541,18 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 391 Python、25 TypeScript tests、24/24 offline Agent 与 12/12 Channel；20 轮 local soak 已通过，live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 456 Python、25 TypeScript tests、24/24 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
-        <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；Phase 5 Telegram/Discord 设计与逐文件 TDD 实施计划已锁定，生产代码进入 Task 1；真实平台 live gates 仍必须用凭据单独验收。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/e049098">e049098 Phase 5 implementation plan</a> · <a href="https://github.com/NEDONION/mini-claw/commit/d0e5031">d0e5031 Phase 5 design</a> · <a href="https://github.com/NEDONION/mini-claw/commit/269f8dd">269f8dd fail-safe + local soak</a></p></div>
+        <div class="decision"><code>scope</code><p>pi-tui、十个 Tool、Memory、Skills、Compaction、Approval 和飞书/Telegram/Discord multi-channel 已完成；真实平台 live gates 必须用各自凭据单独验收。</p></div>
+        <div class="decision"><code>live truth</code><p>Telegram live pending · Discord live pending · fake SDK 与 640/640 不冒充 production verified。</p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/0f18369">0f18369 live harness</a> · <a href="https://github.com/NEDONION/mini-claw/commit/49ee339">49ee339 32-case regression</a> · <a href="https://github.com/NEDONION/mini-claw/commit/7f133e7">7f133e7 doctor readiness</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 391 Python + 25 TypeScript tests + 24/24 offline Agent cases、12/12 Channel cases、local soak 240/240 + Ruff</span>
-      <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-4/feishu-channel.md">Feishu engineering</a> · <a href="../engineering/phase-5/telegram-discord-channels.md">Phase 5 design</a> · <a href="../superpowers/plans/2026-08-08-phase-5-telegram-discord.md">Phase 5 implementation plan</a> · <a href="../engineering/phase-4/completion-audit.md">completion audit</a> · <a href="../evals/releases/v0.4.0.md">v0.4.0 record</a></span>
+      <span>Last updated · 2026-08-08 · 456 Python + 25 TypeScript tests + 24/24 Agent、32/32 Channel、640/640 soak</span>
+      <span><a href="../engineering/phase-5/telegram-discord-channels.md">Phase 5 engineering</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../engineering/phase-5/completion-audit.md">completion audit</a> · <a href="../evals/releases/v0.5.0.md">v0.5.0 record</a></span>
     </footer>
   </main>
 </body>

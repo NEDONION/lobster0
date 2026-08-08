@@ -1,0 +1,212 @@
+# Phase 5：Telegram / Discord 故障排查手册
+
+> 当前状态：**IMPLEMENTATION PASS**；456 Python、25 TypeScript、32/32 Channel、640/640 local soak 均通过。
+>
+> Telegram 与 Discord 都是 **LIVE PENDING**，所以本页给出可执行排查路径，不声称已在真实账号验证。
+
+## 1. 先判断是哪一层坏了
+
+```mermaid
+flowchart TD
+    A["miniclaw doctor"] --> B{"有 FAIL?"}
+    B -->|"Yes"| C["修配置 / SDK / Token / state"]
+    B -->|"No"| D["miniclaw gateway"]
+    D --> E{"启动前失败?"}
+    E -->|"Yes"| F["查看稳定错误码"]
+    E -->|"No"| G["发一条 allowlisted test message"]
+    G --> H{"Inbox 增长?"}
+    H -->|"No"| I["Adapter / 权限 / addressing"]
+    H -->|"Yes"| J{"Delivery sent?"}
+    J -->|"No"| K["Worker / rate limit / platform permission"]
+    J -->|"Yes"| L["检查客户端会话目标"]
+```
+
+不要一上来改 Provider Prompt。消息没进入 Inbox 时，模型根本还没有被调用。
+
+## 2. Doctor 显示 SDK missing
+
+症状：
+
+```text
+official Telegram SDK is not installed
+official Discord SDK is not installed
+```
+
+修复：
+
+```bash
+uv sync --extra telegram
+uv sync --extra discord
+# 或三个平台一次安装
+uv sync --extra channels
+uv run miniclaw doctor
+```
+
+未启用的平台不要求安装 extra。普通 TUI import 也不会因为缺少 Telegram/Discord SDK 失败。
+
+## 3. Token missing / `.env` 被拒绝
+
+检查变量名，不要打印变量值：
+
+```dotenv
+MINICLAW_TELEGRAM_BOT_TOKEN=
+MINICLAW_DISCORD_BOT_TOKEN=
+```
+
+`config.toml` 中 `bot_token_env` 必须指向对应变量名。`.env` 必须是 owner-only regular file：
+
+```bash
+chmod 600 .env
+uv run miniclaw doctor
+```
+
+符号链接、目录、group/world-readable 文件都会在读取 Secret 前失败。不要把 Token 写进 TOML、命令行、日志或 issue。
+
+## 4. Telegram 409 Conflict
+
+含义：同一个 Bot Token 同时被多个 long-polling 进程消费，或者 webhook 仍占用更新来源。
+
+排查：
+
+1. 确认只有一个 `uv run miniclaw gateway`；
+2. 停止旧本机进程、VPS service 或另一个开发终端；
+3. 如果此前配置过 webhook，在 Bot 管理侧按官方方式移除；
+4. 等旧 polling 请求结束后再启动；
+5. 不要通过创建第二个 Manager 来“绕过”冲突。
+
+MiniClaw 会把平台错误映射成稳定短码；错误正文和 Token 不进入日志。
+
+## 5. Telegram 私聊没有响应
+
+按顺序检查：
+
+1. `channels.telegram.enabled = true`；
+2. `owner_user_id` 是正整数且在 `allowed_user_ids`；
+3. 消息来自该 numeric user ID，不使用 username 绑定 Owner；
+4. Update 是普通未编辑文本，不是 service/non-text/bot message；
+5. Gateway 已完成 `get_me` 并打印 ready；
+6. Inbox 是否出现 `telegram/default` queued/running/completed 的匿名计数。
+
+## 6. Telegram 群里不响应
+
+必须同时满足：
+
+- `allow_group_mentions = true`；
+- signed chat ID 在 `allowed_chat_ids`；
+- 发送者在 `allowed_user_ids`；
+- 明确 mention 当前 Bot，或 reply 当前 Bot 的消息；
+- 文本长度未超过配置上限。
+
+未 mention 是设计上的静默，不是错误。forum topic 会成为独立 conversation；不要期望它自动继承另一个 topic 的短期
+会话历史。
+
+## 7. Discord READY 不到 / intent denied
+
+MiniClaw 只启用：
+
+- guilds；
+- guild messages；
+- DM messages；
+- message content。
+
+不会启用 members、presences、reactions 或 typing events。若登录成功但读不到正文，在 Discord Developer Portal 为测试
+Bot 开启 Message Content Intent，并确认邀请权限允许查看频道与读取历史。修改后重启 Gateway。
+
+## 8. Discord 403 / Missing Permissions
+
+区分读取和发送：
+
+- 读不到：View Channel、Read Message History、Message Content Intent；
+- 发不出：Send Messages；
+- Thread：Send Messages in Threads；
+- DM：用户隐私设置或 Bot 与用户无共同 Guild 也可能阻止。
+
+MiniClaw 始终使用 `AllowedMentions.none()`；模型生成 `<@...>` 不会真的 ping 用户。不要为了通过测试打开管理员权限。
+
+## 9. Guild/Thread 消息被静默忽略
+
+Guild 消息需要四层 admission：user、guild、parent channel allowlist，以及 mention/reply addressing。Thread 使用 parent
+channel 的 allowlist，但 conversation identity 会附加 thread snowflake。检查的是 numeric snowflake，不是 Guild/
+Channel 名称。
+
+## 10. Rate limit 与 retry-after
+
+现象：Delivery 状态进入 `retry_wait`。
+
+这是可恢复状态，不应手工删除 SQLite 行。平台提供 Retry-After 时，Worker 使用该值并受本地最大退避约束；重试继续
+复用同一 idempotency key。Telegram/Discord HTTP 本身不承诺该本地 UUID 是服务端幂等键，因此 unknown 状态仍需按
+平台回执谨慎恢复。
+
+如果持续限流：
+
+1. 降低 progress update 频率；
+2. 避免多个 gateway 使用同一 Token；
+3. 查看是否长回复产生大量分片；
+4. 等待 `next_attempt_at`，不要快速重启制造请求风暴。
+
+## 11. Preview/Typing 坏了但最终回复正常
+
+这是预期的故障隔离：Typing、可编辑 preview 是 best effort；最终回答一定先进入 durable Outbox。体验层失败会记录稳定
+短码，但不会让 Turn 或 Delivery 失败。
+
+只有最终 Delivery 也失败时，才继续排查发送权限、rate limit 或目标 conversation identity。
+
+## 12. 一个平台 degraded，另一个是否该停
+
+不该停。`GatewaySupervisor` 维护三条独立 pipeline：
+
+```text
+Transport → DeliveryWorker → ChannelManager
+```
+
+它们共享一个 `AgentRuntime`，但不共享网络 task、内存 queue 或 worker pool。运行期 Telegram 断线只把 Telegram 标为
+degraded；Discord/飞书保持 ready。启动前静态配置错误则是 all-or-none：任何 enabled 平台配置不完整时，一个都不启动。
+
+## 13. Approval 一直 pending
+
+检查：
+
+1. 命令格式必须精确：`/approve <id> once|session|always` 或 `/deny <id>`；
+2. actor external user ID 必须等于配置的 Owner；
+3. Approval 未过期、未决定、未消费；
+4. Core grant modes 是否允许该 scope；
+5. 文件写入不提供 session/always；
+6. Gateway 重启后 pending card/text 是否被补发。
+
+平台消息只请求 Core continuation；它不能直接执行 Tool。重复按钮或重复命令必须得到安全提示而不是再次执行。
+
+## 14. Gateway 重启后消息重复或消失
+
+事实源是 SQLite：
+
+- `queued`：新 Manager feeder 恢复；
+- `running` 且已绑定 Turn：标 interrupted，不盲目重放可能有副作用的 Tool；
+- Delivery `sending`：先变 unknown，再按预算恢复；
+- `sent`：不再发送；
+- 相同 message ID：Inbox 不插入第二次。
+
+不要删除数据库来“修”恢复问题；先用 32-case gate 复现，再增加稳定事故 case。
+
+## 15. Secret scan 失败
+
+立即停止发布。live harness 只报告命中数量，不显示内容。处理步骤：
+
+1. 旋转可能泄露的模型 Key 和平台 Token；
+2. 检查 `.local/eval-results/`、`~/.miniclaw/logs/` 和 shell history；
+3. 从未推送 commit 中移除敏感内容；已推送则按平台和 Git 托管方的事故流程处理；
+4. 增加回归测试，确保 `repr`、异常、Observer、evidence 不含值；
+5. 重新执行 live 15 项，`secret_matches` 必须为 0。
+
+## 16. 标准诊断命令
+
+```bash
+uv run miniclaw doctor
+uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run python -m unittest tests.test_telegram_transport tests.test_discord_transport -v
+uv run python -m unittest tests.test_channel_supervisor tests.test_channel_live_harness -v
+uv run ruff check .
+```
+
+当前已验证基线是 456 Python、25 TypeScript、24/24 Agent、32/32 Channel、640/640 local soak，状态为
+**IMPLEMENTATION PASS / LIVE PENDING**。

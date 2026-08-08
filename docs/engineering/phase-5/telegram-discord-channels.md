@@ -1,6 +1,9 @@
 # Phase 5：Telegram 与 Discord 工程落地说明
 
-> 当前状态：DESIGN READY / IMPLEMENTATION PENDING
+> 当前状态：**IMPLEMENTATION PASS / LIVE PENDING**
+>
+> 当前证据：456/456 Python tests（1 项预期 skip）、25/25 TypeScript tests、24/24 Agent cases、
+> 32/32 Channel cases、20 轮 640/640 local soak。
 >
 > 目标：Telegram 与 Discord 同时进入统一 Gateway，共享一个个人 Agent
 >
@@ -11,8 +14,8 @@
 
 ## 1. 大白话说明
 
-Phase 4 已经让 MiniClaw 能把飞书消息安全地送进 Agent。Phase 5 不是再写两个聊天机器人，而是把同一条生产
-管线扩展到 Telegram 和 Discord：
+Phase 4 已经让 MiniClaw 能把飞书消息安全地送进 Agent。Phase 5 已把同一条生产管线扩展到 Telegram 和
+Discord；它没有再复制两个聊天机器人：
 
 ```text
 平台消息
@@ -333,8 +336,8 @@ uv run miniclaw doctor
 
 ## 14. 回归测试集
 
-Phase 5 计划新增 20 条版本化场景：Telegram 10 条、Discord 10 条。已有飞书 12 条必须继续通过，因此 Channel
-gate 至少达到 32/32。
+Phase 5 已新增 20 条版本化场景：Telegram 10 条、Discord 10 条。已有飞书 12 条继续保留，因此 Channel gate
+当前是 32/32。
 
 覆盖能力：
 
@@ -355,18 +358,18 @@ Local soak：
 uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
 ```
 
-目标至少 `640/640` checks。这个数字只证明本地状态机，不证明真实 Token、平台权限和网络。
+当前结果是 `640/640` checks。这个数字只证明本地状态机，不证明真实 Token、平台权限和网络。
 
 ## 15. 真实验收口径
 
 每个平台分别执行 20 轮私聊、群 mention/non-mention、reply/thread、Memory 重启、Tool、approve/deny、重复消息、
 长回复、限流、重启、断网重连和 Preview fallback。
 
-当前用户没有 Telegram，因此实施完成后允许：
+当前没有两个平台的真实验收 evidence，因此准确口径是：
 
 ```text
 Telegram implementation PASS / live PENDING
-Discord implementation PASS / live 按实际凭据记录
+Discord implementation PASS / live PENDING
 ```
 
 不允许把 Discord live PASS 写成整个 Phase 5 production verified，也不允许用 fake Telegram SDK 冒充真实验收。
@@ -404,13 +407,20 @@ Phase 5 production verified 还要求 Telegram、Discord 两边真实验收均�
 
 | 项目 | 状态 |
 | --- | --- |
-| 总体架构和范围 | DESIGN READY |
-| Telegram 生产代码 | PENDING |
-| Discord 生产代码 | PENDING |
-| GatewaySupervisor | PENDING |
-| 20 条新回归 | PENDING |
-| 真实 Telegram | PENDING（当前无账号/凭据） |
-| 真实 Discord | PENDING（凭据状态尚未确认） |
+| 总体架构和范围 | IMPLEMENTATION PASS |
+| Telegram 生产代码 | IMPLEMENTATION PASS |
+| Discord 生产代码 | IMPLEMENTATION PASS |
+| GatewaySupervisor | IMPLEMENTATION PASS |
+| 20 条新回归 | 20/20 PASS；总 Channel 32/32 |
+| 20-run local soak | 640/640 PASS |
+| Python / TypeScript | 456/456 + 25/25 PASS |
+| 真实 Telegram | LIVE PENDING（当前无账号/凭据） |
+| 真实 Discord | LIVE PENDING（本轮未提供凭据） |
 
 完整的接口、配置、错误码、测试矩阵和发布门禁见
 [Phase 5 Telegram/Discord 工程设计](../../superpowers/specs/2026-08-08-phase-5-telegram-discord-design.md)。
+
+运行、测试与真实验收见
+[测试与 live acceptance](testing-and-live-acceptance.md)；错误定位见
+[故障排查手册](troubleshooting.md)；逐项 requirement → code → evidence 见
+[完成性审计](completion-audit.md)。

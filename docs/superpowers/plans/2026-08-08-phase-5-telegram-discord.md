@@ -1052,8 +1052,8 @@ git commit -m "test(live): 增加 secret-free Telegram/Discord acceptance harnes
 
 ### Step 13.1 — RED documentation fact scan
 
-- [ ] 先建立检查命令，证明文档仍写 `DESIGN READY / IMPLEMENTATION PENDING`、12 cases、240 checks 或单 Feishu gateway。
-- [ ] 记录将被同步的实际总测试数和 commit，不提前写预期数字。
+- [x] 先建立检查命令，证明文档仍写 `DESIGN READY / IMPLEMENTATION PENDING`、12 cases、240 checks 或单 Feishu gateway。
+- [x] 运行新鲜全量门禁后记录实际 456 Python、25 TypeScript 和 implementation commit，不提前写预期数字。
 
 Run RED:
 
@@ -1066,17 +1066,17 @@ Expected RED: 至少命中 Phase 5 尚未实现的进度文本。
 
 ### Step 13.2 — Write plain-language operational docs
 
-- [ ] README 给出最短路径：安装 `channels` extra、配置一个或多个 Channel、Doctor、Gateway。
-- [ ] 工程文档用 Mermaid 展示一个 Runtime、三个 pipeline、SQLite durable truth、Experience/Approval 流程和故障隔离。
-- [ ] testing 文档解释 unit/integration/eval/soak/live 各自证明什么、不证明什么。
-- [ ] troubleshooting 提供 SDK missing、Token missing、Telegram 409 conflict、Discord intents/403、rate limit、degraded pipeline、approval pending、secret scan 的具体排查步骤。
-- [ ] 本地运行指南写 Telegram BotFather/Discord Developer Portal 的最小权限、Token 环境变量、allowlist 获取方式、启动和停止；不得放真实 ID 或截图中的 Secret。
-- [ ] completion audit 建立“设计章节 → 代码 → 测试 → evidence → 状态”逐项表；`docs/evals/README.md` 增加 v0.5.0 发布入口。
-- [ ] `docs/evals/releases/v0.5.0.md` 写实际 commits/gates；无 live evidence 的平台保持 `LIVE PENDING`。
-- [ ] 两个 progress HTML 同步相同百分比、Phase、测试数字、下一步和 commit links。
-- [ ] `scripts/validate_docs.py` 使用 stdlib 检查 Markdown 相对链接、fence/Mermaid 配对、HTML 基本结构和 required facts；`tests/test_documentation.py` 覆盖坏链接、未闭合 fence 与缺失 HTML closing tag。
-- [ ] `AGENTS.md` 保留中英各半 commit 规范，并增加 Phase 5 gate 命令。
-- [ ] 不修改用户拥有的 `docs/README.md`；工程索引使用 `docs/engineering/README.md`。
+- [x] README 给出最短路径：安装 `channels` extra、配置一个或多个 Channel、Doctor、Gateway。
+- [x] 工程文档用 Mermaid 展示一个 Runtime、三个 pipeline、SQLite durable truth、Experience/Approval 流程和故障隔离。
+- [x] testing 文档解释 unit/integration/eval/soak/live 各自证明什么、不证明什么。
+- [x] troubleshooting 提供 SDK missing、Token missing、Telegram 409 conflict、Discord intents/403、rate limit、degraded pipeline、approval pending、secret scan 的具体排查步骤。
+- [x] 本地运行指南写 Telegram BotFather/Discord Developer Portal 的最小权限、Token 环境变量、allowlist 获取方式、启动和停止；没有真实 ID 或 Secret。
+- [x] completion audit 建立“要求 → 代码 → 测试 → evidence → 状态”逐项表；`docs/evals/README.md` 增加 v0.5.0 发布入口。
+- [x] `docs/evals/releases/v0.5.0.md` 写实际 commits/gates；无 live evidence 的平台保持 `LIVE PENDING`。
+- [x] 两个 progress HTML 同步 Phase 5、456+25、32/32、640/640、Phase 6 下一步和 commit links。
+- [x] `scripts/validate_docs.py` 使用 stdlib 检查 Markdown 相对链接、fence/Mermaid 配对、HTML 标签和 required facts；`tests/test_documentation.py` 覆盖坏链接、未闭合 Mermaid 与缺失 HTML closing tag。
+- [x] `AGENTS.md` 保留中英各半 commit 规范，并增加 Phase 5 gate 命令。
+- [x] 未修改用户拥有的 `docs/README.md`；工程索引使用 `docs/engineering/README.md`。
 
 ### Step 13.3 — Validate docs mechanically
 
@@ -1089,6 +1089,9 @@ uv run python scripts/validate_docs.py --root . \
 ```
 
 Expected: link、fence、Mermaid、HTML 和草稿标记检查全 PASS。
+
+Actual (2026-08-08): repository + external HTML validation PASS，documentation focused tests `6/6`，Ruff PASS；
+外部进度页更新于 `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`。
 
 ### Step 13.4 — Commit repo docs, then external progress separately
 
