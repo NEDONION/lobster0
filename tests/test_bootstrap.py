@@ -32,11 +32,13 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(config.workspace.path, self.paths.workspace)
         self.assertEqual(config.permissions.profile, "personal")
         self.assertTrue(config.permissions.discover_user_executables)
+        self.assertEqual(getattr(config.tools, "mode", None), "autopilot")
         self.assertIn(
             '[ui]\nlanguage = "zh-CN"',
             self.paths.config.read_text(encoding="utf-8"),
         )
         template = self.paths.config.read_text(encoding="utf-8")
+        self.assertIn('[tools]\nmode = "autopilot"', template)
         self.assertIn("# [channels.feishu]", template)
         self.assertIn('# app_id_env = "MINICLAW_FEISHU_APP_ID"', template)
         self.assertIn('# app_secret_env = "MINICLAW_FEISHU_APP_SECRET"', template)

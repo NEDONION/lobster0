@@ -18,6 +18,7 @@ from miniclaw.policy.approvals import (
 )
 from miniclaw.policy.command import NormalizedCommand, command_rule_is_persistable
 from miniclaw.policy.engine import PolicyDecision
+from miniclaw.policy.modes import PermissionMode
 from miniclaw.policy.network import NetworkPolicyError, NetworkRule, normalize_network_rule
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.database import Database
@@ -26,6 +27,41 @@ from miniclaw.tools.base import ToolContext
 
 class ToolStateError(RuntimeError):
     """表示 ToolRun 不满足预期的状态迁移。"""
+
+
+class PermissionModeAuditRepository:
+    """把进程级权限模式变化保存为不含平台身份的审计事件。"""
+
+    def __init__(self, database: Database) -> None:
+        """绑定已经完成 schema 初始化的 SQLite 数据库。"""
+        self._database = database
+
+    def record(
+        self,
+        user_id: int,
+        previous: PermissionMode,
+        current: PermissionMode,
+        source: str,
+    ) -> None:
+        """先持久化安全枚举，再允许 PermissionState 完成模式切换。"""
+        metadata = json.dumps(
+            {
+                "current_mode": current.value,
+                "previous_mode": previous.value,
+                "source": source,
+            },
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO audit_events (
+                    event_type, user_id, summary, metadata_json, created_at
+                ) VALUES ('policy.mode_changed', ?, 'Changed permission mode', ?, ?)
+                """,
+                (user_id, metadata, datetime.now(UTC).isoformat()),
+            )
 
 
 @dataclass(frozen=True, slots=True)

@@ -17,6 +17,7 @@ from miniclaw.paths import StatePaths
 from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.policy.executables import discover_executables
+from miniclaw.policy.modes import PermissionState
 from miniclaw.policy.network import normalize_network_rule
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
 from miniclaw.storage.channels import (
@@ -30,6 +31,7 @@ from miniclaw.storage.migrations import apply_migrations
 from miniclaw.storage.repositories import OwnerRepository
 from miniclaw.storage.tooling import (
     ApprovalRepository,
+    PermissionModeAuditRepository,
     PolicyRuleRepository,
     ToolRunRepository,
 )
@@ -53,6 +55,7 @@ class AgentRuntime:
     workspace: Path
     ui_language: str
     context_budget_tokens: int
+    permission_state: PermissionState
     service: TurnService
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
@@ -100,6 +103,10 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     approvals = ApprovalRepository(database)
     rules = PolicyRuleRepository(database)
     messages = MessageRepository(database)
+    permission_state = PermissionState(
+        config.tools.mode,
+        audit=PermissionModeAuditRepository(database).record,
+    )
     configured_command_rules = tuple(
         normalize_command(
             rule.program,
@@ -148,6 +155,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         PolicyEngine(
             security=config.tools.security,
             ask=config.tools.ask,
+            permission_state=permission_state,
             command_rules=command_rules,
             network_rules=network_rules,
             executable_path=executable_environment.path_value,
@@ -189,6 +197,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         workspace=config.workspace.path,
         ui_language=config.ui.language,
         context_budget_tokens=config.agent.context_budget_tokens,
+        permission_state=permission_state,
         service=service,
         tool_definitions=tuple(
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)

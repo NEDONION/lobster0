@@ -11,6 +11,7 @@ from miniclaw.policy.command import (
     NormalizedCommand,
     normalize_command,
 )
+from miniclaw.policy.modes import PermissionMode, PermissionState
 from miniclaw.policy.network import (
     NetworkPolicyError,
     NetworkRule,
@@ -57,6 +58,8 @@ class PolicyEngine:
         network_rules: tuple[NetworkRule, ...] = (),
         network_resolver: Resolver | None = None,
         executable_path: str = SAFE_EXECUTABLE_PATH,
+        mode: str | PermissionMode = PermissionMode.SAFE,
+        permission_state: PermissionState | None = None,
     ) -> None:
         if security not in {"deny", "allowlist", "full"}:
             raise ValueError("invalid tool security mode")
@@ -68,6 +71,7 @@ class PolicyEngine:
         self._network_rules = set(network_rules)
         self._network_resolver = network_resolver or default_resolver
         self._executable_path = executable_path
+        self._permission_state = permission_state or PermissionState(mode)
 
     def authorize(
         self,
@@ -79,7 +83,7 @@ class PolicyEngine:
         if definition.name == "run_command":
             return self._authorize_command(context, arguments)
         if definition.name == "http_get":
-            return self._authorize_http(arguments)
+            return self._authorize_http(context, arguments)
         normalized_arguments = arguments
         path_argument = _READ_PATH_ARGUMENTS.get(definition.name)
         if path_argument is not None:
@@ -105,6 +109,12 @@ class PolicyEngine:
             )
         if definition.risk is ToolRisk.CRITICAL:
             return PolicyDecision(PolicyAction.DENY, "critical_action")
+        if self._automatic_owner_action(context):
+            return PolicyDecision(
+                PolicyAction.ALLOW,
+                "trusted_owner_automation",
+                normalized_arguments=normalized_arguments,
+            )
         return PolicyDecision(
             PolicyAction.REQUIRE_APPROVAL,
             "approval_required",
@@ -138,7 +148,7 @@ class PolicyEngine:
             "args": list(normalized.args),
         }
         exact_match = normalized in self._command_rules
-        action = self._supervised_action(exact_match)
+        action = self._owner_action(context, exact_match, smart_http=False)
         approval_modes = (
             available_approval_decisions("run_command", normalized_arguments)
             if action is PolicyAction.REQUIRE_APPROVAL
@@ -151,7 +161,11 @@ class PolicyEngine:
             approval_modes=approval_modes,
         )
 
-    def _authorize_http(self, arguments: dict[str, JsonValue]) -> PolicyDecision:
+    def _authorize_http(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> PolicyDecision:
         """验证 HTTPS/DNS，并按精确 hostname + port 应用监督策略。"""
         url = cast(str, arguments["url"])
         allowed_ports = tuple(
@@ -167,7 +181,7 @@ class PolicyEngine:
             return PolicyDecision(PolicyAction.DENY, str(error), error.code)
         normalized_arguments = {**arguments, "url": target.url}
         exact_match = target.rule in self._network_rules
-        action = self._supervised_action(exact_match)
+        action = self._owner_action(context, exact_match, smart_http=True)
         return PolicyDecision(
             action,
             "exact_hostname_rule" if exact_match else "network_policy",
@@ -198,3 +212,30 @@ class PolicyEngine:
         if self._ask == "on-miss":
             return PolicyAction.REQUIRE_APPROVAL
         return PolicyAction.DENY
+
+    def _automatic_owner_action(self, context: ToolContext) -> bool:
+        """只为可信 Owner 的 Autopilot/YOLO 自动放行已校验非关键动作。"""
+        return context.trusted_owner and self._permission_state.mode in {
+            PermissionMode.AUTOPILOT,
+            PermissionMode.YOLO,
+        }
+
+    def _owner_action(
+        self,
+        context: ToolContext | None,
+        exact_match: bool,
+        *,
+        smart_http: bool,
+    ) -> PolicyAction:
+        """把可信入口与四档模式映射到命令或 HTTPS 的监督动作。"""
+        trusted_owner = True if context is None else context.trusted_owner
+        if not trusted_owner:
+            return PolicyAction.REQUIRE_APPROVAL
+        mode = self._permission_state.mode
+        if mode in {PermissionMode.AUTOPILOT, PermissionMode.YOLO}:
+            return PolicyAction.ALLOW
+        if mode is PermissionMode.SMART:
+            if smart_http or exact_match:
+                return PolicyAction.ALLOW
+            return PolicyAction.REQUIRE_APPROVAL
+        return self._supervised_action(exact_match)

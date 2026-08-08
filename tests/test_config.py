@@ -39,6 +39,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.permissions.write_roots, ())
         self.assertEqual(config.permissions.executable_roots, ())
         self.assertFalse(config.permissions.discover_user_executables)
+        self.assertEqual(getattr(config.tools, "mode", None), "safe")
         self.assertEqual(config.tools.security, "allowlist")
         self.assertEqual(config.tools.ask, "on-miss")
         self.assertEqual(config.tools.approval_ttl_seconds, 600)
@@ -182,6 +183,7 @@ class ConfigTest(unittest.TestCase):
         self.paths.config.write_text(
             "[tools]\n"
             'enabled = ["system_info", "run_command", "http_get"]\n'
+            'mode = "autopilot"\n'
             'security = "full"\n'
             'ask = "always"\n'
             "approval_ttl_seconds = 90\n"
@@ -199,6 +201,7 @@ class ConfigTest(unittest.TestCase):
         config = load_config(self.paths, {}, {})
 
         self.assertEqual(config.tools.enabled, ("system_info", "run_command", "http_get"))
+        self.assertEqual(getattr(config.tools, "mode", None), "autopilot")
         self.assertEqual((config.tools.security, config.tools.ask), ("full", "always"))
         self.assertEqual(config.tools.approval_ttl_seconds, 90)
         self.assertEqual(config.tools.run_command.allow_commands[0].program, "git")
@@ -216,6 +219,7 @@ class ConfigTest(unittest.TestCase):
             ("[tools.run_command]\nunknown = true\n", "tools.run_command.unknown"),
             ('[tools]\nenabled = ["grep", "grep"]\n', "tools.enabled"),
             ('[tools]\nsecurity = "unsafe"\n', "tools.security"),
+            ('[tools]\nmode = "unrestricted"\n', "tools.mode"),
             (
                 "[tools.run_command]\ntimeout_seconds = 121\nmax_timeout_seconds = 120\n",
                 "tools.run_command.timeout_seconds",

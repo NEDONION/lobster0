@@ -45,7 +45,15 @@ _PERMISSION_KEYS = frozenset(
     }
 )
 _TOOLS_KEYS = frozenset(
-    {"enabled", "security", "ask", "approval_ttl_seconds", "run_command", "http_get"}
+    {
+        "enabled",
+        "mode",
+        "security",
+        "ask",
+        "approval_ttl_seconds",
+        "run_command",
+        "http_get",
+    }
 )
 _RUN_COMMAND_KEYS = frozenset(
     {"allow_commands", "timeout_seconds", "max_timeout_seconds"}
@@ -193,6 +201,7 @@ class ToolConfig:
     """保存 Phase 2 Tool 能力上限和审批默认值。"""
 
     enabled: tuple[str, ...] = BUILTIN_TOOL_NAMES
+    mode: str = "safe"
     security: str = "allowlist"
     ask: str = "on-miss"
     approval_ttl_seconds: int = 600
@@ -400,6 +409,11 @@ def load_config(
             "permissions roots and discover_user_executables require personal profile"
         )
     enabled_tools = _enabled_tools(tools_raw.get("enabled", list(BUILTIN_TOOL_NAMES)))
+    tool_mode = _enum_string(
+        tools_raw.get("mode", "safe"),
+        "tools.mode",
+        frozenset({"safe", "smart", "autopilot", "yolo"}),
+    )
     tool_security = _enum_string(
         tools_raw.get("security", "allowlist"),
         "tools.security",
@@ -713,6 +727,7 @@ def load_config(
         ),
         tools=ToolConfig(
             enabled=enabled_tools,
+            mode=tool_mode,
             security=tool_security,
             ask=tool_ask,
             approval_ttl_seconds=approval_ttl_seconds,

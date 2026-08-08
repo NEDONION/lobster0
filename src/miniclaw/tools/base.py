@@ -53,6 +53,7 @@ class ToolContext:
     read_only_roots: tuple[Path, ...]
     write_roots: tuple[Path, ...] = ()
     owner_home: Path | None = None
+    trusted_owner: bool = True
 
 
 class ToolValidationError(ValueError):
