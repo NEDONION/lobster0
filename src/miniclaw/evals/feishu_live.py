@@ -1366,8 +1366,8 @@ def _has_sent_delivery(
     connection: sqlite3.Connection,
     checkpoint: DatabaseCheckpoint,
 ) -> bool:
-    """判断是否出现新的 sent Feishu Delivery。"""
-    return _exists(
+    """判断新回复已由 Outbox 发送，或由无 Outbox 的最终卡片完成。"""
+    if _exists(
         connection,
         """
         SELECT 1 FROM deliveries
@@ -1375,6 +1375,32 @@ def _has_sent_delivery(
         LIMIT 1
         """,
         (checkpoint.delivery_id,),
+    ):
+        return True
+    if _exists(
+        connection,
+        """
+        SELECT 1 FROM deliveries
+        WHERE id > ? AND channel = 'feishu'
+        LIMIT 1
+        """,
+        (checkpoint.delivery_id,),
+    ):
+        return False
+    return _exists(
+        connection,
+        """
+        SELECT 1 FROM processed_events AS e
+        JOIN turns AS t
+          ON t.session_id = e.session_id
+         AND t.inbound_event_id = e.external_message_id
+        JOIN sessions AS s ON s.id = t.session_id
+        WHERE e.rowid > ? AND t.id > ?
+          AND e.channel = 'feishu' AND s.channel = 'feishu'
+          AND e.status = 'completed' AND t.status = 'completed'
+        LIMIT 1
+        """,
+        (checkpoint.processed_event_rowid, checkpoint.turn_id),
     )
 
 

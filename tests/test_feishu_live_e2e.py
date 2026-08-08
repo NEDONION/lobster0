@@ -164,6 +164,54 @@ class FeishuDatabaseProbeTest(unittest.TestCase):
         )
         self.assertEqual(noisy.failed, ("no_new_turn",))
 
+    def test_delivery_sent_accepts_a_completed_final_card_without_outbox_rows(self) -> None:
+        """短回复只更新最终卡片时，completed Inbox/Turn 必须能证明送达完成。"""
+        api = self._api()
+        checkpoint = api.capture_checkpoint(self.paths.database)
+        session_id = self._insert_session("feishu", "completed_card")
+        external_message_id = "om_completed_card"
+        self._insert_turn(session_id, external_message_id, status="completed")
+        self._insert_event(
+            "feishu",
+            "completed_card",
+            session_id,
+            external_message_id,
+        )
+
+        result = api.evaluate_local_evidence(
+            self.paths.database,
+            checkpoint,
+            ("delivery_sent",),
+        )
+
+        self.assertEqual(result.passed, ("delivery_sent",))
+        self.assertEqual(result.failed, ())
+
+    def test_delivery_sent_rejects_completed_card_when_outbox_is_not_sent(self) -> None:
+        """一旦新建了未发送 Outbox，不能用 completed Inbox/Turn 掩盖发送失败。"""
+        api = self._api()
+        checkpoint = api.capture_checkpoint(self.paths.database)
+        session_id = self._insert_session("feishu", "queued_delivery")
+        external_message_id = "om_queued_delivery"
+        turn_id = self._insert_turn(session_id, external_message_id, status="completed")
+        self._insert_event(
+            "feishu",
+            "queued_delivery",
+            session_id,
+            external_message_id,
+        )
+        message_id = self._insert_message(turn_id, session_id)
+        self._insert_delivery(message_id, 0, status="queued")
+
+        result = api.evaluate_local_evidence(
+            self.paths.database,
+            checkpoint,
+            ("delivery_sent",),
+        )
+
+        self.assertEqual(result.passed, ())
+        self.assertEqual(result.failed, ("delivery_sent",))
+
     def test_pending_approval_captured_before_action_can_transition_to_consumed(self) -> None:
         """LIVE-007 必须识别上一 case 的 pending 行在本次动作后变成 consumed。"""
         api = self._api()
