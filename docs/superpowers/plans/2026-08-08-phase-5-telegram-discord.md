@@ -1237,9 +1237,9 @@ git rev-parse origin/main
 git status --short
 ```
 
-- [ ] `HEAD == origin/main`。
-- [ ] 最终汇报列出实际 commit、测试数字、Channel cases、soak、live pending 原因和可点击文档路径。
-- [ ] 如果 push 失败，Implementation 可以是本地 PASS，但必须明确写 `REMOTE PENDING`，不能声称已发布。
+- [x] 首次发布核验 `d3037c1 == origin/main`；最终 evidence-record commit 再次非强制推送并复核。
+- [x] 最终汇报列出实际 commit、测试数字、Channel cases、soak、live pending 原因和可点击文档路径。
+- [x] Push 成功，未使用 `REMOTE PENDING` 或 force push；主工作区用户文件保持未暂存状态。
 
 ---
 
