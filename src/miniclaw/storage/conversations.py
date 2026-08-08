@@ -268,7 +268,7 @@ class MessageRepository:
         return None
 
     def list_context(self, session_id: int, limit: int = 200) -> tuple[StoredMessage, ...]:
-        """返回最新摘要和其覆盖范围之后的原始消息。
+        """返回最新摘要和其覆盖范围之后的 Provider-safe 原始消息。
 
         Args:
             session_id: 当前会话 ID。
@@ -281,7 +281,7 @@ class MessageRepository:
             raise ValueError("message limit must be a positive integer")
         compaction = self.latest_compaction(session_id)
         if compaction is None:
-            return self.list_recent(session_id, limit=limit)
+            return _provider_safe_context(self.list_recent(session_id, limit=limit))
         with self._database.connect_read_only() as connection:
             summary_row = connection.execute(
                 "SELECT * FROM messages WHERE id = ? AND session_id = ?",
@@ -309,7 +309,9 @@ class MessageRepository:
                 ordered = [*prefix, *ordered]
         if summary_row is None:
             raise ConversationDataError("compaction summary message is missing")
-        return (_message_from_row(summary_row), *(_message_from_row(row) for row in ordered))
+        return _provider_safe_context(
+            (_message_from_row(summary_row), *(_message_from_row(row) for row in ordered))
+        )
 
     def compaction_candidates(self, session_id: int) -> tuple[StoredMessage, ...]:
         """选择摘要覆盖范围后的最旧连续且可压缩消息前缀。
@@ -860,6 +862,77 @@ def _message_from_row(row: sqlite3.Row) -> StoredMessage:
         metadata=_json_object(row["metadata_json"]),
         created_at=datetime.fromisoformat(row["created_at"]),
     )
+
+
+def _provider_safe_context(
+    messages: tuple[StoredMessage, ...],
+) -> tuple[StoredMessage, ...]:
+    """移除无法形成 Assistant Tool Call → Tool Result 的完整 Turn。
+
+    Args:
+        messages: 按消息 ID 递增排列的持久上下文。
+
+    Returns:
+        保留完整审批 continuation，并删除新 User 消息前仍 orphan 的 Tool Turn。
+
+    Raises:
+        ConversationDataError: Tool Call metadata 或 Tool Message 已损坏。
+    """
+    invalid_turns: set[int] = set()
+    pending_calls: dict[str, int] = {}
+    for message in messages:
+        call_ids = _stored_tool_call_ids(message)
+        if call_ids:
+            if pending_calls:
+                invalid_turns.update(pending_calls.values())
+                pending_calls.clear()
+            if message.turn_id is None:
+                raise ConversationDataError("tool call message has no Turn")
+            pending_calls.update((call_id, message.turn_id) for call_id in call_ids)
+            continue
+        if message.role == "tool":
+            if message.tool_call_id is None:
+                raise ConversationDataError("tool message has no tool_call_id")
+            if message.tool_call_id in pending_calls:
+                pending_calls.pop(message.tool_call_id)
+            elif message.turn_id is not None:
+                invalid_turns.add(message.turn_id)
+            continue
+        if pending_calls:
+            invalid_turns.update(pending_calls.values())
+            pending_calls.clear()
+    invalid_turns.update(pending_calls.values())
+    if not invalid_turns:
+        return messages
+    return tuple(
+        message for message in messages if message.turn_id not in invalid_turns
+    )
+
+
+def _stored_tool_call_ids(message: StoredMessage) -> tuple[str, ...]:
+    """从持久 Assistant metadata 中读取非空 Tool Call ID。
+
+    Args:
+        message: 已解码 metadata 的持久消息。
+
+    Returns:
+        没有 Tool Call 时为空，否则保持模型返回顺序。
+
+    Raises:
+        ConversationDataError: Tool Call 容器或任一 ID 不符合持久契约。
+    """
+    value = message.metadata.get("tool_calls", [])
+    if not isinstance(value, list):
+        raise ConversationDataError("tool call metadata is invalid")
+    call_ids: list[str] = []
+    for call in value:
+        if not isinstance(call, dict):
+            raise ConversationDataError("tool call metadata is invalid")
+        call_id = call.get("call_id")
+        if not isinstance(call_id, str) or not call_id:
+            raise ConversationDataError("tool call metadata is invalid")
+        call_ids.append(call_id)
+    return tuple(call_ids)
 
 
 def _compaction_from_row(
