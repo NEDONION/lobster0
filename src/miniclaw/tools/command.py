@@ -54,7 +54,14 @@ class RunCommandTool:
         risk=ToolRisk.HIGH,
     )
 
-    def __init__(self, *, timeout_seconds: int = 30, max_timeout_seconds: int = 120) -> None:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: int = 30,
+        max_timeout_seconds: int = 120,
+        executable_path: str = SAFE_EXECUTABLE_PATH,
+        owner_home: Path | None = None,
+    ) -> None:
         if (
             type(timeout_seconds) is not int
             or type(max_timeout_seconds) is not int
@@ -64,8 +71,14 @@ class RunCommandTool:
             or timeout_seconds > max_timeout_seconds
         ):
             raise ValueError("command timeouts must satisfy 0 < default <= maximum <= 120")
+        if not isinstance(executable_path, str) or not executable_path:
+            raise ValueError("executable_path must be a non-empty string")
+        if owner_home is not None and not owner_home.is_absolute():
+            raise ValueError("owner_home must be absolute")
         self._timeout_seconds = timeout_seconds
         self._max_timeout_seconds = max_timeout_seconds
+        self._executable_path = executable_path
+        self._owner_home = owner_home
 
     def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         """校验 program、字符串 argv 和不可放大的 timeout。"""
@@ -111,7 +124,12 @@ class RunCommandTool:
         assert isinstance(args, list) and all(isinstance(argument, str) for argument in args)
         assert type(timeout) is int
         try:
-            normalized = normalize_command(program, tuple(args), context.workspace)
+            normalized = normalize_command(
+                program,
+                tuple(args),
+                context.workspace,
+                executable_path=self._executable_path,
+            )
         except CommandPolicyError as error:
             return ToolResult.failure(error.code, str(error))
 
@@ -121,7 +139,7 @@ class RunCommandTool:
                 normalized.resolved_program,
                 *normalized.args,
                 cwd=context.workspace,
-                env=_safe_environment(),
+                env=_safe_environment(self._executable_path, self._owner_home),
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -211,13 +229,20 @@ def _process_group_exists(process_group_id: int) -> bool:
     return True
 
 
-def _safe_environment() -> dict[str, str]:
+def _safe_environment(
+    executable_path: str = SAFE_EXECUTABLE_PATH,
+    owner_home: Path | None = None,
+) -> dict[str, str]:
     """构造不含 API Key、代理或用户环境的最小子进程环境。"""
     environment = {
-        "PATH": SAFE_EXECUTABLE_PATH,
+        "PATH": executable_path,
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
+        "LARKSUITE_CLI_NO_UPDATE_NOTIFIER": "1",
+        "LARKSUITE_CLI_NO_SKILLS_NOTIFIER": "1",
     }
+    if owner_home is not None:
+        environment["HOME"] = str(owner_home)
     if os.name == "nt":
         for name in ("SYSTEMROOT", "WINDIR", "PATHEXT"):
             if name in os.environ:

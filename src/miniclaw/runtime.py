@@ -1,6 +1,7 @@
 """CLI 与 TUI 共用的唯一 Agent 运行期装配。"""
 
-from dataclasses import dataclass, field
+import sys
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from miniclaw.agent.compaction import ContextCompactor
@@ -9,11 +10,12 @@ from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
-from miniclaw.config import AppConfig
+from miniclaw.config import AppConfig, resolve_permission_roots
 from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths
 from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
+from miniclaw.policy.executables import discover_executables
 from miniclaw.policy.network import normalize_network_rule
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
 from miniclaw.storage.channels import (
@@ -61,6 +63,29 @@ class AgentRuntime:
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
     """按已校验配置装配当前十个内置 Tool 和唯一 TurnService。"""
+    permission_roots = resolve_permission_roots(
+        config.permissions,
+        config.workspace.path,
+        home=Path.home(),
+        platform_name=sys.platform,
+    )
+    effective_workspace = replace(
+        config.workspace,
+        read_only_roots=tuple(
+            dict.fromkeys(
+                (*config.workspace.read_only_roots, *permission_roots.read_roots)
+            )
+        ),
+        write_roots=permission_roots.write_roots,
+        owner_home=permission_roots.owner_home,
+    )
+    executable_environment = discover_executables(
+        config.permissions.profile,
+        home=permission_roots.owner_home,
+        explicit_roots=config.permissions.executable_roots,
+        discover_user=config.permissions.discover_user_executables,
+        platform_name=sys.platform,
+    )
     database = Database(paths.database)
     apply_migrations(database)
     owner = OwnerRepository(database).get_or_create()
@@ -75,7 +100,12 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     rules = PolicyRuleRepository(database)
     messages = MessageRepository(database)
     configured_command_rules = tuple(
-        normalize_command(rule.program, rule.args, config.workspace.path)
+        normalize_command(
+            rule.program,
+            rule.args,
+            config.workspace.path,
+            executable_path=executable_environment.path_value,
+        )
         for rule in config.tools.run_command.allow_commands
     )
     command_rules = tuple(
@@ -103,6 +133,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         RunCommandTool(
             timeout_seconds=config.tools.run_command.timeout_seconds,
             max_timeout_seconds=config.tools.run_command.max_timeout_seconds,
+            executable_path=executable_environment.path_value,
+            owner_home=permission_roots.owner_home,
         ),
         ReadMemoryTool(memory),
         ProposeMemoryTool(memory),
@@ -117,6 +149,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             ask=config.tools.ask,
             command_rules=command_rules,
             network_rules=network_rules,
+            executable_path=executable_environment.path_value,
         ),
         runs,
         result_max_chars=config.agent.tool_result_max_chars,
@@ -147,7 +180,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             context_budget_tokens=config.agent.context_budget_tokens,
         ),
         state_home=paths.home,
-        workspace=config.workspace,
+        workspace=effective_workspace,
     )
     return AgentRuntime(
         owner_id=owner.id,

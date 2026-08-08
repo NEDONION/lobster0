@@ -6,6 +6,7 @@ import tempfile
 import tomllib
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import load_config
@@ -72,6 +73,41 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 manager = create_channel_manager(config, paths, runtime)
                 self.assertIs(manager.service, runtime.service)
                 self.assertEqual(manager.owner_id, runtime.owner_id)
+            finally:
+                await runtime.aclose()
+
+    async def test_personal_runtime_uses_one_boundary_for_files_and_user_cli(self) -> None:
+        """Runtime 必须把解析后的 Personal Roots 和 executable PATH 注入同一纵切。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            paths = build_state_paths(root / "state")
+            initialized = initialize_state(paths)
+            owner_home = root / "owner"
+            documents = owner_home / "Documents"
+            nvm_bin = owner_home / ".config/nvm/versions/node/v20.19.0/bin"
+            documents.mkdir(parents=True)
+            nvm_bin.mkdir(parents=True)
+            lark_cli = nvm_bin / "lark-cli"
+            lark_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            lark_cli.chmod(0o700)
+            with paths.config.open("a", encoding="utf-8") as config_file:
+                config_file.write(
+                    "\n[tools.run_command]\n"
+                    'allow_commands = [{ program = "lark-cli", args = ["--version"] }]\n'
+                )
+            config = load_config(paths)
+
+            with mock.patch("miniclaw.runtime.Path.home", return_value=owner_home):
+                runtime = create_runtime(config, paths, "test-key")
+            try:
+                context = runtime.service._tool_context(
+                    initialized.owner.id,
+                    1,
+                    1,
+                )
+                self.assertEqual(context.owner_home, owner_home)
+                self.assertIn(owner_home, context.read_only_roots)
+                self.assertIn(documents, context.write_roots)
             finally:
                 await runtime.aclose()
 
