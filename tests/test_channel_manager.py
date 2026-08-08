@@ -579,9 +579,10 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             and element["content"].startswith("**最终回答**\n")
         )
         visible = answer_element["content"].removeprefix("**最终回答**\n")
-        visible = visible.removesuffix("\n\n_答案过长，剩余内容将继续发送。_")
+        visible = visible.removesuffix("\n- _答案过长，剩余内容将继续发送。_")
         tail = "".join(row["content"] for row in deliveries)
-        self.assertEqual(visible + tail, "reply:" + "x" * 25_000)
+        self.assertTrue(visible.startswith("- "))
+        self.assertEqual(visible.removeprefix("- ") + tail, "reply:" + "x" * 25_000)
 
     async def test_approval_commands_bypass_agent_and_waiting_turn_creates_card(self) -> None:
         """控制命令不进模型；普通 Turn waiting 时创建 durable Approval card。"""

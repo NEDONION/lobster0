@@ -83,6 +83,35 @@ class FeishuAgentCardTest(unittest.TestCase):
         self.assertLess(rendered.visible_answer_chars, len(answer))
         self.assertIn(visible[:100], encoded.decode("utf-8"))
 
+    def test_final_answer_uses_bullets_and_converts_markdown_tables(self) -> None:
+        """最终回答统一渲染为项目符号，二维属性表转换为可读的键值条目。"""
+        answer = (
+            "你最近 30 天内修改的文档共有 3 篇。\n\n"
+            "| 项目 | 内容 |\n"
+            "| --- | --- |\n"
+            "| 标题 | 202608_求职公司调研 |\n"
+            "| 类型 | 飞书文档（DOCX） |\n\n"
+            "需要我继续列出剩下 2 篇吗？"
+        )
+
+        card = render_agent_progress_card(_progress(answer=answer)).card
+        elements = card["body"]["elements"]
+        final_content = next(
+            element["content"]
+            for element in elements
+            if isinstance(element, dict)
+            and isinstance(element.get("content"), str)
+            and element["content"].startswith("**最终回答**")
+        )
+        answer_lines = final_content.splitlines()[1:]
+
+        self.assertTrue(answer_lines)
+        self.assertTrue(all(line.startswith("- ") for line in answer_lines if line))
+        self.assertIn("- **标题**：202608_求职公司调研", answer_lines)
+        self.assertIn("- **类型**：飞书文档（DOCX）", answer_lines)
+        self.assertNotIn("| --- |", final_content)
+        self.assertNotIn("| 项目 | 内容 |", final_content)
+
     def test_markdown_and_compact_renderer_do_not_create_raw_code_fences(self) -> None:
         """Tool 目标中的 Markdown 符号应被转义，紧凑预览同样展示步骤。"""
         progress = _progress(answer="答案含有 `code` 和反斜线 \\")

@@ -20,6 +20,7 @@
 
 - 飞书卡片正文使用 Card JSON 2.0 的 `small`（12px）字号；
 - 正常回答能完整放入时只保留一张最终绿色卡片；
+- 卡片内最终回答统一渲染为 bullet points；Markdown 表格转换为键值条目，不依赖模型遵守排版提示；
 - 回答超过 `message_max_chars` 时，卡片保存前缀，只有未展示后缀回复到机器人自己的卡片下方；
 - 卡片创建或最终更新失败时才把完整正文回复原用户消息；
 - completed Turn 重启恢复时复用稳定 progress UUID，不追加重复普通全文；
@@ -108,6 +109,7 @@ flowchart TD
 - `model_reasoning`、原始 Tool 参数/输出、凭据和文件内容不会被保留或渲染；“过程摘要”只来自公开 preamble 与
   确定性状态文案，不代表隐藏思维链；
 - 卡片最多展示 16 步，每字段最多 240 字符；trace metadata 最大 16 KiB，Card JSON 最大 20 KiB；
+- `AgentProgress.final_answer` 保留原始正文的精确字符前缀，渲染层只改变视觉格式，不改变续发偏移；
 - `ExperienceOutcome.final_delivery_required=false` 只会在最终卡片成功承载完整正文后出现；
 - 超限但最终卡片成功时，Outcome 返回 `final_delivery_offset` 和 `final_reply_to_message_id`，Manager 只切出
   `content[offset:]`，不会重复卡片内前缀；

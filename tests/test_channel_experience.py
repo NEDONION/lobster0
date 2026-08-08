@@ -218,6 +218,19 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(outcome.final_reply_to_message_id)
         self.assertEqual(transport.created[-1][1].final_answer, content)
 
+    async def test_final_progress_whitespace_does_not_create_stray_tail_reply(self) -> None:
+        """卡片完整展示含换行的正文后，不得把末尾问句误判为未展示后缀。"""
+        transport = FakeExperienceTransport(visible_limit=1_000)
+        activity = self._activity(transport, progress_is_final=True)
+        content = "结果如下：\n\n- 标题：文档 A\n- 类型：飞书文档\n\n需要继续吗？"
+
+        outcome = await activity.finish(content=content, failed=False)
+
+        self.assertFalse(outcome.final_delivery_required)
+        self.assertEqual(outcome.final_delivery_offset, len(content))
+        self.assertIsNone(outcome.final_reply_to_message_id)
+        self.assertEqual(transport.created[-1][1].final_answer, content)
+
     async def test_final_progress_overflow_requires_only_tail_reply(self) -> None:
         """超出卡片上限的正文必须返回精确后缀偏移和卡片回复目标。"""
         transport = FakeExperienceTransport()

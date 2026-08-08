@@ -223,14 +223,14 @@ class ProgressProjector:
         summary: str,
         final_answer: str = "",
     ) -> AgentProgress:
-        """从当前私有状态复制一个不可变公开快照。"""
+        """从当前私有状态复制快照，并保留答案的精确原文前缀。"""
         duration_ms = max(0, round((self._clock() - self._started_at) * 1000))
         return AgentProgress(
             status=status,
             summary=_clean(text=summary, limit=_MAX_FIELD_CHARS),
             steps=tuple(self._steps),
             public_text=_clean(text=self._public_text, limit=self._public_text_limit),
-            final_answer=_clean(text=final_answer, limit=100_000),
+            final_answer=final_answer[:100_000],
             iterations=self._iterations,
             tool_calls=self._tool_calls,
             input_tokens=self._input_tokens,
@@ -322,7 +322,7 @@ def progress_from_metadata(
         summary=_clean(text=summary, limit=_MAX_FIELD_CHARS),
         steps=tuple(steps),
         public_text="",
-        final_answer=_clean(text=final_answer, limit=100_000),
+        final_answer=final_answer[:100_000],
         iterations=iterations,
         tool_calls=tool_calls,
         input_tokens=_metadata_optional_int(value.get("input_tokens")),

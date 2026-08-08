@@ -1,6 +1,7 @@
 """从脱敏 AgentProgress 渲染飞书 Card 2.0 与紧凑文本。"""
 
 import json
+import re
 from dataclasses import dataclass
 
 from miniclaw.channels.progress import AgentProgress, ProgressStatus, ProgressStep
@@ -21,6 +22,11 @@ _STEP_ICON = {
     "waiting": "◷",
     "incomplete": "!",
 }
+_LIST_PREFIX = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.+)$")
+_HEADING_PREFIX = re.compile(r"^\s*#{1,6}\s+(.+)$")
+_TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
+_KEY_VALUE_FIRST_HEADERS = frozenset({"项目", "字段", "属性", "名称"})
+_KEY_VALUE_SECOND_HEADERS = frozenset({"内容", "值", "信息", "详情"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +54,7 @@ def render_agent_progress_card(progress: AgentProgress) -> RenderedProgressCard:
     low = 0
     high = len(answer)
     best_card = _build_card(progress, "", detail_indexes, answer_trimmed=bool(answer))
+    best_visible = 0
     while low <= high:
         middle = (low + high) // 2
         candidate = _build_card(
@@ -58,11 +65,11 @@ def render_agent_progress_card(progress: AgentProgress) -> RenderedProgressCard:
         )
         if _card_size(candidate) <= _MAX_CARD_BYTES:
             best_card = candidate
+            best_visible = middle
             low = middle + 1
         else:
             high = middle - 1
-    visible = max(0, high)
-    return RenderedProgressCard(best_card, visible)
+    return RenderedProgressCard(best_card, best_visible)
 
 
 def render_compact_progress(progress: AgentProgress) -> str:
@@ -118,9 +125,9 @@ def _build_card(
             ]
         )
     if answer or (answer_trimmed and progress.final_answer):
-        answer_content = _escape_markdown(answer)
+        answer_content = _escape_markdown(_answer_as_bullets(answer))
         if answer_trimmed:
-            answer_content += "\n\n_答案过长，剩余内容将继续发送。_"
+            answer_content += "\n- _答案过长，剩余内容将继续发送。_"
         elements.extend(
             [
                 {"tag": "hr"},
@@ -159,6 +166,83 @@ def _trail_markdown(steps: tuple[ProgressStep, ...], detail_indexes: set[int]) -
         if position in detail_indexes and step.detail:
             lines.append(f"<font color='grey'>{_escape_markdown(step.detail)}</font>")
     return "\n".join(lines)
+
+
+def _answer_as_bullets(answer: str) -> str:
+    """把最终回答转为项目符号；参数是原始答案，返回无表格的 Markdown 列表。"""
+    source = answer.splitlines()
+    bullets: list[str] = []
+    index = 0
+    while index < len(source):
+        line = source[index]
+        cells = _table_cells(line)
+        separator = _table_cells(source[index + 1]) if index + 1 < len(source) else None
+        if cells is not None and separator is not None and _is_table_separator(separator):
+            index += 2
+            rows: list[list[str]] = []
+            while index < len(source):
+                row = _table_cells(source[index])
+                if row is None:
+                    break
+                rows.append(row)
+                index += 1
+            bullets.extend(_table_bullets(cells, rows))
+            continue
+
+        content = line.strip()
+        index += 1
+        if not content:
+            continue
+        list_match = _LIST_PREFIX.fullmatch(content)
+        heading_match = _HEADING_PREFIX.fullmatch(content)
+        if list_match is not None:
+            content = list_match.group(1).strip()
+        elif heading_match is not None:
+            content = f"**{heading_match.group(1).strip()}**"
+        elif content.startswith(">"):
+            content = content[1:].strip()
+        if content:
+            bullets.append(f"- {content}")
+    return "\n".join(bullets)
+
+
+def _table_cells(line: str) -> list[str] | None:
+    """解析一行原始文本；表格行返回单元格列表，普通文本返回 None。"""
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return None
+    cells = [cell.strip() for cell in stripped[1:-1].split("|")]
+    return cells if cells else None
+
+
+def _is_table_separator(cells: list[str]) -> bool:
+    """检查给定单元格列表，返回它是否为标准 Markdown 表头分隔行。"""
+    return bool(cells) and all(_TABLE_SEPARATOR.fullmatch(cell.replace(" ", "")) for cell in cells)
+
+
+def _table_bullets(headers: list[str], rows: list[list[str]]) -> list[str]:
+    """按给定表头转换数据行，返回忽略空单元格的键值 bullet 列表。"""
+    if (
+        len(headers) == 2
+        and headers[0] in _KEY_VALUE_FIRST_HEADERS
+        and headers[1] in _KEY_VALUE_SECOND_HEADERS
+    ):
+        return [
+            f"- **{row[0]}**：{row[1]}"
+            for row in rows
+            if len(row) >= 2 and row[0] and row[1]
+        ]
+
+    bullets: list[str] = []
+    for row in rows:
+        fields = [
+            f"**{header}**：{value}"
+            for header, value in zip(headers, row, strict=False)
+            if header and value
+        ]
+        if fields:
+            bullets.append("- " + "；".join(fields))
+    return bullets
 
 
 def _metrics(progress: AgentProgress) -> str:
