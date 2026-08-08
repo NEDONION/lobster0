@@ -13,6 +13,17 @@ _ACCOUNT_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
 _CHANNEL_NAMES = frozenset({"feishu", "telegram", "discord"})
 
 
+def sanitize_inbound_text(value: str) -> str:
+    """移除会改变日志/终端状态的控制字符，同时保留换行与 Tab。"""
+    return "".join(
+        character
+        for character in value
+        if character in "\n\t"
+        or ord(character) >= 0x20
+        and not 0x7F <= ord(character) <= 0x9F
+    )
+
+
 class ChannelTransportError(RuntimeError):
     """表示已经映射为稳定码且不包含 SDK 原始正文的平台错误。"""
 

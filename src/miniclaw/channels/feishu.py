@@ -15,6 +15,7 @@ from miniclaw.channels.base import (
     InboundMessage,
     OutboundMessage,
     SendReceipt,
+    sanitize_inbound_text,
 )
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import FeishuConfig
@@ -75,7 +76,7 @@ class FeishuAdapter:
         elif message.chat_type != "p2p":
             return IgnoredInbound("unsupported_message")
 
-        text = _safe_text(message.body_text).strip()
+        text = sanitize_inbound_text(message.body_text).strip()
         if not text:
             return IgnoredInbound("empty_message")
         if len(text) > self._config.message_max_chars:
@@ -583,17 +584,6 @@ def _progress_card(
             ],
         },
     }
-
-
-def _safe_text(value: str) -> str:
-    """移除能改变日志或终端状态的控制字符，同时保留文本布局。"""
-    return "".join(
-        character
-        for character in value
-        if character in "\n\t"
-        or ord(character) >= 0x20
-        and not 0x7F <= ord(character) <= 0x9F
-    )
 
 
 def _received_at(

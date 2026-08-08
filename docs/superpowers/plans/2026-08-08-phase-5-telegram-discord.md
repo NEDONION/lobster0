@@ -460,7 +460,7 @@ git commit -m "refactor(experience): 平台无关化 Typing 与 progress preview
 
 ### Step 5.1 — Define a narrow update view and RED matrix
 
-- [ ] 测试使用本地 frozen view，不 import `telegram` SDK：
+- [x] 测试使用本地 frozen view，不 import `telegram` SDK：
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -480,13 +480,13 @@ class TelegramMessageView:
     topic_id: int | None = None
 ```
 
-- [ ] 私聊 Owner admitted；非 allowlisted user ignored `user_not_allowed`。
-- [ ] 群 chat 和 user 双 allowlist；mention 或 reply-to-bot admitted；否则 `bot_not_addressed`。
-- [ ] bot/service/edited/non-text/empty/control-only/oversized 分别稳定 ignore。
-- [ ] event ID 使用 `update:<update_id>`；message key 使用 `chat:<chat_id>:message:<message_id>`。
-- [ ] forum topic conversation key 为 `chat:<chat_id>:topic:<topic_id>`，普通 conversation 为 `chat:<chat_id>`。
-- [ ] mention stripping 只移除 bot 自身 entity，不误删用户正文中的普通 `@name`。
-- [ ] `repr`、异常和 observer fields 不出现 text、完整 user/chat ID 或 raw Update。
+- [x] 私聊 Owner admitted；非 allowlisted user ignored `user_not_allowed`。
+- [x] 群 chat 和 user 双 allowlist；mention 或 reply-to-bot admitted；否则 `bot_not_addressed`。
+- [x] bot/service/edited/non-text/empty/control-only/oversized 分别稳定 ignore。
+- [x] event ID 使用 `update:<update_id>`；message key 使用 `chat:<chat_id>:message:<message_id>`。
+- [x] forum topic conversation key 为 `chat:<chat_id>:topic:<topic_id>`，普通 conversation 为 `chat:<chat_id>`。
+- [x] mention stripping 只移除 bot 自身 entity，不误删用户正文中的普通 `@name`。
+- [x] `repr`、异常和 observer fields 不出现 text、完整 user/chat ID 或 raw Update。
 
 Run RED:
 
@@ -498,11 +498,11 @@ Expected RED: `TelegramAdapter` 尚不存在。
 
 ### Step 5.2 — Implement a pure normalizer
 
-- [ ] `TelegramAdapter(config, bot_user_id)` 构造时冻结 allowlist sets。
-- [ ] `normalize(view)` 返回 `InboundMessage | IgnoredInbound`；不读取网络、不写 SQLite。
-- [ ] `chat_type` 只映射 private → `p2p`，group/supergroup → `group`；其他值忽略。
-- [ ] `received_at` 强制 timezone-aware UTC；非法时间不进入 Core。
-- [ ] 复用公共 text sanitize helper，限制入站正文预算，禁止 NUL 和危险控制字符。
+- [x] `TelegramAdapter(config, bot_user_id)` 构造时冻结 allowlist sets。
+- [x] `normalize(view)` 返回 `InboundMessage | IgnoredInbound`；不读取网络、不写 SQLite。
+- [x] `chat_type` 只映射 private → `p2p`，group/supergroup → `group`；其他值忽略。
+- [x] `received_at` 强制 timezone-aware UTC；非法时间不进入 Core。
+- [x] 复用公共 text sanitize helper，限制入站正文预算，禁止 NUL 和危险控制字符。
 
 Run GREEN:
 
