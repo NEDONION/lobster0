@@ -113,8 +113,10 @@ Hermes 最值得学习的是把记忆、历史检索和 Skills 连成一个学�
 | GAP-EVO-002 | 修改提案 | Schema 已存在，未接线 | Memory/Skill diff、来源、版本和风险 | P1 | 7 |
 | GAP-EVO-003 | 评测门禁 | 有通用 eval | Proposal 自动跑旧集+事故集+安全集 | P1 | 7 |
 | GAP-EVO-004 | 应用与回滚 | GAP | 人工批准、原子应用、一键回滚 | P1 | 7 |
-| GAP-MEM-001 | 跨会话搜索 | GAP | SQLite FTS5、分页、来源和时间 | P1 | 7 |
-| GAP-MEM-002 | 记忆治理 | PARTIAL | active/superseded、晋升、衰减、冲突 | P2 | 7 |
+| GAP-MEM-001 | 跨会话搜索 | GAP | Owner-scoped FTS5、分页、来源和时间 | P0 | Memory Autopilot |
+| GAP-MEM-002 | 记忆治理 | PARTIAL | short-term/active/superseded、晋升、衰减、冲突 | P0 | Memory Autopilot |
+| GAP-MEM-003 | 跨渠道身份与披露 | PARTIAL | 同 Owner 私聊共享；群聊/非 Owner fail closed | P0 | Memory Autopilot |
+| GAP-MEM-004 | 自动 Flush 与 Markdown 投影 | GAP | durable buffer、崩溃恢复、周期落盘、可重建索引 | P0 | Memory Autopilot |
 | GAP-SKILL-001 | 标准 Skill | 本地最小格式 | AgentSkills 兼容、依赖/权限声明 | P2 | 8 |
 | GAP-SKILL-002 | Skill 安装信任 | GAP | staging、hash、scan、approve、version | P1 | 8 |
 | GAP-MCP-001 | MCP Client | GAP | stdio/HTTP、Tool allowlist、凭据过滤 | P1 | 8 |
@@ -189,9 +191,10 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    P52["Phase 5.2\n真实稳定化"] --> P6["Phase 6\n自治运行 + Sandbox"]
+    P52["Phase 5.2\n真实稳定化"] --> MEM["Memory Autopilot\n跨渠道连续性"]
+    MEM --> P6["Phase 6\n自治运行 + Sandbox"]
     P6 --> P65["Phase 6.5\nBrowser Agent"]
-    P65 --> P7["Phase 7\n受控学习 + Memory v2"]
+    P65 --> P7["Phase 7\n受控学习 + Reflection"]
     P7 --> P8["Phase 8\nMCP / Skill / Provider 韧性"]
     P8 --> P9["Phase 9\nSub-agent / 多模态"]
     P9 --> V2["v2 候选\nMulti-agent / Nodes"]
@@ -209,6 +212,24 @@ flowchart LR
 - `/healthz` 只绑定 loopback，或使用本地 status socket；
 - 24h soak 和故障注入；
 - 发布证据与 Secret scan。
+
+### Memory Autopilot：跨渠道连续性基础
+
+**用户能感受到的结果**：在 TUI 说过的稳定偏好，完成后台 Flush 后能在飞书、Telegram 和 Discord 的
+Owner 私聊中召回；群聊和其他用户看不到私人记忆。
+
+**范围**：
+
+- Owner Identity 与 Memory Disclosure；
+- durable buffer、自动提取与原子 Markdown Flush；
+- FTS5/CJK 检索与有界 Context 注入；
+- 明确“记住”立即保存，普通事实分级自动晋升；
+- 敏感/冲突/行为影响 Review；
+- forget、来源下钻、direct-edit reconcile 与 legacy migration。
+
+完整设计见 [Memory Autopilot 能力 Gap](20260808_Memory-Autopilot能力Gap与重构架构.md)和
+[工程技术选型](../engineering/memory-autopilot-best-practices-and-technology-selection.md)。高级 Reflection、
+Agent Case 与 Skill 进化仍留在 Phase 7。
 
 ### Phase 6：自治运行与安全边界
 
@@ -247,9 +268,8 @@ flowchart LR
 **范围**：
 
 - `/good`、`/bad` 和原因；
-- FTS5 Session Search；
-- Memory 候选、晋升、冲突和 supersede；
-- Skill proposal；
+- Memory Reflection、Episode/Scenario 合并与来源保持；
+- Agent Case、Skill proposal 与 Memory/Skill 联动；
 - eval gate；
 - diff review；
 - apply/rollback；

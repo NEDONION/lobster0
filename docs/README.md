@@ -9,33 +9,37 @@
 2. 阅读 [PRD](product/20260807_产品需求文档.md)，确认 v0.1 范围、非目标和验收标准。
 3. 阅读 [OpenClaw / Hermes 能力 Gap 与演进路线](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)，
    用大白话了解当前已经有什么、还缺什么、为什么按 Phase 5.2 → 9 推进。
-4. 阅读 [OpenClaw / Hermes 能力对齐工程落地总方案](engineering/openclaw-hermes-alignment-engineering-roadmap.md)，
+4. 阅读 [Memory Autopilot 能力 Gap 与重构架构](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)，
+   了解为什么新飞书 Session 会像失忆，以及跨渠道分级自动记忆的目标方案。
+5. 阅读 [Memory Autopilot 最佳实践与技术选型](engineering/memory-autopilot-best-practices-and-technology-selection.md)，
+   查看 Markdown/SQLite 职责、Flush、检索、隐私和完整测试施工图。
+6. 阅读 [OpenClaw / Hermes 能力对齐工程落地总方案](engineering/openclaw-hermes-alignment-engineering-roadmap.md)，
    查看自治任务、Sandbox、Browser、自我进化、MCP、Provider、Sub-agent 与多模态的模块和测试边界。
-5. 阅读 [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)，确认 v1.0
+7. 阅读 [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)，确认 v1.0
    的范围、契约、安全边界、数据模型和分阶段交付标准。
-6. 阅读 [Phase 2：Tool、权限与安全执行设计](superpowers/specs/2026-08-07-phase-2-tools-security-design.md)，
+8. 阅读 [Phase 2：Tool、权限与安全执行设计](superpowers/specs/2026-08-07-phase-2-tools-security-design.md)，
    了解本机 Tool、Workspace、审批、命令和 SSRF 的落地方案。
-7. 阅读 [系统架构](architecture/20260807_系统架构.md)，理解渠道、Agent、工具、安全和数据边界。
-8. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证唯一 TUI。
-9. 阅读 [Python Core + pi-tui Bridge](engineering/phase-2/python-core-pi-tui-bridge.md)，理解版本化协议、
+9. 阅读 [系统架构](architecture/20260807_系统架构.md)，理解渠道、Agent、工具、安全和数据边界。
+10. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证唯一 TUI。
+11. 阅读 [Python Core + pi-tui Bridge](engineering/phase-2/python-core-pi-tui-bridge.md)，理解版本化协议、
    进程边界、长文本、选择和审批；[单入口 TUI](engineering/phase-2/single-entry-tui.md)保留 fallback 历史。
-10. 阅读 [TUI 回归测试规范](engineering/phase-2/tui-regression-testing.md)，理解 Trace 可观测契约、
+12. 阅读 [TUI 回归测试规范](engineering/phase-2/tui-regression-testing.md)，理解 Trace 可观测契约、
    虚拟终端、跨进程、Textual fallback、PTY smoke 和每版本门禁。
-11. 阅读 [exact-argv 命令执行工程文档](engineering/phase-2/command-execution.md)，理解 `run_command`、硬禁止、
+13. 阅读 [exact-argv 命令执行工程文档](engineering/phase-2/command-execution.md)，理解 `run_command`、硬禁止、
    精确规则、最小环境、超时和 TUI 审批。
-12. 阅读 [Personal Machine 权限与 CLI 发现](engineering/phase-2/personal-machine-permissions.md)，理解
+14. 阅读 [Personal Machine 权限与 CLI 发现](engineering/phase-2/personal-machine-permissions.md)，理解
    Workspace/Personal Profile、多根读写、敏感路径、NVM/uv/pnpm CLI 发现和最小子进程环境。
-13. 阅读 [Autopilot 权限与紧凑审批 UI](engineering/phase-2/autopilot-permissions-and-approval-ui.md)，理解
+15. 阅读 [Autopilot 权限与紧凑审批 UI](engineering/phase-2/autopilot-permissions-and-approval-ui.md)，理解
    四档模式、Owner 私聊信任、动态切换、脱敏审计与可滚动审批框。
-14. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/https-get-and-ssrf.md)，理解 URL/DNS 校验、
+16. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/https-get-and-ssrf.md)，理解 URL/DNS 校验、
    固定 IP/TLS hostname、重定向、响应预算和不可信内容边界。
-15. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
+17. 阅读 [Agent 回归工程文档](engineering/phase-2/agent-regression-evals.md)，理解每个版本如何固定 query、
    跑离线 gate 并记录 baseline。
-16. 阅读 [飞书 Channel Core](engineering/phase-4/feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
+18. 阅读 [飞书 Channel Core](engineering/phase-4/feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
    WebSocket Transport、Delivery 恢复和卡片审批。
-17. 阅读 [真实飞书 Bot 与 Live E2E](engineering/phase-5/feishu-live-e2e.md)，按图完成 Scope、同应用 Owner
+19. 阅读 [真实飞书 Bot 与 Live E2E](engineering/phase-5/feishu-live-e2e.md)，按图完成 Scope、同应用 Owner
    discovery、15 条真实场景和脱敏 Evidence。
-18. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+20. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -44,6 +48,8 @@
 | [产品需求文档](product/20260807_产品需求文档.md) | 定位、用户流程、功能范围、图解、验收标准和里程碑 |
 | [系统架构](architecture/20260807_系统架构.md) | 运行边界、主链路、计划包结构和安全原则 |
 | [OpenClaw / Hermes 能力 Gap](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 当前能力、竞品方法映射、优先级、Phase 5.2→9 路线与非目标 |
+| [Memory Autopilot 能力 Gap](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 当前失忆根因、EverOS/Tencent/OpenClaw 映射、L0→L3、跨渠道与分级自动治理 |
+| [Memory Autopilot 正式设计](superpowers/specs/2026-08-08-memory-autopilot-design.md) | 已确认的产品语义、存储决策、安全边界、失败策略与验收门槛 |
 | [能力对齐工程落地总方案](engineering/openclaw-hermes-alignment-engineering-roadmap.md) | 模块、数据模型、配置、错误码、测试矩阵与各 Phase 退出条件 |
 
 ## 使用与开发
@@ -94,9 +100,13 @@
 
 ## Phase 3 模块工程文档
 
+> 下表第一项记录当前已实现的 Phase 3；第二项是已确认但**尚未实现**的 Memory Autopilot 重构，不能把规划
+> 当作当前能力。
+
 | 模块 | 文档 |
 | --- | --- |
 | Memory、Skills 与上下文压缩 | [memory-skills-compaction.md](engineering/phase-3/memory-skills-compaction.md) |
+| Memory Autopilot 最佳实践与技术选型（规划） | [memory-autopilot-best-practices-and-technology-selection.md](engineering/memory-autopilot-best-practices-and-technology-selection.md) |
 
 ## Phase 4 模块工程文档
 

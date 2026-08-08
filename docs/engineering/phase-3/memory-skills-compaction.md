@@ -4,6 +4,13 @@
 > 当前全仓 520/520 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS；
 > 当前版本没有把历史 v0.2 DeepSeek live smoke 冒充 Phase 3 新结果。
 
+> [!IMPORTANT]
+> 本文只描述当前已实现的手工/审批式 Memory v1。跨渠道自动提取、短期记忆、自动晋升、周期 Flush、FTS5
+> 检索、冲突/遗忘和 Disclosure Policy 已形成
+> [Memory Autopilot 设计](../../architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)与
+> [工程技术选型](../memory-autopilot-best-practices-and-technology-selection.md)，状态为
+> **APPROVED DESIGN / PLANNED / NOT IMPLEMENTED**。
+
 ## 1. 这阶段解决什么
 
 Phase 2 让 MiniClaw 能安全地使用本机 Tool。Phase 3 让它在对话变长或进程重启后，仍能记住稳定信息、

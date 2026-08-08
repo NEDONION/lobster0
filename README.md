@@ -48,6 +48,9 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > live gate。Telegram 与 Discord 当前也都为 **LIVE PENDING**。离线 fake SDK
 > 通过不冒充 production verified。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
+> 当前 Memory 仍是手工/审批式 v1，不会从普通对话自动提取，也不会跨 Session 搜索。跨渠道 Owner 共享、
+> 分级自动记忆、周期 Markdown Flush、FTS5/CJK 检索、冲突与遗忘已形成 **PLANNED / NOT IMPLEMENTED** 的
+> [Memory Autopilot 设计](docs/architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)，不能当作当前能力。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
 > 保存在 [v0.2.0 release record](docs/evals/releases/v0.2.0.md)，不冒充当前 TUI 版本的新 live 结果。
 > 已确认的产品范围与验收标准见 [PRD](docs/product/20260807_产品需求文档.md)。
@@ -146,6 +149,10 @@ gate，不能代替真实平台验收。`doctor` 会安全读取当前目录的�
 `.env` 以检查 enabled IM 的变量存在性，但不会联网或显示变量值。
 
 ### Memory、Skills 与长对话
+
+> 当前行为如下；已确认但尚未实现的跨渠道 Memory Autopilot 方案见
+> [能力 Gap 与重构架构](docs/architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)和
+> [最佳实践与技术选型](docs/engineering/memory-autopilot-best-practices-and-technology-selection.md)。
 
 ```text
 ~/.miniclaw/
@@ -249,6 +256,9 @@ miniclaw/
 | [产品需求文档](docs/product/20260807_产品需求文档.md) | v0.1 范围、流程图、架构图、验收标准和里程碑 |
 | [系统架构](docs/architecture/20260807_系统架构.md) | 核心边界、数据流和计划中的包布局 |
 | [OpenClaw / Hermes 能力 Gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 已有能力、仍缺能力、开源参考、优先级和 Phase 5.2→9 演进路线 |
+| [Memory Autopilot 能力 Gap](docs/architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 当前失忆根因、跨渠道 Owner Memory、L0→L3、治理规则和验收指标 |
+| [Memory Autopilot 技术选型](docs/engineering/memory-autopilot-best-practices-and-technology-selection.md) | Markdown/SQLite、Flush、FTS5/CJK、迁移、故障恢复和测试施工图 |
+| [Memory Autopilot 正式设计](docs/superpowers/specs/2026-08-08-memory-autopilot-design.md) | 已确认语义、架构决策、安全边界和完成定义 |
 | [能力对齐工程落地总方案](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | 自治任务、Sandbox、Browser、受控进化、MCP、Provider、Sub-agent 与多模态施工图 |
 | [本地运行指南](docs/getting-started/20260807_本地运行指南.md) | 安装、凭据、初始化、CLI 对话、诊断和测试命令 |
 | [工程文档索引](docs/engineering/README.md) | 已实现模块的工程说明入口 |
