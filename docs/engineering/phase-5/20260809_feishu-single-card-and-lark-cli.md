@@ -19,12 +19,14 @@
 修复后的用户体验是：
 
 - 飞书卡片正文使用 Card JSON 2.0 的 `small`（12px）字号；
-- 正常回答能完整放入时只保留一张最终绿色卡片；
+- 消息到达后立即创建一张蓝色 Loading 卡，执行步骤持续更新同一 `message_id`；
+- 正常回答能完整放入时，原卡片转为绿色并展示完整轨迹和答案；
+- Provider 或 Tool Loop 失败时，原卡片转为红色并展示固定安全提示，不另发灰色失败消息；
 - 卡片内最终回答统一渲染为 bullet points；Markdown 表格转换为键值条目，不依赖模型遵守排版提示；
 - 回答超过 `message_max_chars` 时，卡片保存前缀，只有未展示后缀回复到机器人自己的卡片下方；
 - 卡片创建或最终更新失败时才把完整正文回复原用户消息；
 - completed Turn 重启恢复时复用稳定 progress UUID，不追加重复普通全文；
-- waiting approval 只发布 durable Approval card；
+- waiting approval 保留 durable Approval card，运行卡进入未完成终态；
 - Telegram / Discord 继续使用 preview + durable final text，不受飞书策略影响；
 - 飞书业务查询不新增一套 API Tool，而是由 `feishu-lark-cli` Skill 教 Agent 使用现有
   `run_command(program="lark-cli", args=[...])`；
@@ -90,15 +92,15 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    EVENT["RunEvent"] --> PROJECT["Safe AgentProgress projector"]
+    EVENT["Inbound claimed"] --> CREATE["Create one blue Claw Trail card"]
+    CREATE --> PROJECT["Safe AgentProgress projector"]
     PROJECT --> REASON["Drop model_reasoning and raw Tool data"]
-    PROJECT --> START{"First Tool started?"}
-    START -->|yes| CREATE["Create one Claw Trail card"]
-    START -->|no| RESULT{"Turn completed?"}
     CREATE --> UPDATE["Coalesce safe step updates"]
-    UPDATE --> RESULT
-    RESULT -->|waiting before Tool| APPROVAL["Only durable Approval card"]
-    RESULT -->|completed| FINAL["Add final answer to same card"]
+    PROJECT --> UPDATE
+    UPDATE --> RESULT{"Turn terminal state?"}
+    RESULT -->|waiting approval| APPROVAL["Finish run card and send durable Approval card"]
+    RESULT -->|failed| FAILED["Turn same card red with safe notice"]
+    RESULT -->|completed| FINAL["Turn same card green and add final answer"]
     FINAL --> FIT{"20 KiB payload fits?"}
     FIT -->|yes| CARD["Single final card"]
     FIT -->|no| TAIL["Only unseen answer suffix to Outbox"]
@@ -113,9 +115,8 @@ flowchart TD
 - `ExperienceOutcome.final_delivery_required=false` 只会在最终卡片成功承载完整正文后出现；
 - 超限但最终卡片成功时，Outcome 返回 `final_delivery_offset` 和 `final_reply_to_message_id`，Manager 只切出
   `content[offset:]`，不会重复卡片内前缀；
-- 没有 Tool 或流式 delta 时，`finish()` 仍会直接创建一张带最终正文的 completed card；
-- `progress_is_final=true` 时第一次 `tool_started` 才建立 Agent 卡；首次 Tool 前等待审批不会创建 progress 卡；
-- Provider 在终态前失败时不创建飞书卡片，普通失败提示继续进入 Outbox；
+- `progress_is_final=true` 时，`start()` 在模型推理前立即建立蓝色 Agent 卡；没有 Tool 或流式 delta 时也复用该卡；
+- Provider 在终态前失败时更新同一卡片为红色未完成态，并把固定安全提示写入卡内；
 - 卡片创建失败或最终更新失败后，普通文本 fallback 仍存在；
 - 即使 tool-call 响应同时带可见 content，waiting approval 也丢弃 preview，因此唯一终态是 durable Approval card；
 - `ChannelManager` 只跳过普通 message delivery，不改变 Inbox、Turn、Assistant Message 和 Audit 的结算。
@@ -126,10 +127,10 @@ flowchart TD
 | --- | --- | --- | --- |
 | 正常回答 | 一张 Claw Trail completed card | compact trail + final text | compact trail + final text |
 | 回答超过卡片上限 | 12px card 前缀 + 回复卡片的后缀分片 | preview + final text | preview + final text |
-| 无流式 delta | finish 时创建 completed card | final text | final text |
+| 无流式 delta | 蓝色卡原地转为绿色 completed card | final text | final text |
 | progress 失败 | text fallback | final text | final text |
-| Provider 失败 | failure text | incomplete preview + failure text | incomplete preview + failure text |
-| waiting approval | Approval card | Approval text | Approval text / platform展示 |
+| Provider 失败 | 同一卡片转为红色并展示安全提示 | incomplete preview + failure text | incomplete preview + failure text |
+| waiting approval | 运行卡未完成 + durable Approval card | Approval text | Approval text / platform展示 |
 
 ### 4.2 当前持久性边界
 
@@ -231,8 +232,8 @@ Skill 给 Provider 的确定映射是：
 
 相关自动化覆盖：
 
-- `tests/test_channel_experience.py`：completed card、刚好上限、overflow offset/card target、失败 fallback、无 delta；
-- `tests/test_channel_manager.py`：成功无普通全文、后缀回复卡片、waiting approval 单卡片、completed restart UUID 恢复；
+- `tests/test_channel_experience.py`：立即 Loading、同 ID 更新、completed card、刚好上限、overflow offset/card target、失败收口与 fallback、无 delta；
+- `tests/test_channel_manager.py`：成功/失败无卡外普通文本、后缀回复卡片、waiting approval、completed restart UUID 恢复；
 - `tests/test_channel_capabilities.py` + `tests/test_feishu_transport.py`：两个 Card renderer 的 12px `small` payload；
 - `tests/test_feishu_transport.py`：`connect_until_ready()`；
 - `tests/test_cli.py`：SDK 在主 loop 前导入；

@@ -542,6 +542,42 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
                 else:
                     self.assertIsNone(delivery)
 
+    async def test_feishu_turn_failure_finishes_same_card_without_text_notice(self) -> None:
+        """飞书 Turn 失败时必须把安全提示写入原卡，不再创建卡片外灰色消息。"""
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            fail=True,
+        )
+        transport = ManagerCapabilityTransport()
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
+        manager = self._manager(service, queue_size=2, worker_count=1)
+        manager.attach_experience(capabilities)
+
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_card_failure", "break"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        with self.database.connect_read_only() as connection:
+            delivery = connection.execute(
+                "SELECT content FROM deliveries "
+                "WHERE reply_to_message_id = 'om_card_failure' "
+                "AND delivery_kind = 'message'"
+            ).fetchone()
+        self.assertIsNone(delivery)
+        self.assertGreaterEqual(len(transport.cards), 2)
+        self.assertIn("MiniClaw · 执行中", repr(transport.cards[0]))
+        self.assertIn("MiniClaw · 未完成", repr(transport.cards[-1]))
+        self.assertIn("处理失败", repr(transport.cards[-1]))
+
     async def test_feishu_card_overflow_replies_only_tail_to_card(self) -> None:
         """卡片装不下时只把未展示后缀持久化，并回复机器人自己的卡片。"""
         service = TrackingTurnService(self.sessions, self.messages, self.turns)
@@ -638,7 +674,9 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             card_delivery["content"],
             approval_delivery_payload(controller.prompt(user_id=self.owner.id, approval_id=7)),
         )
-        self.assertEqual(waiting_transport.cards, [])
+        self.assertEqual(len(waiting_transport.cards), 2)
+        self.assertIn("MiniClaw · 执行中", repr(waiting_transport.cards[0]))
+        self.assertIn("MiniClaw · 未完成", repr(waiting_transport.cards[-1]))
 
     async def test_approval_controller_failure_creates_safe_durable_notice(self) -> None:
         """控制层异常不能杀死 Worker，也不能让原始异常进入 SQLite。"""
