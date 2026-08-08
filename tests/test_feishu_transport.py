@@ -141,6 +141,21 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(observer.inbound_events[0]["reason"], "sender_denied")
         self.assertNotIn("private-body", repr(observer.inbound_events))
 
+    async def test_outbound_sdk_error_does_not_degrade_a_healthy_websocket(self) -> None:
+        """SDK 的 outbound error fan-out 不能被误判成 WebSocket 断连。"""
+        sdk = FakeOfficialSdk()
+        observer = RecordingObserver()
+        transport = self._transport(sdk, observer=observer)
+        await transport.connect()
+
+        sdk.channel.handlers["error"](RuntimeError("private outbound failure"))
+
+        self.assertEqual(transport.connection_state, "connected")
+        self.assertEqual(
+            [event["state"] for event in observer.transport_events],
+            ["connecting", "connected"],
+        )
+
     async def test_observer_failure_never_breaks_transport_lifecycle_or_filtering(self) -> None:
         """可观测性后端失败时 WebSocket 仍能启停，拒绝消息仍被静默忽略。"""
         sdk = FakeOfficialSdk()

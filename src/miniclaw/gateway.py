@@ -13,7 +13,11 @@ from typing import Any, Protocol
 
 from miniclaw import gateway_lease
 from miniclaw.channels import sdk_logging
-from miniclaw.channels.approvals import ChannelApprovalController
+from miniclaw.channels.approvals import (
+    ApprovalEnvelope,
+    ChannelApprovalController,
+    parse_approval_delivery_payload,
+)
 from miniclaw.channels.delivery import DeliveryWorker, split_message
 from miniclaw.channels.discord import DiscordTransport
 from miniclaw.channels.experience import ChannelExperience
@@ -37,7 +41,7 @@ from miniclaw.runtime import (
     create_runtime,
     limits_for_channel,
 )
-from miniclaw.storage.channels import DeliveryRepository
+from miniclaw.storage.channels import ChannelStateError, DeliveryRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.tooling import ApprovalRepository
 
@@ -308,10 +312,27 @@ def _build_feishu_channel(
         chat_id: str,
         message_id: str,
     ) -> None:
+        try:
+            source = deliveries.find_sent_by_platform_message_id(
+                channel="feishu",
+                account_id=selected.account_id,
+                platform_message_id=message_id,
+                kind="approval",
+            )
+            parsed = (
+                None
+                if source is None
+                else parse_approval_delivery_payload(source.content)
+            )
+        except (ChannelStateError, ValueError):
+            return
+        if not isinstance(parsed, ApprovalEnvelope):
+            return
         outcome = await approvals.handle_card_action(
             user_id=runtime.owner_id,
             actor_external_user_id=actor_open_id,
             value=value,
+            expected_approval_id=parsed.approval_id,
         )
         visible = outcome.result.content if outcome.result is not None else outcome.notice
         if outcome.result is not None and outcome.result.message_id is not None:

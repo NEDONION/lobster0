@@ -185,11 +185,13 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
             user_id=1,
             actor_external_user_id="ou_owner",
             value=value,
+            expected_approval_id=7,
         )
         malformed = await controller.handle_card_action(
             user_id=1,
             actor_external_user_id="ou_owner",
             value={**value, "extra": "not-allowed"},
+            expected_approval_id=7,
         )
 
         self.assertTrue(outcome.handled)
@@ -198,6 +200,26 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(malformed.handled)
         self.assertIn("无法识别", malformed.notice or "")
         self.assertEqual(len(service.calls), 1)
+
+    async def test_card_action_must_match_the_persisted_source_card(self) -> None:
+        """旧卡或伪造 message_id 不能用另一个 approval_id 改变 Core 状态。"""
+        controller, service = self._controller()
+
+        outcome = await controller.handle_card_action(
+            user_id=1,
+            actor_external_user_id="ou_owner",
+            value={
+                "version": 2,
+                "miniclaw_action": "approval",
+                "approval_id": 103,
+                "decision": "once",
+            },
+            expected_approval_id=102,
+        )
+
+        self.assertTrue(outcome.handled)
+        self.assertIn("无法识别", outcome.notice or "")
+        self.assertEqual(service.calls, [])
 
 
 class ApprovalEnvelopeV2Test(unittest.TestCase):
