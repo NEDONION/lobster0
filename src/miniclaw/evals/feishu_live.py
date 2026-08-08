@@ -5,12 +5,10 @@ import asyncio
 import json
 import os
 import re
-import signal
 import sqlite3
 import stat
 import subprocess
 import sys
-from collections import deque
 from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -22,7 +20,9 @@ from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.doctor import CheckResult, CheckStatus, run_local_checks
 from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.evals.cases import EvalCase, EvalCaseError, load_feishu_live_cases
+from miniclaw.evals.gateway_process import ManagedGateway, ManagedGatewayError
 from miniclaw.gateway import GatewayConfigError, validate_gateway_environment
+from miniclaw.gateway_lease import GatewayProvenance
 from miniclaw.paths import (
     PathConfigurationError,
     StatePaths,
@@ -93,6 +93,8 @@ class LiveExecution:
     results: tuple[FeishuCaseResult, ...]
     gateway_ready: bool
     gateway_graceful_exit: bool
+    gateway_provenance: GatewayProvenance | None
+    gateway_secret_matches: int
 
 
 _CASE_STATUSES = frozenset({"pass", "fail", "skip"})
@@ -189,11 +191,12 @@ def run_feishu_live_harness(argv: Sequence[str] | None = None) -> int:
         )
     except FeishuLiveError as error:
         runtime_error = error.code
-        execution = LiveExecution((), False, False)
+        execution = LiveExecution((), False, False, None, 0)
 
     needles = _sensitive_values(preflight)
     try:
         secret_matches = scan_secret_matches((preflight.paths.logs, output_dir), needles)
+        secret_matches += execution.gateway_secret_matches
     except FeishuLiveError:
         secret_matches = 1
     results = execution.results
@@ -217,6 +220,7 @@ def run_feishu_live_harness(argv: Sequence[str] | None = None) -> int:
             finished_at=finished_at,
             gateway_ready=execution.gateway_ready,
             gateway_graceful_exit=execution.gateway_graceful_exit,
+            gateway_provenance=execution.gateway_provenance,
             results=results,
             secret_matches=secret_matches,
         )
@@ -405,24 +409,21 @@ async def _execute_live_cases(
     output_fn: Callable[[str], None],
 ) -> LiveExecution:
     """启动唯一 production Gateway，逐案取证，并在任何路径 finally 停止。"""
-    gateway = await GatewayProcess.start(
-        project_root=preflight.project_root,
-        home=preflight.paths.home,
-        ready_timeout=gateway_timeout,
-    )
+    gateway = await _start_managed_gateway(preflight, gateway_timeout)
     all_graceful = True
+    gateway_secret_matches = 0
     results: list[FeishuCaseResult] = []
 
     async def restart_gateway() -> None:
         """为 restart case 进行一次有界 stop/start，保留同一数据库与配置。"""
-        nonlocal gateway, all_graceful
-        exit_code = await gateway.stop()
+        nonlocal gateway, all_graceful, gateway_secret_matches
+        try:
+            exit_code = await gateway.stop()
+        except ManagedGatewayError as error:
+            raise FeishuLiveError(error.code) from None
         all_graceful = all_graceful and exit_code == 0
-        gateway = await GatewayProcess.start(
-            project_root=preflight.project_root,
-            home=preflight.paths.home,
-            ready_timeout=gateway_timeout,
-        )
+        gateway_secret_matches += gateway.secret_match_count
+        gateway = await _start_managed_gateway(preflight, gateway_timeout)
 
     try:
         output_fn("MiniClaw Feishu Live E2E")
@@ -440,9 +441,52 @@ async def _execute_live_cases(
             )
             results.append(result)
     finally:
-        exit_code = await gateway.stop()
+        try:
+            exit_code = await gateway.stop()
+        except ManagedGatewayError as error:
+            raise FeishuLiveError(error.code) from None
         all_graceful = all_graceful and exit_code == 0
-    return LiveExecution(tuple(results), True, all_graceful)
+        gateway_secret_matches += gateway.secret_match_count
+    return LiveExecution(
+        tuple(results),
+        True,
+        all_graceful,
+        gateway.provenance,
+        gateway_secret_matches,
+    )
+
+
+async def _start_managed_gateway(
+    preflight: LivePreflight,
+    ready_timeout: float,
+) -> ManagedGateway:
+    """用 typed Feishu account 与 clean commit 启动受管 Gateway。
+
+    Args:
+        preflight: 已通过单平台、clean commit 和配置门禁的输入。
+        ready_timeout: 等待 exact ready line 的最长秒数。
+
+    Returns:
+        已绑定当前 commit 且观察到 ready 的受管 Gateway。
+
+    Raises:
+        FeishuLiveError: 受管进程启动或 ready 失败。
+    """
+    ready_line = (
+        "MiniClaw gateway ready: "
+        f"feishu/{preflight.config.channels.feishu.account_id}"
+    )
+    try:
+        return await ManagedGateway.start(
+            project_root=preflight.project_root,
+            home=preflight.paths.home,
+            ready_line=ready_line,
+            commit=preflight.commit,
+            ready_timeout=ready_timeout,
+            secret_values=_sensitive_values(preflight),
+        )
+    except ManagedGatewayError as error:
+        raise FeishuLiveError(error.code) from None
 
 
 async def _run_case(
@@ -469,7 +513,7 @@ async def _run_case(
             if restart_fn is not None:
                 await restart_fn()
             output_fn(f"Action {index + 1}: {action}")
-            if _read_action(input_fn) == "skip":
+            if await asyncio.to_thread(_read_action, input_fn) == "skip":
                 return FeishuCaseResult(
                     case.id,
                     "skip",
@@ -503,9 +547,11 @@ async def _run_case(
             "local_evidence_failed",
         )
 
-    human_statuses = tuple(
-        (key, _read_human_status(input_fn, key)) for key in human_requirements
-    )
+    collected_human_statuses: list[tuple[str, str]] = []
+    for key in human_requirements:
+        status = await asyncio.to_thread(_read_human_status, input_fn, key)
+        collected_human_statuses.append((key, status))
+    human_statuses = tuple(collected_human_statuses)
     statuses = tuple(status for _, status in human_statuses)
     if "fail" in statuses:
         status, error_code = "fail", "human_evidence_failed"
@@ -731,6 +777,7 @@ def build_evidence_report(
     finished_at: str,
     gateway_ready: bool,
     gateway_graceful_exit: bool,
+    gateway_provenance: GatewayProvenance | None,
     results: Sequence[FeishuCaseResult],
     secret_matches: int,
 ) -> dict[str, object]:
@@ -765,13 +812,19 @@ def build_evidence_report(
     else:
         release_status = "FEISHU_LIVE_PARTIAL"
 
+    gateway = _gateway_payload(
+        commit=commit,
+        ready=gateway_ready,
+        graceful_exit=gateway_graceful_exit,
+        provenance=gateway_provenance,
+    )
     report: dict[str, object] = {
         "schema_version": 1,
         "channel": "feishu",
         "commit": commit,
         "started_at": started_at,
         "finished_at": finished_at,
-        "gateway": {"ready": gateway_ready, "graceful_exit": gateway_graceful_exit},
+        "gateway": gateway,
         "checks": checks,
         "counts": counts,
         "release_status": release_status,
@@ -779,6 +832,53 @@ def build_evidence_report(
     if not _is_valid_report(report):
         raise FeishuLiveError("invalid_evidence_report")
     return report
+
+
+def _gateway_payload(
+    *,
+    commit: str,
+    ready: bool,
+    graceful_exit: bool,
+    provenance: GatewayProvenance | None,
+) -> dict[str, object]:
+    """构造并校验受管 Gateway 的本地运行来源对象。
+
+    Args:
+        commit: 顶层 clean repository commit。
+        ready: 是否观察到 exact ready line。
+        graceful_exit: 子进程是否以零状态优雅退出。
+        provenance: 子进程启动后绑定的 PID、UTC 与 commit；启动前失败为空。
+
+    Returns:
+        report 内固定五字段的 Gateway payload。
+
+    Raises:
+        FeishuLiveError: ready 运行缺 provenance 或 provenance 与顶层不一致。
+    """
+    if provenance is None:
+        if ready or graceful_exit:
+            raise FeishuLiveError("invalid_evidence_report")
+        return {
+            "ready": False,
+            "graceful_exit": False,
+            "pid": None,
+            "started_at": None,
+            "commit": None,
+        }
+    if (
+        type(provenance.pid) is not int
+        or provenance.pid <= 0
+        or not _is_timestamp(provenance.started_at)
+        or provenance.commit != commit
+    ):
+        raise FeishuLiveError("invalid_evidence_report")
+    return {
+        "ready": ready,
+        "graceful_exit": graceful_exit,
+        "pid": provenance.pid,
+        "started_at": provenance.started_at,
+        "commit": provenance.commit,
+    }
 
 
 def write_evidence(path: Path, report: Mapping[str, object]) -> None:
@@ -937,9 +1037,27 @@ def _is_valid_report(report: Mapping[str, object]) -> bool:
     if report.get("release_status") not in _RELEASE_STATUSES:
         return False
     gateway = report.get("gateway")
-    if not isinstance(gateway, Mapping) or set(gateway) != {"ready", "graceful_exit"}:
+    if not isinstance(gateway, Mapping) or set(gateway) != {
+        "ready",
+        "graceful_exit",
+        "pid",
+        "started_at",
+        "commit",
+    }:
         return False
     if any(type(gateway[key]) is not bool for key in ("ready", "graceful_exit")):
+        return False
+    if gateway["pid"] is None:
+        if gateway["ready"] or gateway["graceful_exit"]:
+            return False
+        if gateway["started_at"] is not None or gateway["commit"] is not None:
+            return False
+    elif (
+        type(gateway["pid"]) is not int
+        or gateway["pid"] <= 0
+        or not _is_timestamp(gateway["started_at"])
+        or gateway["commit"] != report["commit"]
+    ):
         return False
     counts = report.get("counts")
     if not isinstance(counts, Mapping) or set(counts) != _COUNT_KEYS:
@@ -1126,150 +1244,6 @@ def _read_bounded_regular_file(path: Path) -> bytes | None:
         return None
     finally:
         os.close(descriptor)
-
-
-class GatewayProcess:
-    """持续排空输出、按精确 marker 就绪并有界退出的 Gateway 子进程。"""
-
-    _READY_LINE = "MiniClaw gateway ready: feishu/default"
-    _DIAGNOSTIC_LINES = 200
-    _DIAGNOSTIC_CHARS = 4096
-
-    def __init__(self, process: asyncio.subprocess.Process) -> None:
-        """保存子进程；生产调用方应通过 :meth:`start` 创建实例。"""
-        self._process = process
-        self._ready_event = asyncio.Event()
-        self._ready = False
-        self._diagnostics: deque[str] = deque(maxlen=self._DIAGNOSTIC_LINES)
-        assert process.stdout is not None
-        assert process.stderr is not None
-        self._drain_tasks = (
-            asyncio.create_task(self._drain(process.stdout, "stdout")),
-            asyncio.create_task(self._drain(process.stderr, "stderr")),
-        )
-
-    @classmethod
-    async def start(
-        cls,
-        *,
-        project_root: Path,
-        home: Path,
-        ready_timeout: float,
-        command: tuple[str, ...] | None = None,
-    ) -> "GatewayProcess":
-        """启动 Gateway，并等待精确的 Feishu ready marker。
-
-        Args:
-            project_root: 子进程工作目录。
-            home: 传给 MiniClaw CLI 的状态目录。
-            ready_timeout: 等待 ready marker 的最长秒数。
-            command: 测试专用显式命令；省略时启动当前 Python 的 MiniClaw。
-
-        Raises:
-            FeishuLiveError: 子进程提前结束、未按时就绪或无法启动。
-        """
-        executable = command or (
-            sys.executable,
-            "-m",
-            "miniclaw",
-            "--home",
-            str(home),
-            "gateway",
-        )
-        try:
-            process = await asyncio.create_subprocess_exec(
-                *executable,
-                cwd=project_root,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
-                limit=8 * 1024 * 1024,
-            )
-        except (OSError, ValueError):
-            raise FeishuLiveError("gateway_start_failed") from None
-
-        gateway = cls(process)
-        ready_wait = asyncio.create_task(gateway._ready_event.wait())
-        exit_wait = asyncio.create_task(process.wait())
-        try:
-            done, _ = await asyncio.wait(
-                (ready_wait, exit_wait),
-                timeout=ready_timeout,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-            if ready_wait in done and process.returncode is None:
-                gateway._ready = True
-                return gateway
-            failure = (
-                "gateway_exited_before_ready"
-                if exit_wait in done
-                else "gateway_ready_timeout"
-            )
-            await gateway._stop_after_failed_start()
-            raise FeishuLiveError(failure)
-        finally:
-            for waiter in (ready_wait, exit_wait):
-                if not waiter.done():
-                    waiter.cancel()
-            await asyncio.gather(ready_wait, exit_wait, return_exceptions=True)
-
-    @property
-    def ready(self) -> bool:
-        """返回当前实例是否见过精确 ready marker。"""
-        return self._ready
-
-    @property
-    def bounded_diagnostics(self) -> tuple[str, ...]:
-        """返回最多 200 行、每行最多 4096 字符的内存诊断快照。"""
-        return tuple(self._diagnostics)
-
-    async def stop(self, *, timeout: float = 10.0) -> int:
-        """最多发送两次 SIGTERM，并等待子进程和输出管道结束。
-
-        自动化验收刻意不发送 SIGKILL；第二次等待后仍不退出时，由操作者决定。
-        """
-        if self._process.returncode is None:
-            self._send_sigterm()
-            try:
-                await asyncio.wait_for(self._process.wait(), timeout=timeout)
-            except TimeoutError:
-                self._send_sigterm()
-                try:
-                    await asyncio.wait_for(self._process.wait(), timeout=timeout)
-                except TimeoutError:
-                    raise FeishuLiveError("gateway_shutdown_timeout") from None
-        await asyncio.gather(*self._drain_tasks, return_exceptions=True)
-        if self._process.returncode is None:
-            raise FeishuLiveError("gateway_shutdown_timeout")
-        return self._process.returncode
-
-    async def _drain(self, stream: asyncio.StreamReader, source: str) -> None:
-        """持续排空一个 pipe，并只保存有界单行诊断。"""
-        while line_bytes := await stream.readline():
-            line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
-            if source == "stdout" and line == self._READY_LINE:
-                self._ready_event.set()
-            rendered = f"{source}:{line}"[: self._DIAGNOSTIC_CHARS]
-            self._diagnostics.append(rendered)
-
-    def _send_sigterm(self) -> None:
-        """优先终止整个子进程组，平台不支持时退回单进程 terminate。"""
-        if self._process.returncode is not None:
-            return
-        try:
-            os.killpg(self._process.pid, signal.SIGTERM)
-        except (AttributeError, ProcessLookupError, PermissionError):
-            try:
-                self._process.terminate()
-            except ProcessLookupError:
-                return
-
-    async def _stop_after_failed_start(self) -> None:
-        """启动失败时尽力回收子进程，不用内部诊断覆盖稳定错误码。"""
-        try:
-            await self.stop(timeout=1.0)
-        except FeishuLiveError:
-            return
 
 
 type _EvidenceCheck = Callable[[sqlite3.Connection, DatabaseCheckpoint], bool]

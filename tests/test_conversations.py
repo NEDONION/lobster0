@@ -287,6 +287,55 @@ class ConversationRepositoryTest(unittest.TestCase):
         )
         self.assertEqual(recent[1].metadata["tool_calls"][0]["call_id"], "call_approval")
         self.assertEqual(recent[2].tool_call_id, "call_approval")
+        self.assertEqual(
+            [message.role for message in self.messages.list_context(session.id)],
+            ["user", "assistant", "tool", "assistant", "user", "assistant"],
+        )
+
+    def test_context_drops_orphaned_waiting_tool_turn_before_new_user(self) -> None:
+        """旧审批无 Tool Result 时，新 Turn 不得把 orphan Tool Call 发给 Provider。"""
+        session = self.sessions.get_or_create_cli(self.owner.id, "orphaned-approval")
+        parent = self.turns.create_with_user_message(
+            session.id,
+            "event-parent",
+            "deepseek-v4-pro",
+            "执行旧动作",
+        )
+        self.turns.mark_running(parent.id)
+        self.turns.append_intermediate_messages(
+            parent.id,
+            session.id,
+            (
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(ToolCall("call_orphan", "run_command", {}),),
+                ),
+            ),
+        )
+        self.turns.wait_for_approval(
+            parent.id,
+            session.id,
+            1,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-parent",
+            iterations=1,
+        )
+        current = self.turns.create_with_user_message(
+            session.id,
+            "event-current",
+            "deepseek-v4-pro",
+            "只处理当前请求",
+        )
+        self.turns.mark_running(current.id)
+
+        context = self.messages.list_context(session.id)
+
+        self.assertEqual(
+            [(message.role, message.content) for message in context],
+            [("user", "只处理当前请求")],
+        )
 
     def test_completion_writes_assistant_usage_and_snapshot_atomically(self) -> None:
         """Assistant Message 与 completed Turn 必须在同一事务中可见。"""

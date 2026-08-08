@@ -566,6 +566,51 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(target.exists())
         self.assertEqual(len(provider.requests), 1)
 
+    async def test_new_turn_omits_orphaned_approval_call_from_provider_history(self) -> None:
+        """旧审批直接结算后，新请求只发送 protocol-safe Context。"""
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "call_orphan",
+                            "write_file",
+                            {"path": "old.txt", "content": "old"},
+                        ),
+                    ),
+                    reasoning_content="need approval",
+                    finish_reason="tool_calls",
+                    input_tokens=1,
+                    output_tokens=1,
+                    provider_request_id="req-old",
+                ),
+                final_response("只处理当前请求"),
+            )
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+        )
+        service = self.service(provider, AgentRunner(provider, executor), approvals)
+        waiting = await service.handle(self.owner.id, "执行旧动作", "orphan")
+        approval = approvals.list(self.owner.id, status="pending")[0]
+        approvals.deny(self.owner.id, approval.id)
+
+        current = await service.handle(self.owner.id, "只处理当前请求", "orphan")
+
+        self.assertEqual(current.content, "只处理当前请求")
+        self.assertEqual(self.turns.get(waiting.turn_id).status, "waiting_approval")
+        sent_history = provider.requests[1].messages
+        self.assertEqual(
+            [(message.role, message.content) for message in sent_history[-1:]],
+            [("user", "只处理当前请求")],
+        )
+        self.assertFalse(any(message.tool_calls for message in sent_history))
+
     async def test_approve_after_restart_creates_child_executes_once_and_finishes(self) -> None:
         """批准后由 child Turn 执行绑定写入，重启后也不能重复消费。"""
         target = self.paths.workspace / "approved.txt"

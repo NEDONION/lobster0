@@ -1,11 +1,13 @@
 """Feishu Live E2E 的只读取证、进程与报告安全契约。"""
 
+import asyncio
 import importlib
 import json
 import os
 import sys
 import tempfile
 import textwrap
+import threading
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,6 +16,7 @@ from unittest.mock import AsyncMock, patch
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.doctor import CheckResult, CheckStatus
+from miniclaw.gateway_lease import GatewayProvenance
 from miniclaw.paths import build_state_paths
 from miniclaw.storage.database import Database
 
@@ -374,8 +377,8 @@ class FeishuDatabaseProbeTest(unittest.TestCase):
             )
 
 
-class GatewayProcessTest(unittest.IsolatedAsyncioTestCase):
-    """保证真实 Gateway 启停有界，且子进程输出永远被持续排空。"""
+class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
+    """保证各平台受管 Gateway 启停有界，且输出永远被持续排空。"""
 
     def setUp(self) -> None:
         """创建隔离的项目目录与 MiniClaw Home。"""
@@ -402,6 +405,46 @@ class GatewayProcessTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertTrue(process.ready)
+        self.assertGreater(process.provenance.pid, 0)
+        self.assertEqual(process.provenance.commit, "c" * 40)
+        self.assertRegex(
+            process.provenance.started_at,
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$",
+        )
+        self.assertEqual(await process.stop(timeout=1.0), 0)
+
+    async def test_pipe_child_forces_unbuffered_ready_output(self) -> None:
+        """无 TTY 且 print 未 flush 时，受管进程仍必须及时交付 ready 行。"""
+        api = self._api()
+        script = self.root / "buffered_gateway.py"
+        script.write_text(
+            textwrap.dedent(
+                """
+                import signal
+                import sys
+                import time
+
+                signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+                print("MiniClaw gateway ready: feishu/default")
+                while True:
+                    time.sleep(0.05)
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PYTHONUNBUFFERED", None)
+            process = await api.ManagedGateway.start(
+                project_root=self.root,
+                home=self.home,
+                ready_line="MiniClaw gateway ready: feishu/default",
+                commit="c" * 40,
+                ready_timeout=0.5,
+                command=(sys.executable, str(script)),
+            )
+
+        self.assertTrue(process.ready)
         self.assertEqual(await process.stop(timeout=1.0), 0)
 
     async def test_ready_substring_times_out_and_process_is_reaped(self) -> None:
@@ -420,10 +463,12 @@ class GatewayProcessTest(unittest.IsolatedAsyncioTestCase):
             """
         )
 
-        with self.assertRaises(api.FeishuLiveError) as raised:
-            await api.GatewayProcess.start(
+        with self.assertRaises(api.ManagedGatewayError) as raised:
+            await api.ManagedGateway.start(
                 project_root=self.root,
                 home=self.home,
+                ready_line="MiniClaw gateway ready: feishu/default",
+                commit="c" * 40,
                 ready_timeout=0.1,
                 command=command,
             )
@@ -442,10 +487,12 @@ class GatewayProcessTest(unittest.IsolatedAsyncioTestCase):
             """
         )
 
-        with self.assertRaises(api.FeishuLiveError) as raised:
-            await api.GatewayProcess.start(
+        with self.assertRaises(api.ManagedGatewayError) as raised:
+            await api.ManagedGateway.start(
                 project_root=self.root,
                 home=self.home,
+                ready_line="MiniClaw gateway ready: feishu/default",
+                commit="c" * 40,
                 ready_timeout=1.0,
                 command=command,
             )
@@ -503,12 +550,73 @@ class GatewayProcessTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(await process.stop(timeout=0.15), 0)
 
+    async def test_all_output_is_secret_scanned_before_diagnostic_eviction(self) -> None:
+        """早期 Secret 即使被 200 行窗口淘汰也必须计数，且不能留在 diagnostics。"""
+        api = self._api()
+        process = await api.ManagedGateway.start(
+            project_root=self.root,
+            home=self.home,
+            ready_line="MiniClaw gateway ready: feishu/default",
+            commit="c" * 40,
+            ready_timeout=2.0,
+            secret_values=("EARLY_SECRET_SENTINEL",),
+            command=self._command(
+                """
+                import signal
+                import sys
+                import time
+
+                signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+                print("EARLY_SECRET_SENTINEL", file=sys.stderr, flush=True)
+                for index in range(300):
+                    print(f"safe-{index}", file=sys.stderr)
+                sys.stderr.flush()
+                print("MiniClaw gateway ready: feishu/default", flush=True)
+                while True:
+                    time.sleep(0.05)
+                """
+            ),
+        )
+
+        self.assertEqual(process.secret_match_count, 1)
+        self.assertNotIn(
+            "EARLY_SECRET_SENTINEL",
+            "\n".join(process.bounded_diagnostics),
+        )
+        self.assertEqual(await process.stop(timeout=1.0), 0)
+
+    async def test_redacted_sdk_placeholders_do_not_count_as_secret_matches(self) -> None:
+        """`***` 后接空格、分隔符或行尾时均是安全占位符。"""
+        process = await self._start(
+            """
+            import signal
+            import sys
+            import time
+
+            signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+            print(
+                "access_key=*** ticket=*** token=***&device_id=*** "
+                "Authorization: Bearer ***",
+                file=sys.stderr,
+                flush=True,
+            )
+            print("MiniClaw gateway ready: feishu/default", flush=True)
+            while True:
+                time.sleep(0.05)
+            """
+        )
+
+        self.assertEqual(process.secret_match_count, 0)
+        self.assertEqual(await process.stop(timeout=1.0), 0)
+
     async def _start(self, source: str, *, ready_timeout: float = 1.0):
         """启动一段隔离 fake Gateway 脚本。"""
         api = self._api()
-        return await api.GatewayProcess.start(
+        return await api.ManagedGateway.start(
             project_root=self.root,
             home=self.home,
+            ready_line="MiniClaw gateway ready: feishu/default",
+            commit="c" * 40,
             ready_timeout=ready_timeout,
             command=self._command(source),
         )
@@ -521,10 +629,10 @@ class GatewayProcessTest(unittest.IsolatedAsyncioTestCase):
         return (sys.executable, "-u", str(script))
 
     def _api(self) -> ModuleType:
-        """导入真实生产模块，并明确要求 GatewayProcess 存在。"""
-        api = importlib.import_module("miniclaw.evals.feishu_live")
-        if not hasattr(api, "GatewayProcess"):
-            self.fail("Feishu Live GatewayProcess is missing")
+        """导入真实生产模块，并明确要求 ManagedGateway 存在。"""
+        api = importlib.import_module("miniclaw.evals.gateway_process")
+        if not hasattr(api, "ManagedGateway"):
+            self.fail("ManagedGateway is missing")
         return api
 
 
@@ -539,6 +647,11 @@ class FeishuEvidenceReportTest(unittest.TestCase):
         self.commit = "a" * 40
         self.started_at = "2026-08-08T12:00:00Z"
         self.finished_at = "2026-08-08T12:15:00Z"
+        self.provenance = GatewayProvenance(
+            pid=123,
+            started_at="2026-08-08T12:00:01.000000Z",
+            commit=self.commit,
+        )
 
     def test_verified_report_has_exact_nested_schema_and_derived_counts(self) -> None:
         """15/15、Gateway 正常和零泄露时才能生成严格 VERIFIED 报告。"""
@@ -551,6 +664,7 @@ class FeishuEvidenceReportTest(unittest.TestCase):
             finished_at=self.finished_at,
             gateway_ready=True,
             gateway_graceful_exit=True,
+            gateway_provenance=self.provenance,
             results=results,
             secret_matches=0,
         )
@@ -569,7 +683,12 @@ class FeishuEvidenceReportTest(unittest.TestCase):
                 "release_status",
             },
         )
-        self.assertEqual(set(report["gateway"]), {"ready", "graceful_exit"})
+        self.assertEqual(
+            set(report["gateway"]),
+            {"ready", "graceful_exit", "pid", "started_at", "commit"},
+        )
+        self.assertEqual(report["gateway"]["pid"], 123)
+        self.assertEqual(report["gateway"]["commit"], self.commit)
         self.assertEqual(
             set(report["checks"][0]),
             {"case_id", "status", "local_evidence", "human_evidence", "error_code"},
@@ -608,6 +727,7 @@ class FeishuEvidenceReportTest(unittest.TestCase):
             finished_at=self.finished_at,
             gateway_ready=True,
             gateway_graceful_exit=True,
+            gateway_provenance=self.provenance,
             results=results,
             secret_matches=1,
         )
@@ -676,6 +796,23 @@ class FeishuEvidenceReportTest(unittest.TestCase):
         tampered_check["checks"][0]["local_evidence"][0]["key"] = "raw_private_fact"
         with self.assertRaises(api.FeishuLiveError):
             api.write_evidence(self.root / "tampered-check.json", tampered_check)
+
+        with self.assertRaises(api.FeishuLiveError) as mismatch:
+            api.build_evidence_report(
+                commit=self.commit,
+                started_at=self.started_at,
+                finished_at=self.finished_at,
+                gateway_ready=True,
+                gateway_graceful_exit=True,
+                gateway_provenance=GatewayProvenance(
+                    pid=123,
+                    started_at="2026-08-08T12:00:01.000000Z",
+                    commit="f" * 40,
+                ),
+                results=(self._passing_result(api, 1),),
+                secret_matches=0,
+            )
+        self.assertEqual(mismatch.exception.code, "invalid_evidence_report")
 
     def test_write_evidence_is_exclusive_owner_only_and_redacted(self) -> None:
         """Evidence 使用 0600 原子新建，不能覆盖已有文件或跟随 symlink。"""
@@ -762,6 +899,7 @@ class FeishuEvidenceReportTest(unittest.TestCase):
             finished_at=self.finished_at,
             gateway_ready=True,
             gateway_graceful_exit=True,
+            gateway_provenance=self.provenance,
             results=results,
             secret_matches=0,
         )
@@ -942,6 +1080,33 @@ class FeishuCaseOrchestrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.local_failed, ("turn_completed",))
         self.assertEqual(result.human_statuses, ())
 
+    async def test_action_prompt_does_not_block_gateway_event_loop(self) -> None:
+        """人工输入等待期间事件循环仍须排空 Gateway pipe 与处理 timeout。"""
+        api = self._api("_run_case")
+        release = threading.Event()
+        timed_out: list[bool] = []
+        asyncio.get_running_loop().call_later(0.02, release.set)
+
+        def answer(_: str) -> str:
+            timed_out.append(not release.wait(0.2))
+            return ""
+
+        case = self._case(local=("gateway_ready",), human=())
+        checkpoint = api.DatabaseCheckpoint(0, 0, 0, 0, 0, 0)
+        with patch.object(api, "capture_checkpoint", return_value=checkpoint):
+            result = await api._run_case(
+                case=case,
+                database=self.database,
+                workspace=self.workspace,
+                gateway=SimpleNamespace(ready=True),
+                case_timeout=5.0,
+                input_fn=answer,
+                output_fn=lambda _: None,
+            )
+
+        self.assertEqual(timed_out, [False])
+        self.assertEqual(result.status, "pass")
+
     async def test_local_and_human_pass_produce_pass_while_skip_stays_nonzero(self) -> None:
         """自动证据通过后才收集 p/f/s，skip 永远保留为 skip。"""
         api = self._api("_run_case")
@@ -987,15 +1152,35 @@ class FeishuCaseOrchestrationTest(unittest.IsolatedAsyncioTestCase):
     async def test_gateway_is_stopped_when_case_execution_raises(self) -> None:
         """任一 case 异常都必须穿过 finally 关闭同一个 Gateway。"""
         api = self._api("_execute_live_cases")
-        gateway = SimpleNamespace(ready=True, stop=AsyncMock(return_value=0))
+        provenance = GatewayProvenance(
+            pid=321,
+            started_at="2026-08-08T12:00:01.000000Z",
+            commit="b" * 40,
+        )
+        gateway = SimpleNamespace(
+            ready=True,
+            provenance=provenance,
+            secret_match_count=0,
+            stop=AsyncMock(return_value=0),
+        )
         preflight = SimpleNamespace(
             project_root=self.root,
+            commit="b" * 40,
             paths=SimpleNamespace(home=self.root / "home", database=self.database),
-            config=SimpleNamespace(workspace=SimpleNamespace(path=self.workspace)),
+            config=SimpleNamespace(
+                workspace=SimpleNamespace(path=self.workspace),
+                channels=SimpleNamespace(
+                    feishu=SimpleNamespace(account_id="default")
+                ),
+            ),
             cases=(self._case(local=("turn_completed",), human=()),),
         )
         with (
-            patch.object(api.GatewayProcess, "start", new=AsyncMock(return_value=gateway)),
+            patch.object(
+                api,
+                "_start_managed_gateway",
+                new=AsyncMock(return_value=gateway),
+            ),
             patch.object(
                 api,
                 "_run_case",
@@ -1011,6 +1196,74 @@ class FeishuCaseOrchestrationTest(unittest.IsolatedAsyncioTestCase):
                     output_fn=lambda _: None,
                 )
         gateway.stop.assert_awaited_once()
+
+    async def test_restart_aggregates_secret_matches_from_every_gateway(self) -> None:
+        """重启前后的完整输出都必须进入 Secret 计数，不能只保留末次进程。"""
+        api = self._api("_execute_live_cases")
+        first = SimpleNamespace(
+            ready=True,
+            provenance=GatewayProvenance(
+                pid=321,
+                started_at="2026-08-08T12:00:01.000000Z",
+                commit="b" * 40,
+            ),
+            secret_match_count=1,
+            stop=AsyncMock(return_value=0),
+        )
+        second = SimpleNamespace(
+            ready=True,
+            provenance=GatewayProvenance(
+                pid=654,
+                started_at="2026-08-08T12:00:02.000000Z",
+                commit="b" * 40,
+            ),
+            secret_match_count=2,
+            stop=AsyncMock(return_value=0),
+        )
+        preflight = SimpleNamespace(
+            project_root=self.root,
+            commit="b" * 40,
+            paths=SimpleNamespace(home=self.root / "home", database=self.database),
+            config=SimpleNamespace(
+                workspace=SimpleNamespace(path=self.workspace),
+                channels=SimpleNamespace(
+                    feishu=SimpleNamespace(account_id="default")
+                ),
+            ),
+            cases=(self._case(local=("turn_completed",), human=(), case_id="FEISHU-LIVE-013"),),
+        )
+
+        async def run_restart_case(*, restart_fn, **_):
+            await restart_fn()
+            return api.FeishuCaseResult(
+                "FEISHU-LIVE-013",
+                "pass",
+                ("turn_completed",),
+                (),
+                (),
+                None,
+            )
+
+        with (
+            patch.object(
+                api,
+                "_start_managed_gateway",
+                new=AsyncMock(side_effect=(first, second)),
+            ),
+            patch.object(api, "_run_case", new=AsyncMock(side_effect=run_restart_case)),
+        ):
+            execution = await api._execute_live_cases(
+                preflight,
+                gateway_timeout=5.0,
+                case_timeout=5.0,
+                input_fn=lambda _: "",
+                output_fn=lambda _: None,
+            )
+
+        self.assertEqual(execution.gateway_secret_matches, 3)
+        self.assertEqual(execution.gateway_provenance, second.provenance)
+        first.stop.assert_awaited_once()
+        second.stop.assert_awaited_once()
 
     def _case(
         self,
@@ -1073,6 +1326,7 @@ class FeishuLiveHarnessIntegrationTest(unittest.TestCase):
                     workspace=SimpleNamespace(path=root / "workspace"),
                     channels=SimpleNamespace(
                         feishu=SimpleNamespace(
+                            account_id="default",
                             owner_open_id="ou_synthetic",
                             allowed_open_ids=("ou_synthetic",),
                             allowed_chat_ids=("oc_synthetic",),
@@ -1090,6 +1344,12 @@ class FeishuLiveHarnessIntegrationTest(unittest.TestCase):
                 results=results,
                 gateway_ready=True,
                 gateway_graceful_exit=True,
+                gateway_provenance=GatewayProvenance(
+                    pid=456,
+                    started_at="2026-08-08T12:00:01.000000Z",
+                    commit="b" * 40,
+                ),
+                gateway_secret_matches=0,
             )
             for unchanged, expected_code, expected_release in (
                 (True, 0, "FEISHU_E2E_VERIFIED"),

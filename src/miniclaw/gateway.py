@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
 
+from miniclaw import gateway_lease
+from miniclaw.channels import sdk_logging
 from miniclaw.channels.approvals import ChannelApprovalController
 from miniclaw.channels.delivery import DeliveryWorker, split_message
 from miniclaw.channels.discord import DiscordTransport
@@ -150,6 +152,14 @@ async def run_gateway(
     except (ConfigError, DotEnvError, GatewayConfigError):
         raise
     _configure_channel_logging()
+    sdk_logging.install_feishu_sdk_log_filter()
+    try:
+        lease = gateway_lease.GatewayLease.acquire(
+            paths.run / "gateway.lock",
+            commit=target.get("MINICLAW_GATEWAY_COMMIT", "unknown"),
+        )
+    except gateway_lease.GatewayLeaseError as error:
+        raise GatewayConfigError(error.code) from None
     shutdown_event = asyncio.Event()
     force_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -165,26 +175,28 @@ async def run_gateway(
         else:
             force_event.set()
 
-    for item in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(item, request_shutdown)
-        except (NotImplementedError, RuntimeError, ValueError):
-            continue
-        installed.append(item)
     try:
-        supervisor = await create_gateway_supervisor(config, paths, secrets)
-        await supervisor.run(
-            shutdown_event=shutdown_event,
-            force_event=force_event,
-            ready=ready,
-        )
-    except (ConfigError, DotEnvError, GatewayConfigError):
-        raise
-    except Exception:
-        raise GatewayRuntimeError("gateway startup or runtime failed") from None
+        for item in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(item, request_shutdown)
+            except (NotImplementedError, RuntimeError, ValueError):
+                continue
+            installed.append(item)
+        try:
+            supervisor = await create_gateway_supervisor(config, paths, secrets)
+            await supervisor.run(
+                shutdown_event=shutdown_event,
+                force_event=force_event,
+                ready=ready,
+            )
+        except (ConfigError, DotEnvError, GatewayConfigError):
+            raise
+        except Exception:
+            raise GatewayRuntimeError("gateway startup or runtime failed") from None
     finally:
         for item in installed:
             loop.remove_signal_handler(item)
+        lease.close()
 
 
 async def run_gateway_components(
