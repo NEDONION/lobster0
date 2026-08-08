@@ -340,6 +340,8 @@ def _validate_preflight_state(
         raise FeishuLiveError("feishu_channel_disabled")
     if channels.telegram.enabled or channels.discord.enabled:
         raise FeishuLiveError("peer_channel_enabled")
+    if config.tools.mode != "safe":
+        raise FeishuLiveError("unsafe_permission_mode")
     if not _is_commit(commit):
         raise FeishuLiveError("repository_commit_unavailable")
     if dirty:

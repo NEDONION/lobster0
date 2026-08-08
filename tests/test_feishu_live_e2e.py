@@ -997,7 +997,7 @@ class FeishuLiveHarnessSafetyTest(unittest.TestCase):
             self.assertFalse(output.exists())
 
     def test_static_preflight_rejects_each_isolation_or_truth_failure(self) -> None:
-        """开关、peer Channel、commit、dirty、Doctor、旧审批和 case 数均失败关闭。"""
+        """开关、权限模式、隔离、commit、Doctor、审批和 case 数均失败关闭。"""
         api = self._api("_validate_preflight_state")
         passing_config = self._config(feishu=True)
         passing_checks = (CheckResult("config", CheckStatus.PASS, "ok"),)
@@ -1007,6 +1007,8 @@ class FeishuLiveHarnessSafetyTest(unittest.TestCase):
              "feishu_channel_disabled"),
             (self._config(feishu=True, telegram=True), passing_checks, 0, "a" * 40, False,
              passing_cases, "peer_channel_enabled"),
+            (self._config(feishu=True, mode="autopilot"), passing_checks, 0, "a" * 40,
+             False, passing_cases, "unsafe_permission_mode"),
             (passing_config, passing_checks, 0, "unknown", False, passing_cases,
              "repository_commit_unavailable"),
             (passing_config, passing_checks, 0, "a" * 40, True, passing_cases,
@@ -1052,14 +1054,21 @@ class FeishuLiveHarnessSafetyTest(unittest.TestCase):
         self.assertIn("feishu_channel_disabled", rendered)
 
     @staticmethod
-    def _config(*, feishu: bool, telegram: bool = False, discord: bool = False):
-        """构造仅含 Channel 开关的静态配置。"""
+    def _config(
+        *,
+        feishu: bool,
+        telegram: bool = False,
+        discord: bool = False,
+        mode: str = "safe",
+    ):
+        """构造仅含 Channel 开关与 Tool mode 的静态配置。"""
         return SimpleNamespace(
             channels=SimpleNamespace(
                 feishu=SimpleNamespace(enabled=feishu),
                 telegram=SimpleNamespace(enabled=telegram),
                 discord=SimpleNamespace(enabled=discord),
-            )
+            ),
+            tools=SimpleNamespace(mode=mode),
         )
 
     def _api(self, required: str) -> ModuleType:
