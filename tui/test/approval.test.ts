@@ -72,3 +72,31 @@ test("approval keyboard decisions map exactly to deny once session always", () =
 
   assert.deepEqual(decisions, ["deny", "once", "session", "always", "deny"]);
 });
+
+test("long approval stays within 18 rows with sticky warning and decisions", () => {
+  const value = approval(["once", "session", "always"]);
+  value.arguments = {
+    program: "/usr/local/bin/lark-cli",
+    args: Array.from({ length: 80 }, (_, index) => `document-${index}`),
+  };
+  const dialog = new ApprovalDialog(value, "zh-CN", () => {}, 18);
+
+  const first = dialog.render(80);
+  assert.equal(first.length <= 18, true);
+  assert.equal(first.every((line) => visibleWidth(line) <= 80), true);
+  assert.match(first.join("\n"), /审批 #7/);
+  assert.match(first.join("\n"), /当前用户身份运行/);
+  assert.match(first.join("\n"), /拒绝/);
+  assert.match(first.join("\n"), /始终允许/);
+  assert.doesNotMatch(first.join("\n"), /document-79/);
+
+  dialog.handleInput("\u001b[6~");
+  const next = dialog.render(80).join("\n");
+  assert.doesNotMatch(next, /document-0\"/);
+  assert.match(next, /详情/);
+
+  dialog.handleInput("\u001b[F");
+  const end = dialog.render(80).join("\n");
+  assert.match(end, /document-79/);
+  assert.match(end, /始终允许/);
+});

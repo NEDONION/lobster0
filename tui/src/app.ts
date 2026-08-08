@@ -339,13 +339,22 @@ export class MiniClawTui {
     const approval = this.currentState.pendingApproval;
     if (!approval) return;
     this.editor.disableSubmit = true;
-    this.approvalDialogValue = new ApprovalDialog(approval, this.currentLanguage, (decision) => {
-      this.track(this.resolveApproval(decision));
-    });
+    const terminalRows = this.tui.terminal.rows;
+    const terminalColumns = this.tui.terminal.columns;
+    const overlayRows = Math.min(18, Math.max(8, terminalRows - 2));
+    const overlayWidth = Math.min(84, Math.max(20, terminalColumns - 4));
+    this.approvalDialogValue = new ApprovalDialog(
+      approval,
+      this.currentLanguage,
+      (decision) => {
+        this.track(this.resolveApproval(decision));
+      },
+      overlayRows,
+    );
     this.approvalHandle = this.tui.showOverlay(this.approvalDialogValue, {
-      width: "80%",
-      minWidth: 48,
-      maxHeight: "70%",
+      width: overlayWidth,
+      minWidth: Math.min(48, overlayWidth),
+      maxHeight: overlayRows,
       anchor: "center",
       margin: 1,
     });
