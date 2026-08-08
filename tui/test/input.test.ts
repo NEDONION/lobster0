@@ -17,6 +17,7 @@ class FakeBridge implements BridgePort {
   public readonly approvals: { id: number; decision: string }[] = [];
   public cancelled = 0;
   public readonly permissionModes: string[] = [];
+  public readonly memoryCommands: Record<string, JsonValue>[] = [];
   public rejectNextTurn = false;
   private eventHandler?: BridgeEventHandler;
   private fatalHandler?: BridgeFatalHandler;
@@ -50,6 +51,12 @@ class FakeBridge implements BridgePort {
   }
 
   public async newSession(): Promise<void> {}
+  public async memoryCommand(payload: Record<string, JsonValue>): Promise<Record<string, JsonValue>> {
+    this.memoryCommands.push(payload);
+    return {
+      items: [{ unit_id: "mem-language", text: "用户偏好使用中文回复", status: "active" }],
+    };
+  }
   public async setPermissionMode(mode: "safe" | "smart" | "autopilot" | "yolo") {
     this.permissionModes.push(mode);
     return mode;
@@ -115,6 +122,20 @@ test("large bracketed paste submits the full original text once", async () => {
 
   assert.deepEqual(bridge.turns, [{ session: "default", text }]);
   assert.equal(app.editor.getExpandedText(), "");
+  app.stop();
+});
+
+test("memory slash command uses the typed bridge surface and renders results", async () => {
+  const { app, bridge, terminal } = await createApp();
+  app.editor.setText("/memory search 中文回复");
+
+  terminal.send("\r");
+  await app.whenIdle();
+
+  assert.deepEqual(bridge.memoryCommands, [
+    { action: "search", query: "中文回复", limit: 10 },
+  ]);
+  assert.match(app.renderDocument(80).join("\n"), /mem-language.*中文回复/);
   app.stop();
 });
 

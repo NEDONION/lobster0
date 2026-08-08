@@ -13,6 +13,7 @@ from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig, resolve_permission_roots
 from miniclaw.memory.buffer import MemoryBufferRepository
+from miniclaw.memory.console import MemoryConsole
 from miniclaw.memory.flush import MemoryCapture
 from miniclaw.memory.markdown_store import MemoryMarkdownStore
 from miniclaw.memory.repository import (
@@ -20,8 +21,10 @@ from miniclaw.memory.repository import (
     MemoryReviewRepository,
     MemoryUnitRepository,
 )
+from miniclaw.memory.retrieval import MemoryRetrieval
 from miniclaw.memory.service import MemoryService
 from miniclaw.memory.store import MemoryStore
+from miniclaw.memory.worker import MemoryFlushScheduler
 from miniclaw.paths import StatePaths
 from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
@@ -49,7 +52,13 @@ from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
-from miniclaw.tools.memory_v2 import MemoryRememberTool
+from miniclaw.tools.memory_v2 import (
+    MemoryFlushTool,
+    MemoryGetTool,
+    MemoryListTool,
+    MemoryRememberTool,
+    MemorySearchTool,
+)
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
@@ -67,6 +76,7 @@ class AgentRuntime:
     context_budget_tokens: int
     permission_state: PermissionState
     service: TurnService
+    memory_console: MemoryConsole
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
 
@@ -136,6 +146,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         dict.fromkeys((*configured_network_rules, *rules.network_rules(owner.id)))
     )
     memory = MemoryStore(paths)
+    memory_retrieval = MemoryRetrieval(database)
+    memory_scheduler = MemoryFlushScheduler()
     memory_service = MemoryService(
         MemoryMarkdownStore(paths, MemoryManifestRepository(database)),
         MemoryUnitRepository(database),
@@ -163,6 +175,10 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         ReadMemoryTool(memory),
         ProposeMemoryTool(memory),
         MemoryRememberTool(memory_service, messages),
+        MemorySearchTool(memory_retrieval),
+        MemoryGetTool(memory_retrieval),
+        MemoryListTool(memory_retrieval),
+        MemoryFlushTool(memory_scheduler.schedule),
     )
     tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
@@ -192,6 +208,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         context=ContextBuilder(
             paths,
             memory,
+            retrieval=memory_retrieval,
             context_budget_tokens=config.agent.context_budget_tokens,
         ),
         runner=AgentRunner(
@@ -218,6 +235,12 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         context_budget_tokens=config.agent.context_budget_tokens,
         permission_state=permission_state,
         service=service,
+        memory_console=MemoryConsole(
+            database,
+            owner.id,
+            memory_retrieval,
+            memory_scheduler.schedule,
+        ),
         tool_definitions=tuple(
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)
         ),

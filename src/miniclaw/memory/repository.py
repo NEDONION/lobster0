@@ -9,6 +9,7 @@ from pathlib import PurePosixPath
 from typing import cast
 
 from miniclaw.memory.models import SourceRef
+from miniclaw.memory.text import memory_search_shadow
 from miniclaw.providers.base import JsonValue
 from miniclaw.storage.database import Database
 
@@ -604,6 +605,7 @@ class MemoryUnitRepository:
         if markdown_hash is not None:
             markdown_hash = _require_hash(markdown_hash, "markdown_hash")
         timestamp = _utc_text(now or datetime.now(UTC))
+        indexed_shadow = search_shadow.strip() or memory_search_shadow(normalized)
         with self._database.connect() as connection:
             _validate_sources(connection, owner_id, sources)
             try:
@@ -632,7 +634,7 @@ class MemoryUnitRepository:
                         None if end is None else _utc_text(end),
                         supersedes_unit_id,
                         markdown_hash,
-                        search_shadow,
+                        indexed_shadow,
                         timestamp,
                         timestamp,
                     ),

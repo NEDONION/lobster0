@@ -57,6 +57,10 @@ class ConfigTest(unittest.TestCase):
                 "read_memory",
                 "propose_memory",
                 "memory_remember",
+                "memory_search",
+                "memory_get",
+                "memory_list",
+                "memory_flush",
             ),
         )
         self.assertEqual(config.tools.run_command.timeout_seconds, 30)

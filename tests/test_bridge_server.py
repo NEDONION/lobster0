@@ -170,6 +170,9 @@ def _runtime(service) -> SimpleNamespace:
         tool_definitions=(SimpleNamespace(name="run_command"),),
         permission_state=PermissionState(PermissionMode.SAFE),
         service=service,
+        memory_console=SimpleNamespace(
+            command=lambda **values: {"echo": values},
+        ),
     )
 
 
@@ -255,6 +258,30 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await task, 0)
         self.assertEqual(writer.frames[-1]["type"], "response.ok")
         self.assertEqual(writer.frames[-1]["id"], "stop-1")
+
+    async def test_memory_command_routes_only_validated_core_arguments(self) -> None:
+        """Bridge 把已验证 action/query/limit 路由到 Runtime Console。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        server = BridgeServer(_runtime(EventTurnService()), reader, writer)
+        task = asyncio.create_task(server.run())
+
+        await reader.feed(
+            _request(
+                "memory-1",
+                "memory.command",
+                {"action": "search", "query": "中文", "limit": 3},
+            )
+        )
+        response = await writer.wait_for_id("memory-1")
+
+        self.assertEqual(response["type"], "response.ok")
+        self.assertEqual(
+            response["payload"],
+            {"echo": {"action": "search", "query": "中文", "limit": 3}},
+        )
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        self.assertEqual(await task, 0)
 
     async def test_busy_turn_rejects_second_start_and_cancel_stops_the_task(self) -> None:
         """同时只能执行一个 Turn，取消必须回收正在运行的 Core task。"""

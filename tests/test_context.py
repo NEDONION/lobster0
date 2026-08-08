@@ -2,13 +2,18 @@
 
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 
 from miniclaw.agent.context import ContextBuilder, ContextError
 from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.models import DisclosureContext
+from miniclaw.memory.models import DisclosureContext, SourceRef
+from miniclaw.memory.repository import MemoryUnitRepository
+from miniclaw.memory.retrieval import MemoryRetrieval
 from miniclaw.paths import build_state_paths
 from miniclaw.providers.base import ModelMessage
+from miniclaw.storage.conversations import SessionRepository, TurnRepository
+from miniclaw.storage.database import Database
 
 
 class ContextBuilderTest(unittest.TestCase):
@@ -166,6 +171,54 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertNotIn("must not load arbitrary old daily notes", system)
         self.assertIn("propose_memory", system)
         self.assertIn("明确要求记住", system)
+
+    def test_relevant_structured_memory_enters_context_with_replay_ids(self) -> None:
+        """FTS Recall 只注入相关完整 Unit，并记录可回放 Unit ID。"""
+        database = Database(self.paths.database)
+        session = SessionRepository(database).get_or_create_cli(1, "context-recall")
+        turn = TurnRepository(database).create_with_user_message(
+            session.id,
+            "context-recall-source",
+            "test-model",
+            "请默认使用中文回复",
+        )
+        with database.connect_read_only() as connection:
+            message_id = int(
+                connection.execute(
+                    "SELECT id FROM messages WHERE turn_id = ?",
+                    (turn.id,),
+                ).fetchone()[0]
+            )
+        MemoryUnitRepository(database).create(
+            unit_id="mem-context-language",
+            owner_id=1,
+            key="preference.language",
+            text="用户偏好使用中文回复",
+            kind="preference",
+            scope="private",
+            status="active",
+            confidence=1.0,
+            sensitivity="low",
+            valid_from=datetime.now(UTC),
+            valid_until=None,
+            sources=(SourceRef(message_id, session.id, "cli"),),
+        )
+
+        request = ContextBuilder(
+            self.paths,
+            retrieval=MemoryRetrieval(database),
+        ).build(
+            "deepseek-v4-pro",
+            (ModelMessage(role="user", content="我默认希望你用什么语言回复？"),),
+            disclosure=self.disclosure,
+        )
+
+        self.assertIn("## RELEVANT MEMORY", request.messages[0].content)
+        self.assertIn("用户偏好使用中文回复", request.messages[0].content)
+        self.assertEqual(
+            request.runtime_snapshot["memory_recall_unit_ids"],
+            ["mem-context-language"],
+        )
 
     def test_owner_group_request_never_reads_private_memory_into_provider_context(self) -> None:
         """即使发言者是 Owner，群聊也不能向 Provider 披露私人 Markdown。"""

@@ -17,12 +17,14 @@ _REQUEST_TYPES = frozenset(
         "turn.cancel",
         "approval.resolve",
         "permissions.set",
+        "memory.command",
         "session.new",
         "bridge.shutdown",
     }
 )
 _APPROVAL_DECISIONS = frozenset({"deny", "once", "session", "always"})
 _PERMISSION_MODES = frozenset({"safe", "smart", "autopilot", "yolo"})
+_MEMORY_ACTIONS = frozenset({"status", "list", "search", "why", "flush"})
 
 
 class ProtocolError(RuntimeError):
@@ -180,6 +182,9 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
         if set(payload) != {"mode"} or not isinstance(mode, str) or mode not in _PERMISSION_MODES:
             raise ProtocolError("invalid_permission_mode", "权限模式字段不合法")
         return
+    if request_type == "memory.command":
+        _validate_memory_command(payload)
+        return
     if payload:
         raise ProtocolError("invalid_payload", "该请求不接受 payload 字段")
 
@@ -191,3 +196,27 @@ def _bounded_string(value: JsonValue, minimum: int, maximum: int) -> bool:
         and minimum <= len(value) <= maximum
         and "\x00" not in value
     )
+
+
+def _validate_memory_command(payload: dict[str, JsonValue]) -> None:
+    """按 action 严格限制 Memory Console 参数，身份始终由 Core 绑定。"""
+    action = payload.get("action")
+    if not isinstance(action, str) or action not in _MEMORY_ACTIONS:
+        raise ProtocolError("invalid_memory_command", "Memory 命令字段不合法")
+    if action in {"status", "flush"}:
+        valid = set(payload) == {"action"}
+    elif action == "list":
+        valid = set(payload).issubset({"action", "limit"})
+    elif action == "search":
+        valid = (
+            set(payload).issubset({"action", "query", "limit"})
+            and _bounded_string(payload.get("query"), 1, 1_000)
+        )
+    else:
+        valid = (
+            set(payload) == {"action", "unit_id"}
+            and _bounded_string(payload.get("unit_id"), 1, 160)
+        )
+    limit = payload.get("limit", 10)
+    if not valid or type(limit) is not int or not 1 <= limit <= 50:
+        raise ProtocolError("invalid_memory_command", "Memory 命令字段不合法")

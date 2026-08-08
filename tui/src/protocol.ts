@@ -18,6 +18,7 @@ export type RequestType =
   | "turn.cancel"
   | "approval.resolve"
   | "permissions.set"
+  | "memory.command"
   | "session.new"
   | "bridge.shutdown";
 

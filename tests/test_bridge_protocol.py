@@ -112,6 +112,40 @@ class BridgeProtocolTest(unittest.TestCase):
                     decode_request(raw)
                 self.assertEqual(captured.exception.code, "invalid_permission_mode")
 
+    def test_memory_command_accepts_only_action_specific_fields(self) -> None:
+        """Memory UI 请求不能携带 Owner/scope/status，并按 action 收窄参数。"""
+        accepted = (
+            {"action": "status"},
+            {"action": "flush"},
+            {"action": "list", "limit": 10},
+            {"action": "search", "query": "中文回复", "limit": 5},
+            {"action": "why", "unit_id": "mem-123"},
+        )
+        for index, payload in enumerate(accepted):
+            request = decode_request(
+                json.dumps(
+                    {"v": 1, "id": f"memory-{index}", "type": "memory.command", "payload": payload}
+                ).encode("utf-8")
+                + b"\n"
+            )
+            self.assertEqual(request.payload, payload)
+
+        rejected = (
+            {"action": "search", "query": "中文", "owner_id": 1},
+            {"action": "search"},
+            {"action": "why", "unit_id": ""},
+            {"action": "rebuild", "force": True},
+        )
+        for payload in rejected:
+            with self.assertRaises(ProtocolError) as captured:
+                decode_request(
+                    json.dumps(
+                        {"v": 1, "id": "memory-bad", "type": "memory.command", "payload": payload}
+                    ).encode("utf-8")
+                    + b"\n"
+                )
+            self.assertEqual(captured.exception.code, "invalid_memory_command")
+
     def test_encode_frame_is_one_utf8_json_line_and_rejects_nan(self) -> None:
         """输出必须是一行紧凑 UTF-8 JSON，且不能编码非标准数值。"""
         encoded = encode_frame(

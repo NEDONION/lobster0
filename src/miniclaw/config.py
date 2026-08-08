@@ -26,6 +26,10 @@ BUILTIN_TOOL_NAMES = (
     "read_memory",
     "propose_memory",
     "memory_remember",
+    "memory_search",
+    "memory_get",
+    "memory_list",
+    "memory_flush",
 )
 DEFAULT_TOOL_MODE = "autopilot"
 

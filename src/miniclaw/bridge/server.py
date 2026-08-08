@@ -153,6 +153,20 @@ class BridgeServer:
             self._session_key = session_key
             await self._ok(request.request_id, {"session_key": session_key})
             return True
+        if request.type == "memory.command":
+            if self._active_task is not None or self._pending_approval_id is not None:
+                await self._error(
+                    request.request_id,
+                    "memory_busy",
+                    "运行或审批期间不能执行 Memory 命令",
+                    retryable=True,
+                )
+                return True
+            await self._ok(
+                request.request_id,
+                self._runtime.memory_console.command(**request.payload),
+            )
+            return True
         await self._cancel_active()
         await self._ok(request.request_id, {})
         return False

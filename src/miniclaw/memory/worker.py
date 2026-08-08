@@ -2,10 +2,36 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Protocol
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class MemoryFlushScheduler:
+    """在 Runtime 同步装配阶段缓存 flush 请求，并可稍后绑定 Worker。"""
+
+    def __init__(self) -> None:
+        """创建尚未绑定 Worker 的调度信号。"""
+        self._callback: Callable[[], None] | None = None
+        self._pending = False
+
+    def bind(self, callback: Callable[[], None]) -> None:
+        """绑定非阻塞 wake 回调；已有请求会在下次 schedule/startup 被处理。"""
+        self._callback = callback
+
+    def schedule(self) -> None:
+        """记录调度意图，并在 Worker 已绑定时立即唤醒。"""
+        self._pending = True
+        if self._callback is not None:
+            self._callback()
+
+    def consume_pending(self) -> bool:
+        """原子语义地读取并清除进程内 pending 标志。"""
+        pending = self._pending
+        self._pending = False
+        return pending
 
 
 class Coordinator(Protocol):

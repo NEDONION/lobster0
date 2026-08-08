@@ -48,6 +48,7 @@ export interface BridgePort {
   cancelTurn(): Promise<void>;
   resolveApproval(approvalId: number, decision: ApprovalChoice): Promise<void>;
   newSession(sessionKey: string): Promise<void>;
+  memoryCommand(payload: Record<string, JsonValue>): Promise<Record<string, JsonValue>>;
   setPermissionMode(mode: PermissionMode): Promise<PermissionMode>;
   shutdown(): Promise<void>;
   kill(): void;
@@ -248,7 +249,8 @@ export class MiniClawTui {
   }
 
   private async runLocalCommand(command: string): Promise<void> {
-    const [name, argument] = command.split(/\s+/, 2);
+    const [name, ...arguments_] = command.split(/\s+/);
+    const argument = arguments_[0];
     switch (name) {
       case "/copy":
         this.appendLocal(
@@ -275,6 +277,7 @@ export class MiniClawTui {
         this.applyState(createInitialState());
         break;
       case "/new": {
+        await this.bridge.memoryCommand({ action: "flush" });
         const next = `session-${Date.now().toString(36)}`;
         await this.bridge.newSession(next);
         this.sessionKey = next;
@@ -288,8 +291,11 @@ export class MiniClawTui {
       case "/permissions":
         await this.changePermissionMode(argument);
         break;
+      case "/memory":
+        await this.runMemoryCommand(arguments_);
+        break;
       case "/help":
-        this.appendLocal("/copy · /lang zh|en · /trace all|compact|编号 · /permissions [safe|smart|autopilot|yolo] · /status · /new · /clear · /quit");
+        this.appendLocal("/copy · /lang zh|en · /trace all|compact|编号 · /permissions [safe|smart|autopilot|yolo] · /memory status|list|search|why|flush · /status · /new · /clear · /quit");
         break;
       case "/quit":
       case "/exit":
@@ -300,6 +306,31 @@ export class MiniClawTui {
     }
     this.tui.setFocus(this.editor);
     this.tui.requestRender();
+  }
+
+  private async runMemoryCommand(arguments_: string[]): Promise<void> {
+    const [action, ...values] = arguments_;
+    let payload: Record<string, JsonValue>;
+    if (action === "status" || action === "flush") {
+      payload = { action };
+    } else if (action === "list") {
+      const limit = values[0] && /^\d+$/.test(values[0]) ? Number(values[0]) : 20;
+      payload = { action, limit };
+    } else if (action === "search" && values.length > 0) {
+      payload = { action, query: values.join(" "), limit: 10 };
+    } else if (action === "why" && values.length === 1) {
+      payload = { action, unit_id: values[0]! };
+    } else {
+      this.appendLocal("用法: /memory status | list [数量] | search <查询> | why <unit_id> | flush", "error");
+      return;
+    }
+    try {
+      const response = await this.bridge.memoryCommand(payload);
+      this.appendLocal(formatMemoryResponse(response));
+    } catch (error) {
+      const code = error instanceof BridgeRequestError ? error.code : "memory_command_failed";
+      this.appendLocal(`${this.text("Memory 命令失败", "Memory command failed")}: ${code}`, "error");
+    }
   }
 
   private onFrame(frame: ServerFrame): void {
@@ -473,6 +504,32 @@ export class MiniClawTui {
   private text(chinese: string, english: string): string {
     return this.currentLanguage === "zh-CN" ? chinese : english;
   }
+}
+
+function formatMemoryResponse(response: Record<string, JsonValue>): string {
+  const items = response.items;
+  if (Array.isArray(items)) {
+    if (items.length === 0) return "Memory: (empty)";
+    return items
+      .map((item) => {
+        if (typeof item !== "object" || item === null || Array.isArray(item)) return "Memory: ?";
+        const id = typeof item.unit_id === "string" ? item.unit_id : "?";
+        const text = typeof item.text === "string" ? item.text : "";
+        const status = typeof item.status === "string" ? ` (${item.status})` : "";
+        return `[${id}] ${text}${status}`;
+      })
+      .join("\n");
+  }
+  const item = response.item;
+  if (typeof item === "object" && item !== null && !Array.isArray(item)) {
+    const id = typeof item.unit_id === "string" ? item.unit_id : "?";
+    const text = typeof item.text === "string" ? item.text : "";
+    const sources = Array.isArray(item.source_message_ids)
+      ? item.source_message_ids.join(",")
+      : "";
+    return `[${id}] ${text}\nsources=${sources}`;
+  }
+  return JSON.stringify(response, null, 2);
 }
 
 function systemClipboard(tui: TUI): ClipboardPort {

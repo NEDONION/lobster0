@@ -149,6 +149,12 @@ export class BridgeClient {
     await this.request("session.new", { session_key: sessionKey });
   }
 
+  public async memoryCommand(
+    payload: Record<string, JsonValue>,
+  ): Promise<Record<string, JsonValue>> {
+    return this.request("memory.command", payload);
+  }
+
   public async setPermissionMode(mode: PermissionMode): Promise<PermissionMode> {
     const response = await this.request("permissions.set", { mode });
     const selected = response.permission_mode;

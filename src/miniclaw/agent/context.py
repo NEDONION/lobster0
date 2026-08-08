@@ -4,8 +4,10 @@ import hashlib
 import json
 from pathlib import Path
 
+from miniclaw.memory.context import MemoryContextSelector
 from miniclaw.memory.models import DisclosureContext
 from miniclaw.memory.policy import MemoryDisclosurePolicy, MemoryPolicyError
+from miniclaw.memory.retrieval import MemoryRetrieval, SearchRequest
 from miniclaw.memory.store import MemoryError, MemorySnapshot, MemoryStore
 from miniclaw.paths import StatePaths
 from miniclaw.providers.base import JsonValue, ModelMessage, ModelRequest
@@ -66,6 +68,7 @@ class ContextBuilder:
         memory: MemoryStore | None = None,
         skills: SkillLoader | None = None,
         disclosure_policy: MemoryDisclosurePolicy | None = None,
+        retrieval: MemoryRetrieval | None = None,
         *,
         context_budget_tokens: int = 32_000,
     ) -> None:
@@ -80,6 +83,8 @@ class ContextBuilder:
         self._memory = memory or MemoryStore(paths)
         self._skills = skills or SkillLoader(paths.skills)
         self._disclosure_policy = disclosure_policy or MemoryDisclosurePolicy()
+        self._retrieval = retrieval
+        self._memory_context = MemoryContextSelector()
         self._context_budget_tokens = context_budget_tokens
 
     def build(
@@ -121,6 +126,12 @@ class ContextBuilder:
             (message.content for message in reversed(history) if message.role == "user"),
             "",
         )
+        recall = None
+        if self._retrieval is not None and query.strip():
+            recall = self._memory_context.select(
+                self._retrieval.search(SearchRequest(disclosure, query, 20)),
+                provider_window=self._context_budget_tokens,
+            )
         try:
             skills = self._skills.select(query)
         except SkillError as error:
@@ -136,6 +147,11 @@ class ContextBuilder:
                 f"## SOUL\n{soul.strip()}\n\n"
                 f"## USER\n{user.strip()}\n\n"
                 f"## MEMORY\n{memory.text.strip() or '(empty)'}"
+                + (
+                    f"\n\n## RELEVANT MEMORY\n{recall.text}"
+                    if recall is not None and recall.text
+                    else ""
+                )
                 + (f"\n\n## ACTIVE SKILLS\n{skill_text}" if skill_text else "")
             ),
         )
@@ -154,6 +170,12 @@ class ContextBuilder:
                 }
                 for document in memory.documents
             ],
+            "memory_recall_unit_ids": (
+                [] if recall is None else list(recall.unit_ids)
+            ),
+            "memory_recall_budget_tokens": (
+                0 if recall is None else recall.budget_tokens
+            ),
             "skills": [
                 {
                     "name": skill.name,
