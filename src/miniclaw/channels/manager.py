@@ -9,6 +9,7 @@ from typing import Protocol
 from miniclaw.agent.events import RunEventHandler
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.base import InboundMessage
+from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.delivery import split_message
 from miniclaw.providers.base import StreamHandler
 from miniclaw.storage.channels import (
@@ -114,6 +115,13 @@ class ChannelManager:
         self._workers: list[asyncio.Task[None]] = []
         self._feeder: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
+        self._capabilities: ChannelCapabilities | None = None
+
+    def attach_capabilities(self, capabilities: ChannelCapabilities) -> None:
+        """在启动前绑定依赖同一个 Transport 的平台体验能力。"""
+        if self._workers or self._feeder is not None:
+            raise RuntimeError("Channel capabilities must be attached before start")
+        self._capabilities = capabilities
 
     async def receive(self, message: InboundMessage) -> InboundAcceptance:
         """先持久化消息，再 best-effort 写入有界内存队列。"""
@@ -242,6 +250,13 @@ class ChannelManager:
                 event.external_conversation_id,
             )
             self._inbound.bind_session(event.key, session.id)
+            activity = (
+                None
+                if self._capabilities is None
+                else self._capabilities.activity(event)
+            )
+            if activity is not None:
+                await activity.start()
             try:
                 result = await self.service.handle_inbound(
                     user_id=self.owner_id,
@@ -250,14 +265,22 @@ class ChannelManager:
                     external_conversation_id=event.external_conversation_id,
                     inbound_event_id=event.external_message_id,
                     text=event.content,
+                    on_event=None if activity is None else activity.on_event,
                 )
             except asyncio.CancelledError:
+                if activity is not None:
+                    await activity.finish(content=None, failed=True)
                 self._fail_running_event(event.key, "channel_turn_interrupted")
                 raise
             except Exception:
+                if activity is not None:
+                    await activity.finish(content=None, failed=True)
                 self._create_failure_delivery(session.id, event)
                 self._inbound.mark_failed(event.key, "channel_turn_failed")
                 return
+
+            if activity is not None:
+                await activity.finish(content=result.content, failed=False)
 
             if result.message_id is not None:
                 self._deliveries.create_parts(

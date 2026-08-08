@@ -6,9 +6,12 @@ import unittest
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
+from miniclaw.agent.events import RunEvent
 from miniclaw.agent.turn import TurnResult
-from miniclaw.channels.base import InboundMessage
+from miniclaw.channels.base import InboundMessage, SendReceipt
+from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
@@ -77,6 +80,14 @@ class TrackingTurnService:
         try:
             if self.gate is not None:
                 await self.gate.wait()
+            if on_event is not None:
+                await on_event(
+                    RunEvent(
+                        "model_text_delta",
+                        turn.id,
+                        {"text": "partial" if self.fail else f"reply:{text}"},
+                    )
+                )
             if self.fail:
                 self.turns.fail(turn.id, "provider_server_error", "safe failure")
                 raise RuntimeError("secret-provider-detail")
@@ -102,6 +113,50 @@ class TrackingTurnService:
             )
         finally:
             self.active -= 1
+
+
+@dataclass(slots=True)
+class ManagerCapabilityTransport:
+    """验证 Manager 是否把能力生命周期包在 Turn 外层。"""
+
+    fail_card: bool = False
+    typing_added: list[str] = field(default_factory=list)
+    typing_removed: list[tuple[str, str | None]] = field(default_factory=list)
+    cards: list[dict[str, Any]] = field(default_factory=list)
+
+    async def add_typing(self, message_id: str) -> str:
+        """记录 Typing 开始。"""
+        self.typing_added.append(message_id)
+        return "reaction_manager"
+
+    async def remove_typing(self, message_id: str, reaction_id: str | None) -> bool:
+        """记录 Typing 结束。"""
+        self.typing_removed.append((message_id, reaction_id))
+        return True
+
+    async def send_card(
+        self,
+        *,
+        conversation_id: str,
+        reply_to_message_id: str,
+        card: dict[str, Any],
+        idempotency_key: str,
+    ) -> SendReceipt:
+        """记录进度卡片或模拟 API 失败。"""
+        del conversation_id, reply_to_message_id, idempotency_key
+        self.cards.append(card)
+        if self.fail_card:
+            raise RuntimeError("private-card-error")
+        return SendReceipt("om_manager_card")
+
+    async def update_card(
+        self,
+        platform_message_id: str,
+        card: dict[str, Any],
+    ) -> SendReceipt:
+        """记录卡片终态。"""
+        self.cards.append(card)
+        return SendReceipt(platform_message_id)
 
 
 class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
@@ -260,6 +315,41 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.last_error_code, "channel_turn_failed")
         self.assertIn("处理失败", failure_delivery["content"])
         self.assertNotIn("secret-provider-detail", dump)
+
+    async def test_capabilities_wrap_turn_and_final_markdown_stays_durable(self) -> None:
+        """Typing/Card 成败都不能取代最终 SQLite Outbox。"""
+        for index, fail_card in enumerate((False, True), start=1):
+            with self.subTest(fail_card=fail_card):
+                service = TrackingTurnService(self.sessions, self.messages, self.turns)
+                transport = ManagerCapabilityTransport(fail_card=fail_card)
+                capabilities = ChannelCapabilities(
+                    transport=transport,
+                    streaming_card=True,
+                    update_interval=0.01,
+                )
+                manager = self._manager(service, queue_size=2, worker_count=1)
+                manager.attach_capabilities(capabilities)
+                message_id = f"om_cap_{index}"
+                await manager.start()
+                try:
+                    await manager.receive(self._message(message_id, "hello"))
+                    await manager.wait_idle(timeout=2)
+                finally:
+                    await manager.stop()
+
+                self.assertEqual(transport.typing_added, [message_id])
+                self.assertEqual(
+                    transport.typing_removed,
+                    [(message_id, "reaction_manager")],
+                )
+                with self.database.connect_read_only() as connection:
+                    delivery = connection.execute(
+                        "SELECT content FROM deliveries "
+                        "WHERE reply_to_message_id = ? AND delivery_kind = 'message'",
+                        (message_id,),
+                    ).fetchone()
+                self.assertIsNotNone(delivery)
+                self.assertEqual(delivery["content"], "reply:hello")
 
     async def test_restart_marks_running_turn_failed_without_replay(self) -> None:
         """已有 running Turn 表明可能执行过 Tool，重启只能中断，不能再次调用 Service。"""
