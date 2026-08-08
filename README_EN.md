@@ -21,7 +21,7 @@
 MiniClaw brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
-> The repository has passed the Phase 5 local implementation gates. Full live acceptance remains evidence-specific for each messaging platform. Memory is currently the manual, approval-based v1; Memory Autopilot has an approved design and an A–E implementation plan, but **has not been implemented**. This README keeps current behavior separate from planned work.
+> The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. Full live acceptance remains evidence-specific for each messaging platform. Memory is currently the manual, approval-based v1; Memory Autopilot has an approved design and an A–E implementation plan, but **has not been implemented**. This README keeps current behavior separate from planned work.
 
 ## Why MiniClaw
 
@@ -44,7 +44,7 @@ MiniClaw is not a chat box wired directly to a shell. The model proposes a Tool 
 | TUI | pi-tui by default, Chinese/English UI, streaming turns, Tool status, compact approval cards, four permission modes, Textual fallback. |
 | Tools | `system_info`, `read_file`, `write_file`, `edit_file`, `glob`, `grep`, `http_get`, `run_command`, `read_memory`, `propose_memory`. |
 | Safety | Workspace Guard, hard-denied sensitive paths, exact argv, minimal child environment, HTTPS/DNS/SSRF validation, parameter-bound approvals. |
-| Channels | Isolated Feishu, Telegram, and Discord Transport/Delivery/Manager/queue/recovery pipelines sharing one Agent Runtime. |
+| Channels | Feishu uses one `Claw Trail` Agent Card for redacted progress, Tool state, and the final answer; all three platforms keep isolated Transport/Delivery/Manager/queue/recovery pipelines while sharing one Agent Runtime. |
 | Data | SQLite Session/Message/Turn/ToolRun/Approval/Channel ledgers; owner-only Markdown Memory and Skills. |
 | Operations | `init`, `doctor`, `gateway`, redacted structured logs, idempotent recovery, offline Eval, and versioned Channel gates. |
 
@@ -54,6 +54,8 @@ MiniClaw is not a chat box wired directly to a shell. The model proposes a Tool 
 - `SMART`: exact rules and safe HTTPS targets reduce interruptions; misses remain supervised.
 - `AUTOPILOT`: non-critical actions from a verified Owner may run automatically; hard boundaries, validation, and audit remain active.
 - `YOLO`: least supervision; it still cannot disable sensitive-path, SSRF, workspace, or critical-action hard boundaries.
+
+New installations and older configurations without `tools.mode` default to `autopilot`; explicit `safe` and `smart` settings remain unchanged. This default trusts only the local entry point and verified Owner direct messages. Groups and other users are automatically downgraded.
 
 ## Quick start
 
@@ -231,7 +233,7 @@ flowchart LR
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-The immediate work is to close the Feishu/Discord Live Gate, implement Memory A–E, and only then begin autonomous tasks. Roadmap nodes do not imply that their code already exists.
+Owner-scoped `AUTOPILOT` defaults and the Feishu `Claw Trail` Agent Card are now implemented. The immediate work is to close the Feishu/Discord Live Gate, implement Memory A–E, and only then begin autonomous tasks. Roadmap nodes do not imply that their code already exists.
 
 ## Repository layout
 

@@ -19,6 +19,7 @@ from miniclaw.channels.base import DeliveryKind, InboundMessage
 from miniclaw.channels.delivery import split_message
 from miniclaw.channels.experience import ChannelExperience
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.channels.progress import progress_from_metadata, progress_to_metadata
 from miniclaw.policy.modes import PermissionMode, PermissionState
 from miniclaw.providers.base import StreamHandler
 from miniclaw.storage.channels import (
@@ -456,9 +457,19 @@ class ChannelManager:
             final_reply_to_message_id: str | None = None
             if activity is not None:
                 waiting_for_approval = result.approval_id is not None
+                progress = activity.finalize(
+                    content=None if waiting_for_approval else result.content,
+                    failed=waiting_for_approval,
+                )
+                if result.message_id is not None and not waiting_for_approval:
+                    self._messages.save_experience_trace(
+                        result.message_id,
+                        progress_to_metadata(progress),
+                    )
                 outcome = await activity.finish(
                     content=None if waiting_for_approval else result.content,
                     failed=waiting_for_approval,
+                    progress=progress,
                 )
                 final_delivery_required = outcome.final_delivery_required
                 final_delivery_offset = outcome.final_delivery_offset
@@ -679,9 +690,16 @@ class ChannelManager:
                 final_reply_to_message_id: str | None = None
                 if self._experience is not None:
                     activity = self._experience.activity(event)
+                    stored_trace = self._messages.experience_trace(assistant.id)
+                    progress = (
+                        None
+                        if stored_trace is None
+                        else progress_from_metadata(stored_trace, assistant.content)
+                    )
                     outcome = await activity.finish(
                         content=assistant.content,
                         failed=False,
+                        progress=progress,
                     )
                     final_delivery_required = outcome.final_delivery_required
                     final_delivery_offset = outcome.final_delivery_offset

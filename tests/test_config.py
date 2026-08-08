@@ -20,7 +20,7 @@ class ConfigTest(unittest.TestCase):
         self.paths = build_state_paths(self.home)
         self.workspace = self.home / "custom-workspace"
 
-    def test_missing_file_uses_safe_defaults(self) -> None:
+    def test_missing_file_uses_predictable_defaults(self) -> None:
         """尚未生成配置文件时应返回可预测且不含密钥值的默认配置。"""
         config = load_config(
             self.paths,
@@ -39,7 +39,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.permissions.write_roots, ())
         self.assertEqual(config.permissions.executable_roots, ())
         self.assertFalse(config.permissions.discover_user_executables)
-        self.assertEqual(getattr(config.tools, "mode", None), "safe")
+        self.assertEqual(getattr(config.tools, "mode", None), "autopilot")
         self.assertEqual(config.tools.security, "allowlist")
         self.assertEqual(config.tools.ask, "on-miss")
         self.assertEqual(config.tools.approval_ttl_seconds, 600)
@@ -74,6 +74,14 @@ class ConfigTest(unittest.TestCase):
             "MINICLAW_FEISHU_APP_SECRET",
         )
         self.assertNotIn("secret-must-stay-outside-config", repr(config))
+
+    def test_explicit_safe_tool_mode_overrides_autopilot_default(self) -> None:
+        """用户显式选择 safe 时必须保留审批模式。"""
+        self.paths.config.write_text('[tools]\nmode = "safe"\n', encoding="utf-8")
+
+        config = load_config(self.paths, {}, {})
+
+        self.assertEqual(config.tools.mode, "safe")
 
     def test_feishu_section_loads_typed_limits_without_secret_values(self) -> None:
         """合法飞书配置应保留白名单和预算，但密钥值不能进入 AppConfig。"""

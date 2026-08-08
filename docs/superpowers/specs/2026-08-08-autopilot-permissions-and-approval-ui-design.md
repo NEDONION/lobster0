@@ -71,7 +71,8 @@ approval_ttl_seconds = 600
 
 为避免升级时静默扩权：
 
-- 旧配置未写 `mode` 时按 `safe` 加载。
+- 此条已被 2026-08-09 Owner 默认值决策取代：旧配置未写 `mode` 时按 `autopilot` 加载；显式 `safe`/`smart`
+  继续保留审批，且群聊、其他用户与硬拒绝规则不变。
 - `miniclaw init` 新生成的 Personal Profile 明确写入 `mode = "autopilot"`。
 - 本机现有 Owner 配置只在这次用户明确授权后单独更新。
 

@@ -21,7 +21,10 @@
 MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收进同一个本地 Core。你可以从 TUI、飞书、Telegram 或 Discord 与同一个 Agent 交互；所有本机动作仍要经过统一的 Policy、Workspace 边界和可审计执行链。
 
 > [!IMPORTANT]
-> 当前代码已完成 Phase 5 的本地实现门禁；Feishu/Telegram/Discord 的完整真实 Live Gate 仍按各自证据单独标记。Memory 当前是手工/审批式 v1；Memory Autopilot 已完成设计和 A～E 实施计划，**尚未开发**。本文严格区分“已经实现”和“规划中”。
+> 当前代码已完成 Phase 5 的本地实现门禁；Feishu/Telegram/Discord 的完整真实 Live Gate 仍按各自证据单独标记。
+> 飞书正常回答由一张 `Claw Trail` Agent Card 承载，展示脱敏步骤、Tool、安全目标、状态、耗时、过程摘要和最终回答。
+> 缺少 `tools.mode` 的配置默认使用 `autopilot`，但只对本地入口和经过验证的 Owner 私聊生效；硬安全边界不变。
+> Memory 当前是手工/审批式 v1；Memory Autopilot 已完成设计和 A～E 实施计划，**尚未开发**。本文严格区分“已经实现”和“规划中”。
 
 ## 为什么是 MiniClaw
 
@@ -44,7 +47,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 | TUI | 默认 pi-tui、中文/英文、流式对话、Tool 状态、紧凑审批卡、四档 Permission Mode、Textual fallback。 |
 | Tool | `system_info`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`、`http_get`、`run_command`、`read_memory`、`propose_memory`。 |
 | 安全 | Workspace Guard、敏感路径硬拒绝、exact argv、最小子进程环境、HTTPS/DNS/SSRF 校验、参数绑定 Approval。 |
-| Channel | Feishu、Telegram、Discord 各自独立 Transport/Delivery/Manager/queue/recovery，共享 Agent Runtime。 |
+| Channel | Feishu 用单张 `Claw Trail` Agent Card 展示脱敏步骤和最终回答；三平台各自独立 Transport/Delivery/Manager/queue/recovery，共享 Agent Runtime。 |
 | 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel ledger；owner-only Markdown Memory 与 Skills。 |
 | 运维 | `init`、`doctor`、`gateway`、结构化脱敏日志、幂等恢复、离线 Eval 与版本化 Channel gate。 |
 
@@ -54,6 +57,8 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 - `SMART`：精确规则和安全 HTTPS 可以少打扰，未命中仍受监督。
 - `AUTOPILOT`：已验证 Owner 的非关键动作可自动执行，硬边界、参数校验与审计仍然存在。
 - `YOLO`：最少监督模式；不会关闭敏感路径、SSRF、Workspace 和关键动作硬边界。
+
+新安装和缺少 `tools.mode` 的旧配置默认使用 `autopilot`；显式 `safe`/`smart` 保持不变。该默认值只信任本地入口和经过验证的 Owner 私聊，群聊、其他用户与硬拒绝规则不会扩权。
 
 ## 快速开始
 
@@ -231,7 +236,7 @@ flowchart LR
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-当前最近动作是收口 Feishu/Discord Live Gate；随后实现 Memory A～E，再进入自治任务。路线图不代表相应代码已经存在。
+最近已完成 Owner `AUTOPILOT` 默认值与飞书 `Claw Trail` Agent Card；下一步收口 Feishu/Discord Live Gate，随后实现 Memory A～E，再进入自治任务。路线图不代表相应代码已经存在。
 
 ## 仓库结构
 

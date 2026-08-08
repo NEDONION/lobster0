@@ -4,7 +4,9 @@ import asyncio
 import unittest
 from datetime import UTC, datetime
 
+from miniclaw.agent.events import RunEvent
 from miniclaw.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
+from miniclaw.channels.progress import AgentProgress, ProgressProjector
 from miniclaw.channels.telegram import TelegramTransport
 from miniclaw.config import TelegramConfig
 from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
@@ -18,6 +20,15 @@ from tests.fakes.fake_telegram import (
     TimedOut,
     fake_update,
 )
+
+
+def _progress(text: str, *, completed: bool = False, failed: bool = False) -> AgentProgress:
+    """构造 Telegram Transport 使用的结构化公开进度。"""
+    projector = ProgressProjector(clock=lambda: 0.0)
+    projector.apply(RunEvent("model_text_delta", 1, {"text": text}))
+    if completed or failed:
+        return projector.finish(text if completed else None, failed=failed)
+    return projector.snapshot()
 
 
 class TelegramTransportTest(unittest.IsolatedAsyncioTestCase):
@@ -215,14 +226,12 @@ class TelegramTransportTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.025)
         receipt = await transport.create_progress(
             event,
-            "第一段",
+            _progress("第一段"),
             idempotency_key="progress-key",
         )
         await transport.update_progress(
             receipt.platform_message_id,
-            "完整回答",
-            incomplete=False,
-            completed=True,
+            _progress("完整回答", completed=True),
         )
         await transport.stop_typing(token)
         count_after_stop = len(app.typing)
@@ -230,8 +239,9 @@ class TelegramTransportTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertGreaterEqual(count_after_stop, 2)
         self.assertEqual(len(app.typing), count_after_stop)
-        self.assertEqual(app.sent[0]["text"], "⏳ 第一段")
-        self.assertEqual(app.edited[-1]["text"], "✅ 回复完成，最终内容见下一条消息")
+        self.assertIn("Claw Trail", app.sent[0]["text"])
+        self.assertIn("第一段", app.sent[0]["text"])
+        self.assertIn("最终内容见下一条消息", app.edited[-1]["text"])
         await transport.disconnect()
 
     async def test_message_not_modified_is_success_but_other_edit_error_is_stable(self) -> None:
@@ -244,17 +254,13 @@ class TelegramTransportTest(unittest.IsolatedAsyncioTestCase):
 
         receipt = await transport.update_progress(
             "chat:300:message:700",
-            "same",
-            incomplete=False,
-            completed=False,
+            _progress("same"),
         )
         self.assertEqual(receipt.platform_message_id, "chat:300:message:700")
         with self.assertRaises(ChannelTransportError) as raised:
             await transport.update_progress(
                 "chat:300:message:700",
-                "new",
-                incomplete=True,
-                completed=False,
+                _progress("new", failed=True),
             )
         self.assertEqual(raised.exception.code, "telegram_permission_denied")
         await transport.disconnect()

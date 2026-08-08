@@ -6,11 +6,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from miniclaw.agent.events import RunEvent
-from miniclaw.channels.base import ChannelTransportError, SendReceipt
+from miniclaw.channels.base import ChannelTransportError
 from miniclaw.channels.experience import (
     ChannelExperience,
     ChannelExperienceTransport,
+    ProgressReceipt,
 )
+from miniclaw.channels.progress import AgentProgress
 from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
 
 
@@ -30,10 +32,11 @@ class FakeExperienceTransport:
 
     fail_typing: bool = False
     fail_progress: bool = False
+    visible_limit: int = 20
     typing_started: list[StoredInboundEvent] = field(default_factory=list)
     typing_stopped: list[str | None] = field(default_factory=list)
-    created: list[tuple[StoredInboundEvent, str, str]] = field(default_factory=list)
-    updated: list[tuple[str, str, bool, bool]] = field(default_factory=list)
+    created: list[tuple[StoredInboundEvent, AgentProgress, str]] = field(default_factory=list)
+    updated: list[tuple[str, AgentProgress]] = field(default_factory=list)
 
     async def start_typing(self, event: StoredInboundEvent) -> str | None:
         self.typing_started.append(event)
@@ -47,27 +50,30 @@ class FakeExperienceTransport:
     async def create_progress(
         self,
         event: StoredInboundEvent,
-        text: str,
+        progress: AgentProgress,
         *,
         idempotency_key: str,
-    ) -> SendReceipt:
-        self.created.append((event, text, idempotency_key))
+    ) -> ProgressReceipt:
+        self.created.append((event, progress, idempotency_key))
         if self.fail_progress:
             raise ChannelTransportError("telegram_progress_failed")
-        return SendReceipt("progress-message")
+        return ProgressReceipt(
+            "progress-message",
+            min(len(progress.final_answer), self.visible_limit),
+        )
 
     async def update_progress(
         self,
         platform_message_id: str,
-        text: str,
-        *,
-        incomplete: bool,
-        completed: bool,
-    ) -> SendReceipt:
-        self.updated.append((platform_message_id, text, incomplete, completed))
+        progress: AgentProgress,
+    ) -> ProgressReceipt:
+        self.updated.append((platform_message_id, progress))
         if self.fail_progress:
             raise ChannelTransportError("telegram_progress_failed")
-        return SendReceipt(platform_message_id)
+        return ProgressReceipt(
+            platform_message_id,
+            min(len(progress.final_answer), self.visible_limit),
+        )
 
 
 @dataclass(slots=True)
@@ -138,7 +144,9 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.typing_stopped, ["opaque-typing-token"])
         self.assertEqual(len(transport.created), 1)
         self.assertNotIn("hidden", repr((transport.created, transport.updated)))
-        self.assertEqual(transport.updated[-1], ("progress-message", "你好！", False, True))
+        self.assertEqual(transport.updated[-1][0], "progress-message")
+        self.assertEqual(transport.updated[-1][1].final_answer, "你好！")
+        self.assertEqual(transport.updated[-1][1].status, "completed")
         self.assertTrue(outcome.progress_created)
         self.assertFalse(outcome.progress_failed)
         self.assertTrue(outcome.final_delivery_required)
@@ -152,10 +160,50 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         outcome = await activity.finish(content="final answer", failed=False)
 
         self.assertFalse(outcome.final_delivery_required)
-        self.assertEqual(
-            transport.updated[-1],
-            ("progress-message", "final answer", False, True),
+        self.assertEqual(transport.created[-1][1].final_answer, "final answer")
+        self.assertEqual(transport.created[-1][1].status, "completed")
+
+    async def test_final_card_starts_on_tool_started_and_shows_safe_trace(self) -> None:
+        """飞书式终态卡在 Tool 真正执行时建立，并在完成后更新同一卡片。"""
+        transport = FakeExperienceTransport(visible_limit=100)
+        activity = self._activity(transport, progress_is_final=True)
+        await activity.on_event(
+            RunEvent(
+                "tool_requested",
+                1,
+                {
+                    "call_id": "call_1",
+                    "tool_name": "read_file",
+                    "arguments": {"path": "README.md", "content": "secret"},
+                },
+            )
         )
+        self.assertEqual(transport.created, [])
+
+        await activity.on_event(
+            RunEvent("tool_started", 1, {"call_id": "call_1", "tool_name": "read_file"})
+        )
+        await activity.on_event(
+            RunEvent(
+                "tool_finished",
+                1,
+                {
+                    "call_id": "call_1",
+                    "tool_name": "read_file",
+                    "status": "succeeded",
+                    "preview": "private file content",
+                },
+            )
+        )
+        progress = activity.finalize(content="done", failed=False)
+        outcome = await activity.finish(content="done", failed=False, progress=progress)
+
+        self.assertEqual(len(transport.created), 1)
+        self.assertEqual(transport.created[0][1].steps[-1].status, "running")
+        self.assertEqual(transport.updated[-1][1].steps[-1].status, "succeeded")
+        self.assertNotIn("secret", repr((transport.created, transport.updated)))
+        self.assertNotIn("private file content", repr((transport.created, transport.updated)))
+        self.assertFalse(outcome.final_delivery_required)
 
     async def test_final_progress_at_visible_limit_needs_no_tail_reply(self) -> None:
         """完整正文刚好填满卡片时仍由单张卡片承载，不产生空的后续回复。"""
@@ -168,10 +216,7 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(outcome.final_delivery_required)
         self.assertEqual(outcome.final_delivery_offset, 20)
         self.assertIsNone(outcome.final_reply_to_message_id)
-        self.assertEqual(
-            transport.updated[-1],
-            ("progress-message", content, False, True),
-        )
+        self.assertEqual(transport.created[-1][1].final_answer, content)
 
     async def test_final_progress_overflow_requires_only_tail_reply(self) -> None:
         """超出卡片上限的正文必须返回精确后缀偏移和卡片回复目标。"""
@@ -184,10 +229,7 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(outcome.final_delivery_required)
         self.assertEqual(outcome.final_delivery_offset, 20)
         self.assertEqual(outcome.final_reply_to_message_id, "progress-message")
-        self.assertEqual(
-            transport.updated[-1],
-            ("progress-message", "12345678901234567890", False, True),
-        )
+        self.assertEqual(transport.created[-1][1].final_answer, content)
 
     async def test_final_progress_failure_still_requires_text_fallback(self) -> None:
         """终态卡片失败时必须保留普通文本 Outbox 兜底。"""
@@ -209,11 +251,8 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         outcome = await activity.finish(content="final answer", failed=False)
 
         self.assertFalse(outcome.final_delivery_required)
-        self.assertEqual(transport.created[0][1], "final answer")
-        self.assertEqual(
-            transport.updated[-1],
-            ("progress-message", "final answer", False, True),
-        )
+        self.assertEqual(transport.created[0][1].final_answer, "final answer")
+        self.assertEqual(transport.updated, [])
 
     async def test_final_progress_waits_for_terminal_result_before_card_creation(self) -> None:
         """终态卡必须先确认不是 waiting Approval，避免 preview 与审批形成双卡。"""
@@ -265,8 +304,8 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         await first.on_event(RunEvent("model_text_delta", 1, {"text": "abcdefgh"}))
         await second.on_event(RunEvent("model_text_delta", 2, {"text": "xy"}))
 
-        self.assertEqual(transport.created[0][1], "abcde")
-        self.assertEqual(transport.created[1][1], "xy")
+        self.assertEqual(transport.created[0][1].public_text, "abcde")
+        self.assertEqual(transport.created[1][1].public_text, "xy")
         self.assertNotEqual(first.idempotency_key, "chat:1:message:2")
 
 

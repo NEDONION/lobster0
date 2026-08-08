@@ -5,14 +5,23 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
+from miniclaw.agent.events import RunEvent
 from miniclaw.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
 from miniclaw.channels.feishu import FeishuTransport
+from miniclaw.channels.progress import AgentProgress, ProgressProjector
 from miniclaw.config import FeishuConfig
 from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
 from tests.fakes.fake_channel import (
     FakeOfficialSdk,
     FakeSdkSendResult,
 )
+
+
+def _progress(text: str, *, completed: bool) -> AgentProgress:
+    """构造 Transport 测试所需的脱敏公开进度。"""
+    projector = ProgressProjector(clock=lambda: 0.0)
+    projector.apply(RunEvent("model_text_delta", 1, {"text": text}))
+    return projector.finish(text, failed=False) if completed else projector.snapshot()
 
 
 class RecordingObserver:
@@ -321,14 +330,12 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         token = await transport.start_typing(event)
         receipt = await transport.create_progress(
             event,
-            "第一段",
+            _progress("第一段", completed=False),
             idempotency_key="progress-uuid",
         )
         await transport.update_progress(
             receipt.platform_message_id,
-            "完整回答",
-            incomplete=False,
-            completed=True,
+            _progress("完整回答", completed=True),
         )
         await transport.stop_typing(token)
 
@@ -341,18 +348,13 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(sdk.channel.sent[0][0], "oc_allowed")
         self.assertEqual(sdk.channel.sent[0][2].uuid, "progress-uuid")
-        self.assertEqual(
-            sdk.channel.sent[0][1]["card"]["body"]["elements"][0]["content"],
-            "第一段",
-        )
+        self.assertIn("第一段", repr(sdk.channel.sent[0][1]["card"]))
         self.assertEqual(
             sdk.channel.sent[0][1]["card"]["body"]["elements"][0]["text_size"],
             "small",
         )
-        self.assertEqual(
-            sdk.channel.cards_updated[-1][1]["body"]["elements"][0]["content"],
-            "完整回答",
-        )
+        self.assertIn("完整回答", repr(sdk.channel.cards_updated[-1][1]))
+        self.assertIn("Claw Trail", repr(sdk.channel.cards_updated[-1][1]))
         self.assertNotIn("reaction_typing", repr(transport))
         self.assertNotIn("private question", repr(transport))
 
