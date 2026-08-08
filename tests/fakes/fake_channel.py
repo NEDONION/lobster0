@@ -29,9 +29,16 @@ class FakeFeishuMessage:
 class FakeChannelTransport:
     """按预设结果发送并记录幂等键的异步 Transport。"""
 
-    def __init__(self, outcomes: Sequence[SendReceipt | BaseException]) -> None:
+    def __init__(
+        self,
+        outcomes: Sequence[SendReceipt | BaseException],
+        *,
+        card_outcomes: Sequence[SendReceipt | BaseException] = (),
+    ) -> None:
         self._outcomes = list(outcomes)
+        self._card_outcomes = list(card_outcomes)
         self.sent: list[tuple[OutboundMessage, str]] = []
+        self.cards_sent: list[tuple[str, str, dict[str, Any], str]] = []
         self.connected = False
 
     async def connect(self) -> None:
@@ -53,6 +60,25 @@ class FakeChannelTransport:
         if not self._outcomes:
             raise AssertionError("FakeChannelTransport has no configured outcome")
         outcome = self._outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    async def send_card(
+        self,
+        *,
+        conversation_id: str,
+        reply_to_message_id: str,
+        card: dict[str, Any],
+        idempotency_key: str,
+    ) -> SendReceipt:
+        """记录 durable Card 发送并返回独立预设结果。"""
+        self.cards_sent.append(
+            (conversation_id, reply_to_message_id, card, idempotency_key)
+        )
+        if not self._card_outcomes:
+            raise AssertionError("FakeChannelTransport has no configured card outcome")
+        outcome = self._card_outcomes.pop(0)
         if isinstance(outcome, BaseException):
             raise outcome
         return outcome

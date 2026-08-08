@@ -5,6 +5,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from miniclaw.channels.approvals import ApprovalPrompt, approval_delivery_payload
 from miniclaw.channels.base import ChannelTransportError, SendReceipt
 from miniclaw.channels.delivery import DeliveryWorker, split_message
 from miniclaw.storage.channels import DeliveryRepository
@@ -39,6 +40,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.owner = OwnerRepository(self.database).get_or_create()
         self.clock = MutableClock(datetime(2026, 8, 8, 8, 0, tzinfo=UTC))
         self.repository = DeliveryRepository(self.database, clock=self.clock)
+        self.message_sequence = 0
 
     def test_split_message_preserves_unicode_and_prefix_budget(self) -> None:
         """中文、emoji、段落和换行不能损坏，每个带序号 part 都不越界。"""
@@ -159,6 +161,60 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
             )
         self.assertNotIn("secret-value", dump)
 
+    async def test_approval_card_success_or_failure_keeps_text_fallback(self) -> None:
+        """审批卡成功记录 sent；失败则 supersede 并排队同一提示的 Markdown fallback。"""
+        payload = approval_delivery_payload(
+            ApprovalPrompt(
+                card={"header": {"title": "approval"}},
+                fallback_text="发送 /approve 7 once 或 /deny 7",
+            )
+        )
+
+        successful_delivery = self.repository.create_parts(
+            message_id=self._assistant_message(),
+            channel="feishu",
+            account_id="default",
+            external_conversation_id="oc_chat",
+            reply_to_message_id="om_approval_ok",
+            kind="approval",
+            contents=(payload,),
+        )[0]
+        successful_transport = FakeChannelTransport(
+            (),
+            card_outcomes=(SendReceipt("om_card_sent"),),
+        )
+        self.assertTrue(await self._worker(successful_transport).run_once())
+        self.assertEqual(self.repository.get(successful_delivery.id).status, "sent")
+        self.assertEqual(successful_transport.cards_sent[0][2], {"header": {"title": "approval"}})
+
+        failed_message_id = self._assistant_message()
+        failed_delivery = self.repository.create_parts(
+            message_id=failed_message_id,
+            channel="feishu",
+            account_id="default",
+            external_conversation_id="oc_chat",
+            reply_to_message_id="om_approval_fail",
+            kind="approval",
+            contents=(payload,),
+        )[0]
+        fallback_transport = FakeChannelTransport(
+            (SendReceipt("om_fallback_sent"),),
+            card_outcomes=(ChannelTransportError("feishu_permission_denied"),),
+        )
+        worker = self._worker(fallback_transport)
+        self.assertTrue(await worker.run_once())
+        self.assertEqual(self.repository.get(failed_delivery.id).status, "superseded")
+        self.assertTrue(await worker.run_once())
+        self.assertEqual(fallback_transport.sent[0][0].content, "发送 /approve 7 once 或 /deny 7")
+
+        with self.database.connect_read_only() as connection:
+            fallback = connection.execute(
+                "SELECT * FROM deliveries WHERE message_id = ? "
+                "AND delivery_kind = 'message'",
+                (failed_message_id,),
+            ).fetchone()
+        self.assertEqual(fallback["status"], "sent")
+
     def _worker(
         self,
         transport: FakeChannelTransport,
@@ -194,6 +250,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
 
     def _assistant_message(self) -> int:
         """创建 Delivery 外键所需的 Assistant Message。"""
+        self.message_sequence += 1
         now = self.clock.current.isoformat()
         with self.database.connect() as connection:
             connection.execute(
@@ -203,7 +260,12 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
                     status, created_at, updated_at
                 ) VALUES (?, 'feishu', 'default', ?, 'active', ?, ?)
                 """,
-                (self.owner.id, f"oc_{id(self)}_{now}", now, now),
+                (
+                    self.owner.id,
+                    f"oc_{id(self)}_{now}_{self.message_sequence}",
+                    now,
+                    now,
+                ),
             )
             session_id = int(connection.execute("SELECT last_insert_rowid()").fetchone()[0])
             connection.execute(

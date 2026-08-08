@@ -5,6 +5,7 @@ import random
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
+from miniclaw.channels.approvals import parse_approval_delivery_payload
 from miniclaw.channels.base import (
     ChannelTransport,
     ChannelTransportError,
@@ -83,9 +84,16 @@ class DeliveryWorker:
         jitter: Callable[[], float] | None = None,
         clock: Callable[[], datetime] | None = None,
         poll_interval: float = 0.25,
+        message_max_chars: int = 30_000,
     ) -> None:
         """绑定 Transport、Outbox 和有限重试预算。"""
-        if max_attempts <= 0 or base_delay <= 0 or max_delay <= 0 or poll_interval <= 0:
+        if (
+            max_attempts <= 0
+            or base_delay <= 0
+            or max_delay <= 0
+            or poll_interval <= 0
+            or message_max_chars < 8
+        ):
             raise ValueError("DeliveryWorker limits must be positive")
         self._transport = transport
         self._repository = repository
@@ -97,6 +105,7 @@ class DeliveryWorker:
         self._jitter = jitter or (lambda: random.uniform(0.8, 1.2))
         self._clock = clock or (lambda: datetime.now(UTC))
         self._poll_interval = poll_interval
+        self._message_max_chars = message_max_chars
         self._wake = asyncio.Event()
         self._stopping = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
@@ -115,6 +124,9 @@ class DeliveryWorker:
         delivery = self._repository.claim_next(self._channel, self._account_id)
         if delivery is None:
             return False
+        if delivery.delivery_kind == "approval":
+            await self._send_approval(delivery)
+            return True
         message = OutboundMessage(
             channel=delivery.channel,
             account_id=delivery.account_id,
@@ -147,6 +159,75 @@ class DeliveryWorker:
             else:
                 self._repository.mark_sent(delivery.id, receipt.platform_message_id)
         return True
+
+    async def _send_approval(self, delivery: StoredDelivery) -> None:
+        """发送 durable Approval card；平台不支持时原子创建 Markdown fallback。"""
+        try:
+            prompt = parse_approval_delivery_payload(delivery.content)
+        except ValueError:
+            self._repository.mark_failed(
+                delivery.id,
+                "feishu_approval_payload_invalid",
+            )
+            return
+        send_card = getattr(self._transport, "send_card", None)
+        if not callable(send_card):
+            self._fallback_approval(
+                delivery,
+                prompt.fallback_text,
+                "feishu_card_unsupported",
+            )
+            return
+        try:
+            receipt = await send_card(
+                conversation_id=delivery.external_conversation_id,
+                reply_to_message_id=delivery.reply_to_message_id,
+                card=prompt.card,
+                idempotency_key=delivery.idempotency_key,
+            )
+        except asyncio.CancelledError:
+            self._repository.mark_unknown(
+                delivery.id,
+                "feishu_delivery_unknown",
+            )
+            raise
+        except Exception:
+            self._fallback_approval(
+                delivery,
+                prompt.fallback_text,
+                "feishu_card_failed",
+            )
+            return
+        if not receipt.platform_message_id:
+            self._repository.mark_unknown(
+                delivery.id,
+                "feishu_delivery_unknown",
+            )
+            return
+        self._repository.mark_sent(delivery.id, receipt.platform_message_id)
+
+    def _fallback_approval(
+        self,
+        delivery: StoredDelivery,
+        fallback_text: str,
+        error_code: str,
+    ) -> None:
+        """supersede Card 并在同一内部消息下创建可恢复普通 Delivery。"""
+        self._repository.mark_superseded(delivery.id, error_code)
+        if delivery.message_id is None:
+            return
+        self._repository.create_parts(
+            message_id=delivery.message_id,
+            channel=delivery.channel,
+            account_id=delivery.account_id,
+            external_conversation_id=delivery.external_conversation_id,
+            reply_to_message_id=delivery.reply_to_message_id,
+            kind="message",
+            contents=split_message(
+                fallback_text,
+                max_chars=self._message_max_chars,
+            ),
+        )
 
     async def start(self) -> None:
         """恢复 Outbox 并启动单一后台发送循环。"""

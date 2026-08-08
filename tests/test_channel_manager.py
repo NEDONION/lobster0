@@ -10,6 +10,11 @@ from typing import Any
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.agent.turn import TurnResult
+from miniclaw.channels.approvals import (
+    ApprovalCommandOutcome,
+    ApprovalPrompt,
+    approval_delivery_payload,
+)
 from miniclaw.channels.base import InboundMessage, SendReceipt
 from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.manager import ChannelManager
@@ -38,6 +43,7 @@ class TrackingTurnService:
     fail: bool = False
     gate: asyncio.Event | None = None
     expected_concurrency: int = 0
+    approval_id: int | None = None
     calls: list[tuple[str, str]] = field(init=False, default_factory=list)
     active: int = field(init=False, default=0)
     max_active: int = field(init=False, default=0)
@@ -91,6 +97,26 @@ class TrackingTurnService:
             if self.fail:
                 self.turns.fail(turn.id, "provider_server_error", "safe failure")
                 raise RuntimeError("secret-provider-detail")
+            if self.approval_id is not None:
+                self.turns.wait_for_approval(
+                    turn.id,
+                    session.id,
+                    self.approval_id,
+                    input_tokens=1,
+                    output_tokens=1,
+                    provider_request_id="req_approval",
+                    iterations=1,
+                )
+                return TurnResult(
+                    turn_id=turn.id,
+                    session_id=session.id,
+                    content="approval required",
+                    input_tokens=1,
+                    output_tokens=1,
+                    provider_request_id="req_approval",
+                    message_id=None,
+                    approval_id=self.approval_id,
+                )
             assistant = self.turns.complete_with_assistant_message(
                 turn.id,
                 session.id,
@@ -157,6 +183,40 @@ class ManagerCapabilityTransport:
         """记录卡片终态。"""
         self.cards.append(card)
         return SendReceipt(platform_message_id)
+
+
+@dataclass(slots=True)
+class ManagerApprovalController:
+    """模拟已经过单元测试的 Approval Channel Controller。"""
+
+    calls: list[tuple[str, str]] = field(default_factory=list)
+
+    async def handle_text(
+        self,
+        *,
+        user_id: int,
+        actor_open_id: str,
+        text: str,
+        on_event=None,
+    ) -> ApprovalCommandOutcome:
+        """只消费测试中的 /deny 命令并返回安全通知。"""
+        del user_id, on_event
+        self.calls.append((actor_open_id, text))
+        if text == "/deny 7":
+            return ApprovalCommandOutcome(
+                True,
+                notice="审批 #7 已拒绝。",
+                approval_id=7,
+            )
+        return ApprovalCommandOutcome(False)
+
+    def prompt(self, *, user_id: int, approval_id: int) -> ApprovalPrompt:
+        """返回固定卡片和文本 fallback。"""
+        del user_id
+        return ApprovalPrompt(
+            card={"header": {"title": f"approval-{approval_id}"}},
+            fallback_text=f"发送 /approve {approval_id} once 或 /deny {approval_id}",
+        )
 
 
 class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
@@ -351,6 +411,52 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
                 self.assertIsNotNone(delivery)
                 self.assertEqual(delivery["content"], "reply:hello")
 
+    async def test_approval_commands_bypass_agent_and_waiting_turn_creates_card(self) -> None:
+        """控制命令不进模型；普通 Turn waiting 时创建 durable Approval card。"""
+        controller = ManagerApprovalController()
+        command_service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        command_manager = self._manager(command_service, queue_size=2, worker_count=1)
+        command_manager.attach_approvals(controller)
+        await command_manager.start()
+        try:
+            await command_manager.receive(self._message("om_command", "/deny 7"))
+            await command_manager.wait_idle(timeout=2)
+        finally:
+            await command_manager.stop()
+
+        self.assertEqual(command_service.calls, [])
+        self.assertEqual(controller.calls[-1], ("ou_owner", "/deny 7"))
+        with self.database.connect_read_only() as connection:
+            notice = connection.execute(
+                "SELECT content FROM deliveries WHERE reply_to_message_id = 'om_command'"
+            ).fetchone()
+        self.assertEqual(notice["content"], "审批 #7 已拒绝。")
+
+        waiting_service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            approval_id=7,
+        )
+        waiting_manager = self._manager(waiting_service, queue_size=2, worker_count=1)
+        waiting_manager.attach_approvals(controller)
+        await waiting_manager.start()
+        try:
+            await waiting_manager.receive(self._message("om_waiting", "write file"))
+            await waiting_manager.wait_idle(timeout=2)
+        finally:
+            await waiting_manager.stop()
+
+        with self.database.connect_read_only() as connection:
+            card_delivery = connection.execute(
+                "SELECT * FROM deliveries WHERE reply_to_message_id = 'om_waiting'"
+            ).fetchone()
+        self.assertEqual(card_delivery["delivery_kind"], "approval")
+        self.assertEqual(
+            card_delivery["content"],
+            approval_delivery_payload(controller.prompt(user_id=self.owner.id, approval_id=7)),
+        )
+
     async def test_restart_marks_running_turn_failed_without_replay(self) -> None:
         """已有 running Turn 表明可能执行过 Tool，重启只能中断，不能再次调用 Service。"""
         message = self._message("om_running", "write something")
@@ -384,6 +490,55 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         recovered = self.inbound.get(event.key)
         self.assertEqual(recovered.status, "failed")
         self.assertEqual(recovered.last_error_code, "channel_turn_interrupted")
+
+    async def test_restart_recovers_waiting_approval_without_failing_parent(self) -> None:
+        """崩溃发生在 waiting 持久化后时应补发审批卡，不能把 Parent Turn 判失败。"""
+        message = self._message("om_wait_restart", "write something")
+        event = self.inbound.record(message).event
+        claimed = self.inbound.claim(event.key)
+        session = self.sessions.get_or_create(
+            self.owner.id,
+            "feishu",
+            "default",
+            "oc_chat",
+        )
+        self.inbound.bind_session(claimed.key, session.id)
+        turn = self.turns.create_with_user_message(
+            session.id,
+            "om_wait_restart",
+            "fake-model",
+            "write something",
+        )
+        self.turns.mark_running(turn.id)
+        self.turns.wait_for_approval(
+            turn.id,
+            session.id,
+            7,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req_wait",
+            iterations=1,
+        )
+        controller = ManagerApprovalController()
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=2, worker_count=1)
+        manager.attach_approvals(controller)
+
+        await manager.start()
+        try:
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.calls, [])
+        self.assertEqual(self.turns.get(turn.id).status, "waiting_approval")
+        self.assertEqual(self.inbound.get(event.key).status, "completed")
+        with self.database.connect_read_only() as connection:
+            delivery = connection.execute(
+                "SELECT delivery_kind FROM deliveries "
+                "WHERE reply_to_message_id = 'om_wait_restart'"
+            ).fetchone()
+        self.assertEqual(delivery["delivery_kind"], "approval")
 
     def _manager(
         self,

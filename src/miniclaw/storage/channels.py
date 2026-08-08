@@ -660,6 +660,26 @@ class DeliveryRepository:
             None,
         )
 
+    def mark_superseded(
+        self,
+        delivery_id: int,
+        error_code: str,
+    ) -> StoredDelivery:
+        """把发送中的平台增强项替换为更可靠的普通消息。"""
+        with self._database.connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE deliveries
+                SET status = 'superseded', last_error_code = ?,
+                    last_error_detail = NULL, updated_at = ?
+                WHERE id = ? AND status = 'sending'
+                """,
+                (error_code, self._clock().isoformat(), delivery_id),
+            )
+            if updated.rowcount != 1:
+                raise ChannelStateError("invalid_delivery_transition")
+        return self.get(delivery_id)
+
     def recover_sending(self, channel: str, account_id: str) -> int:
         """重启时把遗留 sending 改为 unknown，避免生成新幂等键盲发。"""
         with self._database.connect() as connection:

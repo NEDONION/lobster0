@@ -2,6 +2,7 @@
 
 import unittest
 from types import SimpleNamespace
+from typing import Any
 
 from miniclaw.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
 from miniclaw.channels.feishu import FeishuTransport
@@ -28,10 +29,21 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
             message_max_chars=1000,
         )
         self.received: list[InboundMessage] = []
+        self.card_actions: list[tuple[str, Any, str, str]] = []
 
     async def _receive(self, message: InboundMessage) -> None:
         """记录通过两层 admission 的标准消息。"""
         self.received.append(message)
+
+    async def _card_action(
+        self,
+        actor_open_id: str,
+        value: Any,
+        chat_id: str,
+        message_id: str,
+    ) -> None:
+        """记录 official CardActionEvent 的有限字段。"""
+        self.card_actions.append((actor_open_id, value, chat_id, message_id))
 
     def _transport(
         self,
@@ -45,6 +57,7 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
             app_id="cli_test",
             app_secret=app_secret,
             on_inbound=self._receive,
+            on_card_action=self._card_action,
             sdk=sdk,
         )
 
@@ -105,6 +118,33 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         await transport.disconnect()
         self.assertTrue(sdk.channel.disconnected)
         self.assertNotIn("message", sdk.channel.handlers)
+        self.assertNotIn("cardAction", sdk.channel.handlers)
+
+    async def test_card_action_callback_extracts_only_actor_value_and_targets(self) -> None:
+        """按钮事件通过有限字段回调，严格 payload 解析留给 Approval Controller。"""
+        sdk = FakeOfficialSdk()
+        transport = self._transport(sdk)
+        await transport.connect()
+        value = {
+            "miniclaw_action": "approval",
+            "approval_id": 7,
+            "decision": "once",
+        }
+
+        await sdk.channel.handlers["cardAction"](
+            SimpleNamespace(
+                operator=SimpleNamespace(open_id="ou_owner"),
+                action=SimpleNamespace(value=value),
+                chat_id="oc_allowed",
+                message_id="om_card",
+                raw={"authorization": "must-not-forward"},
+            )
+        )
+
+        self.assertEqual(
+            self.card_actions,
+            [("ou_owner", value, "oc_allowed", "om_card")],
+        )
 
     async def test_send_replies_with_stable_uuid_and_capabilities(self) -> None:
         """回复、Typing 和 Card 都通过 official SDK 的显式公共 API。"""

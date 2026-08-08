@@ -138,6 +138,9 @@ class FeishuTransport:
         app_id: str,
         app_secret: str,
         on_inbound: Callable[[InboundMessage], Awaitable[None]],
+        on_card_action: (
+            Callable[[str, Any, str, str], Awaitable[None]] | None
+        ) = None,
         sdk: ModuleType | Any | None = None,
     ) -> None:
         """构造严格安全、默认关闭的单账号飞书 Transport。"""
@@ -146,8 +149,9 @@ class FeishuTransport:
         self._config = config
         self._adapter = FeishuAdapter(config)
         self._on_inbound = on_inbound
+        self._on_card_action = on_card_action
         self._sdk = sdk or importlib.import_module("lark_channel")
-        self._unsubscribe: Callable[[], Any] | None = None
+        self._unsubscribers: list[Callable[[], Any]] = []
         self._connected = False
         self._channel = self._build_channel(app_id, app_secret)
 
@@ -162,7 +166,13 @@ class FeishuTransport:
         """注册回调并等待 official SDK 确认 WebSocket 就绪。"""
         if self._connected:
             return
-        self._unsubscribe = self._channel.on("message", self._handle_message)
+        self._unsubscribers.append(
+            self._channel.on("message", self._handle_message)
+        )
+        if self._on_card_action is not None:
+            self._unsubscribers.append(
+                self._channel.on("cardAction", self._handle_card_action)
+            )
         try:
             await self._channel.connect()
         except Exception as error:
@@ -309,6 +319,19 @@ class FeishuTransport:
         if isinstance(normalized, InboundMessage):
             await self._on_inbound(normalized)
 
+    async def _handle_card_action(self, event: Any) -> None:
+        """只转交 Controller 需要的操作者、值和回复目标。"""
+        if self._on_card_action is None:
+            return
+        operator = getattr(event, "operator", None)
+        action = getattr(event, "action", None)
+        await self._on_card_action(
+            str(getattr(operator, "open_id", "") or ""),
+            getattr(action, "value", None),
+            str(getattr(event, "chat_id", "") or ""),
+            str(getattr(event, "message_id", "") or ""),
+        )
+
     def _send_options(
         self,
         *,
@@ -325,10 +348,9 @@ class FeishuTransport:
 
     def _unsubscribe_handler(self) -> None:
         """幂等解除 SDK handler，避免断线期间接收新工作。"""
-        if self._unsubscribe is None:
-            return
-        self._unsubscribe()
-        self._unsubscribe = None
+        while self._unsubscribers:
+            unsubscribe = self._unsubscribers.pop()
+            unsubscribe()
 
 
 def _official_message_view(message: Any) -> _OfficialMessageView:

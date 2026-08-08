@@ -8,7 +8,12 @@ from typing import Protocol
 
 from miniclaw.agent.events import RunEventHandler
 from miniclaw.agent.turn import TurnResult
-from miniclaw.channels.base import InboundMessage
+from miniclaw.channels.approvals import (
+    ApprovalCommandOutcome,
+    ApprovalPrompt,
+    approval_delivery_payload,
+)
+from miniclaw.channels.base import DeliveryKind, InboundMessage
 from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.delivery import split_message
 from miniclaw.providers.base import StreamHandler
@@ -46,6 +51,25 @@ class TurnHandler(Protocol):
         on_event: RunEventHandler | None = None,
     ) -> TurnResult:
         """处理一条已经完成 Channel 校验的消息。"""
+        ...
+
+
+class ApprovalHandler(Protocol):
+    """收窄 Manager 对 Channel Approval Controller 的使用。"""
+
+    async def handle_text(
+        self,
+        *,
+        user_id: int,
+        actor_open_id: str,
+        text: str,
+        on_event: RunEventHandler | None = None,
+    ) -> ApprovalCommandOutcome:
+        """识别并处理文本控制命令。"""
+        ...
+
+    def prompt(self, *, user_id: int, approval_id: int) -> ApprovalPrompt:
+        """构建 Core 已校验的审批展示。"""
         ...
 
 
@@ -116,12 +140,19 @@ class ChannelManager:
         self._feeder: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
         self._capabilities: ChannelCapabilities | None = None
+        self._approvals: ApprovalHandler | None = None
 
     def attach_capabilities(self, capabilities: ChannelCapabilities) -> None:
         """在启动前绑定依赖同一个 Transport 的平台体验能力。"""
         if self._workers or self._feeder is not None:
             raise RuntimeError("Channel capabilities must be attached before start")
         self._capabilities = capabilities
+
+    def attach_approvals(self, approvals: ApprovalHandler) -> None:
+        """在启动前绑定只调用 Core continuation 的审批控制器。"""
+        if self._workers or self._feeder is not None:
+            raise RuntimeError("Channel approvals must be attached before start")
+        self._approvals = approvals
 
     async def receive(self, message: InboundMessage) -> InboundAcceptance:
         """先持久化消息，再 best-effort 写入有界内存队列。"""
@@ -257,6 +288,27 @@ class ChannelManager:
             )
             if activity is not None:
                 await activity.start()
+            if self._approvals is not None:
+                command = await self._approvals.handle_text(
+                    user_id=self.owner_id,
+                    actor_open_id=event.external_user_id,
+                    text=event.content,
+                    on_event=None if activity is None else activity.on_event,
+                )
+                if command.handled:
+                    visible = (
+                        command.result.content
+                        if command.result is not None
+                        else command.notice
+                    )
+                    if activity is not None:
+                        await activity.finish(content=visible, failed=False)
+                    if command.result is not None:
+                        self._create_result_delivery(session.id, event, command.result)
+                    elif command.notice is not None:
+                        self._create_notice_delivery(session.id, event, command.notice)
+                    self._inbound.mark_completed(event.key)
+                    return
             try:
                 result = await self.service.handle_inbound(
                     user_id=self.owner_id,
@@ -282,37 +334,90 @@ class ChannelManager:
             if activity is not None:
                 await activity.finish(content=result.content, failed=False)
 
-            if result.message_id is not None:
-                self._deliveries.create_parts(
-                    message_id=result.message_id,
-                    channel=event.key.channel,
-                    account_id=event.key.account_id,
-                    external_conversation_id=event.external_conversation_id,
-                    reply_to_message_id=event.reply_to_message_id,
-                    kind="message",
-                    contents=split_message(
-                        result.content,
-                        max_chars=self._message_max_chars,
-                    ),
-                )
-            elif result.approval_id is not None:
-                notice = self._messages.create_channel_notice(
-                    session.id,
-                    f"需要审批，编号 #{result.approval_id}。请在 MiniClaw 中处理。",
-                )
-                self._deliveries.create_parts(
-                    message_id=notice.id,
-                    channel=event.key.channel,
-                    account_id=event.key.account_id,
-                    external_conversation_id=event.external_conversation_id,
-                    reply_to_message_id=event.reply_to_message_id,
-                    kind="approval",
-                    contents=split_message(
-                        notice.content,
-                        max_chars=self._message_max_chars,
-                    ),
-                )
+            self._create_result_delivery(session.id, event, result)
             self._inbound.mark_completed(event.key)
+
+    def _create_result_delivery(
+        self,
+        session_id: int,
+        event: StoredInboundEvent,
+        result: TurnResult,
+    ) -> None:
+        """把普通回答或 waiting Approval 转换为 durable Outbox。"""
+        if result.message_id is not None:
+            self._deliveries.create_parts(
+                message_id=result.message_id,
+                channel=event.key.channel,
+                account_id=event.key.account_id,
+                external_conversation_id=event.external_conversation_id,
+                reply_to_message_id=event.reply_to_message_id,
+                kind="message",
+                contents=split_message(
+                    result.content,
+                    max_chars=self._message_max_chars,
+                ),
+            )
+            return
+        if result.approval_id is None:
+            return
+        self._create_approval_delivery(session_id, event, result.approval_id)
+
+    def _create_approval_delivery(
+        self,
+        session_id: int,
+        event: StoredInboundEvent,
+        approval_id: int,
+    ) -> None:
+        """创建 durable Approval card，构造失败时退化为普通文本提示。"""
+        prompt: ApprovalPrompt | None = None
+        if self._approvals is not None:
+            try:
+                prompt = self._approvals.prompt(
+                    user_id=self.owner_id,
+                    approval_id=approval_id,
+                )
+            except Exception:
+                prompt = None
+        if prompt is None:
+            self._create_notice_delivery(
+                session_id,
+                event,
+                f"需要审批，编号 #{approval_id}。请在 MiniClaw 中处理。",
+            )
+            return
+        notice = self._messages.create_channel_notice(session_id, prompt.fallback_text)
+        self._deliveries.create_parts(
+            message_id=notice.id,
+            channel=event.key.channel,
+            account_id=event.key.account_id,
+            external_conversation_id=event.external_conversation_id,
+            reply_to_message_id=event.reply_to_message_id,
+            kind="approval",
+            contents=(approval_delivery_payload(prompt),),
+        )
+
+    def _create_notice_delivery(
+        self,
+        session_id: int,
+        event: StoredInboundEvent,
+        content: str,
+        *,
+        kind: DeliveryKind = "message",
+    ) -> None:
+        """保存 Channel 控制提示并建立可恢复 Delivery。"""
+        notice = self._messages.create_channel_notice(session_id, content)
+        self._deliveries.create_parts(
+            message_id=notice.id,
+            channel=event.key.channel,
+            account_id=event.key.account_id,
+            external_conversation_id=event.external_conversation_id,
+            reply_to_message_id=event.reply_to_message_id,
+            kind=kind,
+            contents=split_message(
+                notice.content,
+                max_chars=self._message_max_chars,
+            ),
+        )
 
     def _create_failure_delivery(self, session_id: int, event: StoredInboundEvent) -> None:
         """把任意内部失败压缩为固定、可投递且不含异常正文的提示。"""
@@ -373,6 +478,16 @@ class ChannelManager:
                 )
                 self._inbound.recover_running(event.key, "completed", None)
                 continue
+            if turn.status == "waiting_approval":
+                approval_id = turn.runtime_snapshot.get("approval_id")
+                if type(approval_id) is int and approval_id > 0:
+                    self._create_approval_delivery(
+                        turn.session_id,
+                        event,
+                        approval_id,
+                    )
+                    self._inbound.recover_running(event.key, "completed", None)
+                    continue
             if turn.status in {"queued", "running"}:
                 self._turns.fail(
                     turn.id,
