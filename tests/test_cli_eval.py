@@ -100,6 +100,45 @@ class CliEvalTest(unittest.TestCase):
         self.assertIn("Offline eval: 24/24 passed, 0 failed", all_output)
         self.assertIn("Channel eval: 12/12 passed, 0 failed", all_output)
 
+    def test_run_channel_repeat_reports_local_soak_evidence(self) -> None:
+        """repeat 应重复真实 Channel 纵切，并只输出聚合的本地 soak 证据。"""
+        code, output, error = run_cli(
+            [
+                "eval",
+                "run",
+                "--suite",
+                "channel",
+                "--repeat",
+                "2",
+                "--root",
+                str(SCENARIO_ROOT),
+            ]
+        )
+
+        self.assertEqual((code, error), (0, ""))
+        self.assertIn("Channel local soak: 24/24 checks passed across 2/2 runs", output)
+        self.assertNotIn("PASS FEISHU-DM-001", output)
+
+    def test_run_rejects_repeat_outside_safe_bound(self) -> None:
+        """repeat 必须是 1..1000，避免误输入制造无界本地任务。"""
+        for value in ("0", "1001", "not-a-number"):
+            with self.subTest(value=value):
+                code, output, error = run_cli(
+                    [
+                        "eval",
+                        "run",
+                        "--suite",
+                        "channel",
+                        "--repeat",
+                        value,
+                        "--root",
+                        str(SCENARIO_ROOT),
+                    ]
+                )
+
+                self.assertEqual((code, output), (2, ""))
+                self.assertIn("--repeat", error)
+
     def test_invalid_root_returns_configuration_exit_two(self) -> None:
         """无效场景目录必须给稳定错误和退出码 2。"""
         with tempfile.TemporaryDirectory() as directory:

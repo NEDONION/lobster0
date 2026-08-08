@@ -29,6 +29,20 @@ class RecordingObserver:
         self.inbound_events.append(event)
 
 
+class FailingObserver(RecordingObserver):
+    """模拟 Audit/日志后端异常，验证它不是 Transport 成败边界。"""
+
+    def transport_state(self, **event: Any) -> None:
+        """连接观测失败。"""
+        del event
+        raise RuntimeError("private-observer-failure")
+
+    def inbound(self, **event: Any) -> None:
+        """过滤观测失败。"""
+        del event
+        raise RuntimeError("private-observer-failure")
+
+
 class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
     """验证 SDK 安全配置、生命周期、映射、发送与稳定错误。"""
 
@@ -124,6 +138,33 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(observer.inbound_events[0]["status"], "ignored")
         self.assertEqual(observer.inbound_events[0]["reason"], "sender_denied")
         self.assertNotIn("private-body", repr(observer.inbound_events))
+
+    async def test_observer_failure_never_breaks_transport_lifecycle_or_filtering(self) -> None:
+        """可观测性后端失败时 WebSocket 仍能启停，拒绝消息仍被静默忽略。"""
+        sdk = FakeOfficialSdk()
+        transport = self._transport(sdk, observer=FailingObserver())
+
+        await transport.connect()
+        await sdk.channel.handlers["message"](
+            SimpleNamespace(
+                id="om_denied",
+                create_time=1_786_118_400_000,
+                conversation=SimpleNamespace(chat_id="oc_allowed", chat_type="p2p"),
+                sender=SimpleNamespace(
+                    open_id="ou_intruder",
+                    sender_type="user",
+                    is_bot=False,
+                ),
+                mentioned_bot=False,
+                body_text="must-remain-ignored",
+                raw_content_type="text",
+                raw={"header": {"event_id": "evt_denied"}},
+            )
+        )
+        await transport.disconnect()
+
+        self.assertTrue(sdk.channel.disconnected)
+        self.assertEqual(self.received, [])
 
     async def test_constructor_sets_strict_security_and_closed_policies(self) -> None:
         """Transport 必须显式使用 WS、strict、用户/群 allowlist 与 require mention。"""

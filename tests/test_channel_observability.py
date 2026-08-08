@@ -155,6 +155,28 @@ class ChannelObservabilityTest(unittest.TestCase):
             "feishu_not_connected",
         )
 
+    def test_audit_database_failure_is_logged_without_breaking_channel(self) -> None:
+        """Audit 表缺失/不可写时应输出安全降级标记，不能让业务回调失败。"""
+        unavailable = Database(
+            Path(self.temporary_directory.name).resolve() / "audit-unavailable.db"
+        )
+        observer = ChannelObserver(
+            unavailable,
+            logger=self.logger,
+            clock=lambda: datetime(2026, 8, 8, 9, 1, tzinfo=UTC),
+        )
+
+        observer.transport_state(
+            channel="feishu",
+            account_id="default",
+            state="connecting",
+        )
+
+        payload = json.loads(self.stream.getvalue().splitlines()[-1])
+        self.assertFalse(payload["audit_persisted"])
+        self.assertEqual(payload["event_type"], "channel.transport.connecting")
+        self.assertNotIn("no such table", repr(payload))
+
 
 if __name__ == "__main__":
     unittest.main()

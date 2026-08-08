@@ -347,14 +347,17 @@ class FeishuTransport:
         if isinstance(normalized, InboundMessage):
             await self._on_inbound(normalized)
         elif self._observer is not None:
-            self._observer.inbound(
-                channel="feishu",
-                account_id=self._config.account_id,
-                external_message_id=view.message_id or view.event_id or "invalid",
-                external_conversation_id=view.chat_id or None,
-                status="ignored",
-                reason=normalized.reason,
-            )
+            try:
+                self._observer.inbound(
+                    channel="feishu",
+                    account_id=self._config.account_id,
+                    external_message_id=view.message_id or view.event_id or "invalid",
+                    external_conversation_id=view.chat_id or None,
+                    status="ignored",
+                    reason=normalized.reason,
+                )
+            except Exception:
+                pass
 
     def _handle_reconnecting(self) -> None:
         """同步接收 SDK 自动重连通知并更新安全状态。"""
@@ -379,12 +382,15 @@ class FeishuTransport:
         """原子更新本地状态并发出同一份脱敏事件。"""
         self._connection_state = state
         if self._observer is not None:
-            self._observer.transport_state(
-                channel="feishu",
-                account_id=self._config.account_id,
-                state=state,
-                error_code=error_code,
-            )
+            try:
+                self._observer.transport_state(
+                    channel="feishu",
+                    account_id=self._config.account_id,
+                    state=state,
+                    error_code=error_code,
+                )
+            except Exception:
+                pass
 
     async def _handle_card_action(self, event: Any) -> None:
         """只转交 Controller 需要的操作者、值和回复目标。"""

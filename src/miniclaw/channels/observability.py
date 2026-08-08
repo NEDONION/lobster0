@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import re
+import sqlite3
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -331,7 +332,7 @@ class ChannelObserver:
                         timestamp,
                     ),
                 )
-        except (DatabaseError, OSError):
+        except (DatabaseError, OSError, sqlite3.Error):
             persisted = False
         payload = {
             "timestamp": timestamp,

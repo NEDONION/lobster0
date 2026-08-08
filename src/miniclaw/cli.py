@@ -70,7 +70,24 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("offline", "channel", "all"),
         required=True,
     )
+    eval_run.add_argument(
+        "--repeat",
+        type=_bounded_eval_repeat,
+        default=1,
+        help="repeat the selected suite 1..1000 times for a local endurance gate",
+    )
     return parser
+
+
+def _bounded_eval_repeat(raw: str) -> int:
+    """把 eval repeat 收窄到可预测的本地执行范围。"""
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be an integer from 1 to 1000") from error
+    if not 1 <= value <= 1000:
+        raise argparse.ArgumentTypeError("must be from 1 to 1000")
+    return value
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -188,27 +205,71 @@ def _run_eval(arguments: argparse.Namespace) -> int:
 
     failed = 0
     if arguments.suite in {"offline", "all"}:
-        suite = asyncio.run(run_offline_suite(offline))
-        for result in suite.cases:
-            if result.passed:
-                print(f"PASS {result.case_id} {result.duration_ms}ms")
-            else:
-                print(f"FAIL {result.case_id} {','.join(result.failures)}")
-        print(
-            f"Offline eval: {suite.passed}/{suite.total} passed, "
-            f"{suite.failed} failed ({suite.duration_ms}ms)."
-        )
-        failed += suite.failed
+        offline_passed = 0
+        offline_total = 0
+        offline_duration = 0
+        offline_runs = 0
+        for iteration in range(1, arguments.repeat + 1):
+            suite = asyncio.run(run_offline_suite(offline))
+            offline_passed += suite.passed
+            offline_total += suite.total
+            offline_duration += suite.duration_ms
+            offline_runs = iteration
+            if arguments.repeat == 1 or suite.failed:
+                for result in suite.cases:
+                    if result.passed:
+                        print(f"PASS {result.case_id} {result.duration_ms}ms")
+                    else:
+                        print(
+                            f"FAIL {result.case_id} {','.join(result.failures)} "
+                            f"run={iteration}"
+                        )
+            failed += suite.failed
+            if suite.failed:
+                break
+        if arguments.repeat == 1:
+            print(
+                f"Offline eval: {offline_passed}/{offline_total} passed, "
+                f"{failed} failed ({offline_duration}ms)."
+            )
+        else:
+            print(
+                f"Offline repeat gate: {offline_passed}/{offline_total} checks passed "
+                f"across {offline_runs}/{arguments.repeat} runs ({offline_duration}ms)."
+            )
     if arguments.suite in {"channel", "all"}:
-        channel_suite = asyncio.run(run_channel_suite(channel))
-        for result in channel_suite.cases:
-            if result.passed:
-                print(f"PASS {result.case_id} {result.duration_ms}ms")
-            else:
-                print(f"FAIL {result.case_id} {','.join(result.failures)}")
-        print(
-            f"Channel eval: {channel_suite.passed}/{channel_suite.total} passed, "
-            f"{channel_suite.failed} failed ({channel_suite.duration_ms}ms)."
-        )
-        failed += channel_suite.failed
+        channel_passed = 0
+        channel_total = 0
+        channel_duration = 0
+        channel_runs = 0
+        channel_failed = 0
+        for iteration in range(1, arguments.repeat + 1):
+            channel_suite = asyncio.run(run_channel_suite(channel))
+            channel_passed += channel_suite.passed
+            channel_total += channel_suite.total
+            channel_duration += channel_suite.duration_ms
+            channel_runs = iteration
+            if arguments.repeat == 1 or channel_suite.failed:
+                for result in channel_suite.cases:
+                    if result.passed:
+                        print(f"PASS {result.case_id} {result.duration_ms}ms")
+                    else:
+                        print(
+                            f"FAIL {result.case_id} {','.join(result.failures)} "
+                            f"run={iteration}"
+                        )
+            channel_failed += channel_suite.failed
+            failed += channel_suite.failed
+            if channel_suite.failed:
+                break
+        if arguments.repeat == 1:
+            print(
+                f"Channel eval: {channel_passed}/{channel_total} passed, "
+                f"{channel_failed} failed ({channel_duration}ms)."
+            )
+        else:
+            print(
+                f"Channel local soak: {channel_passed}/{channel_total} checks passed "
+                f"across {channel_runs}/{arguments.repeat} runs ({channel_duration}ms)."
+            )
     return 1 if failed else 0
