@@ -36,7 +36,7 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((code, error), (0, ""))
         lines = output.splitlines()
-        self.assertEqual(len(lines), 60)
+        self.assertEqual(len(lines), 75)
         self.assertEqual(lines, sorted(lines))
         self.assertTrue(any(line.startswith("CORE-001 active core ") for line in lines))
         self.assertTrue(any(line.startswith("PROTO-001 active provider ") for line in lines))
@@ -49,7 +49,7 @@ class CliEvalTest(unittest.TestCase):
                 ["eval", "validate", "--root", str(SCENARIO_ROOT)]
             )
 
-        self.assertEqual((code, output, error), (0, "Validated 60 eval cases.\n", ""))
+        self.assertEqual((code, output, error), (0, "Validated 75 eval cases.\n", ""))
         self.assertFalse(missing_home.exists())
 
     def test_run_offline_prints_pass_rows_and_summary(self) -> None:

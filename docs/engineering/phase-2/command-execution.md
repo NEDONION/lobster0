@@ -2,7 +2,7 @@
 
 > 状态：`run_command` 已进入 pi-tui 与 Textual fallback 共享的唯一 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
 >
-> 当前门禁：483/483 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS
+> 当前门禁规模：508 Python tests、27/27 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases
 
 ## 1. 大白话解释
 

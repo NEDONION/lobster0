@@ -1,6 +1,8 @@
-# Phase 5：Telegram / Discord 故障排查手册
+# Phase 5：Feishu / Telegram / Discord 故障排查手册
 
-> 当前状态：**IMPLEMENTATION PASS**；483 Python、27 TypeScript、32/32 Channel、640/640 local soak 均通过。
+> 当前状态：**IMPLEMENTATION PASS**；508 Python tests、27 TypeScript、32/32 Channel、640/640 local soak。
+>
+> Feishu 是 **FEISHU E2E HARNESS PASS / REAL BOT PENDING**；
 >
 > Telegram 与 Discord 都是 **LIVE PENDING**，所以本页给出可执行排查路径，不声称已在真实账号验证。
 
@@ -197,7 +199,62 @@ degraded；Discord/飞书保持 ready。启动前静态配置错误则是 all-or
 4. 增加回归测试，确保 `repr`、异常、Observer、evidence 不含值；
 5. 重新执行 live 15 项，`secret_matches` 必须为 0。
 
-## 16. 标准诊断命令
+## 16. Feishu Runner preflight 失败
+
+Feishu Runner 只输出稳定错误码：
+
+| 错误码 | 检查方向 |
+| --- | --- |
+| `feishu_channel_disabled` | 本地 `channels.feishu.enabled` |
+| `peer_channel_enabled` | 本轮只允许 Feishu；暂时关闭 Telegram/Discord |
+| `repository_commit_unavailable` | 是否在 Git worktree 内、HEAD 是否完整 |
+| `repository_dirty` | 先检查并提交本轮代码/文档，不要盲目丢弃用户修改 |
+| `doctor_preflight_failed` | 先单独运行 `miniclaw doctor` |
+| `pending_approval_exists` | 明确处理上一轮遗留审批，Runner 不自动批准/拒绝 |
+| `live_case_count_invalid` | 必须保留 `FEISHU-LIVE-001..015` 恰好 15 条 |
+| `feishu_live_preflight_failed` | `.env`、SDK、Owner/App 关系或配置失败 |
+
+未通过 preflight 时没有 Evidence 文件，因为失败发生在 Gateway 和输出目录创建之前。
+
+## 17. Feishu Gateway ready，但收不到消息
+
+按顺序排查：
+
+1. 应用版本已经发布，并且 Owner 在可用范围；
+2. 机器人能力已启用；
+3. 长连接订阅了 `im.message.receive_v1`；
+4. 私聊 read Scope 与 `send_as_bot` Scope 已审批生效；
+5. Owner Open ID 是使用同一 Bot App 的 `miniclaw-e2e` profile 发现的；
+6. `owner_open_id` 同时在 `allowed_open_ids`；
+7. 群聊还需要唯一测试 Chat allowlist、`allow_group_mentions=true` 和明确 mention。
+
+如果 Gateway ready 而 Inbox 没增长，先查平台权限/admission，不要改 Prompt。
+
+## 18. Feishu Case 007 永远不通过
+
+Case 007 消费 Case 006 已创建的 pending Approval。Runner checkpoint 会保存动作前 pending Approval 的内部 ID，并允许
+该行变成 consumed。常见失败原因：
+
+- Case 006 其实没有落下 pending Approval；
+- 点击的不是当前 Owner 绑定的卡片；
+- Approval 已过期；
+- 重复点击导致第一次已经消费，第二次只能安全拒绝；
+- Tool 执行失败，因此绑定 ToolRun 不是 succeeded；
+- 中途退出后下次 preflight 发现旧 pending，要求先人工处理。
+
+不要通过修改 SQLite 状态来“通过”验收，那会让 Evidence 失去意义。
+
+## 19. Feishu Evidence 或 Secret scan 失败
+
+Evidence 只报告稳定错误码和命中数。它不会告诉你 Secret 或文件路径。如果 `secret_matches > 0`：
+
+1. 停止发布并轮换可能泄露的模型 Key/App Secret；
+2. 检查本机 ignored evidence、MiniClaw 日志和 shell history；
+3. 确认 App Secret 从 stdin 输入，而不在 argv；
+4. 确认日志没有完整 Open ID/Chat ID/Message ID、消息正文或 Home 路径；
+5. 修复后重新完成 15 条，人工不能覆盖 `FEISHU-LIVE-015` 自动失败。
+
+## 20. 标准诊断命令
 
 ```bash
 uv run miniclaw doctor
@@ -205,8 +262,9 @@ uv run miniclaw eval run --suite channel --root evals/scenarios
 uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run python -m unittest tests.test_telegram_transport tests.test_discord_transport -v
 uv run python -m unittest tests.test_channel_supervisor tests.test_channel_live_harness -v
+uv run python -m unittest tests.test_feishu_live_e2e tests.test_feishu_evals -v
 uv run ruff check .
 ```
 
-当前已验证基线是 483 Python、27 TypeScript、28/28 Agent、32/32 Channel、640/640 local soak，状态为
-**IMPLEMENTATION PASS / LIVE PENDING**。
+当前门禁规模是 508 Python、27 TypeScript、28/28 Agent、32/32 Channel、640/640 local soak。状态为
+**IMPLEMENTATION PASS**；Feishu **REAL BOT PENDING**；Telegram/Discord **LIVE PENDING**。

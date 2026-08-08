@@ -18,21 +18,20 @@ class Phase5DocumentationTest(unittest.TestCase):
         """用户入口必须统一显示 implementation PASS 与当前真实门禁数字。"""
         paths = (
             "README.md",
-            "docs/product/20260807_产品需求文档.md",
             "docs/architecture/20260807_系统架构.md",
             "docs/engineering/README.md",
-            "docs/engineering/phase-5/telegram-discord-channels.md",
-            "docs/getting-started/20260807_本地运行指南.md",
-            "docs/evals/releases/v0.5.0.md",
+            "docs/engineering/phase-5/testing-and-live-acceptance.md",
+            "docs/engineering/phase-5/feishu-live-e2e.md",
+            "docs/evals/releases/v0.5.1.md",
         )
         for relative in paths:
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("483", content)
+                self.assertIn("508", content)
                 self.assertIn("32/32", content)
                 self.assertIn("640/640", content)
-                self.assertIn("LIVE PENDING", content)
+                self.assertIn("REAL BOT PENDING", content)
 
     def test_phase5_operational_documents_are_present_and_linked(self) -> None:
         """实现、测试、排障和完成审计必须各有独立入口。"""
@@ -41,6 +40,7 @@ class Phase5DocumentationTest(unittest.TestCase):
         )
         for name in (
             "telegram-discord-channels.md",
+            "feishu-live-e2e.md",
             "testing-and-live-acceptance.md",
             "troubleshooting.md",
             "completion-audit.md",
@@ -52,10 +52,11 @@ class Phase5DocumentationTest(unittest.TestCase):
         """可视化进度页必须能一眼区分代码完成与真实平台待验收。"""
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
-            "Phase 5 implementation pass",
-            "483 Python",
+            "IMPLEMENTATION PASS",
+            "508 Python",
             "32/32",
             "640/640",
+            "REAL BOT PENDING",
             "Telegram live pending",
             "Discord live pending",
         ):
