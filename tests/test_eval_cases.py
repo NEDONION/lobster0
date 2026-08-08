@@ -205,6 +205,50 @@ class EvalCaseLoaderTest(unittest.TestCase):
                 with self.assertRaises(EvalCaseError):
                     load_cases(root)
 
+    def test_personal_and_executable_fixtures_remain_relative_and_typed(self) -> None:
+        """Personal Home 与 executable fixture 只能使用临时 Root 下的相对文本路径。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            case = valid_case("FILES-PERSONAL-999")
+            case["setup"] = {
+                "files": {},
+                "personal_files": {"Documents/note.md": "note\n"},
+                "executables": {".local/bin/demo": "#!/bin/sh\n"},
+            }
+            case["expected"]["personal_files"] = {
+                "Documents/result.md": "done\n"
+            }
+            case["expected"]["absent_personal_files"] = ["Downloads/missing.txt"]
+            write_cases(root, "personal.jsonl", [case])
+
+            loaded = load_cases(root)[0]
+
+        self.assertEqual(
+            loaded.setup_personal_files,
+            (("Documents/note.md", "note\n"),),
+        )
+        self.assertEqual(
+            loaded.setup_executables,
+            ((".local/bin/demo", "#!/bin/sh\n"),),
+        )
+        self.assertEqual(
+            loaded.expected.personal_files,
+            (("Documents/result.md", "done\n"),),
+        )
+        self.assertEqual(
+            loaded.expected.absent_personal_files,
+            ("Downloads/missing.txt",),
+        )
+
+        for field in ("personal_files", "executables"):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                case = valid_case("FILES-PERSONAL-998")
+                case["setup"] = {"files": {}, field: {"../escape": "x"}}
+                write_cases(root, "unsafe.jsonl", [case])
+                with self.assertRaisesRegex(EvalCaseError, "setup file path is unsafe"):
+                    load_cases(root)
+
     def test_channel_fixture_and_evidence_are_strict(self) -> None:
         """Channel case 只能选择内置 fixture，并必须提供稳定证据。"""
         with tempfile.TemporaryDirectory() as directory:
@@ -308,6 +352,23 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
         self.assertEqual(call.arguments, {"program": "open", "args": ["-a", "Lark"]})
         self.assertEqual(case.expected.tool_statuses, (("run_command", "waiting_approval"),))
         self.assertEqual(case.expected.approval_statuses, ("pending",))
+
+    def test_personal_permission_cases_cover_read_write_cli_and_sensitive_deny(self) -> None:
+        """Personal 权限上线后必须永久保留四条真实纵切回归。"""
+        cases = {
+            case.id: case for case in load_cases(PROJECT_ROOT / "evals" / "scenarios")
+        }
+        expected = {
+            "FILES-PERSONAL-READ-001",
+            "FILES-PERSONAL-WRITE-APPROVAL-001",
+            "CLI-DISCOVERY-LARK-001",
+            "CLI-SENSITIVE-DENY-001",
+        }
+
+        self.assertTrue(expected.issubset(cases))
+        for case_id in expected:
+            self.assertEqual(cases[case_id].layers, ("offline",))
+            self.assertIn("personal", cases[case_id].tags)
 
 
 if __name__ == "__main__":

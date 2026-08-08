@@ -1,6 +1,6 @@
 # MiniClaw Agent 回归场景集
 
-Active offline gate: 24 cases
+Active offline gate: 28 cases
 Active channel gate: 12 cases
 
 这里保存随代码版本化的 Claw-like 使用场景。它回答两个问题：
@@ -21,6 +21,7 @@ Active channel gate: 12 cases
 | 写入与审批 | `WRITE-APPROVE-001`、`WRITE-OVERWRITE-001`、`EDIT-APPROVE-001`、`APPROVAL-DENY-001` |
 | 审批完整性 | `APPROVAL-HASH-001`、`APPROVAL-REPLAY-001` |
 | 受控命令 | `COMMAND-APPROVE-001`、`COMMAND-FORBID-001` |
+| Personal 权限 | `FILES-PERSONAL-READ-001`、`FILES-PERSONAL-WRITE-APPROVAL-001`、`CLI-DISCOVERY-LARK-001`、`CLI-SENSITIVE-DENY-001` |
 | HTTPS / SSRF | `HTTP-APPROVAL-001`、`HTTP-PRIVATE-001` |
 | Memory | `MEMORY-READ-001`、`MEMORY-PROPOSE-001` |
 | Skills | `SKILL-ACTIVATE-001` |

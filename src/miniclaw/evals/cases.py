@@ -37,6 +37,8 @@ _EXPECTATION_FIELDS = {
     "absent_files",
     "error_code",
     "channel_evidence",
+    "personal_files",
+    "absent_personal_files",
 }
 _RESPONSE_FIELDS = {
     "content",
@@ -105,6 +107,8 @@ class EvalExpectation:
     approval_statuses: tuple[str, ...]
     files: tuple[tuple[str, str], ...]
     absent_files: tuple[str, ...]
+    personal_files: tuple[tuple[str, str], ...]
+    absent_personal_files: tuple[str, ...]
     error_code: str | None
     channel_evidence: tuple[str, ...]
 
@@ -123,6 +127,8 @@ class EvalCase:
     turns: tuple[str, ...]
     approval_actions: tuple[str, ...]
     setup_files: tuple[tuple[str, str], ...]
+    setup_personal_files: tuple[tuple[str, str], ...]
+    setup_executables: tuple[tuple[str, str], ...]
     responses: tuple[ModelResponse, ...]
     expected: EvalExpectation
     introduced_by: str
@@ -194,7 +200,10 @@ def _parse_case(raw: object, source: str) -> EvalCase:
     layers = _strings(value.get("layers"), source, "layers")
     if not layers or any(layer not in _LAYERS for layer in layers):
         raise EvalCaseError(f"invalid layers at {source}")
-    setup_files = _parse_setup(value.get("setup", {}), source)
+    setup_files, setup_personal_files, setup_executables = _parse_setup(
+        value.get("setup", {}),
+        source,
+    )
     approval_actions = _strings(
         value.get("approval_actions", []),
         source,
@@ -219,6 +228,8 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         turns=_strings(value.get("turns", []), source, "turns"),
         approval_actions=approval_actions,
         setup_files=setup_files,
+        setup_personal_files=setup_personal_files,
+        setup_executables=setup_executables,
         responses=responses,
         expected=_parse_expectation(value.get("expected", {}), source),
         introduced_by=_string(value.get("introduced_by"), source, "introduced_by"),
@@ -240,16 +251,44 @@ def _parse_channel(raw: object, source: str) -> str | None:
     return fixture
 
 
-def _parse_setup(raw: object, source: str) -> tuple[tuple[str, str], ...]:
-    """解析只能写入临时 workspace 的合成文本文件。"""
+def _parse_setup(
+    raw: object,
+    source: str,
+) -> tuple[
+    tuple[tuple[str, str], ...],
+    tuple[tuple[str, str], ...],
+    tuple[tuple[str, str], ...],
+]:
+    """解析只能写入临时 Workspace、Personal Home 的合成 fixture。"""
     setup = _object(raw, source, "setup")
-    _reject_unknown(setup, {"files"}, source)
-    files = _object(setup.get("files", {}), source, "setup.files")
+    _reject_unknown(setup, {"files", "personal_files", "executables"}, source)
+    return (
+        _parse_relative_text_map(setup.get("files", {}), source, "setup.files"),
+        _parse_relative_text_map(
+            setup.get("personal_files", {}),
+            source,
+            "setup.personal_files",
+        ),
+        _parse_relative_text_map(
+            setup.get("executables", {}),
+            source,
+            "setup.executables",
+        ),
+    )
+
+
+def _parse_relative_text_map(
+    raw: object,
+    source: str,
+    field: str,
+) -> tuple[tuple[str, str], ...]:
+    """解析相对临时 Root 的 UTF-8 文本映射。"""
+    files = _object(raw, source, field)
     parsed: list[tuple[str, str]] = []
     for path, content in sorted(files.items()):
         if not isinstance(path, str) or not _safe_relative_path(path):
             raise EvalCaseError(f"setup file path is unsafe at {source}")
-        parsed.append((path, _string(content, source, f"setup.files.{path}", allow_empty=True)))
+        parsed.append((path, _string(content, source, f"{field}.{path}", allow_empty=True)))
     return tuple(parsed)
 
 
@@ -324,6 +363,18 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
     absent_files = _strings(value.get("absent_files", []), source, "absent_files")
     if any(not _safe_relative_path(path) for path in absent_files):
         raise EvalCaseError(f"expected file path is unsafe at {source}")
+    personal_files = _parse_expected_files(
+        value.get("personal_files", {}),
+        source,
+        field="expected.personal_files",
+    )
+    absent_personal_files = _strings(
+        value.get("absent_personal_files", []),
+        source,
+        "absent_personal_files",
+    )
+    if any(not _safe_relative_path(path) for path in absent_personal_files):
+        raise EvalCaseError(f"expected personal file path is unsafe at {source}")
     return EvalExpectation(
         answer_contains=_strings(value.get("answer_contains", []), source, "answer_contains"),
         answer_excludes=_strings(value.get("answer_excludes", []), source, "answer_excludes"),
@@ -335,6 +386,8 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         approval_statuses=approval_statuses,
         files=files,
         absent_files=absent_files,
+        personal_files=personal_files,
+        absent_personal_files=absent_personal_files,
         error_code=_optional_string(value.get("error_code"), source),
         channel_evidence=_strings(
             value.get("channel_evidence", []),
@@ -344,14 +397,19 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
     )
 
 
-def _parse_expected_files(raw: object, source: str) -> tuple[tuple[str, str], ...]:
-    """解析临时 Workspace 内的精确文件结果断言。"""
-    files = _object(raw, source, "expected.files")
+def _parse_expected_files(
+    raw: object,
+    source: str,
+    *,
+    field: str = "expected.files",
+) -> tuple[tuple[str, str], ...]:
+    """解析临时 Root 内的精确文件结果断言。"""
+    files = _object(raw, source, field)
     parsed: list[tuple[str, str]] = []
     for path, content in sorted(files.items()):
         if not isinstance(path, str) or not _safe_relative_path(path):
             raise EvalCaseError(f"expected file path is unsafe at {source}")
-        parsed.append((path, _string(content, source, f"expected.files.{path}", allow_empty=True)))
+        parsed.append((path, _string(content, source, f"{field}.{path}", allow_empty=True)))
     return tuple(parsed)
 
 

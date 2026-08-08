@@ -49,6 +49,15 @@ export class ApprovalDialog implements Component, Focusable {
     for (const raw of details.split("\n").flatMap((line) => wrapTextWithAnsi(line || " ", innerWidth))) {
       lines.push(`│ ${truncateToWidth(raw, innerWidth, "").padEnd(innerWidth)} │`);
     }
+    if (this.approval.toolName === "run_command") {
+      const warning = zh
+        ? "注意：该程序将以当前用户身份运行，并可能读取当前用户可访问的文件。"
+        : "Note: This program runs as the current user and may read files accessible to that user.";
+      for (const raw of wrapTextWithAnsi(warning, innerWidth)) {
+        const styled = palette.muted(raw);
+        lines.push(`│ ${truncateToWidth(styled, innerWidth, "").padEnd(innerWidth)} │`);
+      }
+    }
     const choices = [zh ? "[1 拒绝]" : "[1 Deny]"];
     if (this.allowed("once")) choices.push(zh ? "[2 仅一次]" : "[2 Once]");
     if (this.allowed("session")) choices.push(zh ? "[3 本次运行]" : "[3 Session]");

@@ -100,6 +100,20 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertIn("请求审批", system)
         self.assertIn("不要用手工操作说明替代工具调用", system)
 
+    def test_tool_rules_forbid_sensitive_read_bypass_and_full_disk_guessing(self) -> None:
+        """模型不得用 run_command 绕过文件边界，也不应靠全盘 find 猜 CLI。"""
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (ModelMessage(role="user", content="用飞书 CLI 查看文档"),),
+        )
+
+        system = request.messages[0].content
+        self.assertIn("敏感路径", system)
+        self.assertIn("run_command", system)
+        self.assertIn("其他工具绕过", system)
+        self.assertIn("全盘", system)
+        self.assertIn("本机 CLI", system)
+
     def test_memory_files_enter_system_context_with_usage_rules(self) -> None:
         """长期和 recent daily memory 应进入身份之后，并教模型走受控写入 Tool。"""
         self.paths.memory_file.write_text("- prefers Python 3.12\n", encoding="utf-8")
