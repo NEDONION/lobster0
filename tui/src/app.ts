@@ -295,7 +295,7 @@ export class MiniClawTui {
         await this.runMemoryCommand(arguments_);
         break;
       case "/help":
-        this.appendLocal("/copy · /lang zh|en · /trace all|compact|编号 · /permissions [safe|smart|autopilot|yolo] · /memory status|list|search|why|review|forget|approve|reject|flush · /status · /new · /clear · /quit");
+        this.appendLocal("/copy · /lang zh|en · /trace all|compact|编号 · /permissions [safe|smart|autopilot|yolo] · /memory status|list|search|why|review|forget|approve|reject|flush|rebuild · /status · /new · /clear · /quit");
         break;
       case "/quit":
       case "/exit":
@@ -311,7 +311,7 @@ export class MiniClawTui {
   private async runMemoryCommand(arguments_: string[]): Promise<void> {
     const [action, ...values] = arguments_;
     let payload: Record<string, JsonValue>;
-    if (action === "status" || action === "flush") {
+    if (action === "status" || action === "flush" || action === "rebuild") {
       payload = { action };
     } else if (action === "list" || action === "review") {
       const limit = values[0] && /^\d+$/.test(values[0]) ? Number(values[0]) : 20;
@@ -328,7 +328,7 @@ export class MiniClawTui {
     ) {
       payload = { action, review_id: Number(values[0]), preview_hash: values[1]! };
     } else {
-      this.appendLocal("用法: /memory status | list [数量] | search <查询> | why <unit_id> | review [数量] | forget <unit_id> | approve|reject <review_id> <preview_hash> | flush", "error");
+      this.appendLocal("用法: /memory status | list [数量] | search <查询> | why <unit_id> | review [数量] | forget <unit_id> | approve|reject <review_id> <preview_hash> | flush | rebuild", "error");
       return;
     }
     try {

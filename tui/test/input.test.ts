@@ -166,6 +166,17 @@ test("memory forget only creates a preview request", async () => {
   app.stop();
 });
 
+test("memory rebuild uses a no-argument owner-bound command", async () => {
+  const { app, bridge, terminal } = await createApp();
+  app.editor.setText("/memory rebuild");
+
+  terminal.send("\r");
+  await app.whenIdle();
+
+  assert.deepEqual(bridge.memoryCommands, [{ action: "rebuild" }]);
+  app.stop();
+});
+
 test("shift enter inserts a newline without starting a turn", async () => {
   const { app, bridge, terminal } = await createApp();
   app.editor.setText("第一行");

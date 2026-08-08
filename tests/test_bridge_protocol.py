@@ -117,6 +117,7 @@ class BridgeProtocolTest(unittest.TestCase):
         accepted = (
             {"action": "status"},
             {"action": "flush"},
+            {"action": "rebuild"},
             {"action": "list", "limit": 10},
             {"action": "search", "query": "中文回复", "limit": 5},
             {"action": "why", "unit_id": "mem-123"},

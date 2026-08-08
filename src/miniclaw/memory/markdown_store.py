@@ -124,6 +124,16 @@ class MarkdownBatchWrite:
     block_hashes: dict[str, str]
 
 
+@dataclass(frozen=True, slots=True)
+class MarkdownSource:
+    """描述供 Reconciler 严格解析的安全 Markdown 文件快照。"""
+
+    path: Path
+    payload: bytes
+    content_hash: str
+    mtime_ns: int
+
+
 class MemoryMarkdownStore:
     """在 ``memory/owners/<owner>/memory.md`` 原子追加稳定 Unit block。"""
 
@@ -142,6 +152,20 @@ class MemoryMarkdownStore:
             raise ValueError("memory owner_id is invalid")
         return self._paths.memory_dir / "owners" / str(owner_id) / _RELATIVE_PATH
 
+    def read_for_reconcile(self, owner_id: int) -> MarkdownSource | None:
+        """安全读取 Owner Markdown；文件尚不存在时返回 None。"""
+        path = self.path_for_owner(owner_id)
+        if not path.exists():
+            return None
+        payload = _read_existing(path)
+        metadata = path.stat(follow_symlinks=False)
+        return MarkdownSource(
+            path,
+            payload,
+            hashlib.sha256(payload).hexdigest(),
+            metadata.st_mtime_ns,
+        )
+
     def append(self, unit: MarkdownUnitDocument) -> MarkdownWrite:
         """持锁比较 manifest，幂等追加 Unit，并 fsync + replace 完整文件。"""
         path = self.path_for_owner(unit.owner_id)
@@ -153,7 +177,9 @@ class MemoryMarkdownStore:
             existing = _read_existing(path)
             existing_hash = hashlib.sha256(existing).hexdigest()
             manifest = self._manifests.find(unit.owner_id, _RELATIVE_PATH)
-            if manifest is not None and manifest.content_hash != existing_hash:
+            if manifest is not None and (
+                manifest.status != "current" or manifest.content_hash != existing_hash
+            ):
                 raise MarkdownMemoryError("memory Markdown changed outside the writer")
             block = _unit_block(unit)
             block_hash = hashlib.sha256(block).hexdigest()
@@ -195,7 +221,9 @@ class MemoryMarkdownStore:
             existing = _read_existing(path)
             existing_hash = hashlib.sha256(existing).hexdigest()
             manifest = self._manifests.find(unit.owner_id, _RELATIVE_PATH)
-            if manifest is not None and manifest.content_hash != existing_hash:
+            if manifest is not None and (
+                manifest.status != "current" or manifest.content_hash != existing_hash
+            ):
                 raise MarkdownMemoryError("memory Markdown changed outside the writer")
             block = _unit_block(unit)
             block_hash = hashlib.sha256(block).hexdigest()
@@ -256,7 +284,9 @@ class MemoryMarkdownStore:
             existing = _read_existing(path)
             existing_hash = hashlib.sha256(existing).hexdigest()
             manifest = self._manifests.find(owner_id, _RELATIVE_PATH)
-            if manifest is not None and manifest.content_hash != existing_hash:
+            if manifest is not None and (
+                manifest.status != "current" or manifest.content_hash != existing_hash
+            ):
                 raise MarkdownMemoryError("memory Markdown changed outside the writer")
             payload = existing or _HEADER.encode("utf-8")
             block_hashes: dict[str, str] = {}

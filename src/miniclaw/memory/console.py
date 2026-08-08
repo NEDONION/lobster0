@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 
 from miniclaw.memory.models import DisclosureContext
+from miniclaw.memory.reconcile import MemoryReconciler
 from miniclaw.memory.repository import MemoryUnit
 from miniclaw.memory.retrieval import MemoryRetrieval, SearchRequest
 from miniclaw.memory.review import MemoryReviewService, ReviewPreview
@@ -20,6 +21,7 @@ class MemoryConsole:
         owner_id: int,
         retrieval: MemoryRetrieval,
         governance: MemoryReviewService,
+        reconciler: MemoryReconciler,
         schedule_flush: Callable[[], None],
     ) -> None:
         """绑定数据库、Owner、Retrieval、Review 治理与非阻塞 Flush 信号。"""
@@ -27,6 +29,7 @@ class MemoryConsole:
         self._owner_id = owner_id
         self._retrieval = retrieval
         self._governance = governance
+        self._reconciler = reconciler
         self._schedule_flush = schedule_flush
         self._disclosure = DisclosureContext(owner_id, owner_id, "cli", "local", True)
 
@@ -50,6 +53,19 @@ class MemoryConsole:
         if action == "flush":
             self._schedule_flush()
             return {"scheduled": True}
+        if action == "rebuild":
+            result = self._reconciler.scan(self._owner_id, force=True)
+            if not result.errors:
+                self._retrieval.ensure_projection()
+            return {
+                "added": len(result.added),
+                "updated": len(result.updated),
+                "errors": [
+                    {"path": item.path, "line": item.line, "code": item.code}
+                    for item in result.errors
+                ],
+                "projection_rebuilt": not result.errors,
+            }
         if action == "list":
             return {
                 "items": [

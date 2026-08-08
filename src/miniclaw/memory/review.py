@@ -404,6 +404,8 @@ class MemoryReviewService:
         approve: bool,
     ) -> tuple[tuple[MemoryUnit, str], ...]:
         """把 Review type/decision 映射为封闭 Unit 状态转换集合。"""
+        if review.review_type == "weekly":
+            return ()
         if not approve:
             return () if review.review_type == "forget" else ((unit, "rejected"),)
         if review.review_type == "forget":

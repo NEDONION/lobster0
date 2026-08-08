@@ -115,7 +115,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("invalid TOML", error)
 
     def test_doctor_reports_healthy_initialized_state(self) -> None:
-        """doctor 应输出 Personal 权限、三平台与共享数据库在内的二十二项 PASS。"""
+        """doctor 应输出 Personal 权限、Memory、三平台与数据库的二十三项 PASS。"""
         with tempfile.TemporaryDirectory() as directory:
             run_cli(["init", "--home", directory])
             node = Path(directory) / "test-node"
@@ -136,7 +136,7 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(error, "")
-        self.assertEqual(output.count("[PASS]"), 22)
+        self.assertEqual(output.count("[PASS]"), 23)
 
     def test_doctor_returns_two_for_corrupt_config(self) -> None:
         """损坏配置应显示失败项并使用配置错误退出码 2。"""

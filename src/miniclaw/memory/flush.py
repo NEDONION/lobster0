@@ -123,8 +123,9 @@ class FlushCoordinator:
         prompt_hash: str,
         batch_size: int = 5,
         lease_seconds: int = 60,
+        maintenance: Callable[[datetime], object] | None = None,
     ) -> None:
-        """绑定 durable Repository、两阶段 Handler 和有界批次/lease。"""
+        """绑定 durable Repository、两阶段 Handler、有界批次和可选维护回调。"""
         if type(batch_size) is not int or not 1 <= batch_size <= 100:
             raise ValueError("memory batch_size must be between 1 and 100")
         if type(lease_seconds) is not int or not 1 <= lease_seconds <= 3600:
@@ -137,6 +138,7 @@ class FlushCoordinator:
         self._prompt_hash = prompt_hash
         self._batch_size = batch_size
         self._lease_seconds = lease_seconds
+        self._maintenance = maintenance
 
     async def run_once(
         self,
@@ -146,6 +148,8 @@ class FlushCoordinator:
     ) -> FlushOutcome:
         """优先恢复 Projection，再处理至多一个新/到期 Run。"""
         current = now or datetime.now(UTC)
+        if self._maintenance is not None:
+            self._maintenance(current)
         pending = self._runs.next_projection_pending()
         if pending is not None:
             return await self._resume_projection(pending, current)

@@ -6,12 +6,13 @@ from importlib import resources
 
 from miniclaw.storage.database import Database
 
-LATEST_SCHEMA_VERSION = 3
+LATEST_SCHEMA_VERSION = 4
 
 _MIGRATION_RESOURCES = {
     1: "schema.sql",
     2: "migrations/0002_feishu_channel.sql",
     3: "migrations/0003_memory_autopilot.sql",
+    4: "migrations/0004_memory_maintenance.sql",
 }
 
 

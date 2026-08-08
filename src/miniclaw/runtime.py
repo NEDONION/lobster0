@@ -20,8 +20,11 @@ from miniclaw.memory.extractor import (
     MemoryExtractor,
 )
 from miniclaw.memory.flush import FlushCoordinator, MemoryCapture
+from miniclaw.memory.maintenance import MemoryMaintenance
 from miniclaw.memory.markdown_store import MemoryMarkdownStore
+from miniclaw.memory.migration import LegacyMemoryImporter
 from miniclaw.memory.pipeline import MemoryPipelineHandler
+from miniclaw.memory.reconcile import MemoryReconciler
 from miniclaw.memory.repository import (
     MemoryCandidateRepository,
     MemoryManifestRepository,
@@ -176,9 +179,19 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     memory_candidates = MemoryCandidateRepository(database)
     memory_units = MemoryUnitRepository(database)
     memory_reviews = MemoryReviewRepository(database)
-    memory_markdown = MemoryMarkdownStore(
+    memory_manifests = MemoryManifestRepository(database)
+    memory_markdown = MemoryMarkdownStore(paths, memory_manifests)
+    memory_reconciler = MemoryReconciler(
+        database,
+        memory_markdown,
+        memory_manifests,
+    )
+    memory_importer = LegacyMemoryImporter(
         paths,
-        MemoryManifestRepository(database),
+        database,
+        memory_markdown,
+        memory_units,
+        memory,
     )
     memory_service = MemoryService(
         memory_markdown,
@@ -193,6 +206,15 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         memory_reviews,
         memory,
     )
+    memory_maintenance = MemoryMaintenance(
+        database,
+        memory_markdown,
+        memory_units,
+        memory_reviews,
+        reconciler=memory_reconciler,
+        importer=memory_importer,
+    )
+    memory_maintenance.run_due(owner.id)
     memory_handler = MemoryPipelineHandler(
         database,
         MemoryExtractor(provider, model=config.agent.model),
@@ -208,6 +230,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         memory_handler,
         extractor=MEMORY_EXTRACTOR_VERSION,
         prompt_hash=MEMORY_EXTRACTOR_PROMPT_HASH,
+        maintenance=lambda current: memory_maintenance.run_due(owner.id, now=current),
     )
     memory_worker = MemoryWorker(
         memory_coordinator,
@@ -308,6 +331,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             owner.id,
             memory_retrieval,
             memory_governance,
+            memory_reconciler,
             memory_scheduler.schedule,
         ),
         memory_worker=memory_worker,

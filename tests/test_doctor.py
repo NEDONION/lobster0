@@ -8,6 +8,15 @@ from unittest import mock
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.doctor import CheckStatus, run_local_checks
+from miniclaw.memory.markdown_store import MemoryMarkdownStore
+from miniclaw.memory.models import DisclosureContext, SourceRef
+from miniclaw.memory.repository import (
+    MemoryManifestRepository,
+    MemoryReviewRepository,
+    MemoryUnitRepository,
+)
+from miniclaw.memory.service import ExplicitMemoryRequest, MemoryService
+from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.engine import PolicyAction, PolicyDecision
 from miniclaw.providers.base import ToolCall
@@ -38,7 +47,7 @@ class DoctorTest(unittest.TestCase):
         }
 
     def test_initialized_state_passes_all_local_checks(self) -> None:
-        """完整初始化后 Personal 权限与三平台二十二项检查都应通过。"""
+        """完整初始化后 Personal 权限、Memory 与三平台检查都应通过。"""
         initialize_state(self.paths)
 
         owner_home = self.root / "owner"
@@ -76,6 +85,7 @@ class DoctorTest(unittest.TestCase):
                 "discord_runtime",
                 "channel_database",
                 "channel_workers",
+                "memory",
             },
         )
         self.assertTrue(all(result.status is CheckStatus.PASS for result in results))
@@ -175,6 +185,64 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("1 pending", item.message)
         self.assertFalse(side_effect.exists())
         self.assertEqual(self.paths.database.read_bytes(), before)
+
+    def test_memory_drift_is_reported_without_copying_private_text(self) -> None:
+        """Doctor 只显示 drift 计数，不解析或回显手工编辑正文。"""
+        initialized = initialize_state(self.paths)
+        database = Database(self.paths.database)
+        session = SessionRepository(database).get_or_create_cli(
+            initialized.owner.id,
+            "doctor-memory",
+        )
+        turn = TurnRepository(database).create_with_user_message(
+            session.id,
+            "doctor-memory-source",
+            "test-model",
+            "请记住我的私人偏好",
+        )
+        with database.connect_read_only() as connection:
+            message_id = int(
+                connection.execute(
+                    "SELECT id FROM messages WHERE turn_id = ?",
+                    (turn.id,),
+                ).fetchone()[0]
+            )
+        markdown = MemoryMarkdownStore(
+            self.paths,
+            MemoryManifestRepository(database),
+        )
+        MemoryService(
+            markdown,
+            MemoryUnitRepository(database),
+            MemoryReviewRepository(database),
+            MemoryStore(self.paths),
+        ).remember_explicit(
+            ExplicitMemoryRequest(
+                DisclosureContext(
+                    initialized.owner.id,
+                    initialized.owner.id,
+                    "cli",
+                    "local",
+                    True,
+                ),
+                SourceRef(message_id, session.id, "cli"),
+                "请记住我的私人偏好",
+                "用户偏好不公开的内部代号",
+                datetime(2026, 8, 9, tzinfo=UTC),
+            )
+        )
+        path = markdown.path_for_owner(initialized.owner.id)
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("内部代号", "私人新正文"),
+            encoding="utf-8",
+        )
+
+        results = run_local_checks(self.paths, {})
+
+        item = next(result for result in results if result.name == "memory")
+        self.assertIs(item.status, CheckStatus.WARN)
+        self.assertIn("manifest_drift=1", item.message)
+        self.assertNotIn("私人新正文", item.message)
 
     def test_enabled_feishu_checks_are_offline_and_secret_redacted(self) -> None:
         """飞书 Doctor 只查配置、SDK、表和变量存在性，不连接平台或打印值。"""

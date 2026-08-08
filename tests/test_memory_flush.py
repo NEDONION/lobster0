@@ -147,6 +147,24 @@ class MemoryFlushTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(handler.markdown_calls, 1)
         self.assertEqual(handler.projection_calls, 2)
 
+    async def test_every_worker_cycle_invokes_memory_maintenance(self) -> None:
+        """即使没有待处理 buffer，每轮 Worker 也先运行定时维护。"""
+        maintenance_calls: list[datetime] = []
+        coordinator = FlushCoordinator(
+            self.database,
+            self.buffers,
+            self.runs,
+            RecordingFlushHandler(),
+            extractor="test-v1",
+            prompt_hash="c" * 64,
+            maintenance=maintenance_calls.append,
+        )
+
+        outcome = await coordinator.run_once("worker-a", now=NOW)
+
+        self.assertEqual(outcome.status, "idle")
+        self.assertEqual(maintenance_calls, [NOW])
+
     async def test_worker_wakes_after_five_turns_but_capture_stays_nonblocking(self) -> None:
         """前四条只落 durable buffer，第五条达到阈值才触发后台 wake。"""
         wakes: list[bool] = []

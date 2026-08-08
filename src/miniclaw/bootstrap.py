@@ -6,6 +6,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from miniclaw.config import load_config
+from miniclaw.memory.markdown_store import MemoryMarkdownStore
+from miniclaw.memory.migration import LegacyMemoryImporter
+from miniclaw.memory.reconcile import MemoryReconciler
+from miniclaw.memory.repository import MemoryManifestRepository, MemoryUnitRepository
+from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths
 from miniclaw.storage.database import Database
 from miniclaw.storage.migrations import apply_migrations
@@ -112,6 +117,17 @@ def initialize_state(paths: StatePaths) -> InitResult:
     database = Database(paths.database)
     applied_migrations = apply_migrations(database)
     owner = OwnerRepository(database).get_or_create()
+    manifests = MemoryManifestRepository(database)
+    markdown = MemoryMarkdownStore(paths, manifests)
+    reconcile = MemoryReconciler(database, markdown, manifests).scan(owner.id)
+    if not reconcile.errors:
+        LegacyMemoryImporter(
+            paths,
+            database,
+            markdown,
+            MemoryUnitRepository(database),
+            MemoryStore(paths),
+        ).import_all(owner.id)
     return InitResult(
         paths=paths,
         owner=owner,

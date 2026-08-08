@@ -1,5 +1,6 @@
 """MiniClaw 状态目录的离线、只读本地诊断。"""
 
+import hashlib
 import importlib.util
 import os
 import shutil
@@ -72,6 +73,7 @@ def run_local_checks(
         _check_personal_permissions(config),
         _check_executables(config),
         _check_database(paths),
+        _check_memory(paths),
         _check_approvals(paths),
         _check_permissions(paths),
         node_result,
@@ -341,6 +343,86 @@ def _check_approvals(paths: StatePaths) -> CheckResult:
             f"{count} pending approval(s); doctor did not execute them",
         )
     return CheckResult("approvals", CheckStatus.PASS, "0 pending approvals")
+
+
+def _check_memory(paths: StatePaths) -> CheckResult:
+    """只读报告 manifest、Projection、retry/dead-letter、lease 和 legacy 状态。"""
+    if not paths.database.is_file() or paths.database.is_symlink():
+        return CheckResult("memory", CheckStatus.FAIL, "memory database is unavailable")
+    try:
+        with Database(paths.database).connect_read_only() as connection:
+            manifest_rows = connection.execute(
+                """
+                SELECT owner_id, content_hash, status FROM memory_manifests
+                ORDER BY owner_id
+                """
+            ).fetchall()
+            parser_errors = sum(row["status"] == "error" for row in manifest_rows)
+            manifest_drift = sum(row["status"] == "drift" for row in manifest_rows)
+            retry_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM memory_flush_runs WHERE status = 'retry'"
+                ).fetchone()[0]
+            )
+            dead_count = int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM memory_flush_runs WHERE status = 'dead_letter'"
+                ).fetchone()[0]
+            )
+            stale_leases = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM memory_flush_runs
+                    WHERE status = 'running' AND lease_expires_at <= ?
+                    """,
+                    (datetime.now(UTC).isoformat(),),
+                ).fetchone()[0]
+            )
+            legacy_count = int(
+                connection.execute("SELECT COUNT(*) FROM memory_legacy_imports").fetchone()[0]
+            )
+            fts_exists = connection.execute(
+                "SELECT 1 FROM sqlite_master WHERE name = 'memory_fts'"
+            ).fetchone() is not None
+            projection_drift = 0
+            if fts_exists:
+                unit_count = int(
+                    connection.execute("SELECT COUNT(*) FROM memory_units").fetchone()[0]
+                )
+                fts_count = int(
+                    connection.execute("SELECT COUNT(*) FROM memory_fts").fetchone()[0]
+                )
+                projection_drift = int(unit_count != fts_count)
+    except (DatabaseError, sqlite3.Error, OSError):
+        return CheckResult("memory", CheckStatus.FAIL, "memory state cannot be inspected")
+    filesystem_drift = 0
+    for row in manifest_rows:
+        path = paths.memory_dir / "owners" / str(int(row["owner_id"])) / "memory.md"
+        try:
+            if path.is_symlink() or not path.is_file():
+                filesystem_drift += 1
+                continue
+            if hashlib.sha256(path.read_bytes()).hexdigest() != row["content_hash"]:
+                filesystem_drift += 1
+        except OSError:
+            filesystem_drift += 1
+    status = CheckStatus.PASS
+    if parser_errors:
+        status = CheckStatus.FAIL
+    elif manifest_drift or filesystem_drift or projection_drift or retry_count or dead_count:
+        status = CheckStatus.WARN
+    elif stale_leases:
+        status = CheckStatus.WARN
+    return CheckResult(
+        "memory",
+        status,
+        (
+            f"parser_errors={parser_errors}; manifest_drift={manifest_drift + filesystem_drift}; "
+            f"projection_drift={projection_drift}; retry={retry_count}; "
+            f"dead_letter={dead_count}; stale_leases={stale_leases}; "
+            f"legacy_imports={legacy_count}"
+        ),
+    )
 
 
 def _check_permissions(paths: StatePaths) -> CheckResult:

@@ -25,7 +25,18 @@ _REQUEST_TYPES = frozenset(
 _APPROVAL_DECISIONS = frozenset({"deny", "once", "session", "always"})
 _PERMISSION_MODES = frozenset({"safe", "smart", "autopilot", "yolo"})
 _MEMORY_ACTIONS = frozenset(
-    {"status", "list", "search", "why", "flush", "review", "forget", "approve", "reject"}
+    {
+        "status",
+        "list",
+        "search",
+        "why",
+        "flush",
+        "rebuild",
+        "review",
+        "forget",
+        "approve",
+        "reject",
+    }
 )
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -206,7 +217,7 @@ def _validate_memory_command(payload: dict[str, JsonValue]) -> None:
     action = payload.get("action")
     if not isinstance(action, str) or action not in _MEMORY_ACTIONS:
         raise ProtocolError("invalid_memory_command", "Memory 命令字段不合法")
-    if action in {"status", "flush"}:
+    if action in {"status", "flush", "rebuild"}:
         valid = set(payload) == {"action"}
     elif action in {"list", "review"}:
         valid = set(payload).issubset({"action", "limit"})
