@@ -1,6 +1,7 @@
 """把一次 CLI 输入编排为可持久化的 Agent Turn。"""
 
 import asyncio
+import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -34,6 +35,7 @@ from miniclaw.providers.base import (
 )
 from miniclaw.storage.conversations import (
     ConversationDataError,
+    ConversationStateError,
     MessageRepository,
     SessionRepository,
     StoredMessage,
@@ -53,6 +55,8 @@ class TurnResult:
     input_tokens: int
     output_tokens: int
     provider_request_id: str | None
+    message_id: int | None
+    approval_id: int | None
 
 
 class TurnService:
@@ -122,15 +126,48 @@ class TurnService:
             ProviderError: 模型认证、速率、超时、协议或服务端失败。
             asyncio.CancelledError: 调用方取消，数据库已保存 cancelled。
         """
+        return await self.handle_inbound(
+            user_id=user_id,
+            channel="cli",
+            account_id="local",
+            external_conversation_id=conversation_id,
+            inbound_event_id=f"cli:{uuid4()}",
+            text=text,
+            on_text=on_text,
+            on_event=on_event,
+        )
+
+    async def handle_inbound(
+        self,
+        *,
+        user_id: int,
+        channel: str,
+        account_id: str,
+        external_conversation_id: str,
+        inbound_event_id: str,
+        text: str,
+        on_text: StreamHandler | None = None,
+        on_event: RunEventHandler | None = None,
+    ) -> TurnResult:
+        """执行任意 Channel 已校验并带稳定入站 ID 的用户消息。"""
         if not text.strip():
             raise ValueError("message must not be empty")
-        session = self._sessions.get_or_create_cli(user_id, conversation_id)
-        turn = self._turns.create_with_user_message(
-            session.id,
-            f"cli:{uuid4()}",
-            self._model,
-            text,
+        _validate_inbound_event_id(inbound_event_id)
+        session = self._sessions.get_or_create(
+            user_id,
+            channel,
+            account_id,
+            external_conversation_id,
         )
+        try:
+            turn = self._turns.create_with_user_message(
+                session.id,
+                inbound_event_id,
+                self._model,
+                text,
+            )
+        except sqlite3.IntegrityError:
+            return self._completed_duplicate(session.id, inbound_event_id)
         self._turns.mark_running(turn.id)
         started = time.monotonic()
 
@@ -179,7 +216,7 @@ class TurnService:
                 ),
                 on_event=on_event,
             )
-            self._persist_result(
+            assistant = self._persist_result(
                 turn.id,
                 session.id,
                 result,
@@ -232,6 +269,8 @@ class TurnService:
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             provider_request_id=result.provider_request_id,
+            message_id=None if assistant is None else assistant.id,
+            approval_id=result.approval_id,
         )
 
     async def continue_approval(
@@ -327,7 +366,7 @@ class TurnService:
                 ),
                 on_event=on_event,
             )
-            self._persist_result(
+            assistant = self._persist_result(
                 child.id,
                 parent.session_id,
                 result,
@@ -380,6 +419,8 @@ class TurnService:
             input_tokens=result.input_tokens,
             output_tokens=result.output_tokens,
             provider_request_id=result.provider_request_id,
+            message_id=None if assistant is None else assistant.id,
+            approval_id=result.approval_id,
         )
 
     def _tool_context(self, user_id: int, session_id: int, turn_id: int) -> ToolContext:
@@ -399,7 +440,7 @@ class TurnService:
         session_id: int,
         result: AgentRunResult,
         runtime_snapshot: dict[str, JsonValue],
-    ) -> None:
+    ) -> StoredMessage | None:
         """把 Agent 正常完成或等待审批写为对应 Turn 状态。"""
         if result.status is AgentRunStatus.WAITING_APPROVAL:
             assert result.approval_id is not None
@@ -413,8 +454,8 @@ class TurnService:
                 iterations=result.iterations,
                 runtime_snapshot=runtime_snapshot,
             )
-            return
-        self._turns.complete_with_assistant_message(
+            return None
+        return self._turns.complete_with_assistant_message(
             turn_id,
             session_id,
             result.content,
@@ -425,6 +466,44 @@ class TurnService:
             finish_reason=result.finish_reason,
             runtime_snapshot=runtime_snapshot,
         )
+
+    def _completed_duplicate(
+        self,
+        session_id: int,
+        inbound_event_id: str,
+    ) -> TurnResult:
+        """从持久化完成态恢复重复入站结果，绝不重放 Provider 或 Tool。"""
+        turn = self._turns.get_by_inbound(session_id, inbound_event_id)
+        if turn.status == "completed":
+            message = self._messages.final_assistant_for_turn(turn.id)
+            request_id = turn.runtime_snapshot.get("provider_request_id")
+            if request_id is not None and not isinstance(request_id, str):
+                raise ConversationDataError("provider request ID is invalid")
+            return TurnResult(
+                turn_id=turn.id,
+                session_id=session_id,
+                content=message.content,
+                input_tokens=turn.input_tokens,
+                output_tokens=turn.output_tokens,
+                provider_request_id=request_id,
+                message_id=message.id,
+                approval_id=None,
+            )
+        if turn.status == "waiting_approval":
+            approval_id = turn.runtime_snapshot.get("approval_id")
+            if type(approval_id) is not int:
+                raise ConversationDataError("approval ID is invalid")
+            return TurnResult(
+                turn_id=turn.id,
+                session_id=session_id,
+                content="",
+                input_tokens=turn.input_tokens,
+                output_tokens=turn.output_tokens,
+                provider_request_id=None,
+                message_id=None,
+                approval_id=approval_id,
+            )
+        raise ConversationStateError("duplicate inbound Turn is not replayable")
 
 
 def _continuation_messages(
@@ -522,6 +601,18 @@ def _telemetry(result: AgentRunResult, started: float) -> dict[str, JsonValue]:
 def _elapsed_ms(started: float) -> int:
     """把单调时钟差值转换为非负毫秒。"""
     return max(0, round((time.monotonic() - started) * 1000))
+
+
+def _validate_inbound_event_id(value: str) -> None:
+    """拒绝空白、超长或含控制字符的平台 Turn 幂等键。"""
+    if (
+        not isinstance(value, str)
+        or not value
+        or value != value.strip()
+        or len(value) > 256
+        or any(ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F for character in value)
+    ):
+        raise ValueError("inbound_event_id is invalid")
 
 
 def _error_code(

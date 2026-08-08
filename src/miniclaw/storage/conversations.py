@@ -81,7 +81,7 @@ class StoredCompaction:
 
 
 class SessionRepository:
-    """创建或读取单 Owner 的本地 CLI Session。"""
+    """创建或读取单 Owner 在任意受支持 Channel 的 Session。"""
 
     def __init__(self, database: Database) -> None:
         """绑定已完成迁移的 MiniClaw 数据库。
@@ -104,9 +104,28 @@ class SessionRepository:
         Raises:
             ValueError: 会话标识为空。
         """
-        normalized = conversation_id.strip()
-        if not normalized:
-            raise ValueError("conversation_id must not be empty")
+        return self.get_or_create(
+            user_id,
+            "cli",
+            "local",
+            conversation_id,
+        )
+
+    def get_or_create(
+        self,
+        user_id: int,
+        channel: str,
+        account_id: str,
+        external_conversation_id: str,
+    ) -> Session:
+        """幂等读取或创建一个 Channel/account/conversation Session。"""
+        normalized_channel = _session_key(channel, "channel", maximum=32)
+        normalized_account = _session_key(account_id, "account_id", maximum=64)
+        normalized_conversation = _session_key(
+            external_conversation_id,
+            "external_conversation_id",
+            maximum=256,
+        )
         now = _utc_now().isoformat()
         with self._database.connect() as connection:
             connection.execute(
@@ -114,21 +133,32 @@ class SessionRepository:
                 INSERT INTO sessions (
                     user_id, channel, account_id, external_conversation_id,
                     status, created_at, updated_at
-                ) VALUES (?, 'cli', 'local', ?, 'active', ?, ?)
+                ) VALUES (?, ?, ?, ?, 'active', ?, ?)
                 ON CONFLICT(channel, account_id, external_conversation_id) DO NOTHING
                 """,
-                (user_id, normalized, now, now),
+                (
+                    user_id,
+                    normalized_channel,
+                    normalized_account,
+                    normalized_conversation,
+                    now,
+                    now,
+                ),
             )
             row = connection.execute(
                 """
                 SELECT * FROM sessions
-                WHERE channel = 'cli' AND account_id = 'local'
+                WHERE channel = ? AND account_id = ?
                   AND external_conversation_id = ?
                 """,
-                (normalized,),
+                (
+                    normalized_channel,
+                    normalized_account,
+                    normalized_conversation,
+                ),
             ).fetchone()
         if row is None or row["user_id"] != user_id:
-            raise ConversationStateError("CLI session is owned by a different user")
+            raise ConversationStateError("Channel session is owned by a different user")
         return _session_from_row(row)
 
 
@@ -182,6 +212,46 @@ class MessageRepository:
                 ).fetchall()
                 ordered = [*prefix, *ordered]
         return tuple(_message_from_row(row) for row in ordered)
+
+    def final_assistant_for_turn(self, turn_id: int) -> StoredMessage:
+        """读取 completed Turn 最后一条 Assistant Message。"""
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM messages
+                WHERE turn_id = ? AND role = 'assistant'
+                ORDER BY id DESC LIMIT 1
+                """,
+                (turn_id,),
+            ).fetchone()
+        if row is None:
+            raise ConversationStateError("completed Turn has no assistant message")
+        return _message_from_row(row)
+
+    def create_channel_notice(self, session_id: int, content: str) -> StoredMessage:
+        """保存一条由 Channel 生成而非模型生成的安全 Assistant 提示。"""
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("channel notice must not be empty")
+        now = _utc_now().isoformat()
+        metadata = _json_text({"channel_notice": True})
+        with self._database.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO messages (
+                    session_id, role, content, metadata_json, created_at
+                ) VALUES (?, 'assistant', ?, ?, ?)
+                """,
+                (session_id, content, metadata, now),
+            )
+            connection.execute(
+                "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                (now, session_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM messages WHERE id = ?",
+                (int(cursor.lastrowid),),
+            ).fetchone()
+        return _message_from_row(row)
 
     def latest_compaction(self, session_id: int) -> StoredCompaction | None:
         """读取一个 Session 最新且结构有效的 compaction summary。"""
@@ -657,6 +727,20 @@ class TurnRepository:
             raise ConversationStateError(f"Turn not found: {turn_id}")
         return _turn_from_row(row)
 
+    def get_by_inbound(self, session_id: int, inbound_event_id: str) -> StoredTurn:
+        """按 Session 内稳定入站 ID 读取 Turn，供第二道幂等恢复使用。"""
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM turns
+                WHERE session_id = ? AND inbound_event_id = ?
+                """,
+                (session_id, inbound_event_id),
+            ).fetchone()
+        if row is None:
+            raise ConversationStateError("inbound Turn not found")
+        return _turn_from_row(row)
+
     def list_recent(self, session_id: int, limit: int = 20) -> tuple[StoredTurn, ...]:
         """按从新到旧顺序返回一个 Session 的有限 Turn。
 
@@ -832,6 +916,20 @@ def _turn_from_row(row: sqlite3.Row) -> StoredTurn:
 def _json_text(value: dict[str, JsonValue]) -> str:
     """把内部 JSON 对象编码为稳定紧凑文本。"""
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+
+
+def _session_key(value: str, name: str, *, maximum: int) -> str:
+    """校验 Session 复合键非空、有界且不含控制字符。"""
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    normalized = value.strip()
+    if (
+        not normalized
+        or len(normalized) > maximum
+        or any(ord(character) < 0x20 or 0x7F <= ord(character) <= 0x9F for character in normalized)
+    ):
+        raise ValueError(f"{name} is invalid")
+    return normalized
 
 
 def _json_object(value: str) -> dict[str, JsonValue]:

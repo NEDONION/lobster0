@@ -185,6 +185,20 @@ class ApprovalRepositoryTest(unittest.TestCase):
             "pending",
         )
 
+    def test_presentation_exposes_only_core_modes_and_safe_summary(self) -> None:
+        """Channel 展示只能读取 Core 计算的模式，不能读取完整参数。"""
+        approval_id = self.create()
+
+        presentation = self.repository.presentation(self.owner_id, approval_id)
+
+        self.assertEqual(presentation.approval.id, approval_id)
+        self.assertEqual(presentation.approval.summary, "write_file note.txt")
+        self.assertEqual(
+            presentation.grant_modes,
+            (ApprovalDecision.ONCE,),
+        )
+        self.assertFalse(hasattr(presentation, "arguments"))
+
     def test_list_and_get_lazily_expire_without_executing_waiting_tool(self) -> None:
         """只读查询会结算过期状态，但绝不能消费或执行 ToolRun。"""
         approval_id = self.create(ttl_seconds=10)

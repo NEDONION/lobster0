@@ -23,7 +23,7 @@ class BootstrapTest(unittest.TestCase):
         result = initialize_state(self.paths)
         config = load_config(self.paths, {}, {})
 
-        self.assertEqual(result.applied_migrations, (1,))
+        self.assertEqual(result.applied_migrations, (1, 2))
         self.assertEqual(result.owner.display_name, "Owner")
         self.assertEqual(config.agent.model, "deepseek-v4-pro")
         self.assertEqual(config.provider.base_url, "https://api.deepseek.com")
@@ -34,6 +34,11 @@ class BootstrapTest(unittest.TestCase):
             '[ui]\nlanguage = "zh-CN"',
             self.paths.config.read_text(encoding="utf-8"),
         )
+        template = self.paths.config.read_text(encoding="utf-8")
+        self.assertIn("# [channels.feishu]", template)
+        self.assertIn('# app_id_env = "MINICLAW_FEISHU_APP_ID"', template)
+        self.assertIn('# app_secret_env = "MINICLAW_FEISHU_APP_SECRET"', template)
+        self.assertNotIn("cli_", template)
         self.assertEqual(
             set(result.created_files),
             {

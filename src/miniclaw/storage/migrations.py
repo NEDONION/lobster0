@@ -6,7 +6,12 @@ from importlib import resources
 
 from miniclaw.storage.database import Database
 
-LATEST_SCHEMA_VERSION = 1
+LATEST_SCHEMA_VERSION = 2
+
+_MIGRATION_RESOURCES = {
+    1: "schema.sql",
+    2: "migrations/0002_feishu_channel.sql",
+}
 
 
 class MigrationError(RuntimeError):
@@ -25,13 +30,15 @@ def apply_migrations(database: Database) -> tuple[int, ...]:
     Raises:
         MigrationError: Schema 无法读取、解析或执行。
     """
+    applying_version = 0
+    applied_now: list[int] = []
     try:
-        schema = _load_initial_schema()
-        statements = _split_statements(schema)
         with database.connect() as connection:
             _ensure_migration_table(connection)
+            connection.commit()
             applied = {
-                row[0] for row in connection.execute("SELECT version FROM schema_migrations")
+                int(row[0])
+                for row in connection.execute("SELECT version FROM schema_migrations")
             }
             newest_version = max(applied, default=0)
             if newest_version > LATEST_SCHEMA_VERSION:
@@ -39,20 +46,35 @@ def apply_migrations(database: Database) -> tuple[int, ...]:
                     f"database uses newer schema version {newest_version}; "
                     f"this MiniClaw supports {LATEST_SCHEMA_VERSION}"
                 )
-            if LATEST_SCHEMA_VERSION in applied:
-                return ()
+            if applied != set(range(1, newest_version + 1)):
+                raise MigrationError("database schema migration history is not contiguous")
 
-            connection.commit()
-            connection.execute("BEGIN IMMEDIATE")
-            for statement in statements:
-                connection.execute(statement)
-            connection.execute(
-                "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-                (LATEST_SCHEMA_VERSION, datetime.now(UTC).isoformat()),
-            )
+            for version in range(1, LATEST_SCHEMA_VERSION + 1):
+                if version in applied:
+                    continue
+                applying_version = version
+                statements = _split_statements(_load_migration(version))
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    for statement in statements:
+                        connection.execute(statement)
+                    connection.execute(
+                        "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+                        (version, datetime.now(UTC).isoformat()),
+                    )
+                except BaseException:
+                    connection.rollback()
+                    raise
+                else:
+                    connection.commit()
+                    applied_now.append(version)
+    except MigrationError:
+        raise
     except (OSError, sqlite3.Error) as error:
-        raise MigrationError("failed to apply MiniClaw schema migration 1") from error
-    return (LATEST_SCHEMA_VERSION,)
+        raise MigrationError(
+            f"failed to apply MiniClaw schema migration {applying_version}"
+        ) from error
+    return tuple(applied_now)
 
 
 def current_schema_version(database: Database) -> int:
@@ -90,7 +112,19 @@ def _ensure_migration_table(connection: sqlite3.Connection) -> None:
 
 def _load_initial_schema() -> str:
     """从安装包资源读取版本 1 Schema 文本。"""
-    return resources.files("miniclaw.storage").joinpath("schema.sql").read_text(encoding="utf-8")
+    return _load_migration(1)
+
+
+def _load_migration(version: int) -> str:
+    """读取指定版本的内置 SQL 资源。"""
+    try:
+        relative_path = _MIGRATION_RESOURCES[version]
+    except KeyError as error:
+        raise MigrationError(f"missing MiniClaw schema migration {version}") from error
+    resource = resources.files("miniclaw.storage")
+    for part in relative_path.split("/"):
+        resource = resource.joinpath(part)
+    return resource.read_text(encoding="utf-8")
 
 
 def _split_statements(script: str) -> tuple[str, ...]:

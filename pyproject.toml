@@ -19,6 +19,9 @@ dependencies = [
 dev = [
   "ruff>=0.9",
 ]
+feishu = [
+  "lark-channel-sdk>=1.2,<2",
+]
 
 [project.scripts]
 miniclaw = "miniclaw.cli:main"
@@ -27,7 +30,7 @@ miniclaw = "miniclaw.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"miniclaw.storage" = ["schema.sql"]
+"miniclaw.storage" = ["schema.sql", "migrations/*.sql"]
 
 [tool.ruff]
 line-length = 100

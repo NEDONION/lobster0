@@ -42,6 +42,42 @@ class ConversationRepositoryTest(unittest.TestCase):
         self.assertEqual(first.channel, "cli")
         self.assertEqual(first.account_id, "local")
 
+    def test_generic_session_supports_feishu_without_changing_cli_wrapper(self) -> None:
+        """通用 Session 应保留 Channel/account 边界，CLI 包装仍复用旧键。"""
+        feishu = self.sessions.get_or_create(
+            self.owner.id,
+            "feishu",
+            "default",
+            "oc_personal",
+        )
+        repeated = self.sessions.get_or_create(
+            self.owner.id,
+            "feishu",
+            "default",
+            "oc_personal",
+        )
+        cli = self.sessions.get_or_create_cli(self.owner.id, "oc_personal")
+
+        self.assertEqual(feishu.id, repeated.id)
+        self.assertNotEqual(feishu.id, cli.id)
+        self.assertEqual(
+            (
+                feishu.channel,
+                feishu.account_id,
+                feishu.external_conversation_id,
+            ),
+            ("feishu", "default", "oc_personal"),
+        )
+        for values in (
+            ("", "default", "conversation"),
+            ("feishu", "", "conversation"),
+            ("feishu", "default", " \n "),
+            ("fei\x00shu", "default", "conversation"),
+        ):
+            with self.subTest(values=values):
+                with self.assertRaises(ValueError):
+                    self.sessions.get_or_create(self.owner.id, *values)
+
     def test_recent_messages_are_returned_oldest_to_newest_after_limit(self) -> None:
         """软上限选择最新记录，并补齐最早 Turn 后按时间正序返回。"""
         session = self.sessions.get_or_create_cli(self.owner.id, "default")

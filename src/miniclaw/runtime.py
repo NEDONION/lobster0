@@ -7,6 +7,7 @@ from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
+from miniclaw.channels.manager import ChannelManager
 from miniclaw.config import AppConfig
 from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths
@@ -14,6 +15,11 @@ from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.policy.network import normalize_network_rule
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
+from miniclaw.storage.channels import (
+    ChannelIdentityRepository,
+    DeliveryRepository,
+    InboundEventRepository,
+)
 from miniclaw.storage.conversations import MessageRepository, SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.migrations import apply_migrations
@@ -153,4 +159,29 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)
         ),
         provider=provider,
+    )
+
+
+def create_channel_manager(
+    config: AppConfig,
+    paths: StatePaths,
+    runtime: AgentRuntime,
+) -> ChannelManager:
+    """为飞书 Gateway 装配复用唯一 TurnService 的 durable ChannelManager。"""
+    database = Database(paths.database)
+    feishu = config.channels.feishu
+    return ChannelManager(
+        owner_id=runtime.owner_id,
+        service=runtime.service,
+        sessions=SessionRepository(database),
+        messages=MessageRepository(database),
+        turns=TurnRepository(database),
+        identities=ChannelIdentityRepository(database),
+        inbound=InboundEventRepository(database),
+        deliveries=DeliveryRepository(database),
+        channel="feishu",
+        account_id=feishu.account_id,
+        queue_size=feishu.queue_size,
+        worker_count=feishu.worker_count,
+        message_max_chars=feishu.message_max_chars,
     )

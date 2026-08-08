@@ -46,6 +46,14 @@ class StoredApproval:
 
 
 @dataclass(frozen=True, slots=True)
+class ApprovalPresentation:
+    """保存 Channel 可展示的脱敏 Approval 与 Core 允许模式。"""
+
+    approval: StoredApproval
+    grant_modes: tuple[ApprovalDecision, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class StoredToolRun:
     """表示 Approval 消费后可交给 Executor 的唯一绑定 ToolRun。"""
 
@@ -179,6 +187,30 @@ class ApprovalRepository:
         if row["user_id"] != user_id:
             raise ApprovalError("not_owner", "approval belongs to a different owner")
         return _approval_from_row(row)
+
+    def presentation(self, user_id: int, approval_id: int) -> ApprovalPresentation:
+        """校验参数绑定并返回不含完整 arguments 的 Channel 展示字段。"""
+        approval = self.get(user_id, approval_id)
+        if approval.status == "expired":
+            raise ApprovalError("expired", "approval has expired")
+        if approval.status not in {"pending", "approved"}:
+            raise ApprovalError("already_decided", "approval is not pending")
+        with self._database.connect_read_only() as connection:
+            row = _approval_join_row(connection, approval_id)
+        failure = _approval_access_error(row, user_id)
+        if failure is not None:
+            raise failure
+        arguments = _decode_arguments(row["arguments_json"])
+        expected_hash = canonical_arguments_hash(row["tool_name"], arguments)
+        if (
+            expected_hash != row["arguments_hash"]
+            or expected_hash != row["tool_run_arguments_hash"]
+        ):
+            raise ApprovalError("hash_mismatch", "approval arguments no longer match")
+        return ApprovalPresentation(
+            approval=approval,
+            grant_modes=available_approval_decisions(row["tool_name"], arguments),
+        )
 
     def _expire_due(self, user_id: int, approval_id: int | None = None) -> None:
         """在查询前只结算当前 Owner 到期记录，不消费或执行任何 Tool。"""
