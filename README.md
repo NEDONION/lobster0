@@ -1,6 +1,6 @@
 <h1 align="center">MiniClaw</h1>
 
-<p align="center"><strong>A tiny self-hosted personal agent built with Python.</strong></p>
+<p align="center"><strong>A tiny self-hosted personal agent with a Python Core and TypeScript pi-tui.</strong></p>
 
 <p align="center">
   用一套可阅读、可调试、默认安全的 Python 代码，学习个人 Agent 从 CLI、飞书到工具、记忆和受控演进的完整链路。
@@ -17,7 +17,7 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 改进闭环。
 
 > [!IMPORTANT]
-> 当前仓库已完成 Phase 2.4：裸 `miniclaw` 进入唯一的 Textual 全屏 TUI；同一个 `AgentRuntime`
+> 当前仓库已完成 Phase 2.4：裸 `miniclaw` 默认进入唯一的 TypeScript pi-tui；Node/构建入口不可用时回退 Textual。同一个 `AgentRuntime`
 > 连接 DeepSeek、TurnService、SQLite、八个系统/文件/命令/HTTPS Tool 与参数绑定 Approval。TUI 支持流式回答、
 > Provider reasoning、可逐项展开的 Tool 参数/执行/结果 Trace、Enter 发送、Shift+Enter 换行、Esc 取消、
 > Ctrl+O 全展开/收起、Slash Command、默认中文/可切英文、失败草稿恢复，以及上下文/Token/Tool/迭代/耗时
@@ -28,7 +28,7 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > 都在同一 TUI 接受参数绑定审批。Session 规则只活在当前 Runtime；Always 只在成功后为安全 exact argv 或
 > exact hostname 写入脱敏规则，inline AppleScript 和文件写入不能持久放行。
 > `ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek live eval runner、
-> 真实 `lark-cli`/Node 路径闭环和飞书 Channel 尚未完成。当前回归基线为 **273 tests + 21/21 Agent cases**。
+> 真实 `lark-cli` 业务闭环和飞书 Channel 尚未完成。当前回归基线为 **295 Python tests + 25 TypeScript tests + 21/21 Agent cases**。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
 > 保存在 [v0.2.0 release record](docs/evals/releases/v0.2.0.md)，不冒充当前 TUI 版本的新 live 结果。
@@ -61,11 +61,14 @@ flowchart LR
 
 ## Quick Start
 
-准备 Python 3.12+ 和 [uv](https://docs.astral.sh/uv/)，在仓库根目录运行：
+准备 Python 3.12+、Node.js 22.19+、[uv](https://docs.astral.sh/uv/) 和 pnpm，在仓库根目录运行：
 
 ```bash
 uv venv
 uv sync --extra dev
+corepack enable
+pnpm --dir tui install --frozen-lockfile
+pnpm --dir tui build
 cp .env.example .env
 chmod 600 .env
 # 编辑 .env，填写 MINICLAW_MODEL_API_KEY；不要提交该文件
@@ -78,6 +81,7 @@ uv run miniclaw
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
 uv run python -m unittest discover -s tests -v
+pnpm --dir tui test
 ```
 
 当前可用入口：
@@ -93,7 +97,7 @@ uv run python -m miniclaw --version
 ```
 
 `init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md` 或 `MEMORY.md`；`doctor`
-只执行离线检查，不连接模型或 IM 平台。裸 `miniclaw` 从当前目录的私密 `.env` 读取 Key，并要求真实
+只执行离线检查，不连接模型或 IM 平台；Node/pi-tui 检查同样只读。裸 `miniclaw` 从当前目录的私密 `.env` 读取 Key，并要求真实
 TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`，也可在配置的
 Workspace 内调用 `read_file`、`glob`、`grep`；`write_file` / `edit_file` 会先生成参数绑定 Approval，只有
 Owner 在 TUI 中查看完整归一化参数并选择可用授权范围后才执行；Esc 和 **Deny** 都不会写入。文件写入只提供
@@ -107,10 +111,20 @@ macOS 应用名不确定时，模型可显式调用 `system_info` 的 `applicati
 审批续跑会创建没有假 User Message 的 child Turn，并让模型基于真实执行结果继续回答。Approval 绑定 Tool
 名与完整规范参数；过期、篡改、Owner 不匹配和重复消费都会 fail closed。
 
-TUI 默认使用中文，可在当前界面输入 `/lang en` 切换英文、`/lang zh` 切回中文。Provider reasoning 仍跟随
-用户本轮提问语言，不跟随 UI 语言；终端无法真正缩小局部字体，因此 reasoning 用弱色、无厚边框和默认折叠实现
-紧凑“小字感”。底部审计栏只显示 Provider 真实上报的用量，缺失值明确为 `N/A`，不会估算。长文本在模型失败
+TUI 默认使用中文，可在当前界面输入 `/lang en` 切换英文、`/lang zh` 切回中文。中文提问会使用中文 System Prompt
+约束 Provider reasoning；英文提问使用英文 Prompt。终端无法真正缩小局部字体，因此 reasoning 默认展开，但使用弱色、
+无厚边框和更少留白实现紧凑“小字感”。底部审计栏只显示 Provider 真实上报的用量，缺失值明确为 `N/A`，不会估算。长文本在模型失败
 或用户取消后会逐字恢复到 Composer。
+
+pi-tui 运行要求和迁移期回退：
+
+```bash
+MINICLAW_TUI=pi uv run miniclaw       # 强制新 TUI；缺依赖时明确失败
+MINICLAW_TUI=textual uv run miniclaw  # 显式使用 fallback
+```
+
+完整协议、目录、调试和跨进程测试见
+[Python Core + pi-tui Bridge 工程文档](docs/engineering/phase-2/python-core-pi-tui-bridge.md)。
 
 ### Workspace 只读演示
 
@@ -184,12 +198,13 @@ miniclaw/
 | [Phase 2.1C Agent 回归工程文档](docs/engineering/phase-2/agent-regression-evals.md) | JSONL 场景、真实离线 runner、CLI 门禁、事故回归和 benchmark 分层 |
 | [Phase 2.2A 文件写入工程文档](docs/engineering/phase-2/filesystem-tools.md) | 严格 Tools 配置、Workspace 写边界、write/edit 原子性、错误码和测试矩阵 |
 | [Phase 2.2 Approval 生命周期](docs/engineering/phase-2/approval-lifecycle.md) | 参数 hash、waiting/child Turn、TTL、Owner、单次执行与审计 |
-| [Phase 2.2B 单入口 Textual TUI](docs/engineering/phase-2/single-entry-tui.md) | 技术选型、Runtime、RunEvent、Worker、Tool 卡、审批弹窗、入口迁移和测试矩阵 |
-| [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace、角色、长文本、双语、审计与审批的 23 个稳定用例、Textual 无头测试和 PTY smoke |
+| [Phase 2 单入口 TUI](docs/engineering/phase-2/single-entry-tui.md) | 历史 Textual 实现、当前 pi-tui 默认入口、Runtime、RunEvent 与审批链路 |
+| [Python Core + pi-tui Bridge](docs/engineering/phase-2/python-core-pi-tui-bridge.md) | 版本化 NDJSON、TypeScript 展示层、安装调试、长文本/选择/审批与跨进程测试 |
+| [TUI 回归测试规范](docs/engineering/phase-2/tui-regression-testing.md) | Trace、角色、长文本、双语、审计、选择、错误与审批的 25 个 pi-tui/跨进程用例和 Textual fallback 回归 |
 | [TUI 可观测与分级审批加固](docs/engineering/phase-2/tui-observability-and-scoped-approvals.md) | 真实 Token 遥测、Session/Always exact scope、双语消息层级与草稿恢复 |
 | [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、固定 PATH、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
 | [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |
-| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | 273 tests、21 场景、crash recovery、Doctor、历史 live smoke 与发布手册 |
+| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | 295 Python tests、25 TypeScript tests、21 场景、crash recovery、Doctor 与发布手册 |
 | [旧 Approvals CLI 迁移说明](docs/engineering/phase-2/cli-approvals.md) | 已移除入口与 TUI 替代关系 |
 | [Eval v0.1.0 发布记录](docs/evals/releases/v0.1.0.md) | 177 tests、10/10 场景、复现命令、限制与下一步 |
 | [Eval v0.2.0 发布记录](docs/evals/releases/v0.2.0.md) | 历史 245 tests、20/20 场景、DeepSeek live smoke 与已知边界 |

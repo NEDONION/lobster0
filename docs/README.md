@@ -13,10 +13,10 @@
    了解本机 Tool、Workspace、审批、命令和 SSRF 的落地方案。
 5. 阅读 [系统架构](architecture/20260807_系统架构.md)，理解渠道、Agent、工具、安全和数据边界。
 6. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证唯一 TUI。
-7. 阅读 [单入口 Textual TUI 工程文档](engineering/phase-2/single-entry-tui.md)，理解 Runtime、RunEvent、
-   Worker、Tool 卡与审批 Modal。
+7. 阅读 [Python Core + pi-tui Bridge](engineering/phase-2/python-core-pi-tui-bridge.md)，理解版本化协议、
+   进程边界、长文本、选择和审批；[单入口 TUI](engineering/phase-2/single-entry-tui.md)保留 fallback 历史。
 8. 阅读 [TUI 回归测试规范](engineering/phase-2/tui-regression-testing.md)，理解 Trace 可观测契约、
-   Textual Pilot、PTY smoke 和每版本门禁。
+   虚拟终端、跨进程、Textual fallback、PTY smoke 和每版本门禁。
 9. 阅读 [exact-argv 命令执行工程文档](engineering/phase-2/command-execution.md)，理解 `run_command`、硬禁止、
    精确规则、最小环境、超时和 TUI 审批。
 10. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/https-get-and-ssrf.md)，理解 URL/DNS 校验、
@@ -42,7 +42,7 @@
 ## Phase 1 模块工程文档
 
 > Phase 1 文档保留当时的实现快照。`miniclaw chat` 已在 Phase 2.2B 移除；涉及当前入口时以
-> [单入口 Textual TUI 工程文档](engineering/phase-2/single-entry-tui.md) 为准。
+> [Python Core + pi-tui Bridge](engineering/phase-2/python-core-pi-tui-bridge.md) 为准。
 
 | 模块 | 文档 |
 | --- | --- |
@@ -67,9 +67,10 @@
 | Agent 场景回归与 Benchmark 基线 | [agent-regression-evals.md](engineering/phase-2/agent-regression-evals.md) |
 | 安全文件写入 | [filesystem-tools.md](engineering/phase-2/filesystem-tools.md) |
 | Approval 生命周期与续执行 | [approval-lifecycle.md](engineering/phase-2/approval-lifecycle.md) |
-| 单入口 Textual TUI、Runtime 与审批 Modal | [single-entry-tui.md](engineering/phase-2/single-entry-tui.md) |
+| Python Core + pi-tui Bridge | [python-core-pi-tui-bridge.md](engineering/phase-2/python-core-pi-tui-bridge.md) |
+| 单入口与 Textual fallback 历史 | [single-entry-tui.md](engineering/phase-2/single-entry-tui.md) |
 | TUI 双语、长文本、真实遥测与分级审批 | [tui-observability-and-scoped-approvals.md](engineering/phase-2/tui-observability-and-scoped-approvals.md) |
-| TUI Trace 与 23 项回归测试规范 | [tui-regression-testing.md](engineering/phase-2/tui-regression-testing.md) |
+| TUI Trace、虚拟终端与跨进程回归规范 | [tui-regression-testing.md](engineering/phase-2/tui-regression-testing.md) |
 | Exact-argv 命令执行 | [command-execution.md](engineering/phase-2/command-execution.md) |
 | Pinned HTTPS 与 SSRF 防护 | [https-get-and-ssrf.md](engineering/phase-2/https-get-and-ssrf.md) |
 | Phase 2 回归、恢复与调试 | [testing-and-debugging.md](engineering/phase-2/testing-and-debugging.md) |

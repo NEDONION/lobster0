@@ -1,6 +1,6 @@
 # MiniClaw Python Core + pi-tui 终端架构设计
 
-> 状态：已由 Owner 于 2026-08-08 确认实施  
+> 状态：已由 Owner 于 2026-08-08 确认并完成实施
 > 范围：Provider 历史修复、版本化 NDJSON Bridge、TypeScript pi-tui、Textual fallback、终端回归测试  
 > 结论：Python 保留唯一 Agent Core；TypeScript `@earendil-works/pi-tui` 成为默认 TUI；Textual 仅作迁移期回退
 
@@ -224,7 +224,7 @@ git diff --check
 
 ## 9. 运行与兼容性
 
-- `@earendil-works/pi-tui 0.82.1` 要求 Node.js `>=22.19.0`。
+- `@earendil-works/pi-tui 0.84.1` 要求 Node.js `>=22.19.0`。
 - 开发期使用 `pnpm`；Python 项目仍使用 `uv`。
 - `miniclaw doctor` 检查 Node 版本、`tui/dist/main.js` 和 Bridge 握手。
 - `MINICLAW_TUI=textual` 强制 fallback；`MINICLAW_TUI=pi` 在缺依赖时失败并输出安装指导。
@@ -237,4 +237,3 @@ git diff --check
 - 不通过 TUI 直接调用 Shell、文件、HTTP 或 lark-cli。
 - 不显示模型不可公开的隐藏推理；这里只展示 Provider 明确返回的 `reasoning_content` 和可审计运行事件。
 - 不在终端内强制字体大小；用户仍通过终端设置调整真实字号。
-

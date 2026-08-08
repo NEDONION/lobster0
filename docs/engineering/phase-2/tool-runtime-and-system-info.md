@@ -676,7 +676,7 @@ runner = AgentRunner(
 )
 ```
 
-当前同一个 Executor 服务唯一 Textual TUI。未来飞书 Adapter 应复用 TurnService，而不是重新实现一套
+当前同一个 Executor 服务默认 pi-tui 与 Textual fallback。未来飞书 Adapter 应复用 TurnService，而不是重新实现一套
 Tool Calling。
 
 ## 15. 端到端数据流

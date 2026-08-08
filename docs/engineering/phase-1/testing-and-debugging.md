@@ -1,7 +1,8 @@
 # Phase 1 工程文档：测试与调试
 
-> 本文保留 Phase 1 的测试分层思路；`test_cli_chat.py` 已随单入口 TUI 迁移删除。下方命令已更新为当前
-> `test_cli.py`、`test_runtime.py` 与 `test_tui.py`。
+> 本文保留 Phase 1 的测试分层和历史 CLI 证据；`test_cli_chat.py` 已随单入口 TUI 迁移删除。当前测试与
+> Live Smoke 命令以 [Phase 2 回归、恢复与调试](../phase-2/testing-and-debugging.md) 为准，下面出现的
+> `miniclaw chat --message` 只表示当时的发布流程，不能用于当前版本。
 
 ## 1. 目标
 
@@ -170,11 +171,11 @@ queued → running → cancelled
 
 如果 Turn 停留在 running，说明进程被强制杀死或机器断电；Phase 1 尚无启动恢复任务，先保留数据库用于诊断。
 
-## 8. 真实 DeepSeek 冒烟
+## 8. 历史 DeepSeek 冒烟
 
 前置：仓库根 `.env` 已安全配置 `MINICLAW_MODEL_API_KEY`，且不在 Git 中。
 
-不要使用个人正式状态做首次验证。创建临时状态目录：
+以下命令仅用于解释 Phase 1 的历史证据，当前版本请使用裸 `miniclaw --home "$smoke_home"` 进入唯一 TUI：
 
 ```bash
 smoke_home=$(mktemp -d)

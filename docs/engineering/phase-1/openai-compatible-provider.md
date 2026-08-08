@@ -162,11 +162,16 @@ DeepSeek/OpenAI 流会把同一调用拆成多个片段：
 
 - 第一次出现的非空 `id`；
 - 第一次或后续非空 `function.name`；
-- 按到达顺序追加的 `function.arguments` 字符串。
+- 按到达顺序追加的 `function.arguments` JSON 字符串，或一个完整 JSON object 兼容值。
 
 部分兼容端点会先发送 `arguments: ""`，再结束无参数 Tool Call。这是合法的中间分片，必须参与
-聚合；Provider 不能把空字符串当成缺失字段。流完成后，拼接结果为空时按 `{}` 解析。只有非字符串分片
-或最终结果不是 JSON object 才属于协议错误。该事故以 `[PROTO-001]` 固化在 Provider 回归测试中。
+聚合；Provider 不能把空字符串当成缺失字段。流完成后，拼接结果为空时按 `{}` 解析。该事故以
+`[PROTO-001]` 固化在 Provider 回归测试中。
+
+OpenAI 规范要求 `arguments` 是 JSON 字符串，但部分 DeepSeek/OpenAI-compatible 网关会直接返回完整 JSON
+object。MiniClaw 对这种已经结构化的完整值做兼容：先编码为紧凑 JSON，再进入同一聚合和最终 object 校验。
+object 只能作为完整值出现，不能与字符串分片混用；数组、数字、布尔值和 `null` 仍然 fail closed。这样既解决
+真实端点的 `ProviderProtocolError`，也不放宽 Tool 参数必须为 JSON object 的内部契约。
 
 流完成后按 index 排序，拼接 arguments，并用 `json.loads()` 解码。只有字符串键 JSON object 可以进入
 `ToolCall.arguments`。缺少 ID、name、非法 JSON、数组或标量都转换为 `ProviderProtocolError`。
@@ -295,7 +300,8 @@ HTTPX 异常通过 `raise ... from error` 保留进程内因果链，但 CLI 只
 - 超时只重试一次且底层详情不泄露；
 - 已产生可见 delta 的超时不重试；
 - `[PROTO-001]` 无参数 Tool 的空 arguments 中间分片可正常聚合；
-- Tool arguments 非 JSON object 被拒绝。
+- 兼容端点返回的完整 arguments object 被规范化并正常执行；
+- Tool arguments 数组、标量、残缺分片或混合形态被拒绝。
 
 所有测试使用 `httpx.MockTransport` 或自定义 `AsyncByteStream`，不连接真实模型。
 
@@ -315,8 +321,8 @@ uv run python -m unittest \
 uv run ruff check src/miniclaw/providers tests/test_openai_compatible_provider.py
 ```
 
-真实调用只能通过 `miniclaw chat` 的显式 Live Smoke 执行，不在 Provider 模块临时加入 `print()`、示例
-Key 或调试 main。
+真实调用只能通过裸 `miniclaw` 的唯一 TUI 做显式 Live Smoke，不在 Provider 模块临时加入 `print()`、示例
+Key 或调试 main。自动化协议复现优先使用 MockTransport 和离线 Agent cases。
 
 排障顺序：
 

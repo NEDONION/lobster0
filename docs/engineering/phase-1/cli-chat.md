@@ -2,7 +2,7 @@
 
 > [!WARNING]
 > 本文是 Phase 1 历史实现快照。Phase 2.2B 已移除 `miniclaw chat`、one-shot 与 `input()` REPL；当前唯一
-> 人类对话入口是裸 `miniclaw` 的 Textual TUI。请优先阅读
+> 本文记录 Phase 1 历史 CLI；当前人类对话入口是裸 `miniclaw` 的默认 pi-tui，Textual 仅作 fallback。请优先阅读
 > [单入口 TUI 工程文档](../phase-2/single-entry-tui.md)。
 
 ## 1. 模块目的

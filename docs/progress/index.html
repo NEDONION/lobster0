@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · P2.4 + TUI observability verified · P2.3B lark-cli next</div>
+      <div class="branch">target: main · Python Core + pi-tui verified · Textual fallback retained · P2.3B lark-cli next</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
-        <p class="eyebrow">Open-source personal agent · Python 3.12</p>
+        <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 已成为唯一全屏入口：默认中文/可切英文、角色分区、紧凑 reasoning、长文本恢复、真实 Token 审计、Core 受限的 Session/Always、exact-argv 命令和 pinned HTTPS 都经过同一个 AgentRuntime 与 SQLite。下一步跑通 NVM/Node 路径下的真实 lark-cli。</p>
+        <p class="lede">裸 miniclaw 仍是唯一入口，默认展示层已迁移到 pi-tui：版本化 NDJSON Bridge、Codex 风格活动流、25 万字符粘贴、稳定鼠标选择、真实 Token 审计与分级审批均走同一个 Python AgentRuntime。Textual 保留 onboarding/fallback；下一步跑通真实 lark-cli。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">TUI observability gate</span>
+        <span class="tag">pi-tui migration gate</span>
         <strong>P2.4 ✓</strong>
-        <p>273 tests + 21/21 offline Agent cases + Ruff verified</p>
+        <p>295 Python + 25 TypeScript tests · 21/21 Agent cases · Ruff</p>
       </aside>
     </section>
 
@@ -365,8 +365,8 @@
         <span class="metric-value">2 <small>/ 8</small></span>
       </div>
       <div class="metric">
-        <span class="metric-label">Baseline checks</span>
-        <span class="metric-value">273 <small>passing</small></span>
+        <span class="metric-label">Deterministic tests</span>
+        <span class="metric-value">295+25 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -426,7 +426,7 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 2</div>
-          <div><h3>Tool、安全、TUI 与回归门禁</h3><p>P2.1 Tool、P2.2 写入/Approval、P2.2B TUI、P2.3A 命令、P2.4 HTTPS 与 TUI 可观测/分级审批加固均已验证；P2.3B lark-cli 待闭环。</p></div>
+          <div><h3>Tool、安全、pi-tui 与回归门禁</h3><p>P2.1 Tool、P2.2 写入/Approval、P2.3A 命令、P2.4 HTTPS、Python Core ↔ pi-tui Bridge 与终端稳定化均已验证；P2.3B lark-cli 待闭环。</p></div>
           <span class="pill">IN PROGRESS</span>
         </article>
         <article class="phase queued">
@@ -486,7 +486,10 @@
           <li class="complete">BEGIN IMMEDIATE 并发单次消费</li>
           <li class="complete">AgentRunner 遇到 Approval 立即暂停后续调用</li>
           <li class="complete">waiting Turn + 无假 User Message 的 child Turn</li>
-          <li class="complete">裸 miniclaw 唯一进入 Textual TUI</li>
+          <li class="complete">裸 miniclaw 默认进入 pi-tui；Textual onboarding/fallback</li>
+          <li class="complete">Python Core ↔ TUI versioned NDJSON protocol v1</li>
+          <li class="complete">真实 Node BridgeClient ↔ Python Bridge 跨进程握手</li>
+          <li class="complete">鼠标选区/OSC52、人工上滚、bottom-follow 与 Shift+Enter 回归</li>
           <li class="complete">RunEvent：流式回答、Provider reasoning、Tool 参数与持久化顺序</li>
           <li class="complete">单卡 Enter 展开 + Ctrl+O 全展开/收起，Trace 概要始终可见</li>
           <li class="complete">Enter / Shift+Enter / Esc 与 exclusive Worker</li>
@@ -494,8 +497,10 @@
           <li class="complete">Session 当前 Runtime exact rule；Always 成功后持久化 exact rule</li>
           <li class="complete">inline AppleScript、文件写入与失败动作不能持久授权</li>
           <li class="complete">默认中文、/lang zh|en、你 / MiniClaw 角色分区</li>
-          <li class="complete">弱色紧凑 reasoning，内容跟随用户提问语言</li>
-          <li class="complete">失败/取消恢复 65 KiB+ 长文本草稿</li>
+          <li class="complete">弱色少留白且默认展开的 reasoning；中文提问使用中文 System Prompt</li>
+          <li class="complete">失败/取消恢复 250,000 字符长文本草稿</li>
+          <li class="complete">跨 Approval 子 Turn 的 Tool 历史完整，不再触发孤立 Tool Result 400</li>
+          <li class="complete">失败显示安全错误码与双语摘要，不泄露底层异常正文</li>
           <li class="complete">上下文 / Token / Tool / 迭代 / 耗时真实审计栏</li>
           <li class="complete">Provider usage 缺失显示 N/A，/status 显示 request ID</li>
           <li class="complete">旧 chat / tui / approvals 入口已删除</li>
@@ -506,7 +511,7 @@
           <li class="complete">http_get：HTTPS-only、全部 DNS 公网校验与精确 authority</li>
           <li class="complete">固定 IP/TLS hostname、每跳重验与有界文本响应</li>
           <li class="complete">stale ToolRun crash recovery 与 doctor 七项只读检查</li>
-          <li class="complete">273 tests + 21/21 Agent cases + Ruff 门禁</li>
+          <li class="complete">295 Python + 25 TypeScript tests + 21/21 Agent cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -514,20 +519,20 @@
         <h3>不会漂移的边界</h3>
         <div class="decision"><code>model</code><p>deepseek-v4-pro</p></div>
         <div class="decision"><code>credentials</code><p>本地 .env，0600，永不进入 Git。</p></div>
-        <div class="decision"><code>runtime</code><p>单进程 asyncio + Textual Worker + 一个 Provider + 一个 SQLite。</p></div>
+        <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
         <div class="decision"><code>eval gate</code><p>每次提交跑 deterministic offline 100%；打开应用事故另跑不执行 Tool 的 3 次 live planning probe，完整 live runner 仍待实现。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
-        <div class="decision"><code>scope</code><p>TUI、八个 Tool 与 Approval 续执行已完成；任意 Shell、当前版本 live eval、lark-cli 真实 smoke 和飞书 Channel 仍未完成。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/0eb6052">0eb6052</a> · <a href="https://github.com/NEDONION/miniclaw/commit/a8db692">a8db692</a> · <a href="https://github.com/NEDONION/miniclaw/commit/e9fa616">e9fa616</a> · <a href="https://github.com/NEDONION/miniclaw/commit/a26efe3">a26efe3</a></p></div>
+        <div class="decision"><code>scope</code><p>pi-tui、Bridge、八个 Tool 与 Approval 续执行已完成；任意 Shell、当前版本 live eval、lark-cli 真实业务 smoke 和飞书 Channel 仍未完成。</p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/miniclaw/commit/e109399">e109399</a> · <a href="https://github.com/NEDONION/miniclaw/commit/e1dd0b7">e1dd0b7</a> · <a href="https://github.com/NEDONION/miniclaw/commit/128179e">128179e</a> · <a href="https://github.com/NEDONION/miniclaw/commit/116af48">116af48</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 273 tests + 21/21 offline Agent cases + Ruff verified</span>
-      <span><a href="../engineering/phase-2/tui-observability-and-scoped-approvals.md">TUI hardening</a> · <a href="../engineering/phase-2/tui-regression-testing.md">23-case TUI regression</a> · <a href="../engineering/phase-2/testing-and-debugging.md">release gate</a> · <a href="../evals/releases/v0.2.0.md">historical live record</a></span>
+      <span>Last updated · 2026-08-08 · 295 Python + 25 TypeScript tests + 21/21 offline Agent cases + Ruff</span>
+      <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-2/tui-regression-testing.md">TUI regression</a> · <a href="../engineering/phase-2/testing-and-debugging.md">release gate</a> · <a href="../evals/releases/v0.2.0.md">historical live record</a></span>
     </footer>
   </main>
 </body>

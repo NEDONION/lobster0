@@ -1,8 +1,8 @@
 # Phase 2.2 工程文档：参数绑定 Approval 与跨进程续执行
 
-> 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 Textual TUI 已进入生产链路
+> 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 pi-tui/Textual fallback 已进入生产链路
 >
-> 当前门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS
+> 当前门禁：295/295 Python tests、25/25 TypeScript tests、21/21 offline Agent cases、Ruff PASS
 >
 > 当前非目标：持久规则的 TUI 查看/撤销；飞书卡片审批不在本阶段
 
@@ -218,9 +218,9 @@ uv run ruff check src/miniclaw/policy/approvals.py src/miniclaw/policy/engine.py
   tests/test_approvals.py tests/test_tool_executor.py
 ```
 
-结果已并入当前全仓门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS、diff check PASS。
+结果已并入当前全仓门禁：295/295 Python tests、25/25 TypeScript tests、21/21 offline Agent cases、Ruff PASS、diff check PASS。
 
-全仓门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS、diff check PASS。
+全仓门禁：295/295 Python tests、25/25 TypeScript tests、21/21 offline Agent cases、Ruff PASS、diff check PASS。
 
 ## 13. Runner 为什么必须停下来
 
@@ -294,7 +294,7 @@ flowchart TD
 
 - `ApprovalRepository.list/get` 只查询；过期状态在 approve/deny/consume 时结算。
 - Always 已用于成功的精确 argv 与精确 hostname；文件写入和 inline AppleScript 不支持持久放行。
-- 审批 UI 当前是 Textual TUI；飞书交互卡片会复用同一 Repository 和 TurnService，而不是复制状态机。
+- 审批 UI 默认是 pi-tui Overlay，Textual Modal 为 fallback；飞书交互卡片会复用同一 Repository 和 TurnService，而不是复制状态机。
 - 任意 Shell、删除/移动文件、多用户审批和自动重放明确不在 Phase 2.2。
 
 TUI 的按钮投影、真实遥测和测试证据见

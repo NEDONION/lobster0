@@ -1,10 +1,10 @@
 # MiniClaw 单入口 TUI 与 lark-cli 设计方案
 
-> 状态：方案已确认；P2.2B 实施计划已完成，等待 P2.2A Approval Core 后执行
+> 状态：历史决策记录；Textual 已落地但默认展示层随后被 Python Core + pi-tui 方案取代
 > 日期：2026-08-08
 > 目标阶段：P2.2B（TUI）与 P2.3（受限命令和 lark-cli）
 > 适用范围：本地单用户 MiniClaw；不改变 Phase 4 飞书 Channel 规划
-> 核心决策：人类与 MiniClaw 对话只有一个入口 `miniclaw`，并且只进入同一个 Textual TUI
+> 当前替代方案：[Python Core + pi-tui 终端架构设计](2026-08-08-python-core-pi-tui-design.md)
 
 ## 1. 结论
 

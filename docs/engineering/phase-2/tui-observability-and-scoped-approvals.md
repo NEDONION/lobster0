@@ -1,22 +1,23 @@
 # Phase 2 加固：TUI 可观测、长文本与分级审批
 
-> 状态：已实现并验证  
-> 当前门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS
-> 范围：唯一 Textual TUI；不代表 `lark-cli` 或飞书 Channel 已完成
+> 状态：已实现并验证
+> 当前门禁：295/295 Python tests、25/25 TypeScript tests、21/21 offline Agent cases、Ruff PASS
+> 范围：当前 pi-tui 与迁移期 Textual fallback；不代表 `lark-cli` 或飞书 Channel 已完成
 
 ## 1. 大白话结论
 
 这轮不是再造一套 TUI，而是把现有单入口补成适合长期调试的个人 Agent 界面：
 
 - 用户消息和 MiniClaw 回答不再挤成一团；
-- Provider 返回的 reasoning 仍可看，但默认折叠、弱色、低视觉权重；
+- Provider 返回的 reasoning 仍可看，默认展开但弱色、少留白、低视觉权重；
 - 长文本发送失败或取消时，原文完整回到输入框；
 - 底部直接显示真实上下文、Token、Tool 次数、模型迭代和耗时；
 - UI 默认中文，可用 `/lang en` 切英文；
 - 审批从“拒绝/仅一次”扩展为安全受限的 Session/Always；
 - 文件写入、inline AppleScript 和硬拒绝命令不会因为新按钮变成永久放行。
 
-终端没有网页那样的局部字号。所谓 reasoning “小字”，实际用默认折叠、无厚边框、弱色和更少空白实现。
+终端没有网页那样的局部字号，不能单独缩小 30%。所谓 reasoning “小字”，实际用无厚边框、弱色和更少空白实现；
+本轮按 Owner 要求改为默认展开。
 
 ## 2. 完整数据流
 
@@ -46,7 +47,7 @@ TUI 不查询 Provider、Policy 或数据库内部瞬时对象，也不自己计
 │ 帮我看看电脑配置                           │
 └────────────────────────────────────────────┘
 
-  ▸ 思考（模型）· 第 1 轮       默认折叠、弱色
+  ▾ 思考（模型）· 第 1 轮       默认展开、弱色
 
 ┌─ MiniClaw ─────────────────────────────────┐
 │ 你的系统是……                               │
@@ -163,7 +164,7 @@ flowchart TD
 | 文件 | 责任 |
 | --- | --- |
 | `src/miniclaw/tui/app.py` | 双语消息、reasoning、草稿恢复、审计栏、审批按钮 |
-| `src/miniclaw/agent/context.py` | 回答/reasoning 跟随用户消息语言 |
+| `src/miniclaw/agent/context.py` | 按最新 User 消息选择中英文 System Prompt，约束回答/reasoning 语言 |
 | `src/miniclaw/agent/runner.py` | 每次 Provider 响应的真实 usage 与 Tool 计数 |
 | `src/miniclaw/agent/turn.py` | 终态耗时、Approval decision 预检与续跑 |
 | `src/miniclaw/policy/approvals.py` | `ApprovalDecision` 与可用授权范围 |
@@ -176,10 +177,10 @@ flowchart TD
 
 新能力的确定性检查包括：
 
-- 65 KiB 以上中文输入失败后逐字恢复；
+- 250,000 字符中文输入失败后逐字恢复；
 - Esc 取消后原草稿恢复且焦点回到 Composer；
 - 用户和 MiniClaw 都有可见角色标签与不同结构；
-- reasoning 默认折叠、可用 `Ctrl+O` 展开；
+- reasoning 默认展开、可用 `Ctrl+O` 批量折叠或恢复展开；
 - 中文默认与 `/lang zh|en` 原地切换；
 - usage 缺失持续显示 `N/A`；
 - `/status` 显示 Provider Request ID；
@@ -198,7 +199,7 @@ flowchart TD
 git diff --check
 ```
 
-结果：273/273 tests、21/21 offline Agent cases、Ruff PASS。
+结果：295/295 Python tests、25/25 TypeScript tests、21/21 offline Agent cases、Ruff PASS。
 
 ## 10. 仍未完成
 

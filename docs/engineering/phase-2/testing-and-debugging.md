@@ -2,7 +2,7 @@
 
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> 当前单入口 TUI 基线：273/273 tests、21/21 offline Agent cases、Ruff PASS；历史 PTY smoke PASS
+> 当前单入口 TUI 基线：295/295 Python tests、25/25 TypeScript tests、21/21 offline Agent cases、Ruff PASS
 >
 > 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
@@ -21,7 +21,7 @@ Phase 2 不只要求“某个 Tool 能跑”。每次版本都必须证明：
 
 ```mermaid
 flowchart TB
-    UNIT["Layer 1: 273 deterministic tests"] --> OFFLINE["Layer 2: 21 versioned Agent cases"]
+    UNIT["Layer 1: 295 Python + 25 TypeScript tests"] --> OFFLINE["Layer 2: 21 versioned Agent cases"]
     OFFLINE --> LIVE["Layer 3: release-only DeepSeek smoke"]
     LIVE --> DOC["Release record + progress docs"]
     DOC --> RELEASE["Phase 2 release gate"]
@@ -238,8 +238,16 @@ release record。
 uv run python -m unittest tests.test_openai_compatible_provider -v
 ```
 
-重点检查 SSE 的 `tool_calls[].function.arguments` 是否分片、为空字符串或不是 JSON object。`PROTO-001` 保证空参数 Tool
-会聚合成 `{}`，而不是提前报错。
+重点检查 SSE 的 `tool_calls[].function.arguments` 是字符串分片、空字符串，还是兼容网关直接返回的完整 JSON
+object。`PROTO-001` 保证空参数 Tool 会聚合成 `{}`；Provider 契约测试还保证完整 object 会被规范化。数组、标量、
+object 与字符串混合分片仍然按协议错误关闭，不能因此绕过 Tool Schema。
+
+### 同一 Session 持续出现 `provider_protocol`
+
+先看 Turn 的安全错误摘要。若 Provider 立即返回 HTTP 400，检查最近历史是否从孤立的 `tool` 消息开始。历史软上限
+必须回退到最近一条 User 消息，完整保留父 Turn 的 Assistant Tool Call 与 Approval 子 Turn 的 Tool Result；不能只按
+数据库 `turn_id` 补齐，因为一次模型交互可能跨越多个父子 Turn。对应永久回归位于
+`test_recent_limit_never_orphans_tool_result_from_approval_child`。修复前可用 `/new` 临时切换到干净 Session，不要删除数据库。
 
 ### Agent 说“无法访问电脑”
 
@@ -283,7 +291,7 @@ uv run miniclaw
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
 - [x] Doctor 七项且网络/命令/数据库修改为零；
-- [x] 273/273 tests；
+- [x] 295/295 Python tests + 25/25 TypeScript tests；
 - [x] 21/21 offline Agent cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
 - [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
@@ -298,4 +306,4 @@ uv run miniclaw
 Phase 2 当前不包含：任意 Shell、删除/移动 Tool、后台任务、OS sandbox、多用户 RBAC、飞书审批卡片、Memory/Skills、
 自动修改部署源代码。这些不应在回归结果中被描述成已完成。
 
-TUI 专项分层、23 个稳定用例和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。
+TUI 专项分层、25 个 pi-tui/跨进程用例和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。

@@ -1,8 +1,8 @@
 # Phase 2.4 工程文档：Pinned HTTPS GET 与 SSRF 防护
 
-> 状态：`http_get` 已进入唯一 Textual TUI 的共享 `AgentRuntime`
+> 状态：`http_get` 已进入 pi-tui 与 Textual fallback 共享的唯一 `AgentRuntime`
 >
-> 当前门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS
+> 当前门禁：295/295 Python tests、25/25 TypeScript tests、21/21 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 

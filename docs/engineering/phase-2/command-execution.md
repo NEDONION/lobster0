@@ -1,8 +1,8 @@
 # Phase 2.3A 工程文档：Exact-Argv 命令执行
 
-> 状态：`run_command` 已进入唯一 Textual TUI 的共享 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
+> 状态：`run_command` 已进入 pi-tui 与 Textual fallback 共享的唯一 `AgentRuntime`，默认未命中规则时生成参数绑定 Approval
 >
-> 当前门禁：273/273 tests、21/21 offline Agent cases、Ruff PASS
+> 当前门禁：295/295 Python tests、25/25 TypeScript tests、21/21 offline Agent cases、Ruff PASS
 
 ## 1. 大白话解释
 

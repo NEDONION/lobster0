@@ -1,9 +1,26 @@
-# Phase 2.2B：单入口 Textual TUI 工程文档
+# Phase 2：单入口 TUI（pi-tui 默认，Textual fallback）
 
-> 状态：已实现；当前全仓通过 273 项单元/集成测试与 21/21 离线 Agent 场景。
-> 本文描述当前代码，不描述未来设想。
+> 状态：pi-tui 已成为裸 miniclaw 默认展示层；Textual 暂作首次 onboarding 和运行时 fallback。
+> 当前全仓通过 295 项 Python、25 项 TypeScript 测试与 21/21 离线 Agent 场景。
+> 本文第 3–11 节保留 Textual fallback 的实现记录；当前跨语言架构见
+> [Python Core + pi-tui Bridge 工程文档](python-core-pi-tui-bridge.md)。
 
-## 1. 这次解决了什么
+## 1. 当前解决了什么
+
+人类入口仍然只有裸 miniclaw，但入口内部会选择展示层：
+
+~~~mermaid
+flowchart LR
+    CLI["bare miniclaw"] --> CHECK{"已初始化 + Node >=22.19 + dist?"}
+    CHECK -->|yes| PI["pi-tui + Python Bridge"]
+    CHECK -->|no| TEXTUAL["Textual onboarding/fallback"]
+    PI --> CORE["同一个 AgentRuntime"]
+    TEXTUAL --> CORE
+~~~
+
+显式 MINICLAW_TUI=pi|textual 方便验收和排障；不会新增第二个人类命令。
+
+### 历史交付：Textual 单入口
 
 Phase 1 的 `miniclaw chat --message` 和 `input()` REPL 能证明 Agent Core 可用，但不像一个长期使用的
 个人 Agent：流式内容、Tool 过程、取消和审批都只能退化成终端文本。Phase 2.2B 将本地人类交互统一为：
@@ -185,7 +202,7 @@ flowchart TD
 - Markdown 禁止自动打开链接；
 - 模型和 Tool 文本先移除 ANSI/C0/C1 控制字符；
 - Tool Call ID 只作为字典键，不拼入 CSS selector；
-- Reasoning 默认折叠、弱色且无 Tool 卡的厚边框；终端不支持局部小字体，以紧凑布局实现“小字感”；
+- Reasoning 默认展开、弱色且无 Tool 卡的厚边框；终端不支持局部小字体，以更少留白实现“小字感”；
 - 每次 Tool Call 的“Tool 名 + 文字状态”始终保留在 transcript；
 - 按 Enter 或点击单张卡的标题，展开原始模型参数、完整状态路径、执行耗时和结果预览；
 - `Ctrl+O` 只批量折叠/展开详情，不会隐藏 Tool 或 Reasoning 概要；
@@ -307,9 +324,9 @@ flowchart TD
 | Trace interaction | 单卡 Enter 展开、Ctrl+O 全展开/收起、概要始终可见、ANSI 过滤 |
 | Approval | 完整参数、Deny 默认焦点、Once/Session/Always Core scope、Esc=Deny、同一 Service 续跑 |
 | Reliability | 250,000 字符 bracketed paste 失败/取消逐字恢复、Runtime 缺失不丢输入 |
-| Language | 默认中文、`/lang zh|en`、reasoning 跟随用户语言 Prompt |
+| Language | 默认中文、`/lang zh|en`、按最新 User 消息选择中英文 System Prompt |
 | Telemetry | 真实 usage、N/A、Provider Request ID、Tool/迭代/耗时 |
-| Full suite | 273/273 tests + Ruff + diff check |
+| Full suite | 295/295 Python + 25/25 TypeScript tests + Ruff + diff check |
 | Agent gate | 21/21 active offline Claw-like cases |
 
 运行命令：
@@ -336,7 +353,8 @@ TUI 的用例编号、无头测试策略、PTY smoke 与版本门禁详见
 - Web 管理台。
 
 Phase 2.3A 已实现 exact-argv `run_command`，不经过 shell 字符串；安全命令未命中精确规则时复用同一
-Approval/Turn continuation/TUI Modal 链路。Phase 2.3B 下一步处理本机 NVM `lark-cli` 的 Node 运行时路径、
+Approval/Turn continuation/TUI Overlay 链路。pi-tui 已解决自身 Node 版本检测和构建入口；Phase 2.3B 下一步处理
+本机 NVM `lark-cli` 的独立可执行路径、
 doctor 检查与 `auth status` 真实 smoke，不会把“已安装”误写成“Agent 已可稳定调用”。P2.4 `http_get` 已复用
 同一 Runtime/Modal；网络边界见 [Pinned HTTPS 工程文档](https-get-and-ssrf.md)。
 
