@@ -1,7 +1,9 @@
 """Feishu Live E2E 的只读取证、进程与报告安全契约。"""
 
 import importlib
+import sys
 import tempfile
+import textwrap
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
@@ -338,6 +340,160 @@ class FeishuDatabaseProbeTest(unittest.TestCase):
                 """,
                 (event_type, event_type.replace(".", " "), self.now),
             )
+
+
+class GatewayProcessTest(unittest.IsolatedAsyncioTestCase):
+    """保证真实 Gateway 启停有界，且子进程输出永远被持续排空。"""
+
+    def setUp(self) -> None:
+        """创建隔离的项目目录与 MiniClaw Home。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.root = Path(self.temporary_directory.name).resolve()
+        self.home = self.root / "home"
+        self.home.mkdir()
+        self.script_index = 0
+
+    async def test_exact_ready_line_and_single_sigterm_exit_cleanly(self) -> None:
+        """只有整行 ready marker 才算启动成功，普通 SIGTERM 必须正常退出。"""
+        process = await self._start(
+            """
+            import signal
+            import sys
+            import time
+
+            signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+            print("MiniClaw gateway ready: feishu/default", flush=True)
+            while True:
+                time.sleep(0.05)
+            """
+        )
+
+        self.assertTrue(process.ready)
+        self.assertEqual(await process.stop(timeout=1.0), 0)
+
+    async def test_ready_substring_times_out_and_process_is_reaped(self) -> None:
+        """日志中碰巧包含 marker 不能误判为 ready，超时后必须回收进程。"""
+        api = self._api()
+        command = self._command(
+            """
+            import signal
+            import sys
+            import time
+
+            signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+            print("prefix MiniClaw gateway ready: feishu/default suffix", flush=True)
+            while True:
+                time.sleep(0.05)
+            """
+        )
+
+        with self.assertRaises(api.FeishuLiveError) as raised:
+            await api.GatewayProcess.start(
+                project_root=self.root,
+                home=self.home,
+                ready_timeout=0.1,
+                command=command,
+            )
+
+        self.assertEqual(raised.exception.code, "gateway_ready_timeout")
+
+    async def test_exit_before_ready_has_stable_error_code(self) -> None:
+        """子进程提前结束只能暴露稳定错误码，不能拼接 stderr。"""
+        api = self._api()
+        command = self._command(
+            """
+            import sys
+
+            print("private diagnostic must not escape", file=sys.stderr, flush=True)
+            raise SystemExit(17)
+            """
+        )
+
+        with self.assertRaises(api.FeishuLiveError) as raised:
+            await api.GatewayProcess.start(
+                project_root=self.root,
+                home=self.home,
+                ready_timeout=1.0,
+                command=command,
+            )
+
+        self.assertEqual(raised.exception.code, "gateway_exited_before_ready")
+        self.assertEqual(str(raised.exception), "gateway_exited_before_ready")
+
+    async def test_massive_stderr_is_drained_and_diagnostics_are_bounded(self) -> None:
+        """超过 pipe 容量的 stderr 不能死锁，诊断只保留最后 200 条有界行。"""
+        process = await self._start(
+            """
+            import signal
+            import sys
+            import time
+
+            signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+            for index in range(300):
+                print(f"diagnostic-{index:03d}-" + "x" * 5000, file=sys.stderr)
+            sys.stderr.flush()
+            print("MiniClaw gateway ready: feishu/default", flush=True)
+            while True:
+                time.sleep(0.05)
+            """,
+            ready_timeout=2.0,
+        )
+
+        diagnostics = process.bounded_diagnostics
+        self.assertEqual(len(diagnostics), 200)
+        self.assertTrue(all(len(line) <= 4096 for line in diagnostics))
+        self.assertTrue(any(line.startswith("stderr:diagnostic-299-") for line in diagnostics))
+        self.assertEqual(await process.stop(timeout=1.0), 0)
+
+    async def test_stop_retries_sigterm_once_without_sigkill(self) -> None:
+        """第一次 SIGTERM 被忽略时应再给一次优雅退出机会，绝不自动 SIGKILL。"""
+        process = await self._start(
+            """
+            import signal
+            import sys
+            import time
+
+            signals = 0
+
+            def stop_after_second(*_):
+                global signals
+                signals += 1
+                if signals >= 2:
+                    sys.exit(0)
+
+            signal.signal(signal.SIGTERM, stop_after_second)
+            print("MiniClaw gateway ready: feishu/default", flush=True)
+            while True:
+                time.sleep(0.05)
+            """
+        )
+
+        self.assertEqual(await process.stop(timeout=0.15), 0)
+
+    async def _start(self, source: str, *, ready_timeout: float = 1.0):
+        """启动一段隔离 fake Gateway 脚本。"""
+        api = self._api()
+        return await api.GatewayProcess.start(
+            project_root=self.root,
+            home=self.home,
+            ready_timeout=ready_timeout,
+            command=self._command(source),
+        )
+
+    def _command(self, source: str) -> tuple[str, ...]:
+        """把测试脚本写入临时目录并返回无缓冲 Python 命令。"""
+        self.script_index += 1
+        script = self.root / f"fake_gateway_{self.script_index}.py"
+        script.write_text(textwrap.dedent(source), encoding="utf-8")
+        return (sys.executable, "-u", str(script))
+
+    def _api(self) -> ModuleType:
+        """导入真实生产模块，并明确要求 GatewayProcess 存在。"""
+        api = importlib.import_module("miniclaw.evals.feishu_live")
+        if not hasattr(api, "GatewayProcess"):
+            self.fail("Feishu Live GatewayProcess is missing")
+        return api
 
 
 if __name__ == "__main__":

@@ -1,7 +1,12 @@
 """真实飞书 E2E 的只读 SQLite 证据与后续编排接口。"""
 
+import asyncio
 import json
+import os
+import signal
 import sqlite3
+import sys
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +41,150 @@ class EvidenceEvaluation:
 
     passed: tuple[str, ...]
     failed: tuple[str, ...]
+
+
+class GatewayProcess:
+    """持续排空输出、按精确 marker 就绪并有界退出的 Gateway 子进程。"""
+
+    _READY_LINE = "MiniClaw gateway ready: feishu/default"
+    _DIAGNOSTIC_LINES = 200
+    _DIAGNOSTIC_CHARS = 4096
+
+    def __init__(self, process: asyncio.subprocess.Process) -> None:
+        """保存子进程；生产调用方应通过 :meth:`start` 创建实例。"""
+        self._process = process
+        self._ready_event = asyncio.Event()
+        self._ready = False
+        self._diagnostics: deque[str] = deque(maxlen=self._DIAGNOSTIC_LINES)
+        assert process.stdout is not None
+        assert process.stderr is not None
+        self._drain_tasks = (
+            asyncio.create_task(self._drain(process.stdout, "stdout")),
+            asyncio.create_task(self._drain(process.stderr, "stderr")),
+        )
+
+    @classmethod
+    async def start(
+        cls,
+        *,
+        project_root: Path,
+        home: Path,
+        ready_timeout: float,
+        command: tuple[str, ...] | None = None,
+    ) -> "GatewayProcess":
+        """启动 Gateway，并等待精确的 Feishu ready marker。
+
+        Args:
+            project_root: 子进程工作目录。
+            home: 传给 MiniClaw CLI 的状态目录。
+            ready_timeout: 等待 ready marker 的最长秒数。
+            command: 测试专用显式命令；省略时启动当前 Python 的 MiniClaw。
+
+        Raises:
+            FeishuLiveError: 子进程提前结束、未按时就绪或无法启动。
+        """
+        executable = command or (
+            sys.executable,
+            "-m",
+            "miniclaw",
+            "--home",
+            str(home),
+            "gateway",
+        )
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *executable,
+                cwd=project_root,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                start_new_session=True,
+                limit=8 * 1024 * 1024,
+            )
+        except (OSError, ValueError):
+            raise FeishuLiveError("gateway_start_failed") from None
+
+        gateway = cls(process)
+        ready_wait = asyncio.create_task(gateway._ready_event.wait())
+        exit_wait = asyncio.create_task(process.wait())
+        try:
+            done, _ = await asyncio.wait(
+                (ready_wait, exit_wait),
+                timeout=ready_timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if ready_wait in done and process.returncode is None:
+                gateway._ready = True
+                return gateway
+            failure = (
+                "gateway_exited_before_ready"
+                if exit_wait in done
+                else "gateway_ready_timeout"
+            )
+            await gateway._stop_after_failed_start()
+            raise FeishuLiveError(failure)
+        finally:
+            for waiter in (ready_wait, exit_wait):
+                if not waiter.done():
+                    waiter.cancel()
+            await asyncio.gather(ready_wait, exit_wait, return_exceptions=True)
+
+    @property
+    def ready(self) -> bool:
+        """返回当前实例是否见过精确 ready marker。"""
+        return self._ready
+
+    @property
+    def bounded_diagnostics(self) -> tuple[str, ...]:
+        """返回最多 200 行、每行最多 4096 字符的内存诊断快照。"""
+        return tuple(self._diagnostics)
+
+    async def stop(self, *, timeout: float = 10.0) -> int:
+        """最多发送两次 SIGTERM，并等待子进程和输出管道结束。
+
+        自动化验收刻意不发送 SIGKILL；第二次等待后仍不退出时，由操作者决定。
+        """
+        if self._process.returncode is None:
+            self._send_sigterm()
+            try:
+                await asyncio.wait_for(self._process.wait(), timeout=timeout)
+            except TimeoutError:
+                self._send_sigterm()
+                try:
+                    await asyncio.wait_for(self._process.wait(), timeout=timeout)
+                except TimeoutError:
+                    raise FeishuLiveError("gateway_shutdown_timeout") from None
+        await asyncio.gather(*self._drain_tasks, return_exceptions=True)
+        if self._process.returncode is None:
+            raise FeishuLiveError("gateway_shutdown_timeout")
+        return self._process.returncode
+
+    async def _drain(self, stream: asyncio.StreamReader, source: str) -> None:
+        """持续排空一个 pipe，并只保存有界单行诊断。"""
+        while line_bytes := await stream.readline():
+            line = line_bytes.decode("utf-8", errors="replace").rstrip("\r\n")
+            if source == "stdout" and line == self._READY_LINE:
+                self._ready_event.set()
+            rendered = f"{source}:{line}"[: self._DIAGNOSTIC_CHARS]
+            self._diagnostics.append(rendered)
+
+    def _send_sigterm(self) -> None:
+        """优先终止整个子进程组，平台不支持时退回单进程 terminate。"""
+        if self._process.returncode is not None:
+            return
+        try:
+            os.killpg(self._process.pid, signal.SIGTERM)
+        except (AttributeError, ProcessLookupError, PermissionError):
+            try:
+                self._process.terminate()
+            except ProcessLookupError:
+                return
+
+    async def _stop_after_failed_start(self) -> None:
+        """启动失败时尽力回收子进程，不用内部诊断覆盖稳定错误码。"""
+        try:
+            await self.stop(timeout=1.0)
+        except FeishuLiveError:
+            return
 
 
 type _EvidenceCheck = Callable[[sqlite3.Connection, DatabaseCheckpoint], bool]
