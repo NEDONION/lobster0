@@ -11,7 +11,9 @@ from miniclaw.channels.approvals import (
     approval_delivery_payload,
     feishu_approval_status_card,
     parse_approval_card_action,
+    parse_approval_delivery_payload,
 )
+from miniclaw.channels.base import DeliveryKind
 from miniclaw.channels.delivery import split_message
 from miniclaw.policy.approvals import ApprovalDecision
 
@@ -25,8 +27,9 @@ class ApprovalActionController(Protocol):
         user_id: int,
         actor_external_user_id: str,
         value: Any,
+        expected_approval_id: int,
     ) -> ApprovalCommandOutcome:
-        """校验并执行一个飞书审批动作。"""
+        """校验来源绑定后的审批 ID，并执行一个飞书审批动作。"""
         ...
 
     def prompt(self, *, user_id: int, approval_id: int) -> ApprovalEnvelope:
@@ -73,6 +76,23 @@ class ApprovalDeliveryRepository(Protocol):
     ) -> object:
         """幂等保存最终消息或下一条审批卡。"""
         ...
+
+    def find_sent_by_platform_message_id(
+        self,
+        *,
+        channel: str,
+        account_id: str,
+        platform_message_id: str,
+        kind: DeliveryKind,
+    ) -> "ApprovalDeliveryReceipt | None":
+        """按平台消息 ID 返回唯一 sent Approval receipt，歧义时为空。"""
+        ...
+
+
+class ApprovalDeliveryReceipt(Protocol):
+    """暴露来源卡持久化 envelope 所需的最小 Delivery 投影。"""
+
+    content: str
 
 
 class FeishuApprovalActionHandler:
@@ -146,6 +166,9 @@ class FeishuApprovalActionHandler:
         if actor_open_id != self._owner_external_user_id or parsed is None:
             return
         approval_id, _ = parsed
+        expected_approval_id = self._bound_approval_id(message_id)
+        if expected_approval_id is None or approval_id != expected_approval_id:
+            return
         await self._update_card(
             message_id,
             "processing",
@@ -156,6 +179,7 @@ class FeishuApprovalActionHandler:
                 user_id=self._user_id,
                 actor_external_user_id=actor_open_id,
                 value=value,
+                expected_approval_id=expected_approval_id,
             )
         except asyncio.CancelledError:
             await self._update_terminal_card(
@@ -236,6 +260,31 @@ class FeishuApprovalActionHandler:
         else:
             state = "failed"
         await self._update_terminal_card(message_id, state, visible)
+
+    def _bound_approval_id(self, message_id: str) -> int | None:
+        """从唯一 sent receipt 恢复来源卡绑定的 Approval ID；异常时 fail closed。
+
+        Args:
+            message_id: 飞书 callback 携带的来源卡平台消息 ID。
+
+        Returns:
+            v2 durable envelope 中的审批 ID；来源缺失、歧义、损坏或 legacy v1 时为空。
+        """
+        try:
+            receipt = self._deliveries.find_sent_by_platform_message_id(
+                channel="feishu",
+                account_id=self._account_id,
+                platform_message_id=message_id,
+                kind="approval",
+            )
+            if receipt is None:
+                return None
+            envelope = parse_approval_delivery_payload(receipt.content)
+        except Exception:
+            return None
+        if not isinstance(envelope, ApprovalEnvelope):
+            return None
+        return envelope.approval_id
 
     def _persist_result(
         self,

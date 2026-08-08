@@ -30,8 +30,8 @@
 | Phase 4 | Feishu Channel | v0.4.0；后续由 v0.5.1～v0.5.3 加固 | `IMPLEMENTATION PASS`；Owner DM verified；15-case pending | [飞书 Channel Core](phase-4/20260808_feishu-channel-core.md) |
 | Phase 5 | Telegram / Discord Channel | v0.5.0 | `IMPLEMENTATION PASS / LIVE PENDING` | [Telegram 与 Discord](phase-5/20260808_telegram-discord-channels.md) |
 
-当前全仓本地基线是 666/666 Python、35/35 TypeScript、39/39 Agent、32/32 Channel 和 20 轮
-640/640 local soak。Feishu 为 **OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Telegram、Discord
+当前全仓本地基线是 671/671 Python、35/35 TypeScript、39/39 Agent、32/32 Channel 和 20 轮
+640/640 local soak。Feishu 为 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram、Discord
 均为 **LIVE PENDING**。v0.5.3 的 SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner 与异常
 Tool 历史恢复以及 Memory Autopilot A～E 已经合并；真实 Feishu/Discord 15/15 仍未完成。
 Memory 上线前的 v0.5.3 历史基线为 562 Python、30 TypeScript 和 29/29 Agent，不代表当前门禁数字。
@@ -106,7 +106,7 @@ Memory Autopilot A～E 是 Phase 3 之后的基础重构，状态为 `IMPLEMENTA
 | [运行、测试与故障排查](phase-4/20260808_testing-and-operations.md) | Doctor、离线回归、live smoke、重启/断线/审批验收。 |
 | [完成性审计](phase-4/20260808_completion-audit.md) | Requirement → code → automated/live evidence；不把本地 PASS 冒充真实平台 PASS。 |
 
-准确状态是 **IMPLEMENTATION PASS / OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。真实 Bot、Scope、
+准确状态是 **IMPLEMENTATION PASS / TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。真实 Bot、Scope、
 WebSocket ready 与 Owner 私聊 Delivery 已验证；完整 15-case、长期 soak 和全平台 production verified 尚未成立。
 
 ## Phase 5：Telegram 与 Discord

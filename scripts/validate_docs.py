@@ -10,6 +10,7 @@ from pathlib import Path
 DEFAULT_ROOT = Path(__file__).resolve().parents[1]
 CURRENT_RELATIVE_DOCS = (
     Path("README.md"),
+    Path("README_EN.md"),
     Path("docs/product/20260807_产品需求文档.md"),
     Path("docs/architecture/20260807_系统架构.md"),
     Path("docs/engineering/README.md"),
@@ -28,9 +29,11 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/evals/releases/v0.5.1.md"),
     Path("docs/evals/releases/v0.5.2.md"),
     Path("docs/evals/releases/v0.6.0.md"),
+    Path("docs/evals/releases/v0.6.1.md"),
 )
 FACT_RELATIVE_DOCS = (
     Path("README.md"),
+    Path("README_EN.md"),
     Path("docs/architecture/20260807_系统架构.md"),
     Path("docs/engineering/README.md"),
     Path("docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md"),
@@ -42,9 +45,9 @@ FACT_RELATIVE_DOCS = (
 )
 REQUIRED_FACTS = (
     "IMPLEMENTATION PASS",
-    "562",
-    "30",
-    "29/29",
+    "671",
+    "35",
+    "39/39",
     "32/32",
     "640/640",
     "TARGETED CALLBACK LIVE VERIFIED",

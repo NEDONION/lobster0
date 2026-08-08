@@ -3,7 +3,7 @@
 > 编号说明：历史材料曾称“Phase 5.2”；它是稳定化交付版本，不是新的架构 Phase。
 
 > 状态：代码与离线回归已完成；修复后 Owner DM 单卡已确认，完整 15-case 仍为 LIVE PENDING
-> 当前基线：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、640/640 local soak
+> 当前基线：671/671 Python tests、35/35 TypeScript tests、39/39 offline Agent cases、32/32 Channel cases、640/640 local soak
 > 适用版本：v0.5.2 Stabilization
 
 ## 1. 这次到底修了什么

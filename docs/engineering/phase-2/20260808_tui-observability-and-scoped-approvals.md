@@ -1,7 +1,7 @@
 # Phase 2 加固：TUI 可观测、长文本与分级审批
 
 > 状态：已实现并验证
-> 当前门禁：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS
+> 当前门禁：671/671 Python tests、35/35 TypeScript tests、39/39 offline Agent cases、32/32 Channel cases、Ruff PASS
 > 范围：本文只证明 pi-tui 与 Textual fallback 的这次加固；`lark-cli` 和飞书 Channel 后来已由独立交付完成，
 > 不能由本文的历史阶段 Gate 单独证明。
 
@@ -200,7 +200,7 @@ flowchart TD
 git diff --check
 ```
 
-当前全仓结果：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS。
+当前全仓结果：671/671 Python tests、35/35 TypeScript tests、39/39 offline Agent cases、32/32 Channel cases、Ruff PASS。
 
 ## 10. 仍未完成
 

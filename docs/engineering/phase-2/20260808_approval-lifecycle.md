@@ -2,7 +2,7 @@
 
 > 状态：参数哈希、waiting Turn、approve/deny、child Turn、单次执行和 pi-tui/Textual fallback 已进入生产链路
 >
-> 当前门禁：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS
+> 当前门禁：671/671 Python tests、35/35 TypeScript tests、39/39 offline Agent cases、32/32 Channel cases、Ruff PASS
 >
 > 当前非目标：持久规则的 TUI 查看/撤销；飞书卡片审批不在本阶段
 
@@ -218,9 +218,9 @@ uv run ruff check src/miniclaw/policy/approvals.py src/miniclaw/policy/engine.py
   tests/test_approvals.py tests/test_tool_executor.py
 ```
 
-结果已并入当前全仓门禁：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS、diff check PASS。
+结果已并入当前全仓门禁：671/671 Python tests、35/35 TypeScript tests、39/39 offline Agent cases、32/32 Channel cases、Ruff PASS、diff check PASS。
 
-全仓门禁：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS、diff check PASS。
+全仓门禁：671/671 Python tests、35/35 TypeScript tests、39/39 offline Agent cases、32/32 Channel cases、Ruff PASS、diff check PASS。
 
 ## 13. Runner 为什么必须停下来
 

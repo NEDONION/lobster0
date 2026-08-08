@@ -2,7 +2,7 @@
 
 > 当前结论：**IMPLEMENTATION PASS**
 >
-> 当前全仓自动化证据：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、
+> 当前全仓自动化证据：671/671 Python tests、35/35 TypeScript tests、39/39 offline Agent cases、
 > 32/32 Channel cases、20 轮 640/640 Channel checks。
 >
 > Feishu：**TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
@@ -45,8 +45,8 @@ pnpm --dir tui test
 
 | Gate | Result |
 | --- | ---: |
-| Python | Phase 5 exit 483/483 PASS；当前全仓 562/562 PASS |
-| TypeScript | 当前全仓 30/30 PASS |
+| Python | Phase 5 exit 483/483 PASS；当前全仓 671/671 PASS |
+| TypeScript | 当前全仓 35/35 PASS |
 
 Python 全量覆盖 Config、Provider、Turn、十个 Tool、Approval、Memory、Skills、TUI fallback、三平台 Adapter/
 Transport、GatewaySupervisor、Doctor 和 eval harness。TypeScript 覆盖 pi-tui/Bridge 协议、长粘贴、选择、流式
@@ -246,14 +246,14 @@ Feishu 不复用上面两个通用人工清单，而是使用 `FEISHU-LIVE-001..
 
 Feishu Evidence 进一步使用 strict nested schema、0600、`O_EXCL` 和 `fsync`，并重新推导 count/release status 防止
 篡改。当前真实 Gateway handshake 和两条 Owner DM Delivery 已通过，但尚未生成完整 15/15 Evidence，所以状态必须
-保持 **OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。真实运行记录见
+保持 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。真实运行记录见
 [飞书 Gateway 运行时与 macOS 常驻](20260808_feishu-gateway-runtime-and-macos-service.md)。
 
 ## 9. 发布判定
 
 ```mermaid
 flowchart TD
-    A["562 Python + 30 TypeScript"] --> B["29 Agent + 32 Channel"]
+    A["671 Python + 35 TypeScript"] --> B["39 Agent + 32 Channel"]
     B --> C["640/640 local soak"]
     C --> F{"Feishu 15/15 real Bot?"}
     F -->|"No"| R["OWNER-DM VERIFIED / 15-CASE LIVE PENDING"]

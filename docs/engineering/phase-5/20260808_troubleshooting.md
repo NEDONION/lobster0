@@ -1,6 +1,6 @@
 # Phase 5：Feishu / Telegram / Discord 故障排查手册
 
-> 当前状态：**IMPLEMENTATION PASS**；562 Python tests、30 TypeScript、32/32 Channel、640/640 local soak。
+> 当前状态：**IMPLEMENTATION PASS**；671 Python tests、35 TypeScript、39/39 Agent、32/32 Channel、640/640 local soak。
 >
 > Feishu 是 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；
 >
@@ -304,5 +304,5 @@ uv run python -m unittest tests.test_feishu_live_e2e tests.test_feishu_evals -v
 uv run ruff check .
 ```
 
-当前门禁规模是 562 Python、30 TypeScript、29/29 Agent、32/32 Channel、640/640 local soak。状态为
+当前门禁规模是 671 Python、35 TypeScript、39/39 Agent、32/32 Channel、640/640 local soak。状态为
 **IMPLEMENTATION PASS**；Feishu **15-CASE LIVE PENDING**；Telegram/Discord **LIVE PENDING**。

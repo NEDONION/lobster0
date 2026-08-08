@@ -6,7 +6,7 @@
 >
 > 真实飞书租户结论：**TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**
 >
-> 当前全仓门禁：562/562 Python、30/30 TypeScript、29/29 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
+> 当前全仓门禁：671/671 Python、35/35 TypeScript、39/39 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
 
 ## 1. 先说结论
 
@@ -17,7 +17,7 @@ Phase 4 的代码、离线回归、恢复语义、安全边界、Gateway CLI、D
 ```mermaid
 flowchart LR
     D["Design requirements"] --> C["Code implementation"]
-    C --> U["562 Python + 30 TS tests"]
+    C --> U["671 Python + 35 TS tests"]
     U --> E["29 Agent + 32 Channel evals"]
     E --> L{"严格 15-case evidence 完整?"}
     L -->|"否"| P["Owner DM verified\n15-case pending"]
@@ -105,7 +105,7 @@ Provider 隐藏 reasoning 和异常原文。
 | Gate | 当前证据 | 结论 |
 | --- | --- | --- |
 | 设计、PRD、架构、工程文档一致 | Phase 4 文档组 + 本矩阵 | LOCAL PASS |
-| 当前全量 Python | `562/562` | PASS |
+| 当前全量 Python | `671/671` | PASS |
 | pi-tui / Bridge | `30/30` | PASS |
 | Agent 回归 | `29/29` | PASS |
 | Feishu Channel 回归 | `12/12` | PASS |

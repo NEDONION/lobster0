@@ -24,6 +24,8 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 > 当前代码已完成 Phase 5 的本地实现门禁；Feishu/Telegram/Discord 的完整真实 Live Gate 仍按各自证据单独标记。
 > v0.5.3 Core 已加入 SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner 与异常 Tool 历史恢复；
 > Feishu/Discord 严格 15/15 仍为 Live Pending。
+> 飞书 Card callback 现在绑定唯一 sent receipt、账号与 Approval ID；真实“仅本次”已完成 Tool、child Turn
+> 与结果 Delivery，状态为 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
 > 飞书消息到达后立即创建一张蓝色 `Claw Trail` Agent Card，执行中持续原地更新，成功后同一卡片变为绿色并展示脱敏步骤、Tool、安全目标、状态、耗时、过程摘要和最终回答；最终回答统一渲染为 bullet points，Markdown 表格会转换为条目。
 > 缺少 `tools.mode` 的配置默认使用 `autopilot`，但只对本地入口和经过验证的 Owner 私聊生效；硬安全边界不变。
 > Memory Autopilot A～E 已完成本地实现：四入口共享一个 Owner Memory Space，Markdown 保存语义真相，SQLite
@@ -207,17 +209,18 @@ flowchart LR
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Python | 666/666 `unittest` PASS |
+| Python | 671/671 `unittest` PASS |
 | TUI | 35/35 TypeScript tests + build PASS |
 | Agent | 39/39 active offline cases PASS（含 `MEM-AUTO-001..010`） |
 | Channel | 32/32 versioned cases PASS |
 | 稳定性 | 20 轮 local Channel soak，640/640 PASS |
-| Feishu | OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING |
+| Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS；真实平台 Live Gate 仍 pending |
 | Memory Autopilot | A～E IMPLEMENTATION PASS；真实 IM Live 结论沿用各平台 gate |
 
 本地 fake SDK、离线场景和 640/640 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
-Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；当前发布数字以上表和 v0.6.0 为准。
+Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；Memory v0.6.0 的历史基线为
+666 Python、35 TypeScript、39/39 Agent；当前发布数字以上表和 v0.6.1 为准。
 
 ### 验证命令
 

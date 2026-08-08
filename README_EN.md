@@ -21,7 +21,7 @@
 MiniClaw brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
-> The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Memory Autopilot A–E is now implemented locally: all four verified private entry points share one Owner Memory Space, Markdown stores semantic truth, and SQLite stores the durable control plane and rebuildable FTS5 projection. Strict Feishu/Discord 15/15 evidence is still pending, and live acceptance remains evidence-specific for each messaging platform.
+> The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is now implemented locally: all four verified private entry points share one Owner Memory Space, Markdown stores semantic truth, and SQLite stores the durable control plane and rebuildable FTS5 projection.
 
 ## Why MiniClaw
 
@@ -197,17 +197,17 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 
 | Gate | Current evidence |
 | --- | --- |
-| Python | 666/666 `unittest` PASS |
+| Python | 671/671 `unittest` PASS |
 | TUI | 35/35 TypeScript tests and build PASS |
 | Agent | 39/39 active offline cases PASS, including `MEM-AUTO-001..010` |
 | Channel | 32/32 versioned cases PASS |
 | Stability | 20 local Channel rounds, 640/640 PASS |
-| Feishu | OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING |
+| Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS; real-platform Live Gates pending |
 | Memory Autopilot | A–E IMPLEMENTATION PASS; live conclusions remain platform-specific |
 
 Fake SDKs, offline scenarios, and the 640/640 local soak only establish **IMPLEMENTATION PASS**. They never masquerade as a live-platform PASS. Historical evidence lives under [`docs/evals/releases/`](docs/evals/releases/).
-The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent; current release figures are in the table above and v0.6.0.
+The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent. Memory v0.6.0 recorded 666 Python, 35 TypeScript, and 39/39 Agent; current figures are in the table above and v0.6.1.
 
 ### Verification
 

@@ -2,14 +2,14 @@
 
 > 当前结论：implementation gate 已通过；真实 Bot、WebSocket 和 Owner DM Delivery 已验证；完整 15-case、
 > 部署与 soak 仍待独立 Live Evidence。
-> 当前全仓门禁：562/562 Python、30/30 TypeScript、Agent 29/29、Channel 32/32、20 轮 local soak 640/640、Ruff PASS。
-> v0.5.1 Stabilization 已实现 Feishu Live Runner；真实状态仍是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
+> 当前全仓门禁：671/671 Python、35/35 TypeScript、Agent 39/39、Channel 32/32、20 轮 local soak 640/640、Ruff PASS。
+> v0.5.1 Stabilization 已实现 Feishu Live Runner；当前状态是 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
 
 ## 1. 先理解四层证据
 
 ```mermaid
 flowchart TB
-    P["Current Python contracts / integration\n562 tests"] --> T["pi-tui / Bridge\n30 tests"]
+    P["Current Python contracts / integration\n671 tests"] --> T["pi-tui / Bridge\n35 tests"]
     T --> A["Agent regression\n29 / 29"]
     A --> C["All Channel regression\n32 / 32"]
     C --> L["Feishu strict acceptance\nOwner DM verified / 15-case pending"]
@@ -147,7 +147,7 @@ uv build
 git diff --check
 ```
 
-当前必须得到 Python 562/562、TypeScript 30/30、Agent 29/29、Channel 32/32。以后新增测试时数字应上调，不能为了
+当前必须得到 Python 671/671、TypeScript 35/35、Agent 39/39、Channel 32/32。以后新增测试时数字应上调，不能为了
 保持文档旧数字删除测试。
 
 ## 8. 12 条飞书回归场景
@@ -261,7 +261,7 @@ fallback 才接管回复。Assistant Message 始终保存在 SQLite。
 
 ## 11. 当前完成度
 
-截至 2026-08-08，Phase 4 Core、Gateway、脱敏结构化日志/Audit、562 Python tests、30 TypeScript tests、29 条
+截至 2026-08-09，Phase 4 Core、Gateway、脱敏结构化日志/Audit、671 Python tests、35 TypeScript tests、39 条
 Agent 回归、12 条 Feishu Channel 回归、15 条 Feishu Live 场景和 20 轮 local soak 已完成。专用飞书 App/Bot、
 同应用 Owner、WebSocket ready 和两条 Owner 私聊 Delivery 已完成真实验证；完整 15-case、常驻部署与真实 Gateway
 soak 仍明确待办。

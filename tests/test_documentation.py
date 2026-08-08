@@ -32,9 +32,9 @@ class Phase5DocumentationTest(unittest.TestCase):
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("562", content)
-                self.assertIn("30", content)
-                self.assertIn("29/29", content)
+                self.assertIn("671", content)
+                self.assertIn("35", content)
+                self.assertIn("39/39", content)
                 self.assertIn("32/32", content)
                 self.assertIn("640/640", content)
                 self.assertIn("TARGETED CALLBACK LIVE VERIFIED", content)
@@ -130,10 +130,10 @@ class Phase5DocumentationTest(unittest.TestCase):
         """可视化进度页必须能一眼区分代码完成与真实平台待验收。"""
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
-            "Phase 5 implementation pass",
-            "562 Python",
-            "30 TypeScript",
-            "29/29",
+            "Memory A-E implementation pass",
+            "671 Python",
+            "35 TypeScript",
+            "39/39",
             "IMPLEMENTATION PASS",
             "32/32",
             "640/640",

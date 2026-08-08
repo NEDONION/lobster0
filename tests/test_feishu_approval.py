@@ -11,6 +11,7 @@ from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
     ApprovalCommandOutcome,
     ApprovalEnvelope,
+    approval_delivery_payload,
 )
 from miniclaw.channels.feishu_approval import FeishuApprovalActionHandler
 from miniclaw.policy.approvals import ApprovalDecision
@@ -35,6 +36,21 @@ def _result(
     )
 
 
+def _approval_payload(approval_id: int) -> str:
+    """构造 sent Approval Delivery 中保存的持久 envelope。"""
+    return approval_delivery_payload(
+        ApprovalEnvelope(
+            version=2,
+            approval_id=approval_id,
+            tool_name="write_file",
+            summary="write_file next.txt",
+            decisions=(ApprovalDecision.ONCE, ApprovalDecision.DENY),
+            expires_at="2026-08-09T10:00:00+00:00",
+            fallback_text=f"发送 /approve {approval_id} once 或 /deny {approval_id}",
+        )
+    )
+
+
 @dataclass(slots=True)
 class FakeController:
     """返回固定审批结果并记录 callback 调用。"""
@@ -43,10 +59,12 @@ class FakeController:
     error: Exception | None = None
     gate: asyncio.Event | None = None
     log: list[str] = field(default_factory=list)
+    calls: list[dict[str, Any]] = field(default_factory=list)
 
     async def handle_card_action(self, **kwargs: Any) -> ApprovalCommandOutcome:
         """记录动作并返回结果或模拟异常。"""
         self.log.append("controller")
+        self.calls.append(kwargs)
         if self.gate is not None:
             await self.gate.wait()
         if self.error is not None:
@@ -107,6 +125,22 @@ class FakeDeliveries:
 
     calls: list[dict[str, Any]] = field(default_factory=list)
     fail: bool = False
+    receipt_content: str | None = field(default_factory=lambda: _approval_payload(7))
+
+    def find_sent_by_platform_message_id(self, **kwargs: Any) -> SimpleNamespace | None:
+        """只对当前账号的 sent Approval 卡返回持久 envelope。"""
+        if (
+            kwargs
+            == {
+                "channel": "feishu",
+                "account_id": "default",
+                "platform_message_id": "om_card",
+                "kind": "approval",
+            }
+            and self.receipt_content is not None
+        ):
+            return SimpleNamespace(content=self.receipt_content)
+        return None
 
     def create_parts(self, **kwargs: Any) -> tuple[()]:
         """保存 Delivery 参数。"""
@@ -124,12 +158,17 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
         controller: FakeController,
         *,
         log: list[str] | None = None,
+        receipt_content: str | None = "default",
     ) -> tuple[FeishuApprovalActionHandler, FakeTransport, FakeMessages, FakeDeliveries]:
         """创建无网络 callback 编排器和全部 fake 依赖。"""
         shared_log = log if log is not None else []
         transport = FakeTransport(shared_log)
         messages = FakeMessages()
-        deliveries = FakeDeliveries()
+        deliveries = FakeDeliveries(
+            receipt_content=(
+                _approval_payload(7) if receipt_content == "default" else receipt_content
+            )
+        )
         return (
             FeishuApprovalActionHandler(
                 user_id=1,
@@ -173,6 +212,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(log[:2], ["update", "controller"])
+        self.assertEqual(controller.calls[0]["expected_approval_id"], 7)
         self.assertEqual([item[0] for item in transport.updates], ["om_card", "om_card"])
         self.assertEqual(
             [item[1]["header"]["template"] for item in transport.updates],
@@ -182,6 +222,44 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(deliveries.calls[0]["kind"], "message")
         self.assertEqual(deliveries.calls[0]["message_id"], 31)
         self.assertEqual(deliveries.calls[0]["reply_to_message_id"], "om_card")
+
+    async def test_unbound_or_mismatched_source_card_fails_closed(self) -> None:
+        """缺少 sent receipt 或 envelope ID 不匹配时不能更新卡片或调用 Core。"""
+        cases = (
+            None,
+            _approval_payload(8),
+            "not-json",
+        )
+        for receipt_content in cases:
+            with self.subTest(receipt_content=receipt_content):
+                controller = FakeController(
+                    ApprovalCommandOutcome(
+                        True,
+                        result=_result(),
+                        approval_id=7,
+                        decision=ApprovalDecision.ONCE,
+                    )
+                )
+                handler, transport, _, deliveries = self._handler(
+                    controller,
+                    receipt_content=receipt_content,
+                )
+
+                await handler(
+                    actor_open_id="ou_owner",
+                    value={
+                        "version": 2,
+                        "miniclaw_action": "approval",
+                        "approval_id": 7,
+                        "decision": "once",
+                    },
+                    chat_id="oc_chat",
+                    message_id="om_card",
+                )
+
+                self.assertEqual(controller.calls, [])
+                self.assertEqual(transport.updates, [])
+                self.assertEqual(deliveries.calls, [])
 
     async def test_next_approval_is_persisted_and_original_card_completes(self) -> None:
         """续跑再次等待审批时必须创建下一张 durable 卡，不能丢失。"""

@@ -3,7 +3,7 @@
 > 日期：2026-08-08
 > 文档类型：产品与工程 Gap 分析
 > 当前事实基线：`main@729a801`
-> 当前状态：Phase 5 **IMPLEMENTATION PASS**；Feishu **OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Telegram / Discord **LIVE PENDING**
+> 当前状态：Phase 5 + Memory A～E **IMPLEMENTATION PASS**；Feishu **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram / Discord **LIVE PENDING**
 > 目的：回答“MiniClaw 下一步究竟该学什么”，并把开源参考转成可测试、可回滚的工程边界。
 
 ## 1. 先用大白话说明
