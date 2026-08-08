@@ -1,7 +1,6 @@
 """MiniClaw Feishu Gateway 的生产装配、信号与有界生命周期。"""
 
 import asyncio
-import importlib.util
 import logging
 import os
 import signal
@@ -12,9 +11,19 @@ from typing import Any, Protocol
 
 from miniclaw.channels.approvals import ChannelApprovalController
 from miniclaw.channels.delivery import DeliveryWorker, split_message
+from miniclaw.channels.discord import DiscordTransport
 from miniclaw.channels.experience import ChannelExperience
 from miniclaw.channels.feishu import FeishuTransport
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.channels.supervisor import (
+    ChannelRuntime,
+    GatewayConfigError,
+    GatewaySecrets,
+    GatewaySupervisor,
+    collect_enabled_channels,
+    validate_gateway_preflight,
+)
+from miniclaw.channels.telegram import TelegramTransport
 from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.paths import StatePaths
@@ -29,25 +38,8 @@ from miniclaw.storage.database import Database
 from miniclaw.storage.tooling import ApprovalRepository
 
 
-class GatewayConfigError(ValueError):
-    """表示 Gateway 在联网前即可发现的安全配置问题。"""
-
-
 class GatewayRuntimeError(RuntimeError):
     """表示已完成配置校验后的启动或运行失败。"""
-
-
-@dataclass(frozen=True, slots=True, repr=False)
-class GatewayCredentials:
-    """短暂保存生产组件构造需要的三个 secret，repr 永不显示值。"""
-
-    model_api_key: str
-    app_id: str
-    app_secret: str
-
-    def __repr__(self) -> str:
-        """只报告字段均已配置。"""
-        return "GatewayCredentials(configured=True)"
 
 
 class RuntimeComponent(Protocol):
@@ -113,28 +105,21 @@ def validate_gateway_environment(
     config: AppConfig,
     environ: Mapping[str, str],
     *,
-    sdk_available: bool | None = None,
-) -> GatewayCredentials:
-    """在任何平台网络调用前校验开关、SDK 和三个凭据变量。"""
-    feishu = config.channels.feishu
-    if not feishu.enabled:
-        raise GatewayConfigError("Feishu channel is disabled in config.toml")
-    if sdk_available is None:
-        sdk_available = importlib.util.find_spec("lark_channel") is not None
-    names = (
-        config.provider.api_key_env,
-        feishu.app_id_env,
-        feishu.app_secret_env,
+    sdk_available: bool | Mapping[str, bool] | None = None,
+) -> GatewaySecrets:
+    """兼容旧 bool 注入，并委托 multi-channel preflight。"""
+    availability: Mapping[str, bool] | None
+    if isinstance(sdk_available, bool):
+        availability = {
+            channel: sdk_available for channel in collect_enabled_channels(config)
+        }
+    else:
+        availability = sdk_available
+    return validate_gateway_preflight(
+        config,
+        environ,
+        sdk_available=availability,
     )
-    values = tuple(str(environ.get(name, "")).strip() for name in names)
-    for name, value in zip(names, values, strict=True):
-        if not value:
-            raise GatewayConfigError(f"{name} is not configured")
-    if not sdk_available:
-        raise GatewayConfigError(
-            "official Feishu SDK is not installed; run uv sync --extra feishu"
-        )
-    return GatewayCredentials(values[0], values[1], values[2])
 
 
 async def run_gateway(
@@ -148,7 +133,7 @@ async def run_gateway(
     try:
         load_dotenv(Path.cwd() / ".env", target)
         config = load_config(paths, target)
-        credentials = validate_gateway_environment(config, target)
+        secrets = validate_gateway_environment(config, target)
     except (ConfigError, DotEnvError, GatewayConfigError):
         raise
     _configure_channel_logging()
@@ -174,9 +159,8 @@ async def run_gateway(
             continue
         installed.append(item)
     try:
-        components = await _create_components(config, paths, credentials)
-        await run_gateway_components(
-            components,
+        supervisor = await create_gateway_supervisor(config, paths, secrets)
+        await supervisor.run(
             shutdown_event=shutdown_event,
             force_event=force_event,
             ready=ready,
@@ -197,141 +181,261 @@ async def run_gateway_components(
     force_event: asyncio.Event,
     ready: Callable[[str], None],
 ) -> None:
-    """按确定顺序启动，并在任意失败路径反向释放已创建组件。"""
-    transport_connected = False
-    delivery_started = False
-    manager_started = False
-    try:
-        await components.transport.connect()
-        transport_connected = True
-        await components.delivery.start()
-        delivery_started = True
-        await components.manager.start()
-        manager_started = True
-        ready(f"MiniClaw gateway ready: feishu/{components.account_id}")
-        await shutdown_event.wait()
-    finally:
-        try:
-            components.transport.stop_receiving()
-        except Exception:
-            pass
-        if manager_started:
-            await _force_aware(
-                components.manager.stop(drain_timeout=5.0),
-                force_event,
-            )
-        if delivery_started:
-            await _force_aware(components.delivery.stop(), force_event)
-        if transport_connected:
-            await _force_aware(components.transport.disconnect(), force_event)
-        await _force_aware(components.runtime.aclose(), force_event)
+    """保留 Phase 4 单飞书测试入口，内部使用同一个 Supervisor。"""
+    supervisor = GatewaySupervisor(
+        runtime=components.runtime,
+        channels=(
+            ChannelRuntime(
+                channel="feishu",
+                account_id=components.account_id,
+                manager=components.manager,
+                delivery=components.delivery,
+                transport=components.transport,
+            ),
+        ),
+    )
+    await supervisor.run(
+        shutdown_event=shutdown_event,
+        force_event=force_event,
+        ready=ready,
+    )
 
 
-async def _force_aware(operation, force_event: asyncio.Event) -> None:
-    """让第二信号只取消当前阻塞清理，并继续释放后续资源。"""
-    task = asyncio.create_task(operation)
-    force = asyncio.create_task(force_event.wait())
-    done, _ = await asyncio.wait((task, force), return_when=asyncio.FIRST_COMPLETED)
-    if force in done and not task.done():
-        task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
-        force_event.clear()
-    else:
-        await task
-    force.cancel()
-    await asyncio.gather(force, return_exceptions=True)
-
-
-async def _create_components(
+async def create_gateway_supervisor(
     config: AppConfig,
     paths: StatePaths,
-    credentials: GatewayCredentials,
-) -> GatewayComponents:
-    """装配唯一 Runtime、Manager、Transport、能力、审批和 DeliveryWorker。"""
-    runtime: AgentRuntime = create_runtime(config, paths, credentials.model_api_key)
+    secrets: GatewaySecrets,
+    *,
+    runtime_factory: Callable[[AppConfig, StatePaths, str], AgentRuntime] | None = None,
+    channel_factories: Mapping[str, Callable[..., ChannelRuntime]] | None = None,
+) -> GatewaySupervisor:
+    """创建唯一 AgentRuntime，并按稳定顺序各装配一条 Channel pipeline。"""
+    build_runtime = runtime_factory or create_runtime
+    runtime = build_runtime(config, paths, secrets.model_api_key)
+    factories: Mapping[str, Callable[..., ChannelRuntime]] = channel_factories or {
+        "feishu": _build_feishu_channel,
+        "telegram": _build_telegram_channel,
+        "discord": _build_discord_channel,
+    }
     try:
-        database = Database(paths.database)
-        observer = ChannelObserver(database)
-        manager = create_channel_manager(
-            paths,
-            runtime,
-            limits_for_channel(config, "feishu"),
-            observer=observer,
+        channels = tuple(
+            factories[channel](config, paths, runtime, secrets)
+            for channel in collect_enabled_channels(config)
         )
-        approval_controller = ChannelApprovalController(
-            owner_external_user_id=config.channels.feishu.owner_open_id,
-            approvals=ApprovalRepository(database),
-            service=runtime.service,
-        )
-        deliveries = DeliveryRepository(database)
-        transport: FeishuTransport
-
-        async def on_card_action(
-            actor_open_id: str,
-            value: Any,
-            chat_id: str,
-            message_id: str,
-        ) -> None:
-            """把按钮决定交给 Core，并用 durable Delivery 发送 continuation。"""
-            outcome = await approval_controller.handle_card_action(
-                user_id=runtime.owner_id,
-                actor_external_user_id=actor_open_id,
-                value=value,
-            )
-            visible = outcome.result.content if outcome.result is not None else outcome.notice
-            if outcome.result is not None and outcome.result.message_id is not None:
-                deliveries.create_parts(
-                    message_id=outcome.result.message_id,
-                    channel="feishu",
-                    account_id=config.channels.feishu.account_id,
-                    external_conversation_id=chat_id,
-                    reply_to_message_id=message_id,
-                    kind="message",
-                    contents=split_message(
-                        outcome.result.content,
-                        max_chars=config.channels.feishu.message_max_chars,
-                    ),
-                )
-            if isinstance(visible, str) and visible:
-                await _best_effort_card_status(transport, message_id, visible)
-
-        transport = FeishuTransport(
-            config.channels.feishu,
-            app_id=credentials.app_id,
-            app_secret=credentials.app_secret,
-            on_inbound=manager.receive,
-            on_card_action=on_card_action,
-            observer=observer,
-        )
-        manager.attach_approvals(approval_controller)
-        limits = limits_for_channel(config, "feishu")
-        manager.attach_experience(
-            ChannelExperience(
-                transport=transport,
-                progress_enabled=config.channels.feishu.streaming_card,
-                update_interval=limits.progress_update_interval,
-                max_visible_chars=config.channels.feishu.message_max_chars,
-                observer=observer,
-            )
-        )
-        delivery = DeliveryWorker(
-            transport=transport,
-            repository=deliveries,
-            channel="feishu",
-            account_id=config.channels.feishu.account_id,
-            message_max_chars=config.channels.feishu.message_max_chars,
-            observer=observer,
-        )
-        return GatewayComponents(
-            runtime=runtime,
-            manager=manager,
-            delivery=delivery,
-            transport=transport,
-            account_id=config.channels.feishu.account_id,
-        )
+        return GatewaySupervisor(runtime=runtime, channels=channels)
     except Exception:
         await runtime.aclose()
         raise
+
+
+def _channel_common(
+    config: AppConfig,
+    paths: StatePaths,
+    runtime: AgentRuntime,
+    channel: str,
+    owner_external_user_id: str,
+) -> tuple[
+    Database,
+    ChannelObserver,
+    Any,
+    ChannelApprovalController,
+    DeliveryRepository,
+]:
+    """创建每个平台独立 Repository/Observer/Manager，但共享 TurnService。"""
+    database = Database(paths.database)
+    observer = ChannelObserver(database)
+    manager = create_channel_manager(
+        paths,
+        runtime,
+        limits_for_channel(config, channel),
+        observer=observer,
+    )
+    approvals = ChannelApprovalController(
+        owner_external_user_id=owner_external_user_id,
+        approvals=ApprovalRepository(database),
+        service=runtime.service,
+    )
+    manager.attach_approvals(approvals)
+    return database, observer, manager, approvals, DeliveryRepository(database)
+
+
+def _build_feishu_channel(
+    config: AppConfig,
+    paths: StatePaths,
+    runtime: AgentRuntime,
+    secrets: GatewaySecrets,
+) -> ChannelRuntime:
+    """装配 Feishu WS、Card approval、Experience 和 durable workers。"""
+    selected = config.channels.feishu
+    _, observer, manager, approvals, deliveries = _channel_common(
+        config,
+        paths,
+        runtime,
+        "feishu",
+        selected.owner_open_id,
+    )
+    transport: FeishuTransport
+
+    async def on_card_action(
+        actor_open_id: str,
+        value: Any,
+        chat_id: str,
+        message_id: str,
+    ) -> None:
+        outcome = await approvals.handle_card_action(
+            user_id=runtime.owner_id,
+            actor_external_user_id=actor_open_id,
+            value=value,
+        )
+        visible = outcome.result.content if outcome.result is not None else outcome.notice
+        if outcome.result is not None and outcome.result.message_id is not None:
+            deliveries.create_parts(
+                message_id=outcome.result.message_id,
+                channel="feishu",
+                account_id=selected.account_id,
+                external_conversation_id=chat_id,
+                reply_to_message_id=message_id,
+                kind="message",
+                contents=split_message(
+                    outcome.result.content,
+                    max_chars=selected.message_max_chars,
+                ),
+            )
+        if isinstance(visible, str) and visible:
+            await _best_effort_card_status(transport, message_id, visible)
+
+    transport = FeishuTransport(
+        selected,
+        app_id=secrets.feishu_app_id,
+        app_secret=secrets.channel_tokens["feishu"],
+        on_inbound=manager.receive,
+        on_card_action=on_card_action,
+        observer=observer,
+    )
+    limits = limits_for_channel(config, "feishu")
+    manager.attach_experience(
+        ChannelExperience(
+            transport=transport,
+            progress_enabled=selected.streaming_card,
+            update_interval=limits.progress_update_interval,
+            max_visible_chars=selected.message_max_chars,
+            observer=observer,
+        )
+    )
+    delivery = DeliveryWorker(
+        transport=transport,
+        repository=deliveries,
+        channel="feishu",
+        account_id=selected.account_id,
+        message_max_chars=selected.message_max_chars,
+        observer=observer,
+    )
+    return ChannelRuntime(
+        channel="feishu",
+        account_id=selected.account_id,
+        manager=manager,
+        delivery=delivery,
+        transport=transport,
+        observer=observer,
+    )
+
+
+def _build_telegram_channel(
+    config: AppConfig,
+    paths: StatePaths,
+    runtime: AgentRuntime,
+    secrets: GatewaySecrets,
+) -> ChannelRuntime:
+    """装配 Telegram long polling、文本审批、Experience 和 durable workers。"""
+    selected = config.channels.telegram
+    _, observer, manager, _, deliveries = _channel_common(
+        config,
+        paths,
+        runtime,
+        "telegram",
+        str(selected.owner_user_id),
+    )
+    transport = TelegramTransport(
+        selected,
+        token=secrets.channel_tokens["telegram"],
+        on_inbound=manager.receive,
+        observer=observer,
+    )
+    limits = limits_for_channel(config, "telegram")
+    manager.attach_experience(
+        ChannelExperience(
+            transport=transport,
+            progress_enabled=True,
+            update_interval=limits.progress_update_interval,
+            max_visible_chars=selected.message_max_chars,
+            observer=observer,
+        )
+    )
+    delivery = DeliveryWorker(
+        transport=transport,
+        repository=deliveries,
+        channel="telegram",
+        account_id=selected.account_id,
+        message_max_chars=selected.message_max_chars,
+        observer=observer,
+    )
+    return ChannelRuntime(
+        channel="telegram",
+        account_id=selected.account_id,
+        manager=manager,
+        delivery=delivery,
+        transport=transport,
+        observer=observer,
+    )
+
+
+def _build_discord_channel(
+    config: AppConfig,
+    paths: StatePaths,
+    runtime: AgentRuntime,
+    secrets: GatewaySecrets,
+) -> ChannelRuntime:
+    """装配 Discord Gateway、文本审批、Experience 和 durable workers。"""
+    selected = config.channels.discord
+    _, observer, manager, _, deliveries = _channel_common(
+        config,
+        paths,
+        runtime,
+        "discord",
+        str(selected.owner_user_id),
+    )
+    transport = DiscordTransport(
+        selected,
+        token=secrets.channel_tokens["discord"],
+        on_inbound=manager.receive,
+        observer=observer,
+    )
+    limits = limits_for_channel(config, "discord")
+    manager.attach_experience(
+        ChannelExperience(
+            transport=transport,
+            progress_enabled=True,
+            update_interval=limits.progress_update_interval,
+            max_visible_chars=selected.message_max_chars,
+            observer=observer,
+        )
+    )
+    delivery = DeliveryWorker(
+        transport=transport,
+        repository=deliveries,
+        channel="discord",
+        account_id=selected.account_id,
+        message_max_chars=selected.message_max_chars,
+        observer=observer,
+    )
+    return ChannelRuntime(
+        channel="discord",
+        account_id=selected.account_id,
+        manager=manager,
+        delivery=delivery,
+        transport=transport,
+        observer=observer,
+    )
 
 
 def _configure_channel_logging() -> None:

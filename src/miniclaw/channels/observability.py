@@ -19,6 +19,7 @@ type TransportState = Literal[
     "disconnected",
     "failed",
 ]
+type SupervisorState = Literal["ready", "degraded", "stopping"]
 type InboundState = Literal["accepted", "duplicate", "ignored"]
 type TurnState = Literal[
     "started",
@@ -41,6 +42,7 @@ _SAFE_CODE = re.compile(r"[a-z0-9_.-]{1,96}\Z")
 _TRANSPORT_STATES = frozenset(
     {"connecting", "connected", "reconnecting", "stopping", "disconnected", "failed"}
 )
+_SUPERVISOR_STATES = frozenset({"ready", "degraded", "stopping"})
 _INBOUND_STATES = frozenset({"accepted", "duplicate", "ignored"})
 _TURN_STATES = frozenset(
     {"started", "completed", "waiting_approval", "failed", "interrupted"}
@@ -51,7 +53,16 @@ _DELIVERY_STATES = frozenset(
 _RETRY_DECISIONS = frozenset({"none", "retry", "unknown", "terminal", "fallback"})
 _APPROVAL_STATES = frozenset({"none", "waiting", "approved", "denied", "expired"})
 _CAPABILITIES = frozenset(
-    {"typing_add", "typing_remove", "progress_card_create", "progress_card_update"}
+    {
+        "typing_add",
+        "typing_remove",
+        "progress_card_create",
+        "progress_card_update",
+        "typing_start",
+        "typing_stop",
+        "progress_create",
+        "progress_update",
+    }
 )
 
 
@@ -89,6 +100,26 @@ class ChannelObserver:
         if error_code is not None:
             metadata["error_code"] = _error_code(error_code)
         self._record(f"channel.transport.{state}", metadata)
+
+    def supervisor(
+        self,
+        *,
+        channel: str,
+        account_id: str,
+        state: SupervisorState,
+        error_code: str | None = None,
+    ) -> None:
+        """记录 pipeline 编排状态；不接收任何外部平台标识。"""
+        if state not in _SUPERVISOR_STATES:
+            raise ValueError("invalid supervisor state")
+        metadata: dict[str, Any] = {
+            "channel": _dimension(channel),
+            "account_id": _dimension(account_id),
+            "supervisor_state": state,
+        }
+        if error_code is not None:
+            metadata["error_code"] = _error_code(error_code)
+        self._record(f"channel.supervisor.{state}", metadata)
 
     def inbound(
         self,

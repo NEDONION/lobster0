@@ -739,9 +739,9 @@ git commit -m "feat(discord): 打通 Gateway、safe delivery 与 typing experien
 
 ### Step 9.1 — RED preflight and credential bundle
 
-- [ ] `collect_enabled_channels(config)` 保持固定 `feishu, telegram, discord` 顺序；空集合报 `no_channels_enabled`。
-- [ ] 一次校验 model key、每个 enabled Channel 的 Token/SDK/owner relations；任一失败时 runtime factory、database business write 和 transport factory 调用数都是 0。
-- [ ] 凭据按 platform 分隔并 `repr=False`：
+- [x] `collect_enabled_channels(config)` 保持固定 `feishu, telegram, discord` 顺序；空集合报 `no_channels_enabled`。
+- [x] 一次校验 model key、每个 enabled Channel 的 Token/SDK/owner relations；任一失败时 runtime factory、database business write 和 transport factory 调用数都是 0。
+- [x] 凭据按 platform 分隔并 `repr=False`：
 
 ```python
 @dataclass(frozen=True, slots=True, repr=False)
@@ -754,7 +754,7 @@ class GatewaySecrets:
         return f"GatewaySecrets(configured={names})"
 ```
 
-- [ ] duplicated `(channel, account_id)` 拒绝；不同 platform 相同 account ID 合法。
+- [x] duplicated `(channel, account_id)` 拒绝；不同 platform 相同 account ID 合法。
 
 Run RED:
 
@@ -767,7 +767,7 @@ Expected RED: 现有 validation 只接受 Feishu 三个 secret。
 
 ### Step 9.2 — RED runtime bundle and lifecycle
 
-- [ ] 定义：
+- [x] 定义：
 
 ```python
 @dataclass(slots=True)
@@ -786,22 +786,22 @@ class GatewaySupervisor:
     channels: tuple[ChannelRuntime, ...]
 ```
 
-- [ ] 断言 runtime factory 正好 1 次；三个 Channel 各自 manager/delivery/transport 正好 1 个。
-- [ ] 每个 Channel startup：transport connect → delivery start → manager start。
-- [ ] 全局 shutdown：先全部 stop receiving，再按 reverse channel order 执行 manager stop → delivery stop → transport disconnect，最后 runtime close 一次。
-- [ ] startup 第 N 个失败时，已启动组件反向清理；未启动平台不调用 stop；runtime 仍关闭。
-- [ ] 一个 Channel 的运行期 task 异常只把该 runtime 标记 degraded，其他 ready pipeline 可继续 receive/send。
-- [ ] 一个平台 queue full 不占用其他平台 queue；同 Conversation 仍串行，不同 Channel/Conversation 可并发；Agent 网络等待期间不持有 SQLite transaction。
-- [ ] 第二信号只取消当前阻塞 cleanup，继续清理其余资源。
-- [ ] ready 文本只列 `channel/account_id`，不列任何平台 ID。
-- [ ] Observer 记录 `channel.supervisor.ready/degraded/stopping`，并沿用 hash 后的 message/conversation 字段；observer/audit 自身失败不改变 lifecycle 或业务终态。
+- [x] 断言 runtime factory 正好 1 次；三个 Channel 各自 manager/delivery/transport 正好 1 个。
+- [x] 每个 Channel startup：transport connect → delivery start → manager start。
+- [x] 全局 shutdown：先全部 stop receiving，再按 reverse channel order 执行 manager stop → delivery stop → transport disconnect，最后 runtime close 一次。
+- [x] startup 第 N 个失败时，已启动组件反向清理；未启动平台不调用 stop；runtime 仍关闭。
+- [x] 一个 Channel 的运行期 task 异常只把该 runtime 标记 degraded，其他 ready pipeline 可继续 receive/send。
+- [x] 一个平台 queue full 不占用其他平台 queue；同 Conversation 仍串行，不同 Channel/Conversation 可并发；Agent 网络等待期间不持有 SQLite transaction。
+- [x] 第二信号只取消当前阻塞 cleanup，继续清理其余资源。
+- [x] ready 文本只列 `channel/account_id`，不列任何平台 ID。
+- [x] Observer 记录 `channel.supervisor.ready/degraded/stopping`，并沿用 hash 后的 message/conversation 字段；observer/audit 自身失败不改变 lifecycle 或业务终态。
 
 ### Step 9.3 — Implement platform factories
 
-- [ ] `gateway.py` 只负责 `.env`、config、signal 和 supervisor entry；具体 Feishu/Telegram/Discord build 分到小 factory。
-- [ ] 每个 factory 创建自己的 observer、manager、approval controller、experience、delivery、transport，但复用同一个 `AgentRuntime.service`。
-- [ ] Feishu factory 用 Task 2/4 新公共接口，功能行为不变。
-- [ ] supervisor 不循环重建 runtime；平台 reconnect 由 Transport/SDK 负责。
+- [x] `gateway.py` 只负责 `.env`、config、signal 和 supervisor entry；具体 Feishu/Telegram/Discord build 分到小 factory。
+- [x] 每个 factory 创建自己的 observer、manager、approval controller、experience、delivery、transport，但复用同一个 `AgentRuntime.service`。
+- [x] Feishu factory 用 Task 2/4 新公共接口，功能行为不变。
+- [x] supervisor 不循环重建 runtime；平台 reconnect 由 Transport/SDK 负责。
 
 Run GREEN:
 

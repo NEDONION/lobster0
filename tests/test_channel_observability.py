@@ -155,6 +155,41 @@ class ChannelObservabilityTest(unittest.TestCase):
             "feishu_not_connected",
         )
 
+    def test_supervisor_states_are_durable_without_platform_identifiers(self) -> None:
+        """ready/degraded/stopping 只记录平台、本地账号和稳定错误码。"""
+        self.observer.supervisor(
+            channel="telegram",
+            account_id="personal",
+            state="ready",
+        )
+        self.observer.supervisor(
+            channel="telegram",
+            account_id="personal",
+            state="degraded",
+            error_code="telegram_poll_failed",
+        )
+        self.observer.supervisor(
+            channel="telegram",
+            account_id="personal",
+            state="stopping",
+        )
+
+        with self.database.connect_read_only() as connection:
+            rows = connection.execute(
+                "SELECT event_type, metadata_json FROM audit_events ORDER BY id"
+            ).fetchall()
+        self.assertEqual(
+            [row["event_type"] for row in rows],
+            [
+                "channel.supervisor.ready",
+                "channel.supervisor.degraded",
+                "channel.supervisor.stopping",
+            ],
+        )
+        combined = "\n".join(row["metadata_json"] for row in rows)
+        self.assertNotIn("chat:", combined)
+        self.assertNotIn("message:", combined)
+
     def test_audit_database_failure_is_logged_without_breaking_channel(self) -> None:
         """Audit 表缺失/不可写时应输出安全降级标记，不能让业务回调失败。"""
         unavailable = Database(
