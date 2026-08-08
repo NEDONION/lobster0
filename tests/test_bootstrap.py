@@ -23,7 +23,7 @@ class BootstrapTest(unittest.TestCase):
         result = initialize_state(self.paths)
         config = load_config(self.paths, {}, {})
 
-        self.assertEqual(result.applied_migrations, (1,))
+        self.assertEqual(result.applied_migrations, (1, 2))
         self.assertEqual(result.owner.display_name, "Owner")
         self.assertEqual(config.agent.model, "deepseek-v4-pro")
         self.assertEqual(config.provider.base_url, "https://api.deepseek.com")
