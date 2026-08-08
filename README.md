@@ -40,11 +40,12 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > persistent compaction。Personal Profile 已接通 Home 普通文件只读、受控外部写入、NVM/uv/pnpm 等用户 CLI 的
 > 确定性发现和 `lark-cli --version` 离线纵切；`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning
 > probe。当前回归基线为
-> **517 Python tests + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + 640/640 local soak**。
+> **519 Python tests + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + 640/640 local soak**。
 > Feishu 的 15 条版本化真实场景、有界 Gateway Runner、只读 SQLite evidence、人工客户端 evidence 和 Secret scan
-> 已实现并通过本地契约门禁，当前准确状态是 **FEISHU E2E HARNESS PASS / REAL BOT PENDING**。真实
-> `lark-cli auth status`、飞书 Scope、企业应用发布和 15/15 Evidence 仍是显式 live gate；Telegram 与 Discord 当前也都为
-> **LIVE PENDING**。本机三个 IM 的真实平台 WebSocket/Gateway、权限和 20 轮对话仍待人工验收。离线 fake SDK
+> 已实现并通过本地契约门禁。专用企业应用、机器人、Scope、Owner allowlist 与 WebSocket 已完成真实配置；两条 Owner
+> 私聊已穿过 Inbox、Agent 和 Outbox，并各自一次 Delivery `sent`。当前准确状态是
+> **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；完整 15/15、群聊、审批、重连和常驻 soak 仍是显式
+> live gate。Telegram 与 Discord 当前也都为 **LIVE PENDING**。离线 fake SDK
 > 通过不冒充 production verified。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
@@ -271,6 +272,7 @@ miniclaw/
 | [Phase 4 完成性审计](docs/engineering/phase-4/completion-audit.md) | 逐项 requirement → code → test → live evidence 矩阵与剩余外部验收门 |
 | [Phase 5 Telegram/Discord 工程落地](docs/engineering/phase-5/telegram-discord-channels.md) | 单 Runtime/多 Pipeline、两个 official Transport、身份、审批、恢复与故障隔离 |
 | [Phase 5.1 真实飞书 Bot 与 Live E2E](docs/engineering/phase-5/feishu-live-e2e.md) | 机器人创建、最小 Scope、同应用 Owner discovery、15 条真实用例、Evidence 与排障 |
+| [飞书 Gateway 运行时与 macOS 常驻](docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md) | SDK event loop、富文本入站、处理中表情、真实 Owner DM 证据与 launchd/VPS 运行方式 |
 | [Phase 5 测试与真实验收](docs/engineering/phase-5/testing-and-live-acceptance.md) | 32-case、640-check、15 项 live harness 与证据口径 |
 | [Phase 5 故障排查](docs/engineering/phase-5/troubleshooting.md) | SDK/Token、Telegram 409、Discord intents/403、限流、恢复与 Secret scan |
 | [Phase 5 完成性审计](docs/engineering/phase-5/completion-audit.md) | requirement → code → automated/live evidence 矩阵 |
@@ -281,7 +283,7 @@ miniclaw/
 | [Eval v0.4.0 发布记录](docs/evals/releases/v0.4.0.md) | Phase 4 的 391+25 tests、24+12 回归与真实飞书待验收项 |
 | [Eval v0.4.1 发布记录](docs/evals/releases/v0.4.1.md) | Personal Machine 权限、412+27 tests、28+12 回归与本机 lark-cli 只读纵切 |
 | [Eval v0.5.0 发布记录](docs/evals/releases/v0.5.0.md) | Phase 5 合并基线的 483+27 tests、28+32 回归、640 soak 与双平台 LIVE PENDING |
-| [Eval v0.5.1 发布记录](docs/evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与 REAL BOT PENDING 的准确证据口径 |
+| [Eval v0.5.1 发布记录](docs/evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与当时 REAL BOT PENDING 的历史证据口径 |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

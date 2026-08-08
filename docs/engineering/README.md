@@ -19,7 +19,7 @@
 | [Phase 2.3B：Personal Machine 权限与 CLI 发现](phase-2/personal-machine-permissions.md) | Workspace/Personal Profile、多根读写、敏感路径硬拒绝、NVM/uv/pnpm CLI 发现、最小子进程环境、Doctor 与四条回归场景。 | 全盘任意写、密码库读取、Shell rc、真实飞书认证/Scope。 |
 | [Autopilot 权限与紧凑审批 UI](phase-2/autopilot-permissions-and-approval-ui.md) | 四档权限、Owner 私聊信任、运行时切换、脱敏审计、84×18 可滚动审批框。 | 绕过硬拒绝、群聊 Autopilot、模式自动写回配置。 |
 | [Phase 2.4：Pinned HTTPS 与 SSRF 防护](phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 公网校验、固定 IP/TLS hostname、每跳重验、文本预算、审批与 crash recovery。 | 浏览器、认证 Header、任意方法、企业代理。 |
-| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 当前 517 Python + 30 TypeScript tests、28 Agent + 32 Channel 场景、恢复、Doctor 和发布手册。 | 三平台真实 E2E、自动 Prompt/Skill 演进。 |
+| [Phase 2：回归、恢复与调试](phase-2/testing-and-debugging.md) | 当前 519 Python + 30 TypeScript tests、28 Agent + 32 Channel 场景、恢复、Doctor 和发布手册。 | 三平台真实 E2E、自动 Prompt/Skill 演进。 |
 | [Phase 2.2：Approvals CLI（历史迁移）](phase-2/cli-approvals.md) | 记录旧入口为何被单入口 TUI 取代。 | 当前可执行命令。 |
 
 ## Phase 3：Memory、Skills 与上下文预算
@@ -37,23 +37,24 @@
 | [运行、测试与故障排查](phase-4/testing-and-operations.md) | 15 项 Doctor、412+27 tests、28+12 回归、local soak、live smoke、重启/断线/审批验收规范。 | 未配置凭据时的真实平台结论。 |
 | [完成性审计与证据矩阵](phase-4/completion-audit.md) | Section 4/22 逐项映射到代码、自动化测试和 live gate，明确本地 PASS 与真实平台 PENDING。 | 没有凭据时伪造 production verified。 |
 
-功能主线已完成 Phase 5 implementation（517 Python tests + 30 TypeScript tests + 28/28 Agent + 32/32 Channel）。
-P2.3B 已完成 Personal Profile 与本机用户 CLI 的确定性发现；`lark-cli --version` 只验证发现/启动，不代表认证。
-本机尚未配置飞书 App ID/App Secret，因此 production live acceptance、`lark-cli auth status` 与当前版本 live
-DeepSeek release eval 仍是独立待办。准确状态是“代码与离线门禁完成”，不是“真实飞书已验证”。
+功能主线已完成 Phase 5 implementation（519 Python tests + 30 TypeScript tests + 28/28 Agent + 32/32 Channel）。
+P2.3B 已完成 Personal Profile 与本机用户 CLI 的确定性发现。专用飞书 App、Bot、认证、Scope、Owner allowlist、
+WebSocket ready 与两条 Owner 私聊回复已经得到真实平台证据；完整 15-case suite、长期 soak 和 Telegram/Discord
+仍待验收。准确状态是“Owner DM delivery verified”，不是“全平台 production verified”。
 
 ## Phase 5：Telegram 与 Discord
 
 | 文档 | 已验证内容 | 仍待外部证据 |
 | --- | --- | --- |
 | [Telegram 与 Discord 工程落地说明](phase-5/telegram-discord-channels.md) | 单 Runtime/多 Pipeline、GatewaySupervisor、long polling、Discord Gateway、身份/会话、Typing/Preview、Approval、分片和故障隔离。 | 两个平台真实账号验收。 |
-| [真实飞书 Bot 与 Live E2E](phase-5/feishu-live-e2e.md) | 最小 Scope、同应用 Owner discovery、15 条版本化场景、Gateway Runner、只读 evidence、Secret scan。 | 创建/发布真实 Bot 并完成 15/15。 |
-| [测试与 live acceptance](phase-5/testing-and-live-acceptance.md) | 517 Python、30 TypeScript、28 Agent、32 Channel、640 soak、三平台 live gate。 | 三个平台真实 evidence。 |
+| [真实飞书 Bot 与 Live E2E](phase-5/feishu-live-e2e.md) | App/Bot 已配置、同应用 Owner discovery、15 条版本化场景、Gateway Runner、只读 evidence、Secret scan。 | 完成剩余 15/15。 |
+| [飞书 Gateway 运行时与 macOS 常驻](phase-5/feishu-gateway-runtime-and-macos-service.md) | SDK event loop、`connect_until_ready`、`text/post`、Typing、Owner DM evidence、launchd/VPS。 | 自动安装系统服务、24×7 soak。 |
+| [测试与 live acceptance](phase-5/testing-and-live-acceptance.md) | 519 Python、30 TypeScript、28 Agent、32 Channel、640 soak、三平台 live gate。 | 三个平台真实 evidence。 |
 | [故障排查手册](phase-5/troubleshooting.md) | SDK/Token、Telegram 409、Discord intents/403、限流、degraded、Approval、恢复和 Secret scan。 | 平台侧实际权限工单。 |
 | [完成性审计](phase-5/completion-audit.md) | requirement → code → automated/live evidence 矩阵。 | production verified exit gate。 |
 
-Phase 5 当前是 **IMPLEMENTATION PASS**：517 Python tests、30/30 TypeScript、28/28 Agent、32/32 Channel 与
-640/640 local soak。Feishu 是 **FEISHU E2E HARNESS PASS / REAL BOT PENDING**；Telegram/Discord 是
+Phase 5 当前是 **IMPLEMENTATION PASS**：519 Python tests、30/30 TypeScript、28/28 Agent、32/32 Channel 与
+640/640 local soak。Feishu 是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Telegram/Discord 是
 **LIVE PENDING**。详细权威规格见
 [Phase 5 Telegram/Discord 工程设计](../superpowers/specs/2026-08-08-phase-5-telegram-discord-design.md)，逐项开发步骤见
 [Phase 5 Telegram/Discord Implementation Plan](../superpowers/plans/2026-08-08-phase-5-telegram-discord.md)。

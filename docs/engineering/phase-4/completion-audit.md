@@ -4,16 +4,15 @@
 >
 > 本地实现结论：**PASS**
 >
-> 真实飞书租户结论：**PENDING（缺 App ID / App Secret 与已配置企业应用）**
+> 真实飞书租户结论：**OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**
 >
-> 当前全仓门禁：517/517 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
+> 当前全仓门禁：519/519 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
 
 ## 1. 先说结论
 
 Phase 4 的代码、离线回归、恢复语义、安全边界、Gateway CLI、Doctor、结构化日志和 SQLite Audit 已经落地。
-当前不能写成“生产验收完成”，原因不是还有一段本地代码没写，而是本机没有真实飞书企业应用凭据，也没有可供
-测试的事件订阅、Owner Open ID 和群 Chat ID。没有这些外部条件，WebSocket 真实连接、20 轮对话、真实卡片权限和
-断网重连只能保持 `LIVE PENDING`。
+专用飞书应用、事件订阅、Owner allowlist、真实 WebSocket 和两条 Owner 私聊回复也已验证。当前仍不能写成
+“生产验收完成”，因为 15-case suite、群聊、审批、断网重连、长时间 soak 与最小权限复核尚未完成。
 
 ```mermaid
 flowchart LR
@@ -106,7 +105,7 @@ Provider 隐藏 reasoning 和异常原文。
 | Gate | 当前证据 | 结论 |
 | --- | --- | --- |
 | 设计、PRD、架构、工程文档一致 | Phase 4 文档组 + 本矩阵 | LOCAL PASS |
-| 当前全量 Python | `517/517` | PASS |
+| 当前全量 Python | `519/519` | PASS |
 | pi-tui / Bridge | `30/30` | PASS |
 | Agent 回归 | `28/28` | PASS |
 | Feishu Channel 回归 | `12/12` | PASS |

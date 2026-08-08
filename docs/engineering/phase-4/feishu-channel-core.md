@@ -1,7 +1,7 @@
 # Phase 4：飞书 Channel 与 Gateway 工程文档
 
-> 状态：核心链路与 `miniclaw gateway` 离线生命周期已实现；真实飞书账号 E2E、部署与 soak 尚未完成
-> 当前全仓门禁：517/517 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS
+> 状态：核心链路与 `miniclaw gateway` 已实现；真实 WebSocket 和 Owner DM Delivery 已验证，15-case、部署与 soak 尚未完成
+> 当前全仓门禁：519/519 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS
 
 ## 1. 现在完成到了哪里
 
@@ -171,7 +171,7 @@ uv build
 git diff --check
 ```
 
-当前结果：517/517 Python、30/30 TypeScript、28/28 offline Agent cases、32/32 Channel cases、20 轮
+当前结果：519/519 Python、30/30 TypeScript、28/28 offline Agent cases、32/32 Channel cases、20 轮
 全平台 Channel local soak 为 640/640、Ruff PASS，Python wheel/sdist 构建成功。
 
 ## 10. 尚未完成与下一步

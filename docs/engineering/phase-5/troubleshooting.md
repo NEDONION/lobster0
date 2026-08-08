@@ -1,8 +1,8 @@
 # Phase 5：Feishu / Telegram / Discord 故障排查手册
 
-> 当前状态：**IMPLEMENTATION PASS**；517 Python tests、30 TypeScript、32/32 Channel、640/640 local soak。
+> 当前状态：**IMPLEMENTATION PASS**；519 Python tests、30 TypeScript、32/32 Channel、640/640 local soak。
 >
-> Feishu 是 **FEISHU E2E HARNESS PASS / REAL BOT PENDING**；
+> Feishu 是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；
 >
 > Telegram 与 Discord 都是 **LIVE PENDING**，所以本页给出可执行排查路径，不声称已在真实账号验证。
 
@@ -250,6 +250,24 @@ Feishu Runner 只输出稳定错误码：
 
 如果 Gateway ready 而 Inbox 没增长，先查平台权限/admission，不要改 Prompt。
 
+### 日志出现 `This event loop is already running`
+
+这是 `lark-channel-sdk 1.2.0` 的导入时 loop 绑定与 MiniClaw `asyncio.run()` 顺序冲突。当前 CLI 会在启动 Core loop
+前预加载 SDK，Transport 再调用 `connect_until_ready()`，让 Supervisor 能继续启动 Worker。不要在已运行的 coroutine
+里重新惰性 import SDK，也不要把前台阻塞 `connect()` 当 ready signal。
+
+### 明明发了文字，却没有 `channel.inbound.accepted`
+
+先检查 Adapter Audit 的 ignored reason。飞书富文本编辑器可能把普通文字发成 `msg_type=post`。当前实现接受 `text`
+和 `post`，但只提取 official SDK 的安全 `body_text`；其他消息类型仍 fail closed。若运行旧提交，`post` 会被标成
+`unsupported_message`。
+
+### 回复成功但事后看不到 Typing 表情
+
+Typing reaction 在 claim Inbox 后添加，在成功、失败或等待审批的 `finish()` 中移除。任务完成后查询 reaction 为 0
+属于正常清理。最终闭环以 `channel.delivery.sent` 为准；处理期间是否可见需要在客户端实时观察。完整时序见
+[飞书 Gateway 运行时与 macOS 常驻](feishu-gateway-runtime-and-macos-service.md)。
+
 ## 19. Feishu Case 007 永远不通过
 
 Case 007 消费 Case 006 已创建的 pending Approval。Runner checkpoint 会保存动作前 pending Approval 的内部 ID，并允许
@@ -286,5 +304,5 @@ uv run python -m unittest tests.test_feishu_live_e2e tests.test_feishu_evals -v
 uv run ruff check .
 ```
 
-当前门禁规模是 517 Python、30 TypeScript、28/28 Agent、32/32 Channel、640/640 local soak。状态为
-**IMPLEMENTATION PASS**；Feishu **REAL BOT PENDING**；Telegram/Discord **LIVE PENDING**。
+当前门禁规模是 519 Python、30 TypeScript、28/28 Agent、32/32 Channel、640/640 local soak。状态为
+**IMPLEMENTATION PASS**；Feishu **15-CASE LIVE PENDING**；Telegram/Discord **LIVE PENDING**。

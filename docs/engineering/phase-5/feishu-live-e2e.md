@@ -1,12 +1,13 @@
 # Phase 5.1：真实飞书 Bot 与 Live E2E 工程落地
 
-> 当前结论：**IMPLEMENTATION PASS / FEISHU E2E HARNESS PASS / REAL BOT PENDING**
+> 当前结论：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**
 >
-> 新鲜本地基线：517 Python tests、30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、
+> 新鲜本地基线：519 Python tests、30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、
 > 20 轮 640/640 Channel checks。
 >
-> 这句话的意思是：真实验收程序已经实现并通过离线测试，但当前机器还没有完成 MiniClaw 专用飞书应用的创建、
-> 发布、同应用 Owner Open ID 发现和 15/15 人工验收。因此现在不能写 `FEISHU E2E VERIFIED`。
+> 这句话的意思是：专用飞书应用、机器人、事件订阅、同应用 Owner、真实 WebSocket 和两条 Owner 私聊回复已经
+> 打通；两条 Delivery 都是一次发送成功。完整 15/15 人工验收仍未执行，因此现在不能写 `FEISHU_E2E_VERIFIED`。
+> SDK 运行时与常驻说明见 [Gateway 运行时与 macOS 常驻](feishu-gateway-runtime-and-macos-service.md)。
 
 这份文档是一份可以边看图、边照着操作的工程手册。它回答五个问题：
 
@@ -508,13 +509,14 @@ flowchart TD
 
 真实 Feishu gate 只有在下面全部满足时完成：
 
-- [ ] MiniClaw 专用企业自建应用已经创建；
-- [ ] 机器人能力已启用；
+- [x] MiniClaw 专用企业自建应用已经创建；
+- [x] 机器人能力已启用；
 - [ ] 只申请最小三个 Scope；
-- [ ] `im.message.receive_v1` 使用长连接；
-- [ ] 测试版本已发布且可用范围最小；
-- [ ] `.env` 是本机 0600 regular file；
-- [ ] Owner Open ID 来自同一个 Bot App；
+- [x] `im.message.receive_v1` 使用长连接；
+- [x] 测试版本已发布并可由 Owner 使用；
+- [x] `.env` 是本机私密 regular file；
+- [x] Owner Open ID 来自同一个 Bot App；
+- [x] 两条真实 Owner 私聊均产生一次成功 Delivery；
 - [ ] 私聊 P0 先通过；
 - [ ] 只加入专用测试群；
 - [ ] Runner 返回 0；
@@ -527,5 +529,6 @@ flowchart TD
 ```text
 IMPLEMENTATION PASS
 FEISHU E2E HARNESS PASS
-REAL BOT PENDING
+OWNER-DM DELIVERY VERIFIED
+15-CASE LIVE PENDING
 ```

@@ -25,17 +25,18 @@ class Phase5DocumentationTest(unittest.TestCase):
             "docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md",
             "docs/engineering/phase-5/testing-and-live-acceptance.md",
             "docs/engineering/phase-5/feishu-live-e2e.md",
-            "docs/evals/releases/v0.5.1.md",
+            "docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md",
         )
         for relative in paths:
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("517", content)
+                self.assertIn("519", content)
                 self.assertIn("30", content)
                 self.assertIn("32/32", content)
                 self.assertIn("640/640", content)
-                self.assertIn("REAL BOT PENDING", content)
+                self.assertIn("OWNER-DM DELIVERY VERIFIED", content)
+                self.assertIn("15-CASE LIVE PENDING", content)
 
     def test_phase5_operational_documents_are_present_and_linked(self) -> None:
         """实现、测试、排障和完成审计必须各有独立入口。"""
@@ -45,6 +46,7 @@ class Phase5DocumentationTest(unittest.TestCase):
         for name in (
             "telegram-discord-channels.md",
             "feishu-live-e2e.md",
+            "feishu-gateway-runtime-and-macos-service.md",
             "testing-and-live-acceptance.md",
             "troubleshooting.md",
             "completion-audit.md",
@@ -57,12 +59,13 @@ class Phase5DocumentationTest(unittest.TestCase):
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
             "Phase 5 implementation pass",
-            "517 Python",
+            "519 Python",
             "30 TypeScript",
             "IMPLEMENTATION PASS",
             "32/32",
             "640/640",
-            "REAL BOT PENDING",
+            "OWNER-DM DELIVERY VERIFIED",
+            "15-CASE LIVE PENDING",
             "Telegram live pending",
             "Discord live pending",
         ):

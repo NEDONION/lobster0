@@ -2,10 +2,10 @@
 
 > 当前结论：**IMPLEMENTATION PASS**
 >
-> 当前全仓自动化证据：517/517 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、
+> 当前全仓自动化证据：519/519 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、
 > 32/32 Channel cases、20 轮 640/640 Channel checks。
 >
-> Feishu：**FEISHU E2E HARNESS PASS / REAL BOT PENDING**。
+> Feishu：**FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
 >
 > 外部证据：Telegram **LIVE PENDING**；Discord **LIVE PENDING**。
 
@@ -45,7 +45,7 @@ pnpm --dir tui test
 
 | Gate | Result |
 | --- | ---: |
-| Python | Phase 5 exit 483/483 PASS；当前全仓 517/517 PASS |
+| Python | Phase 5 exit 483/483 PASS；当前全仓 519/519 PASS |
 | TypeScript | 当前全仓 30/30 PASS |
 
 Python 全量覆盖 Config、Provider、Turn、十个 Tool、Approval、Memory、Skills、TUI fallback、三平台 Adapter/
@@ -230,16 +230,18 @@ Feishu 不复用上面两个通用人工清单，而是使用 `FEISHU-LIVE-001..
 日志做精确字节匹配；发现命中时强制把 `secret_scan_zero` 改为 fail，但不会输出 Secret 内容。
 
 Feishu Evidence 进一步使用 strict nested schema、0600、`O_EXCL` 和 `fsync`，并重新推导 count/release status 防止
-篡改。当前没有真实 Feishu Evidence，所以状态必须保持 **REAL BOT PENDING**。
+篡改。当前真实 Gateway handshake 和两条 Owner DM Delivery 已通过，但尚未生成完整 15/15 Evidence，所以状态必须
+保持 **OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。真实运行记录见
+[飞书 Gateway 运行时与 macOS 常驻](feishu-gateway-runtime-and-macos-service.md)。
 
 ## 9. 发布判定
 
 ```mermaid
 flowchart TD
-    A["517 Python + 30 TypeScript"] --> B["28 Agent + 32 Channel"]
+    A["519 Python + 30 TypeScript"] --> B["28 Agent + 32 Channel"]
     B --> C["640/640 local soak"]
     C --> F{"Feishu 15/15 real Bot?"}
-    F -->|"No"| R["FEISHU HARNESS PASS / REAL BOT PENDING"]
+    F -->|"No"| R["OWNER-DM VERIFIED / 15-CASE LIVE PENDING"]
     F -->|"Yes"| D{"Telegram 15/15 live?"}
     D -->|"No"| P["IMPLEMENTATION PASS / LIVE PENDING"]
     D -->|"Yes"| E{"Discord 15/15 live?"}
@@ -247,5 +249,5 @@ flowchart TD
     E -->|"Yes"| V["PRODUCTION VERIFIED"]
 ```
 
-当前发布结论是 `IMPLEMENTATION PASS`；Feishu 是 `FEISHU E2E HARNESS PASS / REAL BOT PENDING`，Telegram 和
+当前发布结论是 `IMPLEMENTATION PASS`；Feishu 是 `FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING`，Telegram 和
 Discord 是 `LIVE PENDING`。不要用 fake SDK、32/32、640/640 或 Runner 自测替代真实平台 evidence。

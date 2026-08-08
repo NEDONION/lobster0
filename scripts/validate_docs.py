@@ -16,6 +16,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md"),
     Path("docs/engineering/phase-5/telegram-discord-channels.md"),
     Path("docs/engineering/phase-5/feishu-live-e2e.md"),
+    Path("docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md"),
     Path("docs/engineering/phase-5/testing-and-live-acceptance.md"),
     Path("docs/engineering/phase-5/troubleshooting.md"),
     Path("docs/engineering/phase-5/completion-audit.md"),
@@ -33,15 +34,16 @@ FACT_RELATIVE_DOCS = (
     Path("docs/getting-started/20260807_本地运行指南.md"),
     Path("docs/engineering/phase-5/testing-and-live-acceptance.md"),
     Path("docs/engineering/phase-5/feishu-live-e2e.md"),
-    Path("docs/evals/releases/v0.5.1.md"),
+    Path("docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md"),
 )
 REQUIRED_FACTS = (
     "IMPLEMENTATION PASS",
-    "517",
+    "519",
     "30",
     "32/32",
     "640/640",
-    "REAL BOT PENDING",
+    "OWNER-DM DELIVERY VERIFIED",
+    "15-CASE LIVE PENDING",
 )
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 FENCE = re.compile(r"^\s*```([^`]*)$")

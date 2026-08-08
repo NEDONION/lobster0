@@ -4,7 +4,7 @@
 >
 > 发布口径：**IMPLEMENTATION PASS / LIVE PENDING**
 >
-> 当前全仓门禁：517/517 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、
+> 当前全仓门禁：519/519 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、
 > 640/640 local soak。
 
 这份表把 Phase 5 的要求逐项映射到代码、自动化证据和仍需真实平台完成的 evidence。它用于防止“代码文件存在”被
@@ -16,9 +16,9 @@
 | --- | --- | --- | --- | --- |
 | Telegram | 完整 | PASS | PENDING | IMPLEMENTATION PASS |
 | Discord | 完整 | PASS | PENDING | IMPLEMENTATION PASS |
-| Single-runtime Gateway | 完整 | PASS | 三平台并发待凭据 | IMPLEMENTATION PASS |
-| 飞书兼容性 | 保持 | 12/12 PASS | 仍 PENDING | 兼容回归 PASS |
-| Phase 5 总体 | 完整 | PASS | 两个平台 PENDING | 非 production verified |
+| Single-runtime Gateway | 完整 | PASS | Feishu ready；三平台并发待验 | IMPLEMENTATION PASS |
+| 飞书兼容性 | 保持 | 12/12 PASS | Owner DM Delivery verified；15-case pending | LIVE PARTIAL |
+| Phase 5 总体 | 完整 | PASS | Feishu partial；另两平台 pending | 非 production verified |
 
 ## 2. Config、安装与 Doctor
 
@@ -106,7 +106,7 @@ flowchart TB
 
 | Gate | Expected | Actual | Result |
 | --- | ---: | ---: | --- |
-| Python unittest | all pass | Phase 5 exit 483/483；当前 517/517 | PASS |
+| Python unittest | all pass | Phase 5 exit 483/483；当前 519/519 | PASS |
 | TypeScript | all pass | 30/30 | PASS |
 | Offline Agent | all active | 28/28 | PASS |
 | Feishu Channel | retain old | 12/12 | PASS |
@@ -151,10 +151,10 @@ Secret 或外部 ID。
 
 1. Telegram 真实 Bot 15/15；
 2. Discord 真实 Bot 15/15；
-3. 飞书既有真实 WebSocket exit gate；
+3. 飞书完整 15-case（群聊、审批、重连、长消息、重启与隐私扫描）；
 4. 长期 VPS soak 与平台 SLA 观察；
 5. Phase 6 反馈→提案→评测→人工批准的受控演进；
 6. Phase 7 Docker/VPS 发布闭环。
 
-因此当前唯一准确写法是：**Phase 5 IMPLEMENTATION PASS；Telegram LIVE PENDING；Discord LIVE PENDING；
-整体不是 PRODUCTION VERIFIED。**
+因此当前唯一准确写法是：**Phase 5 IMPLEMENTATION PASS；Feishu OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE
+PENDING；Telegram LIVE PENDING；Discord LIVE PENDING；整体不是 PRODUCTION VERIFIED。**
