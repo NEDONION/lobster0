@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from miniclaw.channels.approvals import ChannelApprovalController
-from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.delivery import DeliveryWorker, split_message
+from miniclaw.channels.experience import ChannelExperience
 from miniclaw.channels.feishu import FeishuTransport
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig, ConfigError, load_config
@@ -304,10 +304,12 @@ async def _create_components(
             observer=observer,
         )
         manager.attach_approvals(approval_controller)
-        manager.attach_capabilities(
-            ChannelCapabilities(
+        limits = limits_for_channel(config, "feishu")
+        manager.attach_experience(
+            ChannelExperience(
                 transport=transport,
-                streaming_card=config.channels.feishu.streaming_card,
+                progress_enabled=config.channels.feishu.streaming_card,
+                update_interval=limits.progress_update_interval,
                 max_visible_chars=config.channels.feishu.message_max_chars,
                 observer=observer,
             )

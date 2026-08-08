@@ -442,7 +442,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
                     update_interval=0.01,
                 )
                 manager = self._manager(service, queue_size=2, worker_count=1)
-                manager.attach_capabilities(capabilities)
+                manager.attach_experience(capabilities)
                 message_id = f"om_cap_{index}"
                 await manager.start()
                 try:

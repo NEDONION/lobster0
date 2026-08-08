@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import ModuleType
 from typing import Any, Protocol
+from uuid import uuid4
 
 from miniclaw.channels.base import (
     ChannelTransportError,
@@ -17,6 +18,7 @@ from miniclaw.channels.base import (
 )
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import FeishuConfig
+from miniclaw.storage.channels import StoredInboundEvent
 
 _MESSAGE_ID = re.compile(r"om_[A-Za-z0-9_-]{1,128}\Z")
 _OPEN_ID = re.compile(r"ou_[A-Za-z0-9_-]{1,128}\Z")
@@ -157,6 +159,7 @@ class FeishuTransport:
         self._unsubscribers: list[Callable[[], Any]] = []
         self._connected = False
         self._connection_state = "disconnected"
+        self._typing_tokens: dict[str, tuple[str, str]] = {}
         self._channel = self._build_channel(app_id, app_secret)
 
     def __repr__(self) -> str:
@@ -294,6 +297,55 @@ class FeishuTransport:
             raise _transport_error(error) from None
         receipt = _send_receipt(result, default_message_id=platform_message_id)
         return receipt
+
+    async def start_typing(self, event: StoredInboundEvent) -> str | None:
+        """把平台无关 Typing 意图映射为飞书 reaction，返回 opaque token。"""
+        reaction_id = await self.add_typing(event.reply_to_message_id)
+        if reaction_id is None:
+            return None
+        if len(self._typing_tokens) >= 256:
+            self._typing_tokens.pop(next(iter(self._typing_tokens)))
+        token = uuid4().hex
+        self._typing_tokens[token] = (event.reply_to_message_id, reaction_id)
+        return token
+
+    async def stop_typing(self, token: str | None) -> None:
+        """用 opaque token 清理飞书 reaction；缺失或失败均为 best-effort。"""
+        if token is None:
+            return
+        target = self._typing_tokens.pop(token, None)
+        if target is None:
+            return
+        await self.remove_typing(*target)
+
+    async def create_progress(
+        self,
+        event: StoredInboundEvent,
+        text: str,
+        *,
+        idempotency_key: str,
+    ) -> SendReceipt:
+        """把通用 progress preview 创建意图映射为飞书消息卡片。"""
+        return await self.send_card(
+            conversation_id=event.external_conversation_id,
+            reply_to_message_id=event.reply_to_message_id,
+            card=_progress_card(text, incomplete=False, completed=False),
+            idempotency_key=idempotency_key,
+        )
+
+    async def update_progress(
+        self,
+        platform_message_id: str,
+        text: str,
+        *,
+        incomplete: bool,
+        completed: bool,
+    ) -> SendReceipt:
+        """把通用 progress 状态映射为飞书卡片更新。"""
+        return await self.update_card(
+            platform_message_id,
+            _progress_card(text, incomplete=incomplete, completed=completed),
+        )
 
     def _build_channel(self, app_id: str, app_secret: str) -> Any:
         """创建 explicit secure configs；凭据只在此传给 official SDK。"""
@@ -500,6 +552,37 @@ def _transport_error(error: Any) -> ChannelTransportError:
         retryable=retryable,
         unknown=unknown,
     )
+
+
+def _progress_card(
+    text: str,
+    *,
+    incomplete: bool,
+    completed: bool,
+) -> dict[str, Any]:
+    """仅在飞书边界把通用 preview 状态渲染为 Card JSON。"""
+    if completed:
+        title = "MiniClaw 回复"
+        template = "green"
+    elif incomplete:
+        title = "MiniClaw 回复（未完成）"
+        template = "orange"
+    else:
+        title = "MiniClaw 正在回复"
+        template = "blue"
+    return {
+        "schema": "2.0",
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "title": {"tag": "plain_text", "content": title},
+            "template": template,
+        },
+        "body": {
+            "elements": [
+                {"tag": "markdown", "content": text or "…"},
+            ],
+        },
+    }
 
 
 def _safe_text(value: str) -> str:

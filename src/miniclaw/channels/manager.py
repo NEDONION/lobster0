@@ -16,8 +16,8 @@ from miniclaw.channels.approvals import (
     approval_delivery_payload,
 )
 from miniclaw.channels.base import DeliveryKind, InboundMessage
-from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.delivery import split_message
+from miniclaw.channels.experience import ChannelExperience
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.providers.base import StreamHandler
 from miniclaw.storage.channels import (
@@ -143,15 +143,19 @@ class ChannelManager:
         self._workers: list[asyncio.Task[None]] = []
         self._feeder: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
-        self._capabilities: ChannelCapabilities | None = None
+        self._experience: ChannelExperience | None = None
         self._approvals: ApprovalHandler | None = None
         self._observer = observer
 
-    def attach_capabilities(self, capabilities: ChannelCapabilities) -> None:
-        """在启动前绑定依赖同一个 Transport 的平台体验能力。"""
+    def attach_experience(self, experience: ChannelExperience) -> None:
+        """在启动前绑定依赖同一个 Transport 的平台无关体验能力。"""
         if self._workers or self._feeder is not None:
-            raise RuntimeError("Channel capabilities must be attached before start")
-        self._capabilities = capabilities
+            raise RuntimeError("Channel experience must be attached before start")
+        self._experience = experience
+
+    def attach_capabilities(self, capabilities: ChannelExperience) -> None:
+        """保留 Phase 4 进程内兼容别名；新装配应调用 attach_experience。"""
+        self.attach_experience(capabilities)
 
     def attach_approvals(self, approvals: ApprovalHandler) -> None:
         """在启动前绑定只调用 Core continuation 的审批控制器。"""
@@ -297,8 +301,8 @@ class ChannelManager:
             )
             activity = (
                 None
-                if self._capabilities is None
-                else self._capabilities.activity(event)
+                if self._experience is None
+                else self._experience.activity(event)
             )
             if activity is not None:
                 await activity.start()

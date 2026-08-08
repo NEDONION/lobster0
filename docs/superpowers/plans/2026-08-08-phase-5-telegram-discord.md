@@ -379,7 +379,7 @@ git commit -m "feat(approval): 引入 neutral v2 envelope 并兼容 Feishu v1"
 
 ### Step 4.1 — RED the public Experience protocol
 
-- [ ] 定义：
+- [x] 定义：
 
 ```python
 class ChannelExperienceTransport(Protocol):
@@ -402,10 +402,10 @@ class ChannelExperienceTransport(Protocol):
     ) -> SendReceipt: ...
 ```
 
-- [ ] `ChannelExperience.activity(event)` 只消费公开 `model_text_delta`，不读取 provider hidden reasoning。
-- [ ] activity 的 typing token、preview message ID、visible text、interval、finished 状态完全是单 Turn 私有状态。
-- [ ] 所有 Transport 异常被 observer 记录为 `<channel>_typing_failed` / `<channel>_progress_failed`，不向 Agent Turn 抛出。
-- [ ] finish 幂等，失败时 `incomplete=True, completed=False`，成功时 `completed=True`。
+- [x] `ChannelExperience.activity(event)` 只消费公开 `model_text_delta`，不读取 provider hidden reasoning。
+- [x] activity 的 typing token、preview message ID、visible text、interval、finished 状态完全是单 Turn 私有状态。
+- [x] 所有 Transport 异常被 observer 记录为 `<channel>_typing_failed` / `<channel>_progress_failed`，不向 Agent Turn 抛出。
+- [x] finish 幂等，失败时 `incomplete=True, completed=False`，成功时 `completed=True`。
 
 Run RED:
 
@@ -417,14 +417,14 @@ Expected RED: `miniclaw.channels.experience` 不存在。
 
 ### Step 4.2 — Implement shared activity state
 
-- [ ] 从当前 `ChannelCapabilities/CapabilityActivity` 移动 bounded append、interval gating、idempotency key 和 finish cleanup。
-- [ ] `ChannelCapabilities` 暂时成为 Feishu compatibility adapter，公开旧构造形状但内部委托 `ChannelExperience`；下一版本可删除，Phase 5 不做破坏性删改。
-- [ ] Manager 字段和 attach API 改为 `ChannelExperience`，并保留 `attach_capabilities()` 的 deprecated in-process alias 供旧测试与 Feishu 装配迁移。
+- [x] 从当前 `ChannelCapabilities/CapabilityActivity` 移动 bounded append、interval gating、idempotency key 和 finish cleanup。
+- [x] `ChannelCapabilities` 暂时成为 Feishu compatibility adapter，公开旧构造形状但内部委托 `ChannelExperience`；下一版本可删除，Phase 5 不做破坏性删改。
+- [x] Manager 字段和 attach API 改为 `ChannelExperience`，并保留 `attach_capabilities()` 的 deprecated in-process alias 供旧测试与 Feishu 装配迁移。
 
 ### Step 4.3 — Adapt Feishu without behavior change
 
-- [ ] 在 `FeishuTransport` 上实现 Experience protocol 的四个方法，内部调用现有 add/remove typing 与 send/update card。
-- [ ] Feishu final Markdown、streaming card fallback、Observer failure isolation 全部保持 Phase 4 语义。
+- [x] 在 `FeishuTransport` 上实现 Experience protocol 的四个方法，内部调用现有 add/remove typing 与 send/update card。
+- [x] Feishu final Markdown、streaming card fallback、Observer failure isolation 全部保持 Phase 4 语义。
 
 Run GREEN:
 

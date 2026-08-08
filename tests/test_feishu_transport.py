@@ -1,12 +1,14 @@
 """Official lark-channel-sdk Transport 边界测试。"""
 
 import unittest
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
 from miniclaw.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
 from miniclaw.channels.feishu import FeishuTransport
 from miniclaw.config import FeishuConfig
+from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
 from tests.fakes.fake_channel import (
     FakeOfficialSdk,
     FakeSdkSendResult,
@@ -290,6 +292,62 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sdk.channel.sent[1][1], {"card": {"schema": "2.0"}})
         await transport.update_card("om_card", {"schema": "2.0", "body": {}})
         self.assertEqual(sdk.channel.cards_updated[-1][0], "om_card")
+
+    async def test_generic_experience_maps_to_feishu_reaction_and_card(self) -> None:
+        """通用 Experience 意图应在 Transport 内映射为飞书 reaction/card。"""
+        sdk = FakeOfficialSdk((FakeSdkSendResult(True, "om_progress"),))
+        transport = self._transport(sdk)
+        now = datetime.now(UTC)
+        event = StoredInboundEvent(
+            key=InboundEventKey("feishu", "work", "om_inbound"),
+            event_id="evt_inbound",
+            external_user_id="ou_owner",
+            external_conversation_id="oc_allowed",
+            chat_type="p2p",
+            message_type="text",
+            content="private question",
+            reply_to_message_id="om_inbound",
+            session_id=1,
+            status="running",
+            attempts=1,
+            last_error_code=None,
+            received_at=now,
+            updated_at=now,
+        )
+
+        token = await transport.start_typing(event)
+        receipt = await transport.create_progress(
+            event,
+            "第一段",
+            idempotency_key="progress-uuid",
+        )
+        await transport.update_progress(
+            receipt.platform_message_id,
+            "完整回答",
+            incomplete=False,
+            completed=True,
+        )
+        await transport.stop_typing(token)
+
+        self.assertIsNotNone(token)
+        self.assertNotEqual(token, "reaction_typing")
+        self.assertEqual(sdk.channel.typing_added, ["om_inbound"])
+        self.assertEqual(
+            sdk.channel.typing_removed,
+            [("om_inbound", "reaction_typing")],
+        )
+        self.assertEqual(sdk.channel.sent[0][0], "oc_allowed")
+        self.assertEqual(sdk.channel.sent[0][2].uuid, "progress-uuid")
+        self.assertEqual(
+            sdk.channel.sent[0][1]["card"]["body"]["elements"][0]["content"],
+            "第一段",
+        )
+        self.assertEqual(
+            sdk.channel.cards_updated[-1][1]["body"]["elements"][0]["content"],
+            "完整回答",
+        )
+        self.assertNotIn("reaction_typing", repr(transport))
+        self.assertNotIn("private question", repr(transport))
 
     async def test_sdk_failures_map_to_stable_redacted_errors(self) -> None:
         """SDK 失败只暴露 MiniClaw 稳定码、重试属性和不确定发送属性。"""

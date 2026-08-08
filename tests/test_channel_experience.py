@@ -1,0 +1,186 @@
+"""平台无关 Typing 与 progress preview 的 best-effort 测试。"""
+
+import unittest
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
+
+from miniclaw.agent.events import RunEvent
+from miniclaw.channels.base import ChannelTransportError, SendReceipt
+from miniclaw.channels.experience import (
+    ChannelExperience,
+    ChannelExperienceTransport,
+)
+from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
+
+
+@dataclass(slots=True)
+class Clock:
+    """可推进单调时钟。"""
+
+    value: float = 0.0
+
+    def __call__(self) -> float:
+        return self.value
+
+
+@dataclass(slots=True)
+class FakeExperienceTransport:
+    """记录平台无关体验调用，并可注入安全失败。"""
+
+    fail_typing: bool = False
+    fail_progress: bool = False
+    typing_started: list[StoredInboundEvent] = field(default_factory=list)
+    typing_stopped: list[str | None] = field(default_factory=list)
+    created: list[tuple[StoredInboundEvent, str, str]] = field(default_factory=list)
+    updated: list[tuple[str, str, bool, bool]] = field(default_factory=list)
+
+    async def start_typing(self, event: StoredInboundEvent) -> str | None:
+        self.typing_started.append(event)
+        if self.fail_typing:
+            raise ChannelTransportError("telegram_typing_failed")
+        return "opaque-typing-token"
+
+    async def stop_typing(self, token: str | None) -> None:
+        self.typing_stopped.append(token)
+
+    async def create_progress(
+        self,
+        event: StoredInboundEvent,
+        text: str,
+        *,
+        idempotency_key: str,
+    ) -> SendReceipt:
+        self.created.append((event, text, idempotency_key))
+        if self.fail_progress:
+            raise ChannelTransportError("telegram_progress_failed")
+        return SendReceipt("progress-message")
+
+    async def update_progress(
+        self,
+        platform_message_id: str,
+        text: str,
+        *,
+        incomplete: bool,
+        completed: bool,
+    ) -> SendReceipt:
+        self.updated.append((platform_message_id, text, incomplete, completed))
+        if self.fail_progress:
+            raise ChannelTransportError("telegram_progress_failed")
+        return SendReceipt(platform_message_id)
+
+
+@dataclass(slots=True)
+class Observer:
+    """记录脱敏 capability failure。"""
+
+    events: list[dict[str, Any]] = field(default_factory=list)
+
+    def capability(self, **values: Any) -> None:
+        self.events.append(values)
+
+
+class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
+    """验证通用 Experience 不依赖 Card/Reaction 等平台术语。"""
+
+    def setUp(self) -> None:
+        self.clock = Clock()
+        self.event = StoredInboundEvent(
+            key=InboundEventKey("telegram", "default", "chat:1:message:2"),
+            event_id="update:3",
+            external_user_id="1",
+            external_conversation_id="chat:1",
+            chat_type="p2p",
+            message_type="text",
+            content="private question",
+            reply_to_message_id="chat:1:message:2",
+            session_id=1,
+            status="running",
+            attempts=1,
+            last_error_code=None,
+            received_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+
+    def _activity(
+        self,
+        transport: FakeExperienceTransport,
+        *,
+        observer: Observer | None = None,
+    ):
+        experience = ChannelExperience(
+            transport=transport,
+            progress_enabled=True,
+            update_interval=0.5,
+            max_visible_chars=20,
+            clock=self.clock,
+            observer=observer,
+        )
+        return experience.activity(self.event)
+
+    async def test_protocol_and_full_success_lifecycle(self) -> None:
+        """Typing、公开 delta、限频 preview 和 completed finish 应按意图调用。"""
+        transport = FakeExperienceTransport()
+        self.assertIsInstance(transport, ChannelExperienceTransport)
+        activity = self._activity(transport)
+
+        await activity.start()
+        await activity.on_event(RunEvent("model_text_delta", 1, {"text": "你"}))
+        await activity.on_event(RunEvent("model_reasoning", 1, {"text": "hidden"}))
+        await activity.on_event(RunEvent("model_text_delta", 1, {"text": "好"}))
+        self.clock.value = 0.6
+        await activity.on_event(RunEvent("model_text_delta", 1, {"text": "！"}))
+        outcome = await activity.finish(content="你好！", failed=False)
+
+        self.assertEqual(transport.typing_started, [self.event])
+        self.assertEqual(transport.typing_stopped, ["opaque-typing-token"])
+        self.assertEqual(len(transport.created), 1)
+        self.assertNotIn("hidden", repr((transport.created, transport.updated)))
+        self.assertEqual(transport.updated[-1], ("progress-message", "你好！", False, True))
+        self.assertTrue(outcome.progress_created)
+        self.assertFalse(outcome.progress_failed)
+        self.assertTrue(outcome.final_delivery_required)
+
+    async def test_failures_and_finish_are_contained_and_idempotent(self) -> None:
+        """体验失败只产生稳定短码，重复 finish 不重复清理或改变最终 Delivery。"""
+        observer = Observer()
+        transport = FakeExperienceTransport(fail_typing=True, fail_progress=True)
+        activity = self._activity(transport, observer=observer)
+
+        await activity.start()
+        await activity.on_event(RunEvent("model_text_delta", 1, {"text": "partial"}))
+        first = await activity.finish(content=None, failed=True)
+        second = await activity.finish(content="ignored", failed=False)
+
+        self.assertEqual(first, second)
+        self.assertTrue(first.progress_failed)
+        self.assertEqual(transport.typing_stopped, [None])
+        self.assertEqual(
+            [event["error_code"] for event in observer.events],
+            ["telegram_typing_failed", "telegram_progress_failed"],
+        )
+        self.assertNotIn("private question", repr(observer.events))
+
+    async def test_each_activity_has_private_bounded_state(self) -> None:
+        """两个 Turn 不共享 preview text，单条可见缓存不能超过配置上限。"""
+        transport = FakeExperienceTransport()
+        experience = ChannelExperience(
+            transport=transport,
+            progress_enabled=True,
+            update_interval=0.5,
+            max_visible_chars=5,
+            clock=self.clock,
+        )
+        first = experience.activity(self.event)
+        second = experience.activity(self.event)
+
+        await first.on_event(RunEvent("model_text_delta", 1, {"text": "abcdefgh"}))
+        await second.on_event(RunEvent("model_text_delta", 2, {"text": "xy"}))
+
+        self.assertEqual(transport.created[0][1], "abcde")
+        self.assertEqual(transport.created[1][1], "xy")
+        self.assertNotEqual(first.idempotency_key, "chat:1:message:2")
+
+
+if __name__ == "__main__":
+    unittest.main()
