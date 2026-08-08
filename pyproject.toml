@@ -19,6 +19,9 @@ dependencies = [
 dev = [
   "ruff>=0.9",
 ]
+feishu = [
+  "lark-channel-sdk>=1.2,<2",
+]
 
 [project.scripts]
 miniclaw = "miniclaw.cli:main"
