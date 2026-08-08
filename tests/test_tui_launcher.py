@@ -19,6 +19,10 @@ class TuiLauncherTest(unittest.TestCase):
         self.addCleanup(self.temporary_directory.cleanup)
         self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
 
+    def _mark_initialized(self) -> None:
+        """为只测试 launcher 分支的用例创建最小状态标记。"""
+        self.paths.config.write_text("[agent]\n", encoding="utf-8")
+
     @mock.patch("miniclaw.tui_launcher.subprocess.run")
     @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
     def test_auto_launches_compatible_built_pi_tui_with_argv(
@@ -28,6 +32,7 @@ class TuiLauncherTest(unittest.TestCase):
     ) -> None:
         """默认模式必须用当前 Python 和显式 argv 启动 Node TUI。"""
         entry = self.paths.home / "dist" / "main.js"
+        self._mark_initialized()
         inspect_pi_tui.return_value = PiTuiInspection(
             node=Path("/opt/node/bin/node"),
             node_version=(22, 19, 0),
@@ -68,6 +73,34 @@ class TuiLauncherTest(unittest.TestCase):
 
     @mock.patch("miniclaw.tui_launcher.run_tui", return_value=0)
     @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
+    def test_auto_uses_textual_onboarding_when_state_is_not_initialized(
+        self,
+        inspect_pi_tui,
+        run_tui,
+    ) -> None:
+        """首次裸启动必须保留同入口初始化能力，不能启动必然失败的 Bridge。"""
+        stderr = io.StringIO()
+
+        result = run_default_tui(self.paths, environ={}, stderr=stderr)
+
+        self.assertEqual(result, 0)
+        self.assertIn("初始化", stderr.getvalue())
+        inspect_pi_tui.assert_not_called()
+        run_tui.assert_called_once_with(self.paths)
+
+    def test_explicit_pi_requires_initialized_state(self) -> None:
+        """显式 pi 模式应给出 init 指导，而不是留下损坏的 Alt Screen。"""
+        with self.assertRaises(TuiLaunchError) as captured:
+            run_default_tui(
+                self.paths,
+                environ={"MINICLAW_TUI": "pi"},
+                stderr=io.StringIO(),
+            )
+
+        self.assertIn("miniclaw init", str(captured.exception))
+
+    @mock.patch("miniclaw.tui_launcher.run_tui", return_value=0)
+    @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
     def test_auto_reports_problem_and_falls_back_without_crashing(
         self,
         inspect_pi_tui,
@@ -81,6 +114,7 @@ class TuiLauncherTest(unittest.TestCase):
             problem="pi-tui 需要 Node.js >= 22.19.0；当前为 20.19.0",
         )
         stderr = io.StringIO()
+        self._mark_initialized()
 
         result = run_default_tui(self.paths, environ={}, stderr=stderr)
 
@@ -92,6 +126,7 @@ class TuiLauncherTest(unittest.TestCase):
     @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
     def test_explicit_pi_fails_when_runtime_is_not_ready(self, inspect_pi_tui) -> None:
         """显式 pi 模式不能静默换壳，便于部署脚本发现缺失依赖。"""
+        self._mark_initialized()
         inspect_pi_tui.return_value = PiTuiInspection(
             node=None,
             node_version=None,

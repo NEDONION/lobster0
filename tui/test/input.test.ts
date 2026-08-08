@@ -112,6 +112,18 @@ test("large bracketed paste submits the full original text once", async () => {
   app.stop();
 });
 
+test("shift enter inserts a newline without starting a turn", async () => {
+  const { app, bridge, terminal } = await createApp();
+  app.editor.setText("第一行");
+
+  terminal.send("\u001b[13;2u");
+  app.editor.handleInput("第二行");
+
+  assert.equal(app.editor.getExpandedText(), "第一行\n第二行");
+  assert.equal(bridge.turns.length, 0);
+  app.stop();
+});
+
 test("failed submit restores the exact long draft and shows a safe error", async () => {
   const { app, bridge, terminal } = await createApp();
   const text = `保留草稿\n${"字".repeat(40_000)}`;
@@ -147,6 +159,27 @@ test("provider failure event restores the submitted draft without exposing diagn
   const rendered = app.renderDocument(80).join("\n");
   assert.match(rendered, /ProviderProtocolError/);
   assert.doesNotMatch(rendered, /secret provider response body/);
+  app.stop();
+});
+
+test("unexpected Core operation failure unlocks input with a safe summary", async () => {
+  const { app, bridge, terminal } = await createApp();
+  const text = "未知 Core 异常也不能把界面锁死";
+  app.editor.setText(text);
+  terminal.send("\r");
+  await app.whenIdle();
+
+  bridge.emit("event.bridge_error", {
+    code: "core_operation_failed",
+    message: "secret traceback and provider body",
+    retryable: false,
+  });
+
+  assert.equal(app.editor.getExpandedText(), text);
+  assert.equal(app.editor.disableSubmit, false);
+  const rendered = app.renderDocument(80).join("\n");
+  assert.match(rendered, /core_operation_failed/);
+  assert.doesNotMatch(rendered, /secret traceback|provider body/);
   app.stop();
 });
 
@@ -230,6 +263,15 @@ test("approval overlay sends the selected scoped decision to Core", async () => 
 
 test("copy, language and trace commands stay local", async () => {
   const { app, bridge, terminal, clipboard } = await createApp();
+  bridge.emit("event.model_usage", {
+    turn_id: 5,
+    context_tokens: 4096,
+    input_tokens: 1024,
+    output_tokens: 128,
+    tool_calls: 2,
+    iteration: 3,
+    provider_request_id: "req-debug-42",
+  });
   bridge.emit("event.turn_finished", {
     turn_id: 5,
     status: "completed",
@@ -242,9 +284,13 @@ test("copy, language and trace commands stay local", async () => {
   app.editor.setText("/lang en");
   terminal.send("\r");
   await app.whenIdle();
+  app.editor.setText("/status");
+  terminal.send("\r");
+  await app.whenIdle();
 
   assert.deepEqual(clipboard.copied, ["完整\n回复"]);
   assert.equal(app.language, "en");
   assert.equal(bridge.turns.length, 0);
+  assert.match(app.renderDocument(80).join("\n"), /req-debug-42/);
   app.stop();
 });

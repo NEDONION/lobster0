@@ -17,8 +17,13 @@ async function main(): Promise<number> {
   const shutdown = () => app.stop(130);
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
-  await app.start();
-  return app.waitForExit();
+  try {
+    await app.start();
+    return app.waitForExit();
+  } catch (error) {
+    app.stop(2);
+    throw error;
+  }
 }
 
 try {

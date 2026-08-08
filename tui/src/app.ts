@@ -289,6 +289,14 @@ export class MiniClawTui {
 
   private onFrame(frame: ServerFrame): void {
     this.applyState(reduceFrame(this.currentState, frame));
+    if (frame.type === "event.bridge_error") {
+      const code = typeof frame.payload.code === "string" ? frame.payload.code : "core_operation_failed";
+      this.restoreSubmittedDraft();
+      this.editor.disableSubmit = false;
+      this.tui.setFocus(this.editor);
+      this.appendLocal(`${this.text("Core 操作失败", "Core operation failed")}: ${code}`, "error");
+      return;
+    }
     if (frame.type === "event.approval_required" && this.currentState.pendingApproval) {
       this.showApproval();
       return;
@@ -400,9 +408,9 @@ export class MiniClawTui {
   private statusText(): string {
     const telemetry = this.currentState.telemetry;
     if (this.currentLanguage === "zh-CN") {
-      return `上下文 ${telemetry.contextTokens ?? "N/A"}/${this.contextBudget} · 输入 ${telemetry.inputTokens ?? "N/A"} · 输出 ${telemetry.outputTokens ?? "N/A"} · 工具 ${telemetry.toolCalls} · 迭代 ${telemetry.iterations} · 耗时 ${telemetry.durationMs ?? "N/A"} ms`;
+      return `上下文 ${telemetry.contextTokens ?? "N/A"}/${this.contextBudget} · 输入 ${telemetry.inputTokens ?? "N/A"} · 输出 ${telemetry.outputTokens ?? "N/A"} · 工具 ${telemetry.toolCalls} · 迭代 ${telemetry.iterations} · 耗时 ${telemetry.durationMs ?? "N/A"} ms · 请求 ${telemetry.providerRequestId ?? "N/A"}`;
     }
-    return `context ${telemetry.contextTokens ?? "N/A"}/${this.contextBudget} · in ${telemetry.inputTokens ?? "N/A"} · out ${telemetry.outputTokens ?? "N/A"} · tools ${telemetry.toolCalls} · iter ${telemetry.iterations} · time ${telemetry.durationMs ?? "N/A"} ms`;
+    return `context ${telemetry.contextTokens ?? "N/A"}/${this.contextBudget} · in ${telemetry.inputTokens ?? "N/A"} · out ${telemetry.outputTokens ?? "N/A"} · tools ${telemetry.toolCalls} · iter ${telemetry.iterations} · time ${telemetry.durationMs ?? "N/A"} ms · request ${telemetry.providerRequestId ?? "N/A"}`;
   }
 
   private text(chinese: string, english: string): string {

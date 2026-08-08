@@ -105,6 +105,11 @@ def run_default_tui(
         raise TuiLaunchError("MINICLAW_TUI must be auto, pi, or textual")
     if mode == "textual":
         return run_tui(paths)
+    if not paths.config.is_file():
+        if mode == "pi":
+            raise TuiLaunchError("pi-tui requires initialized state; run miniclaw init first")
+        print("warning: 状态尚未初始化；使用 Textual onboarding。", file=error_stream)
+        return run_tui(paths)
 
     inspection = inspect_pi_tui(source)
     if not inspection.ready:
