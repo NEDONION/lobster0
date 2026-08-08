@@ -346,10 +346,10 @@ Use a temporary MiniClaw home to validate Bridge hello/shutdown, explicit Textua
 
 Confirm every spec invariant has implementation/test evidence; scan for secrets, `shell:true`, raw Provider errors, unbounded protocol reads, stdout logs, stale test counts and generated junk.
 
-- [ ] **Step 4: Integrate the explicitly authorized result**
+- [x] **Step 4: Integrate the explicitly authorized result**
 
 Fetch without force, merge latest `origin/main` into the feature branch if it moved, rerun affected gates, merge/push `main`, and verify `origin/main` resolves to the delivered commit.
 
-- [ ] **Step 5: Synchronize the original local main safely**
+- [x] **Step 5: Synchronize the original local main safely**
 
 Inspect its dirty paths, back them up to a temporary directory, use a targeted recoverable stash, fast-forward to `origin/main`, reapply the stash, and verify both commit equality and preservation of every pre-existing local modification.
