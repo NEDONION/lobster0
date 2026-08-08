@@ -13,6 +13,7 @@ __pycache__/
 htmlcov/
 
 .venv/
+node_modules/
 .idea/
 dist/
 build/
