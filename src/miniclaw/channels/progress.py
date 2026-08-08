@@ -358,6 +358,8 @@ def _tool_summary(tool_name: str, arguments: dict[str, JsonValue]) -> tuple[str,
         return "查看记忆", _safe_scalar(arguments.get("scope"), "固定范围")
     if tool_name == "propose_memory":
         return "更新记忆", "仅记录经安全校验的事实"
+    if tool_name == "memory_remember":
+        return "记住事实", "仅记录 Owner 明确要求的事实"
     if tool_name == "system_info":
         return "查看系统信息", _safe_scalar(arguments.get("kind"), "本机公开信息")
     return "调用工具", safe_name

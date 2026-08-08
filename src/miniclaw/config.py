@@ -25,6 +25,7 @@ BUILTIN_TOOL_NAMES = (
     "run_command",
     "read_memory",
     "propose_memory",
+    "memory_remember",
 )
 DEFAULT_TOOL_MODE = "autopilot"
 

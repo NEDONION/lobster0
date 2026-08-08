@@ -5,6 +5,7 @@ import json
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import PurePosixPath
 from typing import cast
 
 from miniclaw.memory.models import SourceRef
@@ -118,6 +119,20 @@ class MemoryReview:
     status: str
     created_at: datetime
     decided_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class MemoryManifest:
+    """描述一个 Owner Markdown 文件的最后已验证投影版本。"""
+
+    owner_id: int
+    relative_path: str
+    content_hash: str
+    last_valid_hash: str
+    mtime_ns: int
+    parser_version: str
+    status: str
+    last_scanned_at: datetime
 
 
 class MemoryRunRepository:
@@ -595,6 +610,14 @@ class MemoryUnitRepository:
                 raise MemoryStateError("memory unit already exists or is invalid") from error
         return self.get(owner_id, identifier)
 
+    def validate_sources(self, owner_id: int, sources: tuple[SourceRef, ...]) -> None:
+        """在 Markdown 写入前验证全部 SourceRef 属于当前 Owner。"""
+        _require_positive(owner_id, "owner_id")
+        if not sources:
+            raise MemoryStateError("memory unit requires at least one source")
+        with self._database.connect_read_only() as connection:
+            _validate_sources(connection, owner_id, sources)
+
     def find(self, owner_id: int, unit_id: str) -> MemoryUnit | None:
         """按 Owner 和 Unit ID 查询；跨 Owner 与缺失统一返回 None。"""
         _require_positive(owner_id, "owner_id")
@@ -702,6 +725,86 @@ class MemoryReviewRepository:
         return _review(row)
 
 
+class MemoryManifestRepository:
+    """保存 Markdown 文件 hash/mtime，用于检测直接编辑和投影漂移。"""
+
+    def __init__(self, database: Database) -> None:
+        """绑定 Manifest 表所在数据库。"""
+        self._database = database
+
+    def find(self, owner_id: int, relative_path: str) -> MemoryManifest | None:
+        """按 Owner 和受限相对路径读取 Manifest。"""
+        _require_positive(owner_id, "owner_id")
+        normalized = _relative_path(relative_path)
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM memory_manifests
+                WHERE owner_id = ? AND relative_path = ?
+                """,
+                (owner_id, normalized),
+            ).fetchone()
+        return None if row is None else _manifest(row)
+
+    def upsert(
+        self,
+        *,
+        owner_id: int,
+        relative_path: str,
+        content_hash: str,
+        last_valid_hash: str,
+        mtime_ns: int,
+        parser_version: str,
+        status: str,
+        now: datetime | None = None,
+    ) -> MemoryManifest:
+        """原子记录刚完成 fsync/replace 的 Markdown 版本。"""
+        _require_positive(owner_id, "owner_id")
+        normalized = _relative_path(relative_path)
+        digest = _require_hash(content_hash, "content_hash")
+        valid_digest = _require_hash(last_valid_hash, "last_valid_hash")
+        if type(mtime_ns) is not int or mtime_ns < 0:
+            raise ValueError("mtime_ns must be a non-negative integer")
+        parser = _require_text(parser_version, "parser_version", maximum=80)
+        if status not in {"current", "drift", "error"}:
+            raise ValueError("manifest status is invalid")
+        timestamp = _utc_text(now or datetime.now(UTC))
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO memory_manifests (
+                    owner_id, relative_path, content_hash, last_valid_hash,
+                    mtime_ns, parser_version, status, last_scanned_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(owner_id, relative_path) DO UPDATE SET
+                    content_hash = excluded.content_hash,
+                    last_valid_hash = excluded.last_valid_hash,
+                    mtime_ns = excluded.mtime_ns,
+                    parser_version = excluded.parser_version,
+                    status = excluded.status,
+                    last_scanned_at = excluded.last_scanned_at
+                """,
+                (
+                    owner_id,
+                    normalized,
+                    digest,
+                    valid_digest,
+                    mtime_ns,
+                    parser,
+                    status,
+                    timestamp,
+                ),
+            )
+            row = connection.execute(
+                """
+                SELECT * FROM memory_manifests
+                WHERE owner_id = ? AND relative_path = ?
+                """,
+                (owner_id, normalized),
+            ).fetchone()
+        assert row is not None
+        return _manifest(row)
+
 def _flush_run(row: sqlite3.Row) -> MemoryFlushRun:
     """把 SQLite Row 严格恢复为 MemoryFlushRun。"""
     return MemoryFlushRun(
@@ -801,6 +904,20 @@ def _review(row: sqlite3.Row) -> MemoryReview:
     )
 
 
+def _manifest(row: sqlite3.Row) -> MemoryManifest:
+    """把 Manifest Row 严格恢复为公共对象。"""
+    return MemoryManifest(
+        owner_id=int(row["owner_id"]),
+        relative_path=str(row["relative_path"]),
+        content_hash=str(row["content_hash"]),
+        last_valid_hash=str(row["last_valid_hash"]),
+        mtime_ns=int(row["mtime_ns"]),
+        parser_version=str(row["parser_version"]),
+        status=str(row["status"]),
+        last_scanned_at=_parse_time(row["last_scanned_at"]),
+    )
+
+
 def _validate_owner_range(
     connection: sqlite3.Connection,
     owner_id: int,
@@ -868,6 +985,15 @@ def _require_hash(value: str, field: str) -> str:
     ):
         raise ValueError(f"{field} must be a lowercase SHA-256 hash")
     return value
+
+
+def _relative_path(value: str) -> str:
+    """只接受不含父跳转的 POSIX 相对路径。"""
+    normalized = _require_text(value, "relative_path", maximum=240)
+    path = PurePosixPath(normalized)
+    if path.is_absolute() or ".." in path.parts or "." in path.parts:
+        raise ValueError("relative_path is invalid")
+    return path.as_posix()
 
 
 def _positive_ids(values: tuple[int, ...], field: str) -> tuple[int, ...]:

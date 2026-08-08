@@ -52,8 +52,8 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(imported.returncode, 0, imported.stderr)
 
-    async def test_create_runtime_exposes_ten_enabled_tools_and_closes(self) -> None:
-        """Runtime 应复用真实配置装配十个已实现 Tool，并拥有 Provider 生命周期。"""
+    async def test_create_runtime_exposes_memory_autopilot_tools_and_closes(self) -> None:
+        """Runtime 应装配明确 remember Tool，并拥有统一 Provider 生命周期。"""
         with tempfile.TemporaryDirectory() as directory:
             paths = build_state_paths(Path(directory).resolve())
             owner = initialize_state(paths).owner
@@ -73,6 +73,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                         "glob",
                         "grep",
                         "http_get",
+                        "memory_remember",
                         "propose_memory",
                         "read_file",
                         "read_memory",

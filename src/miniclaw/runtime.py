@@ -12,6 +12,13 @@ from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig, resolve_permission_roots
+from miniclaw.memory.markdown_store import MemoryMarkdownStore
+from miniclaw.memory.repository import (
+    MemoryManifestRepository,
+    MemoryReviewRepository,
+    MemoryUnitRepository,
+)
+from miniclaw.memory.service import MemoryService
 from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths
 from miniclaw.policy.command import normalize_command
@@ -40,6 +47,7 @@ from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
+from miniclaw.tools.memory_v2 import MemoryRememberTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
@@ -66,7 +74,7 @@ class AgentRuntime:
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
-    """按已校验配置装配当前十个内置 Tool 和唯一 TurnService。"""
+    """按已校验配置装配内置 Tool、Memory Service 和唯一 TurnService。"""
     permission_roots = resolve_permission_roots(
         config.permissions,
         config.workspace.path,
@@ -126,6 +134,12 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         dict.fromkeys((*configured_network_rules, *rules.network_rules(owner.id)))
     )
     memory = MemoryStore(paths)
+    memory_service = MemoryService(
+        MemoryMarkdownStore(paths, MemoryManifestRepository(database)),
+        MemoryUnitRepository(database),
+        MemoryReviewRepository(database),
+        memory,
+    )
     available_tools = (
         SystemInfoTool(),
         ReadFileTool(),
@@ -146,6 +160,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         ),
         ReadMemoryTool(memory),
         ProposeMemoryTool(memory),
+        MemoryRememberTool(memory_service, messages),
     )
     tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled

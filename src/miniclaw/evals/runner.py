@@ -12,6 +12,13 @@ from miniclaw.agent.turn import TurnService
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import AppConfig, load_config, resolve_permission_roots
 from miniclaw.evals.cases import EvalCase
+from miniclaw.memory.markdown_store import MemoryMarkdownStore
+from miniclaw.memory.repository import (
+    MemoryManifestRepository,
+    MemoryReviewRepository,
+    MemoryUnitRepository,
+)
+from miniclaw.memory.service import MemoryService
 from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths, build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
@@ -31,6 +38,7 @@ from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
+from miniclaw.tools.memory_v2 import MemoryRememberTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
@@ -240,6 +248,13 @@ def _build_service(
         platform_name="darwin",
     )
     memory = MemoryStore(paths)
+    messages = MessageRepository(database)
+    memory_service = MemoryService(
+        MemoryMarkdownStore(paths, MemoryManifestRepository(database)),
+        MemoryUnitRepository(database),
+        MemoryReviewRepository(database),
+        memory,
+    )
     executor = ToolExecutor(
         ToolRegistry(
             (
@@ -256,6 +271,7 @@ def _build_service(
                 ),
                 ReadMemoryTool(memory),
                 ProposeMemoryTool(memory),
+                MemoryRememberTool(memory_service, messages),
             )
         ),
         PolicyEngine(executable_path=executables.path_value),
@@ -268,7 +284,7 @@ def _build_service(
         owner_id=owner_id,
         model=config.agent.model,
         sessions=SessionRepository(database),
-        messages=MessageRepository(database),
+        messages=messages,
         turns=TurnRepository(database),
         context=ContextBuilder(paths, memory),
         runner=AgentRunner(provider, executor, max_iterations=config.agent.max_tool_iterations),
