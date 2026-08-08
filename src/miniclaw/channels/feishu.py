@@ -17,7 +17,10 @@ from miniclaw.channels.base import (
     SendReceipt,
     sanitize_inbound_text,
 )
+from miniclaw.channels.experience import ProgressReceipt
+from miniclaw.channels.feishu_cards import render_agent_progress_card
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.channels.progress import AgentProgress
 from miniclaw.config import FeishuConfig
 from miniclaw.storage.channels import StoredInboundEvent
 
@@ -326,31 +329,29 @@ class FeishuTransport:
     async def create_progress(
         self,
         event: StoredInboundEvent,
-        text: str,
+        progress: AgentProgress,
         *,
         idempotency_key: str,
-    ) -> SendReceipt:
-        """把通用 progress preview 创建意图映射为飞书消息卡片。"""
-        return await self.send_card(
+    ) -> ProgressReceipt:
+        """把结构化 progress 创建意图映射为飞书 Agent 卡片。"""
+        rendered = render_agent_progress_card(progress)
+        receipt = await self.send_card(
             conversation_id=event.external_conversation_id,
             reply_to_message_id=event.reply_to_message_id,
-            card=_progress_card(text, incomplete=False, completed=False),
+            card=rendered.card,
             idempotency_key=idempotency_key,
         )
+        return ProgressReceipt(receipt.platform_message_id, rendered.visible_answer_chars)
 
     async def update_progress(
         self,
         platform_message_id: str,
-        text: str,
-        *,
-        incomplete: bool,
-        completed: bool,
-    ) -> SendReceipt:
-        """把通用 progress 状态映射为飞书卡片更新。"""
-        return await self.update_card(
-            platform_message_id,
-            _progress_card(text, incomplete=incomplete, completed=completed),
-        )
+        progress: AgentProgress,
+    ) -> ProgressReceipt:
+        """把结构化 progress 状态映射为同一飞书 Agent 卡片更新。"""
+        rendered = render_agent_progress_card(progress)
+        receipt = await self.update_card(platform_message_id, rendered.card)
+        return ProgressReceipt(receipt.platform_message_id, rendered.visible_answer_chars)
 
     def _build_channel(self, app_id: str, app_secret: str) -> Any:
         """创建 explicit secure configs；凭据只在此传给 official SDK。"""
@@ -557,41 +558,6 @@ def _transport_error(error: Any) -> ChannelTransportError:
         retryable=retryable,
         unknown=unknown,
     )
-
-
-def _progress_card(
-    text: str,
-    *,
-    incomplete: bool,
-    completed: bool,
-) -> dict[str, Any]:
-    """仅在飞书边界把通用 preview 状态渲染为 Card JSON。"""
-    if completed:
-        title = "MiniClaw 回复"
-        template = "green"
-    elif incomplete:
-        title = "MiniClaw 回复（未完成）"
-        template = "orange"
-    else:
-        title = "MiniClaw 正在回复"
-        template = "blue"
-    return {
-        "schema": "2.0",
-        "config": {"wide_screen_mode": True},
-        "header": {
-            "title": {"tag": "plain_text", "content": title},
-            "template": template,
-        },
-        "body": {
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "content": text or "…",
-                    "text_size": "small",
-                },
-            ],
-        },
-    }
 
 
 def _received_at(

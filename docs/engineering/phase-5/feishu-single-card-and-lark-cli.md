@@ -87,27 +87,30 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    START["先缓冲公开 model_text_delta"] --> RESULT{"Turn 终态?"}
-    RESULT -->|waiting approval| APPROVAL["丢弃 preview，只发布 Approval card"]
-    RESULT -->|completed| ENABLED{"Feishu streaming_card 开启?"}
-    ENABLED -->|否| TEXT["创建普通文本 Outbox"]
-    ENABLED -->|是| CREATE["用最终正文创建或恢复同 UUID card"]
-    CREATE --> FINAL["更新为 completed / green"]
-    FINAL --> OK{"最终更新成功?"}
-    OK -->|否| TEXT
-    OK -->|是| FIT{"完整正文放得下?"}
-    FIT -->|是| CARD["只保留最终卡片"]
-    FIT -->|否| TAIL["仅后缀进入 durable Outbox"]
-    TAIL --> REPLY["reply_to = card message ID"]
+    EVENT["RunEvent"] --> PROJECT["Safe AgentProgress projector"]
+    PROJECT --> REASON["Drop model_reasoning and raw Tool data"]
+    PROJECT --> START{"First Tool started?"}
+    START -->|yes| CREATE["Create one Claw Trail card"]
+    START -->|no| RESULT{"Turn completed?"}
+    CREATE --> UPDATE["Coalesce safe step updates"]
+    UPDATE --> RESULT
+    RESULT -->|waiting before Tool| APPROVAL["Only durable Approval card"]
+    RESULT -->|completed| FINAL["Add final answer to same card"]
+    FINAL --> FIT{"20 KiB payload fits?"}
+    FIT -->|yes| CARD["Single final card"]
+    FIT -->|no| TAIL["Only unseen answer suffix to Outbox"]
 ```
 
 关键语义：
 
+- `model_reasoning`、原始 Tool 参数/输出、凭据和文件内容不会被保留或渲染；“过程摘要”只来自公开 preamble 与
+  确定性状态文案，不代表隐藏思维链；
+- 卡片最多展示 16 步，每字段最多 240 字符；trace metadata 最大 16 KiB，Card JSON 最大 20 KiB；
 - `ExperienceOutcome.final_delivery_required=false` 只会在最终卡片成功承载完整正文后出现；
 - 超限但最终卡片成功时，Outcome 返回 `final_delivery_offset` 和 `final_reply_to_message_id`，Manager 只切出
   `content[offset:]`，不会重复卡片内前缀；
-- 没有流式 delta 时，`finish()` 仍会用最终正文创建并完成卡片；
-- `progress_is_final=true` 时公开 delta 先在内存中限长缓冲，只有确认 Turn 不是 waiting approval 后才创建卡片；
+- 没有 Tool 或流式 delta 时，`finish()` 仍会直接创建一张带最终正文的 completed card；
+- `progress_is_final=true` 时第一次 `tool_started` 才建立 Agent 卡；首次 Tool 前等待审批不会创建 progress 卡；
 - Provider 在终态前失败时不创建飞书卡片，普通失败提示继续进入 Outbox；
 - 卡片创建失败或最终更新失败后，普通文本 fallback 仍存在；
 - 即使 tool-call 响应同时带可见 content，waiting approval 也丢弃 preview，因此唯一终态是 durable Approval card；
@@ -117,7 +120,7 @@ flowchart TD
 
 | 场景 | 飞书 | Telegram | Discord |
 | --- | --- | --- | --- |
-| 正常回答 | 一张 completed card | preview + final text | preview + final text |
+| 正常回答 | 一张 Claw Trail completed card | compact trail + final text | compact trail + final text |
 | 回答超过卡片上限 | 12px card 前缀 + 回复卡片的后缀分片 | preview + final text | preview + final text |
 | 无流式 delta | finish 时创建 completed card | final text | final text |
 | progress 失败 | text fallback | final text | final text |
@@ -126,8 +129,9 @@ flowchart TD
 
 ### 4.2 当前持久性边界
 
-Assistant 完整正文始终持久化在 SQLite `messages`，Inbound/Turn/Audit 也会结算。短回答的成功卡片不额外创建普通
-Outbox；长回答只把卡片未展示的后缀写进 Outbox。
+Assistant 完整正文始终持久化在 SQLite `messages`，最终脱敏步骤写入同一消息的
+`metadata_json.experience_trace`；Inbound/Turn/Audit 也会结算。短回答的成功卡片不额外创建普通 Outbox；长回答只把
+卡片未展示的后缀写进 Outbox。重启恢复从 trace 重建同样的 Claw Trail，缺失或损坏的旧 trace 退化为答案单卡。
 
 `ChannelManager.start()` 的恢复流程现在是异步的。发现遗留 running Inbox 对应 completed Turn 时，它读取完整
 Assistant Message，用原 Inbox key 派生和首次运行相同的 progress UUID，再次 `create/update` 同一卡片。官方发送

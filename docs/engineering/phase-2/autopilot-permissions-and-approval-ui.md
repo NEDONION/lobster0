@@ -111,8 +111,9 @@ sequenceDiagram
 mode = "autopilot"
 ```
 
-旧配置如果没有 `mode`，会按 `safe` 加载，避免升级后静默扩权。要让每次新进程都以某模式启动，应编辑私密状态目录
-中的 `config.toml`，然后重启 MiniClaw。有效值只能是：
+旧配置如果没有 `mode`，会按 `autopilot` 加载，与新安装默认值一致；显式配置的 `safe`/`smart` 不变。Autopilot
+仍只对本地入口和经过验证的 Owner 私聊生效，群聊、其他用户、敏感路径和硬拒绝不会扩权。要让每次新进程都以某模式
+启动，应编辑私密状态目录中的 `config.toml`，然后重启 MiniClaw。有效值只能是：
 
 ```text
 safe  smart  autopilot  yolo

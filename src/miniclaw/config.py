@@ -26,6 +26,7 @@ BUILTIN_TOOL_NAMES = (
     "read_memory",
     "propose_memory",
 )
+DEFAULT_TOOL_MODE = "autopilot"
 
 _TOP_LEVEL_KEYS = frozenset(
     {"agent", "provider", "workspace", "permissions", "tools", "ui", "channels"}
@@ -201,7 +202,7 @@ class ToolConfig:
     """保存 Phase 2 Tool 能力上限和审批默认值。"""
 
     enabled: tuple[str, ...] = BUILTIN_TOOL_NAMES
-    mode: str = "safe"
+    mode: str = DEFAULT_TOOL_MODE
     security: str = "allowlist"
     ask: str = "on-miss"
     approval_ttl_seconds: int = 600
@@ -410,7 +411,7 @@ def load_config(
         )
     enabled_tools = _enabled_tools(tools_raw.get("enabled", list(BUILTIN_TOOL_NAMES)))
     tool_mode = _enum_string(
-        tools_raw.get("mode", "safe"),
+        tools_raw.get("mode", DEFAULT_TOOL_MODE),
         "tools.mode",
         frozenset({"safe", "smart", "autopilot", "yolo"}),
     )

@@ -1,4 +1,4 @@
-"""平台无关 Typing 与 progress preview 的 best-effort Experience 层。"""
+"""平台无关 Typing 与结构化 Agent progress 的 best-effort Experience 层。"""
 
 import hashlib
 import time
@@ -7,9 +7,18 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from miniclaw.agent.events import RunEvent
-from miniclaw.channels.base import ChannelTransportError, SendReceipt
+from miniclaw.channels.base import ChannelTransportError
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.channels.progress import AgentProgress, ProgressProjector
 from miniclaw.storage.channels import StoredInboundEvent
+
+
+@dataclass(frozen=True, slots=True)
+class ProgressReceipt:
+    """保存 progress 消息 ID 与其中已覆盖的最终答案字符数。"""
+
+    platform_message_id: str
+    visible_answer_chars: int = 0
 
 
 @runtime_checkable
@@ -27,22 +36,19 @@ class ChannelExperienceTransport(Protocol):
     async def create_progress(
         self,
         event: StoredInboundEvent,
-        text: str,
+        progress: AgentProgress,
         *,
         idempotency_key: str,
-    ) -> SendReceipt:
-        """创建首个公开回答 preview。"""
+    ) -> ProgressReceipt:
+        """创建首个结构化公开进度。"""
         ...
 
     async def update_progress(
         self,
         platform_message_id: str,
-        text: str,
-        *,
-        incomplete: bool,
-        completed: bool,
-    ) -> SendReceipt:
-        """更新同一 preview 的中间或终态。"""
+        progress: AgentProgress,
+    ) -> ProgressReceipt:
+        """更新同一结构化进度的中间或终态。"""
         ...
 
 
@@ -105,7 +111,7 @@ class ChannelExperience:
         self._observer = observer
 
     def activity(self, event: StoredInboundEvent) -> "ExperienceActivity":
-        """创建单 Turn 私有状态，禁止跨 Conversation 共享 preview 文本。"""
+        """创建单 Turn 私有状态，禁止跨 Conversation 共享进度快照。"""
         return ExperienceActivity(
             transport=self._transport,
             event=event,
@@ -119,7 +125,7 @@ class ChannelExperience:
 
 
 class ExperienceActivity:
-    """聚合公开 model text delta，并维护单个 Turn 的 Typing/preview。"""
+    """投影公开 Agent 步骤，并维护单个 Turn 的 Typing/progress。"""
 
     def __init__(
         self,
@@ -138,19 +144,21 @@ class ExperienceActivity:
         self._progress_enabled = progress_enabled
         self._progress_is_final = progress_is_final
         self._update_interval = update_interval
-        self._max_visible_chars = max_visible_chars
         self._clock = clock
         self._observer = observer
+        self._projector = ProgressProjector(
+            clock=clock,
+            public_text_limit=max_visible_chars,
+        )
         self._typing_token: str | None = None
         self._progress_message_id: str | None = None
-        self._visible_text = ""
-        self._last_rendered = ""
         self._last_update_at: float | None = None
         self._progress_failed = False
         self._completed_final_progress = False
         self._final_delivery_offset = 0
         self._final_reply_to_message_id: str | None = None
         self._finished = False
+        self._final_progress: AgentProgress | None = None
         self.idempotency_key = _progress_idempotency_key(event)
 
     async def start(self) -> None:
@@ -162,45 +170,44 @@ class ExperienceActivity:
             self._observe_failure("typing_start", error)
 
     async def on_event(self, event: RunEvent) -> None:
-        """只消费公开 model_text_delta，忽略 reasoning 与 Tool trace。"""
-        if self._finished or event.kind != "model_text_delta":
+        """消费 Runtime 事件并只向 Transport 交付脱敏结构化快照。"""
+        if self._finished:
             return
-        text = event.data.get("text")
-        if not isinstance(text, str) or not text:
+        changed = self._projector.apply(event)
+        if not changed or not self._progress_enabled or self._progress_failed:
             return
-        self._visible_text = _bounded_append(
-            self._visible_text,
-            text,
-            self._max_visible_chars,
-        )
-        # A final card is externally visible and cannot be atomically replaced by
-        # the durable Approval card.  Buffer preview text until the Turn outcome is
-        # known so a tool-call response with content never leaves two Feishu cards.
-        if self._progress_is_final:
-            return
-        if not self._progress_enabled or self._progress_failed:
-            return
+        progress = self._projector.snapshot()
         if self._progress_message_id is None:
-            await self._create_progress()
+            should_create = (
+                event.kind == "tool_started"
+                if self._progress_is_final
+                else event.kind == "model_text_delta"
+            )
+            if should_create:
+                await self._create_progress(progress)
             return
         now = self._clock()
         if self._last_update_at is None or now - self._last_update_at >= self._update_interval:
-            await self._update_progress(
-                self._visible_text,
-                incomplete=False,
-                completed=False,
-            )
+            await self._update_progress(progress)
+
+    def finalize(self, *, content: str | None, failed: bool) -> AgentProgress:
+        """同步、幂等冻结将被持久化并交付的同一份终态快照。"""
+        if self._final_progress is None:
+            self._final_progress = self._projector.finish(content, failed=failed)
+        return self._final_progress
 
     async def finish(
         self,
         *,
         content: str | None,
         failed: bool,
+        progress: AgentProgress | None = None,
     ) -> ExperienceOutcome:
         """幂等刷新平台终态，并无条件 best-effort 清理 Typing。"""
         if self._finished:
             return self._outcome()
         self._finished = True
+        final_progress = progress or self.finalize(content=content, failed=failed)
         try:
             if (
                 self._progress_is_final
@@ -210,26 +217,20 @@ class ExperienceActivity:
                 and not failed
                 and isinstance(content, str)
             ):
-                self._visible_text = content[: self._max_visible_chars]
-                await self._create_progress()
+                receipt = await self._create_progress(final_progress)
+            else:
+                receipt = None
             if self._progress_message_id is not None and not self._progress_failed:
-                final_text = (
-                    self._visible_text
-                    if failed or not isinstance(content, str)
-                    else content[: self._max_visible_chars]
-                )
-                await self._update_progress(
-                    final_text,
-                    incomplete=failed,
-                    completed=not failed,
-                )
+                if receipt is None:
+                    receipt = await self._update_progress(final_progress)
                 if (
                     self._progress_is_final
                     and not failed
                     and not self._progress_failed
                     and isinstance(content, str)
+                    and receipt is not None
                 ):
-                    visible_length = min(len(content), self._max_visible_chars)
+                    visible_length = min(len(content), receipt.visible_answer_chars)
                     self._final_delivery_offset = visible_length
                     if visible_length < len(content):
                         self._final_reply_to_message_id = self._progress_message_id
@@ -242,12 +243,12 @@ class ExperienceActivity:
                 self._observe_failure("typing_stop", error)
         return self._outcome()
 
-    async def _create_progress(self) -> None:
-        """用稳定本地 key 创建第一帧 preview。"""
+    async def _create_progress(self, progress: AgentProgress) -> ProgressReceipt | None:
+        """用稳定本地 key 创建第一帧结构化 progress。"""
         try:
             receipt = await self._transport.create_progress(
                 self._event,
-                self._visible_text,
+                progress,
                 idempotency_key=self.idempotency_key,
             )
             if not receipt.platform_message_id:
@@ -257,34 +258,29 @@ class ExperienceActivity:
         except Exception as error:
             self._progress_failed = True
             self._observe_failure("progress_create", error)
-            return
+            return None
         self._progress_message_id = receipt.platform_message_id
-        self._last_rendered = self._visible_text
         self._last_update_at = self._clock()
+        return receipt
 
     async def _update_progress(
         self,
-        text: str,
-        *,
-        incomplete: bool,
-        completed: bool,
-    ) -> None:
-        """更新 preview；一次失败后关闭本 Turn 的 progress 能力。"""
+        progress: AgentProgress,
+    ) -> ProgressReceipt | None:
+        """更新结构化 progress；一次失败后关闭本 Turn 的 progress 能力。"""
         if self._progress_message_id is None:
-            return
+            return None
         try:
-            await self._transport.update_progress(
+            receipt = await self._transport.update_progress(
                 self._progress_message_id,
-                text,
-                incomplete=incomplete,
-                completed=completed,
+                progress,
             )
         except Exception as error:
             self._progress_failed = True
             self._observe_failure("progress_update", error)
-            return
-        self._last_rendered = text
+            return None
         self._last_update_at = self._clock()
+        return receipt
 
     def _outcome(self) -> ExperienceOutcome:
         """生成不包含正文或平台 ID 的终态。"""
@@ -321,14 +317,6 @@ class ExperienceActivity:
             )
         except Exception:
             return
-
-
-def _bounded_append(current: str, delta: str, limit: int) -> str:
-    """限制 preview 内存和平台 payload，不改变最终 durable 回复。"""
-    remaining = limit - len(current)
-    if remaining <= 0:
-        return current
-    return current + delta[:remaining]
 
 
 def _progress_idempotency_key(event: StoredInboundEvent) -> str:

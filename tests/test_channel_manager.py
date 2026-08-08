@@ -20,6 +20,7 @@ from miniclaw.channels.base import InboundMessage, SendReceipt
 from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.channels.progress import ProgressProjector, progress_to_metadata
 from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.policy.modes import PermissionMode, PermissionState
 from miniclaw.storage.channels import (
@@ -549,14 +550,13 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             transport=transport,
             streaming_card=True,
             update_interval=0.01,
-            max_visible_chars=10,
         )
         manager = self._manager(service, queue_size=2, worker_count=1)
         manager.attach_experience(capabilities)
 
         await manager.start()
         try:
-            await manager.receive(self._message("om_overflow", "hello-overflow"))
+            await manager.receive(self._message("om_overflow", "x" * 25_000))
             await manager.wait_idle(timeout=2)
         finally:
             await manager.stop()
@@ -566,10 +566,22 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
                 "SELECT content, reply_to_message_id FROM deliveries "
                 "WHERE message_id IS NOT NULL ORDER BY part_index"
             ).fetchall()
-        self.assertEqual(
-            [(row["content"], row["reply_to_message_id"]) for row in deliveries],
-            [("o-overflow", "om_manager_card")],
+        self.assertGreater(len(deliveries), 0)
+        self.assertTrue(
+            all(row["reply_to_message_id"] == "om_manager_card" for row in deliveries)
         )
+        card = transport.cards[-1]
+        answer_element = next(
+            element
+            for element in card["body"]["elements"]
+            if isinstance(element, dict)
+            and isinstance(element.get("content"), str)
+            and element["content"].startswith("**最终回答**\n")
+        )
+        visible = answer_element["content"].removeprefix("**最终回答**\n")
+        visible = visible.removesuffix("\n\n_答案过长，剩余内容将继续发送。_")
+        tail = "".join(row["content"] for row in deliveries)
+        self.assertEqual(visible + tail, "reply:" + "x" * 25_000)
 
     async def test_approval_commands_bypass_agent_and_waiting_turn_creates_card(self) -> None:
         """控制命令不进模型；普通 Turn waiting 时创建 durable Approval card。"""
@@ -705,7 +717,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             "hello",
         )
         self.turns.mark_running(turn.id)
-        self.turns.complete_with_assistant_message(
+        assistant = self.turns.complete_with_assistant_message(
             turn.id,
             session.id,
             "reply:hello",
@@ -714,6 +726,33 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             provider_request_id="req_restart",
             iterations=1,
             finish_reason="stop",
+        )
+        projector = ProgressProjector(clock=lambda: 0.0)
+        projector.apply(
+            RunEvent(
+                "tool_requested",
+                turn.id,
+                {
+                    "call_id": "call_restart",
+                    "tool_name": "read_file",
+                    "arguments": {"path": "README.md"},
+                },
+            )
+        )
+        projector.apply(
+            RunEvent(
+                "tool_finished",
+                turn.id,
+                {
+                    "call_id": "call_restart",
+                    "tool_name": "read_file",
+                    "status": "succeeded",
+                },
+            )
+        )
+        self.messages.save_experience_trace(
+            assistant.id,
+            progress_to_metadata(projector.finish("reply:hello", failed=False)),
         )
         transport = ManagerCapabilityTransport()
         capabilities = ChannelCapabilities(
@@ -750,6 +789,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(service.calls, [])
         self.assertEqual(len(transport.card_ids_by_key), 1)
+        self.assertIn("查看文件", repr(transport.cards[-1]))
         self.assertEqual(self.inbound.get(event.key).status, "completed")
         with self.database.connect_read_only() as connection:
             message_deliveries = connection.execute(

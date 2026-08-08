@@ -1,0 +1,105 @@
+"""飞书 Agent Claw Trail 卡片的结构、视觉状态和预算测试。"""
+
+import json
+import unittest
+
+from miniclaw.channels.feishu_cards import (
+    render_agent_progress_card,
+    render_compact_progress,
+)
+from miniclaw.channels.progress import AgentProgress, ProgressStep
+
+
+def _progress(*, status: str = "completed", answer: str = "你有 327 个飞书文档。") -> AgentProgress:
+    """构造不依赖 Runtime 的公开进度 fixture。"""
+    return AgentProgress(
+        status=status,  # type: ignore[arg-type]
+        summary="任务已完成" if status == "completed" else "正在执行：查询飞书云空间",
+        steps=(
+            ProgressStep(1, None, "理解请求", "已识别目标", "succeeded"),
+            ProgressStep(
+                2,
+                "call_1",
+                "查询飞书云空间",
+                "lark-cli drive +search --page-size 100",
+                "succeeded" if status == "completed" else "running",
+                428 if status == "completed" else None,
+            ),
+        ),
+        public_text="",
+        final_answer=answer,
+        iterations=2,
+        tool_calls=1,
+        input_tokens=20,
+        output_tokens=4,
+        duration_ms=851,
+    )
+
+
+class FeishuAgentCardTest(unittest.TestCase):
+    """验证 Card 2.0 输出和超长正文的无损续发偏移。"""
+
+    def test_completed_card_contains_claw_trail_answer_and_metrics(self) -> None:
+        """完成态单卡应同时呈现轨迹、答案、工具与模型轮次。"""
+        progress = _progress()
+
+        rendered_card = render_agent_progress_card(progress)
+        card = rendered_card.card
+        rendered = json.dumps(card, ensure_ascii=False)
+
+        self.assertEqual(card["schema"], "2.0")
+        self.assertEqual(card["header"]["template"], "green")
+        self.assertEqual(card["header"]["title"]["content"], "MiniClaw · 已完成")
+        self.assertIn("Claw Trail", rendered)
+        self.assertIn("查询飞书云空间", rendered)
+        self.assertIn("你有 327 个飞书文档", rendered)
+        self.assertIn("2 步 · 1 个工具 · 2 轮模型", rendered)
+        self.assertLessEqual(len(rendered.encode("utf-8")), 20 * 1024)
+        self.assertEqual(rendered_card.visible_answer_chars, len(progress.final_answer))
+
+    def test_statuses_map_to_distinct_headers(self) -> None:
+        """运行、完成、未完成和等待态必须有稳定的颜色与标题。"""
+        expected = {
+            "running": ("blue", "MiniClaw · 执行中"),
+            "completed": ("green", "MiniClaw · 已完成"),
+            "incomplete": ("red", "MiniClaw · 未完成"),
+            "waiting": ("orange", "MiniClaw · 等待中"),
+        }
+        for status, (template, title) in expected.items():
+            with self.subTest(status=status):
+                card = render_agent_progress_card(_progress(status=status, answer="")).card
+                self.assertEqual(card["header"]["template"], template)
+                self.assertEqual(card["header"]["title"]["content"], title)
+
+    def test_long_answer_returns_exact_visible_prefix_and_stays_under_budget(self) -> None:
+        """超长答案按 Unicode 字符边界裁剪，并返回精确续发偏移。"""
+        answer = "飞书文档🙂" * 10_000
+        rendered = render_agent_progress_card(_progress(answer=answer))
+        encoded = json.dumps(rendered.card, ensure_ascii=False).encode("utf-8")
+        visible = answer[: rendered.visible_answer_chars]
+
+        self.assertLessEqual(len(encoded), 20 * 1024)
+        self.assertGreater(rendered.visible_answer_chars, 0)
+        self.assertLess(rendered.visible_answer_chars, len(answer))
+        self.assertIn(visible[:100], encoded.decode("utf-8"))
+
+    def test_markdown_and_compact_renderer_do_not_create_raw_code_fences(self) -> None:
+        """Tool 目标中的 Markdown 符号应被转义，紧凑预览同样展示步骤。"""
+        progress = _progress(answer="答案含有 `code` 和反斜线 \\")
+
+        card = render_agent_progress_card(progress).card
+        elements = card["body"]["elements"]
+        rendered = "\n".join(
+            element.get("content", "")
+            for element in elements
+            if isinstance(element, dict) and isinstance(element.get("content"), str)
+        )
+        compact = render_compact_progress(progress)
+
+        self.assertIn("\\`code\\`", rendered)
+        self.assertIn("Claw Trail", compact)
+        self.assertIn("查询飞书云空间", compact)
+
+
+if __name__ == "__main__":
+    unittest.main()

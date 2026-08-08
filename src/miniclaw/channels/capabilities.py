@@ -9,8 +9,11 @@ from miniclaw.channels.experience import (
     ChannelExperience,
     ExperienceActivity,
     ExperienceOutcome,
+    ProgressReceipt,
 )
+from miniclaw.channels.feishu_cards import render_agent_progress_card
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.channels.progress import AgentProgress
 from miniclaw.storage.channels import StoredInboundEvent
 
 
@@ -47,7 +50,6 @@ class _LegacyFeishuExperienceTransport:
     def __init__(self, transport: CapabilityTransport) -> None:
         self._transport = transport
         self._typing: dict[str, tuple[str, str | None]] = {}
-        self._progress_text: dict[str, str] = {}
 
     async def start_typing(self, event: StoredInboundEvent) -> str | None:
         reaction_id = await self._transport.add_typing(event.reply_to_message_id)
@@ -71,33 +73,32 @@ class _LegacyFeishuExperienceTransport:
     async def create_progress(
         self,
         event: StoredInboundEvent,
-        text: str,
+        progress: AgentProgress,
         *,
         idempotency_key: str,
-    ) -> SendReceipt:
+    ) -> ProgressReceipt:
+        """通过旧 send_card API 创建结构化 Agent progress 卡片。"""
+        rendered = render_agent_progress_card(progress)
         receipt = await self._transport.send_card(
             conversation_id=event.external_conversation_id,
             reply_to_message_id=event.reply_to_message_id,
-            card=_progress_card(text, incomplete=False, completed=False),
+            card=rendered.card,
             idempotency_key=idempotency_key,
         )
-        self._progress_text[receipt.platform_message_id] = text
-        return receipt
+        return ProgressReceipt(receipt.platform_message_id, rendered.visible_answer_chars)
 
     async def update_progress(
         self,
         platform_message_id: str,
-        text: str,
-        *,
-        incomplete: bool,
-        completed: bool,
-    ) -> SendReceipt:
+        progress: AgentProgress,
+    ) -> ProgressReceipt:
+        """通过旧 update_card API 更新同一结构化 Agent progress 卡片。"""
+        rendered = render_agent_progress_card(progress)
         receipt = await self._transport.update_card(
             platform_message_id,
-            _progress_card(text, incomplete=incomplete, completed=completed),
+            rendered.card,
         )
-        self._progress_text[platform_message_id] = text
-        return receipt
+        return ProgressReceipt(receipt.platform_message_id, rendered.visible_answer_chars)
 
 
 class _LegacyObserver:
@@ -148,37 +149,3 @@ class ChannelCapabilities:
     def activity(self, event: StoredInboundEvent) -> ExperienceActivity:
         """返回新 ExperienceActivity，调用方无需感知兼容层。"""
         return self._experience.activity(event)
-
-
-def _progress_card(
-    text: str,
-    *,
-    incomplete: bool,
-    completed: bool,
-) -> dict[str, Any]:
-    """只在 Feishu compatibility adapter 内构造平台 Card。"""
-    visible = text or "…"
-    if incomplete:
-        visible = f"{visible}\n\n⚠️ **回复未完成，请稍后重试。**"
-    if incomplete:
-        title, template = "MiniClaw 回复未完成", "red"
-    elif completed:
-        title, template = "MiniClaw 回复", "green"
-    else:
-        title, template = "MiniClaw 正在回复", "blue"
-    return {
-        "schema": "2.0",
-        "header": {
-            "title": {"tag": "plain_text", "content": title},
-            "template": template,
-        },
-        "body": {
-            "elements": [
-                {
-                    "tag": "markdown",
-                    "content": visible,
-                    "text_size": "small",
-                }
-            ]
-        },
-    }

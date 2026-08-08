@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from uuid import uuid4
@@ -17,7 +17,10 @@ from miniclaw.channels.base import (
     SendReceipt,
     sanitize_inbound_text,
 )
+from miniclaw.channels.experience import ProgressReceipt
+from miniclaw.channels.feishu_cards import render_compact_progress
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.channels.progress import AgentProgress
 from miniclaw.config import TelegramConfig
 from miniclaw.storage.channels import StoredInboundEvent
 
@@ -380,38 +383,35 @@ class TelegramTransport:
     async def create_progress(
         self,
         event: StoredInboundEvent,
-        text: str,
+        progress: AgentProgress,
         *,
         idempotency_key: str,
-    ) -> SendReceipt:
-        """发送第一帧普通 preview 消息。"""
+    ) -> ProgressReceipt:
+        """发送第一帧结构化 Agent progress 普通消息。"""
         if not idempotency_key:
             raise ValueError("idempotency key must not be empty")
         chat_id, topic_id = _parse_conversation_key(event.external_conversation_id)
         reply_to = _parse_reply_key(event.reply_to_message_id, chat_id)
-        return await self._send_text(
+        receipt = await self._send_text(
             chat_id=chat_id,
             topic_id=topic_id,
             reply_to_message_id=reply_to,
-            text=_bounded_telegram_text(f"⏳ {text}"),
+            text=_bounded_telegram_text(render_compact_progress(progress)),
         )
+        return ProgressReceipt(receipt.platform_message_id)
 
     async def update_progress(
         self,
         platform_message_id: str,
-        text: str,
-        *,
-        incomplete: bool,
-        completed: bool,
-    ) -> SendReceipt:
-        """edit 同一 preview；not-modified 被视为幂等成功。"""
+        progress: AgentProgress,
+    ) -> ProgressReceipt:
+        """edit 同一结构化 progress；not-modified 被视为幂等成功。"""
         chat_id, message_id = _parse_message_key(platform_message_id)
-        if completed:
-            visible = "✅ 回复完成，最终内容见下一条消息"
-        elif incomplete:
-            visible = _bounded_telegram_text(f"⚠️ 回复未完成\n\n{text}")
-        else:
-            visible = _bounded_telegram_text(f"⏳ {text}")
+        display = replace(progress, final_answer="")
+        visible = render_compact_progress(display)
+        if progress.status == "completed":
+            visible += "\n\n最终内容见下一条消息"
+        visible = _bounded_telegram_text(visible)
         try:
             result = await self._application.edit_message(
                 chat_id=chat_id,
@@ -421,11 +421,11 @@ class TelegramTransport:
             )
         except Exception as error:
             if _is_message_not_modified(error):
-                return SendReceipt(platform_message_id)
+                return ProgressReceipt(platform_message_id)
             raise _telegram_error(error, operation="progress") from None
         if result is False:
             raise ChannelTransportError("telegram_progress_failed")
-        return SendReceipt(platform_message_id)
+        return ProgressReceipt(platform_message_id)
 
     async def _send_text(
         self,

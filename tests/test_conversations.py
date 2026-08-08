@@ -9,6 +9,7 @@ from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
 from miniclaw.providers.base import ModelMessage, ToolCall
 from miniclaw.storage.conversations import (
+    ConversationStateError,
     MessageRepository,
     SessionRepository,
     TurnRepository,
@@ -111,6 +112,41 @@ class ConversationRepositoryTest(unittest.TestCase):
                 ("assistant", "assistant-2"),
             ],
         )
+
+    def test_experience_trace_merges_metadata_and_is_bounded(self) -> None:
+        """公开 trace 应保留 Provider metadata，拒绝非 Assistant 与超大对象。"""
+        session = self.sessions.get_or_create_cli(self.owner.id, "trace")
+        turn = self.turns.create_with_user_message(
+            session.id,
+            "event-trace",
+            "provider/model",
+            "question",
+        )
+        self.turns.mark_running(turn.id)
+        completed = self.turns.complete_with_assistant_message(
+            turn.id,
+            session.id,
+            "answer",
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req_trace",
+            iterations=1,
+            finish_reason="stop",
+        )
+        assistant = self.messages.final_assistant_for_turn(turn.id)
+        user = self.messages.list_recent(session.id)[0]
+        trace = {"version": 1, "status": "completed", "steps": []}
+
+        self.messages.save_experience_trace(assistant.id, trace)
+        restored = self.messages.final_assistant_for_turn(turn.id)
+
+        self.assertEqual(self.messages.experience_trace(assistant.id), trace)
+        self.assertEqual(restored.metadata["provider_request_id"], "req_trace")
+        self.assertEqual(completed.id, assistant.id)
+        with self.assertRaises(ValueError):
+            self.messages.save_experience_trace(assistant.id, {"large": "x" * 17_000})
+        with self.assertRaisesRegex(ConversationStateError, "assistant"):
+            self.messages.save_experience_trace(user.id, trace)
 
     def test_recent_limit_never_splits_a_tool_turn(self) -> None:
         """消息软上限命中 Tool Turn 中间时，必须补齐该 Turn 的前半段。"""

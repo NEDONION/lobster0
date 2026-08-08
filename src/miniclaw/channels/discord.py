@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
@@ -17,7 +17,10 @@ from miniclaw.channels.base import (
     SendReceipt,
     sanitize_inbound_text,
 )
+from miniclaw.channels.experience import ProgressReceipt
+from miniclaw.channels.feishu_cards import render_compact_progress
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.channels.progress import AgentProgress
 from miniclaw.config import DiscordConfig
 from miniclaw.storage.channels import StoredInboundEvent
 
@@ -392,35 +395,32 @@ class DiscordTransport:
     async def create_progress(
         self,
         event: StoredInboundEvent,
-        text: str,
+        progress: AgentProgress,
         *,
         idempotency_key: str,
-    ) -> SendReceipt:
-        """创建普通 preview；所有 mention token 都不能触发通知。"""
+    ) -> ProgressReceipt:
+        """创建结构化 progress；所有 mention token 都不能触发通知。"""
         if not idempotency_key:
             raise ValueError("idempotency key must not be empty")
-        return await self._send_text(
+        receipt = await self._send_text(
             target_id=_target_from_conversation(event.external_conversation_id),
             reply_to_message_id=_parse_snowflake_text(event.reply_to_message_id),
-            text=_bounded_discord_text(f"⏳ {text}"),
+            text=_bounded_discord_text(render_compact_progress(progress)),
         )
+        return ProgressReceipt(receipt.platform_message_id)
 
     async def update_progress(
         self,
         platform_message_id: str,
-        text: str,
-        *,
-        incomplete: bool,
-        completed: bool,
-    ) -> SendReceipt:
-        """edit 同一 preview，终态只作提示，durable final reply 仍独立发送。"""
+        progress: AgentProgress,
+    ) -> ProgressReceipt:
+        """edit 同一 progress，终态只作提示，durable final reply 仍独立发送。"""
         target_id, message_id = _parse_platform_message(platform_message_id)
-        if completed:
-            visible = "✅ 回复完成，最终内容见下一条消息"
-        elif incomplete:
-            visible = _bounded_discord_text(f"⚠️ 回复未完成\n\n{text}")
-        else:
-            visible = _bounded_discord_text(f"⏳ {text}")
+        display = replace(progress, final_answer="")
+        visible = render_compact_progress(display)
+        if progress.status == "completed":
+            visible += "\n\n最终内容见下一条消息"
+        visible = _bounded_discord_text(visible)
         try:
             result = await self._client.edit_message(
                 target_id=target_id,
@@ -432,7 +432,7 @@ class DiscordTransport:
             raise _discord_error(error, operation="progress") from None
         if result is False:
             raise ChannelTransportError("discord_progress_failed")
-        return SendReceipt(platform_message_id)
+        return ProgressReceipt(platform_message_id)
 
     async def _send_text(
         self,

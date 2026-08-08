@@ -3,8 +3,10 @@
 import unittest
 from datetime import UTC, datetime
 
+from miniclaw.agent.events import RunEvent
 from miniclaw.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
 from miniclaw.channels.discord import DiscordIntents, DiscordTransport
+from miniclaw.channels.progress import AgentProgress, ProgressProjector
 from miniclaw.config import DiscordConfig
 from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
 from tests.fakes.fake_discord import (
@@ -15,6 +17,13 @@ from tests.fakes.fake_discord import (
     PrivilegedIntentsRequired,
     fake_message,
 )
+
+
+def _progress(text: str, *, completed: bool = False) -> AgentProgress:
+    """构造 Discord Transport 使用的结构化公开进度。"""
+    projector = ProgressProjector(clock=lambda: 0.0)
+    projector.apply(RunEvent("model_text_delta", 1, {"text": text}))
+    return projector.finish(text, failed=False) if completed else projector.snapshot()
 
 
 class DiscordTransportTest(unittest.IsolatedAsyncioTestCase):
@@ -200,22 +209,21 @@ class DiscordTransportTest(unittest.IsolatedAsyncioTestCase):
         token = await transport.start_typing(event)
         receipt = await transport.create_progress(
             event,
-            "第一段",
+            _progress("第一段"),
             idempotency_key="progress",
         )
         await transport.update_progress(
             receipt.platform_message_id,
-            "完整回答",
-            incomplete=False,
-            completed=True,
+            _progress("完整回答", completed=True),
         )
         await transport.stop_typing(token)
         await transport.stop_typing(token)
 
         self.assertEqual(client.typing_started, [600])
         self.assertEqual(client.typing_stopped, ["typing-handle"])
-        self.assertEqual(client.sent[0]["text"], "⏳ 第一段")
-        self.assertEqual(client.edited[0]["text"], "✅ 回复完成，最终内容见下一条消息")
+        self.assertIn("Claw Trail", client.sent[0]["text"])
+        self.assertIn("第一段", client.sent[0]["text"])
+        self.assertIn("最终内容见下一条消息", client.edited[0]["text"])
         self.assertTrue(client.edited[0]["suppress_mentions"])
         await transport.disconnect()
 

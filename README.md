@@ -21,8 +21,9 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > `miniclaw gateway` 可在一个 Python 进程内同时装配飞书 WebSocket、Telegram long polling 与 Discord Gateway，
 > 三个平台和 TUI 复用同一个 `AgentRuntime`、Provider、Memory、Skills、Policy、Approval 与 SQLite。
 > 消息先进入 SQLite Inbox，再由有界 Worker 处理；Telegram/Discord 与飞书文本 fallback 经 durable Outbox
-> 分片、重试并使用稳定 UUID。飞书正常回答由同一张 completed card 承载，避免卡片与文本重复。Typing、
-> 安全进度卡、Owner 审批卡片/文本 fallback、重启恢复、断线映射、脱敏 JSON 日志、durable Channel Audit
+> 分片、重试并使用稳定 UUID。飞书正常回答由同一张 Agent Card 承载：卡片以 `Claw Trail` 展示脱敏步骤、
+> Tool 名称/安全目标/状态/耗时、过程摘要和最终回答，避免卡片与文本重复。Typing、Owner 审批卡片/文本 fallback、
+> 重启恢复、断线映射、脱敏 JSON 日志、durable Channel Audit
 > 和 22 项 Doctor 均已接线。每个平台拥有独立 Transport、DeliveryWorker、ChannelManager、queue 和故障状态；
 > 一个平台运行期 degraded 不会关闭其余平台。
 > 同一个 `AgentRuntime`
@@ -137,11 +138,13 @@ TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据
 使用 `personal` Profile：`read_file`、`glob`、`grep` 可读取 Home 下普通文件以及存在的 Homebrew/Application 根，
 但 Keychain、浏览器登录库、私钥和应用凭据目录始终硬拒绝；旧配置缺少 `[permissions]` 时保持 Workspace-only。
 `write_file` / `edit_file` 只可写 Workspace 与 Documents/Desktop/Downloads/IDE 项目根。新初始化明确使用
-`[tools] mode = "autopilot"`；旧配置缺少 `mode` 时保持 `safe`，不会升级后静默扩权。可信 Owner 可在 TUI 或
+`[tools] mode = "autopilot"`；旧配置缺少 `mode` 时也按 `autopilot` 加载，与新安装一致。显式 `safe`/`smart`
+仍保留审批。可信 Owner 可在 TUI 或
 三个 IM 私聊中用 `/permissions safe|smart|autopilot|yolo` 动态切换；群聊和其他白名单成员不能切换，也不会继承
 Personal 额外读写根。`safe`/`smart` 下写入会先生成参数绑定 Approval，Esc 和 **Deny** 都不会写入，文件写入只提供
 **Allow once**；安全 exact argv / exact hostname 可由 Core 提供 **Allow this session** 或 **Always allow**。`autopilot`
-只在完整硬校验通过后为可信 Owner 自动执行。模型仍不能运行
+只在完整硬校验通过后为本地入口和经过验证的 Owner 私聊自动执行；群聊、其他用户与硬拒绝不会扩权，也不会生成
+无意义的 Owner 常规权限卡。模型仍不能运行
 任意 Shell 字符串；`run_command` 只接收 `program + args[]`，安全命令未命中 exact rule 时也走同一审批弹窗。
 macOS 应用名不确定时，模型可显式调用 `system_info` 的 `applications` 分区；该分区默认不读取，只返回固定
 `/Applications` 中有界、去路径的真实 `.app` 名称，再由 `run_command(open, [-a, Exact Name])` 请求审批。

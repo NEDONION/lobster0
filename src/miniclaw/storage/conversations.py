@@ -228,6 +228,47 @@ class MessageRepository:
             raise ConversationStateError("completed Turn has no assistant message")
         return _message_from_row(row)
 
+    def save_experience_trace(
+        self,
+        message_id: int,
+        trace: dict[str, JsonValue],
+    ) -> None:
+        """把最多 16 KiB 的脱敏 Experience trace 合并到 Assistant metadata。"""
+        if type(message_id) is not int or message_id <= 0:
+            raise ValueError("message id must be positive")
+        if not isinstance(trace, dict):
+            raise ValueError("experience trace must be an object")
+        encoded_trace = _json_text(trace).encode("utf-8")
+        if len(encoded_trace) > 16 * 1024:
+            raise ValueError("experience trace exceeds 16 KiB")
+        with self._database.connect() as connection:
+            row = connection.execute(
+                "SELECT role, metadata_json FROM messages WHERE id = ?",
+                (message_id,),
+            ).fetchone()
+            if row is None or row["role"] != "assistant":
+                raise ConversationStateError("experience trace requires an assistant message")
+            metadata = _json_object(row["metadata_json"])
+            metadata["experience_trace"] = trace
+            connection.execute(
+                "UPDATE messages SET metadata_json = ? WHERE id = ?",
+                (_json_text(metadata), message_id),
+            )
+
+    def experience_trace(self, message_id: int) -> dict[str, JsonValue] | None:
+        """读取 Assistant 的脱敏 Experience trace；缺失或非对象值返回 None。"""
+        if type(message_id) is not int or message_id <= 0:
+            raise ValueError("message id must be positive")
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT metadata_json FROM messages WHERE id = ? AND role = 'assistant'",
+                (message_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        trace = _json_object(row["metadata_json"]).get("experience_trace")
+        return trace if isinstance(trace, dict) else None
+
     def create_channel_notice(self, session_id: int, content: str) -> StoredMessage:
         """保存一条由 Channel 生成而非模型生成的安全 Assistant 提示。"""
         if not isinstance(content, str) or not content.strip():

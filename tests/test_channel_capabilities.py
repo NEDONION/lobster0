@@ -147,8 +147,8 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             [("om_inbound", "reaction_1")],
         )
 
-    async def test_visible_deltas_are_buffered_and_sensitive_events_are_ignored(self) -> None:
-        """公开文本只在终态建卡，reasoning 与 Tool 参数始终不能进入卡片。"""
+    async def test_tool_activity_creates_safe_claw_trail_and_updates_same_card(self) -> None:
+        """Tool 开始时建轨迹卡，reasoning 与敏感参数始终不能进入卡片。"""
         transport = FakeCapabilityTransport()
         activity = self._activity(transport)
         await activity.start()
@@ -161,20 +161,36 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             RunEvent(
                 "tool_requested",
                 1,
-                {"name": "run_command", "arguments": "secret-token"},
+                {
+                    "call_id": "call_1",
+                    "tool_name": "run_command",
+                    "arguments": {
+                        "program": "lark-cli",
+                        "args": ["drive", "+search", "--token", "secret-token"],
+                    },
+                },
             )
         )
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "好"}))
         self.assertEqual(len(transport.cards_sent), 0)
         self.assertEqual(len(transport.cards_updated), 0)
 
+        await activity.on_event(
+            RunEvent(
+                "tool_started",
+                1,
+                {"call_id": "call_1", "tool_name": "run_command"},
+            )
+        )
+        self.assertEqual(len(transport.cards_sent), 1)
+
         self.clock.value = 0.6
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "！"}))
         await activity.finish(content="你好！", failed=False)
 
-        self.assertEqual(len(transport.cards_sent), 1)
-        self.assertEqual(len(transport.cards_updated), 1)
-        self.assertIn("MiniClaw 回复", repr(transport.cards_updated[-1][1]))
+        self.assertEqual(len(transport.cards_updated), 2)
+        self.assertIn("MiniClaw · 已完成", repr(transport.cards_updated[-1][1]))
+        self.assertIn("Claw Trail", repr(transport.cards_updated[-1][1]))
         self.assertEqual(
             transport.cards_updated[-1][1]["body"]["elements"][0]["text_size"],
             "small",
@@ -200,9 +216,23 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
                 await activity.on_event(
                     RunEvent("model_text_delta", 1, {"text": "partial"})
                 )
-                self.clock.value += 1
                 await activity.on_event(
-                    RunEvent("model_text_delta", 1, {"text": " answer"})
+                    RunEvent(
+                        "tool_requested",
+                        1,
+                        {
+                            "call_id": "call_1",
+                            "tool_name": "read_file",
+                            "arguments": {"path": "README.md"},
+                        },
+                    )
+                )
+                await activity.on_event(
+                    RunEvent(
+                        "tool_started",
+                        1,
+                        {"call_id": "call_1", "tool_name": "read_file"},
+                    )
                 )
                 outcome = await activity.finish(content="final answer", failed=False)
                 self.assertTrue(outcome.card_failed)
