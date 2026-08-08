@@ -13,6 +13,7 @@ from miniclaw.policy.command import CommandPolicyError, normalize_command
 from miniclaw.policy.network import NetworkPolicyError, normalize_network_rule
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import LATEST_SCHEMA_VERSION
+from miniclaw.tui_launcher import MINIMUM_NODE_VERSION, inspect_pi_tui
 
 
 class CheckStatus(StrEnum):
@@ -43,10 +44,11 @@ def run_local_checks(
         environ: 配置覆盖使用的环境变量；默认使用当前进程环境。
 
     Returns:
-        固定七项、按依赖顺序排列的安全诊断结果。
+        固定九项、按依赖顺序排列的安全诊断结果。
     """
     state_result = _check_state_home(paths)
     config_result, config = _check_config(paths, environ)
+    node_result, pi_tui_result = _check_pi_tui(environ)
     return (
         state_result,
         config_result,
@@ -55,6 +57,57 @@ def run_local_checks(
         _check_database(paths),
         _check_approvals(paths),
         _check_permissions(paths),
+        node_result,
+        pi_tui_result,
+    )
+
+
+def _check_pi_tui(
+    environ: Mapping[str, str] | None,
+) -> tuple[CheckResult, CheckResult]:
+    """检查默认 TypeScript TUI 的 Node 版本和编译入口。"""
+    inspection = inspect_pi_tui(environ)
+    minimum = ".".join(str(part) for part in MINIMUM_NODE_VERSION)
+    if inspection.node is None:
+        return (
+            CheckResult("node", CheckStatus.FAIL, f"Node.js >= {minimum} is required"),
+            CheckResult("pi_tui", CheckStatus.FAIL, "pi-tui cannot be checked without Node.js"),
+        )
+    if inspection.node_version is None or inspection.node_version < MINIMUM_NODE_VERSION:
+        return (
+            CheckResult(
+                "node",
+                CheckStatus.FAIL,
+                inspection.problem or f"Node.js >= {minimum} is required",
+            ),
+            CheckResult(
+                "pi_tui",
+                CheckStatus.FAIL,
+                "pi-tui cannot run until Node.js is upgraded",
+            ),
+        )
+    version = ".".join(str(part) for part in inspection.node_version)
+    node_result = CheckResult(
+        "node",
+        CheckStatus.PASS,
+        f"Node.js {version} is compatible: {inspection.node}",
+    )
+    if inspection.entry is None:
+        return (
+            node_result,
+            CheckResult(
+                "pi_tui",
+                CheckStatus.FAIL,
+                inspection.problem or "pi-tui build entry is missing",
+            ),
+        )
+    return (
+        node_result,
+        CheckResult(
+            "pi_tui",
+            CheckStatus.PASS,
+            f"pi-tui build is ready: {inspection.entry}",
+        ),
     )
 
 

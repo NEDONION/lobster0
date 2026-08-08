@@ -18,7 +18,7 @@ from miniclaw.evals.runner import run_offline_suite
 from miniclaw.paths import PathConfigurationError, build_state_paths, resolve_home
 from miniclaw.storage.database import DatabaseError
 from miniclaw.storage.migrations import MigrationError
-from miniclaw.tui import run_tui
+from miniclaw.tui_launcher import TuiLaunchError, run_default_tui
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -85,8 +85,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print("error: MiniClaw TUI requires an interactive terminal", file=sys.stderr)
         return 2
     try:
-        return run_tui(paths)
-    except (ConfigError, DotEnvError, ValueError) as error:
+        return run_default_tui(paths)
+    except (ConfigError, DotEnvError, TuiLaunchError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
     except (DatabaseError, MigrationError, OSError, sqlite3.Error) as error:

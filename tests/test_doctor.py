@@ -24,12 +24,22 @@ class DoctorTest(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+        self.node = self.paths.home / "test-node"
+        self.node.parent.mkdir(parents=True, exist_ok=True)
+        self.node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+        self.node.chmod(0o700)
+        self.tui_entry = self.paths.home / "main.js"
+        self.tui_entry.write_text("// test entry\n", encoding="utf-8")
+        self.tui_environ = {
+            "MINICLAW_NODE": str(self.node),
+            "MINICLAW_TUI_ENTRY": str(self.tui_entry),
+        }
 
     def test_initialized_state_passes_all_local_checks(self) -> None:
         """完整初始化后七项本地检查都应实际通过。"""
         initialize_state(self.paths)
 
-        results = run_local_checks(self.paths, {})
+        results = run_local_checks(self.paths, self.tui_environ)
 
         self.assertEqual(
             {result.name for result in results},
@@ -41,9 +51,24 @@ class DoctorTest(unittest.TestCase):
                 "permissions",
                 "tools",
                 "approvals",
+                "node",
+                "pi_tui",
             },
         )
         self.assertTrue(all(result.status is CheckStatus.PASS for result in results))
+
+    def test_old_node_reports_actionable_pi_tui_failure(self) -> None:
+        """默认 pi-tui 遇到旧 Node 时必须给出最低版本，而不是启动后崩溃。"""
+        initialize_state(self.paths)
+        self.node.write_text("#!/bin/sh\nprintf 'v20.19.0\\n'\n", encoding="utf-8")
+
+        results = run_local_checks(self.paths, self.tui_environ)
+
+        node = next(result for result in results if result.name == "node")
+        build = next(result for result in results if result.name == "pi_tui")
+        self.assertIs(node.status, CheckStatus.FAIL)
+        self.assertIn("22.19.0", node.message)
+        self.assertIs(build.status, CheckStatus.FAIL)
 
     def test_corrupt_config_fails_without_exposing_file_contents(self) -> None:
         """损坏配置必须失败，诊断消息不能回显其中的密钥样例。"""

@@ -31,7 +31,7 @@ class CliTest(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as directory,
             mock.patch("miniclaw.cli._is_tui_terminal", return_value=True),
-            mock.patch("miniclaw.cli.run_tui", return_value=0) as run_tui,
+            mock.patch("miniclaw.cli.run_default_tui", return_value=0) as run_tui,
         ):
             exit_code, output, error = run_cli(["--home", directory])
 
@@ -113,15 +113,28 @@ class CliTest(unittest.TestCase):
         self.assertIn("invalid TOML", error)
 
     def test_doctor_reports_healthy_initialized_state(self) -> None:
-        """doctor 应输出七项 PASS 并以 0 退出。"""
+        """doctor 应包含 Node/pi-tui 在内的九项 PASS 并以 0 退出。"""
         with tempfile.TemporaryDirectory() as directory:
             run_cli(["init", "--home", directory])
+            node = Path(directory) / "test-node"
+            node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+            node.chmod(0o700)
+            entry = Path(directory) / "main.js"
+            entry.write_text("// test entry\n", encoding="utf-8")
 
-            exit_code, output, error = run_cli(["doctor", "--home", directory])
+            with mock.patch.dict(
+                "os.environ",
+                {
+                    "MINICLAW_NODE": str(node),
+                    "MINICLAW_TUI_ENTRY": str(entry),
+                },
+                clear=False,
+            ):
+                exit_code, output, error = run_cli(["doctor", "--home", directory])
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(error, "")
-        self.assertEqual(output.count("[PASS]"), 7)
+        self.assertEqual(output.count("[PASS]"), 9)
 
     def test_doctor_returns_two_for_corrupt_config(self) -> None:
         """损坏配置应显示失败项并使用配置错误退出码 2。"""
