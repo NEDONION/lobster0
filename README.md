@@ -49,7 +49,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 | TUI | 默认 pi-tui、中文/英文、流式对话、Tool 状态、紧凑审批卡、四档 Permission Mode、Textual fallback。 |
 | Tool | `system_info`、`read_file`、`write_file`、`edit_file`、`glob`、`grep`、`http_get`、`run_command`、`read_memory`、`propose_memory`。 |
 | 安全 | Workspace Guard、敏感路径硬拒绝、exact argv、最小子进程环境、HTTPS/DNS/SSRF 校验、参数绑定 Approval。 |
-| Channel | Feishu 用单张 `Claw Trail` Agent Card 展示脱敏步骤和最终回答；三平台各自独立 Transport/Delivery/Manager/queue/recovery，共享 Agent Runtime。 |
+| Channel | Feishu 用单张 `Claw Trail` Agent Card 展示脱敏步骤和最终回答；审批点击在原卡先显示处理中，再以成功、拒绝或失败终态收口；三平台各自独立 Transport/Delivery/Manager/queue/recovery，共享 Agent Runtime。 |
 | 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel ledger；owner-only Markdown Memory 与 Skills。 |
 | 运维 | `init`、`doctor`、`gateway`、结构化脱敏日志、幂等恢复、离线 Eval 与版本化 Channel gate。 |
 
@@ -63,6 +63,8 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 - `YOLO`：最少监督模式；不会关闭敏感路径、SSRF、Workspace 和关键动作硬边界。
 
 新安装和缺少 `tools.mode` 的旧配置默认使用 `autopilot`；显式 `safe`/`smart` 保持不变。该默认值只信任本地入口和经过验证的 Owner 私聊，群聊、其他用户与硬拒绝规则不会扩权。
+
+如果当前个人实例明确要求最少监督，可在私有 `~/.miniclaw/config.toml` 中设置 `mode = "yolo"` 并重启 Gateway；这只减少硬校验通过后的审批，不会开放凭据、敏感路径、SSRF、提权或 Shell 字符串执行。
 
 ## 快速开始
 

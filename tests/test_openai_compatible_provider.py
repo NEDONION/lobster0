@@ -530,6 +530,103 @@ class OpenAICompatibleProviderTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ProviderProtocolError):
             await provider.complete(simple_request())
 
+    async def test_malformed_tool_json_without_visible_text_is_retried_once(self) -> None:
+        """首轮未展示文本且 Tool JSON 截断时允许模型重试一次，不能猜测执行。"""
+        malformed = sse(
+            {
+                "id": "chat_malformed",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_bad",
+                                    "function": {
+                                        "name": "write_file",
+                                        "arguments": '{"path":"note.txt",',
+                                    },
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+        )
+        attempts = 0
+        delays: list[float] = []
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=malformed if attempts == 1 else SUCCESS_SSE,
+            )
+
+        async def record_sleep(delay: float) -> None:
+            delays.append(delay)
+
+        provider = await self._provider(respond, sleep=record_sleep)
+
+        response = await provider.complete(simple_request())
+
+        self.assertEqual(response.content, "ok")
+        self.assertEqual(attempts, 2)
+        self.assertEqual(delays, [0.5])
+
+    async def test_malformed_tool_json_after_visible_text_is_not_retried(self) -> None:
+        """已经产生可见增量后禁止协议重试，避免重复展示相同前缀。"""
+        partial = sse(
+            {
+                "id": "chat_partial_malformed",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "content": "开始",
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_bad",
+                                    "function": {
+                                        "name": "write_file",
+                                        "arguments": '{"path":',
+                                    },
+                                }
+                            ],
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            }
+        )
+        attempts = 0
+        chunks: list[str] = []
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            nonlocal attempts
+            attempts += 1
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=partial,
+            )
+
+        async def collect(text: str) -> None:
+            chunks.append(text)
+
+        provider = await self._provider(respond)
+
+        with self.assertRaises(ProviderProtocolError):
+            await provider.complete(simple_request(), collect)
+
+        self.assertEqual(attempts, 1)
+        self.assertEqual(chunks, ["开始"])
+
     async def test_tool_arguments_object_is_normalized_for_compatible_provider(self) -> None:
         """兼容服务直接返回 JSON object 时仍应生成受校验的 ToolCall。"""
         compatible = sse(

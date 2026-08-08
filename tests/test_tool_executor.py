@@ -463,6 +463,47 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(row["approval_id"], outcome.approval_id)
         self.assertEqual(json.loads(row["arguments_json"])["path"], str(target))
 
+    async def test_command_approval_summary_hides_long_and_sensitive_arguments(self) -> None:
+        """命令审批只展示程序和参数数量，不能把长短凭据复制到卡片。"""
+        secret = "PRIVATE-DOCUMENT-CONTENT-" * 40
+        short_secret = "abc123token"
+        approvals = ApprovalRepository(self.database)
+        executor = self.executor(RunCommandTool(), approvals=approvals)
+
+        outcome = await executor.execute(
+            self.context,
+            ToolCall(
+                "compact-command",
+                "run_command",
+                {
+                    "program": sys.executable,
+                    "args": [
+                        short_secret,
+                        "+create",
+                        "--content",
+                        secret,
+                        "--token",
+                        "private-token",
+                    ],
+                    "timeout_seconds": 30,
+                },
+            ),
+        )
+
+        assert outcome.approval_id is not None
+        summary = approvals.presentation(
+            self.context.user_id,
+            outcome.approval_id,
+        ).approval.summary
+        self.assertLessEqual(len(summary), 160)
+        self.assertIn("run_command", summary)
+        self.assertIn(Path(sys.executable).name, summary)
+        self.assertIn("6 args", summary)
+        self.assertNotIn(short_secret, summary)
+        self.assertNotIn("+create", summary)
+        self.assertNotIn(secret, summary)
+        self.assertNotIn("private-token", summary)
+
     async def test_personal_external_write_requires_once_then_creates_file(self) -> None:
         """Personal 外部写根在批准前无副作用，Allow once 后才创建文件。"""
         home = self.context.workspace.parent / "owner"

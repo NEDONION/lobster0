@@ -140,7 +140,7 @@ class ServiceStatus:
 - `ProgramArguments` 使用绝对解释器与 `miniclaw gateway` exact argv；
 - `WorkingDirectory` 指向项目或安装目录；
 - stdout/stderr 指向 `~/.miniclaw/logs/`；
-- `KeepAlive` 只根据异常退出重启，不制造快速重启风暴；
+- `KeepAlive` 持续恢复正常和异常退出；Gateway lease 阻止重启竞争形成双实例；
 - 添加退避和最大频率；
 - 安装前写临时文件、解析验证后原子替换；
 - 卸载只删除 MiniClaw 自己生成并且 hash 匹配的文件。

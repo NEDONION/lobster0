@@ -197,6 +197,11 @@ MiniClaw 0.1.0 · deepseek-v4-pro · 会话 default · 工作区 workspace · [A
 文件写入在 `safe`/`smart` 下仍只支持 Once；exact argv 和 exact hostname 可以由 Core 提供 Session/Always。
 `autopilot` 对可信 Owner 在硬校验通过后通常不会创建这些低于 critical 的审批。
 
+飞书审批不复制 TUI 的完整参数视图。`run_command` 卡片只显示程序 basename、最多两个安全子命令标签和参数数量，
+正文、Token、Header、完整路径和其余 argv 不进入卡片。点击按钮后原卡先变为橙色“处理中”，再按结果变为绿色完成、
+红色拒绝或红色失败，终态卡不保留按钮。续跑的最终回答或下一条 Approval 会先写入 durable Delivery；重复点击由
+SQLite 的单次 consume 条件安全拒绝。
+
 ## 9. 审计与排查
 
 模式变化写入 `audit_events` 的 `policy.mode_changed`。metadata 只包含：
@@ -226,6 +231,7 @@ running ToolRun，但会先写脱敏拒绝 Audit；Audit 写入失败时动作 f
 | Autopilot 仍拒绝某路径 | 命中了敏感路径或逃逸硬规则 | 不要放宽模式；改用非敏感路径 |
 | 切换后重启又变回去 | `/permissions` 只改进程状态 | 修改 `[tools].mode` 作为启动默认值 |
 | 审批详情很长 | 参数区可滚动，不再撑大 Overlay | 使用 PgUp/PgDn 或 Home/End |
+| 飞书按钮点击没反应 | Gateway 不在线或长连接已断开 | 检查 `launchctl print`、Gateway lease 和 `channel.supervisor.ready` 日志 |
 
 ## 10. 回滚
 
