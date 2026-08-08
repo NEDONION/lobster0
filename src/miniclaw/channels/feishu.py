@@ -15,6 +15,7 @@ from miniclaw.channels.base import (
     OutboundMessage,
     SendReceipt,
 )
+from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import FeishuConfig
 
 _MESSAGE_ID = re.compile(r"om_[A-Za-z0-9_-]{1,128}\Z")
@@ -142,6 +143,7 @@ class FeishuTransport:
             Callable[[str, Any, str, str], Awaitable[None]] | None
         ) = None,
         sdk: ModuleType | Any | None = None,
+        observer: ChannelObserver | None = None,
     ) -> None:
         """构造严格安全、默认关闭的单账号飞书 Transport。"""
         if not app_id or not app_secret:
@@ -150,9 +152,11 @@ class FeishuTransport:
         self._adapter = FeishuAdapter(config)
         self._on_inbound = on_inbound
         self._on_card_action = on_card_action
+        self._observer = observer
         self._sdk = sdk or importlib.import_module("lark_channel")
         self._unsubscribers: list[Callable[[], Any]] = []
         self._connected = False
+        self._connection_state = "disconnected"
         self._channel = self._build_channel(app_id, app_secret)
 
     def __repr__(self) -> str:
@@ -166,6 +170,7 @@ class FeishuTransport:
         """注册回调并等待 official SDK 确认 WebSocket 就绪。"""
         if self._connected:
             return
+        self._set_connection_state("connecting")
         self._unsubscribers.append(
             self._channel.on("message", self._handle_message)
         )
@@ -173,23 +178,42 @@ class FeishuTransport:
             self._unsubscribers.append(
                 self._channel.on("cardAction", self._handle_card_action)
             )
+        self._unsubscribers.extend(
+            (
+                self._channel.on("reconnecting", self._handle_reconnecting),
+                self._channel.on("reconnected", self._handle_reconnected),
+                self._channel.on("error", self._handle_sdk_error),
+            )
+        )
         try:
             await self._channel.connect()
         except Exception as error:
             self._unsubscribe_handler()
-            raise _transport_error(error) from None
+            mapped = _transport_error(error)
+            self._set_connection_state("failed", error_code=mapped.code)
+            raise mapped from None
         self._connected = True
+        self._set_connection_state("connected")
 
     async def disconnect(self) -> None:
         """先停止新回调，再优雅排空并断开 SDK。"""
         self._unsubscribe_handler()
         if not self._connected:
             return
+        self._set_connection_state("stopping")
         self._connected = False
         try:
             await self._channel.disconnect()
         except Exception as error:
-            raise _transport_error(error) from None
+            mapped = _transport_error(error)
+            self._set_connection_state("failed", error_code=mapped.code)
+            raise mapped from None
+        self._set_connection_state("disconnected")
+
+    @property
+    def connection_state(self) -> str:
+        """返回不含 SDK 原始错误的当前连接状态快照。"""
+        return self._connection_state
 
     def stop_receiving(self) -> None:
         """解除入站回调但保持连接，供 Gateway drain 已接收工作。"""
@@ -322,6 +346,45 @@ class FeishuTransport:
         normalized = self._adapter.normalize(view)
         if isinstance(normalized, InboundMessage):
             await self._on_inbound(normalized)
+        elif self._observer is not None:
+            self._observer.inbound(
+                channel="feishu",
+                account_id=self._config.account_id,
+                external_message_id=view.message_id or view.event_id or "invalid",
+                external_conversation_id=view.chat_id or None,
+                status="ignored",
+                reason=normalized.reason,
+            )
+
+    def _handle_reconnecting(self) -> None:
+        """同步接收 SDK 自动重连通知并更新安全状态。"""
+        self._set_connection_state("reconnecting")
+
+    def _handle_reconnected(self) -> None:
+        """同步接收 SDK 重连成功通知。"""
+        self._connected = True
+        self._set_connection_state("connected")
+
+    def _handle_sdk_error(self, error: Any) -> None:
+        """把 SDK error 事件压缩为稳定码；原始异常不会进入 Observer。"""
+        mapped = _transport_error(error)
+        self._set_connection_state("failed", error_code=mapped.code)
+
+    def _set_connection_state(
+        self,
+        state: str,
+        *,
+        error_code: str | None = None,
+    ) -> None:
+        """原子更新本地状态并发出同一份脱敏事件。"""
+        self._connection_state = state
+        if self._observer is not None:
+            self._observer.transport_state(
+                channel="feishu",
+                account_id=self._config.account_id,
+                state=state,
+                error_code=error_code,
+            )
 
     async def _handle_card_action(self, event: Any) -> None:
         """只转交 Controller 需要的操作者、值和回复目标。"""

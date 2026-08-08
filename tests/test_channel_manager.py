@@ -1,6 +1,7 @@
 """Durable ChannelManager 队列、并发和崩溃恢复测试。"""
 
 import asyncio
+import json
 import tempfile
 import unittest
 from dataclasses import dataclass, field
@@ -18,6 +19,7 @@ from miniclaw.channels.approvals import (
 from miniclaw.channels.base import InboundMessage, SendReceipt
 from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.manager import ChannelManager
+from miniclaw.channels.observability import ChannelObserver
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
@@ -257,6 +259,49 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(duplicate.enqueued)
         self.assertEqual(len(queued), 1)
         self.assertEqual(queued[0].content, "one")
+
+    async def test_inbound_and_turn_lifecycle_write_correlated_audit(self) -> None:
+        """Manager 首次落库、重复投递和 Turn 终态必须共享安全 correlation。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        observer = ChannelObserver(self.database)
+        manager = self._manager(
+            service,
+            queue_size=2,
+            worker_count=1,
+            observer=observer,
+        )
+
+        await manager.receive(self._message("om_observed", "one"))
+        await manager.receive(
+            self._message("om_observed", "ignored duplicate", event_id="evt_retry")
+        )
+        await manager.start()
+        await manager.wait_idle(timeout=1)
+        await manager.stop()
+
+        with self.database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT event_type, metadata_json FROM audit_events
+                WHERE event_type LIKE 'channel.%'
+                ORDER BY id
+                """
+            ).fetchall()
+        self.assertEqual(
+            [row["event_type"] for row in rows],
+            [
+                "channel.inbound.accepted",
+                "channel.inbound.duplicate",
+                "channel.turn.started",
+                "channel.turn.completed",
+            ],
+        )
+        metadata = [json.loads(row["metadata_json"]) for row in rows]
+        self.assertEqual(len({item["correlation_id"] for item in metadata}), 1)
+        self.assertGreater(metadata[0]["event_row_id"], 0)
+        self.assertEqual(metadata[-1]["tool_count"], 0)
+        self.assertEqual(metadata[-1]["approval_state"], "none")
+        self.assertNotIn("om_observed", repr(metadata))
 
     async def test_full_memory_queue_recovers_second_message_from_database(self) -> None:
         """queue 满只能丢 wake-up，不能丢已经持久化的第二条消息。"""
@@ -574,6 +619,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         *,
         queue_size: int,
         worker_count: int,
+        observer: ChannelObserver | None = None,
     ) -> ChannelManager:
         """用共享 Repository 构造 Manager。"""
         return ChannelManager(
@@ -590,6 +636,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             queue_size=queue_size,
             worker_count=worker_count,
             feeder_interval=0.01,
+            observer=observer,
         )
 
     def _message(

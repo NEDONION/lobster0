@@ -1,9 +1,11 @@
 """SQLite-backed Channel Inbox 的有界队列、Worker 与重启恢复。"""
 
 import asyncio
+import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Protocol
 
 from miniclaw.agent.events import RunEventHandler
@@ -16,6 +18,7 @@ from miniclaw.channels.approvals import (
 from miniclaw.channels.base import DeliveryKind, InboundMessage
 from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.delivery import split_message
+from miniclaw.channels.observability import ChannelObserver
 from miniclaw.providers.base import StreamHandler
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
@@ -109,6 +112,7 @@ class ChannelManager:
         worker_count: int,
         message_max_chars: int = 30_000,
         feeder_interval: float = 0.25,
+        observer: ChannelObserver | None = None,
     ) -> None:
         """绑定唯一 Runtime、Repository 与不可由平台消息改变的并发预算。"""
         if (
@@ -141,6 +145,7 @@ class ChannelManager:
         self._stopping = asyncio.Event()
         self._capabilities: ChannelCapabilities | None = None
         self._approvals: ApprovalHandler | None = None
+        self._observer = observer
 
     def attach_capabilities(self, capabilities: ChannelCapabilities) -> None:
         """在启动前绑定依赖同一个 Transport 的平台体验能力。"""
@@ -160,8 +165,10 @@ class ChannelManager:
             raise ChannelStateError("channel_account_mismatch")
         result = self._inbound.record(message)
         if not result.inserted:
+            self._observe_inbound(message, result.event, "duplicate", False)
             return InboundAcceptance(False, False)
         enqueued = await self._enqueue(result.event.key)
+        self._observe_inbound(message, result.event, "accepted", enqueued)
         return InboundAcceptance(True, enqueued)
 
     async def start(self) -> None:
@@ -281,6 +288,13 @@ class ChannelManager:
                 event.external_conversation_id,
             )
             self._inbound.bind_session(event.key, session.id)
+            started = time.monotonic()
+            self._observe_turn(
+                event,
+                status="started",
+                session_id=session.id,
+                started=started,
+            )
             activity = (
                 None
                 if self._capabilities is None
@@ -300,12 +314,26 @@ class ChannelManager:
                     if activity is not None:
                         await activity.finish(content=None, failed=True)
                     self._fail_running_event(event.key, "channel_turn_interrupted")
+                    self._observe_turn(
+                        event,
+                        status="interrupted",
+                        session_id=session.id,
+                        started=started,
+                        error_code="channel_turn_interrupted",
+                    )
                     raise
                 except Exception:
                     if activity is not None:
                         await activity.finish(content=None, failed=True)
                     self._create_failure_delivery(session.id, event)
                     self._inbound.mark_failed(event.key, "channel_control_failed")
+                    self._observe_turn(
+                        event,
+                        status="failed",
+                        session_id=session.id,
+                        started=started,
+                        error_code="channel_control_failed",
+                    )
                     return
                 if command.handled:
                     visible = (
@@ -320,6 +348,18 @@ class ChannelManager:
                     elif command.notice is not None:
                         self._create_notice_delivery(session.id, event, command.notice)
                     self._inbound.mark_completed(event.key)
+                    self._observe_turn(
+                        event,
+                        status=(
+                            "waiting_approval"
+                            if command.result is not None
+                            and command.result.approval_id is not None
+                            else "completed"
+                        ),
+                        session_id=session.id,
+                        started=started,
+                        result=command.result,
+                    )
                     return
             try:
                 result = await self.service.handle_inbound(
@@ -335,12 +375,26 @@ class ChannelManager:
                 if activity is not None:
                     await activity.finish(content=None, failed=True)
                 self._fail_running_event(event.key, "channel_turn_interrupted")
+                self._observe_turn(
+                    event,
+                    status="interrupted",
+                    session_id=session.id,
+                    started=started,
+                    error_code="channel_turn_interrupted",
+                )
                 raise
             except Exception:
                 if activity is not None:
                     await activity.finish(content=None, failed=True)
                 self._create_failure_delivery(session.id, event)
                 self._inbound.mark_failed(event.key, "channel_turn_failed")
+                self._observe_turn(
+                    event,
+                    status="failed",
+                    session_id=session.id,
+                    started=started,
+                    error_code="channel_turn_failed",
+                )
                 return
 
             if activity is not None:
@@ -348,6 +402,15 @@ class ChannelManager:
 
             self._create_result_delivery(session.id, event, result)
             self._inbound.mark_completed(event.key)
+            self._observe_turn(
+                event,
+                status=(
+                    "waiting_approval" if result.approval_id is not None else "completed"
+                ),
+                session_id=session.id,
+                started=started,
+                result=result,
+            )
 
     def _create_result_delivery(
         self,
@@ -517,6 +580,91 @@ class ChannelManager:
         try:
             self._inbound.mark_failed(key, error_code)
         except ChannelStateError:
+            return
+
+    def _observe_inbound(
+        self,
+        message: InboundMessage,
+        event: StoredInboundEvent,
+        status: str,
+        enqueued: bool,
+    ) -> None:
+        """把首次落库/重复投递映射为不含正文与完整外部 ID 的 Audit。"""
+        if self._observer is None:
+            return
+        try:
+            self._observer.inbound(
+                channel=event.key.channel,
+                account_id=event.key.account_id,
+                external_message_id=event.external_message_id,
+                external_conversation_id=message.external_conversation_id,
+                status=status,
+                event_row_id=(event.storage_rowid if event.storage_rowid > 0 else None),
+                enqueued=enqueued,
+                user_id=self.owner_id,
+            )
+        except Exception:
+            return
+
+    def _observe_turn(
+        self,
+        event: StoredInboundEvent,
+        *,
+        status: str,
+        session_id: int,
+        started: float,
+        result: TurnResult | None = None,
+        error_code: str | None = None,
+    ) -> None:
+        """记录一个 Turn 的安全内部关联、排队时间和终态耗时。"""
+        if self._observer is None:
+            return
+        turn_id = None if result is None else result.turn_id
+        internal_message_id = None if result is None else result.message_id
+        if turn_id is None and status != "started":
+            try:
+                turn_id = self._turns.get_by_inbound(
+                    session_id,
+                    event.external_message_id,
+                ).id
+            except ConversationStateError:
+                turn_id = None
+        queue_wait_ms = max(
+            0,
+            int((datetime.now(UTC) - event.received_at).total_seconds() * 1000),
+        )
+        try:
+            self._observer.turn(
+                channel=event.key.channel,
+                account_id=event.key.account_id,
+                external_message_id=event.external_message_id,
+                status=status,
+                event_row_id=(event.storage_rowid if event.storage_rowid > 0 else None),
+                user_id=self.owner_id,
+                session_id=session_id,
+                turn_id=turn_id,
+                internal_message_id=internal_message_id,
+                queue_wait_ms=queue_wait_ms,
+                agent_duration_ms=(
+                    None
+                    if status == "started"
+                    else max(0, int((time.monotonic() - started) * 1000))
+                ),
+                tool_count=(
+                    None if status == "started" else self._observer.tool_count(turn_id)
+                ),
+                approval_state=(
+                    None
+                    if status == "started"
+                    else (
+                        "waiting"
+                        if result is not None and result.approval_id is not None
+                        else "none"
+                    )
+                ),
+                error_code=error_code,
+            )
+        except Exception:
             return
 
     @asynccontextmanager

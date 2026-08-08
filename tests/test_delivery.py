@@ -1,5 +1,6 @@
 """Unicode 分片、DeliveryWorker 重试与恢复测试。"""
 
+import json
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
@@ -8,6 +9,7 @@ from pathlib import Path
 from miniclaw.channels.approvals import ApprovalPrompt, approval_delivery_payload
 from miniclaw.channels.base import ChannelTransportError, SendReceipt
 from miniclaw.channels.delivery import DeliveryWorker, split_message
+from miniclaw.channels.observability import ChannelObserver
 from miniclaw.storage.channels import DeliveryRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.migrations import apply_migrations
@@ -133,6 +135,35 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await second_worker.run_once())
         self.assertEqual(first_transport.sent[0][1], second_transport.sent[0][1])
 
+    async def test_delivery_attempt_and_terminal_state_are_audited(self) -> None:
+        """每次 claim 与最终发送结果必须记录内部 Delivery ID、attempt 和耗时。"""
+        delivery = self._delivery("observed")
+        observer = ChannelObserver(self.database)
+        transport = FakeChannelTransport((SendReceipt("om_sent"),))
+
+        self.assertTrue(await self._worker(transport, observer=observer).run_once())
+
+        with self.database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT event_type, metadata_json FROM audit_events
+                WHERE event_type LIKE 'channel.delivery.%'
+                ORDER BY id
+                """
+            ).fetchall()
+        self.assertEqual(
+            [row["event_type"] for row in rows],
+            ["channel.delivery.sending", "channel.delivery.sent"],
+        )
+        sending = json.loads(rows[0]["metadata_json"])
+        sent = json.loads(rows[1]["metadata_json"])
+        self.assertEqual(sending["delivery_id"], delivery.id)
+        self.assertEqual(sent["delivery_attempts"], 1)
+        self.assertEqual(sent["retry_decision"], "none")
+        self.assertGreaterEqual(sent["delivery_duration_ms"], 0)
+        self.assertEqual(sending["correlation_id"], sent["correlation_id"])
+        self.assertNotIn("om_source", repr((sending, sent)))
+
     async def test_max_attempts_and_unexpected_error_are_failed_and_redacted(self) -> None:
         """达到重试上限或未知异常必须失败，异常原文不能进入数据库。"""
         delivery = self._delivery("secret")
@@ -221,6 +252,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         *,
         max_attempts: int = 5,
         base_delay: float = 1,
+        observer: ChannelObserver | None = None,
     ) -> DeliveryWorker:
         """构造不使用真实 sleep 或随机抖动的 Worker。"""
         return DeliveryWorker(
@@ -234,6 +266,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
             jitter=lambda: 1.0,
             clock=self.clock,
             poll_interval=0.01,
+            observer=observer,
         )
 
     def _delivery(self, content: str):

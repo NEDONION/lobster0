@@ -2,6 +2,7 @@
 
 import asyncio
 import random
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
@@ -11,6 +12,7 @@ from miniclaw.channels.base import (
     ChannelTransportError,
     OutboundMessage,
 )
+from miniclaw.channels.observability import ChannelObserver
 from miniclaw.storage.channels import DeliveryRepository, StoredDelivery
 
 
@@ -85,6 +87,7 @@ class DeliveryWorker:
         clock: Callable[[], datetime] | None = None,
         poll_interval: float = 0.25,
         message_max_chars: int = 30_000,
+        observer: ChannelObserver | None = None,
     ) -> None:
         """绑定 Transport、Outbox 和有限重试预算。"""
         if (
@@ -109,6 +112,7 @@ class DeliveryWorker:
         self._wake = asyncio.Event()
         self._stopping = asyncio.Event()
         self._task: asyncio.Task[None] | None = None
+        self._observer = observer
 
     def recover(self) -> int:
         """把遗留 sending 变成 unknown，再用相同 UUID 安全重新排队。"""
@@ -124,40 +128,45 @@ class DeliveryWorker:
         delivery = self._repository.claim_next(self._channel, self._account_id)
         if delivery is None:
             return False
-        if delivery.delivery_kind == "approval":
-            await self._send_approval(delivery)
-            return True
-        message = OutboundMessage(
-            channel=delivery.channel,
-            account_id=delivery.account_id,
-            external_conversation_id=delivery.external_conversation_id,
-            reply_to_message_id=delivery.reply_to_message_id,
-            content=delivery.content,
-            kind=delivery.delivery_kind,
-        )
+        started = time.monotonic()
+        self._observe_delivery(delivery, started=started)
         try:
-            receipt = await self._transport.send(
-                message,
-                idempotency_key=delivery.idempotency_key,
+            if delivery.delivery_kind == "approval":
+                await self._send_approval(delivery)
+                return True
+            message = OutboundMessage(
+                channel=delivery.channel,
+                account_id=delivery.account_id,
+                external_conversation_id=delivery.external_conversation_id,
+                reply_to_message_id=delivery.reply_to_message_id,
+                content=delivery.content,
+                kind=delivery.delivery_kind,
             )
-        except asyncio.CancelledError:
-            self._repository.mark_unknown(
-                delivery.id,
-                "feishu_delivery_unknown",
-            )
-            raise
-        except ChannelTransportError as error:
-            self._handle_transport_error(delivery, error)
-        except Exception:
-            self._repository.mark_failed(delivery.id, "feishu_send_failed")
-        else:
-            if not receipt.platform_message_id:
+            try:
+                receipt = await self._transport.send(
+                    message,
+                    idempotency_key=delivery.idempotency_key,
+                )
+            except asyncio.CancelledError:
                 self._repository.mark_unknown(
                     delivery.id,
                     "feishu_delivery_unknown",
                 )
+                raise
+            except ChannelTransportError as error:
+                self._handle_transport_error(delivery, error)
+            except Exception:
+                self._repository.mark_failed(delivery.id, "feishu_send_failed")
             else:
-                self._repository.mark_sent(delivery.id, receipt.platform_message_id)
+                if not receipt.platform_message_id:
+                    self._repository.mark_unknown(
+                        delivery.id,
+                        "feishu_delivery_unknown",
+                    )
+                else:
+                    self._repository.mark_sent(delivery.id, receipt.platform_message_id)
+        finally:
+            self._observe_delivery_id(delivery.id, started=started)
         return True
 
     async def _send_approval(self, delivery: StoredDelivery) -> None:
@@ -283,3 +292,59 @@ class DeliveryWorker:
             )
             return
         self._repository.mark_failed(delivery.id, error.code)
+
+    def _observe_delivery(
+        self,
+        delivery: StoredDelivery,
+        *,
+        started: float,
+    ) -> None:
+        """记录 claim 或终态；正文、目标和平台消息 ID 永不进入 Observer。"""
+        if self._observer is None:
+            return
+        retry_decisions = {
+            "sending": None,
+            "sent": "none",
+            "retry_wait": "retry",
+            "unknown": "unknown",
+            "failed": "terminal",
+            "superseded": "fallback",
+        }
+        retry_decision = retry_decisions.get(delivery.status)
+        if delivery.status not in retry_decisions:
+            return
+        try:
+            user_id, session_id, turn_id = self._observer.message_context(
+                delivery.message_id
+            )
+            self._observer.delivery(
+                channel=delivery.channel,
+                account_id=delivery.account_id,
+                external_message_id=delivery.reply_to_message_id or delivery.idempotency_key,
+                delivery_id=delivery.id,
+                status=delivery.status,
+                internal_message_id=delivery.message_id,
+                delivery_duration_ms=(
+                    None
+                    if delivery.status == "sending"
+                    else max(0, int((time.monotonic() - started) * 1000))
+                ),
+                attempts=delivery.attempts,
+                error_code=delivery.last_error_code,
+                retry_decision=retry_decision,
+                user_id=user_id,
+                session_id=session_id,
+                turn_id=turn_id,
+            )
+        except Exception:
+            return
+
+    def _observe_delivery_id(self, delivery_id: int, *, started: float) -> None:
+        """读取 Repository 已提交的终态后写入可观测事件。"""
+        if self._observer is None:
+            return
+        try:
+            delivery = self._repository.get(delivery_id)
+        except Exception:
+            return
+        self._observe_delivery(delivery, started=started)

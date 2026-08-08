@@ -75,6 +75,17 @@ class FakeCapabilityTransport:
         return SendReceipt(platform_message_id)
 
 
+@dataclass(slots=True)
+class RecordingObserver:
+    """记录能力层失败，不接收正文或原始异常。"""
+
+    events: list[dict[str, Any]] = field(default_factory=list)
+
+    def capability(self, **event: Any) -> None:
+        """保存单条安全 capability 事件。"""
+        self.events.append(event)
+
+
 class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
     """验证进度能力不会改变 Agent 或 durable final delivery。"""
 
@@ -103,6 +114,7 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         transport: FakeCapabilityTransport,
         *,
         enabled: bool = True,
+        observer: RecordingObserver | None = None,
     ):
         """创建单条消息的能力会话。"""
         capabilities = ChannelCapabilities(
@@ -110,17 +122,21 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             streaming_card=enabled,
             update_interval=0.5,
             clock=self.clock,
+            observer=observer,
         )
         return capabilities.activity(self.event)
 
     async def test_typing_starts_and_always_ends_best_effort(self) -> None:
         """Typing 失败不能中断 Turn，成功 token 必须在完成时移除。"""
         failing = FakeCapabilityTransport(fail_typing=True)
-        activity = self._activity(failing)
+        observer = RecordingObserver()
+        activity = self._activity(failing, observer=observer)
         await activity.start()
         await activity.finish(content="answer", failed=False)
         self.assertEqual(failing.typing_added, ["om_inbound"])
         self.assertEqual(failing.typing_removed, [])
+        self.assertEqual(observer.events[0]["capability"], "typing_add")
+        self.assertEqual(observer.events[0]["error_code"], "feishu_permission_denied")
 
         successful = FakeCapabilityTransport()
         activity = self._activity(successful)

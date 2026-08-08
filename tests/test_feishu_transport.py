@@ -13,6 +13,22 @@ from tests.fakes.fake_channel import (
 )
 
 
+class RecordingObserver:
+    """记录 Transport 发出的安全可观测事件。"""
+
+    def __init__(self) -> None:
+        self.transport_events: list[dict[str, Any]] = []
+        self.inbound_events: list[dict[str, Any]] = []
+
+    def transport_state(self, **event: Any) -> None:
+        """记录连接状态。"""
+        self.transport_events.append(event)
+
+    def inbound(self, **event: Any) -> None:
+        """记录 admission 结果。"""
+        self.inbound_events.append(event)
+
+
 class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
     """验证 SDK 安全配置、生命周期、映射、发送与稳定错误。"""
 
@@ -50,6 +66,7 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         sdk: FakeOfficialSdk,
         *,
         app_secret: str = "app-secret-private",
+        observer: RecordingObserver | None = None,
     ) -> FeishuTransport:
         """用注入 SDK 创建 Transport。"""
         return FeishuTransport(
@@ -59,7 +76,54 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
             on_inbound=self._receive,
             on_card_action=self._card_action,
             sdk=sdk,
+            observer=observer,
         )
+
+    async def test_connection_reconnect_and_ignored_inbound_are_observable(self) -> None:
+        """official 重连事件和安全过滤必须发出脱敏状态，不能依赖正文。"""
+        sdk = FakeOfficialSdk()
+        observer = RecordingObserver()
+        transport = self._transport(sdk, observer=observer)
+
+        self.assertEqual(transport.connection_state, "disconnected")
+        await transport.connect()
+        self.assertEqual(transport.connection_state, "connected")
+        sdk.channel.handlers["reconnecting"]()
+        self.assertEqual(transport.connection_state, "reconnecting")
+        sdk.channel.handlers["reconnected"]()
+        self.assertEqual(transport.connection_state, "connected")
+        await sdk.channel.handlers["message"](
+            SimpleNamespace(
+                id="om_denied",
+                create_time=1_786_118_400_000,
+                conversation=SimpleNamespace(chat_id="oc_allowed", chat_type="p2p"),
+                sender=SimpleNamespace(
+                    open_id="ou_intruder",
+                    sender_type="user",
+                    is_bot=False,
+                ),
+                mentioned_bot=False,
+                body_text="private-body-must-not-be-observed",
+                raw_content_type="text",
+                raw={"header": {"event_id": "evt_denied"}},
+            )
+        )
+        await transport.disconnect()
+
+        self.assertEqual(
+            [event["state"] for event in observer.transport_events],
+            [
+                "connecting",
+                "connected",
+                "reconnecting",
+                "connected",
+                "stopping",
+                "disconnected",
+            ],
+        )
+        self.assertEqual(observer.inbound_events[0]["status"], "ignored")
+        self.assertEqual(observer.inbound_events[0]["reason"], "sender_denied")
+        self.assertNotIn("private-body", repr(observer.inbound_events))
 
     async def test_constructor_sets_strict_security_and_closed_policies(self) -> None:
         """Transport 必须显式使用 WS、strict、用户/群 allowlist 与 require mention。"""

@@ -8,6 +8,7 @@ from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
 from miniclaw.channels.manager import ChannelManager
+from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig
 from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths
@@ -166,6 +167,8 @@ def create_channel_manager(
     config: AppConfig,
     paths: StatePaths,
     runtime: AgentRuntime,
+    *,
+    observer: ChannelObserver | None = None,
 ) -> ChannelManager:
     """为飞书 Gateway 装配复用唯一 TurnService 的 durable ChannelManager。"""
     database = Database(paths.database)
@@ -184,4 +187,5 @@ def create_channel_manager(
         queue_size=feishu.queue_size,
         worker_count=feishu.worker_count,
         message_max_chars=feishu.message_max_chars,
+        observer=observer,
     )

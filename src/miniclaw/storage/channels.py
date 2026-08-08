@@ -73,6 +73,7 @@ class StoredInboundEvent:
     last_error_code: str | None
     received_at: datetime
     updated_at: datetime
+    storage_rowid: int = 0
 
     @property
     def external_message_id(self) -> str:
@@ -838,6 +839,7 @@ def _inbound_from_row(row: sqlite3.Row) -> StoredInboundEvent:
         ),
         received_at=_parse_time(str(row["received_at"])),
         updated_at=_parse_time(str(row["updated_at"])),
+        storage_rowid=int(row["storage_rowid"]),
     )
 
 

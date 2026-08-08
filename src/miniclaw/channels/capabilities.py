@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from miniclaw.agent.events import RunEvent
-from miniclaw.channels.base import SendReceipt
+from miniclaw.channels.base import ChannelTransportError, SendReceipt
+from miniclaw.channels.observability import ChannelObserver
 from miniclaw.storage.channels import StoredInboundEvent
 
 
@@ -62,6 +63,7 @@ class ChannelCapabilities:
         update_interval: float = 0.5,
         max_visible_chars: int = 20_000,
         clock: Callable[[], float] | None = None,
+        observer: ChannelObserver | None = None,
     ) -> None:
         """绑定 Transport 与不可由平台输入放大的更新预算。"""
         if update_interval <= 0 or max_visible_chars <= 0:
@@ -71,6 +73,7 @@ class ChannelCapabilities:
         self._update_interval = update_interval
         self._max_visible_chars = max_visible_chars
         self._clock = clock or time.monotonic
+        self._observer = observer
 
     def activity(self, event: StoredInboundEvent) -> "CapabilityActivity":
         """创建单条消息专用状态，禁止跨 Conversation 共享内容。"""
@@ -81,6 +84,7 @@ class ChannelCapabilities:
             update_interval=self._update_interval,
             max_visible_chars=self._max_visible_chars,
             clock=self._clock,
+            observer=self._observer,
         )
 
 
@@ -96,6 +100,7 @@ class CapabilityActivity:
         update_interval: float,
         max_visible_chars: int,
         clock: Callable[[], float],
+        observer: ChannelObserver | None,
     ) -> None:
         self._transport = transport
         self._event = event
@@ -103,6 +108,7 @@ class CapabilityActivity:
         self._update_interval = update_interval
         self._max_visible_chars = max_visible_chars
         self._clock = clock
+        self._observer = observer
         self._typing_reaction_id: str | None = None
         self._card_message_id: str | None = None
         self._visible_text = ""
@@ -118,8 +124,9 @@ class CapabilityActivity:
             self._typing_reaction_id = await self._transport.add_typing(
                 self._event.reply_to_message_id
             )
-        except Exception:
+        except Exception as error:
             self._typing_reaction_id = None
+            self._observe_failure("typing_add", error)
 
     async def on_event(self, event: RunEvent) -> None:
         """只消费公开 model_text_delta；其他 trace 类型一律忽略。"""
@@ -168,12 +175,17 @@ class CapabilityActivity:
                     await self._update_card(final_text, incomplete=False)
         finally:
             try:
-                await self._transport.remove_typing(
+                removed = await self._transport.remove_typing(
                     self._event.reply_to_message_id,
                     self._typing_reaction_id,
                 )
-            except Exception:
-                pass
+                if self._typing_reaction_id is not None and not removed:
+                    self._observe_failure(
+                        "typing_remove",
+                        ChannelTransportError("feishu_typing_remove_failed"),
+                    )
+            except Exception as error:
+                self._observe_failure("typing_remove", error)
         return self._outcome()
 
     async def _create_card(self) -> None:
@@ -185,8 +197,9 @@ class CapabilityActivity:
                 card=_progress_card(self._visible_text, incomplete=False),
                 idempotency_key=self.idempotency_key,
             )
-        except Exception:
+        except Exception as error:
             self._card_failed = True
+            self._observe_failure("progress_card_create", error)
             return
         self._card_message_id = receipt.platform_message_id
         self._last_rendered = self._visible_text
@@ -201,8 +214,9 @@ class CapabilityActivity:
                 self._card_message_id,
                 _progress_card(text, incomplete=incomplete),
             )
-        except Exception:
+        except Exception as error:
             self._card_failed = True
+            self._observe_failure("progress_card_update", error)
             return
         self._last_rendered = text
         self._last_update_at = self._clock()
@@ -213,6 +227,32 @@ class CapabilityActivity:
             card_created=self._card_message_id is not None,
             card_failed=self._card_failed,
         )
+
+    def _observe_failure(self, capability: str, error: Exception) -> None:
+        """把能力异常压缩为稳定码，Observer 永远看不到异常正文。"""
+        if self._observer is None:
+            return
+        error_code = (
+            error.code
+            if isinstance(error, ChannelTransportError)
+            else "feishu_capability_failed"
+        )
+        try:
+            self._observer.capability(
+                channel=self._event.key.channel,
+                account_id=self._event.key.account_id,
+                external_message_id=self._event.external_message_id,
+                capability=capability,
+                error_code=error_code,
+                event_row_id=(
+                    self._event.storage_rowid
+                    if self._event.storage_rowid > 0
+                    else None
+                ),
+                session_id=self._event.session_id,
+            )
+        except Exception:
+            return
 
 
 def _progress_card(text: str, *, incomplete: bool) -> dict[str, Any]:

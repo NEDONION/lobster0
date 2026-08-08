@@ -2,6 +2,7 @@
 
 import asyncio
 import importlib.util
+import logging
 import os
 import signal
 from collections.abc import Callable, Mapping
@@ -13,6 +14,7 @@ from miniclaw.channels.approvals import ChannelApprovalController
 from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.delivery import DeliveryWorker, split_message
 from miniclaw.channels.feishu import FeishuTransport
+from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.paths import StatePaths
@@ -144,6 +146,7 @@ async def run_gateway(
         credentials = validate_gateway_environment(config, target)
     except (ConfigError, DotEnvError, GatewayConfigError):
         raise
+    _configure_channel_logging()
     shutdown_event = asyncio.Event()
     force_event = asyncio.Event()
     loop = asyncio.get_running_loop()
@@ -243,7 +246,13 @@ async def _create_components(
     runtime: AgentRuntime = create_runtime(config, paths, credentials.model_api_key)
     try:
         database = Database(paths.database)
-        manager = create_channel_manager(config, paths, runtime)
+        observer = ChannelObserver(database)
+        manager = create_channel_manager(
+            config,
+            paths,
+            runtime,
+            observer=observer,
+        )
         approval_controller = ChannelApprovalController(
             owner_open_id=config.channels.feishu.owner_open_id,
             approvals=ApprovalRepository(database),
@@ -287,6 +296,7 @@ async def _create_components(
             app_secret=credentials.app_secret,
             on_inbound=manager.receive,
             on_card_action=on_card_action,
+            observer=observer,
         )
         manager.attach_approvals(approval_controller)
         manager.attach_capabilities(
@@ -294,6 +304,7 @@ async def _create_components(
                 transport=transport,
                 streaming_card=config.channels.feishu.streaming_card,
                 max_visible_chars=config.channels.feishu.message_max_chars,
+                observer=observer,
             )
         )
         delivery = DeliveryWorker(
@@ -302,6 +313,7 @@ async def _create_components(
             channel="feishu",
             account_id=config.channels.feishu.account_id,
             message_max_chars=config.channels.feishu.message_max_chars,
+            observer=observer,
         )
         return GatewayComponents(
             runtime=runtime,
@@ -313,6 +325,18 @@ async def _create_components(
     except Exception:
         await runtime.aclose()
         raise
+
+
+def _configure_channel_logging() -> None:
+    """为 Gateway 安装单个纯 JSON stderr handler，避免重复日志。"""
+    logger = logging.getLogger("miniclaw.channel")
+    if not any(getattr(handler, "_miniclaw_channel", False) for handler in logger.handlers):
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(message)s"))
+        handler._miniclaw_channel = True  # type: ignore[attr-defined]
+        logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
 
 async def _best_effort_card_status(
