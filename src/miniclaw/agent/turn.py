@@ -1,6 +1,7 @@
 """把一次 CLI 输入编排为可持久化的 Agent Turn。"""
 
 import asyncio
+import logging
 import sqlite3
 import time
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from miniclaw.agent.runner import (
     EmptyModelResponseError,
 )
 from miniclaw.config import WorkspaceConfig
+from miniclaw.memory.flush import MemoryCapture
 from miniclaw.memory.models import ConversationKind, DisclosureContext
 from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.providers.base import (
@@ -44,6 +46,8 @@ from miniclaw.storage.conversations import (
 )
 from miniclaw.storage.tooling import ApprovalRepository, StoredToolRun
 from miniclaw.tools.base import ToolContext, ToolResult
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +79,7 @@ class TurnService:
         runner: AgentRunner,
         approvals: ApprovalRepository | None = None,
         compactor: ContextCompactor | None = None,
+        memory_capture: MemoryCapture | None = None,
         state_home: Path,
         workspace: WorkspaceConfig,
     ) -> None:
@@ -88,6 +93,7 @@ class TurnService:
             turns: 负责 User Message 和 Turn 终态事务的 Repository。
             context: 负责身份文件与历史组合的 ContextBuilder。
             runner: 负责模型与 Tool Call 循环的 AgentRunner。
+            memory_capture: 可选的 completed Turn durable capture，不运行提取器。
             state_home: 当前实例的状态根目录。
             workspace: 当前可写与额外只读文件边界。
         """
@@ -102,6 +108,7 @@ class TurnService:
         self._runner = runner
         self._approvals = approvals
         self._compactor = compactor
+        self._memory_capture = memory_capture
         self._state_home = state_home
         self._workspace = workspace
 
@@ -249,6 +256,20 @@ class TurnService:
                 result,
                 request.runtime_snapshot,
             )
+            if (
+                result.status is AgentRunStatus.COMPLETED
+                and assistant is not None
+                and self._memory_capture is not None
+            ):
+                try:
+                    self._memory_capture.capture_completed(
+                        owner_id=self._owner_id,
+                        session_id=session.id,
+                        turn_id=turn.id,
+                        disclosure=disclosure,
+                    )
+                except Exception:
+                    _LOGGER.warning("memory_capture_failed", exc_info=False)
             if result.status is AgentRunStatus.COMPLETED:
                 await emit(
                     on_event,

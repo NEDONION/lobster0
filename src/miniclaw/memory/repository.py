@@ -331,6 +331,42 @@ class MemoryRunRepository:
         assert row is not None
         return _flush_run(row)
 
+    def complete_projection_and_buffers(
+        self,
+        run_id: int,
+        *,
+        now: datetime,
+    ) -> MemoryFlushRun:
+        """在同一事务中结算 Projection checkpoint 和全部 assigned buffers。"""
+        _require_positive(run_id, "run_id")
+        timestamp = _utc_text(now)
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            updated = connection.execute(
+                """
+                UPDATE memory_flush_runs
+                SET status = 'completed', projection_committed_at = ?, completed_at = ?,
+                    updated_at = ?, last_error_code = NULL
+                WHERE id = ? AND status = 'projection_pending'
+                """,
+                (timestamp, timestamp, timestamp, run_id),
+            ).rowcount
+            if updated != 1:
+                raise MemoryStateError("memory run is not projection_pending")
+            connection.execute(
+                """
+                UPDATE memory_buffers SET status = 'flushed', flushed_at = ?
+                WHERE flush_run_id = ? AND status = 'assigned'
+                """,
+                (timestamp, run_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM memory_flush_runs WHERE id = ?",
+                (run_id,),
+            ).fetchone()
+        assert row is not None
+        return _flush_run(row)
+
     def mark_dead_letter(
         self,
         run_id: int,
@@ -366,6 +402,18 @@ class MemoryRunRepository:
         if row is None:
             raise MemoryStateError("memory run does not exist")
         return _flush_run(row)
+
+    def next_projection_pending(self) -> MemoryFlushRun | None:
+        """返回最早尚未完成 SQLite Projection 的 Markdown checkpoint。"""
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM memory_flush_runs
+                WHERE status = 'projection_pending'
+                ORDER BY owner_id, id LIMIT 1
+                """
+            ).fetchone()
+        return None if row is None else _flush_run(row)
 
     def _transition_owned_run(
         self,

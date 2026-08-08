@@ -12,6 +12,8 @@ from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig, resolve_permission_roots
+from miniclaw.memory.buffer import MemoryBufferRepository
+from miniclaw.memory.flush import MemoryCapture
 from miniclaw.memory.markdown_store import MemoryMarkdownStore
 from miniclaw.memory.repository import (
     MemoryManifestRepository,
@@ -204,6 +206,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             model=config.agent.model,
             context_budget_tokens=config.agent.context_budget_tokens,
         ),
+        memory_capture=MemoryCapture(MemoryBufferRepository(database)),
         state_home=paths.home,
         workspace=effective_workspace,
     )

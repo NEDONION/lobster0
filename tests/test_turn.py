@@ -987,6 +987,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 "glob",
                 "grep",
                 "http_get",
+                "memory_remember",
                 "propose_memory",
                 "read_file",
                 "read_memory",

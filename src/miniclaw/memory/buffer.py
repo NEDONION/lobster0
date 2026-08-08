@@ -109,6 +109,46 @@ class MemoryBufferRepository:
             raise MemoryBufferStateError("memory buffer idempotency key changed")
         return result
 
+    def capture_completed_turn(
+        self,
+        *,
+        owner_id: int,
+        session_id: int,
+        turn_id: int,
+        capture_scope: str,
+        now: datetime | None = None,
+    ) -> MemoryBuffer:
+        """从已完成 Turn 解析完整 Message range 并创建 durable receipt。"""
+        for name, value in (
+            ("owner_id", owner_id),
+            ("session_id", session_id),
+            ("turn_id", turn_id),
+        ):
+            _positive(value, name)
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT MIN(messages.id), MAX(messages.id)
+                FROM turns
+                JOIN sessions ON sessions.id = turns.session_id
+                JOIN messages ON messages.turn_id = turns.id
+                WHERE turns.id = ? AND turns.session_id = ? AND sessions.user_id = ?
+                    AND turns.status = 'completed'
+                """,
+                (turn_id, session_id, owner_id),
+            ).fetchone()
+        if row is None or row[0] is None or row[1] is None:
+            raise MemoryBufferStateError("completed memory Turn has no source range")
+        return self.capture(
+            owner_id=owner_id,
+            session_id=session_id,
+            turn_id=turn_id,
+            first_message_id=int(row[0]),
+            last_message_id=int(row[1]),
+            capture_scope=capture_scope,
+            now=now,
+        )
+
     def pending_count(self, owner_id: int) -> int:
         """返回 Owner 当前未绑定 Run 的 buffer 数量。"""
         _positive(owner_id, "owner_id")
@@ -138,6 +178,17 @@ class MemoryBufferRepository:
                 (owner_id, limit),
             ).fetchall()
         return tuple(_buffer(row) for row in rows)
+
+    def pending_owner_ids(self) -> tuple[int, ...]:
+        """返回至少有一个 pending buffer 的有序 Owner ID。"""
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT DISTINCT owner_id FROM memory_buffers
+                WHERE status = 'pending' ORDER BY owner_id
+                """
+            ).fetchall()
+        return tuple(int(row[0]) for row in rows)
 
     def assign(self, owner_id: int, buffer_ids: tuple[int, ...], run_id: int) -> None:
         """在一个 IMMEDIATE 事务中把完整 buffer 集合绑定给同 Owner Run。"""
