@@ -2,7 +2,7 @@
 
 这个目录保存“某个代码版本通过了哪些 Agent 场景”的脱敏发布记录。可执行场景数据在
 [`evals/scenarios/`](../../evals/scenarios/)，详细工程实现见
-[P2.1C Agent 回归工程文档](../engineering/phase-2/agent-regression-evals.md)。
+[P2.1C Agent 回归工程文档](../engineering/phase-2/20260808_agent-regression-evals.md)。
 
 ## 三类文件不要混淆
 
@@ -17,7 +17,7 @@
 
 ```mermaid
 flowchart LR
-    CHANGE["代码或 Prompt 变更"] --> UNIT["644 Python + 35 TypeScript"]
+    CHANGE["代码或 Prompt 变更"] --> UNIT["651 Python + 35 TypeScript"]
     UNIT --> VALIDATE["eval validate"]
     VALIDATE --> OFFLINE["39 active offline cases"]
     OFFLINE --> CHANNEL["32 active Channel cases"]
@@ -27,7 +27,7 @@ flowchart LR
     LIVE --> RECORD["release record"]
 ```
 
-当前全仓门禁是 **IMPLEMENTATION PASS**：644/644 Python tests、35/35 TypeScript、39/39 active offline Agent、
+当前全仓门禁是 **IMPLEMENTATION PASS**：651/651 Python tests、35/35 TypeScript、39/39 active offline Agent、
 32/32 Channel、640/640 local soak。Feishu 是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Telegram 与
 Discord 的真实验收均为 **LIVE PENDING**。
 Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已单独完成 3 次 planning probe。

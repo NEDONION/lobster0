@@ -162,12 +162,18 @@ class ExperienceActivity:
         self.idempotency_key = _progress_idempotency_key(event)
 
     async def start(self) -> None:
-        """Turn 开始前 best-effort 开启平台 Typing。"""
+        """Turn 开始前开启 Typing，并为终态单卡 best-effort 创建首帧。"""
         try:
             self._typing_token = await self._transport.start_typing(self._event)
         except Exception as error:
             self._typing_token = None
             self._observe_failure("typing_start", error)
+        if (
+            self._progress_enabled
+            and self._progress_is_final
+            and not self._progress_failed
+        ):
+            await self._create_progress(self._projector.snapshot())
 
     async def on_event(self, event: RunEvent) -> None:
         """消费 Runtime 事件并只向 Transport 交付脱敏结构化快照。"""
@@ -214,7 +220,6 @@ class ExperienceActivity:
                 and self._progress_enabled
                 and self._progress_message_id is None
                 and not self._progress_failed
-                and not failed
                 and isinstance(content, str)
             ):
                 receipt = await self._create_progress(final_progress)
@@ -225,7 +230,6 @@ class ExperienceActivity:
                     receipt = await self._update_progress(final_progress)
                 if (
                     self._progress_is_final
-                    and not failed
                     and not self._progress_failed
                     and isinstance(content, str)
                     and receipt is not None

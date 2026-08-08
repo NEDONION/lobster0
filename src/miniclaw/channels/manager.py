@@ -360,9 +360,15 @@ class ChannelManager:
                     )
                     raise
                 except Exception:
+                    final_delivery_required = True
                     if activity is not None:
-                        await activity.finish(content=None, failed=True)
-                    self._create_failure_delivery(session.id, event)
+                        outcome = await activity.finish(
+                            content=_FAILURE_NOTICE,
+                            failed=True,
+                        )
+                        final_delivery_required = outcome.final_delivery_required
+                    if final_delivery_required:
+                        self._create_failure_delivery(session.id, event)
                     self._inbound.mark_failed(event.key, "channel_control_failed")
                     self._observe_turn(
                         event,
@@ -444,9 +450,15 @@ class ChannelManager:
                 )
                 raise
             except Exception:
+                final_delivery_required = True
                 if activity is not None:
-                    await activity.finish(content=None, failed=True)
-                self._create_failure_delivery(session.id, event)
+                    outcome = await activity.finish(
+                        content=_FAILURE_NOTICE,
+                        failed=True,
+                    )
+                    final_delivery_required = outcome.final_delivery_required
+                if final_delivery_required:
+                    self._create_failure_delivery(session.id, event)
                 self._inbound.mark_failed(event.key, "channel_turn_failed")
                 self._observe_turn(
                     event,

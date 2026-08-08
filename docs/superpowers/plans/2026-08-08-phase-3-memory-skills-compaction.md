@@ -87,7 +87,7 @@
 **Files:**
 
 - Modify: `evals/cases/*.json` 或当前稳定 suite
-- Modify: `docs/engineering/phase-3/memory-skills-compaction.md`
+- Modify: `docs/engineering/phase-3/20260808_memory-skills-compaction.md`
 - Modify: `docs/engineering/README.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `README.md`

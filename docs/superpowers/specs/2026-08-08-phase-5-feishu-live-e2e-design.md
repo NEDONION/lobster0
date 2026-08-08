@@ -456,9 +456,9 @@ flowchart TD
 - `src/miniclaw/evals/live.py` 或新建聚焦模块：schema、证据和状态断言；
 - `tests/test_feishu_live_e2e.py`：secret-free fake process/SQLite 契约；
 - `tests/test_feishu_evals.py`：保持旧入口兼容并扩充安全门禁；
-- `docs/engineering/phase-5/feishu-live-e2e.md`：大白话操作手册；
-- `docs/engineering/phase-5/testing-and-live-acceptance.md`：三平台真实状态；
-- `docs/engineering/phase-5/troubleshooting.md`：真实机器人排障；
+- `docs/engineering/phase-5/20260808_feishu-live-e2e.md`：大白话操作手册；
+- `docs/engineering/phase-5/20260808_testing-and-live-acceptance.md`：三平台真实状态；
+- `docs/engineering/phase-5/20260808_troubleshooting.md`：真实机器人排障；
 - `docs/evals/releases/v0.5.1.md`：发布证据；
 - `README.md`、工程索引、架构、仓库进度 HTML 与外部进度 HTML。
 

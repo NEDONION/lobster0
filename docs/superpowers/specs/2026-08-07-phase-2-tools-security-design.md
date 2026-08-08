@@ -1408,14 +1408,14 @@ uv run miniclaw approvals approve <ID>
 | `phase-2/tool-registry-executor.md` | 注册、Schema 过滤、唯一执行路径、截断 |
 | `phase-2/system-info.md` | macOS/Linux collector、脱敏、超时、字段 |
 | `phase-2/workspace-policy.md` | 根、symlink、敏感路径、TOCTOU 边界 |
-| `phase-2/filesystem-tools.md` | read/write/edit 的原子性和限制 |
+| `phase-2/20260808_filesystem-tools.md` | read/write/edit 的原子性和限制 |
 | `phase-2/search-tools.md` | glob/grep 上限和二进制处理 |
-| `phase-2/approval-lifecycle.md` | 参数哈希、状态机、事务、续执行 |
-| `phase-2/command-execution.md` | argv、allowlist、环境、超时、禁止项 |
+| `phase-2/20260808_approval-lifecycle.md` | 参数哈希、状态机、事务、续执行 |
+| `phase-2/20260808_command-execution.md` | argv、allowlist、环境、超时、禁止项 |
 | `phase-2/http-and-ssrf.md` | DNS、IP、redirect、peer、响应限制 |
 | `phase-2/turn-integration.md` | Runner、Turn、Tool Message、多 Call |
-| `phase-2/cli-approvals.md` | 命令、退出码、JSON 输出、常见故障 |
-| `phase-2/testing-and-debugging.md` | 离线 fake、安全矩阵、真实冒烟 |
+| `phase-2/20260808_cli-approvals.md` | 命令、退出码、JSON 输出、常见故障 |
+| `phase-2/20260808_testing-and-debugging.md` | 离线 fake、安全矩阵、真实冒烟 |
 
 ## 24. 风险与缓解
 

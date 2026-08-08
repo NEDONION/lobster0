@@ -148,10 +148,13 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_tool_activity_creates_safe_claw_trail_and_updates_same_card(self) -> None:
-        """Tool 开始时建轨迹卡，reasoning 与敏感参数始终不能进入卡片。"""
+        """Turn 开始时建轨迹卡，Tool 只更新原卡且敏感参数不能进入卡片。"""
         transport = FakeCapabilityTransport()
         activity = self._activity(transport)
         await activity.start()
+
+        self.assertEqual(len(transport.cards_sent), 1)
+        self.assertIn("MiniClaw · 执行中", repr(transport.cards_sent[0][2]))
 
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "你"}))
         await activity.on_event(
@@ -172,9 +175,10 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "好"}))
-        self.assertEqual(len(transport.cards_sent), 0)
+        self.assertEqual(len(transport.cards_sent), 1)
         self.assertEqual(len(transport.cards_updated), 0)
 
+        self.clock.value = 0.6
         await activity.on_event(
             RunEvent(
                 "tool_started",
@@ -183,12 +187,17 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         self.assertEqual(len(transport.cards_sent), 1)
+        self.assertEqual(len(transport.cards_updated), 1)
+        self.assertEqual(transport.cards_updated[0][0], "om_progress_card")
 
-        self.clock.value = 0.6
+        self.clock.value = 1.2
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "！"}))
         await activity.finish(content="你好！", failed=False)
 
-        self.assertEqual(len(transport.cards_updated), 2)
+        self.assertEqual(len(transport.cards_updated), 3)
+        self.assertTrue(
+            all(message_id == "om_progress_card" for message_id, _ in transport.cards_updated)
+        )
         self.assertIn("MiniClaw · 已完成", repr(transport.cards_updated[-1][1]))
         self.assertIn("Claw Trail", repr(transport.cards_updated[-1][1]))
         self.assertEqual(
@@ -250,8 +259,8 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.cards_updated, [])
         self.assertTrue(outcome.final_markdown_required)
 
-    async def test_partial_provider_failure_never_publishes_buffered_card(self) -> None:
-        """终态前失败必须丢弃缓冲文本，避免红色 preview 与失败提示并存。"""
+    async def test_partial_provider_failure_finishes_card_without_buffered_text(self) -> None:
+        """终态前失败必须把原卡转红，并丢弃未确认的模型正文。"""
         transport = FakeCapabilityTransport()
         activity = self._activity(transport)
         await activity.start()
@@ -260,8 +269,11 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         await activity.finish(content=None, failed=True)
 
-        self.assertEqual(transport.cards_sent, [])
-        self.assertEqual(transport.cards_updated, [])
+        self.assertEqual(len(transport.cards_sent), 1)
+        self.assertEqual(len(transport.cards_updated), 1)
+        self.assertEqual(transport.cards_updated[0][0], "om_progress_card")
+        self.assertIn("MiniClaw · 未完成", repr(transport.cards_updated[0][1]))
+        self.assertNotIn("partial answer", repr(transport.cards_updated[0][1]))
 
 
 if __name__ == "__main__":

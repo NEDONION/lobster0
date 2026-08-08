@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from miniclaw.memory.context import MemoryContextSelector
-from miniclaw.memory.models import DisclosureContext
+from miniclaw.memory.models import DisclosureContext, DisclosureDecision
 from miniclaw.memory.policy import MemoryDisclosurePolicy, MemoryPolicyError
 from miniclaw.memory.retrieval import MemoryRetrieval, SearchRequest
 from miniclaw.memory.store import MemoryError, MemorySnapshot, MemoryStore
@@ -96,7 +96,7 @@ class ContextBuilder:
         model: str,
         history: tuple[ModelMessage, ...],
         *,
-        disclosure: DisclosureContext,
+        disclosure: DisclosureContext | None = None,
         tools: tuple[dict[str, JsonValue], ...] = (),
     ) -> ModelRequest:
         """构造身份在前、会话历史在后的模型请求。
@@ -104,7 +104,7 @@ class ContextBuilder:
         Args:
             model: 当前配置选中的 Provider 模型 ID。
             history: Storage 已按时间筛选并排序的最近消息，包含当前用户消息。
-            disclosure: Core 根据入口身份和会话类型构造的披露边界。
+            disclosure: Core 根据入口身份和会话类型构造的披露边界；缺失时拒绝记忆读取。
             tools: 当前安全执行入口公开的模型 Tool Schema。
 
         Returns:
@@ -116,7 +116,11 @@ class ContextBuilder:
         soul = self._read_identity(self._paths.soul)
         user = self._read_identity(self._paths.user)
         try:
-            decision = self._disclosure_policy.decide(disclosure)
+            decision = (
+                self._disclosure_policy.decide(disclosure)
+                if disclosure is not None
+                else DisclosureDecision("deny", "none", "missing_disclosure")
+            )
             memory = (
                 self._memory.snapshot()
                 if decision.private_access == "full"
@@ -131,7 +135,7 @@ class ContextBuilder:
             "",
         )
         recall = None
-        if self._retrieval is not None and query.strip():
+        if disclosure is not None and self._retrieval is not None and query.strip():
             recall = self._memory_context.select(
                 self._retrieval.search(SearchRequest(disclosure, query, 20)),
                 provider_window=self._context_budget_tokens,
@@ -164,8 +168,10 @@ class ContextBuilder:
             "memory_disclosure_reason": decision.reason_code,
             "memory_private_access": decision.private_access,
             "memory_capture_scope": decision.capture_scope,
-            "memory_channel": disclosure.channel,
-            "memory_conversation_kind": disclosure.conversation_kind,
+            "memory_channel": "unknown" if disclosure is None else disclosure.channel,
+            "memory_conversation_kind": (
+                "unknown" if disclosure is None else disclosure.conversation_kind
+            ),
             "memory_documents": [
                 {
                     "scope": document.scope,

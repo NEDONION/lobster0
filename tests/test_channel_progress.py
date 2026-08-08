@@ -137,6 +137,14 @@ class ProgressProjectorTest(unittest.TestCase):
         self.assertTrue(all(len(step.detail) <= 240 for step in progress.steps))
         self.assertNotIn("\x00", repr(progress.steps))
 
+    def test_final_answer_preserves_original_whitespace_for_delivery_offsets(self) -> None:
+        """最终答案必须保持原始字符前缀，避免卡片偏移把末尾文字重复发送。"""
+        answer = "结果如下：\n\n| 项目 | 内容 |\n| --- | --- |\n| 标题 | 文档 A |\n\n需要继续吗？"
+
+        progress = ProgressProjector(clock=lambda: 1.0).finish(answer, failed=False)
+
+        self.assertEqual(progress.final_answer, answer)
+
     def test_metadata_round_trip_omits_answer_and_rejects_malformed_values(self) -> None:
         """持久化 trace 不复制答案，损坏值按无 trace 处理。"""
         projector = ProgressProjector(clock=lambda: 1.0)
@@ -150,12 +158,13 @@ class ProgressProjectorTest(unittest.TestCase):
         progress = projector.finish("private final answer", failed=False)
 
         metadata = progress_to_metadata(progress)
-        restored = progress_from_metadata(metadata, "restored answer")
+        restored_answer = "restored\n\nanswer"
+        restored = progress_from_metadata(metadata, restored_answer)
 
         self.assertNotIn("private final answer", json.dumps(metadata))
         self.assertIsNotNone(restored)
         assert restored is not None
-        self.assertEqual(restored.final_answer, "restored answer")
+        self.assertEqual(restored.final_answer, restored_answer)
         self.assertEqual(restored.steps, progress.steps)
         self.assertIsNone(progress_from_metadata({"status": "wrong"}, "answer"))
 

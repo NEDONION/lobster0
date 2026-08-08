@@ -290,8 +290,8 @@ git commit -m "build(deploy): add hardened MiniClaw container"
 - Create: `src/miniclaw/evals/soak.py`
 - Create: `tests/test_soak_harness.py`
 - Modify: `src/miniclaw/evals/feishu_live.py`
-- Modify: `docs/engineering/phase-5/feishu-live-e2e.md`
-- Modify: `docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md`
+- Modify: `docs/engineering/phase-5/20260808_feishu-live-e2e.md`
+- Modify: `docs/engineering/phase-5/20260808_feishu-gateway-runtime-and-macos-service.md`
 - Create: `docs/evals/releases/v0.5.2.md`
 - Modify: `README.md`
 - Modify: `docs/progress/index.html`

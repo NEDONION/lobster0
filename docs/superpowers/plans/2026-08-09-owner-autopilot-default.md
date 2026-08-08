@@ -107,8 +107,8 @@ git commit -m "fix(policy): 统一 legacy config 的 autopilot 默认值"
 - Modify: `README.md:138-146`
 - Modify: `docs/product/20260807_产品需求文档.md:347-360`
 - Modify: `docs/architecture/20260807_系统架构.md:206-214`
-- Modify: `docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md:105-121`
-- Modify: `docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md:217-228`
+- Modify: `docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md:105-121`
+- Modify: `docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md:217-228`
 - Modify: `docs/superpowers/specs/2026-08-08-autopilot-permissions-and-approval-ui-design.md:70-78`
 - Modify outside repository, never stage: `~/.miniclaw/config.toml`
 
@@ -154,7 +154,7 @@ Expected: documentation reports `PASS`; the displayed `[tools]` section contains
 - [ ] **Step 4: Commit repository documentation only**
 
 ```bash
-git add README.md docs/product/20260807_产品需求文档.md docs/architecture/20260807_系统架构.md docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md docs/superpowers/specs/2026-08-08-autopilot-permissions-and-approval-ui-design.md
+git add README.md docs/product/20260807_产品需求文档.md docs/architecture/20260807_系统架构.md docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md docs/superpowers/specs/2026-08-08-autopilot-permissions-and-approval-ui-design.md
 git commit -m "docs(policy): 更新 Owner autopilot 默认语义"
 ```
 

@@ -391,9 +391,9 @@ git commit -m "feat(tui): polish chat and expose runtime telemetry"
 - Modify: `README.md`
 - Modify: `docs/README.md`
 - Modify: `docs/engineering/README.md`
-- Modify: `docs/engineering/phase-2/single-entry-tui.md`
-- Modify: `docs/engineering/phase-2/tui-regression-testing.md`
-- Modify: `docs/engineering/phase-2/approval-lifecycle.md`
+- Modify: `docs/engineering/phase-2/20260808_single-entry-tui.md`
+- Modify: `docs/engineering/phase-2/20260808_tui-regression-testing.md`
+- Modify: `docs/engineering/phase-2/20260808_approval-lifecycle.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/progress/index.html`
 - Modify: `docs/superpowers/specs/2026-08-08-tui-polish-telemetry-approval-design.md`

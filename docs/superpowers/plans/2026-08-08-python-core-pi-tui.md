@@ -290,10 +290,10 @@ git commit -m "test(tui): 增加跨进程与长文本回归门禁"
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/architecture/20260808_TUI稳定化与桌面版架构设计.md`
 - Modify: `docs/engineering/README.md`
-- Modify: `docs/engineering/phase-2/single-entry-tui.md`
-- Modify: `docs/engineering/phase-2/testing-and-debugging.md`
-- Modify: `docs/engineering/phase-2/tui-regression-testing.md`
-- Create: `docs/engineering/phase-2/python-core-pi-tui-bridge.md`
+- Modify: `docs/engineering/phase-2/20260808_single-entry-tui.md`
+- Modify: `docs/engineering/phase-2/20260808_testing-and-debugging.md`
+- Modify: `docs/engineering/phase-2/20260808_tui-regression-testing.md`
+- Create: `docs/engineering/phase-2/20260808_python-core-pi-tui-bridge.md`
 - Modify: `docs/getting-started/20260807_本地运行指南.md`
 - Modify: `docs/product/20260807_产品需求文档.md`
 - Modify: `docs/progress/index.html`

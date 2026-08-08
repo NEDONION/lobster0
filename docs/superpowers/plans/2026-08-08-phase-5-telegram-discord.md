@@ -1037,10 +1037,10 @@ git commit -m "test(live): 增加 secret-free Telegram/Discord acceptance harnes
 - Modify: `docs/product/20260807_产品需求文档.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/engineering/README.md`
-- Modify: `docs/engineering/phase-5/telegram-discord-channels.md`
-- Create: `docs/engineering/phase-5/testing-and-live-acceptance.md`
-- Create: `docs/engineering/phase-5/troubleshooting.md`
-- Create: `docs/engineering/phase-5/completion-audit.md`
+- Modify: `docs/engineering/phase-5/20260808_telegram-discord-channels.md`
+- Create: `docs/engineering/phase-5/20260808_testing-and-live-acceptance.md`
+- Create: `docs/engineering/phase-5/20260808_troubleshooting.md`
+- Create: `docs/engineering/phase-5/20260808_completion-audit.md`
 - Modify: `docs/getting-started/20260807_本地运行指南.md`
 - Modify: `docs/evals/README.md`
 - Create: `docs/evals/releases/v0.5.0.md`
@@ -1098,10 +1098,10 @@ Actual (2026-08-08): repository + external HTML validation PASS，documentation 
 ```bash
 git add README.md docs/product/20260807_产品需求文档.md \
   docs/architecture/20260807_系统架构.md \
-  docs/engineering/README.md docs/engineering/phase-5/telegram-discord-channels.md \
-  docs/engineering/phase-5/testing-and-live-acceptance.md \
-  docs/engineering/phase-5/troubleshooting.md \
-  docs/engineering/phase-5/completion-audit.md \
+  docs/engineering/README.md docs/engineering/phase-5/20260808_telegram-discord-channels.md \
+  docs/engineering/phase-5/20260808_testing-and-live-acceptance.md \
+  docs/engineering/phase-5/20260808_troubleshooting.md \
+  docs/engineering/phase-5/20260808_completion-audit.md \
   docs/getting-started/20260807_本地运行指南.md docs/evals/README.md \
   docs/evals/releases/v0.5.0.md \
   docs/progress/index.html scripts/validate_docs.py tests/test_documentation.py AGENTS.md

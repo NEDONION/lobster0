@@ -50,14 +50,52 @@ def initialize_state(paths: StatePaths) -> InitResult:
         _ensure_directory(directory)
     example_skill_directory = paths.skills / "summarize"
     feishu_skill_directory = paths.skills / "feishu-lark-cli"
+    github_skill_directory = paths.skills / "github-cli"
     _ensure_directory(example_skill_directory)
     _ensure_directory(feishu_skill_directory)
+    _ensure_directory(github_skill_directory)
 
     templates = (
         (paths.config, _render_default_config(paths)),
         (paths.soul, "# MiniClaw\n"),
         (paths.user, "# User\n"),
         (paths.memory_file, "# Long-term Memory\n"),
+        (
+            github_skill_directory / "SKILL.md",
+            "---\n"
+            "name: github-cli\n"
+            "description: GitHub github 仓库 repository repo pinned 置顶 私有 public private "
+            "issue pull request PR workflow actions；使用本机 gh 和 git CLI 查询或操作。\n"
+            "version: 1\n"
+            "---\n\n"
+            "# GitHub CLI instructions\n\n"
+            "GitHub 是外部服务。用户询问 GitHub 账号、仓库、pinned repositories、Issue、"
+            "Pull Request、Actions 或要求操作仓库时，必须使用现有 `run_command` 调用本机 "
+            "`gh` 或 `git`，并依据真实 Tool 结果回答。不能在尚未调用 Tool 时声称网络、权限、"
+            "认证或 GitHub 不可用。\n\n"
+            "## 基本规则\n\n"
+            "- 查询 Owner 的远端 GitHub 数据前，先调用 `gh auth status --hostname github.com`。"
+            "检查返回的 `exit_code` 和输出；登录失效时只报告需要重新执行安全登录流程。\n"
+            "- GitHub 远端读取和写入优先使用 `gh`；本地仓库状态、日志和差异使用 `git`。"
+            "两者都通过 `run_command` 传入单个 program 和精确 `args`，不得拼 Shell。\n"
+            "- 不得在命令参数中传入 Token、PAT、Authorization Header 或其他凭据，也不得读取、"
+            "打印或记忆凭据文件。让 `gh` 使用它自己的本机认证存储。\n"
+            "- Tool 返回非零 `exit_code` 时，以实际错误为准；只有 Tool 明确返回 Policy "
+            "或网络错误时，"
+            "才能说请求被相应边界阻止。\n"
+            "- 创建、删除、合并、push、修改 Issue/PR/Workflow 等外部变更只在用户明确要求后执行；"
+            "只读查询可以直接执行。\n\n"
+            "## Pinned repositories\n\n"
+            "用户询问自己的 pinned/置顶仓库时，在认证成功后调用：\n\n"
+            "```text\n"
+            "gh api graphql -f query='query { viewer { pinnedItems(first: 6, "
+            "types: [REPOSITORY]) { nodes { ... on Repository { nameWithOwner description "
+            "url isPrivate } } } } }'\n"
+            "```\n\n"
+            "在 `run_command` 中把 `gh` 作为 program，把 `api`、`graphql`、`-f` 和完整 query "
+            "分别作为 args 元素；不要把单引号本身传给 `gh`。"
+            "只根据返回的仓库字段生成 bullet points。\n",
+        ),
         (
             feishu_skill_directory / "SKILL.md",
             "---\n"

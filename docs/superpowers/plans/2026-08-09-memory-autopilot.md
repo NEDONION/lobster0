@@ -528,7 +528,7 @@ git commit -m "feat(memory): 对账 Markdown 并迁移 legacy memory"
 
 **Files:**
 - Create: `evals/scenarios/memory.v1.jsonl`
-- Create: `docs/engineering/phase-5/memory-autopilot.md`
+- Create: `docs/engineering/phase-5/20260809_memory-autopilot.md`
 - Create: `docs/evals/releases/v0.6.0.md`
 - Modify: `src/miniclaw/evals/runner.py`
 - Modify: `tests/test_eval_runner.py`

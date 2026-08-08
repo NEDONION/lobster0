@@ -36,9 +36,9 @@
 - `tests/test_eval_cases.py`：Live JSONL schema RED/GREEN。
 - `tests/test_feishu_live_e2e.py`：数据库取证、Gateway 监督、Evidence 和 Runner 契约。
 - `tests/test_feishu_evals.py`：仓库固定 15 条 Live matrix 与未确认零副作用。
-- `docs/engineering/phase-5/feishu-live-e2e.md`：真实 Bot 创建、Scope、Owner discovery、运行和验收手册。
-- `docs/engineering/phase-5/testing-and-live-acceptance.md`：三平台状态和 Feishu Live gate。
-- `docs/engineering/phase-5/troubleshooting.md`：同应用 Open ID、Scope、发布、WebSocket、审批和恢复排障。
+- `docs/engineering/phase-5/20260808_feishu-live-e2e.md`：真实 Bot 创建、Scope、Owner discovery、运行和验收手册。
+- `docs/engineering/phase-5/20260808_testing-and-live-acceptance.md`：三平台状态和 Feishu Live gate。
+- `docs/engineering/phase-5/20260808_troubleshooting.md`：同应用 Open ID、Scope、发布、WebSocket、审批和恢复排障。
 - `docs/evals/releases/v0.5.1.md`：实现门禁与真实平台 Evidence；若未完成 Live，只能写 pending/partial。
 - `README.md`、`docs/engineering/README.md`、`docs/architecture/20260807_系统架构.md`、`docs/progress/index.html`：入口和真实进度。
 - `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`：外部可点击进度页，不进入 Git。
@@ -492,14 +492,14 @@ git commit -m "feat(feishu): 编排真实 Bot Live E2E gate"
 ### Task 6: Engineering Documentation, Release Truth, and Progress
 
 **Files:**
-- Create: `docs/engineering/phase-5/feishu-live-e2e.md`
+- Create: `docs/engineering/phase-5/20260808_feishu-live-e2e.md`
 - Create: `docs/evals/releases/v0.5.1.md`
 - Modify: `README.md`
 - Modify: `docs/engineering/README.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
-- Modify: `docs/engineering/phase-4/testing-and-operations.md`
-- Modify: `docs/engineering/phase-5/testing-and-live-acceptance.md`
-- Modify: `docs/engineering/phase-5/troubleshooting.md`
+- Modify: `docs/engineering/phase-4/20260808_testing-and-operations.md`
+- Modify: `docs/engineering/phase-5/20260808_testing-and-live-acceptance.md`
+- Modify: `docs/engineering/phase-5/20260808_troubleshooting.md`
 - Modify: `docs/progress/index.html`
 - Modify: `scripts/validate_docs.py`
 - Modify external: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
@@ -518,7 +518,7 @@ git commit -m "feat(feishu): 编排真实 Bot Live E2E gate"
 .venv/bin/python scripts/validate_docs.py
 ```
 
-Expected: FAIL，报告缺少 `phase-5/feishu-live-e2e.md` 和 `v0.5.1.md`。
+Expected: FAIL，报告缺少 `phase-5/20260808_feishu-live-e2e.md` 和 `v0.5.1.md`。
 
 - [ ] **Step 3: Write the operation manual**
 
@@ -574,7 +574,7 @@ External HTML 不进入 Git，但记录其校验结果。
 
 **Files:**
 - No source file required before live setup.
-- Modify after evidence only: `docs/evals/releases/v0.5.1.md`、`docs/engineering/phase-5/testing-and-live-acceptance.md`、两份 progress HTML。
+- Modify after evidence only: `docs/evals/releases/v0.5.1.md`、`docs/engineering/phase-5/20260808_testing-and-live-acceptance.md`、两份 progress HTML。
 - Local secret only: project `.env` and `~/.miniclaw/config.toml`（禁止 `git add`）。
 - Local ignored evidence: `.local/eval-results/feishu/*.json`（禁止 `git add`）。
 

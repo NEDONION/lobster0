@@ -21,12 +21,12 @@ class Phase5DocumentationTest(unittest.TestCase):
             "README_EN.md",
             "docs/architecture/20260807_系统架构.md",
             "docs/engineering/README.md",
-            "docs/engineering/phase-5/telegram-discord-channels.md",
+            "docs/engineering/phase-5/20260808_telegram-discord-channels.md",
             "docs/getting-started/20260807_本地运行指南.md",
-            "docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md",
-            "docs/engineering/phase-5/testing-and-live-acceptance.md",
-            "docs/engineering/phase-5/feishu-live-e2e.md",
-            "docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md",
+            "docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md",
+            "docs/engineering/phase-5/20260808_testing-and-live-acceptance.md",
+            "docs/engineering/phase-5/20260808_feishu-live-e2e.md",
+            "docs/engineering/phase-5/20260808_feishu-gateway-runtime-and-macos-service.md",
         )
         for relative in paths:
             with self.subTest(path=relative):
@@ -46,13 +46,13 @@ class Phase5DocumentationTest(unittest.TestCase):
             encoding="utf-8"
         )
         for name in (
-            "telegram-discord-channels.md",
-            "feishu-live-e2e.md",
-            "feishu-gateway-runtime-and-macos-service.md",
-            "feishu-single-card-and-lark-cli.md",
-            "testing-and-live-acceptance.md",
-            "troubleshooting.md",
-            "completion-audit.md",
+            "20260808_telegram-discord-channels.md",
+            "20260808_feishu-live-e2e.md",
+            "20260808_feishu-gateway-runtime-and-macos-service.md",
+            "20260809_feishu-single-card-and-lark-cli.md",
+            "20260808_testing-and-live-acceptance.md",
+            "20260808_troubleshooting.md",
+            "20260808_completion-audit.md",
         ):
             self.assertTrue((PROJECT_ROOT / "docs/engineering/phase-5" / name).is_file())
             self.assertIn(name, engineering)
@@ -65,7 +65,7 @@ class Phase5DocumentationTest(unittest.TestCase):
             "docs/product/20260807_产品需求文档.md",
             "docs/architecture/20260807_系统架构.md",
             "docs/engineering/README.md",
-            "docs/engineering/phase-5/memory-autopilot.md",
+            "docs/engineering/phase-5/20260809_memory-autopilot.md",
             "docs/evals/releases/v0.6.0.md",
             "docs/progress/index.html",
         )
@@ -78,7 +78,7 @@ class Phase5DocumentationTest(unittest.TestCase):
         release = (PROJECT_ROOT / "docs/evals/releases/v0.6.0.md").read_text(
             encoding="utf-8"
         )
-        for fact in ("644/644", "35/35", "39/39", "MEM-AUTO-001", "MEM-AUTO-010"):
+        for fact in ("651/651", "35/35", "39/39", "MEM-AUTO-001", "MEM-AUTO-010"):
             self.assertIn(fact, release)
 
     def test_openclaw_hermes_gap_and_phase_plans_are_linked_as_planned(self) -> None:
@@ -87,7 +87,7 @@ class Phase5DocumentationTest(unittest.TestCase):
             "docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md"
         )
         engineering = PROJECT_ROOT / (
-            "docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md"
+            "docs/engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md"
         )
         plans = (
             "2026-08-09-memory-autopilot.md",
@@ -120,7 +120,7 @@ class Phase5DocumentationTest(unittest.TestCase):
         ):
             content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
             self.assertIn("20260808_OpenClaw-Hermes能力Gap与演进路线.md", content)
-            self.assertIn("openclaw-hermes-alignment-engineering-roadmap.md", content)
+            self.assertIn("20260808_openclaw-hermes-alignment-engineering-roadmap.md", content)
 
         for relative in ("README.md", "README_EN.md", "docs/README.md"):
             content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")

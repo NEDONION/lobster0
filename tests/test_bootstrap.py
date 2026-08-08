@@ -61,6 +61,7 @@ class BootstrapTest(unittest.TestCase):
                 self.paths.user,
                 self.paths.memory_file,
                 self.paths.skills / "feishu-lark-cli/SKILL.md",
+                self.paths.skills / "github-cli/SKILL.md",
                 self.paths.skills / "summarize/SKILL.md",
             },
         )
@@ -75,6 +76,12 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("run_command", feishu_skill)
         self.assertIn("lark-cli drive +search", feishu_skill)
         self.assertNotIn("access_token", feishu_skill.casefold())
+        github_skill = (self.paths.skills / "github-cli/SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("gh auth status", github_skill)
+        self.assertIn("pinnedItems", github_skill)
+        self.assertIn("不得在命令参数中传入 Token", github_skill)
 
     def test_repeated_initialization_preserves_user_files_and_owner(self) -> None:
         """重复初始化不能覆盖 Markdown、重复迁移或插入第二个 Owner。"""

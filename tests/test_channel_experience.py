@@ -163,10 +163,18 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.created[-1][1].final_answer, "final answer")
         self.assertEqual(transport.created[-1][1].status, "completed")
 
-    async def test_final_card_starts_on_tool_started_and_shows_safe_trace(self) -> None:
-        """飞书式终态卡在 Tool 真正执行时建立，并在完成后更新同一卡片。"""
+    async def test_final_card_starts_immediately_and_shows_safe_trace(self) -> None:
+        """飞书式终态卡在 Turn 开始时建立，并在 Tool 执行后更新同一卡片。"""
         transport = FakeExperienceTransport(visible_limit=100)
         activity = self._activity(transport, progress_is_final=True)
+
+        await activity.start()
+
+        self.assertEqual(len(transport.created), 1)
+        self.assertEqual(transport.created[0][1].status, "running")
+        self.assertEqual(transport.created[0][1].steps[-1].title, "理解请求")
+        self.assertEqual(transport.created[0][1].steps[-1].status, "running")
+
         await activity.on_event(
             RunEvent(
                 "tool_requested",
@@ -178,8 +186,7 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
                 },
             )
         )
-        self.assertEqual(transport.created, [])
-
+        self.clock.value = 0.6
         await activity.on_event(
             RunEvent("tool_started", 1, {"call_id": "call_1", "tool_name": "read_file"})
         )
@@ -199,8 +206,11 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         outcome = await activity.finish(content="done", failed=False, progress=progress)
 
         self.assertEqual(len(transport.created), 1)
-        self.assertEqual(transport.created[0][1].steps[-1].status, "running")
+        self.assertEqual(transport.updated[0][1].steps[-1].status, "running")
         self.assertEqual(transport.updated[-1][1].steps[-1].status, "succeeded")
+        self.assertTrue(
+            all(message_id == "progress-message" for message_id, _ in transport.updated)
+        )
         self.assertNotIn("secret", repr((transport.created, transport.updated)))
         self.assertNotIn("private file content", repr((transport.created, transport.updated)))
         self.assertFalse(outcome.final_delivery_required)
@@ -215,6 +225,19 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(outcome.final_delivery_required)
         self.assertEqual(outcome.final_delivery_offset, 20)
+        self.assertIsNone(outcome.final_reply_to_message_id)
+        self.assertEqual(transport.created[-1][1].final_answer, content)
+
+    async def test_final_progress_whitespace_does_not_create_stray_tail_reply(self) -> None:
+        """卡片完整展示含换行的正文后，不得把末尾问句误判为未展示后缀。"""
+        transport = FakeExperienceTransport(visible_limit=1_000)
+        activity = self._activity(transport, progress_is_final=True)
+        content = "结果如下：\n\n- 标题：文档 A\n- 类型：飞书文档\n\n需要继续吗？"
+
+        outcome = await activity.finish(content=content, failed=False)
+
+        self.assertFalse(outcome.final_delivery_required)
+        self.assertEqual(outcome.final_delivery_offset, len(content))
         self.assertIsNone(outcome.final_reply_to_message_id)
         self.assertEqual(transport.created[-1][1].final_answer, content)
 
@@ -254,19 +277,38 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.created[0][1].final_answer, "final answer")
         self.assertEqual(transport.updated, [])
 
-    async def test_final_progress_waits_for_terminal_result_before_card_creation(self) -> None:
-        """终态卡必须先确认不是 waiting Approval，避免 preview 与审批形成双卡。"""
+    async def test_final_progress_starts_before_terminal_result_is_known(self) -> None:
+        """终态卡立即展示 Loading；等待授权时仍保留 durable Approval 投递。"""
         transport = FakeExperienceTransport()
         activity = self._activity(transport, progress_is_final=True)
 
+        await activity.start()
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "checking"}))
-        self.assertEqual(transport.created, [])
+        self.assertEqual(len(transport.created), 1)
+        self.assertEqual(transport.created[0][1].status, "running")
 
         outcome = await activity.finish(content=None, failed=True)
 
-        self.assertFalse(outcome.progress_created)
-        self.assertEqual(transport.created, [])
-        self.assertEqual(transport.updated, [])
+        self.assertTrue(outcome.progress_created)
+        self.assertTrue(outcome.final_delivery_required)
+        self.assertEqual(transport.updated[-1][1].status, "incomplete")
+
+    async def test_failed_final_progress_contains_notice_without_text_fallback(self) -> None:
+        """运行失败时由同一张终态卡展示安全提示，不产生卡片外灰色回复。"""
+        transport = FakeExperienceTransport(visible_limit=1_000)
+        activity = self._activity(transport, progress_is_final=True)
+        notice = "抱歉，这条消息处理失败了，请稍后重试。"
+
+        await activity.start()
+        outcome = await activity.finish(content=notice, failed=True)
+
+        self.assertFalse(outcome.final_delivery_required)
+        self.assertEqual(outcome.final_delivery_offset, len(notice))
+        self.assertTrue(
+            all(message_id == "progress-message" for message_id, _ in transport.updated)
+        )
+        self.assertEqual(transport.updated[-1][1].status, "incomplete")
+        self.assertEqual(transport.updated[-1][1].final_answer, notice)
 
     async def test_failures_and_finish_are_contained_and_idempotent(self) -> None:
         """体验失败只产生稳定短码，重复 finish 不重复清理或改变最终 Delivery。"""

@@ -1,6 +1,13 @@
-# MiniClaw Phase 5.3 Feishu / Discord Live Gate Implementation Plan
+# MiniClaw v0.5.3 Stabilization Feishu / Discord Live Gate Implementation Plan
+
+> 编号说明：历史路线称“Phase 5.3”；它是架构 Phase 5 之后的稳定化交付版本。
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+> 执行状态（2026-08-09）：Tasks 1～4 的 Core hardening 已由 `f856679` 合并，并在 `54db7b0` 固定
+> 562-test 基线；Tasks 5～7 的 Feishu/Discord 严格 Live Evidence 仍待完成；Task 8 已同步当前事实但不能
+> 预填 Live PASS；Task 9 只有完成真实 Gate 后才能关闭。下方未勾选框保留原始 TDD 操作清单，不作为当前
+> 状态权威来源。
 
 **Goal:** 修复 Feishu SDK 日志泄露与旧 Gateway 运行来源不明的问题，在真实飞书和隔离 Discord Server 上分别完成严格 15/15 Live Gate，并把可复核、脱敏的结果同步到发布文档与进度页。
 
@@ -455,12 +462,12 @@ Expected: Harness 自己启动并持有唯一 Gateway，exact ready 后才显示
 - Modify: `docs/product/20260807_产品需求文档.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/engineering/README.md`
-- Modify: `docs/engineering/phase-5/testing-and-live-acceptance.md`
-- Modify: `docs/engineering/phase-5/feishu-live-e2e.md`
-- Modify: `docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md`
-- Modify: `docs/engineering/phase-5/telegram-discord-channels.md`
-- Modify: `docs/engineering/phase-5/troubleshooting.md`
-- Modify: `docs/engineering/phase-5/completion-audit.md`
+- Modify: `docs/engineering/phase-5/20260808_testing-and-live-acceptance.md`
+- Modify: `docs/engineering/phase-5/20260808_feishu-live-e2e.md`
+- Modify: `docs/engineering/phase-5/20260808_feishu-gateway-runtime-and-macos-service.md`
+- Modify: `docs/engineering/phase-5/20260808_telegram-discord-channels.md`
+- Modify: `docs/engineering/phase-5/20260808_troubleshooting.md`
+- Modify: `docs/engineering/phase-5/20260808_completion-audit.md`
 - Modify: `docs/progress/index.html`
 - Modify outside repo with explicit approval: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
 

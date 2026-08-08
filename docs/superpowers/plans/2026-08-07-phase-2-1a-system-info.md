@@ -45,7 +45,7 @@
 | `tests/test_context.py` | Tool Schema 被放进 ModelRequest |
 | `tests/test_conversations.py` | 中间消息和 Tool Call metadata 事务持久化 |
 | `tests/test_turn.py` | 完整 Turn 持久化 ToolRun 与可恢复消息历史 |
-| `docs/engineering/phase-2/tool-runtime-and-system-info.md` | 已实现行为、边界、调试与测试说明 |
+| `docs/engineering/phase-2/20260807_tool-runtime-and-system-info.md` | 已实现行为、边界、调试与测试说明 |
 
 ---
 
@@ -889,7 +889,7 @@ git commit -m "feat: persist tool conversations in agent turns"
 **Files:**
 - Modify: `src/miniclaw/cli.py`
 - Modify: `tests/test_cli_chat.py`
-- Create: `docs/engineering/phase-2/tool-runtime-and-system-info.md`
+- Create: `docs/engineering/phase-2/20260807_tool-runtime-and-system-info.md`
 - Modify: `docs/README.md`
 - Modify: `README.md`
 - Modify: `docs/progress/index.html`
@@ -967,7 +967,7 @@ Expected: 全部测试 PASS；Ruff 和 diff check 无输出；离线测试不访
 
 - [ ] **Step 5: 编写事实工程文档**
 
-`docs/engineering/phase-2/tool-runtime-and-system-info.md` 必须记录：
+`docs/engineering/phase-2/20260807_tool-runtime-and-system-info.md` 必须记录：
 
 - 用户说一句话后从 Provider → Runner → Executor → Policy → Tool → SQLite → Provider 的实际调用链；
 - `system_info` 的 macOS/Linux 字段来源和隐私白名单；

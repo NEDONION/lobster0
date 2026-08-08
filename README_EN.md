@@ -21,7 +21,7 @@
 MiniClaw brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
-> The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. Memory Autopilot A–E is now implemented locally: all four verified private entry points share one Owner Memory Space, Markdown stores semantic truth, and SQLite stores the durable control plane and rebuildable FTS5 projection. Live acceptance remains evidence-specific for each messaging platform.
+> The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Memory Autopilot A–E is now implemented locally: all four verified private entry points share one Owner Memory Space, Markdown stores semantic truth, and SQLite stores the durable control plane and rebuildable FTS5 projection. Strict Feishu/Discord 15/15 evidence is still pending, and live acceptance remains evidence-specific for each messaging platform.
 
 ## Why MiniClaw
 
@@ -176,9 +176,9 @@ Architecture, implementation, and evidence references:
 
 - [Memory Autopilot capability gap and architecture](docs/architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)
 - [Approved design spec](docs/superpowers/specs/2026-08-08-memory-autopilot-design.md)
-- [Best practices and technology selection](docs/engineering/memory-autopilot-best-practices-and-technology-selection.md)
+- [Best practices and technology selection](docs/engineering/20260808_memory-autopilot-best-practices-and-technology-selection.md)
 - [Memory A–E TDD implementation plan](docs/superpowers/plans/2026-08-09-memory-autopilot.md)
-- [Memory Autopilot engineering implementation](docs/engineering/phase-5/memory-autopilot.md)
+- [Memory Autopilot engineering implementation](docs/engineering/phase-5/20260809_memory-autopilot.md)
 - [v0.6.0 release evidence](docs/evals/releases/v0.6.0.md)
 
 ## Security boundaries
@@ -197,7 +197,7 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 
 | Gate | Current evidence |
 | --- | --- |
-| Python | 644/644 `unittest` PASS |
+| Python | 651/651 `unittest` PASS |
 | TUI | 35/35 TypeScript tests and build PASS |
 | Agent | 39/39 active offline cases PASS, including `MEM-AUTO-001..010` |
 | Channel | 32/32 versioned cases PASS |
@@ -225,7 +225,7 @@ git diff --check
 
 ```mermaid
 flowchart LR
-    P53["Phase 5.3\nLive Gate"] --> MA["Memory A-E\nIMPLEMENTED"]
+    P53["v0.5.3\nLive Evidence closure"] --> MA["Memory A-E\nIMPLEMENTED"]
     MA --> P6["Phase 6\nAutomation + Sandbox"]
     P6 --> P65["Phase 6.5\nBrowser Agent"]
     P65 --> P7["Phase 7\nControlled Evolution"]
@@ -233,7 +233,7 @@ flowchart LR
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, and Memory A–E are implemented. The next work is to close the real-platform Live Gates before Phase 6 autonomous tasks. Later roadmap nodes do not imply implementation.
+Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, v0.5.3 Core hardening, and Memory A–E are implemented. The next work is to close the strict Feishu/Discord Live Gates before Phase 6 autonomous tasks. Later roadmap nodes do not imply implementation.
 
 ## Repository layout
 
@@ -263,11 +263,12 @@ tests/           # Python unittest suite
 | [System architecture](docs/architecture/20260807_系统架构.md) | Module boundaries, data flow, and safety principles |
 | [Local setup guide](docs/getting-started/20260807_本地运行指南.md) | Installation, config, TUI, Gateway, troubleshooting |
 | [Engineering index](docs/engineering/README.md) | Implemented modules versus planned designs |
+| [Development timeline](docs/engineering/20260809_development-timeline.md) | Mapping between architecture phases, delivery versions, and evidence states |
 | [Progress page](docs/progress/index.html) | Current phase, evidence, and next work |
-| [OpenClaw / Hermes gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | Capability mapping and the Phase 5.3–9 roadmap |
-| [Capability-alignment engineering roadmap](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | Module, data, and test boundaries for Phase 5.3–9 |
+| [OpenClaw / Hermes gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | The v0.5.3 evidence → Memory A–E → Phase 6–9 roadmap |
+| [Capability-alignment engineering roadmap](docs/engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Module, data, and test boundaries for future deliveries |
 | [Memory A–E plan](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | Executable RED→GREEN delivery plan |
-| [Memory Autopilot implementation](docs/engineering/phase-5/memory-autopilot.md) | Current data flow, safety boundaries, recovery, and operations |
+| [Memory Autopilot implementation](docs/engineering/phase-5/20260809_memory-autopilot.md) | Current data flow, safety boundaries, recovery, and operations |
 
 ## Contributing
 

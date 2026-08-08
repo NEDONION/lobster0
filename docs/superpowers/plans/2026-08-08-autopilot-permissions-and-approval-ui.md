@@ -240,7 +240,7 @@
 ### Task 5: 工程文档、默认配置与发布门禁
 
 **Files:**
-- Create: `docs/engineering/phase-2/autopilot-permissions-and-approval-ui.md`
+- Create: `docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md`
 - Modify: `README.md`
 - Modify: `docs/getting-started/20260807_本地运行指南.md`
 - Modify: `docs/architecture/20260807_系统架构.md`

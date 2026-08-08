@@ -96,9 +96,9 @@ git commit -m "fix(agent): 引导 direct Tool action 与安全审批"
 - Modify: `tests/test_cli_eval.py`
 - Modify: `tests/test_eval_cases.py`
 - Modify: `README.md`
-- Modify: `docs/engineering/phase-2/agent-regression-evals.md`
-- Modify: `docs/engineering/phase-2/command-execution.md`
-- Modify: `docs/engineering/phase-2/testing-and-debugging.md`
+- Modify: `docs/engineering/phase-2/20260808_agent-regression-evals.md`
+- Modify: `docs/engineering/phase-2/20260808_command-execution.md`
+- Modify: `docs/engineering/phase-2/20260808_testing-and-debugging.md`
 - Modify: `docs/progress/index.html`
 
 **Interfaces:**

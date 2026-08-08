@@ -445,12 +445,12 @@ Commit: `feat(http): 实现 pinned HTTPS 与 SSRF redirect 防护`
 - Modify: `tests/test_eval_cases.py`
 - Modify: `tests/test_eval_runner.py`
 - Modify/Create: `evals/scenarios/*.jsonl`
-- Create: `docs/engineering/phase-2/filesystem-tools.md`
-- Create: `docs/engineering/phase-2/approval-lifecycle.md`
-- Create: `docs/engineering/phase-2/cli-approvals.md`
-- Create: `docs/engineering/phase-2/command-execution.md`
+- Create: `docs/engineering/phase-2/20260808_filesystem-tools.md`
+- Create: `docs/engineering/phase-2/20260808_approval-lifecycle.md`
+- Create: `docs/engineering/phase-2/20260808_cli-approvals.md`
+- Create: `docs/engineering/phase-2/20260808_command-execution.md`
 - Create: `docs/engineering/phase-2/http-and-ssrf.md`
-- Create: `docs/engineering/phase-2/testing-and-debugging.md`
+- Create: `docs/engineering/phase-2/20260808_testing-and-debugging.md`
 - Modify: `docs/engineering/README.md`
 - Modify: `README.md`
 - Modify: `docs/progress/index.html`

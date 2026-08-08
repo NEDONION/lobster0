@@ -523,8 +523,8 @@ Phase 7 仍负责更高级的自我进化、Memory Reflection 与 Skill 提案�
 
 ## 18. 配套文档
 
-- [Memory Autopilot 最佳实践与技术选型](../engineering/memory-autopilot-best-practices-and-technology-selection.md)
+- [Memory Autopilot 最佳实践与技术选型](../engineering/20260808_memory-autopilot-best-practices-and-technology-selection.md)
 - [Memory Autopilot 正式设计 Spec](../superpowers/specs/2026-08-08-memory-autopilot-design.md)
 - [Memory Autopilot A～E TDD 实施计划](../superpowers/plans/2026-08-09-memory-autopilot.md)
-- [现有 Phase 3 Memory 实现](../engineering/phase-3/memory-skills-compaction.md)
+- [现有 Phase 3 Memory 实现](../engineering/phase-3/20260808_memory-skills-compaction.md)
 - [OpenClaw / Hermes 总体能力 Gap](20260808_OpenClaw-Hermes能力Gap与演进路线.md)
