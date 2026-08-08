@@ -117,6 +117,8 @@ def _render_default_config(paths: StatePaths) -> str:
         '[provider]\nbase_url = "https://api.deepseek.com"\n'
         'api_key_env = "MINICLAW_MODEL_API_KEY"\ntimeout_seconds = 120\n\n'
         f"[workspace]\npath = {workspace}\nread_only_roots = []\n\n"
+        '[permissions]\nprofile = "personal"\nread_roots = []\nwrite_roots = []\n'
+        "executable_roots = []\ndiscover_user_executables = true\n\n"
         "# [channels.feishu]\n"
         "# enabled = false\n"
         '# account_id = "default"\n'

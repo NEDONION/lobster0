@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.config import ConfigError, load_config
+from miniclaw.config import ConfigError, load_config, resolve_permission_roots
 from miniclaw.paths import build_state_paths
 
 
@@ -33,6 +33,11 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
         self.assertEqual(config.workspace.path, self.paths.workspace)
+        self.assertEqual(config.permissions.profile, "workspace")
+        self.assertEqual(config.permissions.read_roots, ())
+        self.assertEqual(config.permissions.write_roots, ())
+        self.assertEqual(config.permissions.executable_roots, ())
+        self.assertFalse(config.permissions.discover_user_executables)
         self.assertEqual(config.tools.security, "allowlist")
         self.assertEqual(config.tools.ask, "on-miss")
         self.assertEqual(config.tools.approval_ttl_seconds, 600)
@@ -316,6 +321,110 @@ class ConfigTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ConfigError, "workspace.read_only_roots"):
             load_config(self.paths, {}, {})
+
+    def test_personal_permissions_load_existing_unique_roots(self) -> None:
+        """Personal Profile 应保留已存在的显式 Roots 和 CLI 发现开关。"""
+        read_root = self.home / "read-root"
+        write_root = self.home / "write-root"
+        executable_root = self.home / "bin"
+        for root in (read_root, write_root, executable_root):
+            root.mkdir()
+        self.paths.config.write_text(
+            "[permissions]\n"
+            'profile = "personal"\n'
+            f'read_roots = ["{read_root}"]\n'
+            f'write_roots = ["{write_root}"]\n'
+            f'executable_roots = ["{executable_root}"]\n'
+            "discover_user_executables = true\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(self.paths, {}, {})
+
+        self.assertEqual(config.permissions.profile, "personal")
+        self.assertEqual(config.permissions.read_roots, (read_root,))
+        self.assertEqual(config.permissions.write_roots, (write_root,))
+        self.assertEqual(config.permissions.executable_roots, (executable_root,))
+        self.assertTrue(config.permissions.discover_user_executables)
+
+    def test_invalid_permission_roots_and_profile_fail_closed(self) -> None:
+        """Personal Roots 必须真实、唯一且为非 symlink 绝对目录。"""
+        directory = self.home / "root"
+        directory.mkdir()
+        file_path = self.home / "file"
+        file_path.write_text("x", encoding="utf-8")
+        link = self.home / "link"
+        link.symlink_to(directory, target_is_directory=True)
+        invalid = (
+            ("[permissions]\nunknown = true\n", "permissions.unknown"),
+            ('[permissions]\nprofile = "full"\n', "permissions.profile"),
+            (
+                '[permissions]\nprofile = "workspace"\n'
+                "discover_user_executables = true\n",
+                "discover_user_executables",
+            ),
+            (
+                '[permissions]\nprofile = "personal"\nread_roots = ["relative"]\n',
+                "permissions.read_roots",
+            ),
+            (
+                '[permissions]\nprofile = "personal"\n'
+                f'read_roots = ["{self.home / "missing"}"]\n',
+                "permissions.read_roots",
+            ),
+            (
+                '[permissions]\nprofile = "personal"\n'
+                f'write_roots = ["{file_path}"]\n',
+                "permissions.write_roots",
+            ),
+            (
+                '[permissions]\nprofile = "personal"\n'
+                f'executable_roots = ["{link}"]\n',
+                "permissions.executable_roots",
+            ),
+            (
+                '[permissions]\nprofile = "personal"\n'
+                f'read_roots = ["{directory}", "{directory}"]\n',
+                "permissions.read_roots",
+            ),
+        )
+        for content, expected in invalid:
+            with self.subTest(expected=expected):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
+
+    def test_personal_root_resolution_is_stable_and_ignores_missing_defaults(self) -> None:
+        """Personal 默认根只纳入真实目录，并保持显式根和 Workspace 去重。"""
+        documents = self.home / "Documents"
+        projects = self.home / "PycharmProjects"
+        explicit_read = self.home / "shared"
+        explicit_write = self.home / "published"
+        for root in (documents, projects, explicit_read, explicit_write, self.workspace):
+            root.mkdir()
+        self.paths.config.write_text(
+            "[permissions]\n"
+            'profile = "personal"\n'
+            f'read_roots = ["{explicit_read}", "{self.workspace}"]\n'
+            f'write_roots = ["{explicit_write}", "{self.workspace}"]\n',
+            encoding="utf-8",
+        )
+        config = load_config(self.paths, {}, {})
+
+        roots = resolve_permission_roots(
+            config.permissions,
+            self.workspace,
+            home=self.home,
+            platform_name="darwin",
+        )
+
+        self.assertEqual(roots.owner_home, self.home)
+        self.assertEqual(roots.read_roots[:2], (self.home, explicit_read))
+        self.assertNotIn(self.workspace, roots.read_roots)
+        self.assertEqual(
+            roots.write_roots,
+            (documents, projects, explicit_write),
+        )
 
 
 if __name__ == "__main__":

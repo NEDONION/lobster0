@@ -30,6 +30,8 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
         self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.workspace.path, self.paths.workspace)
+        self.assertEqual(config.permissions.profile, "personal")
+        self.assertTrue(config.permissions.discover_user_executables)
         self.assertIn(
             '[ui]\nlanguage = "zh-CN"',
             self.paths.config.read_text(encoding="utf-8"),
@@ -68,6 +70,21 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(second.created_files, ())
         self.assertEqual(self.paths.user.read_text(encoding="utf-8"), "My profile\n")
         self.assertEqual(example.read_text(encoding="utf-8"), "custom skill\n")
+
+    def test_repeated_initialization_preserves_workspace_permission_profile(self) -> None:
+        """已有 Workspace Profile 不能被重复 init 静默扩大为 Personal。"""
+        initialize_state(self.paths)
+        self.paths.config.write_text(
+            f'[workspace]\npath = "{self.paths.workspace}"\n'
+            '[permissions]\nprofile = "workspace"\n',
+            encoding="utf-8",
+        )
+
+        initialize_state(self.paths)
+
+        config = load_config(self.paths, {}, {})
+        self.assertEqual(config.permissions.profile, "workspace")
+        self.assertFalse(config.permissions.discover_user_executables)
 
     def test_symbolic_link_state_directory_is_rejected(self) -> None:
         """预置符号链接不能把初始化写入重定向到非预期目录。"""
