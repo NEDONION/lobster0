@@ -26,7 +26,9 @@ BUILTIN_TOOL_NAMES = (
     "propose_memory",
 )
 
-_TOP_LEVEL_KEYS = frozenset({"agent", "provider", "workspace", "tools", "ui"})
+_TOP_LEVEL_KEYS = frozenset(
+    {"agent", "provider", "workspace", "tools", "ui", "channels"}
+)
 _AGENT_KEYS = frozenset(
     {"model", "max_tool_iterations", "context_budget_tokens", "tool_result_max_chars"}
 )
@@ -40,8 +42,29 @@ _RUN_COMMAND_KEYS = frozenset(
 )
 _HTTP_GET_KEYS = frozenset({"allow_hosts", "timeout_seconds", "max_response_bytes"})
 _UI_KEYS = frozenset({"language"})
+_CHANNELS_KEYS = frozenset({"feishu"})
+_FEISHU_KEYS = frozenset(
+    {
+        "enabled",
+        "account_id",
+        "app_id_env",
+        "app_secret_env",
+        "domain",
+        "owner_open_id",
+        "allowed_open_ids",
+        "allowed_chat_ids",
+        "allow_group_mentions",
+        "queue_size",
+        "worker_count",
+        "message_max_chars",
+        "streaming_card",
+    }
+)
 _OVERRIDE_KEYS = frozenset({"model", "base_url", "api_key_env", "workspace"})
 _ENVIRONMENT_NAME = re.compile(r"[A-Z_][A-Z0-9_]*\Z")
+_ACCOUNT_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
+_FEISHU_OPEN_ID = re.compile(r"ou_[A-Za-z0-9_-]{1,128}\Z")
+_FEISHU_CHAT_ID = re.compile(r"oc_[A-Za-z0-9_-]{1,128}\Z")
 
 
 class ConfigError(ValueError):
@@ -121,6 +144,32 @@ class UIConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class FeishuConfig:
+    """保存飞书 Channel 的非秘密配置和本地资源预算。"""
+
+    enabled: bool = False
+    account_id: str = "default"
+    app_id_env: str = "MINICLAW_FEISHU_APP_ID"
+    app_secret_env: str = "MINICLAW_FEISHU_APP_SECRET"
+    domain: str = "feishu"
+    owner_open_id: str = ""
+    allowed_open_ids: tuple[str, ...] = ()
+    allowed_chat_ids: tuple[str, ...] = ()
+    allow_group_mentions: bool = False
+    queue_size: int = 64
+    worker_count: int = 2
+    message_max_chars: int = 30_000
+    streaming_card: bool = True
+
+
+@dataclass(frozen=True, slots=True)
+class ChannelConfig:
+    """汇总当前实例启用的 IM Channel 配置。"""
+
+    feishu: FeishuConfig = FeishuConfig()
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     """汇总 Phase 0 已实现的强类型配置。"""
 
@@ -129,6 +178,7 @@ class AppConfig:
     workspace: WorkspaceConfig
     tools: ToolConfig = ToolConfig()
     ui: UIConfig = UIConfig()
+    channels: ChannelConfig = ChannelConfig()
 
 
 def load_config(
@@ -158,6 +208,13 @@ def load_config(
     workspace_raw = _section(raw, "workspace", _WORKSPACE_KEYS)
     tools_raw = _section(raw, "tools", _TOOLS_KEYS)
     ui_raw = _section(raw, "ui", _UI_KEYS)
+    channels_raw = _section(raw, "channels", _CHANNELS_KEYS)
+    feishu_raw = _section(
+        channels_raw,
+        "feishu",
+        _FEISHU_KEYS,
+        parent="channels",
+    )
     run_command_raw = _section(
         tools_raw,
         "run_command",
@@ -248,6 +305,75 @@ def load_config(
         "ui.language",
         frozenset({"zh-CN", "en"}),
     )
+    feishu_enabled = _boolean(
+        feishu_raw.get("enabled", False),
+        "channels.feishu.enabled",
+    )
+    feishu_account_id = _account_id(
+        feishu_raw.get("account_id", "default"),
+        "channels.feishu.account_id",
+    )
+    feishu_app_id_env = _environment_variable_name(
+        feishu_raw.get("app_id_env", "MINICLAW_FEISHU_APP_ID"),
+        "channels.feishu.app_id_env",
+    )
+    feishu_app_secret_env = _environment_variable_name(
+        feishu_raw.get("app_secret_env", "MINICLAW_FEISHU_APP_SECRET"),
+        "channels.feishu.app_secret_env",
+    )
+    feishu_domain = _enum_string(
+        feishu_raw.get("domain", "feishu"),
+        "channels.feishu.domain",
+        frozenset({"feishu", "lark"}),
+    )
+    feishu_owner_open_id = _optional_platform_id(
+        feishu_raw.get("owner_open_id", ""),
+        "channels.feishu.owner_open_id",
+        _FEISHU_OPEN_ID,
+    )
+    feishu_allowed_open_ids = _platform_id_list(
+        feishu_raw.get("allowed_open_ids", []),
+        "channels.feishu.allowed_open_ids",
+        _FEISHU_OPEN_ID,
+    )
+    feishu_allowed_chat_ids = _platform_id_list(
+        feishu_raw.get("allowed_chat_ids", []),
+        "channels.feishu.allowed_chat_ids",
+        _FEISHU_CHAT_ID,
+    )
+    feishu_allow_group_mentions = _boolean(
+        feishu_raw.get("allow_group_mentions", False),
+        "channels.feishu.allow_group_mentions",
+    )
+    feishu_queue_size = _bounded_integer(
+        feishu_raw.get("queue_size", 64),
+        "channels.feishu.queue_size",
+        minimum=1,
+        maximum=1024,
+    )
+    feishu_worker_count = _bounded_integer(
+        feishu_raw.get("worker_count", 2),
+        "channels.feishu.worker_count",
+        minimum=1,
+        maximum=8,
+    )
+    feishu_message_max_chars = _bounded_integer(
+        feishu_raw.get("message_max_chars", 30_000),
+        "channels.feishu.message_max_chars",
+        minimum=1000,
+        maximum=30_000,
+    )
+    feishu_streaming_card = _boolean(
+        feishu_raw.get("streaming_card", True),
+        "channels.feishu.streaming_card",
+    )
+    _validate_feishu_relationships(
+        enabled=feishu_enabled,
+        owner_open_id=feishu_owner_open_id,
+        allowed_open_ids=feishu_allowed_open_ids,
+        allowed_chat_ids=feishu_allowed_chat_ids,
+        allow_group_mentions=feishu_allow_group_mentions,
+    )
 
     model = _environment_string(source, "MINICLAW_MODEL_NAME", model)
     max_tool_iterations = _environment_integer(
@@ -309,6 +435,23 @@ def load_config(
             ),
         ),
         ui=UIConfig(language=ui_language),
+        channels=ChannelConfig(
+            feishu=FeishuConfig(
+                enabled=feishu_enabled,
+                account_id=feishu_account_id,
+                app_id_env=feishu_app_id_env,
+                app_secret_env=feishu_app_secret_env,
+                domain=feishu_domain,
+                owner_open_id=feishu_owner_open_id,
+                allowed_open_ids=feishu_allowed_open_ids,
+                allowed_chat_ids=feishu_allowed_chat_ids,
+                allow_group_mentions=feishu_allow_group_mentions,
+                queue_size=feishu_queue_size,
+                worker_count=feishu_worker_count,
+                message_max_chars=feishu_message_max_chars,
+                streaming_card=feishu_streaming_card,
+            )
+        ),
     )
 
 
@@ -377,6 +520,26 @@ def _bounded_positive_integer(value: object, name: str, *, maximum: int) -> int:
     return number
 
 
+def _bounded_integer(
+    value: object,
+    name: str,
+    *,
+    minimum: int,
+    maximum: int,
+) -> int:
+    """校验整数同时位于不可由配置突破的上下界内。"""
+    if type(value) is not int or value < minimum or value > maximum:
+        raise ConfigError(f"{name} must be between {minimum} and {maximum}")
+    return value
+
+
+def _boolean(value: object, name: str) -> bool:
+    """严格接受 TOML 布尔值，拒绝整数等 Python 真值。"""
+    if type(value) is not bool:
+        raise ConfigError(f"{name} must be a boolean")
+    return value
+
+
 def _enum_string(value: object, name: str, allowed: frozenset[str]) -> str:
     """校验配置字符串属于显式枚举。"""
     normalized = _non_empty_string(value, name)
@@ -405,6 +568,64 @@ def _string_list(value: object, name: str, *, allow_empty: bool) -> tuple[str, .
     if len(set(values)) != len(values):
         raise ConfigError(f"{name} must not contain duplicates")
     return tuple(values)
+
+
+def _account_id(value: object, name: str) -> str:
+    """校验仅用于本地分区的非秘密 Channel account 标识。"""
+    account_id = _non_empty_string(value, name)
+    if _ACCOUNT_ID.fullmatch(account_id) is None:
+        raise ConfigError(f"{name} must be a lowercase account identifier")
+    return account_id
+
+
+def _optional_platform_id(
+    value: object,
+    name: str,
+    pattern: re.Pattern[str],
+) -> str:
+    """校验一个允许在 Channel 未启用时为空的平台 ID。"""
+    if not isinstance(value, str):
+        raise ConfigError(f"{name} must be a platform identifier")
+    normalized = value.strip()
+    if normalized and pattern.fullmatch(normalized) is None:
+        raise ConfigError(f"{name} must be a valid platform identifier")
+    return normalized
+
+
+def _platform_id_list(
+    value: object,
+    name: str,
+    pattern: re.Pattern[str],
+) -> tuple[str, ...]:
+    """校验唯一、非空且前缀正确的平台 ID 列表。"""
+    identifiers = _string_list(value, name, allow_empty=False)
+    if any(pattern.fullmatch(identifier) is None for identifier in identifiers):
+        raise ConfigError(f"{name} must contain valid platform identifiers")
+    return identifiers
+
+
+def _validate_feishu_relationships(
+    *,
+    enabled: bool,
+    owner_open_id: str,
+    allowed_open_ids: tuple[str, ...],
+    allowed_chat_ids: tuple[str, ...],
+    allow_group_mentions: bool,
+) -> None:
+    """校验飞书开关、Owner 与两层白名单之间的组合关系。"""
+    if not enabled:
+        return
+    if not owner_open_id:
+        raise ConfigError("channels.feishu.owner_open_id is required when enabled")
+    if owner_open_id not in allowed_open_ids:
+        raise ConfigError(
+            "channels.feishu.owner_open_id must be present in "
+            "channels.feishu.allowed_open_ids"
+        )
+    if allow_group_mentions and not allowed_chat_ids:
+        raise ConfigError(
+            "channels.feishu.allowed_chat_ids is required when group mentions are enabled"
+        )
 
 
 def _argument_list(value: object, name: str) -> tuple[str, ...]:

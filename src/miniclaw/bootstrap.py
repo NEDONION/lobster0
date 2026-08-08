@@ -116,5 +116,19 @@ def _render_default_config(paths: StatePaths) -> str:
         '[ui]\nlanguage = "zh-CN"\n\n'
         '[provider]\nbase_url = "https://api.deepseek.com"\n'
         'api_key_env = "MINICLAW_MODEL_API_KEY"\ntimeout_seconds = 120\n\n'
-        f"[workspace]\npath = {workspace}\nread_only_roots = []\n"
+        f"[workspace]\npath = {workspace}\nread_only_roots = []\n\n"
+        "# [channels.feishu]\n"
+        "# enabled = false\n"
+        '# account_id = "default"\n'
+        '# app_id_env = "MINICLAW_FEISHU_APP_ID"\n'
+        '# app_secret_env = "MINICLAW_FEISHU_APP_SECRET"\n'
+        '# domain = "feishu"\n'
+        '# owner_open_id = "ou_replace_with_owner_open_id"\n'
+        '# allowed_open_ids = ["ou_replace_with_owner_open_id"]\n'
+        "# allowed_chat_ids = []\n"
+        "# allow_group_mentions = false\n"
+        "# queue_size = 64\n"
+        "# worker_count = 2\n"
+        "# message_max_chars = 30000\n"
+        "# streaming_card = true\n"
     )

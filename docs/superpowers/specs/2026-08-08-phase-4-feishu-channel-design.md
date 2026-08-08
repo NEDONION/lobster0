@@ -173,6 +173,7 @@ account_id = "default"
 app_id_env = "MINICLAW_FEISHU_APP_ID"
 app_secret_env = "MINICLAW_FEISHU_APP_SECRET"
 domain = "feishu"
+owner_open_id = "ou_replace_with_owner_open_id"
 allowed_open_ids = []
 allowed_chat_ids = []
 allow_group_mentions = true
@@ -185,6 +186,7 @@ streaming_card = true
 安全规则：
 
 - 配置只保存环境变量名，不保存秘密值；
+- `owner_open_id` 是唯一可以批准 Tool 动作的飞书身份，并且必须同时位于 `allowed_open_ids`；
 - `enabled=true` 时必须有至少一个 `allowed_open_ids`；
 - 群聊开启时必须有至少一个 `allowed_chat_ids`；
 - `account_id` 只允许小写字母、数字、短横线和下划线；

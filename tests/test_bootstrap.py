@@ -34,6 +34,11 @@ class BootstrapTest(unittest.TestCase):
             '[ui]\nlanguage = "zh-CN"',
             self.paths.config.read_text(encoding="utf-8"),
         )
+        template = self.paths.config.read_text(encoding="utf-8")
+        self.assertIn("# [channels.feishu]", template)
+        self.assertIn('# app_id_env = "MINICLAW_FEISHU_APP_ID"', template)
+        self.assertIn('# app_secret_env = "MINICLAW_FEISHU_APP_SECRET"', template)
+        self.assertNotIn("cli_", template)
         self.assertEqual(
             set(result.created_files),
             {

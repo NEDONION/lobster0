@@ -53,7 +53,102 @@ class ConfigTest(unittest.TestCase):
         )
         self.assertEqual(config.tools.run_command.timeout_seconds, 30)
         self.assertEqual(config.tools.http_get.max_response_bytes, 2 * 1024 * 1024)
+        self.assertFalse(config.channels.feishu.enabled)
+        self.assertEqual(config.channels.feishu.account_id, "default")
+        self.assertEqual(config.channels.feishu.owner_open_id, "")
+        self.assertEqual(
+            config.channels.feishu.app_secret_env,
+            "MINICLAW_FEISHU_APP_SECRET",
+        )
         self.assertNotIn("secret-must-stay-outside-config", repr(config))
+
+    def test_feishu_section_loads_typed_limits_without_secret_values(self) -> None:
+        """合法飞书配置应保留白名单和预算，但密钥值不能进入 AppConfig。"""
+        self.paths.config.write_text(
+            "[channels.feishu]\n"
+            "enabled = true\n"
+            'account_id = "personal"\n'
+            'app_id_env = "MY_FEISHU_APP_ID"\n'
+            'app_secret_env = "MY_FEISHU_APP_SECRET"\n'
+            'domain = "feishu"\n'
+            'owner_open_id = "ou_owner123"\n'
+            'allowed_open_ids = ["ou_owner123", "ou_friend456"]\n'
+            'allowed_chat_ids = ["oc_project789"]\n'
+            "allow_group_mentions = true\n"
+            "queue_size = 32\n"
+            "worker_count = 3\n"
+            "message_max_chars = 24000\n"
+            "streaming_card = false\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(
+            self.paths,
+            {
+                "MY_FEISHU_APP_ID": "cli_test_app_id",
+                "MY_FEISHU_APP_SECRET": "secret-that-must-not-enter-config",
+            },
+            {},
+        )
+
+        feishu = config.channels.feishu
+        self.assertTrue(feishu.enabled)
+        self.assertEqual(feishu.account_id, "personal")
+        self.assertEqual(feishu.app_id_env, "MY_FEISHU_APP_ID")
+        self.assertEqual(feishu.app_secret_env, "MY_FEISHU_APP_SECRET")
+        self.assertEqual(feishu.owner_open_id, "ou_owner123")
+        self.assertEqual(feishu.allowed_open_ids, ("ou_owner123", "ou_friend456"))
+        self.assertEqual(feishu.allowed_chat_ids, ("oc_project789",))
+        self.assertTrue(feishu.allow_group_mentions)
+        self.assertEqual(feishu.queue_size, 32)
+        self.assertEqual(feishu.worker_count, 3)
+        self.assertEqual(feishu.message_max_chars, 24_000)
+        self.assertFalse(feishu.streaming_card)
+        self.assertNotIn("secret-that-must-not-enter-config", repr(config))
+
+    def test_invalid_feishu_configuration_fails_closed(self) -> None:
+        """未知字段、无 Owner、非法 ID 与越界预算都不能静默回退。"""
+        base = (
+            "[channels.feishu]\n"
+            "enabled = true\n"
+            'owner_open_id = "ou_owner123"\n'
+            'allowed_open_ids = ["ou_owner123"]\n'
+            "allow_group_mentions = false\n"
+        )
+        invalid_configs = (
+            ("[channels]\nunknown = true\n", "channels.unknown"),
+            ("[channels.feishu]\nunknown = true\n", "channels.feishu.unknown"),
+            (
+                "[channels.feishu]\nenabled = true\nallow_group_mentions = false\n",
+                "owner_open_id",
+            ),
+            (
+                base.replace("ou_owner123", "owner", 1),
+                "owner_open_id",
+            ),
+            (
+                base.replace('["ou_owner123"]', '["ou_someone_else"]'),
+                "owner_open_id.*allowed_open_ids",
+            ),
+            (
+                base.replace("allow_group_mentions = false", "allow_group_mentions = true"),
+                "allowed_chat_ids",
+            ),
+            (base + 'allowed_chat_ids = ["not-a-chat"]\n', "allowed_chat_ids"),
+            (base + 'account_id = "UPPER CASE"\n', "account_id"),
+            (base + 'app_secret_env = "literal-secret"\n', "app_secret_env"),
+            (base + "queue_size = 0\n", "queue_size"),
+            (base + "queue_size = 1025\n", "queue_size"),
+            (base + "worker_count = 9\n", "worker_count"),
+            (base + "message_max_chars = 999\n", "message_max_chars"),
+            (base + "streaming_card = 1\n", "streaming_card"),
+            (base + 'domain = "unknown"\n', "domain"),
+        )
+        for content, expected in invalid_configs:
+            with self.subTest(expected=expected):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
 
     def test_ui_language_defaults_to_chinese_and_accepts_only_english(self) -> None:
         """界面默认中文，并且持久配置只能在中英文之间选择。"""
