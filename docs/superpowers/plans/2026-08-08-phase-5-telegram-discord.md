@@ -981,17 +981,18 @@ git commit -m "test(channel): 固化 20 个 Telegram/Discord regression scenario
 
 - Create: `scripts/telegram_live_smoke.py`
 - Create: `scripts/discord_live_smoke.py`
+- Create: `src/miniclaw/evals/live.py`
 - Create: `tests/test_channel_live_harness.py`
-- Modify: `.gitignore`
+- Verify: `.gitignore` already ignores `.local/`
 
 ### Step 12.1 — RED safety contract
 
-- [ ] 不带 `--confirm-live` 必须退出非零且不读取 Token、不联网。
-- [ ] enabled config、Doctor/preflight、commit SHA 缺失时 fail closed。
-- [ ] 脚本不得调用 send API；只启动/提示人工在另一个客户端发规定消息，读取本地匿名状态计数。
-- [ ] evidence 输出固定到 ignored `.local/eval-results/<channel>/`。
-- [ ] JSON 只允许：channel、commit、started/finished time、check name、pass/fail/skip、匿名计数。
-- [ ] 任一 fail 或 skip 返回非零；Token、完整 ID、username、chat/guild name、message body、截图不落盘。
+- [x] 不带 `--confirm-live` 必须退出非零且不读取 Token、不联网。
+- [x] enabled config、Doctor/preflight、commit SHA 缺失时 fail closed。
+- [x] 脚本不得调用 send API；只提示人工在另一个终端启动 Gateway 并从另一个客户端发规定消息，读取本地匿名状态计数。
+- [x] evidence 默认输出到 ignored `.local/eval-results/<channel>/`。
+- [x] JSON 只允许：channel、commit、started/finished time、check name、pass/fail/skip、匿名计数。
+- [x] 任一 fail 或 skip 返回非零；Token、完整 ID、username、chat/guild name、message body、截图不落盘。
 
 Run RED:
 
@@ -1003,8 +1004,10 @@ Expected RED: 两个脚本不存在。
 
 ### Step 12.2 — Implement fifteen-step checklist harness
 
-- [ ] 覆盖 design 第 25.7 节的 15 项：auth ready、DM、group/guild mention、reply/thread、memory restart、read Tool、approval/deny、non-owner、dedupe、long text、rate limit、restart recovery、network reconnect、experience fallback、secret scan。
-- [ ] 当前无法真实执行的平台在 release record 中明确 `LIVE PENDING`，不生成伪 evidence 文件。
+- [x] 覆盖 design 第 25.7 节的 15 项：auth ready、DM、group/guild mention、reply/thread、memory restart、read Tool、approval/deny、non-owner、dedupe、long text、rate limit、restart recovery、network reconnect、experience fallback、secret scan。
+- [x] 当前无法真实执行的平台将在 release record 中明确 `LIVE PENDING`；本轮没有生成伪 live evidence 文件。
+
+Actual gate (2026-08-08): live harness focused tests `4/4`、Ruff PASS；Telegram/Discord 真实平台状态均为 `LIVE PENDING`。
 
 Run GREEN:
 
@@ -1017,8 +1020,8 @@ uv run ruff check scripts/telegram_live_smoke.py scripts/discord_live_smoke.py \
 ### Step 12.3 — Commit
 
 ```bash
-git add .gitignore scripts/telegram_live_smoke.py scripts/discord_live_smoke.py \
-  tests/test_channel_live_harness.py
+git add src/miniclaw/evals/live.py scripts/telegram_live_smoke.py \
+  scripts/discord_live_smoke.py tests/test_channel_live_harness.py
 git commit -m "test(live): 增加 secret-free Telegram/Discord acceptance harness"
 ```
 
