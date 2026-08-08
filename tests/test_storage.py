@@ -19,6 +19,15 @@ EXPECTED_TABLES = {
     "eval_runs",
     "feedback",
     "messages",
+    "memory_audit",
+    "memory_buffers",
+    "memory_candidates",
+    "memory_conflicts",
+    "memory_flush_runs",
+    "memory_manifests",
+    "memory_reviews",
+    "memory_sources",
+    "memory_units",
     "policy_rules",
     "processed_events",
     "proposals",
@@ -58,10 +67,10 @@ class StorageTest(unittest.TestCase):
             busy_timeout = connection.execute("PRAGMA busy_timeout").fetchone()[0]
             journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
 
-        self.assertEqual(first, (1, 2))
+        self.assertEqual(first, (1, 2, 3))
         self.assertEqual(second, ())
         self.assertEqual(tables, EXPECTED_TABLES)
-        self.assertEqual(current_schema_version(database), 2)
+        self.assertEqual(current_schema_version(database), 3)
         self.assertEqual(foreign_keys, 1)
         self.assertEqual(busy_timeout, 5000)
         self.assertEqual(journal_mode, "wal")
@@ -167,7 +176,7 @@ class StorageTest(unittest.TestCase):
                 (now,),
             )
 
-        self.assertEqual(apply_migrations(database), (2,))
+        self.assertEqual(apply_migrations(database), (2, 3))
 
         with database.connect() as connection:
             event = connection.execute(
@@ -255,10 +264,10 @@ class StorageTest(unittest.TestCase):
             )
             connection.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-                (3, "future"),
+                (4, "future"),
             )
 
-        with self.assertRaisesRegex(MigrationError, "newer schema version 3"):
+        with self.assertRaisesRegex(MigrationError, "newer schema version 4"):
             apply_migrations(database)
 
 
