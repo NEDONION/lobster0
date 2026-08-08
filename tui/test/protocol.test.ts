@@ -26,6 +26,12 @@ test("fragmented UTF-8 and multiple lines decode to complete server frames", () 
 });
 
 test("malformed and over-limit server frames fail with stable client codes", () => {
+  const invalidUtf8 = new NdjsonDecoder();
+  assert.throws(
+    () => invalidUtf8.push(Buffer.from([0x7b, 0x22, 0x78, 0x22, 0x3a, 0x22, 0xff, 0x22, 0x7d, 0x0a])),
+    (error: unknown) => error instanceof ProtocolClientError && error.code === "invalid_encoding",
+  );
+
   const malformed = new NdjsonDecoder();
   assert.throws(
     () => malformed.push(Buffer.from("{bad}\n")),

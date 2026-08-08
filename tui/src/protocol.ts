@@ -2,6 +2,7 @@
 
 export const PROTOCOL_VERSION = 1 as const;
 export const MAX_FRAME_BYTES = 2 * 1024 * 1024;
+const UTF8_DECODER = new TextDecoder("utf-8", { fatal: true });
 
 export type JsonValue =
   | string
@@ -91,9 +92,15 @@ export function encodeRequest(
 }
 
 function parseServerFrame(line: Uint8Array): ServerFrame {
+  let text: string;
+  try {
+    text = UTF8_DECODER.decode(line);
+  } catch {
+    throw new ProtocolClientError("invalid_encoding", "Bridge frame must use UTF-8");
+  }
   let value: unknown;
   try {
-    value = JSON.parse(Buffer.from(line).toString("utf8"));
+    value = JSON.parse(text);
   } catch {
     throw new ProtocolClientError("invalid_json", "Bridge returned invalid JSON");
   }
