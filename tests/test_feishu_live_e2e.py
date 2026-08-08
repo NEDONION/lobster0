@@ -411,6 +411,40 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(await process.stop(timeout=1.0), 0)
 
+    async def test_pipe_child_forces_unbuffered_ready_output(self) -> None:
+        """无 TTY 且 print 未 flush 时，受管进程仍必须及时交付 ready 行。"""
+        api = self._api()
+        script = self.root / "buffered_gateway.py"
+        script.write_text(
+            textwrap.dedent(
+                """
+                import signal
+                import sys
+                import time
+
+                signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+                print("MiniClaw gateway ready: feishu/default")
+                while True:
+                    time.sleep(0.05)
+                """
+            ),
+            encoding="utf-8",
+        )
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("PYTHONUNBUFFERED", None)
+            process = await api.ManagedGateway.start(
+                project_root=self.root,
+                home=self.home,
+                ready_line="MiniClaw gateway ready: feishu/default",
+                commit="c" * 40,
+                ready_timeout=0.5,
+                command=(sys.executable, str(script)),
+            )
+
+        self.assertTrue(process.ready)
+        self.assertEqual(await process.stop(timeout=1.0), 0)
+
     async def test_ready_substring_times_out_and_process_is_reaped(self) -> None:
         """日志中碰巧包含 marker 不能误判为 ready，超时后必须回收进程。"""
         api = self._api()

@@ -127,6 +127,7 @@ class ManagedGateway:
         )
         environment = dict(os.environ)
         environment["MINICLAW_GATEWAY_COMMIT"] = commit
+        environment["PYTHONUNBUFFERED"] = "1"
         try:
             process = await asyncio.create_subprocess_exec(
                 *executable,
