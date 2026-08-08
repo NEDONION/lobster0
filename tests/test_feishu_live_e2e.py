@@ -1,6 +1,8 @@
 """Feishu Live E2E 的只读取证、进程与报告安全契约。"""
 
 import importlib
+import json
+import os
 import sys
 import tempfile
 import textwrap
@@ -493,6 +495,259 @@ class GatewayProcessTest(unittest.IsolatedAsyncioTestCase):
         api = importlib.import_module("miniclaw.evals.feishu_live")
         if not hasattr(api, "GatewayProcess"):
             self.fail("Feishu Live GatewayProcess is missing")
+        return api
+
+
+class FeishuEvidenceReportTest(unittest.TestCase):
+    """保证 Live Evidence 只有封闭事实，不保存 Secret、正文或平台 ID。"""
+
+    def setUp(self) -> None:
+        """创建隔离输出目录与稳定时间/commit。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.root = Path(self.temporary_directory.name).resolve()
+        self.commit = "a" * 40
+        self.started_at = "2026-08-08T12:00:00Z"
+        self.finished_at = "2026-08-08T12:15:00Z"
+
+    def test_verified_report_has_exact_nested_schema_and_derived_counts(self) -> None:
+        """15/15、Gateway 正常和零泄露时才能生成严格 VERIFIED 报告。"""
+        api = self._api()
+        results = tuple(self._passing_result(api, index) for index in range(1, 16))
+
+        report = api.build_evidence_report(
+            commit=self.commit,
+            started_at=self.started_at,
+            finished_at=self.finished_at,
+            gateway_ready=True,
+            gateway_graceful_exit=True,
+            results=results,
+            secret_matches=0,
+        )
+
+        self.assertEqual(
+            set(report),
+            {
+                "schema_version",
+                "channel",
+                "commit",
+                "started_at",
+                "finished_at",
+                "gateway",
+                "checks",
+                "counts",
+                "release_status",
+            },
+        )
+        self.assertEqual(set(report["gateway"]), {"ready", "graceful_exit"})
+        self.assertEqual(
+            set(report["checks"][0]),
+            {"case_id", "status", "local_evidence", "human_evidence", "error_code"},
+        )
+        self.assertEqual(
+            set(report["checks"][0]["local_evidence"][0]),
+            {"key", "status"},
+        )
+        self.assertEqual(
+            set(report["counts"]),
+            {
+                "cases_total",
+                "cases_passed",
+                "cases_failed",
+                "cases_skipped",
+                "local_evidence_passed",
+                "local_evidence_failed",
+                "human_evidence_passed",
+                "human_evidence_failed",
+                "human_evidence_skipped",
+                "secret_matches",
+            },
+        )
+        self.assertEqual(report["counts"]["cases_passed"], 15)
+        self.assertEqual(report["release_status"], "FEISHU_E2E_VERIFIED")
+        json.dumps(report, allow_nan=False)
+
+    def test_secret_match_forces_case_fifteen_and_release_to_fail(self) -> None:
+        """Secret scan 只要命中一次，015 和整个发布都不能维持 PASS。"""
+        api = self._api()
+        results = tuple(self._passing_result(api, index) for index in range(1, 16))
+
+        report = api.build_evidence_report(
+            commit=self.commit,
+            started_at=self.started_at,
+            finished_at=self.finished_at,
+            gateway_ready=True,
+            gateway_graceful_exit=True,
+            results=results,
+            secret_matches=1,
+        )
+
+        case_fifteen = report["checks"][14]
+        self.assertEqual(case_fifteen["case_id"], "FEISHU-LIVE-015")
+        self.assertEqual(case_fifteen["status"], "fail")
+        self.assertIn(
+            {"key": "secret_scan_zero", "status": "fail"},
+            case_fifteen["local_evidence"],
+        )
+        self.assertEqual(case_fifteen["error_code"], "secret_scan_match")
+        self.assertEqual(report["release_status"], "FEISHU_LIVE_FAILED")
+
+    def test_builder_and_serializer_reject_raw_or_unknown_fields(self) -> None:
+        """外部 ID、路径和额外字段不能借 error/evidence/report 进入 JSON。"""
+        api = self._api()
+        forbidden = (
+            "MODEL_SECRET_SENTINEL",
+            "CHANNEL_SECRET_SENTINEL",
+            "ou_private",
+            "oc_private",
+            "om_private",
+            "full message body",
+            str(self.root),
+        )
+        for value in forbidden:
+            with self.subTest(value=value):
+                result = api.FeishuCaseResult(
+                    case_id="FEISHU-LIVE-001",
+                    status="fail",
+                    local_passed=(),
+                    local_failed=("gateway_ready",),
+                    human_statuses=(),
+                    error_code=value,
+                )
+                with self.assertRaises(api.FeishuLiveError) as raised:
+                    self._report(api, (result,))
+                self.assertEqual(raised.exception.code, "invalid_evidence_report")
+
+        unknown = api.FeishuCaseResult(
+            case_id="FEISHU-LIVE-001",
+            status="fail",
+            local_passed=(),
+            local_failed=("raw_private_fact",),
+            human_statuses=(),
+            error_code="evidence_failed",
+        )
+        with self.assertRaises(api.FeishuLiveError):
+            self._report(api, (unknown,))
+
+        safe = self._report(api, (self._passing_result(api, 1),))
+        unsafe = dict(safe)
+        unsafe["raw"] = "MODEL_SECRET_SENTINEL"
+        with self.assertRaises(api.FeishuLiveError) as raised:
+            api.write_evidence(self.root / "unsafe.json", unsafe)
+        self.assertEqual(raised.exception.code, "invalid_evidence_report")
+        self.assertFalse((self.root / "unsafe.json").exists())
+
+        tampered_counts = json.loads(json.dumps(safe))
+        tampered_counts["counts"]["cases_passed"] = 999
+        with self.assertRaises(api.FeishuLiveError):
+            api.write_evidence(self.root / "tampered-counts.json", tampered_counts)
+
+        tampered_check = json.loads(json.dumps(safe))
+        tampered_check["checks"][0]["local_evidence"][0]["key"] = "raw_private_fact"
+        with self.assertRaises(api.FeishuLiveError):
+            api.write_evidence(self.root / "tampered-check.json", tampered_check)
+
+    def test_write_evidence_is_exclusive_owner_only_and_redacted(self) -> None:
+        """Evidence 使用 0600 原子新建，不能覆盖已有文件或跟随 symlink。"""
+        api = self._api()
+        report = self._report(api, (self._passing_result(api, 1),))
+        target = self.root / "evidence.json"
+
+        api.write_evidence(target, report)
+
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        rendered = target.read_text(encoding="utf-8")
+        for forbidden in (
+            "MODEL_SECRET_SENTINEL",
+            "CHANNEL_SECRET_SENTINEL",
+            "ou_",
+            "oc_",
+            "om_",
+            str(self.root),
+        ):
+            self.assertNotIn(forbidden, rendered)
+        with self.assertRaises(api.FeishuLiveError) as existing:
+            api.write_evidence(target, report)
+        self.assertEqual(existing.exception.code, "evidence_already_exists")
+
+        if hasattr(os, "symlink"):
+            link = self.root / "linked.json"
+            link.symlink_to(target)
+            with self.assertRaises(api.FeishuLiveError):
+                api.write_evidence(link, report)
+
+    def test_secret_scan_is_bounded_and_returns_only_match_count(self) -> None:
+        """扫描跳过 symlink、大文件和第 1001 个文件，只返回匿名命中数。"""
+        api = self._api()
+        scan_root = self.root / "scan"
+        scan_root.mkdir()
+        secrets = (
+            "MODEL_SECRET_SENTINEL",
+            "CHANNEL_SECRET_SENTINEL",
+            "ou_private",
+            "oc_private",
+            "full message body",
+            str(self.root),
+        )
+        (scan_root / "matches.txt").write_text("\n".join(secrets), encoding="utf-8")
+        external = self.root / "external.txt"
+        external.write_text("MODEL_SECRET_SENTINEL", encoding="utf-8")
+        (scan_root / "linked.txt").symlink_to(external)
+        (scan_root / "large.txt").write_bytes(
+            b"x" * (1024 * 1024 + 1) + b"CHANNEL_SECRET_SENTINEL"
+        )
+
+        matches = api.scan_secret_matches((scan_root,), secrets)
+
+        self.assertEqual(matches, len(secrets))
+        self.assertIsInstance(matches, int)
+
+        limited = self.root / "limited"
+        limited.mkdir()
+        for index in range(1001):
+            content = "MODEL_SECRET_SENTINEL" if index == 1000 else "safe"
+            (limited / f"{index:04d}.txt").write_text(content, encoding="utf-8")
+        self.assertEqual(
+            api.scan_secret_matches((limited,), ("MODEL_SECRET_SENTINEL",)),
+            0,
+        )
+
+    def _passing_result(self, api: ModuleType, index: int):
+        """构造一个只含 allowlist evidence 的通过结果。"""
+        local = "secret_scan_zero" if index == 15 else "gateway_ready"
+        return api.FeishuCaseResult(
+            case_id=f"FEISHU-LIVE-{index:03d}",
+            status="pass",
+            local_passed=(local,),
+            local_failed=(),
+            human_statuses=(("reply_visible", "pass"),),
+            error_code=None,
+        )
+
+    def _report(self, api: ModuleType, results: tuple[object, ...]):
+        """使用稳定元数据调用真实报告 builder。"""
+        return api.build_evidence_report(
+            commit=self.commit,
+            started_at=self.started_at,
+            finished_at=self.finished_at,
+            gateway_ready=True,
+            gateway_graceful_exit=True,
+            results=results,
+            secret_matches=0,
+        )
+
+    def _api(self) -> ModuleType:
+        """导入真实生产模块，并要求报告接口已存在。"""
+        api = importlib.import_module("miniclaw.evals.feishu_live")
+        required = (
+            "FeishuCaseResult",
+            "build_evidence_report",
+            "write_evidence",
+            "scan_secret_matches",
+        )
+        missing = tuple(name for name in required if not hasattr(api, name))
+        if missing:
+            self.fail(f"Feishu evidence API is missing: {missing}")
         return api
 
 

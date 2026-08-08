@@ -3,11 +3,13 @@
 import asyncio
 import json
 import os
+import re
 import signal
 import sqlite3
+import stat
 import sys
 from collections import deque
-from collections.abc import Callable
+from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -41,6 +43,473 @@ class EvidenceEvaluation:
 
     passed: tuple[str, ...]
     failed: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class FeishuCaseResult:
+    """保存一个 Live case 的封闭自动/人工结论，不包含原始数据。"""
+
+    case_id: str
+    status: str
+    local_passed: tuple[str, ...]
+    local_failed: tuple[str, ...]
+    human_statuses: tuple[tuple[str, str], ...]
+    error_code: str | None
+
+
+_CASE_STATUSES = frozenset({"pass", "fail", "skip"})
+_HUMAN_EVIDENCE = frozenset(
+    {
+        "reply_visible",
+        "context_answer_correct",
+        "system_info_visible",
+        "sentinel_visible",
+        "approval_prompt_visible",
+        "approved_result_visible",
+        "denial_visible",
+        "bot_silent",
+        "group_reply_visible",
+        "long_content_intact",
+        "restart_answer_correct",
+        "reconnect_reply_visible",
+    }
+)
+_RELEASE_STATUSES = frozenset(
+    {"FEISHU_E2E_VERIFIED", "FEISHU_LIVE_PARTIAL", "FEISHU_LIVE_FAILED"}
+)
+_COUNT_KEYS = frozenset(
+    {
+        "cases_total",
+        "cases_passed",
+        "cases_failed",
+        "cases_skipped",
+        "local_evidence_passed",
+        "local_evidence_failed",
+        "human_evidence_passed",
+        "human_evidence_failed",
+        "human_evidence_skipped",
+        "secret_matches",
+    }
+)
+_REPORT_KEYS = frozenset(
+    {
+        "schema_version",
+        "channel",
+        "commit",
+        "started_at",
+        "finished_at",
+        "gateway",
+        "checks",
+        "counts",
+        "release_status",
+    }
+)
+_MAX_SCAN_FILES = 1000
+_MAX_SCAN_FILE_BYTES = 1024 * 1024
+
+
+def build_evidence_report(
+    *,
+    commit: str,
+    started_at: str,
+    finished_at: str,
+    gateway_ready: bool,
+    gateway_graceful_exit: bool,
+    results: Sequence[FeishuCaseResult],
+    secret_matches: int,
+) -> dict[str, object]:
+    """把封闭 case 结果转成不含正文和平台 ID 的 Evidence 报告。
+
+    Secret scan 命中会强制把 ``FEISHU-LIVE-015`` 与发布结果改为失败，人工结果
+    无权覆盖这一结论。
+    """
+    if not _is_commit(commit) or not _is_timestamp(started_at) or not _is_timestamp(finished_at):
+        raise FeishuLiveError("invalid_evidence_report")
+    if type(gateway_ready) is not bool or type(gateway_graceful_exit) is not bool:
+        raise FeishuLiveError("invalid_evidence_report")
+    if type(secret_matches) is not int or secret_matches < 0:
+        raise FeishuLiveError("invalid_evidence_report")
+
+    normalized = [_validate_case_result(result) for result in results]
+    case_ids = [result.case_id for result in normalized]
+    if len(case_ids) != len(set(case_ids)):
+        raise FeishuLiveError("invalid_evidence_report")
+    if secret_matches:
+        normalized = [_force_secret_failure(result) for result in normalized]
+
+    checks = [_case_result_payload(result) for result in normalized]
+    counts = _report_counts(normalized, secret_matches)
+    expected_ids = {f"FEISHU-LIVE-{index:03d}" for index in range(1, 16)}
+    if secret_matches or not gateway_ready or not gateway_graceful_exit:
+        release_status = "FEISHU_LIVE_FAILED"
+    elif any(result.status == "fail" for result in normalized):
+        release_status = "FEISHU_LIVE_FAILED"
+    elif set(case_ids) == expected_ids and all(result.status == "pass" for result in normalized):
+        release_status = "FEISHU_E2E_VERIFIED"
+    else:
+        release_status = "FEISHU_LIVE_PARTIAL"
+
+    report: dict[str, object] = {
+        "schema_version": 1,
+        "channel": "feishu",
+        "commit": commit,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "gateway": {"ready": gateway_ready, "graceful_exit": gateway_graceful_exit},
+        "checks": checks,
+        "counts": counts,
+        "release_status": release_status,
+    }
+    if not _is_valid_report(report):
+        raise FeishuLiveError("invalid_evidence_report")
+    return report
+
+
+def write_evidence(path: Path, report: Mapping[str, object]) -> None:
+    """以 0600、O_EXCL 和 fsync 写入一份经过严格验证的新 Evidence。"""
+    if not _is_valid_report(report):
+        raise FeishuLiveError("invalid_evidence_report")
+    try:
+        rendered = json.dumps(
+            report,
+            ensure_ascii=False,
+            sort_keys=True,
+            indent=2,
+            allow_nan=False,
+        ) + "\n"
+    except (TypeError, ValueError):
+        raise FeishuLiveError("invalid_evidence_report") from None
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags, 0o600)
+    except FileExistsError:
+        raise FeishuLiveError("evidence_already_exists") from None
+    except OSError:
+        raise FeishuLiveError("evidence_write_failed") from None
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write(rendered)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except OSError:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise FeishuLiveError("evidence_write_failed") from None
+
+
+def scan_secret_matches(paths: Sequence[Path], secrets: Sequence[str]) -> int:
+    """有界扫描普通小文件并只返回 exact secret 的匿名命中次数。"""
+    if any(not isinstance(secret, str) or not 1 <= len(secret) <= 4096 for secret in secrets):
+        raise FeishuLiveError("invalid_secret_scan")
+    needles = tuple(dict.fromkeys(secret.encode("utf-8") for secret in secrets))
+    if not needles:
+        return 0
+
+    matches = 0
+    visited = 0
+    for candidate in _iter_scan_candidates(paths):
+        if visited >= _MAX_SCAN_FILES:
+            break
+        visited += 1
+        content = _read_bounded_regular_file(candidate)
+        if content is None:
+            continue
+        matches += sum(content.count(needle) for needle in needles)
+    return matches
+
+
+def _validate_case_result(result: FeishuCaseResult) -> FeishuCaseResult:
+    """验证一个 case 结果只使用封闭 ID、状态、evidence 和错误码。"""
+    if not isinstance(result, FeishuCaseResult):
+        raise FeishuLiveError("invalid_evidence_report")
+    if not re.fullmatch(r"FEISHU-LIVE-(?:00[1-9]|01[0-5])", result.case_id):
+        raise FeishuLiveError("invalid_evidence_report")
+    if result.status not in _CASE_STATUSES:
+        raise FeishuLiveError("invalid_evidence_report")
+    local = (*result.local_passed, *result.local_failed)
+    if len(local) != len(set(local)) or any(key not in _EVIDENCE_CHECKS for key in local):
+        raise FeishuLiveError("invalid_evidence_report")
+    human_keys = tuple(key for key, _ in result.human_statuses)
+    if len(human_keys) != len(set(human_keys)):
+        raise FeishuLiveError("invalid_evidence_report")
+    if any(
+        key not in _HUMAN_EVIDENCE or status not in _CASE_STATUSES
+        for key, status in result.human_statuses
+    ):
+        raise FeishuLiveError("invalid_evidence_report")
+    if result.error_code is not None and not _is_safe_error_code(result.error_code):
+        raise FeishuLiveError("invalid_evidence_report")
+    if result.status == "pass" and (
+        result.local_failed
+        or any(status != "pass" for _, status in result.human_statuses)
+        or result.error_code is not None
+    ):
+        raise FeishuLiveError("invalid_evidence_report")
+    return result
+
+
+def _force_secret_failure(result: FeishuCaseResult) -> FeishuCaseResult:
+    """只重写 015 的封闭 secret scan 结论，不触碰其他 case。"""
+    if result.case_id != "FEISHU-LIVE-015":
+        return result
+    passed = tuple(key for key in result.local_passed if key != "secret_scan_zero")
+    failed = tuple(dict.fromkeys((*result.local_failed, "secret_scan_zero")))
+    return FeishuCaseResult(
+        case_id=result.case_id,
+        status="fail",
+        local_passed=passed,
+        local_failed=failed,
+        human_statuses=result.human_statuses,
+        error_code="secret_scan_match",
+    )
+
+
+def _case_result_payload(result: FeishuCaseResult) -> dict[str, object]:
+    """把验证后的结果转换成固定 nested schema。"""
+    local = [
+        {"key": key, "status": status}
+        for status, keys in (("pass", result.local_passed), ("fail", result.local_failed))
+        for key in keys
+    ]
+    human = [{"key": key, "status": status} for key, status in result.human_statuses]
+    return {
+        "case_id": result.case_id,
+        "status": result.status,
+        "local_evidence": local,
+        "human_evidence": human,
+        "error_code": result.error_code,
+    }
+
+
+def _report_counts(results: Sequence[FeishuCaseResult], secret_matches: int) -> dict[str, int]:
+    """从封闭结果派生匿名计数，调用方不能注入字段名。"""
+    return {
+        "cases_total": len(results),
+        "cases_passed": sum(result.status == "pass" for result in results),
+        "cases_failed": sum(result.status == "fail" for result in results),
+        "cases_skipped": sum(result.status == "skip" for result in results),
+        "local_evidence_passed": sum(len(result.local_passed) for result in results),
+        "local_evidence_failed": sum(len(result.local_failed) for result in results),
+        "human_evidence_passed": sum(
+            status == "pass" for result in results for _, status in result.human_statuses
+        ),
+        "human_evidence_failed": sum(
+            status == "fail" for result in results for _, status in result.human_statuses
+        ),
+        "human_evidence_skipped": sum(
+            status == "skip" for result in results for _, status in result.human_statuses
+        ),
+        "secret_matches": secret_matches,
+    }
+
+
+def _is_valid_report(report: Mapping[str, object]) -> bool:
+    """递归验证 Evidence 所有对象的精确字段和安全值。"""
+    if set(report) != _REPORT_KEYS:
+        return False
+    if report.get("schema_version") != 1 or report.get("channel") != "feishu":
+        return False
+    if not _is_commit(report.get("commit")):
+        return False
+    if not _is_timestamp(report.get("started_at")) or not _is_timestamp(report.get("finished_at")):
+        return False
+    if report.get("release_status") not in _RELEASE_STATUSES:
+        return False
+    gateway = report.get("gateway")
+    if not isinstance(gateway, Mapping) or set(gateway) != {"ready", "graceful_exit"}:
+        return False
+    if any(type(gateway[key]) is not bool for key in ("ready", "graceful_exit")):
+        return False
+    counts = report.get("counts")
+    if not isinstance(counts, Mapping) or set(counts) != _COUNT_KEYS:
+        return False
+    if any(type(value) is not int or value < 0 for value in counts.values()):
+        return False
+    checks = report.get("checks")
+    if not isinstance(checks, list) or not all(_is_valid_check_payload(check) for check in checks):
+        return False
+    case_ids = [check["case_id"] for check in checks]
+    if len(case_ids) != len(set(case_ids)):
+        return False
+    expected_counts = _payload_counts(checks, int(counts["secret_matches"]))
+    if dict(counts) != expected_counts:
+        return False
+    if counts["secret_matches"]:
+        case_fifteen = next(
+            (check for check in checks if check["case_id"] == "FEISHU-LIVE-015"),
+            None,
+        )
+        if case_fifteen is None or case_fifteen["status"] != "fail":
+            return False
+        if {"key": "secret_scan_zero", "status": "fail"} not in case_fifteen["local_evidence"]:
+            return False
+    expected_release = _payload_release_status(checks, gateway, int(counts["secret_matches"]))
+    return report["release_status"] == expected_release
+
+
+def _is_valid_check_payload(check: object) -> bool:
+    """验证已经序列化的单 case nested schema。"""
+    if not isinstance(check, Mapping):
+        return False
+    if set(check) != {"case_id", "status", "local_evidence", "human_evidence", "error_code"}:
+        return False
+    if not isinstance(check.get("case_id"), str) or not re.fullmatch(
+        r"FEISHU-LIVE-(?:00[1-9]|01[0-5])", check["case_id"]
+    ):
+        return False
+    if check.get("status") not in _CASE_STATUSES:
+        return False
+    error_code = check.get("error_code")
+    if error_code is not None and not _is_safe_error_code(error_code):
+        return False
+    local = check.get("local_evidence")
+    human = check.get("human_evidence")
+    if not _is_valid_evidence_payload(local, _EVIDENCE_CHECKS) or not _is_valid_evidence_payload(
+        human, _HUMAN_EVIDENCE
+    ):
+        return False
+    if check["status"] == "pass" and (
+        error_code is not None
+        or any(item["status"] != "pass" for item in local)
+        or any(item["status"] != "pass" for item in human)
+    ):
+        return False
+    return True
+
+
+def _is_valid_evidence_payload(payload: object, allowed: Container[str]) -> bool:
+    """验证 evidence 数组只有 key/status，且 key 不重复。"""
+    if not isinstance(payload, list):
+        return False
+    keys: list[str] = []
+    for item in payload:
+        if not isinstance(item, Mapping) or set(item) != {"key", "status"}:
+            return False
+        key = item.get("key")
+        if (
+            not isinstance(key, str)
+            or key not in allowed
+            or item.get("status") not in _CASE_STATUSES
+        ):
+            return False
+        keys.append(key)
+    return len(keys) == len(set(keys))
+
+
+def _payload_counts(checks: list[Mapping[str, object]], secret_matches: int) -> dict[str, int]:
+    """从已验证 JSON payload 重新推导计数，用于拒绝报告篡改。"""
+    return {
+        "cases_total": len(checks),
+        "cases_passed": sum(check["status"] == "pass" for check in checks),
+        "cases_failed": sum(check["status"] == "fail" for check in checks),
+        "cases_skipped": sum(check["status"] == "skip" for check in checks),
+        "local_evidence_passed": sum(
+            item["status"] == "pass" for check in checks for item in check["local_evidence"]
+        ),
+        "local_evidence_failed": sum(
+            item["status"] == "fail" for check in checks for item in check["local_evidence"]
+        ),
+        "human_evidence_passed": sum(
+            item["status"] == "pass" for check in checks for item in check["human_evidence"]
+        ),
+        "human_evidence_failed": sum(
+            item["status"] == "fail" for check in checks for item in check["human_evidence"]
+        ),
+        "human_evidence_skipped": sum(
+            item["status"] == "skip" for check in checks for item in check["human_evidence"]
+        ),
+        "secret_matches": secret_matches,
+    }
+
+
+def _payload_release_status(
+    checks: list[Mapping[str, object]],
+    gateway: Mapping[str, object],
+    secret_matches: int,
+) -> str:
+    """从已验证 payload 重新推导发布判定。"""
+    if secret_matches or not gateway["ready"] or not gateway["graceful_exit"]:
+        return "FEISHU_LIVE_FAILED"
+    if any(check["status"] == "fail" for check in checks):
+        return "FEISHU_LIVE_FAILED"
+    expected = {f"FEISHU-LIVE-{index:03d}" for index in range(1, 16)}
+    if {check["case_id"] for check in checks} == expected and all(
+        check["status"] == "pass" for check in checks
+    ):
+        return "FEISHU_E2E_VERIFIED"
+    return "FEISHU_LIVE_PARTIAL"
+
+
+def _is_safe_error_code(value: object) -> bool:
+    """接受稳定小写错误码，同时拒绝飞书外部 ID 前缀。"""
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", value) is not None
+        and not value.startswith(("ou_", "oc_", "om_"))
+    )
+
+
+def _is_commit(value: object) -> bool:
+    """判断是否是完整小写 Git SHA-1。"""
+    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None
+
+
+def _is_timestamp(value: object) -> bool:
+    """判断是否是不含本地路径信息的 UTC ISO-8601 字符串。"""
+    return isinstance(value, str) and re.fullmatch(
+        r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", value
+    ) is not None
+
+
+def _iter_scan_candidates(paths: Sequence[Path]) -> Iterator[Path]:
+    """按稳定顺序枚举普通文件候选，从不跟随目录或文件 symlink。"""
+    for root in sorted(paths, key=lambda item: str(item)):
+        try:
+            if root.is_symlink():
+                continue
+            if root.is_file():
+                yield root
+                continue
+            if not root.is_dir():
+                continue
+        except OSError:
+            continue
+        for directory, directory_names, file_names in os.walk(root, followlinks=False):
+            base = Path(directory)
+            directory_names[:] = sorted(
+                name for name in directory_names if not (base / name).is_symlink()
+            )
+            for name in sorted(file_names):
+                yield base / name
+
+
+def _read_bounded_regular_file(path: Path) -> bytes | None:
+    """使用 no-follow fd 读取至多 1 MiB，竞态变大时安全跳过。"""
+    flags = os.O_RDONLY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError:
+        return None
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > _MAX_SCAN_FILE_BYTES:
+            return None
+        with os.fdopen(descriptor, "rb", closefd=False) as handle:
+            content = handle.read(_MAX_SCAN_FILE_BYTES + 1)
+        if len(content) > _MAX_SCAN_FILE_BYTES:
+            return None
+        return content
+    except OSError:
+        return None
+    finally:
+        os.close(descriptor)
 
 
 class GatewayProcess:
