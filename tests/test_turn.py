@@ -651,6 +651,10 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         service = self.service(provider, AgentRunner(provider, executor), approvals)
         waiting = await service.handle(self.owner.id, "写入文件", "approve")
         approval = approvals.list(self.owner.id, status="pending")[0]
+        self.messages.create_channel_notice(
+            waiting.session_id,
+            f"卡片不可用时发送：/approve {approval.id} once",
+        )
 
         restarted_approvals = ApprovalRepository(self.database)
         restarted_executor = ToolExecutor(
@@ -678,9 +682,18 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(child.status, "completed")
         self.assertEqual(
             [message.role for message in history],
-            ["user", "assistant", "tool", "assistant"],
+            ["user", "assistant", "assistant", "tool", "assistant"],
         )
-        self.assertEqual(provider.requests[1].messages[-1].tool_call_id, call.call_id)
+        sent_history = provider.requests[1].messages
+        call_index = next(
+            index
+            for index, message in enumerate(sent_history)
+            if message.tool_calls == (call,)
+        )
+        self.assertEqual(sent_history[call_index + 1].tool_call_id, call.call_id)
+        self.assertFalse(
+            any(message.metadata.get("channel_notice") for message in sent_history)
+        )
         with self.assertRaises(ApprovalError) as repeated:
             await restarted.continue_approval(
                 self.owner.id,

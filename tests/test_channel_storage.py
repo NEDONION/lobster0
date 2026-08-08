@@ -214,6 +214,47 @@ class ChannelStorageTest(unittest.TestCase):
         self.assertEqual(recovered.last_error_code, "channel_delivery_unknown")
         self.assertEqual(recovered.idempotency_key, delivery.idempotency_key)
 
+    def test_sent_platform_receipt_resolves_only_the_exact_approval_card(self) -> None:
+        """Card callback 只能绑定同平台、账号和 receipt 的已发送审批卡。"""
+        message_id = self._assistant_message()
+        repository = DeliveryRepository(self.database, clock=lambda: self.now)
+        delivery = repository.create_parts(
+            message_id=message_id,
+            channel="feishu",
+            account_id="default",
+            external_conversation_id="oc_chat",
+            reply_to_message_id="om_source",
+            kind="approval",
+            contents=("approval-envelope",),
+        )[0]
+        claimed = repository.claim_next("feishu", "default")
+        repository.mark_sent(claimed.id, "om_approval_card")
+
+        resolved = repository.find_sent_by_platform_message_id(
+            channel="feishu",
+            account_id="default",
+            platform_message_id="om_approval_card",
+            kind="approval",
+        )
+
+        self.assertEqual(resolved.id, delivery.id)
+        self.assertIsNone(
+            repository.find_sent_by_platform_message_id(
+                channel="feishu",
+                account_id="other",
+                platform_message_id="om_approval_card",
+                kind="approval",
+            )
+        )
+        self.assertIsNone(
+            repository.find_sent_by_platform_message_id(
+                channel="feishu",
+                account_id="default",
+                platform_message_id="om_approval_card",
+                kind="message",
+            )
+        )
+
     def _message(
         self,
         *,

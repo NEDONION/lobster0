@@ -2,7 +2,7 @@
 
 > 当前状态：**IMPLEMENTATION PASS**；562 Python tests、30 TypeScript、32/32 Channel、640/640 local soak。
 >
-> Feishu 是 **FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；
+> Feishu 是 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；
 >
 > Telegram 与 Discord 都是 **LIVE PENDING**，所以本页给出可执行排查路径，不声称已在真实账号验证。
 

@@ -1,6 +1,6 @@
 # Phase 5：Telegram 与 Discord 工程落地说明
 
-> 当前状态：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Telegram/Discord live pending
+> 当前状态：**IMPLEMENTATION PASS / TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram/Discord live pending
 >
 > 当前全仓证据：562/562 Python tests、30/30 TypeScript tests、29/29 Agent cases、
 > 32/32 Channel cases、20 轮 640/640 local soak。

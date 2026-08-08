@@ -598,6 +598,36 @@ class DeliveryRepository:
             raise ChannelStateError("delivery_not_found")
         return _delivery_from_row(row)
 
+    def find_sent_by_platform_message_id(
+        self,
+        *,
+        channel: str,
+        account_id: str,
+        platform_message_id: str,
+        kind: DeliveryKind,
+    ) -> StoredDelivery | None:
+        """按精确平台 receipt 查找唯一的已发送 Delivery；歧义时 fail closed。"""
+        if not all(
+            isinstance(value, str) and bool(value)
+            for value in (channel, account_id, platform_message_id, kind)
+        ):
+            raise ChannelStateError("invalid_delivery_lookup")
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM deliveries
+                WHERE channel = ? AND account_id = ?
+                  AND platform_message_id = ? AND delivery_kind = ?
+                  AND status = 'sent'
+                ORDER BY id DESC
+                LIMIT 2
+                """,
+                (channel, account_id, platform_message_id, kind),
+            ).fetchall()
+        if len(rows) != 1:
+            return None
+        return _delivery_from_row(rows[0])
+
     def mark_sent(self, delivery_id: int, platform_message_id: str) -> StoredDelivery:
         """记录平台确认，并允许 unknown 经核实后结算为 sent。"""
         now = self._clock().isoformat()

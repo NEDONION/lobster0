@@ -4,7 +4,7 @@
 >
 > 本地实现结论：**PASS**
 >
-> 真实飞书租户结论：**OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**
+> 真实飞书租户结论：**TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**
 >
 > 当前全仓门禁：562/562 Python、30/30 TypeScript、29/29 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
 

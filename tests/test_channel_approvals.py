@@ -186,11 +186,13 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
             user_id=1,
             actor_external_user_id="ou_owner",
             value=value,
+            expected_approval_id=7,
         )
         malformed = await controller.handle_card_action(
             user_id=1,
             actor_external_user_id="ou_owner",
             value={**value, "extra": "not-allowed"},
+            expected_approval_id=7,
         )
 
         self.assertTrue(outcome.handled)

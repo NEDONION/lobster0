@@ -2,7 +2,7 @@
 
 > 编号说明：历史材料曾称“Phase 5.1”；它属于 Feishu 运行加固，不改变架构 Phase 5 的 Telegram/Discord 定义。
 
-> 当前状态（2026-08-08）：**REAL BOT CONFIGURED / GATEWAY READY VERIFIED / OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
+> 当前状态（2026-08-09）：**REAL BOT CONFIGURED / TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
 >
 > 两条真实 Owner 私聊已依次经过 WebSocket、Adapter、durable Inbox、AgentRuntime、durable Outbox 和
 > DeliveryWorker；两条 Delivery 都是一次发送成功。全套 `FEISHU-LIVE-001..015` 尚未完成，所以不能写成
@@ -232,7 +232,7 @@ VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy�
 IMPLEMENTATION PASS
 REAL BOT CONFIGURED
 GATEWAY READY VERIFIED
-OWNER-DM DELIVERY VERIFIED
+TARGETED CALLBACK LIVE VERIFIED
 15-CASE LIVE PENDING
 ```
 

@@ -1,8 +1,8 @@
 # Phase 5：完成性审计与证据矩阵
 
-> 审计日期：2026-08-08
+> 审计日期：2026-08-09
 >
-> 发布口径：**IMPLEMENTATION PASS / LIVE PENDING**
+> 发布口径：**IMPLEMENTATION PASS / TARGETED FEISHU LIVE VERIFIED / FULL LIVE PENDING**
 >
 > 当前全仓门禁：562/562 Python、30/30 TypeScript、29/29 Agent、32/32 Channel、
 > 640/640 local soak。
@@ -17,7 +17,7 @@
 | Telegram | 完整 | PASS | PENDING | IMPLEMENTATION PASS |
 | Discord | 完整 | PASS | PENDING | IMPLEMENTATION PASS |
 | Single-runtime Gateway | 完整 | PASS | Feishu ready；三平台并发待验 | IMPLEMENTATION PASS |
-| 飞书兼容性 | 保持 | 12/12 PASS | Owner DM Delivery verified；15-case pending | LIVE PARTIAL |
+| 飞书兼容性 | 保持并加固 | 12/12 PASS | Callback/continuation targeted verified；15-case pending | LIVE PARTIAL |
 | Phase 5 总体 | 完整 | PASS | Feishu partial；另两平台 pending | 非 production verified |
 
 ## 2. Config、安装与 Doctor
@@ -147,13 +147,40 @@ Secret 或外部 ID。
 - 一个 Channel 运行期故障不能关闭另外两个；
 - 没有 live evidence 就不能写 production verified。
 
+### 9.1 Phase 5.3 Card callback 与 continuation 加固
+
+```mermaid
+sequenceDiagram
+    participant F as Feishu Card
+    participant G as Gateway
+    participant D as DeliveryRepository
+    participant A as ApprovalController
+    participant P as Provider Context
+    F->>G: card.action.trigger + source message_id
+    G->>D: 查找唯一 sent approval receipt
+    D-->>G: channel + account + durable envelope
+    G->>A: expected approval_id + callback payload
+    A->>A: 参数、来源与状态全部匹配后 consume once
+    A->>P: assistant tool_call + tool result
+    Note over P: Channel notice 被过滤，不进入 Provider 协议
+```
+
+| Requirement | Evidence | Result |
+| --- | --- | --- |
+| callback 绑定来源卡 receipt | `test_channel_storage.py`、`test_channel_approvals.py` | PASS |
+| 0 条或多条 receipt fail closed | repository / controller regression | PASS |
+| 跨账号、错误 kind、错误 approval ID 拒绝 | Gateway callback regression | PASS |
+| Approval fallback notice 不进入 Provider Context | `test_turn.py` restart continuation | PASS |
+| 飞书“仅本次”真实继续执行 | Tool succeeded、child Turn completed、result Delivery sent | TARGETED LIVE VERIFIED |
+| 完整 15-case 同 commit 报告 | 尚未生成 | LIVE PENDING |
+
 ## 10. 未完成但不阻塞 implementation 的事项
 
 1. Telegram 真实 Bot 15/15；
 2. Discord 真实 Bot 15/15；
 3. 飞书完整 15-case（群聊、审批、重连、长消息、重启与隐私扫描）；
 4. 长期 VPS soak 与平台 SLA 观察；
-5. Phase 5.2 系统服务、非 root Docker、24 小时 soak 与完整发布闭环；
+5. Phase 5.2–5.3 系统服务、非 root Docker、24 小时 soak 与完整发布闭环；
 6. Phase 6 Cron/Heartbeat/Task Ledger、主动投递、Sandbox 与 Checkpoint；
 7. Phase 6.5 独立 Browser Agent；
 8. Phase 7 反馈→提案→评测→人工批准→应用/回滚的受控演进；
@@ -165,5 +192,5 @@ Secret 或外部 ID。
 [能力对齐工程落地总方案](../20260808_openclaw-hermes-alignment-engineering-roadmap.md)。上述项目均为 `PLANNED`，不改变本
 文的 Phase 5 事实状态。
 
-因此当前唯一准确写法是：**Phase 5 IMPLEMENTATION PASS；Feishu OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE
-PENDING；Telegram LIVE PENDING；Discord LIVE PENDING；整体不是 PRODUCTION VERIFIED。**
+因此当前唯一准确写法是：**Phase 5.3 IMPLEMENTATION PASS；Feishu TARGETED CALLBACK LIVE VERIFIED / 15-CASE
+LIVE PENDING；Telegram LIVE PENDING；Discord LIVE PENDING；整体不是 PRODUCTION VERIFIED。**

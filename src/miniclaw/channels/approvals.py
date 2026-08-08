@@ -181,6 +181,7 @@ class ChannelApprovalController:
         user_id: int,
         actor_external_user_id: str,
         value: Any,
+        expected_approval_id: int,
         on_event: RunEventHandler | None = None,
     ) -> ApprovalCommandOutcome:
         """只接受 MiniClaw 自己生成且键集合完全一致的按钮 payload。"""
@@ -188,6 +189,8 @@ class ChannelApprovalController:
         if parsed is None:
             return ApprovalCommandOutcome(True, notice="无法识别这次审批操作。")
         approval_id, decision = parsed
+        if approval_id != expected_approval_id:
+            return ApprovalCommandOutcome(True, notice="无法识别这次审批操作。")
         return await self._decide(
             user_id=user_id,
             actor_external_user_id=actor_external_user_id,

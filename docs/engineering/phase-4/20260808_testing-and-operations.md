@@ -265,7 +265,7 @@ fallback 才接管回复。Assistant Message 始终保存在 SQLite。
 Agent 回归、12 条 Feishu Channel 回归、15 条 Feishu Live 场景和 20 轮 local soak 已完成。专用飞书 App/Bot、
 同应用 Owner、WebSocket ready 和两条 Owner 私聊 Delivery 已完成真实验证；完整 15-case、常驻部署与真实 Gateway
 soak 仍明确待办。
-准确说法是：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
+准确说法是：**IMPLEMENTATION PASS / TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
 
 完整模块说明见 [飞书 Channel 与 Gateway](20260808_feishu-channel-core.md)，逐项状态见
 [完成性审计与证据矩阵](20260808_completion-audit.md)，设计决策见

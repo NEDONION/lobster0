@@ -164,6 +164,54 @@ class FeishuDatabaseProbeTest(unittest.TestCase):
         )
         self.assertEqual(noisy.failed, ("no_new_turn",))
 
+    def test_delivery_sent_accepts_a_completed_final_card_without_outbox_rows(self) -> None:
+        """短回复只更新最终卡片时，completed Inbox/Turn 必须能证明送达完成。"""
+        api = self._api()
+        checkpoint = api.capture_checkpoint(self.paths.database)
+        session_id = self._insert_session("feishu", "completed_card")
+        external_message_id = "om_completed_card"
+        self._insert_turn(session_id, external_message_id, status="completed")
+        self._insert_event(
+            "feishu",
+            "completed_card",
+            session_id,
+            external_message_id,
+        )
+
+        result = api.evaluate_local_evidence(
+            self.paths.database,
+            checkpoint,
+            ("delivery_sent",),
+        )
+
+        self.assertEqual(result.passed, ("delivery_sent",))
+        self.assertEqual(result.failed, ())
+
+    def test_delivery_sent_rejects_completed_card_when_outbox_is_not_sent(self) -> None:
+        """一旦新建了未发送 Outbox，不能用 completed Inbox/Turn 掩盖发送失败。"""
+        api = self._api()
+        checkpoint = api.capture_checkpoint(self.paths.database)
+        session_id = self._insert_session("feishu", "queued_delivery")
+        external_message_id = "om_queued_delivery"
+        turn_id = self._insert_turn(session_id, external_message_id, status="completed")
+        self._insert_event(
+            "feishu",
+            "queued_delivery",
+            session_id,
+            external_message_id,
+        )
+        message_id = self._insert_message(turn_id, session_id)
+        self._insert_delivery(message_id, 0, status="queued")
+
+        result = api.evaluate_local_evidence(
+            self.paths.database,
+            checkpoint,
+            ("delivery_sent",),
+        )
+
+        self.assertEqual(result.passed, ())
+        self.assertEqual(result.failed, ("delivery_sent",))
+
     def test_pending_approval_captured_before_action_can_transition_to_consumed(self) -> None:
         """LIVE-007 必须识别上一 case 的 pending 行在本次动作后变成 consumed。"""
         api = self._api()
@@ -949,7 +997,7 @@ class FeishuLiveHarnessSafetyTest(unittest.TestCase):
             self.assertFalse(output.exists())
 
     def test_static_preflight_rejects_each_isolation_or_truth_failure(self) -> None:
-        """开关、peer Channel、commit、dirty、Doctor、旧审批和 case 数均失败关闭。"""
+        """开关、权限模式、隔离、commit、Doctor、审批和 case 数均失败关闭。"""
         api = self._api("_validate_preflight_state")
         passing_config = self._config(feishu=True)
         passing_checks = (CheckResult("config", CheckStatus.PASS, "ok"),)
@@ -959,6 +1007,8 @@ class FeishuLiveHarnessSafetyTest(unittest.TestCase):
              "feishu_channel_disabled"),
             (self._config(feishu=True, telegram=True), passing_checks, 0, "a" * 40, False,
              passing_cases, "peer_channel_enabled"),
+            (self._config(feishu=True, mode="autopilot"), passing_checks, 0, "a" * 40,
+             False, passing_cases, "unsafe_permission_mode"),
             (passing_config, passing_checks, 0, "unknown", False, passing_cases,
              "repository_commit_unavailable"),
             (passing_config, passing_checks, 0, "a" * 40, True, passing_cases,
@@ -1004,14 +1054,21 @@ class FeishuLiveHarnessSafetyTest(unittest.TestCase):
         self.assertIn("feishu_channel_disabled", rendered)
 
     @staticmethod
-    def _config(*, feishu: bool, telegram: bool = False, discord: bool = False):
-        """构造仅含 Channel 开关的静态配置。"""
+    def _config(
+        *,
+        feishu: bool,
+        telegram: bool = False,
+        discord: bool = False,
+        mode: str = "safe",
+    ):
+        """构造仅含 Channel 开关与 Tool mode 的静态配置。"""
         return SimpleNamespace(
             channels=SimpleNamespace(
                 feishu=SimpleNamespace(enabled=feishu),
                 telegram=SimpleNamespace(enabled=telegram),
                 discord=SimpleNamespace(enabled=discord),
-            )
+            ),
+            tools=SimpleNamespace(mode=mode),
         )
 
     def _api(self, required: str) -> ModuleType:

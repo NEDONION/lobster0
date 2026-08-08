@@ -427,9 +427,8 @@ class FeishuTransport:
         self._set_connection_state("connected")
 
     def _handle_sdk_error(self, error: Any) -> None:
-        """把 SDK error 事件压缩为稳定码；原始异常不会进入 Observer。"""
-        mapped = _transport_error(error)
-        self._set_connection_state("failed", error_code=mapped.code)
+        """忽略混合 SDK error fan-out；连接状态只由明确 lifecycle 事件改变。"""
+        del error
 
     def _set_connection_state(
         self,

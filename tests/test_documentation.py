@@ -37,7 +37,7 @@ class Phase5DocumentationTest(unittest.TestCase):
                 self.assertIn("29/29", content)
                 self.assertIn("32/32", content)
                 self.assertIn("640/640", content)
-                self.assertIn("OWNER-DM DELIVERY VERIFIED", content)
+                self.assertIn("TARGETED CALLBACK LIVE VERIFIED", content)
                 self.assertIn("15-CASE LIVE PENDING", content)
 
     def test_phase5_operational_documents_are_present_and_linked(self) -> None:
@@ -137,7 +137,7 @@ class Phase5DocumentationTest(unittest.TestCase):
             "IMPLEMENTATION PASS",
             "32/32",
             "640/640",
-            "OWNER-DM DELIVERY VERIFIED",
+            "TARGETED CALLBACK LIVE VERIFIED",
             "15-CASE LIVE PENDING",
             "Telegram live pending",
             "Discord live pending",

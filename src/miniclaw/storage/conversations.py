@@ -919,9 +919,14 @@ def _provider_safe_context(
     Raises:
         ConversationDataError: Tool Call metadata 或 Tool Message 已损坏。
     """
+    provider_messages = tuple(
+        message
+        for message in messages
+        if message.metadata.get("channel_notice") is not True
+    )
     invalid_turns: set[int] = set()
     pending_calls: dict[str, int] = {}
-    for message in messages:
+    for message in provider_messages:
         call_ids = _stored_tool_call_ids(message)
         if call_ids:
             if pending_calls:
@@ -944,9 +949,11 @@ def _provider_safe_context(
             pending_calls.clear()
     invalid_turns.update(pending_calls.values())
     if not invalid_turns:
-        return messages
+        return provider_messages
     return tuple(
-        message for message in messages if message.turn_id not in invalid_turns
+        message
+        for message in provider_messages
+        if message.turn_id not in invalid_turns
     )
 
 

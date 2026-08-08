@@ -47,7 +47,7 @@ REQUIRED_FACTS = (
     "29/29",
     "32/32",
     "640/640",
-    "OWNER-DM DELIVERY VERIFIED",
+    "TARGETED CALLBACK LIVE VERIFIED",
     "15-CASE LIVE PENDING",
 )
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")

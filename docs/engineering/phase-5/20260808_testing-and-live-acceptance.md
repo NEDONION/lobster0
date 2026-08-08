@@ -5,7 +5,7 @@
 > 当前全仓自动化证据：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、
 > 32/32 Channel cases、20 轮 640/640 Channel checks。
 >
-> Feishu：**FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
+> Feishu：**TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
 >
 > 外部证据：Telegram **LIVE PENDING**；Discord **LIVE PENDING**。
 
@@ -177,6 +177,21 @@ uv run python scripts/feishu_live_smoke.py --confirm-live
 Feishu、worktree clean、没有旧 pending Approval，并在每个动作前捕获 checkpoint。完整说明见
 [真实飞书 Bot 与 Live E2E](20260808_feishu-live-e2e.md)。
 
+## 8. Phase 5.3 Card callback 发布门禁
+
+飞书审批 Live Gate 不能只检查“按钮能点”。每个 callback 必须同时证明：
+
+- callback 来源 `message_id` 命中当前账号唯一的 sent Approval Delivery；
+- envelope 与 payload 的 `approval_id` 完全一致；
+- Approval 从 pending 只消费一次，重复点击不重复执行；
+- ToolRun 成功或拒绝后，child Turn 产生对应终态；
+- Channel notice 不进入 Provider request；
+- 成功 continuation 有 sent result Delivery，失败只有稳定错误码。
+
+开发者后台增加或修改 `card.action.trigger` 后必须重新发布应用版本；仅看到 WebSocket ready 不能证明 callback
+已经生效。真实长期私聊只用于 targeted smoke，15-case release evidence 应使用专用测试会话，避免旧 Context、旧卡和
+其他自动化任务干扰结果。
+
 ## 6. Telegram / Discord 每个平台 15 项真实验收
 
 | Check | 人工动作与通过条件 |
@@ -249,5 +264,5 @@ flowchart TD
     E -->|"Yes"| V["PRODUCTION VERIFIED"]
 ```
 
-当前发布结论是 `IMPLEMENTATION PASS`；Feishu 是 `FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING`，Telegram 和
+当前发布结论是 `IMPLEMENTATION PASS`；Feishu 是 `TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING`，Telegram 和
 Discord 是 `LIVE PENDING`。不要用 fake SDK、32/32、640/640 或 Runner 自测替代真实平台 evidence。
