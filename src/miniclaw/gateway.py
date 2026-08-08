@@ -248,6 +248,7 @@ def _channel_common(
         paths,
         runtime,
         limits_for_channel(config, channel),
+        owner_external_user_id=owner_external_user_id,
         observer=observer,
     )
     approvals = ChannelApprovalController(

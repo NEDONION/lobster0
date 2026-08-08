@@ -234,12 +234,15 @@ def create_channel_manager(
     runtime: AgentRuntime,
     limits: ChannelLimits,
     *,
+    owner_external_user_id: str,
     observer: ChannelObserver | None = None,
 ) -> ChannelManager:
     """为一个 Channel 装配复用唯一 TurnService 的 durable Manager。"""
     database = Database(paths.database)
     return ChannelManager(
         owner_id=runtime.owner_id,
+        owner_external_user_id=owner_external_user_id,
+        permission_state=runtime.permission_state,
         service=runtime.service,
         sessions=SessionRepository(database),
         messages=MessageRepository(database),

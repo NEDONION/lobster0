@@ -19,6 +19,7 @@ from miniclaw.channels.base import DeliveryKind, InboundMessage
 from miniclaw.channels.delivery import split_message
 from miniclaw.channels.experience import ChannelExperience
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.policy.modes import PermissionMode, PermissionState
 from miniclaw.providers.base import StreamHandler
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
@@ -52,6 +53,7 @@ class TurnHandler(Protocol):
         text: str,
         on_text: StreamHandler | None = None,
         on_event: RunEventHandler | None = None,
+        trusted_owner: bool = False,
     ) -> TurnResult:
         """处理一条已经完成 Channel 校验的消息。"""
         ...
@@ -99,6 +101,8 @@ class ChannelManager:
         self,
         *,
         owner_id: int,
+        owner_external_user_id: str,
+        permission_state: PermissionState,
         service: TurnHandler,
         sessions: SessionRepository,
         messages: MessageRepository,
@@ -123,6 +127,12 @@ class ChannelManager:
         ):
             raise ValueError("ChannelManager limits must be positive")
         self.owner_id = owner_id
+        if not owner_external_user_id or any(
+            ord(character) < 0x20 for character in owner_external_user_id
+        ):
+            raise ValueError("owner_external_user_id is invalid")
+        self._owner_external_user_id = owner_external_user_id
+        self._permission_state = permission_state
         self.service = service
         self._sessions = sessions
         self._messages = messages
@@ -306,6 +316,19 @@ class ChannelManager:
             )
             if activity is not None:
                 await activity.start()
+            permission_notice = self._permission_notice(event)
+            if permission_notice is not None:
+                if activity is not None:
+                    await activity.finish(content=permission_notice, failed=False)
+                self._create_notice_delivery(session.id, event, permission_notice)
+                self._inbound.mark_completed(event.key)
+                self._observe_turn(
+                    event,
+                    status="completed",
+                    session_id=session.id,
+                    started=started,
+                )
+                return
             if self._approvals is not None:
                 try:
                     command = await self._approvals.handle_text(
@@ -374,6 +397,7 @@ class ChannelManager:
                     inbound_event_id=event.external_message_id,
                     text=event.content,
                     on_event=None if activity is None else activity.on_event,
+                    trusted_owner=self._trusted_owner(event),
                 )
             except asyncio.CancelledError:
                 if activity is not None:
@@ -415,6 +439,38 @@ class ChannelManager:
                 started=started,
                 result=result,
             )
+
+    def _trusted_owner(self, event: StoredInboundEvent) -> bool:
+        """只有配置 Owner 的点对点消息可以携带自动化信任。"""
+        return (
+            event.external_user_id == self._owner_external_user_id
+            and event.chat_type == "p2p"
+        )
+
+    def _permission_notice(self, event: StoredInboundEvent) -> str | None:
+        """处理不进入模型的权限查询/切换命令，并返回可投递提示。"""
+        parts = event.content.split()
+        if not parts or parts[0] != "/permissions":
+            return None
+        if not self._trusted_owner(event):
+            return "只有 Owner 私聊可以查看或切换权限模式。"
+        if len(parts) == 1:
+            return f"当前权限模式：{self._permission_state.mode.value}"
+        if len(parts) != 2:
+            return "用法：/permissions safe|smart|autopilot|yolo"
+        try:
+            selected = PermissionMode(parts[1])
+        except ValueError:
+            return "用法：/permissions safe|smart|autopilot|yolo"
+        try:
+            self._permission_state.set_mode(
+                selected,
+                user_id=self.owner_id,
+                source=self._channel,
+            )
+        except Exception:  # noqa: BLE001 - 控制命令必须收口为稳定提示
+            return "权限模式切换失败，原模式保持不变。"
+        return f"权限模式已切换为：{selected.value}"
 
     def _create_result_delivery(
         self,

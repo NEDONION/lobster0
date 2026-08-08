@@ -35,11 +35,44 @@ from miniclaw.storage.conversations import (
 )
 from miniclaw.storage.database import Database
 from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
+from miniclaw.tools.base import ToolContext, ToolDefinition, ToolResult, ToolRisk
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.system import SystemInfoTool
 from tests.fakes.fake_provider import FakeProvider
+
+
+class _ContextProbeTool:
+    """记录模型不可伪造的 ToolContext，供信任传播测试断言。"""
+
+    definition = ToolDefinition(
+        name="context_probe",
+        description="Record the current trusted runtime context.",
+        parameters={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self) -> None:
+        """创建空的上下文记录。"""
+        self.contexts: list[ToolContext] = []
+
+    def validate(self, arguments):
+        """只接受空参数。"""
+        if arguments:
+            raise ValueError("context_probe accepts no arguments")
+        return arguments
+
+    async def execute(self, context, arguments):
+        """保存完整上下文并返回固定成功结果。"""
+        del arguments
+        self.contexts.append(context)
+        return ToolResult.success({"captured": True})
 
 
 def final_response(content: str = "world") -> ModelResponse:
@@ -166,6 +199,75 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                         text="hello",
                     )
         self.assertEqual(provider.requests, [])
+
+    async def test_untrusted_channel_drops_personal_roots_but_cli_keeps_them(self) -> None:
+        """非 Owner 私聊不能继承 Personal 全局读写根；本地 CLI 可以。"""
+        read_root = self.paths.home / "read-root"
+        write_root = self.paths.home / "write-root"
+        read_root.mkdir()
+        write_root.mkdir()
+        probe = _ContextProbeTool()
+        call = ToolCall("context-1", "context_probe", {})
+        provider = FakeProvider(
+            (
+                ModelResponse("", (call,), "probe", "tool_calls", 1, 1, "req-1"),
+                final_response("channel done"),
+                ModelResponse(
+                    "",
+                    (ToolCall("context-2", "context_probe", {}),),
+                    "probe",
+                    "tool_calls",
+                    1,
+                    1,
+                    "req-2",
+                ),
+                final_response("cli done"),
+            )
+        )
+        executor = ToolExecutor(
+            ToolRegistry((probe,)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+        )
+        service = TurnService(
+            model="deepseek-v4-pro",
+            sessions=self.sessions,
+            messages=self.messages,
+            turns=self.turns,
+            context=self.context,
+            runner=AgentRunner(provider, executor),
+            state_home=self.paths.home,
+            workspace=WorkspaceConfig(
+                path=self.paths.workspace,
+                read_only_roots=(read_root,),
+                write_roots=(write_root,),
+                owner_home=self.paths.home,
+            ),
+        )
+
+        try:
+            await service.handle_inbound(
+                user_id=self.owner.id,
+                channel="feishu",
+                account_id="default",
+                external_conversation_id="oc_friend",
+                inbound_event_id="om_friend",
+                text="inspect",
+                trusted_owner=False,
+            )
+        except TypeError:
+            self.fail("TurnService.handle_inbound must accept trusted_owner")
+        await service.handle(self.owner.id, "inspect", "local-owner")
+
+        self.assertEqual(len(probe.contexts), 2)
+        self.assertFalse(probe.contexts[0].trusted_owner)
+        self.assertEqual(probe.contexts[0].read_only_roots, ())
+        self.assertEqual(probe.contexts[0].write_roots, ())
+        self.assertIsNone(probe.contexts[0].owner_home)
+        self.assertTrue(probe.contexts[1].trusted_owner)
+        self.assertEqual(probe.contexts[1].read_only_roots, (read_root,))
+        self.assertEqual(probe.contexts[1].write_roots, (write_root,))
+        self.assertEqual(probe.contexts[1].owner_home, self.paths.home)
 
     async def test_run_events_follow_persisted_turn_and_tool_states(self) -> None:
         """TUI 只能看到已落库的 Turn/Tool 状态，且顺序与真实执行一致。"""

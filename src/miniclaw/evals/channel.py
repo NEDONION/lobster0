@@ -28,6 +28,7 @@ from miniclaw.config import FeishuConfig
 from miniclaw.evals.cases import EvalCase
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision
+from miniclaw.policy.modes import PermissionMode, PermissionState
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
@@ -352,6 +353,8 @@ def _manager(
     """构造使用真实 SQLite Repository 的单 Worker Manager。"""
     return ChannelManager(
         owner_id=owner_id,
+        owner_external_user_id="ou_owner",
+        permission_state=PermissionState(PermissionMode.SAFE),
         service=service,
         sessions=service.sessions,
         messages=service.messages,

@@ -135,6 +135,7 @@ class TurnService:
             text=text,
             on_text=on_text,
             on_event=on_event,
+            trusted_owner=True,
         )
 
     async def handle_inbound(
@@ -148,8 +149,9 @@ class TurnService:
         text: str,
         on_text: StreamHandler | None = None,
         on_event: RunEventHandler | None = None,
+        trusted_owner: bool = False,
     ) -> TurnResult:
-        """执行任意 Channel 已校验并带稳定入站 ID 的用户消息。"""
+        """执行任意 Channel 消息，并把入口信任收窄到不可伪造的 ToolContext。"""
         if not text.strip():
             raise ValueError("message must not be empty")
         _validate_inbound_event_id(inbound_event_id)
@@ -203,9 +205,12 @@ class TurnService:
                 turn_id=turn.id,
                 state_home=self._state_home,
                 workspace=self._workspace.path,
-                read_only_roots=self._workspace.read_only_roots,
-                write_roots=self._workspace.write_roots,
-                owner_home=self._workspace.owner_home,
+                read_only_roots=(
+                    self._workspace.read_only_roots if trusted_owner else ()
+                ),
+                write_roots=self._workspace.write_roots if trusted_owner else (),
+                owner_home=self._workspace.owner_home if trusted_owner else None,
+                trusted_owner=trusted_owner,
             )
             result = await self._runner.run(
                 request,

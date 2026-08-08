@@ -21,6 +21,7 @@ from miniclaw.channels.capabilities import ChannelCapabilities
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.policy.approvals import ApprovalDecision
+from miniclaw.policy.modes import PermissionMode, PermissionState
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
@@ -48,6 +49,7 @@ class TrackingTurnService:
     expected_concurrency: int = 0
     approval_id: int | None = None
     calls: list[tuple[str, str]] = field(init=False, default_factory=list)
+    trusted_calls: list[bool] = field(init=False, default_factory=list)
     active: int = field(init=False, default=0)
     max_active: int = field(init=False, default=0)
     reached_concurrency: asyncio.Event = field(init=False)
@@ -66,9 +68,11 @@ class TrackingTurnService:
         text: str,
         on_text=None,
         on_event=None,
+        trusted_owner: bool = False,
     ) -> TurnResult:
         """模拟共享 TurnService，保留真实持久化边界。"""
         self.calls.append((external_conversation_id, inbound_event_id))
+        self.trusted_calls.append(trusted_owner)
         session = self.sessions.get_or_create(
             user_id,
             channel,
@@ -247,6 +251,69 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.turns = TurnRepository(self.database)
         self.inbound = InboundEventRepository(self.database)
         self.deliveries = DeliveryRepository(self.database)
+        self.permission_state = PermissionState(PermissionMode.SAFE)
+
+    async def test_only_owner_private_messages_receive_trusted_automation(self) -> None:
+        """Owner 私聊为 trusted；Owner 群聊和其他白名单成员均降级。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=4, worker_count=1)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_owner", "one"))
+            await manager.receive(
+                self._message("om_group", "two", chat_id="oc_group", chat_type="group")
+            )
+            await manager.receive(
+                self._message("om_friend", "three", external_user_id="ou_friend")
+            )
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.trusted_calls, [True, False, False])
+
+    async def test_permissions_command_is_owner_private_only_and_bypasses_agent(self) -> None:
+        """Owner 私聊可切换/查询模式；群聊和其他成员不能切换或进入模型。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=6, worker_count=1)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_set", "/permissions autopilot"))
+            await manager.receive(self._message("om_get", "/permissions"))
+            await manager.receive(
+                self._message(
+                    "om_group_mode",
+                    "/permissions yolo",
+                    chat_id="oc_group_mode",
+                    chat_type="group",
+                )
+            )
+            await manager.receive(
+                self._message(
+                    "om_friend_mode",
+                    "/permissions yolo",
+                    external_user_id="ou_friend",
+                )
+            )
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.calls, [])
+        self.assertEqual(self.permission_state.mode, PermissionMode.AUTOPILOT)
+        with self.database.connect_read_only() as connection:
+            notices = {
+                row["reply_to_message_id"]: row["content"]
+                for row in connection.execute(
+                    "SELECT reply_to_message_id, content FROM deliveries "
+                    "WHERE reply_to_message_id IN "
+                    "('om_set', 'om_get', 'om_group_mode', 'om_friend_mode')"
+                )
+            }
+        self.assertIn("autopilot", notices["om_set"])
+        self.assertIn("autopilot", notices["om_get"])
+        self.assertIn("Owner 私聊", notices["om_group_mode"])
+        self.assertIn("Owner 私聊", notices["om_friend_mode"])
 
     async def test_receive_persists_before_enqueue_and_duplicate_is_not_queued(self) -> None:
         """callback 成功返回前必须落库，相同 message_id 不得产生第二个 wake-up。"""
@@ -630,6 +697,8 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         """用共享 Repository 构造 Manager。"""
         return ChannelManager(
             owner_id=self.owner.id,
+            owner_external_user_id="ou_owner",
+            permission_state=self.permission_state,
             service=service,
             sessions=self.sessions,
             messages=self.messages,
@@ -652,6 +721,8 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         *,
         event_id: str | None = None,
         chat_id: str = "oc_chat",
+        chat_type: str = "p2p",
+        external_user_id: str = "ou_owner",
     ) -> InboundMessage:
         """创建一条标准化飞书消息。"""
         return InboundMessage(
@@ -659,9 +730,9 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             account_id="default",
             event_id=event_id or f"evt_{message_id}",
             message_id=message_id,
-            external_user_id="ou_owner",
+            external_user_id=external_user_id,
             external_conversation_id=chat_id,
-            chat_type="p2p",
+            chat_type=chat_type,
             message_type="text",
             text=text,
             reply_to_message_id=message_id,

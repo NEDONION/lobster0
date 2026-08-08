@@ -31,6 +31,7 @@ from miniclaw.config import DiscordConfig, TelegramConfig
 from miniclaw.evals.cases import EvalCase
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision
+from miniclaw.policy.modes import PermissionMode, PermissionState
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
@@ -483,6 +484,8 @@ async def _restart_evidence(platform: str) -> tuple[str, ...]:
         )
         manager = ChannelManager(
             owner_id=owner.id,
+            owner_external_user_id="owner",
+            permission_state=PermissionState(PermissionMode.SAFE),
             service=service,
             sessions=service.sessions,
             messages=service.messages,

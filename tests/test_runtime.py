@@ -82,7 +82,12 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertIsNotNone(runtime.service)
                 limits = limits_for_channel(config, "feishu")
-                manager = create_channel_manager(paths, runtime, limits)
+                manager = create_channel_manager(
+                    paths,
+                    runtime,
+                    limits,
+                    owner_external_user_id="ou_owner",
+                )
                 self.assertIs(manager.service, runtime.service)
                 self.assertEqual(manager.owner_id, runtime.owner_id)
             finally:
