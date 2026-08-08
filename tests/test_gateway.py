@@ -13,6 +13,7 @@ from miniclaw.config import load_config
 from miniclaw.gateway import (
     GatewayComponents,
     GatewayConfigError,
+    GatewayRuntimeError,
     run_gateway,
     run_gateway_components,
     validate_gateway_environment,
@@ -219,6 +220,84 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
             events,
             ["channel.logging", "sdk.filter", "supervisor.create", "supervisor.run"],
         )
+
+    async def test_gateway_lease_wraps_success_and_runtime_failure(self) -> None:
+        """lease 必须先于 Supervisor 获取，并在正常/异常路径最后释放。"""
+        for fails in (False, True):
+            with self.subTest(fails=fails):
+                events: list[str] = []
+
+                def acquire(
+                    path: Path,
+                    *,
+                    commit: str,
+                    _events: list[str] = events,
+                ) -> object:
+                    """校验安全路径和 Live Runner commit 透传。"""
+                    self.assertEqual(path, self.paths.run / "gateway.lock")
+                    self.assertEqual(commit, "e" * 40)
+                    _events.append("lease.acquire")
+                    return SimpleNamespace(
+                        close=lambda _bound=_events: _bound.append("lease.close")
+                    )
+
+                async def create_supervisor(
+                    *_args: object,
+                    _events: list[str] = events,
+                    _fails: bool = fails,
+                    **_kwargs: object,
+                ) -> object:
+                    """返回可选失败的 fake Supervisor。"""
+                    _events.append("supervisor.create")
+
+                    async def run(**_values: object) -> None:
+                        """记录运行并按 case 注入异常。"""
+                        _events.append("supervisor.run")
+                        if _fails:
+                            raise RuntimeError("PRIVATE_RUNTIME_SENTINEL")
+
+                    return SimpleNamespace(run=run)
+
+                with (
+                    patch("miniclaw.gateway.load_dotenv"),
+                    patch("miniclaw.gateway.load_config", return_value=self.config),
+                    patch(
+                        "miniclaw.gateway.validate_gateway_environment",
+                        return_value=SimpleNamespace(),
+                    ),
+                    patch("miniclaw.gateway._configure_channel_logging"),
+                    patch("miniclaw.channels.sdk_logging.install_feishu_sdk_log_filter"),
+                    patch(
+                        "miniclaw.gateway_lease.GatewayLease.acquire",
+                        side_effect=acquire,
+                    ),
+                    patch(
+                        "miniclaw.gateway.create_gateway_supervisor",
+                        side_effect=create_supervisor,
+                    ),
+                ):
+                    if fails:
+                        with self.assertRaises(GatewayRuntimeError) as raised:
+                            await run_gateway(
+                                self.paths,
+                                environ={"MINICLAW_GATEWAY_COMMIT": "e" * 40},
+                            )
+                        self.assertNotIn("PRIVATE_RUNTIME_SENTINEL", str(raised.exception))
+                    else:
+                        await run_gateway(
+                            self.paths,
+                            environ={"MINICLAW_GATEWAY_COMMIT": "e" * 40},
+                        )
+
+                self.assertEqual(
+                    events,
+                    [
+                        "lease.acquire",
+                        "supervisor.create",
+                        "supervisor.run",
+                        "lease.close",
+                    ],
+                )
 
     async def test_second_signal_cancels_blocked_shutdown_without_process_kill(self) -> None:
         """force event 应取消阻塞组件并继续关闭其余资源。"""
