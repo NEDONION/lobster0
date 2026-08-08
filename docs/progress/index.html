@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · Phase 5.1 + Autopilot IMPLEMENTATION PASS · Feishu Owner DM delivery verified · 15-case pending</div>
+      <div class="branch">target: main · Phase 5.2 IMPLEMENTATION PASS · Feishu single-card fix · post-fix live pending</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 已把普通 Home 文件、有限写根与用户 CLI 纳入同一安全边界，safe / smart / autopilot / yolo 四档权限、Owner 私聊信任、动态切换和紧凑滚动审批框已经贯通 TUI 与三个 IM。飞书、Telegram 与 Discord 三条独立 pipeline 共享一个 AgentRuntime、十个 Tool、Policy、Approval、Memory、Skills 和 SQLite durable truth。Phase 5.1 已把 15 条飞书真实场景、production Gateway 启停、只读 SQLite evidence、人工客户端确认与 Secret scan 编排成安全 Runner；专用飞书 App/Bot、WebSocket ready 和两条 Owner 私聊回复已经真实打通。下一步是完成完整 15/15，再进入 Phase 6 受控演进。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 已把普通 Home 文件、有限写根与用户 CLI 纳入同一安全边界，safe / smart / autopilot / yolo 四档权限、Owner 私聊信任、动态切换和紧凑滚动审批框已经贯通 TUI 与三个 IM。飞书、Telegram 与 Discord 三条独立 pipeline 共享一个 AgentRuntime、十个 Tool、Policy、Approval、Memory、Skills 和 SQLite durable truth。Phase 5.2 已让飞书短回答只保留一张 12px completed card，超长回答只把未展示后缀回复到卡片下方，restart 复用稳定 UUID，tool-call preview 先缓冲、waiting approval 只留审批卡；feishu-lark-cli Skill 把云文档等业务 Query 映射到通用 run_command。专用飞书 App/Bot、WebSocket ready 和两条 Owner 私聊回复已经真实打通；下一步是人工确认新卡片体验，再完成完整 15/15。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
-        <span class="tag">Phase 5.1 + Autopilot pass</span>
-        <strong>DM VERIFIED</strong>
-        <p>519 Python + 30 TypeScript tests · Agent 28/28 · Channel 32/32 · Feishu Owner DM verified · 15-case pending</p>
+        <span class="tag">Phase 5.2 implementation pass</span>
+        <strong>CARD FIXED</strong>
+        <p>530 Python + 30 TypeScript tests · Agent 29/29 · Channel 32/32 · Owner DM verified · post-fix live pending</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">519+30 <small>passing</small></span>
+        <span class="metric-value">530+30 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -459,7 +459,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 5 implementation pass · Phase 5.1 live harness</p>
+        <p class="eyebrow">Phase 5 implementation pass · Phase 5.2 single card + lark-cli Skill</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -473,7 +473,7 @@
           <li class="complete">AgentRuntime / Agent 离线 Tool 集成验证</li>
           <li class="complete">PROTO-001：empty tool arguments 事故回归</li>
           <li class="complete">ACTION-OPEN-APP-001：direct open -a 与 Approval 事故回归</li>
-          <li class="complete">严格 JSONL Schema 与 28 条 Claw-like query（含四条 Personal/CLI 权限事故）</li>
+          <li class="complete">严格 JSONL Schema 与 29 条 Claw-like query（含 Personal/CLI 与飞书文档事故）</li>
           <li class="complete">真实 Agent / Policy / Tool / SQLite offline runner</li>
           <li class="complete">miniclaw eval list / validate / run</li>
           <li class="complete">严格 [tools] / command / HTTP 配置边界</li>
@@ -542,7 +542,10 @@
           <li class="complete">0600 O_EXCL redacted Evidence + bounded Secret scan</li>
           <li class="complete">确认前零读取、单 Feishu preflight、自动证据不可人工覆盖</li>
           <li class="complete">飞书专用 App/Bot、WebSocket ready、text/post 入站与两条 Owner DM Delivery sent</li>
-          <li class="complete">519 Python + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
+          <li class="complete">飞书 12px completed card；超限只回复后缀；restart UUID 恢复；tool-call preview 缓冲后 waiting approval 只留审批卡</li>
+          <li class="complete">feishu-lark-cli Skill：复用 run_command + official lark-cli，不新增重复 API Tool</li>
+          <li class="complete">Provider 兼容流式 Tool Call 的 empty-name continuation</li>
+          <li class="complete">530 Python + 30 TypeScript tests + 29/29 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -553,19 +556,20 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace/Personal 多根 Guard、敏感凭据硬拒绝、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 519 Python、30 TypeScript tests、28/28 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640，Feishu 另有 15-case real Bot gate。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 530 Python、30 TypeScript tests、29/29 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640，Feishu 另有 15-case real Bot gate。</p></div>
         <div class="decision"><code>permissions</code><p>Autopilot 只给本地与 Owner 私聊；群聊/其他成员降级。任何模式都不能绕过敏感路径、exact argv、SSRF 和资源硬边界。</p></div>
         <div class="decision"><code>approval</code><p>审批框固定头尾、只滚动参数；Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
         <div class="decision"><code>scope</code><p>pi-tui、十个 Tool、Personal Machine 权限、用户 CLI 发现、Memory、Skills、Compaction、Approval 和飞书/Telegram/Discord multi-channel 已完成；真实平台 live gates 必须用各自凭据单独验收。</p></div>
-        <div class="decision"><code>live truth</code><p>FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING · Telegram live pending · Discord live pending · 两条真实 Delivery 不冒充完整 15/15。</p></div>
+        <div class="decision"><code>live truth</code><p>FEISHU OWNER-DM DELIVERY VERIFIED / 12PX CARD + OVERFLOW REPLY POST-FIX LIVE PENDING / 15-CASE LIVE PENDING · Telegram live pending · Discord live pending · 自动化不冒充真实客户端确认。</p></div>
+        <div class="decision"><code>lark-cli</code><p>Channel 负责收发消息；业务查询由 Skill 生成 lark-cli argv 并经过 run_command / Policy / Approval。私有标题和 URL 进入模型前必须得到 Owner 授权。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/96dc16f">96dc16f permission modes</a> · <a href="https://github.com/NEDONION/mini-claw/commit/e92278b">e92278b compact approval</a> · <a href="https://github.com/NEDONION/mini-claw/commit/1301b31">1301b31 Feishu Live orchestrator</a> · <a href="https://github.com/NEDONION/mini-claw/commit/00d4477">00d4477 redacted evidence</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 519 Python + 30 TypeScript · Agent 28/28 · Channel 32/32 · Feishu Owner DM verified</span>
-      <span><a href="../engineering/phase-2/autopilot-permissions-and-approval-ui.md">Autopilot permissions</a> · <a href="../engineering/phase-2/personal-machine-permissions.md">Personal permissions</a> · <a href="../engineering/phase-5/feishu-live-e2e.md">Feishu Live E2E</a> · <a href="../engineering/phase-5/feishu-gateway-runtime-and-macos-service.md">Feishu runtime</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../evals/releases/v0.5.1.md">v0.5.1</a></span>
+      <span>Last updated · 2026-08-09 · 530 Python + 30 TypeScript · Agent 29/29 · Channel 32/32 · Feishu card fix pending live confirmation</span>
+      <span><a href="../engineering/phase-2/autopilot-permissions-and-approval-ui.md">Autopilot permissions</a> · <a href="../engineering/phase-2/personal-machine-permissions.md">Personal permissions</a> · <a href="../engineering/phase-5/feishu-live-e2e.md">Feishu Live E2E</a> · <a href="../engineering/phase-5/feishu-gateway-runtime-and-macos-service.md">Feishu runtime</a> · <a href="../engineering/phase-5/feishu-single-card-and-lark-cli.md">single card + lark-cli</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../evals/releases/v0.5.2.md">v0.5.2</a></span>
     </footer>
   </main>
 </body>

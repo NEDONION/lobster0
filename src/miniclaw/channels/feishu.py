@@ -190,12 +190,11 @@ class FeishuTransport:
             )
         )
         try:
-            connect_until_ready = getattr(
-                self._channel,
-                "connect_until_ready",
-                self._channel.connect,
-            )
-            await connect_until_ready()
+            connect_until_ready = getattr(self._channel, "connect_until_ready", None)
+            if callable(connect_until_ready):
+                await connect_until_ready()
+            else:
+                await self._channel.connect()
         except Exception as error:
             self._unsubscribe_handler()
             mapped = _transport_error(error)
@@ -585,7 +584,11 @@ def _progress_card(
         },
         "body": {
             "elements": [
-                {"tag": "markdown", "content": text or "…"},
+                {
+                    "tag": "markdown",
+                    "content": text or "…",
+                    "text_size": "small",
+                },
             ],
         },
     }

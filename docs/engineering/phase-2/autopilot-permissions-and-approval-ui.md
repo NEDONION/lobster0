@@ -1,6 +1,7 @@
 # Phase 2 工程文档：Autopilot 权限与紧凑审批 UI
 
 > 状态：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Autopilot 已通过离线发布门禁，完整真实 IM 验收仍需独立完成。
+> 当前门禁：530 Python、30 TypeScript、29/29 Agent、32/32 Channel、640/640 local soak。
 > 日期：2026-08-08  
 > 适用版本：MiniClaw 0.1.0 之后的当前 `main`  
 > 相关代码：`policy/modes.py`、`policy/engine.py`、`channels/manager.py`、`bridge/`、`tui/src/app.ts`
@@ -246,7 +247,7 @@ mode = "safe"
 
 | 层 | 覆盖重点 | 当前证据 |
 | --- | --- | --- |
-| Python Policy | 四档状态表、trusted/untrusted、hard deny、审计失败关闭 | 全量 Python 519/519 |
+| Python Policy | 四档状态表、trusted/untrusted、hard deny、审计失败关闭 | 全量 Python 530/530 |
 | Channel | Owner 私聊、Owner 群聊、其他白名单、命令绕过模型 | 32/32 deterministic cases |
 | Bridge | 精确枚举、握手、idle 切换、busy 拒绝、真实子进程 | Python/Node bridge tests |
 | pi-tui | 状态徽标、slash command、80×24 长审批、滚动与按钮常驻 | TypeScript 30/30 |

@@ -14,15 +14,16 @@ class SkillLoaderTest(unittest.TestCase):
     """验证 Loader 只加载命中正文、最多三个且拒绝路径逃逸。"""
 
     def setUp(self) -> None:
-        """创建初始化状态并移除默认示例，保证每个测试显式控制 Skill。"""
+        """创建初始化状态并移除内置模板，保证每个测试显式控制 Skill。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
         initialize_state(self.paths)
-        example = self.paths.skills / "summarize/SKILL.md"
-        if example.exists():
-            example.unlink()
-            example.parent.rmdir()
+        for name in ("summarize", "feishu-lark-cli"):
+            example = self.paths.skills / name / "SKILL.md"
+            if example.exists():
+                example.unlink()
+                example.parent.rmdir()
         self.loader = SkillLoader(self.paths.skills)
 
     def make_skill(

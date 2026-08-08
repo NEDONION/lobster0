@@ -31,8 +31,9 @@ class Phase5DocumentationTest(unittest.TestCase):
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("519", content)
+                self.assertIn("530", content)
                 self.assertIn("30", content)
+                self.assertIn("29/29", content)
                 self.assertIn("32/32", content)
                 self.assertIn("640/640", content)
                 self.assertIn("OWNER-DM DELIVERY VERIFIED", content)
@@ -47,6 +48,7 @@ class Phase5DocumentationTest(unittest.TestCase):
             "telegram-discord-channels.md",
             "feishu-live-e2e.md",
             "feishu-gateway-runtime-and-macos-service.md",
+            "feishu-single-card-and-lark-cli.md",
             "testing-and-live-acceptance.md",
             "troubleshooting.md",
             "completion-audit.md",
@@ -59,8 +61,9 @@ class Phase5DocumentationTest(unittest.TestCase):
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
             "Phase 5 implementation pass",
-            "519 Python",
+            "530 Python",
             "30 TypeScript",
+            "29/29",
             "IMPLEMENTATION PASS",
             "32/32",
             "640/640",

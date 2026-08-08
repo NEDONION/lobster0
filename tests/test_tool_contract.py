@@ -125,6 +125,9 @@ class ToolContractTest(unittest.TestCase):
         self.assertIn("request approval", description)
         self.assertIn("open -a", description)
         self.assertIn("system_info applications", description)
+        self.assertIn("lark-cli", description)
+        self.assertIn("active feishu", description)
+        self.assertIn("do not claim", description)
 
     def test_tool_result_uses_stable_model_json_without_traceback(self) -> None:
         """成功和失败结果必须是模型可解析且不含内部异常的 JSON。"""

@@ -31,7 +31,9 @@
    WebSocket Transport、Delivery 恢复和卡片审批。
 15. 阅读 [真实飞书 Bot 与 Live E2E](engineering/phase-5/feishu-live-e2e.md)，按图完成 Scope、同应用 Owner
    discovery、15 条真实场景和脱敏 Evidence。
-16. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+16. 阅读 [飞书单卡片与 lark-cli Skill](engineering/phase-5/feishu-single-card-and-lark-cli.md)，理解为什么飞书
+   只保留 completed card，以及业务 API 为什么直接复用 official `lark-cli`。
+17. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -98,6 +100,7 @@
 | --- | --- |
 | 飞书 Channel Core、Gateway 与真实 E2E 边界 | [feishu-channel-core.md](engineering/phase-4/feishu-channel-core.md) |
 | 真实飞书 Bot 创建、Scope、15 条 Live gate 与 Evidence | [feishu-live-e2e.md](engineering/phase-5/feishu-live-e2e.md) |
+| 飞书单卡片最终回复与 direct lark-cli Skill | [feishu-single-card-and-lark-cli.md](engineering/phase-5/feishu-single-card-and-lark-cli.md) |
 
 ## 评测与版本证据
 
@@ -109,6 +112,7 @@
 | [Eval v0.3.0](evals/releases/v0.3.0.md) | Phase 3 基线：296 tests、24/24 Agent cases、Memory/Skills/Compaction |
 | [Eval v0.4.1](evals/releases/v0.4.1.md) | Personal Machine 基线：412+27 tests、28+12 cases、lark-cli 只读纵切 |
 | [Eval v0.5.1](evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与当时 REAL BOT PENDING 的历史证据 |
+| [Eval v0.5.2](evals/releases/v0.5.2.md) | 530+30 tests、29+32 场景、飞书单卡片与 direct lark-cli Skill |
 | [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md) | 对 OpenClaw/ZeroClaw/nanobot/RayClaw/Claw Bench/OpenJarvis 的方法映射 |
 | [R1/R2 实施计划](superpowers/plans/2026-08-08-agent-regression-benchmark.md) | TDD 任务、文件、命令与完成定义 |
 

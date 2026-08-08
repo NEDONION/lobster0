@@ -190,7 +190,7 @@ class ChannelManager:
         if self._workers or self._feeder is not None:
             return
         self._stopping.clear()
-        self._recover_stale()
+        await self._recover_stale()
         self._workers = [
             asyncio.create_task(self._worker(index), name=f"channel-worker-{index}")
             for index in range(self._worker_count)
@@ -318,9 +318,15 @@ class ChannelManager:
                 await activity.start()
             permission_notice = self._permission_notice(event)
             if permission_notice is not None:
+                final_delivery_required = True
                 if activity is not None:
-                    await activity.finish(content=permission_notice, failed=False)
-                self._create_notice_delivery(session.id, event, permission_notice)
+                    outcome = await activity.finish(
+                        content=permission_notice,
+                        failed=False,
+                    )
+                    final_delivery_required = outcome.final_delivery_required
+                if final_delivery_required:
+                    self._create_notice_delivery(session.id, event, permission_notice)
                 self._inbound.mark_completed(event.key)
                 self._observe_turn(
                     event,
@@ -368,11 +374,31 @@ class ChannelManager:
                         if command.result is not None
                         else command.notice
                     )
+                    waiting_for_approval = (
+                        command.result is not None
+                        and command.result.approval_id is not None
+                    )
+                    final_delivery_required = True
+                    final_delivery_offset = 0
+                    final_reply_to_message_id: str | None = None
                     if activity is not None:
-                        await activity.finish(content=visible, failed=False)
+                        outcome = await activity.finish(
+                            content=None if waiting_for_approval else visible,
+                            failed=waiting_for_approval,
+                        )
+                        final_delivery_required = outcome.final_delivery_required
+                        final_delivery_offset = outcome.final_delivery_offset
+                        final_reply_to_message_id = outcome.final_reply_to_message_id
                     if command.result is not None:
-                        self._create_result_delivery(session.id, event, command.result)
-                    elif command.notice is not None:
+                        self._create_result_delivery(
+                            session.id,
+                            event,
+                            command.result,
+                            message_delivery_required=final_delivery_required,
+                            content_offset=final_delivery_offset,
+                            reply_to_message_id=final_reply_to_message_id,
+                        )
+                    elif command.notice is not None and final_delivery_required:
                         self._create_notice_delivery(session.id, event, command.notice)
                     self._inbound.mark_completed(event.key)
                     self._observe_turn(
@@ -425,10 +451,27 @@ class ChannelManager:
                 )
                 return
 
+            final_delivery_required = True
+            final_delivery_offset = 0
+            final_reply_to_message_id: str | None = None
             if activity is not None:
-                await activity.finish(content=result.content, failed=False)
+                waiting_for_approval = result.approval_id is not None
+                outcome = await activity.finish(
+                    content=None if waiting_for_approval else result.content,
+                    failed=waiting_for_approval,
+                )
+                final_delivery_required = outcome.final_delivery_required
+                final_delivery_offset = outcome.final_delivery_offset
+                final_reply_to_message_id = outcome.final_reply_to_message_id
 
-            self._create_result_delivery(session.id, event, result)
+            self._create_result_delivery(
+                session.id,
+                event,
+                result,
+                message_delivery_required=final_delivery_required,
+                content_offset=final_delivery_offset,
+                reply_to_message_id=final_reply_to_message_id,
+            )
             self._inbound.mark_completed(event.key)
             self._observe_turn(
                 event,
@@ -477,26 +520,55 @@ class ChannelManager:
         session_id: int,
         event: StoredInboundEvent,
         result: TurnResult,
+        *,
+        message_delivery_required: bool = True,
+        content_offset: int = 0,
+        reply_to_message_id: str | None = None,
     ) -> None:
-        """把普通回答或 waiting Approval 转换为 durable Outbox。"""
+        """按平台终态创建完整 fallback、卡片后缀或 durable Approval Outbox。"""
         if result.message_id is not None:
-            self._deliveries.create_parts(
-                message_id=result.message_id,
-                channel=event.key.channel,
-                account_id=event.key.account_id,
-                external_conversation_id=event.external_conversation_id,
-                reply_to_message_id=event.reply_to_message_id,
-                kind="message",
-                contents=split_message(
-                    result.content,
-                    max_chars=self._message_max_chars,
-                    preserve_code_fences=self._channel == "telegram",
-                ),
+            if not message_delivery_required:
+                return
+            self._create_message_delivery(
+                result.message_id,
+                result.content,
+                event,
+                content_offset=content_offset,
+                reply_to_message_id=reply_to_message_id,
             )
             return
         if result.approval_id is None:
             return
         self._create_approval_delivery(session_id, event, result.approval_id)
+
+    def _create_message_delivery(
+        self,
+        message_id: int,
+        content: str,
+        event: StoredInboundEvent,
+        *,
+        content_offset: int = 0,
+        reply_to_message_id: str | None = None,
+    ) -> None:
+        """把完整 fallback 或卡片未展示后缀写成可恢复文本分片。"""
+        if not 0 <= content_offset <= len(content):
+            raise ChannelStateError("invalid_delivery_content_offset")
+        remaining = content[content_offset:]
+        if not remaining:
+            return
+        self._deliveries.create_parts(
+            message_id=message_id,
+            channel=event.key.channel,
+            account_id=event.key.account_id,
+            external_conversation_id=event.external_conversation_id,
+            reply_to_message_id=reply_to_message_id or event.reply_to_message_id,
+            kind="message",
+            contents=split_message(
+                remaining,
+                max_chars=self._message_max_chars,
+                preserve_code_fences=self._channel == "telegram",
+            ),
+        )
 
     def _create_approval_delivery(
         self,
@@ -573,7 +645,7 @@ class ChannelManager:
             ),
         )
 
-    def _recover_stale(self) -> None:
+    async def _recover_stale(self) -> None:
         """恢复遗留 Inbox/Delivery，绝不重放已经开始的 Turn。"""
         self._deliveries.recover_sending(self._channel, self._account_id)
         for event in self._inbound.list_by_status(
@@ -602,19 +674,26 @@ class ChannelManager:
                 continue
             if turn.status == "completed":
                 assistant = self._messages.final_assistant_for_turn(turn.id)
-                self._deliveries.create_parts(
-                    message_id=assistant.id,
-                    channel=event.key.channel,
-                    account_id=event.key.account_id,
-                    external_conversation_id=event.external_conversation_id,
-                    reply_to_message_id=event.reply_to_message_id,
-                    kind="message",
-                    contents=split_message(
+                final_delivery_required = True
+                final_delivery_offset = 0
+                final_reply_to_message_id: str | None = None
+                if self._experience is not None:
+                    activity = self._experience.activity(event)
+                    outcome = await activity.finish(
+                        content=assistant.content,
+                        failed=False,
+                    )
+                    final_delivery_required = outcome.final_delivery_required
+                    final_delivery_offset = outcome.final_delivery_offset
+                    final_reply_to_message_id = outcome.final_reply_to_message_id
+                if final_delivery_required:
+                    self._create_message_delivery(
+                        assistant.id,
                         assistant.content,
-                        max_chars=self._message_max_chars,
-                        preserve_code_fences=self._channel == "telegram",
-                    ),
-                )
+                        event,
+                        content_offset=final_delivery_offset,
+                        reply_to_message_id=final_reply_to_message_id,
+                    )
                 self._inbound.recover_running(event.key, "completed", None)
                 continue
             if turn.status == "waiting_approval":

@@ -4,7 +4,7 @@
 >
 > 发布口径：**IMPLEMENTATION PASS / LIVE PENDING**
 >
-> 当前全仓门禁：519/519 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、
+> 当前全仓门禁：530/530 Python、30/30 TypeScript、29/29 Agent、32/32 Channel、
 > 640/640 local soak。
 
 这份表把 Phase 5 的要求逐项映射到代码、自动化证据和仍需真实平台完成的 evidence。它用于防止“代码文件存在”被
@@ -106,9 +106,9 @@ flowchart TB
 
 | Gate | Expected | Actual | Result |
 | --- | ---: | ---: | --- |
-| Python unittest | all pass | Phase 5 exit 483/483；当前 519/519 | PASS |
+| Python unittest | all pass | Phase 5 exit 483/483；当前 530/530 | PASS |
 | TypeScript | all pass | 30/30 | PASS |
-| Offline Agent | all active | 28/28 | PASS |
+| Offline Agent | all active | 29/29 | PASS |
 | Feishu Channel | retain old | 12/12 | PASS |
 | Telegram Channel | exact matrix | 10/10 | PASS |
 | Discord Channel | exact matrix | 10/10 | PASS |

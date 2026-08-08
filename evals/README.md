@@ -1,6 +1,6 @@
 # MiniClaw Agent 回归场景集
 
-Active offline gate: 28 cases
+Active offline gate: 29 cases
 Active channel gate: 12 cases
 
 这里保存随代码版本化的 Claw-like 使用场景。它回答两个问题：
@@ -24,7 +24,7 @@ Active channel gate: 12 cases
 | Personal 权限 | `FILES-PERSONAL-READ-001`、`FILES-PERSONAL-WRITE-APPROVAL-001`、`CLI-DISCOVERY-LARK-001`、`CLI-SENSITIVE-DENY-001` |
 | HTTPS / SSRF | `HTTP-APPROVAL-001`、`HTTP-PRIVATE-001` |
 | Memory | `MEMORY-READ-001`、`MEMORY-PROPOSE-001` |
-| Skills | `SKILL-ACTIVATE-001` |
+| Skills | `SKILL-ACTIVATE-001`、`FEISHU-LARK-DOCS-001` |
 | 飞书 Channel | `FEISHU-DM-001`、`FEISHU-GROUP-001/002`、`FEISHU-DEDUPE-001`、`FEISHU-TOOL-001`、`FEISHU-APPROVAL-001/002`、`FEISHU-RESTART-001/002`、`FEISHU-DELIVERY-001`、`FEISHU-CARD-001`、`FEISHU-RECONNECT-001` |
 
 所有 active offline 与 channel case 必须分别 100% PASS。任何 skipped 都按失败处理。

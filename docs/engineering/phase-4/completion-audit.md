@@ -6,7 +6,7 @@
 >
 > 真实飞书租户结论：**OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**
 >
-> 当前全仓门禁：519/519 Python、30/30 TypeScript、28/28 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
+> 当前全仓门禁：530/530 Python、30/30 TypeScript、29/29 Agent、32/32 Channel、20 轮 local soak 640/640、Ruff 与 build PASS
 
 ## 1. 先说结论
 
@@ -18,7 +18,7 @@ Phase 4 的代码、离线回归、恢复语义、安全边界、Gateway CLI、D
 flowchart LR
     D["Design requirements"] --> C["Code implementation"]
     C --> U["412 Python + 27 TS tests"]
-    U --> E["28 Agent + 12 Channel evals"]
+    U --> E["29 Agent + 12 Channel evals"]
     E --> L{"真实飞书凭据可用?"}
     L -->|"否"| P["Implementation PASS\nLive PENDING"]
     L -->|"是"| R["20 轮 + Tool + Approval\nrestart + reconnect + soak"]
@@ -52,8 +52,8 @@ flowchart LR
 | 11 | 同会话串行、跨会话有界并发 | conversation lock + `worker_count` | 两条并发 / 串行 manager tests | LOCAL PASS |
 | 12 | CLI / TUI / Feishu 共享 Agent Core | `runtime.create_runtime()` + `create_channel_manager()` | runtime、turn、manager integration tests | LOCAL PASS |
 | 13 | Typing best effort | `ChannelCapabilities.start()/finish()` | capability success/failure tests | LOCAL PASS；平台 reaction 权限 LIVE PENDING |
-| 14 | streaming card + Markdown fallback | progress card 只读公开 delta，最终回复进 durable Outbox | capability、delivery、`FEISHU-CARD-001` | LOCAL PASS；真实卡片 API LIVE PENDING |
-| 15 | 最终 Markdown durable truth | Manager 先创建 Delivery、Worker 后发送 | manager success/failure + delivery tests | LOCAL PASS |
+| 14 | streaming card + Markdown fallback | progress card 只读公开 delta；成功 completed card 为唯一回复，失败进 durable Outbox | capability、delivery、`FEISHU-CARD-001` | LOCAL PASS；修复后客户端确认 PENDING |
+| 15 | 平台终态不重复 | SQLite 保存 Assistant Message；Manager 仅在 card 未完成时创建文本 Delivery | manager success/failure + delivery tests | LOCAL PASS |
 | 16 | 长回复 Unicode 安全分片 | `split_message()` | 中文、emoji、前缀预算测试 | LOCAL PASS；真实平台顺序 LIVE PENDING |
 | 17 | Outbox 稳定 UUID、retry、unknown | `DeliveryRepository` + `DeliveryWorker` | retry / timeout / max-attempt tests、`FEISHU-DELIVERY-001` | LOCAL PASS |
 | 18 | WebSocket 自动重连与状态可观测 | SDK `auto_reconnect` + reconnecting/reconnected callbacks + `connection_state` | transport reconnect observer test、`FEISHU-RECONNECT-001` | LOCAL PASS；真实断网 LIVE PENDING |
@@ -105,9 +105,9 @@ Provider 隐藏 reasoning 和异常原文。
 | Gate | 当前证据 | 结论 |
 | --- | --- | --- |
 | 设计、PRD、架构、工程文档一致 | Phase 4 文档组 + 本矩阵 | LOCAL PASS |
-| 当前全量 Python | `519/519` | PASS |
+| 当前全量 Python | `530/530` | PASS |
 | pi-tui / Bridge | `30/30` | PASS |
-| Agent 回归 | `28/28` | PASS |
+| Agent 回归 | `29/29` | PASS |
 | Feishu Channel 回归 | `12/12` | PASS |
 | Ruff | `All checks passed` | PASS |
 | wheel / sdist | `uv build` 两个 artifact 成功 | PASS |

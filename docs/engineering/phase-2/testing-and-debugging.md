@@ -2,7 +2,7 @@
 
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> 当前 Phase 5.1 全仓基线：519/519 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS；历史 PTY smoke PASS
+> 当前 Phase 5.2 全仓基线：530/530 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS；历史 PTY smoke PASS
 >
 > 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
@@ -48,7 +48,7 @@ git diff --check
 - diff check 无空白错误；
 - 文档中的计数来自这次新鲜输出，不手算、不预测。
 
-## 3. 28 条 Claw-like 回归场景
+## 3. 29 条 Claw-like 回归场景
 
 ### 3.1 Phase 1 / P2.1 基线
 
@@ -301,8 +301,8 @@ uv run miniclaw
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
 - [x] Doctor 十五项且网络/命令/数据库修改为零；
-- [x] 519/519 Python tests + 30/30 TypeScript tests；
-- [x] 28/28 offline Agent cases、32/32 Channel cases；
+- [x] 530/530 Python tests + 30/30 TypeScript tests；
+- [x] 29/29 offline Agent cases、32/32 Channel cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
 - [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
 - [x] Provider reasoning、Tool 参数/状态/耗时/结果可展开回归；

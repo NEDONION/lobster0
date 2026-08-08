@@ -1,7 +1,7 @@
 # Phase 4：飞书 Channel 与 Gateway 工程文档
 
 > 状态：核心链路与 `miniclaw gateway` 已实现；真实 WebSocket 和 Owner DM Delivery 已验证，15-case、部署与 soak 尚未完成
-> 当前全仓门禁：519/519 Python tests、30/30 TypeScript tests、28/28 offline Agent cases、32/32 Channel cases、Ruff PASS
+> 当前全仓门禁：530/530 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、Ruff PASS
 
 ## 1. 现在完成到了哪里
 
@@ -113,10 +113,12 @@ Inbox 同时约束 event ID 和 message ID，但 `InboundEventRepository.record(
 这些能力不能改变事实层：
 
 - typing reaction 是 best effort，添加或移除失败不影响 Turn；
-- streaming progress card 只消费公开 `model_text_delta`；reasoning、Tool 参数和内部 Trace 不进入卡片；
+- Feishu 终态卡只消费公开 `model_text_delta`，但先缓冲到 Turn 终态；reasoning、Tool 参数和内部 Trace 不进入卡片；
 - Approval card 只显示 Core 允许的 grant modes；
 - 卡片 payload 绑定 Approval ID、Owner 和原参数 hash；
-- 进度卡不是权威结果；最终 Markdown 始终提前进入 durable Outbox，卡片失败不会决定最终回复是否存在；
+- 飞书成功完成的 12px 进度卡优先作为最终回复；全文超限时只把后缀回复到该卡片，卡片失败时才创建完整
+  durable Markdown fallback；completed restart 复用稳定 progress UUID；tool-call content 不提前建卡，waiting approval
+  只发布审批卡；
 - 文本 `approve/deny` 与 card action 都进入同一个 `continue_approval()`，不会复制执行逻辑。
 
 ## 8. 配置与凭据
@@ -171,7 +173,7 @@ uv build
 git diff --check
 ```
 
-当前结果：519/519 Python、30/30 TypeScript、28/28 offline Agent cases、32/32 Channel cases、20 轮
+当前结果：530/530 Python、30/30 TypeScript、29/29 offline Agent cases、32/32 Channel cases、20 轮
 全平台 Channel local soak 为 640/640、Ruff PASS，Python wheel/sdist 构建成功。
 
 ## 10. 尚未完成与下一步

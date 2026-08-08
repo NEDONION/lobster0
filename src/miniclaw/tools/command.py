@@ -35,7 +35,11 @@ class RunCommandTool:
             "Never use a shell, pipeline, redirection, or inline code. Call this tool to "
             "request approval when needed instead of claiming it is unavailable. On macOS, "
             "if the exact installed app name is uncertain, call system_info applications "
-            'first; then launch it with open -a: program "open", args ["-a", "Exact Name"].'
+            'first; then launch it with open -a: program "open", args ["-a", "Exact Name"]. '
+            "For Feishu/Lark documents, messages, calendars, tasks, or other cloud services, "
+            "follow the active feishu-lark-cli Skill and call program lark-cli with exact args. "
+            "Do not claim that Feishu APIs are unavailable and do not search the local "
+            "workspace for cloud data."
         ),
         parameters={
             "type": "object",

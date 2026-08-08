@@ -107,10 +107,12 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         transport: FakeExperienceTransport,
         *,
         observer: Observer | None = None,
+        progress_is_final: bool = False,
     ):
         experience = ChannelExperience(
             transport=transport,
             progress_enabled=True,
+            progress_is_final=progress_is_final,
             update_interval=0.5,
             max_visible_chars=20,
             clock=self.clock,
@@ -140,6 +142,92 @@ class ChannelExperienceTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(outcome.progress_created)
         self.assertFalse(outcome.progress_failed)
         self.assertTrue(outcome.final_delivery_required)
+
+    async def test_completed_final_progress_replaces_text_delivery(self) -> None:
+        """平台把 progress 作为终态时，成功完成后不再要求重复文本。"""
+        transport = FakeExperienceTransport()
+        activity = self._activity(transport, progress_is_final=True)
+
+        await activity.on_event(RunEvent("model_text_delta", 1, {"text": "partial"}))
+        outcome = await activity.finish(content="final answer", failed=False)
+
+        self.assertFalse(outcome.final_delivery_required)
+        self.assertEqual(
+            transport.updated[-1],
+            ("progress-message", "final answer", False, True),
+        )
+
+    async def test_final_progress_at_visible_limit_needs_no_tail_reply(self) -> None:
+        """完整正文刚好填满卡片时仍由单张卡片承载，不产生空的后续回复。"""
+        transport = FakeExperienceTransport()
+        activity = self._activity(transport, progress_is_final=True)
+        content = "12345678901234567890"
+
+        outcome = await activity.finish(content=content, failed=False)
+
+        self.assertFalse(outcome.final_delivery_required)
+        self.assertEqual(outcome.final_delivery_offset, 20)
+        self.assertIsNone(outcome.final_reply_to_message_id)
+        self.assertEqual(
+            transport.updated[-1],
+            ("progress-message", content, False, True),
+        )
+
+    async def test_final_progress_overflow_requires_only_tail_reply(self) -> None:
+        """超出卡片上限的正文必须返回精确后缀偏移和卡片回复目标。"""
+        transport = FakeExperienceTransport()
+        activity = self._activity(transport, progress_is_final=True)
+        content = "12345678901234567890TAIL"
+
+        outcome = await activity.finish(content=content, failed=False)
+
+        self.assertTrue(outcome.final_delivery_required)
+        self.assertEqual(outcome.final_delivery_offset, 20)
+        self.assertEqual(outcome.final_reply_to_message_id, "progress-message")
+        self.assertEqual(
+            transport.updated[-1],
+            ("progress-message", "12345678901234567890", False, True),
+        )
+
+    async def test_final_progress_failure_still_requires_text_fallback(self) -> None:
+        """终态卡片失败时必须保留普通文本 Outbox 兜底。"""
+        transport = FakeExperienceTransport()
+        activity = self._activity(transport, progress_is_final=True)
+        await activity.on_event(RunEvent("model_text_delta", 1, {"text": "partial"}))
+        transport.fail_progress = True
+
+        outcome = await activity.finish(content="final answer", failed=False)
+
+        self.assertTrue(outcome.progress_failed)
+        self.assertTrue(outcome.final_delivery_required)
+
+    async def test_final_progress_is_created_at_finish_without_stream_delta(self) -> None:
+        """Provider 不发送 delta 时也应创建 completed card，而不是退回双路径。"""
+        transport = FakeExperienceTransport()
+        activity = self._activity(transport, progress_is_final=True)
+
+        outcome = await activity.finish(content="final answer", failed=False)
+
+        self.assertFalse(outcome.final_delivery_required)
+        self.assertEqual(transport.created[0][1], "final answer")
+        self.assertEqual(
+            transport.updated[-1],
+            ("progress-message", "final answer", False, True),
+        )
+
+    async def test_final_progress_waits_for_terminal_result_before_card_creation(self) -> None:
+        """终态卡必须先确认不是 waiting Approval，避免 preview 与审批形成双卡。"""
+        transport = FakeExperienceTransport()
+        activity = self._activity(transport, progress_is_final=True)
+
+        await activity.on_event(RunEvent("model_text_delta", 1, {"text": "checking"}))
+        self.assertEqual(transport.created, [])
+
+        outcome = await activity.finish(content=None, failed=True)
+
+        self.assertFalse(outcome.progress_created)
+        self.assertEqual(transport.created, [])
+        self.assertEqual(transport.updated, [])
 
     async def test_failures_and_finish_are_contained_and_idempotent(self) -> None:
         """体验失败只产生稳定短码，重复 finish 不重复清理或改变最终 Delivery。"""

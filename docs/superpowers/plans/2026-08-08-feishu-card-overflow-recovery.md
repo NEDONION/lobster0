@@ -172,7 +172,7 @@ Run:
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ruff check .
-.venv/bin/miniclaw eval run --suite agent --root evals/scenarios
+.venv/bin/miniclaw eval run --suite offline --root evals/scenarios
 .venv/bin/miniclaw eval run --suite channel --root evals/scenarios
 .venv/bin/miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
 .venv/bin/python scripts/validate_docs.py
@@ -185,4 +185,3 @@ Expected: all commands exit 0; counts in docs match fresh output.
 
 Run a focused code review, stage only the intended MiniClaw changes, commit with a mixed Chinese/English title such as
 `fix(feishu): 卡片溢出回复与 restart recovery`, then push `main` and verify `HEAD == origin/main`.
-

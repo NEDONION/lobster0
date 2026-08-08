@@ -17,6 +17,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/engineering/phase-5/telegram-discord-channels.md"),
     Path("docs/engineering/phase-5/feishu-live-e2e.md"),
     Path("docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md"),
+    Path("docs/engineering/phase-5/feishu-single-card-and-lark-cli.md"),
     Path("docs/engineering/phase-5/testing-and-live-acceptance.md"),
     Path("docs/engineering/phase-5/troubleshooting.md"),
     Path("docs/engineering/phase-5/completion-audit.md"),
@@ -24,6 +25,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/evals/README.md"),
     Path("docs/evals/releases/v0.5.0.md"),
     Path("docs/evals/releases/v0.5.1.md"),
+    Path("docs/evals/releases/v0.5.2.md"),
 )
 FACT_RELATIVE_DOCS = (
     Path("README.md"),
@@ -38,8 +40,9 @@ FACT_RELATIVE_DOCS = (
 )
 REQUIRED_FACTS = (
     "IMPLEMENTATION PASS",
-    "519",
+    "530",
     "30",
+    "29/29",
     "32/32",
     "640/640",
     "OWNER-DM DELIVERY VERIFIED",

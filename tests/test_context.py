@@ -114,6 +114,27 @@ class ContextBuilderTest(unittest.TestCase):
         self.assertIn("全盘", system)
         self.assertIn("本机 CLI", system)
 
+    def test_feishu_document_query_activates_direct_lark_cli_skill(self) -> None:
+        """飞书文档问题必须加载官方 CLI 映射，不能搜索本地 Workspace。"""
+        request = ContextBuilder(self.paths).build(
+            "deepseek-v4-pro",
+            (
+                ModelMessage(
+                    role="user",
+                    content="你帮我看看我最近更改的飞书文档是哪两个",
+                ),
+            ),
+        )
+
+        system = request.messages[0].content
+        self.assertIn("### feishu-lark-cli v1", system)
+        self.assertIn("lark-cli drive +search", system)
+        self.assertIn("--as user", system)
+        self.assertIn("不要搜索本地 Workspace", system)
+        skills = request.runtime_snapshot["skills"]
+        assert isinstance(skills, list)
+        self.assertEqual(skills[0]["name"], "feishu-lark-cli")
+
     def test_memory_files_enter_system_context_with_usage_rules(self) -> None:
         """长期和 recent daily memory 应进入身份之后，并教模型走受控写入 Tool。"""
         self.paths.memory_file.write_text("- prefers Python 3.12\n", encoding="utf-8")

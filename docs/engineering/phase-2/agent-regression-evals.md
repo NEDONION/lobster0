@@ -2,7 +2,7 @@
 
 > 状态：已实现并验证（R1 事故回归 + R2 Agent 门禁 + R4 Channel 确定性门禁）
 >
-> 当前仓库事实：519/519 Python tests、30/30 TypeScript tests、28/28 active offline Agent cases、32/32 Channel cases、Ruff PASS；v0.1.0 发布时基线为 177 tests
+> 当前仓库事实：530/530 Python tests、30/30 TypeScript tests、29/29 active offline Agent cases、32/32 Channel cases、Ruff PASS；v0.1.0 发布时基线为 177 tests
 >
 > 不代表：真实 DeepSeek live benchmark、飞书 E2E 或自动演进已经完成
 
@@ -41,8 +41,8 @@ MiniClaw 因此分层：
 
 | 层 | 当前状态 | 运行时机 | 通过规则 |
 | --- | --- | --- | --- |
-| L0 单元/契约 | 已实现 | 每次提交 | 519/519 Python + 30/30 TypeScript |
-| L1 offline Agent scenarios | 已实现 | 每次提交 | 28/28 active cases |
+| L0 单元/契约 | 已实现 | 每次提交 | 530/530 Python + 30/30 TypeScript |
+| L1 offline Agent scenarios | 已实现 | 每次提交 | 29/29 active cases |
 | L2 live DeepSeek | 单事故 planning probe；完整 R3 仍待实现 | release/tag | `ACTION-OPEN-APP-001` 3/3；完整 capability gate 待 CLI |
 | L3 deterministic Channel | 已实现 | 每次提交 | 12/12 Adapter/Inbox/Delivery/Approval/Gateway cases |
 | L4 live Channel/soak | harness 已实现，真实验收待执行 | IM release | 飞书真实投递、去重、重连与长时运行 |
@@ -196,7 +196,7 @@ uv run miniclaw eval run --suite channel --root evals/scenarios
 退出码：全部通过为 `0`；任一 case FAIL 为 `1`；场景目录、Schema 无效或所选 suite 没有 active case 为 `2`。
 空 gate 不能用 `0/0` 伪装通过。
 
-## 10. 当前 28 条 Agent query 与 12 条 Channel case
+## 10. 当前 29 条 Agent query 与 12 条 Channel case
 
 | ID | 用户场景 | 核心证明 |
 | --- | --- | --- |
@@ -219,6 +219,7 @@ uv run miniclaw eval run --suite channel --root evals/scenarios
 | `COMMAND-APPROVE-001` | 批准 `/usr/bin/true` | exact argv 命令成功轨迹 |
 | `COMMAND-FORBID-001` | 请求 `bash -lc` | Shell 硬拒绝、零 Approval/ToolRun |
 | `ACTION-OPEN-APP-001` | `你能帮我打开飞书吗` | direct `open -a`、waiting Approval、真实 Provider planning gate |
+| `FEISHU-LARK-DOCS-001` | 最近更改的两个飞书文档 | 激活 Skill 后 direct `lark-cli drive +search`，不搜索本地 Workspace |
 | `HTTP-APPROVAL-001` | 读取公网 HTTPS | hostname 审批、未提前联网 |
 | `HTTP-PRIVATE-001` | 读取 loopback HTTPS | SSRF 硬拒绝、零 Approval/ToolRun |
 
@@ -267,7 +268,7 @@ uv run miniclaw eval run --suite channel --root evals/scenarios
 git diff --check
 ```
 
-当前仓库已验证结果是 519/519 Python tests、30/30 TypeScript tests、28/28 active Agent cases、32/32 Channel cases 和 Ruff PASS。场景集首次发布时的 177 tests
+当前仓库已验证结果是 530/530 Python tests、30/30 TypeScript tests、29/29 active Agent cases、32/32 Channel cases 和 Ruff PASS。场景集首次发布时的 177 tests
 版本证据见 [v0.1.0 release record](../../evals/releases/v0.1.0.md)。
 
 ## 13. 已知边界和下一步

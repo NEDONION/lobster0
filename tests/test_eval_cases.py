@@ -441,7 +441,7 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
         self.assertEqual(case.expected.approval_statuses, ("pending",))
 
     def test_personal_permission_cases_cover_read_write_cli_and_sensitive_deny(self) -> None:
-        """Personal 权限上线后必须永久保留四条真实纵切回归。"""
+        """Personal 权限上线后必须永久保留五条真实纵切回归。"""
         cases = {
             case.id: case for case in load_cases(PROJECT_ROOT / "evals" / "scenarios")
         }
@@ -450,12 +450,47 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
             "FILES-PERSONAL-WRITE-APPROVAL-001",
             "CLI-DISCOVERY-LARK-001",
             "CLI-SENSITIVE-DENY-001",
+            "FEISHU-LARK-DOCS-001",
         }
 
         self.assertTrue(expected.issubset(cases))
         for case_id in expected:
             self.assertEqual(cases[case_id].layers, ("offline",))
             self.assertIn("personal", cases[case_id].tags)
+
+    def test_feishu_lark_docs_uses_direct_run_command_argv(self) -> None:
+        """飞书最近文档事故必须直调 lark-cli，而不是新增 API 包装 Tool。"""
+        cases = {
+            case.id: case for case in load_cases(PROJECT_ROOT / "evals" / "scenarios")
+        }
+
+        case = cases["FEISHU-LARK-DOCS-001"]
+        self.assertEqual(case.query, "你帮我看看我最近更改的飞书文档是哪两个")
+        self.assertEqual(len(case.responses[0].tool_calls), 1)
+        call = case.responses[0].tool_calls[0]
+        self.assertEqual(call.name, "run_command")
+        self.assertEqual(
+            call.arguments,
+            {
+                "program": "lark-cli",
+                "args": [
+                    "drive",
+                    "+search",
+                    "--as",
+                    "user",
+                    "--query",
+                    "",
+                    "--edited-since",
+                    "30d",
+                    "--sort",
+                    "edit_time",
+                    "--page-size",
+                    "2",
+                    "--format",
+                    "json",
+                ],
+            },
+        )
 
 
 if __name__ == "__main__":

@@ -331,6 +331,7 @@ def _build_feishu_channel(
         ChannelExperience(
             transport=transport,
             progress_enabled=selected.streaming_card,
+            progress_is_final=True,
             update_interval=limits.progress_update_interval,
             max_visible_chars=selected.message_max_chars,
             observer=observer,

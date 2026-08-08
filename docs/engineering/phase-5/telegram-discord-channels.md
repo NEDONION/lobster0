@@ -2,7 +2,7 @@
 
 > 当前状态：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**；Telegram/Discord live pending
 >
-> 当前全仓证据：519/519 Python tests、30/30 TypeScript tests、28/28 Agent cases、
+> 当前全仓证据：530/530 Python tests、30/30 TypeScript tests、29/29 Agent cases、
 > 32/32 Channel cases、20 轮 640/640 local soak。
 >
 > 目标：Telegram 与 Discord 同时进入统一 Gateway，共享一个个人 Agent
@@ -96,7 +96,7 @@ Discord 的 wake-up；Discord 重连时飞书仍可以继续处理消息。
 | 自身消息过滤 | sender type / bot | bot user ID | author.bot / webhook |
 | Typing | reaction | chat action | typing context |
 | 流式体验 | progress card | preview message edit | preview message edit |
-| 最终权威回复 | durable Markdown Outbox | durable text Outbox | durable text Outbox |
+| 最终平台回复 | completed card；失败时 durable text fallback | durable text Outbox | durable text Outbox |
 | 字符上限 | 配置软上限 | 4096 | 2000 |
 | 平台限流 | SDK/错误码 | RetryAfter | route bucket / retry_after |
 | Approval UI | card + text | inline keyboard + text | View/button + text |
@@ -413,7 +413,7 @@ Phase 5 production verified 还要求 Telegram、Discord 两边真实验收均�
 | GatewaySupervisor | IMPLEMENTATION PASS |
 | 20 条新回归 | 20/20 PASS；总 Channel 32/32 |
 | 20-run local soak | 640/640 PASS |
-| Phase 5 合并时 Python / TypeScript | 483/483 + 27/27 PASS；当前总门禁 519/519 + 30/30 |
+| Phase 5 合并时 Python / TypeScript | 483/483 + 27/27 PASS；当前总门禁 530/530 + 30/30 |
 | 真实 Telegram | LIVE PENDING（当前无账号/凭据） |
 | 真实 Discord | LIVE PENDING（本轮未提供凭据） |
 

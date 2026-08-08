@@ -203,6 +203,7 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(sdk.channel.connected)
         self.assertTrue(sdk.channel.connect_until_ready_called)
         self.assertFalse(sdk.channel.legacy_connect_called)
+        self.assertEqual(sdk.channel.connect_calls, ["connect_until_ready"])
         await sdk.channel.handlers["message"](
             SimpleNamespace(
                 id="om_inbound",
@@ -343,6 +344,10 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             sdk.channel.sent[0][1]["card"]["body"]["elements"][0]["content"],
             "第一段",
+        )
+        self.assertEqual(
+            sdk.channel.sent[0][1]["card"]["body"]["elements"][0]["text_size"],
+            "small",
         )
         self.assertEqual(
             sdk.channel.cards_updated[-1][1]["body"]["elements"][0]["content"],

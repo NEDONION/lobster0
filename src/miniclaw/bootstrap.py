@@ -44,13 +44,54 @@ def initialize_state(paths: StatePaths) -> InitResult:
     for directory in paths.directories:
         _ensure_directory(directory)
     example_skill_directory = paths.skills / "summarize"
+    feishu_skill_directory = paths.skills / "feishu-lark-cli"
     _ensure_directory(example_skill_directory)
+    _ensure_directory(feishu_skill_directory)
 
     templates = (
         (paths.config, _render_default_config(paths)),
         (paths.soul, "# MiniClaw\n"),
         (paths.user, "# User\n"),
         (paths.memory_file, "# Long-term Memory\n"),
+        (
+            feishu_skill_directory / "SKILL.md",
+            "---\n"
+            "name: feishu-lark-cli\n"
+            "description: 飞书 Lark 文档 云盘 Wiki 表格 Base 消息 日历 任务 审批 邮件；"
+            "把自然语言映射为 official lark-cli 命令。\n"
+            "version: 1\n"
+            "---\n\n"
+            "# Feishu / Lark CLI instructions\n\n"
+            "飞书是外部云服务，不是本地文件。用户询问飞书文档、云盘、Wiki、表格、消息、"
+            "日历、任务、审批或邮件时，使用现有 `run_command` 直接调用官方 `lark-cli`；"
+            "不要搜索本地 Workspace，也不能在 `run_command` 已提供时声称没有飞书 API 工具。\n\n"
+            "## 基本规则\n\n"
+            "- `run_command.program` 固定写 `lark-cli`，完整参数放进字符串数组 `args`。\n"
+            "- 访问 Owner 自己的数据时使用 `--as user`；"
+            "不要把凭据交给模型或写入参数。\n"
+            "- 不确定命令时，先调用 `lark-cli <domain> --help` 或 "
+            "`lark-cli schema ... --format json`，"
+            "再执行目标命令；不得猜参数。\n"
+            "- 只依据 CLI 返回的标题、时间、URL 和正文回答，不能编造结果。CLI 错误是权威边界。\n"
+            "- 写入、删除、发送、移动等动作仍通过同一个 `run_command` 进入 Policy / Approval。"
+            "用户未明确批准高风险动作时，不得自行追加 `--yes`。\n"
+            "- 登录失效时只报告需要重新完成 `lark-cli` 用户认证，不索要或读取凭据文件。\n\n"
+            "## 最近修改的文档\n\n"
+            "用户没有提供业务关键词，只问最近修改、编辑或更改的文档时，用空 query 和编辑时间过滤。"
+            "例如“最近更改的两个飞书文档”直接调用：\n\n"
+            "```text\n"
+            "lark-cli drive +search --as user --query \"\" --edited-since 30d "
+            "--sort edit_time --page-size 2 --format json\n"
+            "```\n\n"
+            "对应 `run_command` 参数：\n\n"
+            "```json\n"
+            "{\"program\":\"lark-cli\",\"args\":[\"drive\",\"+search\",\"--as\",\"user\","
+            "\"--query\",\"\",\"--edited-since\",\"30d\",\"--sort\",\"edit_time\","
+            "\"--page-size\",\"2\",\"--format\",\"json\"]}\n"
+            "```\n\n"
+            "如果用户给了标题或内容关键词，把精简后的关键词放入 `--query`；"
+            "纯列表请求保持空字符串。\n",
+        ),
         (
             example_skill_directory / "SKILL.md",
             "---\n"

@@ -147,8 +147,8 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             [("om_inbound", "reaction_1")],
         )
 
-    async def test_visible_deltas_coalesce_and_sensitive_events_are_ignored(self) -> None:
-        """只聚合可见 text delta，限频更新且不泄露 reasoning/Tool 参数。"""
+    async def test_visible_deltas_are_buffered_and_sensitive_events_are_ignored(self) -> None:
+        """公开文本只在终态建卡，reasoning 与 Tool 参数始终不能进入卡片。"""
         transport = FakeCapabilityTransport()
         activity = self._activity(transport)
         await activity.start()
@@ -165,14 +165,20 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             )
         )
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "好"}))
-        self.assertEqual(len(transport.cards_sent), 1)
+        self.assertEqual(len(transport.cards_sent), 0)
         self.assertEqual(len(transport.cards_updated), 0)
 
         self.clock.value = 0.6
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "！"}))
         await activity.finish(content="你好！", failed=False)
 
+        self.assertEqual(len(transport.cards_sent), 1)
         self.assertEqual(len(transport.cards_updated), 1)
+        self.assertIn("MiniClaw 回复", repr(transport.cards_updated[-1][1]))
+        self.assertEqual(
+            transport.cards_updated[-1][1]["body"]["elements"][0]["text_size"],
+            "small",
+        )
         rendered = repr([transport.cards_sent, transport.cards_updated])
         self.assertIn("你好！", rendered)
         self.assertNotIn("secret reasoning", rendered)
@@ -214,8 +220,8 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(transport.cards_updated, [])
         self.assertTrue(outcome.final_markdown_required)
 
-    async def test_partial_provider_failure_marks_existing_card_incomplete(self) -> None:
-        """已经展示部分内容后失败，卡片必须明确标记未完成。"""
+    async def test_partial_provider_failure_never_publishes_buffered_card(self) -> None:
+        """终态前失败必须丢弃缓冲文本，避免红色 preview 与失败提示并存。"""
         transport = FakeCapabilityTransport()
         activity = self._activity(transport)
         await activity.start()
@@ -224,9 +230,8 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         )
         await activity.finish(content=None, failed=True)
 
-        rendered = repr(transport.cards_updated[-1][1])
-        self.assertIn("partial answer", rendered)
-        self.assertIn("未完成", rendered)
+        self.assertEqual(transport.cards_sent, [])
+        self.assertEqual(transport.cards_updated, [])
 
 
 if __name__ == "__main__":

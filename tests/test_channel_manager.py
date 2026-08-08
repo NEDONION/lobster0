@@ -48,6 +48,7 @@ class TrackingTurnService:
     gate: asyncio.Event | None = None
     expected_concurrency: int = 0
     approval_id: int | None = None
+    emit_event: bool = True
     calls: list[tuple[str, str]] = field(init=False, default_factory=list)
     trusted_calls: list[bool] = field(init=False, default_factory=list)
     active: int = field(init=False, default=0)
@@ -93,7 +94,7 @@ class TrackingTurnService:
         try:
             if self.gate is not None:
                 await self.gate.wait()
-            if on_event is not None:
+            if on_event is not None and self.emit_event:
                 await on_event(
                     RunEvent(
                         "model_text_delta",
@@ -156,6 +157,7 @@ class ManagerCapabilityTransport:
     typing_added: list[str] = field(default_factory=list)
     typing_removed: list[tuple[str, str | None]] = field(default_factory=list)
     cards: list[dict[str, Any]] = field(default_factory=list)
+    card_ids_by_key: dict[str, str] = field(default_factory=dict)
 
     async def add_typing(self, message_id: str) -> str:
         """记录 Typing 开始。"""
@@ -176,11 +178,15 @@ class ManagerCapabilityTransport:
         idempotency_key: str,
     ) -> SendReceipt:
         """记录进度卡片或模拟 API 失败。"""
-        del conversation_id, reply_to_message_id, idempotency_key
+        del conversation_id, reply_to_message_id
         self.cards.append(card)
         if self.fail_card:
             raise RuntimeError("private-card-error")
-        return SendReceipt("om_manager_card")
+        message_id = self.card_ids_by_key.setdefault(
+            idempotency_key,
+            "om_manager_card",
+        )
+        return SendReceipt(message_id)
 
     async def update_card(
         self,
@@ -497,8 +503,8 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("处理失败", failure_delivery["content"])
         self.assertNotIn("secret-provider-detail", dump)
 
-    async def test_capabilities_wrap_turn_and_final_markdown_stays_durable(self) -> None:
-        """Typing/Card 成败都不能取代最终 SQLite Outbox。"""
+    async def test_feishu_completed_card_replaces_text_and_failure_falls_back(self) -> None:
+        """飞书成功卡片是唯一回复；卡片失败时才创建文本 Outbox。"""
         for index, fail_card in enumerate((False, True), start=1):
             with self.subTest(fail_card=fail_card):
                 service = TrackingTurnService(self.sessions, self.messages, self.turns)
@@ -529,8 +535,41 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
                         "WHERE reply_to_message_id = ? AND delivery_kind = 'message'",
                         (message_id,),
                     ).fetchone()
-                self.assertIsNotNone(delivery)
-                self.assertEqual(delivery["content"], "reply:hello")
+                if fail_card:
+                    self.assertIsNotNone(delivery)
+                    self.assertEqual(delivery["content"], "reply:hello")
+                else:
+                    self.assertIsNone(delivery)
+
+    async def test_feishu_card_overflow_replies_only_tail_to_card(self) -> None:
+        """卡片装不下时只把未展示后缀持久化，并回复机器人自己的卡片。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        transport = ManagerCapabilityTransport()
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+            max_visible_chars=10,
+        )
+        manager = self._manager(service, queue_size=2, worker_count=1)
+        manager.attach_experience(capabilities)
+
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_overflow", "hello-overflow"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        with self.database.connect_read_only() as connection:
+            deliveries = connection.execute(
+                "SELECT content, reply_to_message_id FROM deliveries "
+                "WHERE message_id IS NOT NULL ORDER BY part_index"
+            ).fetchall()
+        self.assertEqual(
+            [(row["content"], row["reply_to_message_id"]) for row in deliveries],
+            [("o-overflow", "om_manager_card")],
+        )
 
     async def test_approval_commands_bypass_agent_and_waiting_turn_creates_card(self) -> None:
         """控制命令不进模型；普通 Turn waiting 时创建 durable Approval card。"""
@@ -559,8 +598,15 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             self.turns,
             approval_id=7,
         )
+        waiting_transport = ManagerCapabilityTransport()
+        waiting_capabilities = ChannelCapabilities(
+            transport=waiting_transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
         waiting_manager = self._manager(waiting_service, queue_size=2, worker_count=1)
         waiting_manager.attach_approvals(controller)
+        waiting_manager.attach_experience(waiting_capabilities)
         await waiting_manager.start()
         try:
             await waiting_manager.receive(self._message("om_waiting", "write file"))
@@ -569,14 +615,17 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             await waiting_manager.stop()
 
         with self.database.connect_read_only() as connection:
-            card_delivery = connection.execute(
+            card_deliveries = connection.execute(
                 "SELECT * FROM deliveries WHERE reply_to_message_id = 'om_waiting'"
-            ).fetchone()
+            ).fetchall()
+        self.assertEqual(len(card_deliveries), 1)
+        card_delivery = card_deliveries[0]
         self.assertEqual(card_delivery["delivery_kind"], "approval")
         self.assertEqual(
             card_delivery["content"],
             approval_delivery_payload(controller.prompt(user_id=self.owner.id, approval_id=7)),
         )
+        self.assertEqual(waiting_transport.cards, [])
 
     async def test_approval_controller_failure_creates_safe_durable_notice(self) -> None:
         """控制层异常不能杀死 Worker，也不能让原始异常进入 SQLite。"""
@@ -636,6 +685,78 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         recovered = self.inbound.get(event.key)
         self.assertEqual(recovered.status, "failed")
         self.assertEqual(recovered.last_error_code, "channel_turn_interrupted")
+
+    async def test_restart_recovers_completed_turn_through_same_card(self) -> None:
+        """卡片成功后结算崩溃时，重启必须复用 UUID 完成同一卡片且不补发全文。"""
+        message = self._message("om_completed_restart", "hello")
+        event = self.inbound.record(message).event
+        claimed = self.inbound.claim(event.key)
+        session = self.sessions.get_or_create(
+            self.owner.id,
+            "feishu",
+            "default",
+            "oc_chat",
+        )
+        self.inbound.bind_session(claimed.key, session.id)
+        turn = self.turns.create_with_user_message(
+            session.id,
+            "om_completed_restart",
+            "fake-model",
+            "hello",
+        )
+        self.turns.mark_running(turn.id)
+        self.turns.complete_with_assistant_message(
+            turn.id,
+            session.id,
+            "reply:hello",
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req_restart",
+            iterations=1,
+            finish_reason="stop",
+        )
+        transport = ManagerCapabilityTransport()
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        first_manager = self._manager(service, queue_size=2, worker_count=1)
+        first_manager.attach_experience(capabilities)
+        recover_running = self.inbound.recover_running
+        interrupted = False
+
+        def interrupt_after_remote_card(key, status, error_code):
+            """首次 completed 结算前模拟进程中断，保留 running Inbox。"""
+            nonlocal interrupted
+            if status == "completed" and not interrupted:
+                interrupted = True
+                raise RuntimeError("simulated-process-stop")
+            return recover_running(key, status, error_code)
+
+        self.inbound.recover_running = interrupt_after_remote_card
+        with self.assertRaisesRegex(RuntimeError, "simulated-process-stop"):
+            await first_manager.start()
+        self.inbound.recover_running = recover_running
+
+        second_manager = self._manager(service, queue_size=2, worker_count=1)
+        second_manager.attach_experience(capabilities)
+        await second_manager.start()
+        try:
+            await second_manager.wait_idle(timeout=2)
+        finally:
+            await second_manager.stop()
+
+        self.assertEqual(service.calls, [])
+        self.assertEqual(len(transport.card_ids_by_key), 1)
+        self.assertEqual(self.inbound.get(event.key).status, "completed")
+        with self.database.connect_read_only() as connection:
+            message_deliveries = connection.execute(
+                "SELECT COUNT(*) FROM deliveries WHERE delivery_kind = 'message' "
+                "AND reply_to_message_id = 'om_completed_restart'"
+            ).fetchone()[0]
+        self.assertEqual(message_deliveries, 0)
 
     async def test_restart_recovers_waiting_approval_without_failing_parent(self) -> None:
         """崩溃发生在 waiting 持久化后时应补发审批卡，不能把 Parent Turn 判失败。"""

@@ -20,7 +20,8 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > 当前仓库已完成 **Phase 5 IMPLEMENTATION PASS**：裸 `miniclaw` 默认进入 pi-tui，Textual 作为 onboarding/fallback；
 > `miniclaw gateway` 可在一个 Python 进程内同时装配飞书 WebSocket、Telegram long polling 与 Discord Gateway，
 > 三个平台和 TUI 复用同一个 `AgentRuntime`、Provider、Memory、Skills、Policy、Approval 与 SQLite。
-> 消息先进入 SQLite Inbox，再由有界 Worker 处理；回复经 durable Outbox 分片、重试并使用稳定 UUID。Typing、
+> 消息先进入 SQLite Inbox，再由有界 Worker 处理；Telegram/Discord 与飞书文本 fallback 经 durable Outbox
+> 分片、重试并使用稳定 UUID。飞书正常回答由同一张 completed card 承载，避免卡片与文本重复。Typing、
 > 安全进度卡、Owner 审批卡片/文本 fallback、重启恢复、断线映射、脱敏 JSON 日志、durable Channel Audit
 > 和 22 项 Doctor 均已接线。每个平台拥有独立 Transport、DeliveryWorker、ChannelManager、queue 和故障状态；
 > 一个平台运行期 degraded 不会关闭其余平台。
@@ -40,7 +41,7 @@ CLI、飞书、Telegram 和 Discord，并实现工具调用、SQLite 会话、Ma
 > persistent compaction。Personal Profile 已接通 Home 普通文件只读、受控外部写入、NVM/uv/pnpm 等用户 CLI 的
 > 确定性发现和 `lark-cli --version` 离线纵切；`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning
 > probe。当前回归基线为
-> **519 Python tests + 30 TypeScript tests + 28/28 Agent cases + 32/32 Channel cases + 640/640 local soak**。
+> **530 Python tests + 30 TypeScript tests + 29/29 Agent cases + 32/32 Channel cases + 640/640 local soak**。
 > Feishu 的 15 条版本化真实场景、有界 Gateway Runner、只读 SQLite evidence、人工客户端 evidence 和 Secret scan
 > 已实现并通过本地契约门禁。专用企业应用、机器人、Scope、Owner allowlist 与 WebSocket 已完成真实配置；两条 Owner
 > 私聊已穿过 Inbox、Agent 和 Outbox，并各自一次 Delivery `sent`。当前准确状态是
@@ -100,6 +101,7 @@ uv run miniclaw doctor
 uv run miniclaw
 # 在 TUI 中输入：你好，请介绍你自己
 # 在 TUI 中输入：帮我看看我的电脑是什么配置
+# 在 TUI 中输入：帮我看看我最近更改的飞书文档是哪两个
 # 在 TUI 中输入：/permissions（查看当前权限模式）
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
@@ -124,7 +126,9 @@ uv run python -m miniclaw --version
 
 单个平台可只安装 `--extra feishu`、`--extra telegram` 或 `--extra discord`；`--extra channels` 一次安装三个 official SDK。
 `init` 只创建缺失的本地文件，重复运行不会覆盖 `USER.md`、`SOUL.md`、`MEMORY.md` 或已有 Skill；它会为新环境
-创建一个 `skills/summarize/SKILL.md` 示例。`doctor`
+创建 `skills/summarize/SKILL.md` 和 `skills/feishu-lark-cli/SKILL.md`。后者只负责教 Agent 把飞书业务
+Query 映射为 official `lark-cli` argv，实际执行仍经过通用 `run_command`、Policy 与 Approval。升级旧状态目录后应
+再运行一次 `miniclaw init`。`doctor`
 只执行离线检查，不连接模型或 IM 平台；Node/pi-tui 检查同样只读。裸 `miniclaw` 从当前目录的私密 `.env` 读取 Key，并要求真实
 TTY；pipe、CI 或 `TERM=dumb` 会明确失败。模型需要真实本机数据时可调用只读、脱敏的 `system_info`。新安装默认
 使用 `personal` Profile：`read_file`、`glob`、`grep` 可读取 Home 下普通文件以及存在的 Homebrew/Application 根，
@@ -264,7 +268,7 @@ miniclaw/
 | [Phase 2.3A exact-argv 命令执行](docs/engineering/phase-2/command-execution.md) | `run_command`、硬禁止、精确规则、最小环境、超时和 TUI 审批 |
 | [Phase 2.3B Personal Machine 权限与 CLI 发现](docs/engineering/phase-2/personal-machine-permissions.md) | Workspace/Personal Profile、多根读写、敏感路径、NVM/uv/pnpm CLI 发现、最小环境、Doctor 与回归场景 |
 | [Phase 2.4 Pinned HTTPS 与 SSRF 防护](docs/engineering/phase-2/https-get-and-ssrf.md) | `http_get`、URL/DNS 校验、固定 IP、TLS、重定向、响应预算与审批 |
-| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | Python + TypeScript tests、28+12 场景、crash recovery、Doctor 与发布手册 |
+| [Phase 2 回归、恢复与调试](docs/engineering/phase-2/testing-and-debugging.md) | Python + TypeScript tests、29+12 当前场景、crash recovery、Doctor 与发布手册 |
 | [Phase 3 Memory、Skills 与 Compaction](docs/engineering/phase-3/memory-skills-compaction.md) | Markdown 记忆、审批写入、Skill 惰性激活、持久化摘要、恢复和测试矩阵 |
 | [Phase 4 飞书生产 Channel](docs/engineering/phase-4/feishu-channel.md) | WebSocket、白名单、durable Inbox/Outbox、Worker、进度卡与跨 Channel 审批 |
 | [Phase 4 Channel/Gateway 概览](docs/engineering/phase-4/feishu-channel-core.md) | 模块地图、Admission、状态机、恢复和真实 E2E 边界 |
@@ -273,6 +277,7 @@ miniclaw/
 | [Phase 5 Telegram/Discord 工程落地](docs/engineering/phase-5/telegram-discord-channels.md) | 单 Runtime/多 Pipeline、两个 official Transport、身份、审批、恢复与故障隔离 |
 | [Phase 5.1 真实飞书 Bot 与 Live E2E](docs/engineering/phase-5/feishu-live-e2e.md) | 机器人创建、最小 Scope、同应用 Owner discovery、15 条真实用例、Evidence 与排障 |
 | [飞书 Gateway 运行时与 macOS 常驻](docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md) | SDK event loop、富文本入站、处理中表情、真实 Owner DM 证据与 launchd/VPS 运行方式 |
+| [Phase 5.2 飞书单卡片与 lark-cli Skill](docs/engineering/phase-5/feishu-single-card-and-lark-cli.md) | 12px 单卡片、超限后缀回复卡片、restart UUID 恢复、Approval 单卡片、direct lark-cli Skill 与 Provider 兼容 |
 | [Phase 5 测试与真实验收](docs/engineering/phase-5/testing-and-live-acceptance.md) | 32-case、640-check、15 项 live harness 与证据口径 |
 | [Phase 5 故障排查](docs/engineering/phase-5/troubleshooting.md) | SDK/Token、Telegram 409、Discord intents/403、限流、恢复与 Secret scan |
 | [Phase 5 完成性审计](docs/engineering/phase-5/completion-audit.md) | requirement → code → automated/live evidence 矩阵 |
@@ -284,6 +289,7 @@ miniclaw/
 | [Eval v0.4.1 发布记录](docs/evals/releases/v0.4.1.md) | Personal Machine 权限、412+27 tests、28+12 回归与本机 lark-cli 只读纵切 |
 | [Eval v0.5.0 发布记录](docs/evals/releases/v0.5.0.md) | Phase 5 合并基线的 483+27 tests、28+32 回归、640 soak 与双平台 LIVE PENDING |
 | [Eval v0.5.1 发布记录](docs/evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与当时 REAL BOT PENDING 的历史证据口径 |
+| [Eval v0.5.2 发布记录](docs/evals/releases/v0.5.2.md) | 530+30 tests、29+32 场景、飞书单卡片与 direct lark-cli Skill |
 | [AGENTS.md](AGENTS.md) | 仓库开发规范和完成检查 |
 
 ## License

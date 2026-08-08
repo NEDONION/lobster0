@@ -1,7 +1,7 @@
 # Phase 4：飞书生产 Channel 工程落地
 
 > 状态：代码与离线门禁已完成；真实企业应用验收待凭据
-> 基线：SQLite schema v2，Agent 回归 28/28，Channel 回归 12/12
+> 基线：SQLite schema v2，Agent 回归 29/29，Channel 回归 12/12
 > 入口：`miniclaw gateway`
 
 ## 1. 大白话说明
@@ -113,8 +113,10 @@ stateDiagram-v2
 
 ## 6. Outbox 与发送语义
 
-最终回答始终先持久化成普通 Markdown Delivery。进度卡只是 best-effort 视图，不是权威结果，所以卡片更新失败
-不会丢掉最终回复。
+最终回答始终持久化为 Assistant Message。飞书启用 streaming card 时，成功完成的卡片就是平台上的唯一最终回复；
+卡片创建或最终更新失败才创建普通 Markdown Delivery。Telegram/Discord 仍使用 durable final text。这避免飞书同时
+出现内容相同的卡片和文本，同时保留失败 fallback。飞书公开 delta 会等到 Turn 终态分类后再用于创建卡片；这样
+tool-call 响应即使先返回可见 content，waiting approval 也不会遗留额外的 preview card。
 
 ```mermaid
 stateDiagram-v2
@@ -151,11 +153,14 @@ flowchart TD
     E -->|"是"| W
     W --> F["Turn 结束"]
     X --> F
-    F --> O["Outbox 发送权威 Markdown"]
+    F --> K{"飞书卡片完成?"}
+    K -->|"是"| O["同一卡片作为最终回复"]
+    K -->|"否"| X["Outbox 发送文本 fallback"]
     F --> R["best-effort 移除 Typing"]
 ```
 
-若 Provider 在输出一部分后失败，已有卡片会标记为未完成；最终错误通过普通消息发送。
+若 Provider 在输出一部分后失败，已有卡片会标记为未完成；最终错误通过普通消息发送。Approval card 是独立的
+durable delivery，不会被单卡片策略跳过。
 
 ## 8. Approval 闭环
 
@@ -242,7 +247,7 @@ Chat ID、Message ID、正文、Secret、token、Tool 参数、SDK raw event、�
 
 1. 当前是单进程 SQLite 模式，不支持两个 Gateway 同时消费同一状态目录。
 2. 真实飞书权限、事件订阅和 20 轮对话必须在企业自建应用中人工验收，离线 fake SDK 不能证明它们。
-3. 进度卡只保证安全可见文本，最终 Markdown 才是 durable truth。
+3. SQLite Assistant Message 是内容事实；飞书 completed card 是正常回答的唯一平台终态，失败时由 durable text fallback 接管。
 4. SDK 无法确认的发送超时进入 `unknown`；系统选择“不重复轰炸”而非假装已送达。
 5. Telegram/Discord 等下一 Channel 必须复用 `channels/base.py`，不能复制 Agent Core。
 

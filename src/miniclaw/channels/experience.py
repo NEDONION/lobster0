@@ -48,11 +48,13 @@ class ChannelExperienceTransport(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class ExperienceOutcome:
-    """描述非权威体验能力的终态；最终 durable Delivery 始终需要。"""
+    """描述体验能力终态，以及平台是否仍需普通文本投递。"""
 
     progress_created: bool
     progress_failed: bool
     final_delivery_required: bool = True
+    final_delivery_offset: int = 0
+    final_reply_to_message_id: str | None = None
 
     @property
     def card_created(self) -> bool:
@@ -78,6 +80,7 @@ class ChannelExperience:
         *,
         transport: ChannelExperienceTransport,
         progress_enabled: bool,
+        progress_is_final: bool = False,
         update_interval: float = 0.5,
         max_visible_chars: int = 20_000,
         clock: Callable[[], float] | None = None,
@@ -86,6 +89,7 @@ class ChannelExperience:
         """绑定 Transport 和不能由平台输入放大的本地预算。"""
         if (
             not isinstance(progress_enabled, bool)
+            or not isinstance(progress_is_final, bool)
             or type(update_interval) not in {int, float}
             or update_interval <= 0
             or type(max_visible_chars) is not int
@@ -94,6 +98,7 @@ class ChannelExperience:
             raise ValueError("Channel experience limits must be positive")
         self._transport = transport
         self._progress_enabled = progress_enabled
+        self._progress_is_final = progress_is_final
         self._update_interval = float(update_interval)
         self._max_visible_chars = max_visible_chars
         self._clock = clock or time.monotonic
@@ -105,6 +110,7 @@ class ChannelExperience:
             transport=self._transport,
             event=event,
             progress_enabled=self._progress_enabled,
+            progress_is_final=self._progress_is_final,
             update_interval=self._update_interval,
             max_visible_chars=self._max_visible_chars,
             clock=self._clock,
@@ -121,6 +127,7 @@ class ExperienceActivity:
         transport: ChannelExperienceTransport,
         event: StoredInboundEvent,
         progress_enabled: bool,
+        progress_is_final: bool,
         update_interval: float,
         max_visible_chars: int,
         clock: Callable[[], float],
@@ -129,6 +136,7 @@ class ExperienceActivity:
         self._transport = transport
         self._event = event
         self._progress_enabled = progress_enabled
+        self._progress_is_final = progress_is_final
         self._update_interval = update_interval
         self._max_visible_chars = max_visible_chars
         self._clock = clock
@@ -139,6 +147,9 @@ class ExperienceActivity:
         self._last_rendered = ""
         self._last_update_at: float | None = None
         self._progress_failed = False
+        self._completed_final_progress = False
+        self._final_delivery_offset = 0
+        self._final_reply_to_message_id: str | None = None
         self._finished = False
         self.idempotency_key = _progress_idempotency_key(event)
 
@@ -162,6 +173,11 @@ class ExperienceActivity:
             text,
             self._max_visible_chars,
         )
+        # A final card is externally visible and cannot be atomically replaced by
+        # the durable Approval card.  Buffer preview text until the Turn outcome is
+        # known so a tool-call response with content never leaves two Feishu cards.
+        if self._progress_is_final:
+            return
         if not self._progress_enabled or self._progress_failed:
             return
         if self._progress_message_id is None:
@@ -181,11 +197,21 @@ class ExperienceActivity:
         content: str | None,
         failed: bool,
     ) -> ExperienceOutcome:
-        """幂等刷新终态 preview，并无条件 best-effort 清理 Typing。"""
+        """幂等刷新平台终态，并无条件 best-effort 清理 Typing。"""
         if self._finished:
             return self._outcome()
         self._finished = True
         try:
+            if (
+                self._progress_is_final
+                and self._progress_enabled
+                and self._progress_message_id is None
+                and not self._progress_failed
+                and not failed
+                and isinstance(content, str)
+            ):
+                self._visible_text = content[: self._max_visible_chars]
+                await self._create_progress()
             if self._progress_message_id is not None and not self._progress_failed:
                 final_text = (
                     self._visible_text
@@ -197,6 +223,18 @@ class ExperienceActivity:
                     incomplete=failed,
                     completed=not failed,
                 )
+                if (
+                    self._progress_is_final
+                    and not failed
+                    and not self._progress_failed
+                    and isinstance(content, str)
+                ):
+                    visible_length = min(len(content), self._max_visible_chars)
+                    self._final_delivery_offset = visible_length
+                    if visible_length < len(content):
+                        self._final_reply_to_message_id = self._progress_message_id
+                    else:
+                        self._completed_final_progress = True
         finally:
             try:
                 await self._transport.stop_typing(self._typing_token)
@@ -253,6 +291,9 @@ class ExperienceActivity:
         return ExperienceOutcome(
             progress_created=self._progress_message_id is not None,
             progress_failed=self._progress_failed,
+            final_delivery_required=not self._completed_final_progress,
+            final_delivery_offset=self._final_delivery_offset,
+            final_reply_to_message_id=self._final_reply_to_message_id,
         )
 
     def _observe_failure(self, capability: str, error: Exception) -> None:

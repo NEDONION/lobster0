@@ -317,7 +317,15 @@ async def _parse_json_response(
 
 
 def _merge_tool_fragments(value: object, tools: dict[int, _ToolAccumulator]) -> None:
-    """按 index 合并流式或完整响应中的 Tool Call 字段。"""
+    """按 index 合并流式或完整响应中的 Tool Call 字段。
+
+    Args:
+        value: 当前响应分片中的动态 ``tool_calls`` 值。
+        tools: 按调用序号保存的聚合器，函数会原地追加合法分片。
+
+    Raises:
+        ProviderProtocolError: Tool Call 结构、索引、名称或参数不符合兼容协议。
+    """
     if value is None:
         return
     if not isinstance(value, list):
@@ -331,8 +339,9 @@ def _merge_tool_fragments(value: object, tools: dict[int, _ToolAccumulator]) -> 
         if call.get("id") is not None:
             accumulator.call_id = _required_string(call.get("id"), "tool call id")
         function = _object(call.get("function"), "model provider tool function is invalid")
-        if function.get("name") is not None:
-            accumulator.name = _required_string(function.get("name"), "tool name")
+        name = function.get("name")
+        if name is not None and name != "":
+            accumulator.name = _required_string(name, "tool name")
         arguments = function.get("arguments")
         if arguments is not None:
             if isinstance(arguments, str):

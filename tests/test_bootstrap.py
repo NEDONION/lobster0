@@ -60,6 +60,7 @@ class BootstrapTest(unittest.TestCase):
                 self.paths.soul,
                 self.paths.user,
                 self.paths.memory_file,
+                self.paths.skills / "feishu-lark-cli/SKILL.md",
                 self.paths.skills / "summarize/SKILL.md",
             },
         )
@@ -67,6 +68,13 @@ class BootstrapTest(unittest.TestCase):
         self.assertTrue(self.paths.database.is_file())
         for path in result.created_files:
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+
+        feishu_skill = (
+            self.paths.skills / "feishu-lark-cli/SKILL.md"
+        ).read_text(encoding="utf-8")
+        self.assertIn("run_command", feishu_skill)
+        self.assertIn("lark-cli drive +search", feishu_skill)
+        self.assertNotIn("access_token", feishu_skill.casefold())
 
     def test_repeated_initialization_preserves_user_files_and_owner(self) -> None:
         """重复初始化不能覆盖 Markdown、重复迁移或插入第二个 Owner。"""

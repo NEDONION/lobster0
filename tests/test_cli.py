@@ -203,7 +203,10 @@ class CliTest(unittest.TestCase):
             self.assertEqual(paths.home, Path(directory).resolve())
 
         with tempfile.TemporaryDirectory() as directory:
-            with mock.patch("miniclaw.cli.run_gateway", side_effect=successful):
+            with (
+                mock.patch("miniclaw.cli.prepare_gateway_sdk_runtime"),
+                mock.patch("miniclaw.cli.run_gateway", side_effect=successful),
+            ):
                 exit_code, output, error = run_cli(["gateway", "--home", directory])
         self.assertEqual((exit_code, output, error), (0, "", ""))
 

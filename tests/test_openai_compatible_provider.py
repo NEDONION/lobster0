@@ -265,6 +265,61 @@ class OpenAICompatibleProviderTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.tool_calls[0].name, "system_info")
         self.assertEqual(response.tool_calls[0].arguments, {})
 
+    async def test_sse_ignores_empty_tool_name_continuation_fragment(self) -> None:
+        """已有合法 Tool 名后，兼容网关的空名称续传分片不应覆盖或拒绝它。"""
+        empty_name_continuation = sse(
+            {
+                "id": "chat_empty_name",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "id": "call_glob",
+                                    "type": "function",
+                                    "function": {"name": "glob", "arguments": '{"pattern":'},
+                                }
+                            ]
+                        },
+                        "finish_reason": None,
+                    }
+                ],
+            },
+            {
+                "id": "chat_empty_name",
+                "choices": [
+                    {
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [
+                                {
+                                    "index": 0,
+                                    "function": {"name": "", "arguments": '"*.py"}'},
+                                }
+                            ]
+                        },
+                        "finish_reason": "tool_calls",
+                    }
+                ],
+            },
+        )
+
+        async def respond(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text=empty_name_continuation,
+            )
+
+        provider = await self._provider(respond)
+
+        response = await provider.complete(simple_request())
+
+        self.assertEqual(response.tool_calls[0].name, "glob")
+        self.assertEqual(response.tool_calls[0].arguments, {"pattern": "*.py"})
+
     async def test_json_response_is_supported_without_stream_callback(self) -> None:
         """兼容端点忽略 stream 时仍应解析同一语义的非流式 JSON。"""
         async def respond(request: httpx.Request) -> httpx.Response:

@@ -92,8 +92,6 @@ class _LegacyFeishuExperienceTransport:
         incomplete: bool,
         completed: bool,
     ) -> SendReceipt:
-        if completed and not incomplete and self._progress_text.get(platform_message_id) == text:
-            return SendReceipt(platform_message_id)
         receipt = await self._transport.update_card(
             platform_message_id,
             _progress_card(text, incomplete=incomplete, completed=completed),
@@ -140,6 +138,7 @@ class ChannelCapabilities:
         self._experience = ChannelExperience(
             transport=adapter,
             progress_enabled=streaming_card,
+            progress_is_final=True,
             update_interval=update_interval,
             max_visible_chars=max_visible_chars,
             clock=clock,
@@ -173,5 +172,13 @@ def _progress_card(
             "title": {"tag": "plain_text", "content": title},
             "template": template,
         },
-        "body": {"elements": [{"tag": "markdown", "content": visible}]},
+        "body": {
+            "elements": [
+                {
+                    "tag": "markdown",
+                    "content": visible,
+                    "text_size": "small",
+                }
+            ]
+        },
     }

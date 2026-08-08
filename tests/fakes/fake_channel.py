@@ -116,6 +116,7 @@ class FakeOfficialChannel:
         self.disconnected = False
         self.connect_until_ready_called = False
         self.legacy_connect_called = False
+        self.connect_calls: list[str] = []
 
     def on(self, name: str, handler: Any):
         """注册事件 handler 并返回 unsubscribe。"""
@@ -129,11 +130,13 @@ class FakeOfficialChannel:
     async def connect(self) -> None:
         """记录不适合长连接 Gateway 的旧前台接口。"""
         self.legacy_connect_called = True
+        self.connect_calls.append("connect")
         self.connected = True
 
     async def connect_until_ready(self) -> None:
         """模拟 WebSocket 就绪后立即返回的后台接口。"""
         self.connect_until_ready_called = True
+        self.connect_calls.append("connect_until_ready")
         self.connected = True
 
     async def disconnect(self) -> None:
