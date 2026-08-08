@@ -3,10 +3,12 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
 from miniclaw.config import AppConfig
+from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import StatePaths
 from miniclaw.policy.command import normalize_command
 from miniclaw.policy.engine import PolicyEngine
@@ -25,6 +27,7 @@ from miniclaw.tools.base import ToolDefinition
 from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
+from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
@@ -50,7 +53,7 @@ class AgentRuntime:
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
-    """按已校验配置装配当前八个内置 Tool 和唯一 TurnService。"""
+    """按已校验配置装配当前十个内置 Tool 和唯一 TurnService。"""
     database = Database(paths.database)
     apply_migrations(database)
     owner = OwnerRepository(database).get_or_create()
@@ -63,6 +66,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     )
     approvals = ApprovalRepository(database)
     rules = PolicyRuleRepository(database)
+    messages = MessageRepository(database)
     configured_command_rules = tuple(
         normalize_command(rule.program, rule.args, config.workspace.path)
         for rule in config.tools.run_command.allow_commands
@@ -76,6 +80,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     network_rules = tuple(
         dict.fromkeys((*configured_network_rules, *rules.network_rules(owner.id)))
     )
+    memory = MemoryStore(paths)
     available_tools = (
         SystemInfoTool(),
         ReadFileTool(),
@@ -92,6 +97,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             timeout_seconds=config.tools.run_command.timeout_seconds,
             max_timeout_seconds=config.tools.run_command.max_timeout_seconds,
         ),
+        ReadMemoryTool(memory),
+        ProposeMemoryTool(memory),
     )
     tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
@@ -113,15 +120,25 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     service = TurnService(
         model=config.agent.model,
         sessions=SessionRepository(database),
-        messages=MessageRepository(database),
+        messages=messages,
         turns=TurnRepository(database),
-        context=ContextBuilder(paths),
+        context=ContextBuilder(
+            paths,
+            memory,
+            context_budget_tokens=config.agent.context_budget_tokens,
+        ),
         runner=AgentRunner(
             provider,
             executor,
             max_iterations=config.agent.max_tool_iterations,
         ),
         approvals=approvals,
+        compactor=ContextCompactor(
+            messages,
+            provider,
+            model=config.agent.model,
+            context_budget_tokens=config.agent.context_budget_tokens,
+        ),
         state_home=paths.home,
         workspace=config.workspace,
     )

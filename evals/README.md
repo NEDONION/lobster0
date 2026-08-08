@@ -1,6 +1,6 @@
 # MiniClaw Agent 回归场景集
 
-Active offline gate: 21 cases
+Active offline gate: 24 cases
 
 这里保存随代码版本化的 Claw-like 使用场景。它回答两个问题：
 
@@ -21,6 +21,8 @@ Active offline gate: 21 cases
 | 审批完整性 | `APPROVAL-HASH-001`、`APPROVAL-REPLAY-001` |
 | 受控命令 | `COMMAND-APPROVE-001`、`COMMAND-FORBID-001` |
 | HTTPS / SSRF | `HTTP-APPROVAL-001`、`HTTP-PRIVATE-001` |
+| Memory | `MEMORY-READ-001`、`MEMORY-PROPOSE-001` |
+| Skills | `SKILL-ACTIVATE-001` |
 
 所有 active offline case 必须 100% PASS。任何 skipped 都按失败处理。
 

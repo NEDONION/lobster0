@@ -1,7 +1,7 @@
 # Phase 2：单入口 TUI（pi-tui 默认，Textual fallback）
 
 > 状态：pi-tui 已成为裸 miniclaw 默认展示层；Textual 暂作首次 onboarding 和运行时 fallback。
-> 当前全仓通过 295 项 Python、25 项 TypeScript 测试与 21/21 离线 Agent 场景。
+> 当前全仓通过 318 项 Python、25 项 TypeScript 测试与 24/24 离线 Agent 场景。
 > 本文第 3–11 节保留 Textual fallback 的实现记录；当前跨语言架构见
 > [Python Core + pi-tui Bridge 工程文档](python-core-pi-tui-bridge.md)。
 
@@ -87,7 +87,7 @@ flowchart LR
 | 文件 | 责任 |
 | --- | --- |
 | `src/miniclaw/cli.py` | 解析裸入口与维护命令；做 TTY guard；不装配 Agent |
-| `src/miniclaw/runtime.py` | 唯一装配 Owner、Provider、TurnService、Policy、Approval 和八个 Tool |
+| `src/miniclaw/runtime.py` | 唯一装配 Owner、Provider、TurnService、Policy、Approval、Memory/Skills/Compaction 和十个 Tool |
 | `src/miniclaw/agent/events.py` | 定义进程内 `RunEvent` 与安全交付函数 |
 | `src/miniclaw/agent/turn.py` | 在 SQLite 状态迁移后发 Turn 事件，并负责审批 continuation |
 | `src/miniclaw/agent/runner.py` | 发模型增量、Provider reasoning 与带原始参数的 Tool requested 事件 |
@@ -110,10 +110,11 @@ flowchart TB
     RUNTIME --> CLOSE["aclose provider"]
 ```
 
-当前注册的八个 Tool 按名称稳定暴露：
+当前注册的十个 Tool 按名称稳定暴露：
 
 ```text
-edit_file, glob, grep, http_get, read_file, run_command, system_info, write_file
+edit_file, glob, grep, http_get, propose_memory, read_file, read_memory,
+run_command, system_info, write_file
 ```
 
 `run_command` 与 `http_get` 都由同一个 Runtime 接入监督 Policy 与 TUI 审批；后者额外执行 SSRF、DNS pin、
@@ -316,7 +317,7 @@ flowchart TD
 | 层 | 主要断言 |
 | --- | --- |
 | CLI | 裸入口、`--home`、TTY guard、旧入口不存在、init/doctor/eval 保留 |
-| Runtime | 八个 Tool、Owner、model、workspace、Provider 生命周期 |
+| Runtime | 十个 Tool、Owner、model、workspace、Memory/Skills/Compaction、Provider 生命周期 |
 | Event | 精确一次交付、异常脱敏、取消传播、持久化后顺序 |
 | TUI shell | 80x24 布局、唯一 Composer、默认焦点、终端控制字符过滤 |
 | Interaction | Enter、Shift+Enter、exclusive Worker、Esc 取消、焦点恢复 |
@@ -326,8 +327,8 @@ flowchart TD
 | Reliability | 250,000 字符 bracketed paste 失败/取消逐字恢复、Runtime 缺失不丢输入 |
 | Language | 默认中文、`/lang zh|en`、按最新 User 消息选择中英文 System Prompt |
 | Telemetry | 真实 usage、N/A、Provider Request ID、Tool/迭代/耗时 |
-| Full suite | 295/295 Python + 25/25 TypeScript tests + Ruff + diff check |
-| Agent gate | 21/21 active offline Claw-like cases |
+| Full suite | 318/318 Python + 25/25 TypeScript tests + Ruff + diff check |
+| Agent gate | 24/24 active offline Claw-like cases |
 
 运行命令：
 

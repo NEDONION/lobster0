@@ -659,7 +659,7 @@ Tool Message 恢复 `tool_call_id`。如果 metadata 缺字段、类型错误，
 
 代码位置：`src/miniclaw/cli.py`
 
-P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册八个 Tool：
+P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册十个 Tool：
 
 ```python
 registry = ToolRegistry((SystemInfoTool(),))

@@ -227,9 +227,11 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
                 "core",
                 "error",
                 "network",
+                "memory",
                 "provider",
                 "safety",
                 "state",
+                "skills",
                 "tools",
             },
         )

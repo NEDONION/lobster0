@@ -22,6 +22,8 @@ BUILTIN_TOOL_NAMES = (
     "grep",
     "http_get",
     "run_command",
+    "read_memory",
+    "propose_memory",
 )
 
 _TOP_LEVEL_KEYS = frozenset({"agent", "provider", "workspace", "tools", "ui"})

@@ -264,7 +264,7 @@ uv run miniclaw
 | 文本搜索 | `test_search_tools.py` 的 `GrepToolTest` | 正则、摘要、排序、1 MiB/200 候选/20 MiB 上限、失败候选计数、fd race 与 symlink 去重。 |
 | 统一入口 | `test_tool_executor.py` | Guard 拒绝只写脱敏 `tool.denied`、无 ToolRun；合法读取才创建 running/terminal ToolRun。 |
 | Runtime 装配 | `test_turn.py`、`test_cli_chat.py` | `read_file` 与全部四个 Schema 进入 Agent Runtime，Tool Message、ToolRun 和 Audit 完整保存。 |
-| Agent 场景 | `test_eval_cases.py`、`test_eval_runner.py`、`test_cli_eval.py` | 版本化 query 经真实 Agent/Policy/Tool/SQLite，21/21 active cases PASS。 |
+| Agent 场景 | `test_eval_cases.py`、`test_eval_runner.py`、`test_cli_eval.py` | 版本化 query 经真实 Agent/Policy/Tool/SQLite，当前 24/24 active cases PASS。 |
 | 全仓回归 | `unittest discover` 与 Ruff | P2.1B exit gate 为 153 tests；当前 P2.1C 基线为 **177 tests**，另运行 `uv run ruff check .`。 |
 
 ## 10. 常见报错怎么理解
