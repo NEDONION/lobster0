@@ -78,6 +78,8 @@ flowchart LR
 - 每个 `ExperienceActivity` 私有持有一个 `ProgressProjector`。
 - 结构事件可以触发卡片创建或合并更新；普通文本 delta 仍受节流。
 - Transport 接收 `AgentProgress`，不再只接收一个失去语义的字符串。
+- Transport 通过 `ProgressReceipt.visible_answer_chars` 回报平台实际展示的最终答案字符数；飞书按卡片
+  字节预算精确回报，Telegram/Discord 返回 0 并继续使用独立最终文本。
 
 修改 `storage/conversations.py`：
 
@@ -173,8 +175,9 @@ Autopilot 路径不会触发它。
    idempotency key，不创建第二张回答卡。
 6. Card 创建或更新失败时，现有 durable Markdown Delivery 继续兜底；体验层异常不影响 Tool 与 Turn 结果。
 
-卡片 payload 预算为 20 KiB；snapshot metadata 预算为 16 KiB；步骤 16 条；每个参数/结果摘要 240 字符；
-所有预算由本地常量控制，平台输入和模型不能放大。
+卡片 payload 预算为 20 KiB；snapshot metadata 预算为 16 KiB；步骤 16 条；每个参数/结果摘要 240 字符。
+Renderer 先移除最旧可选详情，再在 Unicode 字符边界截断最终答案，并返回精确可见字符数；Experience
+据此创建无重叠、无缺口的后缀 Delivery。所有预算由本地常量控制，平台输入和模型不能放大。
 
 ## 9. 错误与隐私行为
 
