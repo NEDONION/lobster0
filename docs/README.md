@@ -144,7 +144,7 @@
 | [Eval v0.5.1](evals/releases/v0.5.1.md) | Feishu Live Runner、508-test gate 与当时 REAL BOT PENDING 的历史证据 |
 | [Eval v0.5.2](evals/releases/v0.5.2.md) | 530+30 tests、29+32 场景、飞书单卡片与 direct lark-cli Skill |
 | [Eval v0.5.3 Core](evals/releases/v0.5.3.md) | 562+30 tests、SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner；严格双平台 Live Pending |
-| [Eval v0.6.0](evals/releases/v0.6.0.md) | 651+35 tests、39+32 场景、Memory Autopilot A～E 与恢复矩阵 |
+| [Eval v0.6.0](evals/releases/v0.6.0.md) | 666+35 tests、39+32 场景、Memory Autopilot A～E 与恢复矩阵 |
 | [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md) | 对 OpenClaw/ZeroClaw/nanobot/RayClaw/Claw Bench/OpenJarvis 的方法映射 |
 | [R1/R2 实施计划](superpowers/plans/2026-08-08-agent-regression-benchmark.md) | TDD 任务、文件、命令与完成定义 |
 

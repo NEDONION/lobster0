@@ -23,6 +23,7 @@ from miniclaw.channels.observability import ChannelObserver
 from miniclaw.channels.progress import ProgressProjector, progress_to_metadata
 from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.policy.modes import PermissionMode, PermissionState
+from miniclaw.providers.base import ProviderProtocolError
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
@@ -46,6 +47,7 @@ class TrackingTurnService:
     messages: MessageRepository
     turns: TurnRepository
     fail: bool = False
+    failure: Exception | None = None
     gate: asyncio.Event | None = None
     expected_concurrency: int = 0
     approval_id: int | None = None
@@ -109,9 +111,15 @@ class TrackingTurnService:
                         {"text": "partial" if self.fail else f"reply:{text}"},
                     )
                 )
-            if self.fail:
-                self.turns.fail(turn.id, "provider_server_error", "safe failure")
-                raise RuntimeError("secret-provider-detail")
+            if self.fail or self.failure is not None:
+                error = self.failure or RuntimeError("secret-provider-detail")
+                error_code = (
+                    "provider_protocol"
+                    if isinstance(error, ProviderProtocolError)
+                    else "provider_server_error"
+                )
+                self.turns.fail(turn.id, error_code, "safe failure")
+                raise error
             if self.approval_id is not None:
                 self.turns.wait_for_approval(
                     turn.id,
@@ -585,6 +593,86 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("MiniClaw · 执行中", repr(transport.cards[0]))
         self.assertIn("MiniClaw · 未完成", repr(transport.cards[-1]))
         self.assertIn("处理失败", repr(transport.cards[-1]))
+
+    async def test_provider_protocol_failure_has_actionable_redacted_card(self) -> None:
+        """模型 Tool JSON 不合法时应在原卡给出具体安全提示，不回显协议细节。"""
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            failure=ProviderProtocolError("private malformed tool detail"),
+        )
+        transport = ManagerCapabilityTransport()
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
+        manager = self._manager(
+            service,
+            queue_size=2,
+            worker_count=1,
+            observer=ChannelObserver(self.database),
+        )
+        manager.attach_experience(capabilities)
+
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_protocol_failure", "create doc"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        final = repr(transport.cards[-1])
+        self.assertIn("失败阶段", final)
+        self.assertIn("模型响应校验", final)
+        self.assertIn("provider_protocol", final)
+        self.assertIn("工具参数格式错误", final)
+        self.assertIn("已安全停止", final)
+        self.assertIn("Turn #", final)
+        self.assertIn("0 个 Tool", final)
+        self.assertNotIn("private malformed tool detail", final)
+
+    async def test_cancelled_turn_finishes_same_card_with_debug_diagnostics(self) -> None:
+        """Gateway 停止取消活动 Turn 时，原卡必须展示稳定中断诊断而不是空红卡。"""
+        gate = asyncio.Event()
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            gate=gate,
+            expected_concurrency=1,
+        )
+        transport = ManagerCapabilityTransport()
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
+        observer = ChannelObserver(self.database)
+        manager = self._manager(
+            service,
+            queue_size=2,
+            worker_count=1,
+            observer=observer,
+        )
+        manager.attach_experience(capabilities)
+
+        await manager.start()
+        await manager.receive(self._message("om_interrupted", "long task"))
+        await asyncio.wait_for(service.reached_concurrency.wait(), timeout=1)
+        await manager.stop(drain_timeout=0.01)
+
+        final = repr(transport.cards[-1])
+        self.assertIn("MiniClaw · 未完成", final)
+        self.assertIn("失败阶段", final)
+        self.assertIn("Gateway 运行期", final)
+        self.assertIn("channel_turn_interrupted", final)
+        self.assertIn("Gateway 已停止或重启", final)
+        self.assertIn("Turn #", final)
+        self.assertIn("0 个 Tool", final)
+        self.assertIn("未发生 Tool 副作用", final)
+        self.assertIn("重新发送", final)
 
     async def test_feishu_card_overflow_replies_only_tail_to_card(self) -> None:
         """卡片装不下时只把未展示后缀持久化，并回复机器人自己的卡片。"""

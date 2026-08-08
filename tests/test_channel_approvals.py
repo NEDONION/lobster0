@@ -13,6 +13,7 @@ from miniclaw.channels.approvals import (
     ChannelApprovalController,
     approval_delivery_payload,
     feishu_approval_prompt,
+    feishu_approval_status_card,
     parse_approval_delivery_payload,
     text_approval_prompt,
 )
@@ -194,10 +195,28 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(outcome.handled)
         self.assertIn("已经处理", outcome.notice or "")
+        self.assertIs(outcome.decision, ApprovalDecision.ONCE)
         self.assertNotIn("private database detail", outcome.notice or "")
         self.assertTrue(malformed.handled)
         self.assertIn("无法识别", malformed.notice or "")
         self.assertEqual(len(service.calls), 1)
+
+    def test_status_cards_are_bounded_terminal_and_have_no_actions(self) -> None:
+        """审批状态卡必须有界，终态按结果着色且不能残留可重复点击按钮。"""
+        cases = (
+            ("processing", "orange", "处理中"),
+            ("succeeded", "green", "已完成"),
+            ("denied", "red", "已拒绝"),
+            ("failed", "red", "处理失败"),
+        )
+        for state, template, title in cases:
+            with self.subTest(state=state):
+                card = feishu_approval_status_card(state, "x" * 5_000)
+                rendered = json.dumps(card, ensure_ascii=False)
+                self.assertEqual(card["header"]["template"], template)
+                self.assertIn(title, card["header"]["title"]["content"])
+                self.assertNotIn('"tag": "action"', rendered)
+                self.assertLessEqual(len(card["elements"][0]["content"]), 2_000)
 
 
 class ApprovalEnvelopeV2Test(unittest.TestCase):

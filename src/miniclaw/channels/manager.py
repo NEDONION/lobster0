@@ -22,7 +22,14 @@ from miniclaw.channels.observability import ChannelObserver
 from miniclaw.channels.progress import progress_from_metadata, progress_to_metadata
 from miniclaw.memory.models import ConversationKind
 from miniclaw.policy.modes import PermissionMode, PermissionState
-from miniclaw.providers.base import StreamHandler
+from miniclaw.providers.base import (
+    ProviderAuthenticationError,
+    ProviderProtocolError,
+    ProviderRateLimitError,
+    ProviderServerError,
+    ProviderTimeoutError,
+    StreamHandler,
+)
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     ChannelStateError,
@@ -348,8 +355,16 @@ class ChannelManager:
                         on_event=None if activity is None else activity.on_event,
                     )
                 except asyncio.CancelledError:
+                    failure_notice = self._failure_diagnostics(
+                        session_id=session.id,
+                        event=event,
+                        fallback_error_code="channel_turn_interrupted",
+                        stage="Gateway 运行期",
+                        reason="Gateway 已停止或重启，当前任务已安全取消。",
+                        suggestion="等待 Gateway 恢复 ready 后重新发送任务。",
+                    )
                     if activity is not None:
-                        await activity.finish(content=None, failed=True)
+                        await activity.finish(content=failure_notice, failed=True)
                     self._fail_running_event(event.key, "channel_turn_interrupted")
                     self._observe_turn(
                         event,
@@ -360,15 +375,27 @@ class ChannelManager:
                     )
                     raise
                 except Exception:
+                    failure_notice = self._failure_diagnostics(
+                        session_id=session.id,
+                        event=event,
+                        fallback_error_code="channel_control_failed",
+                        stage="审批控制",
+                        reason="审批控制处理失败，已安全停止。",
+                        suggestion="请重新发送审批指令；若 Tool 已执行，系统不会自动重试。",
+                    )
                     final_delivery_required = True
                     if activity is not None:
                         outcome = await activity.finish(
-                            content=_FAILURE_NOTICE,
+                            content=failure_notice,
                             failed=True,
                         )
                         final_delivery_required = outcome.final_delivery_required
                     if final_delivery_required:
-                        self._create_failure_delivery(session.id, event)
+                        self._create_failure_delivery(
+                            session.id,
+                            event,
+                            content=failure_notice,
+                        )
                     self._inbound.mark_failed(event.key, "channel_control_failed")
                     self._observe_turn(
                         event,
@@ -438,8 +465,16 @@ class ChannelManager:
                     identity_verified=self._verified_owner(event),
                 )
             except asyncio.CancelledError:
+                failure_notice = self._failure_diagnostics(
+                    session_id=session.id,
+                    event=event,
+                    fallback_error_code="channel_turn_interrupted",
+                    stage="Gateway 运行期",
+                    reason="Gateway 已停止或重启，当前任务已安全取消。",
+                    suggestion="等待 Gateway 恢复 ready 后重新发送任务。",
+                )
                 if activity is not None:
-                    await activity.finish(content=None, failed=True)
+                    await activity.finish(content=failure_notice, failed=True)
                 self._fail_running_event(event.key, "channel_turn_interrupted")
                 self._observe_turn(
                     event,
@@ -449,16 +484,29 @@ class ChannelManager:
                     error_code="channel_turn_interrupted",
                 )
                 raise
-            except Exception:
+            except Exception as error:
+                stage, reason, suggestion = _failure_profile(error)
+                failure_notice = self._failure_diagnostics(
+                    session_id=session.id,
+                    event=event,
+                    fallback_error_code=_failure_error_code(error),
+                    stage=stage,
+                    reason=reason,
+                    suggestion=suggestion,
+                )
                 final_delivery_required = True
                 if activity is not None:
                     outcome = await activity.finish(
-                        content=_FAILURE_NOTICE,
+                        content=failure_notice,
                         failed=True,
                     )
                     final_delivery_required = outcome.final_delivery_required
                 if final_delivery_required:
-                    self._create_failure_delivery(session.id, event)
+                    self._create_failure_delivery(
+                        session.id,
+                        event,
+                        content=failure_notice,
+                    )
                 self._inbound.mark_failed(event.key, "channel_turn_failed")
                 self._observe_turn(
                     event,
@@ -666,9 +714,15 @@ class ChannelManager:
             ),
         )
 
-    def _create_failure_delivery(self, session_id: int, event: StoredInboundEvent) -> None:
+    def _create_failure_delivery(
+        self,
+        session_id: int,
+        event: StoredInboundEvent,
+        *,
+        content: str = _FAILURE_NOTICE,
+    ) -> None:
         """把任意内部失败压缩为固定、可投递且不含异常正文的提示。"""
-        notice = self._messages.create_channel_notice(session_id, _FAILURE_NOTICE)
+        notice = self._messages.create_channel_notice(session_id, content)
         self._deliveries.create_parts(
             message_id=notice.id,
             channel=event.key.channel,
@@ -681,6 +735,61 @@ class ChannelManager:
                 max_chars=self._message_max_chars,
                 preserve_code_fences=self._channel == "telegram",
             ),
+        )
+
+    def _failure_diagnostics(
+        self,
+        *,
+        session_id: int,
+        event: StoredInboundEvent,
+        fallback_error_code: str,
+        stage: str,
+        reason: str,
+        suggestion: str,
+    ) -> str:
+        """生成不包含异常正文的有界失败诊断，并关联内部 Turn 与 ToolRun。"""
+        turn_id: int | None = None
+        persisted_error_code: str | None = None
+        try:
+            turn = self._turns.get_by_inbound(
+                session_id,
+                event.external_message_id,
+            )
+            turn_id = turn.id
+            persisted_error_code = turn.error_code
+        except ConversationStateError:
+            pass
+        error_code = _safe_error_code(persisted_error_code, fallback_error_code)
+        tool_count: int | None = None
+        if self._observer is not None and turn_id is not None:
+            try:
+                tool_count = self._observer.tool_count(turn_id)
+            except Exception:
+                tool_count = None
+        if tool_count == 0:
+            tool_status = "0 个 Tool，未发生 Tool 副作用。"
+        elif tool_count is None:
+            tool_status = "暂时无法读取；请检查 ToolRun 审计记录确认是否有副作用。"
+        else:
+            tool_status = (
+                f"已请求 {tool_count} 个 Tool；系统不会自动重试，"
+                "请检查 ToolRun 确认副作用。"
+            )
+        references: list[str] = []
+        if turn_id is not None:
+            references.append(f"Turn #{turn_id}")
+        if event.storage_rowid > 0:
+            references.append(f"Event #{event.storage_rowid}")
+        debug_reference = " · ".join(references) or "未生成内部编号"
+        return "\n".join(
+            (
+                f"- 失败阶段：{stage}",
+                f"- 错误码：`{error_code}`",
+                f"- 原因：{reason}",
+                f"- 调试编号：{debug_reference}",
+                f"- Tool 状态：{tool_status}",
+                f"- 下一步：{suggestion}",
+            )
         )
 
     async def _recover_stale(self) -> None:
@@ -872,3 +981,53 @@ class ChannelManager:
                 entry.users -= 1
                 if entry.users == 0:
                     self._locks.pop(conversation_id, None)
+
+
+def _failure_profile(error: Exception) -> tuple[str, str, str]:
+    """把异常类型映射为安全失败阶段、原因和行动建议。"""
+    if isinstance(error, ProviderProtocolError):
+        return (
+            "模型响应校验",
+            "模型生成的工具参数格式错误，已安全停止。",
+            "请重试，或把任务拆成较短的步骤。",
+        )
+    if isinstance(error, ProviderTimeoutError):
+        return "模型请求", "模型服务响应超时。", "请稍后重试。"
+    if isinstance(error, ProviderRateLimitError):
+        return "模型请求", "模型服务当前限流。", "请稍后重试。"
+    if isinstance(error, ProviderAuthenticationError):
+        return "模型请求", "模型服务认证失败。", "请检查本机 API Key 配置。"
+    if isinstance(error, ProviderServerError):
+        return "模型请求", "模型服务暂时不可用。", "请稍后重试。"
+    return "Agent 执行", "消息处理失败，已安全停止。", "请稍后重试。"
+
+
+def _failure_error_code(error: Exception) -> str:
+    """把公开异常类型映射为稳定错误码，未知异常使用 Channel 兜底码。"""
+    mappings = (
+        (ProviderAuthenticationError, "provider_authentication"),
+        (ProviderRateLimitError, "provider_rate_limit"),
+        (ProviderTimeoutError, "provider_timeout"),
+        (ProviderProtocolError, "provider_protocol"),
+        (ProviderServerError, "provider_server"),
+    )
+    for error_type, error_code in mappings:
+        if isinstance(error, error_type):
+            return error_code
+    return "channel_turn_failed"
+
+
+def _safe_error_code(value: str | None, fallback: str) -> str:
+    """只接受小写 ASCII 稳定码，非法持久值退回调用方给定安全码。"""
+    if (
+        isinstance(value, str)
+        and 0 < len(value) <= 64
+        and all(
+            character == "_"
+            or "a" <= character <= "z"
+            or "0" <= character <= "9"
+            for character in value
+        )
+    ):
+        return value
+    return fallback

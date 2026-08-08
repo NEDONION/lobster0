@@ -78,7 +78,7 @@ class Phase5DocumentationTest(unittest.TestCase):
         release = (PROJECT_ROOT / "docs/evals/releases/v0.6.0.md").read_text(
             encoding="utf-8"
         )
-        for fact in ("651/651", "35/35", "39/39", "MEM-AUTO-001", "MEM-AUTO-010"):
+        for fact in ("666/666", "35/35", "39/39", "MEM-AUTO-001", "MEM-AUTO-010"):
             self.assertIn(fact, release)
 
     def test_openclaw_hermes_gap_and_phase_plans_are_linked_as_planned(self) -> None:

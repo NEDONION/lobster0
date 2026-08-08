@@ -1,7 +1,6 @@
 """Tool 参数校验、Policy、执行和持久化的唯一入口。"""
 
 import asyncio
-import json
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -341,16 +340,14 @@ def _elapsed_ms(started: float) -> int:
 
 
 def _approval_summary(tool_name: str, arguments: dict[str, JsonValue]) -> str:
-    """文件隐藏内容；命令使用无歧义 JSON argv 供 Owner 确认。"""
+    """生成有界审批摘要，隐藏正文、凭据、路径和完整命令参数。"""
     if tool_name == "run_command":
         program = arguments.get("program")
         args = arguments.get("args")
         if isinstance(program, str) and isinstance(args, list):
-            return "run_command " + json.dumps(
-                [program, *args],
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
+            program_label = Path(program).name or "command"
+            suffix = "arg" if len(args) == 1 else "args"
+            return f"run_command {program_label} · {len(args)} {suffix}"
     if tool_name == "http_get":
         url = arguments.get("url")
         if isinstance(url, str):

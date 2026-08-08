@@ -227,7 +227,8 @@ ls -l .env
 - `empty final response`：模型没有文本和 Tool Call；
 - `iteration limit`：工具循环超过配置上限。
 
-Provider 对 429、5xx、timeout、transport 在未输出可见文本时已经重试一次，不应在 CLI 内再套无上限重试。
+Provider 对 429、5xx、timeout、transport 和 2xx 协议解析失败在未输出可见文本时已经重试一次，不应在 CLI 内再套
+无上限重试。若错误是 `tool arguments are invalid JSON`，系统不会猜测补齐参数；第二次仍失败时应缩短或拆分任务。
 
 ### 9.4 exit 5
 

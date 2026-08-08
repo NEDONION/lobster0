@@ -229,7 +229,7 @@ stateDiagram-v2
     [*] --> Attempt1
     Attempt1 --> Success: 2xx + valid response
     Attempt1 --> Fail: 401 / 403 / 4xx protocol
-    Attempt1 --> Attempt2: 429 / 5xx / timeout / transport\n且尚未回调可见文本
+    Attempt1 --> Attempt2: 429 / 5xx / timeout / transport / 2xx parse\n且尚未回调可见文本
     Attempt1 --> Fail: 已回调文本后流中断
     Attempt2 --> Success: 2xx + valid response
     Attempt2 --> Fail: 任意失败
@@ -245,7 +245,7 @@ stateDiagram-v2
 | HTTPX timeout | 等待后重试 | 超时错误 |
 | HTTPX transport | 等待后重试 | 服务端连接错误 |
 | 其他 4xx | 协议错误 | 不重试 |
-| JSON/SSE 解析 | 协议错误 | 不重试 |
+| 2xx JSON/SSE/Tool arguments 解析 | 等待后重试 | 协议错误 |
 
 ### 9.1 Retry-After
 
@@ -260,10 +260,13 @@ HTTP-date 暂不解析，值非法时走 0.5 秒后备。
 
 ### 9.2 可见增量后的失败
 
-如果 `on_text` 已成功接收任一 delta，读超时或连接中断不再重试。原因是第二次请求会重新生成完整前缀，
+如果 `on_text` 已成功接收任一 delta，读超时、连接中断或协议解析失败不再重试。原因是第二次请求会重新生成完整前缀，
 Channel 无法可靠识别并消除重复文本。Provider 返回稳定错误，由未来 Delivery 层决定如何标记不完整流。
 
 CLI Phase 1 不传流回调，因此尚未产生可见增量的请求仍可安全重试一次。
+
+2xx 响应中的畸形 Tool arguments 只触发重新请求，不会被本地 JSON repair 猜测补齐。这样可以提高兼容模型偶发截断时的
+成功率，同时保持“只有完整 JSON object 才能进入 AgentRunner”的安全边界。
 
 ## 10. 错误与脱敏
 

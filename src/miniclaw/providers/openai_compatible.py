@@ -117,7 +117,12 @@ class OpenAICompatibleProvider:
                     if _status_error(response, attempt):
                         delay = _retry_delay(response)
                     else:
-                        return await _parse_response(response, stream_handler)
+                        try:
+                            return await _parse_response(response, stream_handler)
+                        except ProviderProtocolError:
+                            if emitted_text or attempt + 1 >= _MAX_ATTEMPTS:
+                                raise
+                            delay = _DEFAULT_RETRY_DELAY
                 await self._sleep(delay)
             except httpx.TimeoutException as error:
                 if not emitted_text and attempt + 1 < _MAX_ATTEMPTS:

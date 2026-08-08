@@ -146,10 +146,7 @@ Mac 上推荐使用用户级 `launchd`，而不是 `nohup` 或一直开着 Termi
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
-  <dict>
-    <key>SuccessfulExit</key>
-    <false/>
-  </dict>
+  <true/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>StandardOutPath</key>
@@ -186,6 +183,7 @@ launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/io.miniclaw.gateway.plist
 - Secret 继续放仓库本地 `.env`，权限为 `0600`；不要写进 plist；
 - `WorkingDirectory` 指向仓库根目录，确保现有 `.env` 加载语义不变；
 - `ProgramArguments` 直接指向项目虚拟环境，不依赖 shell rc、alias 或交互式 PATH；
+- `KeepAlive=true` 同时恢复正常和异常退出；Gateway 自身的 lease 阻止重启竞争形成两个有效实例；
 - 日志目录使用 owner-only 权限，并纳入轮转；
 - 升级代码前先停止服务，完成门禁后再启动，避免运行中 import 到半更新文件。
 

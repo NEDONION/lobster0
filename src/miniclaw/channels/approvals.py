@@ -27,6 +27,7 @@ _V2_KEYS = frozenset(
         "fallback_text",
     }
 )
+ApprovalCardState = Literal["processing", "succeeded", "denied", "failed"]
 
 
 class ApprovalPresentationRepository(Protocol):
@@ -114,6 +115,8 @@ class ApprovalCommandOutcome:
     result: TurnResult | None = None
     notice: str | None = None
     approval_id: int | None = None
+    decision: ApprovalDecision | None = None
+    error_code: str | None = None
 
 
 class ChannelApprovalController:
@@ -181,7 +184,7 @@ class ChannelApprovalController:
         on_event: RunEventHandler | None = None,
     ) -> ApprovalCommandOutcome:
         """只接受 MiniClaw 自己生成且键集合完全一致的按钮 payload。"""
-        parsed = _parse_card_action(value)
+        parsed = parse_approval_card_action(value)
         if parsed is None:
             return ApprovalCommandOutcome(True, notice="无法识别这次审批操作。")
         approval_id, decision = parsed
@@ -208,6 +211,8 @@ class ChannelApprovalController:
                 True,
                 notice="只有 Owner 可以处理这条审批。",
                 approval_id=approval_id,
+                decision=decision,
+                error_code="not_owner",
             )
         try:
             result = await self._service.continue_approval(
@@ -221,11 +226,14 @@ class ChannelApprovalController:
                 True,
                 notice=_approval_error_notice(error.code),
                 approval_id=approval_id,
+                decision=decision,
+                error_code=error.code,
             )
         return ApprovalCommandOutcome(
             True,
             result=result,
             approval_id=approval_id,
+            decision=decision,
         )
 
 
@@ -296,6 +304,39 @@ def feishu_approval_prompt(envelope: ApprovalEnvelope) -> ApprovalPrompt:
     )
 
 
+def feishu_approval_status_card(
+    state: ApprovalCardState,
+    visible: str,
+) -> dict[str, Any]:
+    """渲染无按钮的飞书审批处理中或终态卡片，并限制可见正文长度。"""
+    presentations = {
+        "processing": ("orange", "MiniClaw 审批 · 处理中", "正在验证并执行这次操作。"),
+        "succeeded": ("green", "MiniClaw 审批 · 已完成", "操作已完成。"),
+        "denied": ("red", "MiniClaw 审批 · 已拒绝", "操作已拒绝，未执行。"),
+        "failed": ("red", "MiniClaw 审批 · 处理失败", "操作未完成。"),
+    }
+    try:
+        template, title, fallback = presentations[state]
+    except (KeyError, TypeError):
+        raise ValueError("invalid approval card state") from None
+    if not isinstance(visible, str):
+        raise TypeError("approval card visible text must be a string")
+    content = visible.strip() or fallback
+    content = "".join(
+        character
+        for character in content
+        if ord(character) >= 32 or character in "\n\t"
+    )[:2000]
+    return {
+        "config": {"wide_screen_mode": True},
+        "header": {
+            "template": template,
+            "title": {"tag": "plain_text", "content": title},
+        },
+        "elements": [{"tag": "markdown", "content": content}],
+    }
+
+
 def text_approval_prompt(envelope: ApprovalEnvelope) -> str:
     """把中立 envelope 渲染为 Telegram/Discord 都可发送的有限纯文本。"""
     if not isinstance(envelope, ApprovalEnvelope):
@@ -320,7 +361,7 @@ def _parse_text_command(text: str) -> tuple[int, ApprovalDecision] | None:
     return None
 
 
-def _parse_card_action(value: Any) -> tuple[int, ApprovalDecision] | None:
+def parse_approval_card_action(value: Any) -> tuple[int, ApprovalDecision] | None:
     """解析 v2 callback，并兼容升级前的固定三字段 v1 payload。"""
     if not isinstance(value, dict) or set(value) not in {_ACTION_V1_KEYS, _ACTION_V2_KEYS}:
         return None

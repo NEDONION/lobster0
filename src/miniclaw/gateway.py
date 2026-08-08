@@ -14,10 +14,11 @@ from typing import Any, Protocol
 from miniclaw import gateway_lease
 from miniclaw.channels import sdk_logging
 from miniclaw.channels.approvals import ChannelApprovalController
-from miniclaw.channels.delivery import DeliveryWorker, split_message
+from miniclaw.channels.delivery import DeliveryWorker
 from miniclaw.channels.discord import DiscordTransport
 from miniclaw.channels.experience import ChannelExperience
 from miniclaw.channels.feishu import FeishuTransport
+from miniclaw.channels.feishu_approval import FeishuApprovalActionHandler
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.channels.supervisor import (
     ChannelRuntime,
@@ -38,6 +39,7 @@ from miniclaw.runtime import (
     limits_for_channel,
 )
 from miniclaw.storage.channels import DeliveryRepository
+from miniclaw.storage.conversations import MessageRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.tooling import ApprovalRepository
 
@@ -293,7 +295,7 @@ def _build_feishu_channel(
 ) -> ChannelRuntime:
     """装配 Feishu WS、Card approval、Experience 和 durable workers。"""
     selected = config.channels.feishu
-    _, observer, manager, approvals, deliveries = _channel_common(
+    database, observer, manager, approvals, deliveries = _channel_common(
         config,
         paths,
         runtime,
@@ -301,6 +303,7 @@ def _build_feishu_channel(
         selected.owner_open_id,
     )
     transport: FeishuTransport
+    action_handler: FeishuApprovalActionHandler | None = None
 
     async def on_card_action(
         actor_open_id: str,
@@ -308,27 +311,8 @@ def _build_feishu_channel(
         chat_id: str,
         message_id: str,
     ) -> None:
-        outcome = await approvals.handle_card_action(
-            user_id=runtime.owner_id,
-            actor_external_user_id=actor_open_id,
-            value=value,
-        )
-        visible = outcome.result.content if outcome.result is not None else outcome.notice
-        if outcome.result is not None and outcome.result.message_id is not None:
-            deliveries.create_parts(
-                message_id=outcome.result.message_id,
-                channel="feishu",
-                account_id=selected.account_id,
-                external_conversation_id=chat_id,
-                reply_to_message_id=message_id,
-                kind="message",
-                contents=split_message(
-                    outcome.result.content,
-                    max_chars=selected.message_max_chars,
-                ),
-            )
-        if isinstance(visible, str) and visible:
-            await _best_effort_card_status(transport, message_id, visible)
+        if action_handler is not None:
+            await action_handler(actor_open_id, value, chat_id, message_id)
 
     transport = FeishuTransport(
         selected,
@@ -337,6 +321,16 @@ def _build_feishu_channel(
         on_inbound=manager.receive,
         on_card_action=on_card_action,
         observer=observer,
+    )
+    action_handler = FeishuApprovalActionHandler(
+        user_id=runtime.owner_id,
+        owner_external_user_id=selected.owner_open_id,
+        account_id=selected.account_id,
+        message_max_chars=selected.message_max_chars,
+        controller=approvals,
+        transport=transport,
+        messages=MessageRepository(database),
+        deliveries=deliveries,
     )
     limits = limits_for_channel(config, "feishu")
     manager.attach_experience(
@@ -475,24 +469,3 @@ def _configure_channel_logging() -> None:
         logger.addHandler(handler)
     logger.setLevel(logging.INFO)
     logger.propagate = False
-
-
-async def _best_effort_card_status(
-    transport: FeishuTransport,
-    message_id: str,
-    visible: str,
-) -> None:
-    """更新审批卡为有限可见状态；失败不影响 Core 终态或文本 fallback。"""
-    text = visible[:2000]
-    card = {
-        "config": {"wide_screen_mode": True},
-        "header": {
-            "template": "green",
-            "title": {"tag": "plain_text", "content": "MiniClaw 审批已处理"},
-        },
-        "elements": [{"tag": "markdown", "content": text}],
-    }
-    try:
-        await transport.update_card(message_id, card)
-    except Exception:
-        return
