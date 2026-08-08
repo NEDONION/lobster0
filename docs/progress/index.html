@@ -355,7 +355,7 @@
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">pi-tui / Phase 3 / Channel Gateway gate</span>
         <strong>P4 GATEWAY ✓</strong>
-        <p>376 Python + 25 TypeScript tests · 24/24 Agent cases · Ruff</p>
+        <p>382 Python + 25 TypeScript tests · 24/24 Agent cases + 12/12 Channel cases · Ruff</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">376+25 <small>passing</small></span>
+        <span class="metric-value">382+25 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -523,7 +523,7 @@
           <li class="complete">官方 WebSocket Transport、Unicode 分片、重试与 unknown 恢复</li>
           <li class="complete">typing、streaming card、审批卡片与文本 fallback</li>
           <li class="complete">miniclaw gateway 生命周期、双信号关闭与离线飞书 Doctor</li>
-          <li class="complete">376 Python + 25 TypeScript tests + 24/24 Agent cases + Ruff 门禁</li>
+          <li class="complete">382 Python + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -534,7 +534,7 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace Guard、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 376 Python、25 TypeScript tests 与 24/24 offline；完整 live DeepSeek runner 仍待实现。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 382 Python、25 TypeScript tests、24/24 offline Agent 与 12/12 Channel；live DeepSeek/飞书仍只在发布门禁显式执行。</p></div>
         <div class="decision"><code>approval</code><p>Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
         <div class="decision"><code>scope</code><p>pi-tui、Bridge、十个 Tool、Memory、Skills、Compaction、Approval 续执行与飞书 Channel/Gateway 已完成；任意 Shell、当前版本 live eval、lark-cli smoke 和飞书真实 E2E 仍未完成。</p></div>
@@ -543,7 +543,7 @@
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-08 · 376 Python + 25 TypeScript tests + 24/24 offline Agent cases + Ruff</span>
+      <span>Last updated · 2026-08-08 · 382 Python + 25 TypeScript tests + 24/24 offline Agent cases、12/12 Channel cases + Ruff</span>
       <span><a href="../engineering/phase-2/python-core-pi-tui-bridge.md">pi-tui engineering</a> · <a href="../engineering/phase-3/memory-skills-compaction.md">Phase 3 engineering</a> · <a href="../engineering/phase-4/feishu-channel-core.md">Feishu Core</a> · <a href="../engineering/phase-2/testing-and-debugging.md">release gate</a></span>
     </footer>
   </main>

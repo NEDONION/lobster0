@@ -1,8 +1,8 @@
 # Phase 2.1C 工程文档：Agent 场景回归与 Benchmark 基线
 
-> 状态：已实现并验证（R1 事故回归 + R2 离线场景门禁）
+> 状态：已实现并验证（R1 事故回归 + R2 Agent 门禁 + R4 Channel 确定性门禁）
 >
-> 当前仓库事实：376/376 Python tests、25/25 TypeScript tests、24/24 active offline cases、Ruff PASS；v0.1.0 发布时基线为 177 tests
+> 当前仓库事实：382/382 Python tests、25/25 TypeScript tests、24/24 active offline Agent cases、12/12 Channel cases、Ruff PASS；v0.1.0 发布时基线为 177 tests
 >
 > 不代表：真实 DeepSeek live benchmark、飞书 E2E 或自动演进已经完成
 
@@ -41,10 +41,11 @@ MiniClaw 因此分层：
 
 | 层 | 当前状态 | 运行时机 | 通过规则 |
 | --- | --- | --- | --- |
-| L0 单元/契约 | 已实现 | 每次提交 | 376/376 Python + 25/25 TypeScript |
+| L0 单元/契约 | 已实现 | 每次提交 | 382/382 Python + 25/25 TypeScript |
 | L1 offline Agent scenarios | 已实现 | 每次提交 | 24/24 active cases |
 | L2 live DeepSeek | 单事故 planning probe；完整 R3 仍待实现 | release/tag | `ACTION-OPEN-APP-001` 3/3；完整 capability gate 待 CLI |
-| L3 Channel/soak | R4 规划 | IM release | 飞书真实投递、去重、重连与长时运行 |
+| L3 deterministic Channel | 已实现 | 每次提交 | 12/12 Adapter/Inbox/Delivery/Approval/Gateway cases |
+| L4 live Channel/soak | harness 已实现，真实验收待执行 | IM release | 飞书真实投递、去重、重连与长时运行 |
 
 当前不使用 LLM Judge。现有场景都能用 ToolRun、Audit、消息上下文、哨兵文本和稳定错误码判断；为了十条场景
 引入第二个模型只会增加费用和不确定性。
@@ -69,12 +70,14 @@ MiniClaw 因此分层：
 src/miniclaw/evals/
 ├── __init__.py
 ├── cases.py                 # JSONL loader、Schema 与安全校验
-└── runner.py                # ScriptedProvider、真实运行组装、verifier
+├── runner.py                # ScriptedProvider、真实 Agent 组装、verifier
+└── channel.py               # 12 个有界 Channel fixture 与稳定 evidence verifier
 
 evals/
 ├── README.md                # 新增 case 与数据安全规范
 ├── scenarios/
 │   ├── core.v1.jsonl
+│   ├── feishu-channel.v1.jsonl
 │   ├── provider.v1.jsonl
 │   ├── tools.v1.jsonl
 │   └── safety.v1.jsonl
@@ -87,6 +90,7 @@ docs/evals/
 tests/
 ├── test_eval_cases.py
 ├── test_eval_runner.py
+├── test_feishu_evals.py
 └── test_cli_eval.py
 ```
 
@@ -102,11 +106,12 @@ tests/
 | `schema_version` | 当前固定为 `1` |
 | `id` | 永久稳定的事故/能力 ID |
 | `status` | `active`、`planned`、`retired` |
-| `layers` | 当前可执行 `offline`；其他层是目标标记 |
-| `capability` | `core/provider/tools/safety/state/error` |
+| `layers` | 当前可执行 `offline` 和 `channel`；live 只能由显式 harness 启动 |
+| `capability` | Agent 与 Channel 能力的固定枚举 |
 | `query` / `turns` | 第一轮 query 与同 session 的后续轮次 |
 | `setup.files` | 临时 Workspace 内的合成 UTF-8 文件 |
 | `offline.responses` | ScriptedProvider 顺序返回的 `ModelResponse` |
+| `channel.fixture` / `channel_evidence` | 有界 Channel 纵切名与期望的稳定证据 |
 | `expected` | 最终答案、ToolRun、Audit 和最后请求上下文断言 |
 | `introduced_by` | 初始 suite、事故或需求来源 |
 
@@ -153,6 +158,9 @@ JSON 错误只显示 `filename:line`，不回显整行。`.env` 路径可以作�
 ScriptedProvider 只替换 `ModelProvider.complete()`。响应不足会抛稳定 `eval scripted responses exhausted`，runner
 把它收窄成 `execution_error` 并继续后续 case。
 
+`run_channel_suite()` 则按固定 fixture 走 Adapter、Inbox、ChannelManager、Delivery、Approval、Workspace Tool
+和 Transport 生命周期的有限纵切。它对 `channel_evidence` 做精确比对，不读 `.env`、不联网也不使用个人账号。
+
 ## 8. Verifier 与失败码
 
 | 短码 | 含义 |
@@ -174,6 +182,7 @@ CLI 不打印 query、脚本响应、工具原始结果、绝对临时路径或�
 uv run miniclaw eval list --root evals/scenarios
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run miniclaw eval run --suite channel --root evals/scenarios
 ```
 
 `eval` 在解析后先于普通 StatePaths 分支执行，因此：
@@ -184,10 +193,10 @@ uv run miniclaw eval run --suite offline --root evals/scenarios
 - 不调用互联网；
 - 默认 root 是当前仓库的 `evals/scenarios`。
 
-退出码：全部通过为 `0`；任一 case FAIL 为 `1`；场景目录、Schema 无效或没有 active offline case 为 `2`。
+退出码：全部通过为 `0`；任一 case FAIL 为 `1`；场景目录、Schema 无效或所选 suite 没有 active case 为 `2`。
 空 gate 不能用 `0/0` 伪装通过。
 
-## 10. 当前 21 条 active query
+## 10. 当前 24 条 Agent query 与 12 条 Channel case
 
 | ID | 用户场景 | 核心证明 |
 | --- | --- | --- |
@@ -244,6 +253,7 @@ DeepSeek probe 复现了另一个错误分支：先读取 Darwin，再生成被 
 uv run python -m unittest tests.test_eval_cases tests.test_eval_runner -v
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run miniclaw eval run --suite channel --root evals/scenarios
 ```
 
 发布前：
@@ -253,10 +263,11 @@ uv run python -m unittest discover -s tests -v
 uv run ruff check .
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run miniclaw eval run --suite channel --root evals/scenarios
 git diff --check
 ```
 
-当前仓库已验证结果是 376/376 Python tests、25/25 TypeScript tests、24/24 active cases 和 Ruff PASS。场景集首次发布时的 177 tests
+当前仓库已验证结果是 382/382 Python tests、25/25 TypeScript tests、24/24 active Agent cases、12/12 Channel cases 和 Ruff PASS。场景集首次发布时的 177 tests
 版本证据见 [v0.1.0 release record](../../evals/releases/v0.1.0.md)。
 
 ## 13. 已知边界和下一步
@@ -266,7 +277,7 @@ git diff --check
 - `system_info` 执行真实只读收集，但不把结果写进提交的报告；
 - 尚无 `report/compare` CLI，当前 baseline 和 release record 在发布时显式生成；
 - `ACTION-OPEN-APP-001` 已有手工三次 planning probe；尚无通用 live runner、seed/temperature manifest、Token/费用趋势；
-- 尚无飞书 DM、群 mention、重复消息、重连和交互卡片回归。
+- 已有飞书 DM、群 mention、重复消息、重连和交互卡片的 12 个确定性回归，但它们不等于真实平台 E2E。
 
 R3 的最短下一步是实现 `eval run --suite live --runs 3`、脱敏 raw result、版本 compare 和 live release gate；
-R4 再加入飞书 Channel E2E。它们不会扩大当前 Tool 权限。
+R4 已提供确定性 Channel gate 和需显式 `--confirm-live` 的真实验收 harness；下一步是在测试飞书 App 上执行并生成脱敏 release record。它们不会扩大当前 Tool 权限。

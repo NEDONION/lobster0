@@ -2,7 +2,7 @@
 
 > v0.2.0 发布证据：245/245 tests、20/20 offline Agent cases、Ruff PASS、diff check PASS
 >
-> 当前 Phase 3 单入口 TUI 基线：376/376 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、Ruff PASS；历史 PTY smoke PASS
+> 当前 Phase 3 单入口 TUI 基线：382/382 Python tests、25/25 TypeScript tests、24/24 offline Agent cases、12/12 Channel cases、Ruff PASS；历史 PTY smoke PASS
 >
 > 历史 live smoke：DeepSeek V4 Pro 的 system_info、write approval、read_file、run_command approval 均完成
 
@@ -17,12 +17,13 @@ Phase 2 不只要求“某个 Tool 能跑”。每次版本都必须证明：
 5. SQLite 状态可跨进程恢复，Approval 不会重放；
 6. 真实模型仍会按 Tool Calling 协议使用这些能力。
 
-因此发布门禁分三层，而不是把所有风险都压给一次真实模型聊天。
+因此发布门禁分层运行，而不是把所有风险都压给一次真实模型聊天。
 
 ```mermaid
 flowchart TB
-    UNIT["Layer 1: 376 Python + 25 TypeScript tests"] --> OFFLINE["Layer 2: 24 versioned Agent cases"]
-    OFFLINE --> LIVE["Layer 3: release-only DeepSeek smoke"]
+    UNIT["Layer 1: 382 Python + 25 TypeScript tests"] --> OFFLINE["Layer 2: 24 versioned Agent cases"]
+    OFFLINE --> CHANNEL["Layer 3: 12 deterministic Channel cases"]
+    CHANNEL --> LIVE["Layer 4: release-only DeepSeek / Feishu smoke"]
     LIVE --> DOC["Release record + progress docs"]
     DOC --> RELEASE["Phase 2 release gate"]
 ```
@@ -34,6 +35,7 @@ uv run python -m unittest discover -s tests -v
 uv run ruff check .
 uv run miniclaw eval validate --root evals/scenarios
 uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run miniclaw eval run --suite channel --root evals/scenarios
 git diff --check
 ```
 
@@ -42,7 +44,7 @@ git diff --check
 - unittest 0 failure / 0 error；
 - Ruff 0 finding；
 - validate 必须正好加载当前 README 声明的 active 数；
-- offline 必须 100% PASS，不允许 skipped；
+- offline 与 channel 必须各自 100% PASS，不允许 skipped；
 - diff check 无空白错误；
 - 文档中的计数来自这次新鲜输出，不手算、不预测。
 
@@ -298,9 +300,9 @@ uv run miniclaw
 - [x] Approval 绑定 owner、TTL、Tool 名和规范参数 hash；
 - [x] 拒绝、篡改、过期和重放无副作用；
 - [x] stale running 不重放；
-- [x] Doctor 九项且网络/命令/数据库修改为零；
-- [x] 376/376 Python tests + 25/25 TypeScript tests；
-- [x] 24/24 offline Agent cases；
+- [x] Doctor 十三项且网络/命令/数据库修改为零；
+- [x] 382/382 Python tests + 25/25 TypeScript tests；
+- [x] 24/24 offline Agent cases、12/12 Channel cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
 - [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
 - [x] Provider reasoning、Tool 参数/状态/耗时/结果可展开回归；

@@ -32,7 +32,7 @@ CLI 和飞书私聊，逐步实现工具调用、SQLite 会话、Markdown 记忆
 > persistent compaction。`ACTION-OPEN-APP-001` 已完成三次不执行 Tool 的 DeepSeek planning probe；完整 DeepSeek
 > live eval runner 和真实 `lark-cli` 业务闭环尚未完成。Phase 4 飞书 Channel Core、durable Inbox/Outbox、官方
 > WebSocket Transport、分片重试、卡片审批和 `miniclaw gateway` 生命周期编排已经进入代码；真实账号 E2E 与 soak 仍待完成。
-> 当前回归基线为 **376 Python tests + 25 TypeScript tests + 24/24 Agent cases**。
+> 当前回归基线为 **382 Python tests + 25 TypeScript tests + 24/24 Agent cases + 12/12 Channel cases**。
 > Policy 拒绝只写脱敏审计，不创建 ToolRun。
 > v0.2.0 曾在 TUI 迁移前完成 DeepSeek V4 Pro 的 system/write/read/command 脱敏 live smoke；历史证据
 > 保存在 [v0.2.0 release record](docs/evals/releases/v0.2.0.md)，不冒充当前 TUI 版本的新 live 结果。

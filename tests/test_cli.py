@@ -170,10 +170,23 @@ class CliTest(unittest.TestCase):
                 encoding="utf-8",
             )
             dotenv.chmod(0o600)
+            node = root / "test-node"
+            node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+            node.chmod(0o700)
+            entry = root / "main.js"
+            entry.write_text("// test entry\n", encoding="utf-8")
 
             with (
                 mock.patch("miniclaw.cli.Path.cwd", return_value=root),
-                mock.patch.dict("miniclaw.cli.os.environ", {}, clear=True),
+                mock.patch.dict(
+                    "miniclaw.cli.os.environ",
+                    {
+                        "MINICLAW_NODE": str(node),
+                        "MINICLAW_TUI_ENTRY": str(entry),
+                    },
+                    clear=True,
+                ),
+                mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()),
             ):
                 exit_code, output, error = run_cli(
                     ["doctor", "--home", str(state)]
