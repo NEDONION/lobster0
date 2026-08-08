@@ -1,7 +1,7 @@
 # Phase 5.2：飞书单卡片回复与 lark-cli Skill 工程落地
 
 > 状态：代码与离线回归已完成；真实 Bot 的修复后人工确认待 Owner 明确授权
-> 当前基线：542/542 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、640/640 local soak
+> 当前基线：562/562 Python tests、30/30 TypeScript tests、29/29 offline Agent cases、32/32 Channel cases、640/640 local soak
 > 适用版本：Phase 5.2
 
 ## 1. 这次到底修了什么

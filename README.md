@@ -197,7 +197,7 @@ flowchart LR
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Python | 542/542 `unittest` PASS |
+| Python | 562/562 `unittest` PASS |
 | TUI | 30/30 TypeScript tests + build PASS |
 | Agent | 29/29 active offline cases PASS |
 | Channel | 32/32 versioned cases PASS |

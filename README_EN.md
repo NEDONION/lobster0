@@ -194,7 +194,7 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 
 | Gate | Current evidence |
 | --- | --- |
-| Python | 542/542 `unittest` PASS |
+| Python | 562/562 `unittest` PASS |
 | TUI | 30/30 TypeScript tests and build PASS |
 | Agent | 29/29 active offline cases PASS |
 | Channel | 32/32 versioned cases PASS |

@@ -32,7 +32,7 @@ class Phase5DocumentationTest(unittest.TestCase):
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("542", content)
+                self.assertIn("562", content)
                 self.assertIn("30", content)
                 self.assertIn("29/29", content)
                 self.assertIn("32/32", content)
@@ -107,7 +107,7 @@ class Phase5DocumentationTest(unittest.TestCase):
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
             "Phase 5 implementation pass",
-            "542 Python",
+            "562 Python",
             "30 TypeScript",
             "29/29",
             "IMPLEMENTATION PASS",

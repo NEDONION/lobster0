@@ -355,7 +355,7 @@
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Phase 5.2 implementation pass</span>
         <strong>CARD FIXED</strong>
-        <p>542 Python + 30 TypeScript tests · Agent 29/29 · Channel 32/32 · Owner DM verified · post-fix live pending</p>
+        <p>562 Python + 30 TypeScript tests · Agent 29/29 · Channel 32/32 · Owner DM verified · post-fix live pending</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">542+30 <small>passing</small></span>
+        <span class="metric-value">562+30 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -570,7 +570,7 @@
           <li class="complete">飞书 12px completed card；超限只回复后缀；restart UUID 恢复；tool-call preview 缓冲后 waiting approval 只留审批卡</li>
           <li class="complete">feishu-lark-cli Skill：复用 run_command + official lark-cli，不新增重复 API Tool</li>
           <li class="complete">Provider 兼容流式 Tool Call 的 empty-name continuation</li>
-          <li class="complete">542 Python + 30 TypeScript tests + 29/29 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
+          <li class="complete">562 Python + 30 TypeScript tests + 29/29 Agent cases + 32/32 Channel cases + local soak 640/640 + Ruff 门禁</li>
         </ul>
       </article>
       <article class="work-card">
@@ -581,7 +581,7 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace/Personal 多根 Guard、敏感凭据硬拒绝、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 542 Python、30 TypeScript tests、29/29 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640，Feishu 另有 15-case real Bot gate。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 562 Python、30 TypeScript tests、29/29 offline Agent 与 32/32 Channel；20 轮 local soak 为 640/640，Feishu 另有 15-case real Bot gate。</p></div>
         <div class="decision"><code>permissions</code><p>Autopilot 只给本地与 Owner 私聊；群聊/其他成员降级。任何模式都不能绕过敏感路径、exact argv、SSRF 和资源硬边界。</p></div>
         <div class="decision"><code>approval</code><p>审批框固定头尾、只滚动参数；Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
@@ -593,7 +593,7 @@
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-09 · 542 Python + 30 TypeScript · Agent 29/29 · Channel 32/32 · Feishu card fix pending live confirmation</span>
+      <span>Last updated · 2026-08-09 · 562 Python + 30 TypeScript · Agent 29/29 · Channel 32/32 · Feishu card fix pending live confirmation</span>
       <span><a href="../engineering/phase-2/autopilot-permissions-and-approval-ui.md">Autopilot permissions</a> · <a href="../engineering/phase-2/personal-machine-permissions.md">Personal permissions</a> · <a href="../engineering/phase-5/feishu-live-e2e.md">Feishu Live E2E</a> · <a href="../engineering/phase-5/feishu-gateway-runtime-and-macos-service.md">Feishu runtime</a> · <a href="../engineering/phase-5/feishu-single-card-and-lark-cli.md">single card + lark-cli</a> · <a href="../engineering/phase-5/testing-and-live-acceptance.md">testing &amp; live</a> · <a href="../engineering/phase-5/troubleshooting.md">troubleshooting</a> · <a href="../evals/releases/v0.5.2.md">v0.5.2</a></span>
     </footer>
   </main>
