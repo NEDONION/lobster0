@@ -296,6 +296,33 @@ class InboundEventRepository:
             )
         return None if claimed is None else _inbound_from_row(claimed)
 
+    def claim(self, key: InboundEventKey) -> StoredInboundEvent | None:
+        """只在指定事件仍为 queued 时原子 claim，重复 wake-up 返回 None。"""
+        with self._database.connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE processed_events
+                SET status = 'running', attempts = attempts + 1, updated_at = ?
+                WHERE channel = ? AND account_id = ? AND external_message_id = ?
+                  AND status = 'queued'
+                """,
+                (
+                    self._clock().isoformat(),
+                    key.channel,
+                    key.account_id,
+                    key.external_message_id,
+                ),
+            )
+            if updated.rowcount != 1:
+                return None
+            claimed = self._find_by_message(
+                connection,
+                key.channel,
+                key.account_id,
+                key.external_message_id,
+            )
+        return None if claimed is None else _inbound_from_row(claimed)
+
     def get(self, key: InboundEventKey) -> StoredInboundEvent:
         """按稳定消息键读取事件，不暴露复合 SQL 给 Worker。"""
         with self._database.connect_read_only() as connection:
@@ -360,6 +387,34 @@ class InboundEventRepository:
     ) -> StoredInboundEvent:
         """把 running 事件结算为 failed，只保存稳定错误码。"""
         return self._finish(key, "failed", error_code)
+
+    def recover_running(
+        self,
+        key: InboundEventKey,
+        status: Literal["queued", "completed", "failed"],
+        error_code: str | None,
+    ) -> StoredInboundEvent:
+        """启动恢复时结算遗留 running，不允许从其他状态任意跳转。"""
+        with self._database.connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE processed_events
+                SET status = ?, last_error_code = ?, updated_at = ?
+                WHERE channel = ? AND account_id = ? AND external_message_id = ?
+                  AND status = 'running'
+                """,
+                (
+                    status,
+                    error_code,
+                    self._clock().isoformat(),
+                    key.channel,
+                    key.account_id,
+                    key.external_message_id,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise ChannelStateError("invalid_inbound_transition")
+        return self.get(key)
 
     def _finish(
         self,

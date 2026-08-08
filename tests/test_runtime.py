@@ -10,7 +10,7 @@ from pathlib import Path
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import load_config
 from miniclaw.paths import build_state_paths
-from miniclaw.runtime import create_runtime
+from miniclaw.runtime import create_channel_manager, create_runtime
 
 
 class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
@@ -69,6 +69,9 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                     ],
                 )
                 self.assertIsNotNone(runtime.service)
+                manager = create_channel_manager(config, paths, runtime)
+                self.assertIs(manager.service, runtime.service)
+                self.assertEqual(manager.owner_id, runtime.owner_id)
             finally:
                 await runtime.aclose()
 

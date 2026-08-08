@@ -219,6 +219,31 @@ class MessageRepository:
             raise ConversationStateError("completed Turn has no assistant message")
         return _message_from_row(row)
 
+    def create_channel_notice(self, session_id: int, content: str) -> StoredMessage:
+        """保存一条由 Channel 生成而非模型生成的安全 Assistant 提示。"""
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("channel notice must not be empty")
+        now = _utc_now().isoformat()
+        metadata = _json_text({"channel_notice": True})
+        with self._database.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO messages (
+                    session_id, role, content, metadata_json, created_at
+                ) VALUES (?, 'assistant', ?, ?, ?)
+                """,
+                (session_id, content, metadata, now),
+            )
+            connection.execute(
+                "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                (now, session_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM messages WHERE id = ?",
+                (int(cursor.lastrowid),),
+            ).fetchone()
+        return _message_from_row(row)
+
     def latest_compaction(self, session_id: int) -> StoredCompaction | None:
         """读取一个 Session 最新且结构有效的 compaction summary。"""
         with self._database.connect_read_only() as connection:
