@@ -68,6 +68,15 @@ class BridgeProtocolTest(unittest.TestCase):
                 {"v": 1, "id": "r", "type": "session.new", "payload": {"session_key": ""}},
                 "invalid_session",
             ),
+            (
+                {
+                    "v": 1,
+                    "id": "r",
+                    "type": "permissions.set",
+                    "payload": {"mode": "unlimited"},
+                },
+                "invalid_permission_mode",
+            ),
         )
 
         for frame, expected_code in cases:
@@ -76,6 +85,32 @@ class BridgeProtocolTest(unittest.TestCase):
                 with self.assertRaises(ProtocolError) as captured:
                     decode_request(raw)
                 self.assertEqual(captured.exception.code, expected_code)
+
+    def test_permission_mode_request_accepts_only_the_four_exact_modes(self) -> None:
+        """跨语言权限切换必须是精确枚举，不能接收额外字段或宽松别名。"""
+        for mode in ("safe", "smart", "autopilot", "yolo"):
+            with self.subTest(mode=mode):
+                request = decode_request(
+                    json.dumps(
+                        {
+                            "v": 1,
+                            "id": f"mode-{mode}",
+                            "type": "permissions.set",
+                            "payload": {"mode": mode},
+                        }
+                    ).encode("utf-8")
+                    + b"\n"
+                )
+                self.assertEqual(request.payload, {"mode": mode})
+
+        for payload in ({}, {"mode": "AUTOPILOT"}, {"mode": "safe", "force": True}):
+            with self.subTest(payload=payload):
+                raw = json.dumps(
+                    {"v": 1, "id": "mode-bad", "type": "permissions.set", "payload": payload}
+                ).encode("utf-8") + b"\n"
+                with self.assertRaises(ProtocolError) as captured:
+                    decode_request(raw)
+                self.assertEqual(captured.exception.code, "invalid_permission_mode")
 
     def test_encode_frame_is_one_utf8_json_line_and_rejects_nan(self) -> None:
         """输出必须是一行紧凑 UTF-8 JSON，且不能编码非标准数值。"""

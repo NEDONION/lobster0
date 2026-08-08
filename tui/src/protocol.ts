@@ -17,8 +17,15 @@ export type RequestType =
   | "turn.start"
   | "turn.cancel"
   | "approval.resolve"
+  | "permissions.set"
   | "session.new"
   | "bridge.shutdown";
+
+export type PermissionMode = "safe" | "smart" | "autopilot" | "yolo";
+
+export function isPermissionMode(value: unknown): value is PermissionMode {
+  return value === "safe" || value === "smart" || value === "autopilot" || value === "yolo";
+}
 
 export interface ServerFrame {
   v: 1;

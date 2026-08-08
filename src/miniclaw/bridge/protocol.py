@@ -16,11 +16,13 @@ _REQUEST_TYPES = frozenset(
         "turn.start",
         "turn.cancel",
         "approval.resolve",
+        "permissions.set",
         "session.new",
         "bridge.shutdown",
     }
 )
 _APPROVAL_DECISIONS = frozenset({"deny", "once", "session", "always"})
+_PERMISSION_MODES = frozenset({"safe", "smart", "autopilot", "yolo"})
 
 
 class ProtocolError(RuntimeError):
@@ -172,6 +174,11 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
             payload.get("session_key"), 1, 128
         ):
             raise ProtocolError("invalid_session", "Session 字段不合法")
+        return
+    if request_type == "permissions.set":
+        mode = payload.get("mode")
+        if set(payload) != {"mode"} or not isinstance(mode, str) or mode not in _PERMISSION_MODES:
+            raise ProtocolError("invalid_permission_mode", "权限模式字段不合法")
         return
     if payload:
         raise ProtocolError("invalid_payload", "该请求不接受 payload 字段")

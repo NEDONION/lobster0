@@ -8,8 +8,10 @@ import {
   ProtocolClientError,
   encodeRequest,
   type JsonValue,
+  type PermissionMode,
   type RequestType,
   type ServerFrame,
+  isPermissionMode,
 } from "./protocol.js";
 
 export interface BridgeProcess {
@@ -145,6 +147,18 @@ export class BridgeClient {
 
   public async newSession(sessionKey: string): Promise<void> {
     await this.request("session.new", { session_key: sessionKey });
+  }
+
+  public async setPermissionMode(mode: PermissionMode): Promise<PermissionMode> {
+    const response = await this.request("permissions.set", { mode });
+    const selected = response.permission_mode;
+    if (!isPermissionMode(selected)) {
+      throw new BridgeRequestError(
+        "invalid_permission_mode",
+        "MiniClaw Core 返回了无效权限模式",
+      );
+    }
+    return selected;
   }
 
   public async shutdown(): Promise<void> {

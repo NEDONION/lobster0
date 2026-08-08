@@ -64,7 +64,14 @@ test("dense Chinese transcript renders roles and activity without oversized card
 });
 
 test("header and telemetry remain single-line and truncate at narrow widths", () => {
-  const header = new HeaderLine("0.1.0", "deepseek-v4-pro", "default", "workspace", "zh-CN");
+  const header = new HeaderLine(
+    "0.1.0",
+    "deepseek-v4-pro",
+    "default",
+    "workspace",
+    "zh-CN",
+    "autopilot",
+  );
   const telemetry = new TelemetryLine(
     {
       contextTokens: 12_400,
@@ -87,4 +94,5 @@ test("header and telemetry remain single-line and truncate at narrow widths", ()
     assert.equal(visibleWidth(headerLines[0] ?? "") <= width, true);
     assert.equal(visibleWidth(telemetryLines[0] ?? "") <= width, true);
   }
+  assert.match(header.render(120).join("\n"), /AUTOPILOT/);
 });

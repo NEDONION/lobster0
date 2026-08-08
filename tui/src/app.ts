@@ -25,7 +25,12 @@ import {
   TimelineView,
   type UiLanguage,
 } from "./components/conversation.js";
-import type { JsonValue, ServerFrame } from "./protocol.js";
+import {
+  isPermissionMode,
+  type JsonValue,
+  type PermissionMode,
+  type ServerFrame,
+} from "./protocol.js";
 import {
   appendLocal,
   appendUser,
@@ -43,6 +48,7 @@ export interface BridgePort {
   cancelTurn(): Promise<void>;
   resolveApproval(approvalId: number, decision: ApprovalChoice): Promise<void>;
   newSession(sessionKey: string): Promise<void>;
+  setPermissionMode(mode: PermissionMode): Promise<PermissionMode>;
   shutdown(): Promise<void>;
   kill(): void;
   onEvent(handler: BridgeEventHandler): () => void;
@@ -75,6 +81,7 @@ export class MiniClawTui {
   private currentLanguage: UiLanguage;
   private sessionKey: string;
   private contextBudget = 32_000;
+  private permissionMode: PermissionMode = "safe";
   private approvalHandle: OverlayHandle | null = null;
   private approvalDialogValue: ApprovalDialog | null = null;
   private submittedDraft: string | null = null;
@@ -150,7 +157,12 @@ export class MiniClawTui {
     const model = typeof metadata.model === "string" ? metadata.model : "unknown";
     const workspace = typeof metadata.workspace === "string" ? metadata.workspace : "workspace";
     const budget = metadata.context_budget_tokens;
+    const permissionMode = metadata.permission_mode;
     this.contextBudget = typeof budget === "number" ? budget : this.contextBudget;
+    if (isPermissionMode(permissionMode)) {
+      this.permissionMode = permissionMode;
+      this.header.setPermissionMode(permissionMode);
+    }
     this.header.setMetadata(model, workspace);
     this.telemetry.setContextBudget(this.contextBudget);
     this.tui.requestRender(true);
@@ -273,8 +285,11 @@ export class MiniClawTui {
       case "/status":
         this.appendLocal(this.statusText());
         break;
+      case "/permissions":
+        await this.changePermissionMode(argument);
+        break;
       case "/help":
-        this.appendLocal("/copy · /lang zh|en · /trace all|compact|编号 · /status · /new · /clear · /quit");
+        this.appendLocal("/copy · /lang zh|en · /trace all|compact|编号 · /permissions [safe|smart|autopilot|yolo] · /status · /new · /clear · /quit");
         break;
       case "/quit":
       case "/exit":
@@ -379,6 +394,39 @@ export class MiniClawTui {
     this.appendLocal(language === "zh-CN" ? "界面语言已切换为中文。" : "UI language changed to English.");
   }
 
+  private async changePermissionMode(argument: string | undefined): Promise<void> {
+    if (argument === undefined) {
+      this.appendLocal(
+        this.text(
+          `当前权限模式：${this.permissionMode}`,
+          `Current permission mode: ${this.permissionMode}`,
+        ),
+      );
+      return;
+    }
+    if (!isPermissionMode(argument)) {
+      this.appendLocal("用法: /permissions safe|smart|autopilot|yolo", "error");
+      return;
+    }
+    try {
+      const selected = await this.bridge.setPermissionMode(argument);
+      this.permissionMode = selected;
+      this.header.setPermissionMode(selected);
+      this.appendLocal(
+        this.text(
+          `权限模式已切换为：${selected}`,
+          `Permission mode changed to: ${selected}`,
+        ),
+      );
+    } catch (error) {
+      const code = error instanceof BridgeRequestError ? error.code : "permissions_change_failed";
+      this.appendLocal(
+        `${this.text("权限模式切换失败", "Permission mode change failed")}: ${code}`,
+        "error",
+      );
+    }
+  }
+
   private applyState(state: AppState): void {
     this.currentState = state;
     this.timeline.setState(state);
@@ -408,9 +456,9 @@ export class MiniClawTui {
   private statusText(): string {
     const telemetry = this.currentState.telemetry;
     if (this.currentLanguage === "zh-CN") {
-      return `上下文 ${telemetry.contextTokens ?? "N/A"}/${this.contextBudget} · 输入 ${telemetry.inputTokens ?? "N/A"} · 输出 ${telemetry.outputTokens ?? "N/A"} · 工具 ${telemetry.toolCalls} · 迭代 ${telemetry.iterations} · 耗时 ${telemetry.durationMs ?? "N/A"} ms · 请求 ${telemetry.providerRequestId ?? "N/A"}`;
+      return `权限 ${this.permissionMode} · 上下文 ${telemetry.contextTokens ?? "N/A"}/${this.contextBudget} · 输入 ${telemetry.inputTokens ?? "N/A"} · 输出 ${telemetry.outputTokens ?? "N/A"} · 工具 ${telemetry.toolCalls} · 迭代 ${telemetry.iterations} · 耗时 ${telemetry.durationMs ?? "N/A"} ms · 请求 ${telemetry.providerRequestId ?? "N/A"}`;
     }
-    return `context ${telemetry.contextTokens ?? "N/A"}/${this.contextBudget} · in ${telemetry.inputTokens ?? "N/A"} · out ${telemetry.outputTokens ?? "N/A"} · tools ${telemetry.toolCalls} · iter ${telemetry.iterations} · time ${telemetry.durationMs ?? "N/A"} ms · request ${telemetry.providerRequestId ?? "N/A"}`;
+    return `mode ${this.permissionMode} · context ${telemetry.contextTokens ?? "N/A"}/${this.contextBudget} · in ${telemetry.inputTokens ?? "N/A"} · out ${telemetry.outputTokens ?? "N/A"} · tools ${telemetry.toolCalls} · iter ${telemetry.iterations} · time ${telemetry.durationMs ?? "N/A"} ms · request ${telemetry.providerRequestId ?? "N/A"}`;
   }
 
   private text(chinese: string, english: string): string {

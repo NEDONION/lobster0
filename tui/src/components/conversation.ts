@@ -8,6 +8,7 @@ import {
 } from "@earendil-works/pi-tui";
 
 import type { AppState, Telemetry, TimelineItem, ToolItem } from "../state.js";
+import type { PermissionMode } from "../protocol.js";
 import { markdownTheme, palette, terminalSafe } from "../theme.js";
 
 export type UiLanguage = "zh-CN" | "en";
@@ -19,6 +20,7 @@ export class HeaderLine implements Component {
     private session: string,
     private workspace: string,
     private language: UiLanguage,
+    private permissionMode: PermissionMode = "safe",
   ) {}
 
   public setMetadata(model: string, workspace: string): void {
@@ -34,16 +36,29 @@ export class HeaderLine implements Component {
     this.language = language;
   }
 
+  public setPermissionMode(mode: PermissionMode): void {
+    this.permissionMode = mode;
+  }
+
   public invalidate(): void {}
 
   public render(width: number): string[] {
     const session = this.language === "zh-CN" ? "会话" : "session";
     const workspace = this.language === "zh-CN" ? "工作区" : "workspace";
-    const text = palette.muted(
-      ` MiniClaw ${this.version} · ${this.model} · ${session} ${this.session} · ${workspace} ${this.workspace}`,
-    );
+    const badge = permissionBadge(this.permissionMode);
+    const text = `${palette.muted(
+      ` MiniClaw ${this.version} · ${this.model} · ${session} ${this.session} · ${workspace} ${this.workspace} · `,
+    )}${badge}`;
     return [truncateToWidth(text, Math.max(1, width), "")];
   }
+}
+
+function permissionBadge(mode: PermissionMode): string {
+  const label = `[${mode.toUpperCase()}]`;
+  if (mode === "safe") return palette.green(label);
+  if (mode === "smart") return palette.cyan(label);
+  if (mode === "autopilot") return palette.amber(label);
+  return palette.red(label);
 }
 
 export class TelemetryLine implements Component {

@@ -86,6 +86,7 @@ class BridgeServer:
                     ),
                     "language": self._runtime.ui_language,
                     "context_budget_tokens": self._runtime.context_budget_tokens,
+                    "permission_mode": self._runtime.permission_state.mode.value,
                     "tools": [definition.name for definition in self._runtime.tool_definitions],
                     "capabilities": [
                         "streaming",
@@ -135,6 +136,9 @@ class BridgeServer:
         if request.type == "approval.resolve":
             await self._resolve_approval(request)
             return True
+        if request.type == "permissions.set":
+            await self._set_permission_mode(request)
+            return True
         if request.type == "session.new":
             if self._active_task is not None or self._pending_approval_id is not None:
                 await self._error(
@@ -152,6 +156,34 @@ class BridgeServer:
         await self._cancel_active()
         await self._ok(request.request_id, {})
         return False
+
+    async def _set_permission_mode(self, request: BridgeRequest) -> None:
+        """仅在无运行 Turn/待审批时切换共享权限状态。"""
+        if self._active_task is not None or self._pending_approval_id is not None:
+            await self._error(
+                request.request_id,
+                "permissions_busy",
+                "运行或审批期间不能切换权限模式",
+                retryable=True,
+            )
+            return
+        mode = request.payload["mode"]
+        assert isinstance(mode, str)
+        try:
+            selected = self._runtime.permission_state.set_mode(
+                mode,
+                user_id=self._runtime.owner_id,
+                source="cli",
+            )
+        except Exception:  # noqa: BLE001 - 审计/状态异常只能暴露稳定 Bridge 错误
+            await self._error(
+                request.request_id,
+                "permissions_change_failed",
+                "权限模式切换失败",
+                retryable=False,
+            )
+            return
+        await self._ok(request.request_id, {"permission_mode": selected.value})
 
     async def _resolve_approval(self, request: BridgeRequest) -> None:
         """校验 pending id 后启动同一 Core 的审批续跑。"""

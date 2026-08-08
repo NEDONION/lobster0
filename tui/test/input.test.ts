@@ -16,6 +16,7 @@ class FakeBridge implements BridgePort {
   public readonly turns: { session: string; text: string }[] = [];
   public readonly approvals: { id: number; decision: string }[] = [];
   public cancelled = 0;
+  public readonly permissionModes: string[] = [];
   public rejectNextTurn = false;
   private eventHandler?: BridgeEventHandler;
   private fatalHandler?: BridgeFatalHandler;
@@ -27,6 +28,7 @@ class FakeBridge implements BridgePort {
       workspace: "workspace",
       language: "zh-CN",
       context_budget_tokens: 128_000,
+      permission_mode: "safe",
       tools: ["run_command", "read_file"],
     };
   }
@@ -48,6 +50,10 @@ class FakeBridge implements BridgePort {
   }
 
   public async newSession(): Promise<void> {}
+  public async setPermissionMode(mode: "safe" | "smart" | "autopilot" | "yolo") {
+    this.permissionModes.push(mode);
+    return mode;
+  }
   public async shutdown(): Promise<void> {}
   public kill(): void {}
 
@@ -292,5 +298,24 @@ test("copy, language and trace commands stay local", async () => {
   assert.equal(app.language, "en");
   assert.equal(bridge.turns.length, 0);
   assert.match(app.renderDocument(80).join("\n"), /req-debug-42/);
+  app.stop();
+});
+
+test("permissions command shows and changes the shared Core mode without a model turn", async () => {
+  const { app, bridge, terminal } = await createApp();
+
+  app.editor.setText("/permissions");
+  terminal.send("\r");
+  await app.whenIdle();
+  assert.match(app.renderDocument(80).join("\n"), /当前权限模式：safe/);
+
+  app.editor.setText("/permissions autopilot");
+  terminal.send("\r");
+  await app.whenIdle();
+  const output = app.renderDocument(100).join("\n");
+  assert.deepEqual(bridge.permissionModes, ["autopilot"]);
+  assert.match(output, /AUTOPILOT/);
+  assert.match(output, /权限模式已切换为：autopilot/);
+  assert.equal(bridge.turns.length, 0);
   app.stop();
 });

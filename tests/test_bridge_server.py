@@ -14,6 +14,7 @@ from miniclaw.bootstrap import initialize_state
 from miniclaw.bridge.server import BridgeServer
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision
+from miniclaw.policy.modes import PermissionMode, PermissionState
 
 
 def _request(request_id: str, request_type: str, payload: dict) -> bytes:
@@ -167,6 +168,7 @@ def _runtime(service) -> SimpleNamespace:
         ui_language="zh-CN",
         context_budget_tokens=32_000,
         tool_definitions=(SimpleNamespace(name="run_command"),),
+        permission_state=PermissionState(PermissionMode.SAFE),
         service=service,
     )
 
@@ -194,6 +196,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hello["payload"]["protocol"], 1)
         self.assertEqual(hello["payload"]["model"], "deepseek-v4-pro")
         self.assertEqual(hello["payload"]["tools"], ["run_command"])
+        self.assertEqual(hello["payload"]["permission_mode"], "safe")
 
         await reader.feed(
             _request("turn-1", "turn.start", {"session_key": "default", "text": "你好"})
@@ -216,6 +219,38 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(service.decisions, [ApprovalDecision.SESSION])
 
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        self.assertEqual(await task, 0)
+
+    async def test_permission_mode_changes_only_while_idle_and_returns_current_mode(self) -> None:
+        """CLI 可动态切换共享模式；运行中必须拒绝且不能静默扩权。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        service = BlockingTurnService()
+        runtime = _runtime(service)
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+
+        await reader.feed(
+            _request("mode-1", "permissions.set", {"mode": "autopilot"})
+        )
+        changed = await writer.wait_for_id("mode-1")
+        self.assertEqual(changed["type"], "response.ok")
+        self.assertEqual(changed["payload"], {"permission_mode": "autopilot"})
+        self.assertEqual(runtime.permission_state.mode, PermissionMode.AUTOPILOT)
+
+        await reader.feed(
+            _request("turn-1", "turn.start", {"session_key": "default", "text": "first"})
+        )
+        await asyncio.wait_for(service.started.wait(), timeout=1)
+        await reader.feed(_request("mode-busy", "permissions.set", {"mode": "yolo"}))
+        rejected = await writer.wait_for_id("mode-busy")
+        self.assertEqual(rejected["type"], "response.error")
+        self.assertEqual(rejected["payload"]["code"], "permissions_busy")
+        self.assertEqual(runtime.permission_state.mode, PermissionMode.AUTOPILOT)
+
+        await reader.feed(_request("cancel-1", "turn.cancel", {}))
+        await writer.wait_for_id("cancel-1")
         await reader.feed(_request("stop-1", "bridge.shutdown", {}))
         self.assertEqual(await task, 0)
         self.assertEqual(writer.frames[-1]["type"], "response.ok")

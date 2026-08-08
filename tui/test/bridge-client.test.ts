@@ -42,6 +42,29 @@ test("request writes NDJSON and resolves its matching response", async () => {
   assert.deepEqual(await response, { model: "deepseek-v4-pro" });
 });
 
+test("setPermissionMode sends the exact versioned request and returns the Core mode", async () => {
+  const process = new FakeProcess();
+  const client = new BridgeClient(process);
+  const written: Buffer[] = [];
+  process.stdin.on("data", (chunk: Buffer) => written.push(chunk));
+
+  const pending = client.setPermissionMode("autopilot");
+  await new Promise((resolve) => setImmediate(resolve));
+  const request = JSON.parse(Buffer.concat(written).toString("utf8"));
+  assert.equal(request.type, "permissions.set");
+  assert.deepEqual(request.payload, { mode: "autopilot" });
+  process.stdout.write(
+    `${JSON.stringify({
+      v: 1,
+      id: request.id,
+      type: "response.ok",
+      payload: { permission_mode: "autopilot" },
+    })}\n`,
+  );
+
+  assert.equal(await pending, "autopilot");
+});
+
 test("fragmented RunEvent frames reach subscribers in order", async () => {
   const process = new FakeProcess();
   const client = new BridgeClient(process);
