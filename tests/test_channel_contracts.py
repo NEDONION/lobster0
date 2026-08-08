@@ -5,6 +5,7 @@ from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 
 from miniclaw.channels.base import (
+    ChannelLimits,
     ChannelTransport,
     InboundMessage,
     OutboundMessage,
@@ -71,6 +72,36 @@ class ChannelContractTest(unittest.TestCase):
 
         self.assertIsInstance(CompleteTransport(), ChannelTransport)
         self.assertEqual(SendReceipt("om_sent").platform_message_id, "om_sent")
+
+
+class ChannelLimitsTest(unittest.TestCase):
+    """验证三平台共享资源预算是冻结、严格且不携带 Secret 的值对象。"""
+
+    def test_valid_limits_are_immutable_and_redacted(self) -> None:
+        """合法值应完整保留，但不允许运行期扩大预算。"""
+        limits = ChannelLimits("telegram", "default", 64, 2, 4096, 0.8)
+
+        self.assertEqual(limits.channel, "telegram")
+        self.assertEqual(limits.worker_count, 2)
+        self.assertNotIn("bot-token", repr(limits))
+        with self.assertRaises(FrozenInstanceError):
+            limits.worker_count = 8  # type: ignore[misc]
+
+    def test_invalid_channel_account_and_budgets_are_rejected(self) -> None:
+        """未知平台、非法 account、bool 和非正预算不能进入 Manager。"""
+        invalid = (
+            ("unknown", "default", 64, 2, 2000, 1.0),
+            ("telegram", "", 64, 2, 2000, 1.0),
+            ("telegram", "UPPER", 64, 2, 2000, 1.0),
+            ("telegram", "default", True, 2, 2000, 1.0),
+            ("telegram", "default", 64, 0, 2000, 1.0),
+            ("telegram", "default", 64, 2, 0, 1.0),
+            ("telegram", "default", 64, 2, 2000, 0.0),
+        )
+        for values in invalid:
+            with self.subTest(values=values):
+                with self.assertRaises(ValueError):
+                    ChannelLimits(*values)
 
 
 if __name__ == "__main__":

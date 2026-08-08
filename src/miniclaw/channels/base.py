@@ -1,5 +1,6 @@
 """平台 Adapter、Gateway 和 Delivery 之间的最小公共契约。"""
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol, runtime_checkable
@@ -7,6 +8,9 @@ from typing import Literal, Protocol, runtime_checkable
 type ChatType = Literal["p2p", "group"]
 type MessageType = Literal["text"]
 type DeliveryKind = Literal["message", "card", "approval", "typing"]
+
+_ACCOUNT_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
+_CHANNEL_NAMES = frozenset({"feishu", "telegram", "discord"})
 
 
 class ChannelTransportError(RuntimeError):
@@ -30,6 +34,33 @@ class ChannelTransportError(RuntimeError):
             "ChannelTransportError("
             f"code={self.code!r}, retryable={self.retryable!r}, unknown={self.unknown!r})"
         )
+
+
+@dataclass(frozen=True, slots=True)
+class ChannelLimits:
+    """保存单个平台 Manager/Experience 共用的非秘密本地预算。"""
+
+    channel: str
+    account_id: str
+    queue_size: int
+    worker_count: int
+    message_max_chars: int
+    progress_update_interval: float
+
+    def __post_init__(self) -> None:
+        """拒绝未知平台、非法本地账号和可被 bool 绕过的预算。"""
+        if self.channel not in _CHANNEL_NAMES:
+            raise ValueError("unsupported channel")
+        if not isinstance(self.account_id, str) or _ACCOUNT_ID.fullmatch(self.account_id) is None:
+            raise ValueError("invalid channel account_id")
+        integer_limits = (self.queue_size, self.worker_count, self.message_max_chars)
+        if any(type(value) is not int or value <= 0 for value in integer_limits):
+            raise ValueError("channel integer limits must be positive")
+        if (
+            type(self.progress_update_interval) not in {int, float}
+            or self.progress_update_interval <= 0
+        ):
+            raise ValueError("channel progress interval must be positive")
 
 
 @dataclass(frozen=True, slots=True, repr=False)

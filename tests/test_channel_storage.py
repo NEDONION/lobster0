@@ -211,6 +211,7 @@ class ChannelStorageTest(unittest.TestCase):
         self.assertEqual(after_due.recover_sending("feishu", "default"), 1)
         recovered = after_due.get(retried.id)
         self.assertEqual(recovered.status, "unknown")
+        self.assertEqual(recovered.last_error_code, "channel_delivery_unknown")
         self.assertEqual(recovered.idempotency_key, delivery.idempotency_key)
 
     def _message(

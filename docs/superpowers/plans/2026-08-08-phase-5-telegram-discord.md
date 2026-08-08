@@ -195,7 +195,7 @@ git commit -m "feat(config): 增加 Telegram/Discord typed settings 与 optional
 
 ### Step 2.1 — RED for `ChannelLimits`
 
-- [ ] 测试 immutable value object：
+- [x] 测试 immutable value object：
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -208,8 +208,8 @@ class ChannelLimits:
     progress_update_interval: float
 ```
 
-- [ ] 构造函数拒绝未知 channel、空 account、bool 数字、非正预算；`repr` 不含 Secret 或平台 ID。
-- [ ] 添加 `limits_for_channel(config, "feishu" | "telegram" | "discord")` 的稳定映射测试。
+- [x] 构造函数拒绝未知 channel、空 account、bool 数字、非正预算；`repr` 不含 Secret 或平台 ID。
+- [x] 添加 `limits_for_channel(config, "feishu" | "telegram" | "discord")` 的稳定映射测试。
 
 Run RED:
 
@@ -223,8 +223,8 @@ Expected RED: `ChannelLimits` 和 generic manager factory 不存在。
 
 ### Step 2.2 — Generalize manager creation
 
-- [ ] 将 `create_channel_manager()` 改为显式接收 `ChannelLimits`，不能在函数内部读取 `config.channels.feishu`。
-- [ ] 依赖仍只创建一次 repository set；不把 Transport 传入 Core Manager。
+- [x] 将 `create_channel_manager()` 改为显式接收 `ChannelLimits`，不能在函数内部读取 `config.channels.feishu`。
+- [x] 依赖仍只创建一次 repository set；不把 Transport 传入 Core Manager。
 
 目标签名：
 
@@ -257,8 +257,8 @@ def create_channel_manager(
 
 ### Step 2.3 — Make Delivery errors channel-neutral
 
-- [ ] RED 覆盖 cancel、unknown receipt、unexpected exception、invalid approval payload、unsupported interactive delivery。
-- [ ] 将稳定码改为：
+- [x] RED 覆盖 cancel、unknown receipt、unexpected exception、invalid approval payload、unsupported interactive delivery。
+- [x] 将稳定码改为：
 
 | Old hard-coded code | New stable code |
 | --- | --- |
@@ -268,8 +268,8 @@ def create_channel_manager(
 | `feishu_card_unsupported` | `channel_interactive_unsupported` |
 | `feishu_card_failed` | `channel_interactive_failed` |
 
-- [ ] 保留平台 Transport 自己映射的 `telegram_rate_limited`、`discord_forbidden` 等平台码。
-- [ ] 旧测试更新为公共语义断言，不通过兼容 alias 隐藏硬编码。
+- [x] 保留平台 Transport 自己映射的 `telegram_rate_limited`、`discord_forbidden` 等平台码。
+- [x] 旧测试更新为公共语义断言，不通过兼容 alias 隐藏硬编码。
 
 Run GREEN:
 

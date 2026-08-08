@@ -7,6 +7,7 @@ from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
+from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig
@@ -163,16 +164,38 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     )
 
 
+def limits_for_channel(config: AppConfig, channel: str) -> ChannelLimits:
+    """把三套强类型配置收窄为 Manager/Experience 共用预算。"""
+    if channel == "feishu":
+        selected = config.channels.feishu
+        progress_update_interval = 0.5
+    elif channel == "telegram":
+        selected = config.channels.telegram
+        progress_update_interval = selected.progress_update_interval
+    elif channel == "discord":
+        selected = config.channels.discord
+        progress_update_interval = selected.progress_update_interval
+    else:
+        raise ValueError("unsupported channel")
+    return ChannelLimits(
+        channel=channel,
+        account_id=selected.account_id,
+        queue_size=selected.queue_size,
+        worker_count=selected.worker_count,
+        message_max_chars=selected.message_max_chars,
+        progress_update_interval=progress_update_interval,
+    )
+
+
 def create_channel_manager(
-    config: AppConfig,
     paths: StatePaths,
     runtime: AgentRuntime,
+    limits: ChannelLimits,
     *,
     observer: ChannelObserver | None = None,
 ) -> ChannelManager:
-    """为飞书 Gateway 装配复用唯一 TurnService 的 durable ChannelManager。"""
+    """为一个 Channel 装配复用唯一 TurnService 的 durable Manager。"""
     database = Database(paths.database)
-    feishu = config.channels.feishu
     return ChannelManager(
         owner_id=runtime.owner_id,
         service=runtime.service,
@@ -182,10 +205,10 @@ def create_channel_manager(
         identities=ChannelIdentityRepository(database),
         inbound=InboundEventRepository(database),
         deliveries=DeliveryRepository(database),
-        channel="feishu",
-        account_id=feishu.account_id,
-        queue_size=feishu.queue_size,
-        worker_count=feishu.worker_count,
-        message_max_chars=feishu.message_max_chars,
+        channel=limits.channel,
+        account_id=limits.account_id,
+        queue_size=limits.queue_size,
+        worker_count=limits.worker_count,
+        message_max_chars=limits.message_max_chars,
         observer=observer,
     )

@@ -10,7 +10,7 @@ from pathlib import Path
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import load_config
 from miniclaw.paths import build_state_paths
-from miniclaw.runtime import create_channel_manager, create_runtime
+from miniclaw.runtime import create_channel_manager, create_runtime, limits_for_channel
 
 
 class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
@@ -80,11 +80,38 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                     ],
                 )
                 self.assertIsNotNone(runtime.service)
-                manager = create_channel_manager(config, paths, runtime)
+                limits = limits_for_channel(config, "feishu")
+                manager = create_channel_manager(paths, runtime, limits)
                 self.assertIs(manager.service, runtime.service)
                 self.assertEqual(manager.owner_id, runtime.owner_id)
             finally:
                 await runtime.aclose()
+
+    async def test_channel_limits_map_all_typed_config_without_secrets(self) -> None:
+        """三个平台应稳定映射同一公共预算，不复制 Manager factory。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            initialize_state(paths)
+            config = load_config(paths)
+
+        feishu = limits_for_channel(config, "feishu")
+        telegram = limits_for_channel(config, "telegram")
+        discord = limits_for_channel(config, "discord")
+
+        self.assertEqual(
+            (feishu.message_max_chars, feishu.progress_update_interval),
+            (30000, 0.5),
+        )
+        self.assertEqual(
+            (telegram.message_max_chars, telegram.progress_update_interval),
+            (4096, 0.8),
+        )
+        self.assertEqual(
+            (discord.message_max_chars, discord.progress_update_interval),
+            (2000, 1.0),
+        )
+        with self.assertRaisesRegex(ValueError, "unsupported channel"):
+            limits_for_channel(config, "matrix")
 
 
 if __name__ == "__main__":

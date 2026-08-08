@@ -687,7 +687,7 @@ class DeliveryRepository:
             updated = connection.execute(
                 """
                 UPDATE deliveries
-                SET status = 'unknown', last_error_code = 'feishu_delivery_unknown',
+                SET status = 'unknown', last_error_code = 'channel_delivery_unknown',
                     updated_at = ?
                 WHERE channel = ? AND account_id = ? AND status = 'sending'
                 """,
@@ -717,7 +717,7 @@ class DeliveryRepository:
             connection.execute(
                 """
                 UPDATE deliveries
-                SET status = 'failed', last_error_code = 'feishu_send_failed',
+                SET status = 'failed', last_error_code = 'channel_send_failed',
                     updated_at = ?
                 WHERE channel = ? AND account_id = ? AND status = 'unknown'
                   AND attempts >= ?

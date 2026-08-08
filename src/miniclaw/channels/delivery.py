@@ -150,18 +150,18 @@ class DeliveryWorker:
             except asyncio.CancelledError:
                 self._repository.mark_unknown(
                     delivery.id,
-                    "feishu_delivery_unknown",
+                    "channel_delivery_unknown",
                 )
                 raise
             except ChannelTransportError as error:
                 self._handle_transport_error(delivery, error)
             except Exception:
-                self._repository.mark_failed(delivery.id, "feishu_send_failed")
+                self._repository.mark_failed(delivery.id, "channel_send_failed")
             else:
                 if not receipt.platform_message_id:
                     self._repository.mark_unknown(
                         delivery.id,
-                        "feishu_delivery_unknown",
+                        "channel_delivery_unknown",
                     )
                 else:
                     self._repository.mark_sent(delivery.id, receipt.platform_message_id)
@@ -176,7 +176,7 @@ class DeliveryWorker:
         except ValueError:
             self._repository.mark_failed(
                 delivery.id,
-                "feishu_approval_payload_invalid",
+                "channel_approval_payload_invalid",
             )
             return
         send_card = getattr(self._transport, "send_card", None)
@@ -184,7 +184,7 @@ class DeliveryWorker:
             self._fallback_approval(
                 delivery,
                 prompt.fallback_text,
-                "feishu_card_unsupported",
+                "channel_interactive_unsupported",
             )
             return
         try:
@@ -197,20 +197,20 @@ class DeliveryWorker:
         except asyncio.CancelledError:
             self._repository.mark_unknown(
                 delivery.id,
-                "feishu_delivery_unknown",
+                "channel_delivery_unknown",
             )
             raise
         except Exception:
             self._fallback_approval(
                 delivery,
                 prompt.fallback_text,
-                "feishu_card_failed",
+                "channel_interactive_failed",
             )
             return
         if not receipt.platform_message_id:
             self._repository.mark_unknown(
                 delivery.id,
-                "feishu_delivery_unknown",
+                "channel_delivery_unknown",
             )
             return
         self._repository.mark_sent(delivery.id, receipt.platform_message_id)

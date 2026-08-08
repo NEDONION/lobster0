@@ -18,7 +18,12 @@ from miniclaw.channels.observability import ChannelObserver
 from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.paths import StatePaths
-from miniclaw.runtime import AgentRuntime, create_channel_manager, create_runtime
+from miniclaw.runtime import (
+    AgentRuntime,
+    create_channel_manager,
+    create_runtime,
+    limits_for_channel,
+)
 from miniclaw.storage.channels import DeliveryRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.tooling import ApprovalRepository
@@ -248,9 +253,9 @@ async def _create_components(
         database = Database(paths.database)
         observer = ChannelObserver(database)
         manager = create_channel_manager(
-            config,
             paths,
             runtime,
+            limits_for_channel(config, "feishu"),
             observer=observer,
         )
         approval_controller = ChannelApprovalController(

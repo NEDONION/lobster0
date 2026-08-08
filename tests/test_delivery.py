@@ -1,5 +1,6 @@
 """Unicode 分片、DeliveryWorker 重试与恢复测试。"""
 
+import asyncio
 import json
 import tempfile
 import unittest
@@ -181,7 +182,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
 
         failed = self.repository.get(delivery.id)
         self.assertEqual(failed.status, "failed")
-        self.assertEqual(failed.last_error_code, "feishu_send_failed")
+        self.assertEqual(failed.last_error_code, "channel_send_failed")
         with self.database.connect_read_only() as connection:
             dump = "\n".join(
                 str(value)
@@ -245,6 +246,87 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
                 (failed_message_id,),
             ).fetchone()
         self.assertEqual(fallback["status"], "sent")
+
+    async def test_cancel_and_empty_receipt_become_common_unknown(self) -> None:
+        """Worker 自己产生的未知状态必须平台无关，且取消继续向上传播。"""
+        cancelled = self._delivery("cancelled")
+        cancelling_transport = FakeChannelTransport((asyncio.CancelledError(),))
+
+        with self.assertRaises(asyncio.CancelledError):
+            await self._worker(cancelling_transport).run_once()
+
+        self.assertEqual(self.repository.get(cancelled.id).status, "unknown")
+        self.assertEqual(
+            self.repository.get(cancelled.id).last_error_code,
+            "channel_delivery_unknown",
+        )
+
+        empty = self._delivery("empty-receipt")
+        self.assertTrue(
+            await self._worker(FakeChannelTransport((SendReceipt(""),))).run_once()
+        )
+        self.assertEqual(self.repository.get(empty.id).last_error_code, "channel_delivery_unknown")
+
+    async def test_invalid_and_unsupported_approval_use_common_codes(self) -> None:
+        """Approval payload/render fallback 由公共 Worker 结算，不再制造 feishu code。"""
+        invalid = self.repository.create_parts(
+            message_id=self._assistant_message(),
+            channel="telegram",
+            account_id="default",
+            external_conversation_id="chat",
+            reply_to_message_id="message",
+            kind="approval",
+            contents=("{}",),
+        )[0]
+        invalid_worker = DeliveryWorker(
+            transport=FakeChannelTransport(()),
+            repository=self.repository,
+            channel="telegram",
+            account_id="default",
+            poll_interval=0.01,
+        )
+        self.assertTrue(await invalid_worker.run_once())
+        self.assertEqual(
+            self.repository.get(invalid.id).last_error_code,
+            "channel_approval_payload_invalid",
+        )
+
+        valid_payload = approval_delivery_payload(
+            ApprovalPrompt(card={"header": {}}, fallback_text="approve 9 once")
+        )
+        unsupported = self.repository.create_parts(
+            message_id=self._assistant_message(),
+            channel="telegram",
+            account_id="default",
+            external_conversation_id="chat",
+            reply_to_message_id="message",
+            kind="approval",
+            contents=(valid_payload,),
+        )[0]
+
+        class TextOnlyTransport:
+            async def connect(self) -> None:
+                return None
+
+            async def disconnect(self) -> None:
+                return None
+
+            async def send(self, message, *, idempotency_key: str) -> SendReceipt:
+                return SendReceipt("sent")
+
+        unsupported_worker = DeliveryWorker(
+            transport=TextOnlyTransport(),
+            repository=self.repository,
+            channel="telegram",
+            account_id="default",
+            poll_interval=0.01,
+        )
+        self.assertTrue(await unsupported_worker.run_once())
+        self.assertEqual(self.repository.get(unsupported.id).status, "superseded")
+        self.assertEqual(
+            self.repository.get(unsupported.id).last_error_code,
+            "channel_interactive_unsupported",
+        )
 
     def _worker(
         self,
