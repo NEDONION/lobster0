@@ -283,7 +283,7 @@ Phase 2 收尾时更新：
 - `docs/getting-started/20260807_本地运行指南.md`；
 - `docs/engineering/README.md`；
 - `docs/engineering/phase-2/lark-cli-and-live-eval.md`；
-- `docs/engineering/phase-2/testing-and-debugging.md`；
+- `docs/engineering/phase-2/20260808_testing-and-debugging.md`；
 - `docs/evals/README.md` 与新发布记录；
 - `docs/progress/index.html`；
 - `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`。

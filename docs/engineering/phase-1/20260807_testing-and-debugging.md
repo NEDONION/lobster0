@@ -2,7 +2,7 @@
 
 > 文档性质：`HISTORICAL SNAPSHOT`。本文保留 Phase 1 的测试分层和旧 CLI 证据；`test_cli_chat.py` 已随
 > 单入口 TUI 迁移删除。当前测试与
-> Live Smoke 命令以 [Phase 2 回归、恢复与调试](../phase-2/testing-and-debugging.md) 为准，下面出现的
+> Live Smoke 命令以 [Phase 2 回归、恢复与调试](../phase-2/20260808_testing-and-debugging.md) 为准，下面出现的
 > `miniclaw chat --message` 只表示当时的发布流程，不能用于当前版本。
 
 ## 1. 目标

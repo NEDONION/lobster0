@@ -162,7 +162,7 @@ Secret 或外部 ID。
 
 权威后续路线见
 [OpenClaw / Hermes 能力 Gap](../../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)和
-[能力对齐工程落地总方案](../openclaw-hermes-alignment-engineering-roadmap.md)。上述项目均为 `PLANNED`，不改变本
+[能力对齐工程落地总方案](../20260808_openclaw-hermes-alignment-engineering-roadmap.md)。上述项目均为 `PLANNED`，不改变本
 文的 Phase 5 事实状态。
 
 因此当前唯一准确写法是：**Phase 5 IMPLEMENTATION PASS；Feishu OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE

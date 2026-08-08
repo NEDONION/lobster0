@@ -205,6 +205,6 @@ git diff --check
 唯一入口、交互、Trace、审批和安全渲染。
 
 本轮实现细节与 scope 表见
-[Python Core + pi-tui Bridge 工程文档](python-core-pi-tui-bridge.md)与
-[TUI 可观测、长文本与分级审批](tui-observability-and-scoped-approvals.md)、
-[Autopilot 权限与紧凑审批 UI](autopilot-permissions-and-approval-ui.md)。
+[Python Core + pi-tui Bridge 工程文档](20260808_python-core-pi-tui-bridge.md)与
+[TUI 可观测、长文本与分级审批](20260808_tui-observability-and-scoped-approvals.md)、
+[Autopilot 权限与紧凑审批 UI](20260808_autopilot-permissions-and-approval-ui.md)。

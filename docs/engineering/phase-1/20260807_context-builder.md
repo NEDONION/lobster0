@@ -3,7 +3,7 @@
 > 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 最小上下文）
 >
 > 当前替代：ContextBuilder 已接入 Memory、Skills、persistent compaction、runtime snapshot 与精确预算；
-> 当前行为见 [Memory、Skills 与上下文压缩](../phase-3/memory-skills-compaction.md)。
+> 当前行为见 [Memory、Skills 与上下文压缩](../phase-3/20260808_memory-skills-compaction.md)。
 
 ## 1. 模块目的
 

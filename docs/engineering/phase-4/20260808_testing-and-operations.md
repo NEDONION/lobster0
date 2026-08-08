@@ -267,9 +267,9 @@ Agent 回归、12 条 Feishu Channel 回归、15 条 Feishu Live 场景和 20 �
 soak 仍明确待办。
 准确说法是：**IMPLEMENTATION PASS / FEISHU OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。
 
-完整模块说明见 [飞书 Channel 与 Gateway](feishu-channel-core.md)，逐项状态见
-[完成性审计与证据矩阵](completion-audit.md)，设计决策见
+完整模块说明见 [飞书 Channel 与 Gateway](20260808_feishu-channel-core.md)，逐项状态见
+[完成性审计与证据矩阵](20260808_completion-audit.md)，设计决策见
 [Phase 4 设计规格](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)。真实 Bot 创建、Scope、
-同应用身份发现和 15 条验收见 [Phase 5.1 Feishu Live E2E](../phase-5/feishu-live-e2e.md)。
+同应用身份发现和 15 条验收见 [Phase 5.1 Feishu Live E2E](../phase-5/20260808_feishu-live-e2e.md)。
 SDK 启动顺序、Typing 与 macOS 常驻见
-[飞书 Gateway 运行时与 macOS 常驻](../phase-5/feishu-gateway-runtime-and-macos-service.md)。
+[飞书 Gateway 运行时与 macOS 常驻](../phase-5/20260808_feishu-gateway-runtime-and-macos-service.md)。

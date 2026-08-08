@@ -175,7 +175,7 @@ uv run python scripts/feishu_live_smoke.py --confirm-live
 
 未给 `--confirm-live` 时，三个脚本都必须在读取 `.env`、状态目录和凭据前退出 2。Feishu 额外要求只启用
 Feishu、worktree clean、没有旧 pending Approval，并在每个动作前捕获 checkpoint。完整说明见
-[真实飞书 Bot 与 Live E2E](feishu-live-e2e.md)。
+[真实飞书 Bot 与 Live E2E](20260808_feishu-live-e2e.md)。
 
 ## 6. Telegram / Discord 每个平台 15 项真实验收
 
@@ -232,7 +232,7 @@ Feishu 不复用上面两个通用人工清单，而是使用 `FEISHU-LIVE-001..
 Feishu Evidence 进一步使用 strict nested schema、0600、`O_EXCL` 和 `fsync`，并重新推导 count/release status 防止
 篡改。当前真实 Gateway handshake 和两条 Owner DM Delivery 已通过，但尚未生成完整 15/15 Evidence，所以状态必须
 保持 **OWNER-DM DELIVERY VERIFIED / 15-CASE LIVE PENDING**。真实运行记录见
-[飞书 Gateway 运行时与 macOS 常驻](feishu-gateway-runtime-and-macos-service.md)。
+[飞书 Gateway 运行时与 macOS 常驻](20260808_feishu-gateway-runtime-and-macos-service.md)。
 
 ## 9. 发布判定
 

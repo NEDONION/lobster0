@@ -421,6 +421,6 @@ Phase 5 production verified 还要求 Telegram、Discord 两边真实验收均�
 [Phase 5 Telegram/Discord 工程设计](../../superpowers/specs/2026-08-08-phase-5-telegram-discord-design.md)。
 
 运行、测试与真实验收见
-[测试与 live acceptance](testing-and-live-acceptance.md)；错误定位见
-[故障排查手册](troubleshooting.md)；逐项 requirement → code → evidence 见
-[完成性审计](completion-audit.md)。
+[测试与 live acceptance](20260808_testing-and-live-acceptance.md)；错误定位见
+[故障排查手册](20260808_troubleshooting.md)；逐项 requirement → code → evidence 见
+[完成性审计](20260808_completion-audit.md)。

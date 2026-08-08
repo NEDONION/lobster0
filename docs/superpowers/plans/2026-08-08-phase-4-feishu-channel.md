@@ -724,8 +724,8 @@ git commit -m "test(feishu): 增加 R4 regression 与 live smoke harness"
 
 **Files:**
 
-- Create: `docs/engineering/phase-4/feishu-channel.md`
-- Create: `docs/engineering/phase-4/testing-and-operations.md`
+- Create: `docs/engineering/phase-4/20260808_feishu-channel.md`
+- Create: `docs/engineering/phase-4/20260808_testing-and-operations.md`
 - Modify: `docs/product/20260807_产品需求文档.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/engineering/README.md`

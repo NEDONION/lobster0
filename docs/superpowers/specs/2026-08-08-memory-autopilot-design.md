@@ -170,9 +170,9 @@ The foundation is scheduled after the Phase 5.3 live gate closes and before Phas
 ## 14. Detailed References
 
 - [Gap and target architecture](../../architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)
-- [Engineering best practices and technology selection](../../engineering/memory-autopilot-best-practices-and-technology-selection.md)
+- [Engineering best practices and technology selection](../../engineering/20260808_memory-autopilot-best-practices-and-technology-selection.md)
 - [Memory A–E TDD implementation plan](../plans/2026-08-09-memory-autopilot.md)
-- [Current Phase 3 implementation](../../engineering/phase-3/memory-skills-compaction.md)
+- [Current Phase 3 implementation](../../engineering/phase-3/20260808_memory-skills-compaction.md)
 - [EverOS](https://github.com/EverMind-AI/EverOS)
 - [TencentDB Agent Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)
 - [OpenClaw Memory](https://github.com/openclaw/openclaw/blob/main/docs/concepts/memory.md)

@@ -36,7 +36,7 @@
 | `tests/test_file_tools.py` | `read_file` 正常行窗口、二进制、编码、大小和错误码 |
 | `tests/test_search_tools.py` | `glob`/`grep` 排序、过滤、上限、正则和二进制行为 |
 | `tests/test_turn.py` | 真实 Turn/Executor/Fake Provider 的 `read_file` 两轮 Tool Loop |
-| `docs/engineering/phase-2/workspace-read-tools.md` | 面向学习者的模块、调用链、安全边界、调试和测试说明 |
+| `docs/engineering/phase-2/20260807_workspace-read-tools.md` | 面向学习者的模块、调用链、安全边界、调试和测试说明 |
 | `docs/progress/index.html` | 把 P2.1B 标成已验证，并展示下一阶段仍未实现的能力 |
 
 ---
@@ -425,7 +425,7 @@ git commit -m "feat: expose workspace read tools to the agent"
 ### Task 5: 学习文档与可点击进度页
 
 **Files:**
-- Create: `docs/engineering/phase-2/workspace-read-tools.md`
+- Create: `docs/engineering/phase-2/20260807_workspace-read-tools.md`
 - Modify: `docs/engineering/README.md`
 - Modify: `README.md`
 - Modify: `docs/progress/index.html`
@@ -453,7 +453,7 @@ Run: `rg -n "loblet|已实现.*write_file|已实现.*run_command" README.md docs
 Expected: 无旧产品名或把未来功能写成已完成的命中；另人工确认新增文档没有占位段落。
 
 ```bash
-git add README.md docs/engineering/README.md docs/engineering/phase-2/workspace-read-tools.md docs/progress/index.html
+git add README.md docs/engineering/README.md docs/engineering/phase-2/20260807_workspace-read-tools.md docs/progress/index.html
 git commit -m "docs: explain workspace read tools"
 ```
 

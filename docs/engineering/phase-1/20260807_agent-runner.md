@@ -4,7 +4,7 @@
 >
 > 当前替代：Phase 2.1A 已删除临时 `ToolHandler` Mapping，改为 Policy 控制的 `ToolExecutor`，并持久化
 > 中间消息；当前实现见
-> [Tool Runtime 与 system_info](../phase-2/tool-runtime-and-system-info.md)。
+> [Tool Runtime 与 system_info](../phase-2/20260807_tool-runtime-and-system-info.md)。
 
 ## 1. 模块目的
 

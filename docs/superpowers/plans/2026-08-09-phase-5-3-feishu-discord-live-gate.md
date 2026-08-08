@@ -462,12 +462,12 @@ Expected: Harness 自己启动并持有唯一 Gateway，exact ready 后才显示
 - Modify: `docs/product/20260807_产品需求文档.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/engineering/README.md`
-- Modify: `docs/engineering/phase-5/testing-and-live-acceptance.md`
-- Modify: `docs/engineering/phase-5/feishu-live-e2e.md`
-- Modify: `docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md`
-- Modify: `docs/engineering/phase-5/telegram-discord-channels.md`
-- Modify: `docs/engineering/phase-5/troubleshooting.md`
-- Modify: `docs/engineering/phase-5/completion-audit.md`
+- Modify: `docs/engineering/phase-5/20260808_testing-and-live-acceptance.md`
+- Modify: `docs/engineering/phase-5/20260808_feishu-live-e2e.md`
+- Modify: `docs/engineering/phase-5/20260808_feishu-gateway-runtime-and-macos-service.md`
+- Modify: `docs/engineering/phase-5/20260808_telegram-discord-channels.md`
+- Modify: `docs/engineering/phase-5/20260808_troubleshooting.md`
+- Modify: `docs/engineering/phase-5/20260808_completion-audit.md`
 - Modify: `docs/progress/index.html`
 - Modify outside repo with explicit approval: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
 

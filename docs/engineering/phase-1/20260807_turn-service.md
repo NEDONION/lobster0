@@ -3,8 +3,8 @@
 > 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 Turn 闭环）
 >
 > 当前替代：TurnService 已持久化完整 Tool transcript、Approval 续执行、crash recovery、Session lock 与
-> runtime snapshot；当前 Tool 事务见[Tool Runtime](../phase-2/tool-runtime-and-system-info.md)，上下文恢复见
-> [Memory、Skills 与上下文压缩](../phase-3/memory-skills-compaction.md)。
+> runtime snapshot；当前 Tool 事务见[Tool Runtime](../phase-2/20260807_tool-runtime-and-system-info.md)，上下文恢复见
+> [Memory、Skills 与上下文压缩](../phase-3/20260808_memory-skills-compaction.md)。
 
 ## 1. 模块目的
 

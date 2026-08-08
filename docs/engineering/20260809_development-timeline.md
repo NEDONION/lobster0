@@ -20,14 +20,14 @@
 | 2 | Phase 1 | Provider、ContextBuilder、AgentRunner、TurnService、旧 CLI 闭环 | Core 保留；旧 CLI 已迁移 | [Phase 1 设计](../superpowers/specs/2026-08-07-phase-1-cli-agent-design.md) |
 | 3 | v0.1.0 | Tool Runtime、只读文件 Tool、首个 Agent Eval | 177 tests、10/10 Agent | [Release v0.1.0](../evals/releases/v0.1.0.md) |
 | 4 | v0.2.0 | 写入、Approval、exact argv、HTTPS 与 Phase 2 release gate | 245 tests、20/20 Agent；历史 DeepSeek smoke PASS | [Release v0.2.0](../evals/releases/v0.2.0.md) |
-| 5 | TUI stabilization | 裸 `miniclaw` 单入口、pi-tui Bridge、可观测与审批 UI | 已并入当前入口 | [单入口 TUI](phase-2/single-entry-tui.md) |
+| 5 | TUI stabilization | 裸 `miniclaw` 单入口、pi-tui Bridge、可观测与审批 UI | 已并入当前入口 | [单入口 TUI](phase-2/20260808_single-entry-tui.md) |
 | 6 | v0.3.0 | Memory v1、Skills、Compaction | 296 tests、24/24 Agent；本版本未跑 live model | [Release v0.3.0](../evals/releases/v0.3.0.md) |
 | 7 | v0.4.0 | Feishu Channel、durable Inbox/Outbox、Gateway | Implementation PASS；当时 Live Pending | [Release v0.4.0](../evals/releases/v0.4.0.md) |
 | 8 | v0.4.1 | P2.3B Personal Machine 权限与用户 CLI 发现 | Implementation PASS；当时 auth live pending | [Release v0.4.1](../evals/releases/v0.4.1.md) |
 | 9 | v0.5.0 | Telegram/Discord、单 Runtime 多 Pipeline | 483 tests、32/32 Channel、640/640 soak；Live Pending | [Release v0.5.0](../evals/releases/v0.5.0.md) |
 | 10 | v0.5.1 Stabilization | Feishu 15-case Runner 与脱敏 Evidence | Harness PASS；后来补充 Owner DM evidence | [Release v0.5.1](../evals/releases/v0.5.1.md) |
 | 11 | v0.5.2 Stabilization | Feishu 单卡、恢复、direct lark-cli Skill | Implementation PASS；完整 Live Pending | [Release v0.5.2](../evals/releases/v0.5.2.md) |
-| 12 | mainline increment | Owner Autopilot 默认值与 Claw Trail Agent Card | Implementation PASS；Owner 范围受限 | [Autopilot 工程文档](phase-2/autopilot-permissions-and-approval-ui.md) |
+| 12 | mainline increment | Owner Autopilot 默认值与 Claw Trail Agent Card | Implementation PASS；Owner 范围受限 | [Autopilot 工程文档](phase-2/20260808_autopilot-permissions-and-approval-ui.md) |
 | 13 | v0.5.3 Core | SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner、异常 Tool 历史恢复 | 562 tests；Feishu/Discord 15/15 Pending | [Release v0.5.3](../evals/releases/v0.5.3.md) |
 
 ## 3. 当前主线

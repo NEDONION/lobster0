@@ -351,7 +351,7 @@ git commit -m "feat(tui): 解释命令权限并增加 Personal 回归场景"
 ### Task 6: 工程文档、架构与进度同步
 
 **Files:**
-- Create: `docs/engineering/phase-2/personal-machine-permissions.md`
+- Create: `docs/engineering/phase-2/20260808_personal-machine-permissions.md`
 - Modify: `docs/engineering/README.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/product/20260807_产品需求文档.md`
@@ -375,7 +375,7 @@ README/PRD/架构把“文件只能 Workspace”改为 Profile 语义；本地�
 
 ```bash
 rg -n "只能访问 Workspace|workspace-only|P2.3B 尚未|391/391" README.md docs
-sed -n '1,260p' docs/engineering/phase-2/personal-machine-permissions.md
+sed -n '1,260p' docs/engineering/phase-2/20260808_personal-machine-permissions.md
 git diff --check
 git add README.md docs
 git commit -m "docs(phase2.3): 记录 Personal 权限工程边界与进度"

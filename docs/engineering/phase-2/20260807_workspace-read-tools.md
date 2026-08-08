@@ -330,4 +330,4 @@ symlink loop；P2.1B exit gate 的 153 项测试已分别在 Python 3.12 与 3.1
 177 项。本页事实来自这些提交中的 `workspace.py`、
 `filesystem.py`、`search.py`、`cli.py`，以及对应单元测试和现有 Tool Runtime 契约；本页不把设计文档中的
 P2.2/P2.3 规划写成当前功能。Agent 版本回归的最新验证方式见
-[P2.1C 工程文档](agent-regression-evals.md)。
+[P2.1C 工程文档](20260808_agent-regression-evals.md)。

@@ -10,7 +10,7 @@
 
 这份文档只回答运行时问题：为什么之前收不到消息、现在一条消息怎样被处理、处理中表情何时出现，以及怎样让
 Gateway 在 Mac 或 VPS 上长期运行。飞书应用创建、Scope、15 条真实验收和 Evidence 格式见
-[真实飞书 Bot 与 Live E2E](feishu-live-e2e.md)。
+[真实飞书 Bot 与 Live E2E](20260808_feishu-live-e2e.md)。
 
 ## 1. 当前真实链路
 

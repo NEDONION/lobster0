@@ -241,7 +241,7 @@ flowchart LR
 
 允许记录内部 row/session/turn/message/delivery ID、短哈希、毫秒耗时、计数、枚举状态和稳定错误码。完整 Open ID、
 Chat ID、Message ID、正文、Secret、token、Tool 参数、SDK raw event、异常原文和隐藏 reasoning 一律不进入该链路。
-完整逐项证据见 [Phase 4 完成性审计](completion-audit.md)。
+完整逐项证据见 [Phase 4 完成性审计](20260808_completion-audit.md)。
 
 ## 11. 已知边界
 
@@ -253,9 +253,9 @@ Chat ID、Message ID、正文、Secret、token、Tool 参数、SDK raw event、�
 
 ## 12. 相关文档
 
-- [运行、测试与故障排查](testing-and-operations.md)
-- [完成性审计与证据矩阵](completion-audit.md)
+- [运行、测试与故障排查](20260808_testing-and-operations.md)
+- [完成性审计与证据矩阵](20260808_completion-audit.md)
 - [Phase 4 设计规格](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)
 - [Phase 4 实施计划](../../superpowers/plans/2026-08-08-phase-4-feishu-channel.md)
 - [系统架构](../../architecture/20260807_系统架构.md)
-- [Agent 回归规范](../phase-2/agent-regression-evals.md)
+- [Agent 回归规范](../phase-2/20260808_agent-regression-evals.md)

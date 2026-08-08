@@ -8,7 +8,7 @@
 > 本文只描述当前已实现的手工/审批式 Memory v1。跨渠道自动提取、短期记忆、自动晋升、周期 Flush、FTS5
 > 检索、冲突/遗忘和 Disclosure Policy 已形成
 > [Memory Autopilot 设计](../../architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)与
-> [工程技术选型](../memory-autopilot-best-practices-and-technology-selection.md)，状态为
+> [工程技术选型](../20260808_memory-autopilot-best-practices-and-technology-selection.md)，状态为
 > **APPROVED DESIGN / PLANNED / NOT IMPLEMENTED**。
 
 ## 1. 这阶段解决什么

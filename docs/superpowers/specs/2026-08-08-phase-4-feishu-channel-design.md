@@ -635,8 +635,8 @@ Phase 4 只有同时满足以下条件才算完成：
 
 ## 24. 文档同步清单
 
-- `docs/engineering/phase-4/feishu-channel.md`：面向学习者的完整工程说明；
-- `docs/engineering/phase-4/testing-and-operations.md`：测试、联调、恢复、排障；
+- `docs/engineering/phase-4/20260808_feishu-channel.md`：面向学习者的完整工程说明；
+- `docs/engineering/phase-4/20260808_testing-and-operations.md`：测试、联调、恢复、排障；
 - `docs/superpowers/plans/2026-08-08-phase-4-feishu-channel.md`：逐文件 TDD 计划；
 - `docs/product/20260807_产品需求文档.md`：SDK、幂等、群 mention 与阶段状态；
 - `docs/architecture/20260807_系统架构.md`：运行时和数据流现状；

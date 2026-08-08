@@ -198,4 +198,4 @@ Provider 选择，不经过 Executor，因此验证时不会启动应用。
 - Windows 进程组终止尚未作为当前 macOS/Linux MVP 的发布门禁。
 - P2.3B 已解决 NVM/Node 安装下的 `lark-cli` 确定性发现、Doctor 可用性检查和最小环境启动；真实
   `auth status`、飞书 Scope 与企业权限仍需 live gate。详见
-  [Personal Machine 权限与 CLI 发现](personal-machine-permissions.md)。
+  [Personal Machine 权限与 CLI 发现](20260808_personal-machine-permissions.md)。

@@ -159,8 +159,8 @@ Core 使用现有 `AgentRunResult`、Tool 事件和 `RunEvent` 传递数据；�
 | `tests/test_agent_runner.py`、`tests/test_turn.py` | 运行指标事件契约 |
 | `tests/test_approvals.py`、`tests/test_tool_executor.py` | Session/Always 安全与审计契约 |
 | `tests/test_config.py`、`tests/test_bootstrap.py` | UI 默认语言和配置校验 |
-| `docs/engineering/phase-2/single-entry-tui.md` | 交互与数据完整性说明 |
-| `docs/engineering/phase-2/tui-regression-testing.md` | 新回归矩阵 |
+| `docs/engineering/phase-2/20260808_single-entry-tui.md` | 交互与数据完整性说明 |
+| `docs/engineering/phase-2/20260808_tui-regression-testing.md` | 新回归矩阵 |
 | `docs/progress/index.html` | 完成后更新当前进度与测试数 |
 
 不增加依赖、Presenter、主题系统、语言识别器、消息虚拟化或第二个 CLI 入口。

@@ -288,7 +288,7 @@ uv run miniclaw
 ### HTTP 被拒绝
 
 按 `https_required`、`port_forbidden`、`dns_failed`、`non_public_address`、`redirect_not_allowed` 分流。不要为了“先跑通”
-关闭证书或公网检查。详见 [HTTP 与 SSRF](https-get-and-ssrf.md)。
+关闭证书或公网检查。详见 [HTTP 与 SSRF](20260808_https-get-and-ssrf.md)。
 
 ### Doctor 显示 stale running
 
@@ -319,4 +319,4 @@ Phase 2 的阶段交付当时不包含：任意 Shell、删除/移动 Tool、后
 Memory/Skills 和自动修改部署源代码。当前仓库后来已经实现飞书审批卡片与 Memory/Skills；其余项目仍不能因为
 Phase 2 Gate 全绿而描述成已完成。
 
-TUI 专项分层、33 个稳定行为 ID 和 PTY 要求见 [TUI 回归测试规范](tui-regression-testing.md)。
+TUI 专项分层、33 个稳定行为 ID 和 PTY 要求见 [TUI 回归测试规范](20260808_tui-regression-testing.md)。

@@ -43,7 +43,7 @@
 **Files:**
 - Create: `src/miniclaw/env.py`
 - Create: `tests/test_env.py`
-- Create: `docs/engineering/phase-1/environment.md`
+- Create: `docs/engineering/phase-1/20260807_environment.md`
 - Modify: `src/miniclaw/bootstrap.py`
 - Modify: `.env.example`
 - Modify: `tests/test_bootstrap.py`
@@ -130,7 +130,7 @@ Add a bootstrap assertion that a new state loads these exact values.
 
 - [ ] **Step 5: Write the environment engineering document**
 
-`docs/engineering/phase-1/environment.md` must explain discovery (`Path.cwd() / ".env"`), precedence, accepted grammar, rejection behavior, `0600`, one-time EvalHub migration, non-logging rules, tests, and the limitation that `.env` is not searched in parent directories.
+`docs/engineering/phase-1/20260807_environment.md` must explain discovery (`Path.cwd() / ".env"`), precedence, accepted grammar, rejection behavior, `0600`, one-time EvalHub migration, non-logging rules, tests, and the limitation that `.env` is not searched in parent directories.
 
 - [ ] **Step 6: Run focused and full checks**
 
@@ -142,7 +142,7 @@ Expected: `All checks passed!`
 - [ ] **Step 7: Commit**
 
 ```bash
-git add .env.example src/miniclaw/env.py src/miniclaw/bootstrap.py tests/test_env.py tests/test_bootstrap.py docs/engineering/phase-1/environment.md
+git add .env.example src/miniclaw/env.py src/miniclaw/bootstrap.py tests/test_env.py tests/test_bootstrap.py docs/engineering/phase-1/20260807_environment.md
 git commit -m "feat: add safe local environment loading"
 ```
 
@@ -154,7 +154,7 @@ git commit -m "feat: add safe local environment loading"
 - Create: `src/miniclaw/providers/__init__.py`
 - Create: `src/miniclaw/providers/base.py`
 - Create: `tests/test_provider_contracts.py`
-- Create: `docs/engineering/phase-1/provider-contract.md`
+- Create: `docs/engineering/phase-1/20260807_provider-contract.md`
 
 **Interfaces:**
 - Produces: `JsonValue`, `ToolCall`, `ModelMessage`, `ModelRequest`, `ModelResponse`
@@ -205,7 +205,7 @@ Validate only at the remote-data parser boundary; the dataclasses remain transpa
 
 - [ ] **Step 4: Document the provider contract**
 
-`provider-contract.md` must include the request/response diagram, each field, `reasoning_content` lifetime, error taxonomy, redaction boundary, fake implementation example, and Phase 2 extension point.
+`20260807_provider-contract.md` must include the request/response diagram, each field, `reasoning_content` lifetime, error taxonomy, redaction boundary, fake implementation example, and Phase 2 extension point.
 
 - [ ] **Step 5: Run tests and Ruff, then commit**
 
@@ -215,7 +215,7 @@ Run: `.venv/bin/ruff check --no-cache src/miniclaw/providers tests/test_provider
 Expected: PASS.
 
 ```bash
-git add src/miniclaw/providers tests/test_provider_contracts.py docs/engineering/phase-1/provider-contract.md
+git add src/miniclaw/providers tests/test_provider_contracts.py docs/engineering/phase-1/20260807_provider-contract.md
 git commit -m "feat: define model provider contracts"
 ```
 
@@ -226,7 +226,7 @@ git commit -m "feat: define model provider contracts"
 **Files:**
 - Create: `src/miniclaw/providers/openai_compatible.py`
 - Create: `tests/test_openai_compatible_provider.py`
-- Create: `docs/engineering/phase-1/openai-compatible-provider.md`
+- Create: `docs/engineering/phase-1/20260807_openai-compatible-provider.md`
 - Modify: `pyproject.toml`
 - Modify: `uv.lock`
 
@@ -326,7 +326,7 @@ Map 401/403, 429, 5xx, timeout/connect, and other invalid responses to the exact
 
 - [ ] **Step 7: Document transport internals and debugging**
 
-`openai-compatible-provider.md` must include request JSON, SSE event examples, fragment merge rules, retry matrix, lifecycle/aclose, DeepSeek reasoning behavior, safe diagnostics, MockTransport testing, and `curl`-free local debugging.
+`20260807_openai-compatible-provider.md` must include request JSON, SSE event examples, fragment merge rules, retry matrix, lifecycle/aclose, DeepSeek reasoning behavior, safe diagnostics, MockTransport testing, and `curl`-free local debugging.
 
 - [ ] **Step 8: Run focused/full tests and commit**
 
@@ -336,7 +336,7 @@ Run: `.venv/bin/ruff check --no-cache src/miniclaw/providers tests/test_provider
 Expected: PASS.
 
 ```bash
-git add pyproject.toml uv.lock src/miniclaw/providers tests/test_openai_compatible_provider.py docs/engineering/phase-1/openai-compatible-provider.md
+git add pyproject.toml uv.lock src/miniclaw/providers tests/test_openai_compatible_provider.py docs/engineering/phase-1/20260807_openai-compatible-provider.md
 git commit -m "feat: add openai compatible model provider"
 ```
 
@@ -352,8 +352,8 @@ git commit -m "feat: add openai compatible model provider"
 - Create: `tests/fakes/fake_provider.py`
 - Create: `tests/test_context.py`
 - Create: `tests/test_agent_runner.py`
-- Create: `docs/engineering/phase-1/context-builder.md`
-- Create: `docs/engineering/phase-1/agent-runner.md`
+- Create: `docs/engineering/phase-1/20260807_context-builder.md`
+- Create: `docs/engineering/phase-1/20260807_agent-runner.md`
 
 **Interfaces:**
 - Produces: `ContextBuilder(paths).build(model, history) -> ModelRequest`
@@ -412,7 +412,7 @@ The runner appends one Assistant `ModelMessage` per Provider response, awaits ha
 
 - [ ] **Step 5: Write both module engineering documents**
 
-`context-builder.md` documents prompt order, file reads, history limit ownership, token-budget deferral, errors, fixtures, and future Memory/Skill insertion points. `agent-runner.md` documents the state machine, request evolution, reasoning propagation, tool handler contract, loop counting, errors, cancellation, tests, and Phase 2 replacement boundary.
+`20260807_context-builder.md` documents prompt order, file reads, history limit ownership, token-budget deferral, errors, fixtures, and future Memory/Skill insertion points. `20260807_agent-runner.md` documents the state machine, request evolution, reasoning propagation, tool handler contract, loop counting, errors, cancellation, tests, and Phase 2 replacement boundary.
 
 - [ ] **Step 6: Run focused/full checks and commit**
 
@@ -422,7 +422,7 @@ Run: `.venv/bin/ruff check --no-cache src/miniclaw/agent tests/fakes tests/test_
 Expected: PASS.
 
 ```bash
-git add src/miniclaw/agent tests/fakes tests/test_context.py tests/test_agent_runner.py docs/engineering/phase-1/context-builder.md docs/engineering/phase-1/agent-runner.md
+git add src/miniclaw/agent tests/fakes tests/test_context.py tests/test_agent_runner.py docs/engineering/phase-1/20260807_context-builder.md docs/engineering/phase-1/20260807_agent-runner.md
 git commit -m "feat: add bounded agent runner"
 ```
 
@@ -435,8 +435,8 @@ git commit -m "feat: add bounded agent runner"
 - Create: `src/miniclaw/agent/turn.py`
 - Create: `tests/test_conversations.py`
 - Create: `tests/test_turn.py`
-- Create: `docs/engineering/phase-1/conversation-storage.md`
-- Create: `docs/engineering/phase-1/turn-service.md`
+- Create: `docs/engineering/phase-1/20260807_conversation-storage.md`
+- Create: `docs/engineering/phase-1/20260807_turn-service.md`
 
 **Interfaces:**
 - Produces: `SessionRepository.get_or_create_cli(user_id, conversation_id) -> Session`
@@ -498,7 +498,7 @@ Flow: session → queued Turn/user Message → running → recent history → Co
 
 - [ ] **Step 5: Write storage and Turn engineering documents**
 
-`conversation-storage.md` includes table mapping, dataclasses, SQL transaction diagrams, timestamps, indexes, queries, rollback behavior, tests, inspection SQL, and limitations. `turn-service.md` includes orchestration sequence, dependency graph, state transitions, error-code mapping, cancellation, idempotency scope, test fakes, debug flow, and the future Channel entry point.
+`20260807_conversation-storage.md` includes table mapping, dataclasses, SQL transaction diagrams, timestamps, indexes, queries, rollback behavior, tests, inspection SQL, and limitations. `20260807_turn-service.md` includes orchestration sequence, dependency graph, state transitions, error-code mapping, cancellation, idempotency scope, test fakes, debug flow, and the future Channel entry point.
 
 - [ ] **Step 6: Run focused/full checks and commit**
 
@@ -508,7 +508,7 @@ Run: `.venv/bin/ruff check --no-cache src/miniclaw/storage/conversations.py src/
 Expected: PASS.
 
 ```bash
-git add src/miniclaw/storage/conversations.py src/miniclaw/agent/turn.py tests/test_conversations.py tests/test_turn.py docs/engineering/phase-1/conversation-storage.md docs/engineering/phase-1/turn-service.md
+git add src/miniclaw/storage/conversations.py src/miniclaw/agent/turn.py tests/test_conversations.py tests/test_turn.py docs/engineering/phase-1/20260807_conversation-storage.md docs/engineering/phase-1/20260807_turn-service.md
 git commit -m "feat: persist cli agent turns"
 ```
 
@@ -520,8 +520,8 @@ git commit -m "feat: persist cli agent turns"
 - Modify: `src/miniclaw/cli.py`
 - Modify: `tests/test_cli.py`
 - Create: `tests/test_cli_chat.py`
-- Create: `docs/engineering/phase-1/cli-chat.md`
-- Create: `docs/engineering/phase-1/testing-and-debugging.md`
+- Create: `docs/engineering/phase-1/20260807_cli-chat.md`
+- Create: `docs/engineering/phase-1/20260807_testing-and-debugging.md`
 - Modify: `README.md`
 - Modify: `docs/getting-started/20260807_本地运行指南.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
@@ -563,7 +563,7 @@ When `--message` is omitted, require stdin TTY, repeatedly read `You> `, use one
 
 - [ ] **Step 5: Write CLI and test/debug engineering documents**
 
-`cli-chat.md` covers parser, dependency assembly, one-shot/interactive flows, exit codes, stdout/stderr contract, provider lifecycle, session selection, tests, and limitations. `testing-and-debugging.md` covers focused commands, full gate, local fake server, safe SQLite inspection, live-test opt-in, redaction checks, and failure triage.
+`20260807_cli-chat.md` covers parser, dependency assembly, one-shot/interactive flows, exit codes, stdout/stderr contract, provider lifecycle, session selection, tests, and limitations. `20260807_testing-and-debugging.md` covers focused commands, full gate, local fake server, safe SQLite inspection, live-test opt-in, redaction checks, and failure triage.
 
 - [ ] **Step 6: Update user docs and progress HTML**
 
@@ -599,7 +599,7 @@ Initialize a fresh temporary home and run a one-shot prompt requesting a short f
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/miniclaw/cli.py tests/test_cli.py tests/test_cli_chat.py README.md docs/getting-started/20260807_本地运行指南.md docs/architecture/20260807_系统架构.md docs/progress/index.html docs/engineering/phase-1/cli-chat.md docs/engineering/phase-1/testing-and-debugging.md
+git add src/miniclaw/cli.py tests/test_cli.py tests/test_cli_chat.py README.md docs/getting-started/20260807_本地运行指南.md docs/architecture/20260807_系统架构.md docs/progress/index.html docs/engineering/phase-1/20260807_cli-chat.md docs/engineering/phase-1/20260807_testing-and-debugging.md
 git commit -m "feat: complete cli agent loop"
 ```
 

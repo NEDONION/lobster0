@@ -2,7 +2,7 @@
 
 这个目录保存“某个代码版本通过了哪些 Agent 场景”的脱敏发布记录。可执行场景数据在
 [`evals/scenarios/`](../../evals/scenarios/)，详细工程实现见
-[P2.1C Agent 回归工程文档](../engineering/phase-2/agent-regression-evals.md)。
+[P2.1C Agent 回归工程文档](../engineering/phase-2/20260808_agent-regression-evals.md)。
 
 ## 三类文件不要混淆
 

@@ -298,4 +298,4 @@ flowchart TD
 - 任意 Shell、删除/移动文件、多用户审批和自动重放明确不在 Phase 2.2。
 
 TUI 的按钮投影、真实遥测和测试证据见
-[TUI 可观测、长文本与分级审批](tui-observability-and-scoped-approvals.md)。
+[TUI 可观测、长文本与分级审批](20260808_tui-observability-and-scoped-approvals.md)。

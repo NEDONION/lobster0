@@ -45,7 +45,7 @@ MiniClaw 现在已经像一个“你叫它，它就能干活的新员工”：
 | Channel | 飞书、Telegram、Discord 独立 Transport，共享 Agent Runtime | `src/miniclaw/channels/` |
 | 消息可靠性 | SQLite Inbox/Outbox、幂等、重试、恢复、Delivery 状态 | `src/miniclaw/storage/channels.py` |
 | 评测 | 520 Python、30 TypeScript、28 Agent、32 Channel、640 soak | `evals/`、`tests/` |
-| 真实平台 | 飞书 App/Bot/WebSocket 和两条 Owner DM Delivery 已验证 | `docs/engineering/phase-5/feishu-gateway-runtime-and-macos-service.md` |
+| 真实平台 | 飞书 App/Bot/WebSocket 和两条 Owner DM Delivery 已验证 | `docs/engineering/phase-5/20260808_feishu-gateway-runtime-and-macos-service.md` |
 
 ## 3. 参考项目分别值得学什么
 
@@ -228,7 +228,7 @@ Owner 私聊中召回；群聊和其他用户看不到私人记忆。
 - forget、来源下钻、direct-edit reconcile 与 legacy migration。
 
 完整设计见 [Memory Autopilot 能力 Gap](20260808_Memory-Autopilot能力Gap与重构架构.md)和
-[工程技术选型](../engineering/memory-autopilot-best-practices-and-technology-selection.md)。高级 Reflection、
+[工程技术选型](../engineering/20260808_memory-autopilot-best-practices-and-technology-selection.md)。高级 Reflection、
 Agent Case 与 Skill 进化仍留在 Phase 7。
 
 ### Phase 6：自治运行与安全边界

@@ -349,7 +349,7 @@ git commit -m "feat(feishu): 持久化并恢复 progress trace"
 - Modify: `README.md`
 - Modify: `docs/product/20260807_产品需求文档.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
-- Modify: `docs/engineering/phase-5/feishu-single-card-and-lark-cli.md`
+- Modify: `docs/engineering/phase-5/20260809_feishu-single-card-and-lark-cli.md`
 - Modify: `docs/evals/releases/v0.5.2.md`
 
 **Interfaces:**
@@ -371,7 +371,7 @@ Expected: `Documentation validation: PASS`.
 - [ ] **Step 3: Commit documentation**
 
 ```bash
-git add README.md docs/product/20260807_产品需求文档.md docs/architecture/20260807_系统架构.md docs/engineering/phase-5/feishu-single-card-and-lark-cli.md docs/evals/releases/v0.5.2.md
+git add README.md docs/product/20260807_产品需求文档.md docs/architecture/20260807_系统架构.md docs/engineering/phase-5/20260809_feishu-single-card-and-lark-cli.md docs/evals/releases/v0.5.2.md
 git commit -m "docs(feishu): 记录 Agent progress rich card"
 ```
 

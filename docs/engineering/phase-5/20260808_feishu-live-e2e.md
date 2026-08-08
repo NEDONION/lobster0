@@ -9,7 +9,7 @@
 >
 > 这句话的意思是：专用飞书应用、机器人、事件订阅、同应用 Owner、真实 WebSocket 和两条 Owner 私聊回复已经
 > 打通；两条 Delivery 都是一次发送成功。完整 15/15 人工验收仍未执行，因此现在不能写 `FEISHU_E2E_VERIFIED`。
-> SDK 运行时与常驻说明见 [Gateway 运行时与 macOS 常驻](feishu-gateway-runtime-and-macos-service.md)。
+> SDK 运行时与常驻说明见 [Gateway 运行时与 macOS 常驻](20260808_feishu-gateway-runtime-and-macos-service.md)。
 
 这份文档是一份可以边看图、边照着操作的工程手册。它回答五个问题：
 
@@ -479,7 +479,7 @@ flowchart TD
     J -->|"是"| L["检查客户端会话与人工 evidence"]
 ```
 
-详细错误表见 [Phase 5 Troubleshooting](troubleshooting.md)。几个最容易踩的坑：
+详细错误表见 [Phase 5 Troubleshooting](20260808_troubleshooting.md)。几个最容易踩的坑：
 
 - Bot 没发布：客户端找不到或不能聊天；
 - Open ID 来自另一个应用：消息进入 SDK，但 admission 以 `sender_denied` 静默拒绝；

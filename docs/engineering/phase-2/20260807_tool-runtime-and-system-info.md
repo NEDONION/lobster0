@@ -7,7 +7,7 @@
 > 不代表：整个 Phase 2 已完成
 
 > 当前仓库已继续完成 P2.1B、P2.1C、P2.2 与 P2.2B 单入口 TUI；最新入口请阅读
-> [P2.2B 文档](single-entry-tui.md)。本页“还没有实现”和 CLI 片段只描述
+> [P2.2B 文档](20260808_single-entry-tui.md)。本页“还没有实现”和 CLI 片段只描述
 > P2.1A 当时的阶段边界，不代表仓库当前状态。
 
 ## 1. 这一小阶段解决了什么
@@ -873,4 +873,4 @@ WorkspacePathResolver
 ```
 
 写文件、Shell 和真正 Approval 仍继续后移，因为它们会改变本机状态，需要更严格的确认和恢复语义。当前
-质量门禁已继续完成到 [P2.1C Agent 回归](agent-regression-evals.md)。
+质量门禁已继续完成到 [P2.1C Agent 回归](20260808_agent-regression-evals.md)。

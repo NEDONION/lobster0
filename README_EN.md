@@ -176,7 +176,7 @@ Design and delivery references:
 
 - [Memory Autopilot capability gap and architecture](docs/architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)
 - [Approved design spec](docs/superpowers/specs/2026-08-08-memory-autopilot-design.md)
-- [Best practices and technology selection](docs/engineering/memory-autopilot-best-practices-and-technology-selection.md)
+- [Best practices and technology selection](docs/engineering/20260808_memory-autopilot-best-practices-and-technology-selection.md)
 - [Memory A–E TDD implementation plan](docs/superpowers/plans/2026-08-09-memory-autopilot.md)
 
 ## Security boundaries
@@ -264,10 +264,10 @@ tests/           # Python unittest suite
 | [System architecture](docs/architecture/20260807_系统架构.md) | Module boundaries, data flow, and safety principles |
 | [Local setup guide](docs/getting-started/20260807_本地运行指南.md) | Installation, config, TUI, Gateway, troubleshooting |
 | [Engineering index](docs/engineering/README.md) | Implemented modules versus planned designs |
-| [Development timeline](docs/engineering/development-timeline.md) | Mapping between architecture phases, delivery versions, and evidence states |
+| [Development timeline](docs/engineering/20260809_development-timeline.md) | Mapping between architecture phases, delivery versions, and evidence states |
 | [Progress page](docs/progress/index.html) | Current phase, evidence, and next work |
 | [OpenClaw / Hermes gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | The v0.5.3 evidence → Memory A–E → Phase 6–9 roadmap |
-| [Capability-alignment engineering roadmap](docs/engineering/openclaw-hermes-alignment-engineering-roadmap.md) | Module, data, and test boundaries for future deliveries |
+| [Capability-alignment engineering roadmap](docs/engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Module, data, and test boundaries for future deliveries |
 | [Memory A–E plan](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | Executable RED→GREEN delivery plan |
 
 ## Contributing

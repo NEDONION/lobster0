@@ -467,8 +467,8 @@ git commit -m "fix(live): 修复真实 lark-cli Agent 闭环"
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/getting-started/20260807_本地运行指南.md`
 - Modify: `docs/engineering/README.md`
-- Modify: `docs/engineering/phase-2/command-execution.md`
-- Modify: `docs/engineering/phase-2/testing-and-debugging.md`
+- Modify: `docs/engineering/phase-2/20260808_command-execution.md`
+- Modify: `docs/engineering/phase-2/20260808_testing-and-debugging.md`
 - Modify: `docs/evals/README.md`
 
 **Interfaces:**

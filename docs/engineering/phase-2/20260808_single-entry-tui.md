@@ -3,7 +3,7 @@
 > 状态：pi-tui 已成为裸 miniclaw 默认展示层；Textual 暂作首次 onboarding 和运行时 fallback。
 > 当前全仓门禁规模为 562 项 Python、30 项 TypeScript 测试、29/29 离线 Agent 场景与 32/32 Channel 场景。
 > 本文第 3–11 节保留 Textual fallback 的实现记录；当前跨语言架构见
-> [Python Core + pi-tui Bridge 工程文档](python-core-pi-tui-bridge.md)。
+> [Python Core + pi-tui Bridge 工程文档](20260808_python-core-pi-tui-bridge.md)。
 
 ## 1. 当前解决了什么
 
@@ -342,7 +342,7 @@ git diff --check
 ```
 
 TUI 的用例编号、无头测试策略、PTY smoke 与版本门禁详见
-[TUI 回归测试规范](tui-regression-testing.md)。
+[TUI 回归测试规范](20260808_tui-regression-testing.md)。
 
 ## 13. 当前边界与 Phase 2.3B
 
@@ -359,11 +359,11 @@ Phase 2.3A 已实现 exact-argv `run_command`，不经过 shell 字符串；安�
 Approval/Turn continuation/TUI Overlay 链路。pi-tui 已解决自身 Node 版本检测和构建入口；Phase 2.3B 下一步处理
 本机 NVM `lark-cli` 的独立可执行路径、
 doctor 检查与 `auth status` 真实 smoke，不会把“已安装”误写成“Agent 已可稳定调用”。P2.4 `http_get` 已复用
-同一 Runtime/Modal；网络边界见 [Pinned HTTPS 工程文档](https-get-and-ssrf.md)。
+同一 Runtime/Modal；网络边界见 [Pinned HTTPS 工程文档](20260808_https-get-and-ssrf.md)。
 
 设计取舍与参考项目对比见
 [Gemini 风格 TUI 设计](../../superpowers/specs/2026-08-08-gemini-style-tui-and-lark-cli-design.md)，逐任务实现记录见
 [P2.2B 实施计划](../../superpowers/plans/2026-08-08-p2-2b-single-entry-textual-tui.md)。
 
 本轮双语、长文本、真实遥测与 scoped approvals 的完整工程说明见
-[TUI 可观测、长文本与分级审批](tui-observability-and-scoped-approvals.md)。
+[TUI 可观测、长文本与分级审批](20260808_tui-observability-and-scoped-approvals.md)。

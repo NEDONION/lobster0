@@ -266,7 +266,7 @@ Feishu Runner 只输出稳定错误码：
 
 Typing reaction 在 claim Inbox 后添加，在成功、失败或等待审批的 `finish()` 中移除。任务完成后查询 reaction 为 0
 属于正常清理。最终闭环以 `channel.delivery.sent` 为准；处理期间是否可见需要在客户端实时观察。完整时序见
-[飞书 Gateway 运行时与 macOS 常驻](feishu-gateway-runtime-and-macos-service.md)。
+[飞书 Gateway 运行时与 macOS 常驻](20260808_feishu-gateway-runtime-and-macos-service.md)。
 
 ## 19. Feishu Case 007 永远不通过
 

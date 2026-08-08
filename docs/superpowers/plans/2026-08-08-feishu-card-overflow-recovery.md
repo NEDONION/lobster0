@@ -151,7 +151,7 @@ Expected: both suites pass.
 ### Task 5: Documentation, release evidence, and final gates
 
 **Files:**
-- Modify: `docs/engineering/phase-5/feishu-single-card-and-lark-cli.md`
+- Modify: `docs/engineering/phase-5/20260809_feishu-single-card-and-lark-cli.md`
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/evals/releases/v0.5.2.md`
 - Modify: `docs/progress/index.html`

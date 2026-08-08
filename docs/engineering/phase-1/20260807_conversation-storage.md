@@ -3,7 +3,7 @@
 > 文档性质：`HISTORICAL SNAPSHOT`（Phase 1 会话存储）
 >
 > 当前替代：Phase 2.1A 已增加 ToolRun/Audit 和完整工具消息事务；当前实现见
-> [Tool Runtime 与 system_info](../phase-2/tool-runtime-and-system-info.md)。
+> [Tool Runtime 与 system_info](../phase-2/20260807_tool-runtime-and-system-info.md)。
 
 ## 1. 模块目的
 

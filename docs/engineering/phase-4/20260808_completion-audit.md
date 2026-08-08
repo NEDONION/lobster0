@@ -146,7 +146,7 @@ uv run python scripts/feishu_live_smoke.py --confirm-live
 
 相关文档：
 
-- [飞书生产 Channel 工程落地](feishu-channel.md)
-- [运行、测试与故障排查](testing-and-operations.md)
+- [飞书生产 Channel 工程落地](20260808_feishu-channel.md)
+- [运行、测试与故障排查](20260808_testing-and-operations.md)
 - [Phase 4 设计规格](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)
 - [v0.4.0 发布证据](../../evals/releases/v0.4.0.md)

@@ -5,7 +5,7 @@
 > Overlay（Textual fallback 为 Modal）中展示完整归一化参数，并按 Core scope 提供
 > **Allow once / Allow this session / Always allow / Deny**。
 > 文件写入仍只提供 Once。SQLite Approval 生命周期与安全约束仍然有效，当前用法见
-> [单入口 TUI 工程文档](single-entry-tui.md)。
+> [单入口 TUI 工程文档](20260808_single-entry-tui.md)。
 
 > 历史状态：`list / show / approve / deny` 曾实现，Phase 2.2B 已移除这些入口
 >

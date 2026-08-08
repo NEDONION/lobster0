@@ -187,7 +187,7 @@ Phase 4 的剩余工作不能用单元测试冒充：
 4. 再决定是否开放群聊和多账号，而不是提前泛化。
 
 配置、运行、12 条回归、真实 smoke 和排障步骤见
-[Phase 4 运行与测试手册](testing-and-operations.md)。
-[Phase 4 完成性审计](completion-audit.md)逐项列出 requirement → code → test → live evidence；设计约束见
+[Phase 4 运行与测试手册](20260808_testing-and-operations.md)。
+[Phase 4 完成性审计](20260808_completion-audit.md)逐项列出 requirement → code → test → live evidence；设计约束见
 [Phase 4 飞书 Channel 设计](../../superpowers/specs/2026-08-08-phase-4-feishu-channel-design.md)，
 逐步实现记录见 [Phase 4 TDD 计划](../../superpowers/plans/2026-08-08-phase-4-feishu-channel.md)。
