@@ -513,7 +513,7 @@ async def _run_case(
             if restart_fn is not None:
                 await restart_fn()
             output_fn(f"Action {index + 1}: {action}")
-            if _read_action(input_fn) == "skip":
+            if await asyncio.to_thread(_read_action, input_fn) == "skip":
                 return FeishuCaseResult(
                     case.id,
                     "skip",
@@ -547,9 +547,11 @@ async def _run_case(
             "local_evidence_failed",
         )
 
-    human_statuses = tuple(
-        (key, _read_human_status(input_fn, key)) for key in human_requirements
-    )
+    collected_human_statuses: list[tuple[str, str]] = []
+    for key in human_requirements:
+        status = await asyncio.to_thread(_read_human_status, input_fn, key)
+        collected_human_statuses.append((key, status))
+    human_statuses = tuple(collected_human_statuses)
     statuses = tuple(status for _, status in human_statuses)
     if "fail" in statuses:
         status, error_code = "fail", "human_evidence_failed"

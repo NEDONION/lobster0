@@ -1,11 +1,13 @@
 """Feishu Live E2E 的只读取证、进程与报告安全契约。"""
 
+import asyncio
 import importlib
 import json
 import os
 import sys
 import tempfile
 import textwrap
+import threading
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1077,6 +1079,33 @@ class FeishuCaseOrchestrationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.status, "fail")
         self.assertEqual(result.local_failed, ("turn_completed",))
         self.assertEqual(result.human_statuses, ())
+
+    async def test_action_prompt_does_not_block_gateway_event_loop(self) -> None:
+        """人工输入等待期间事件循环仍须排空 Gateway pipe 与处理 timeout。"""
+        api = self._api("_run_case")
+        release = threading.Event()
+        timed_out: list[bool] = []
+        asyncio.get_running_loop().call_later(0.02, release.set)
+
+        def answer(_: str) -> str:
+            timed_out.append(not release.wait(0.2))
+            return ""
+
+        case = self._case(local=("gateway_ready",), human=())
+        checkpoint = api.DatabaseCheckpoint(0, 0, 0, 0, 0, 0)
+        with patch.object(api, "capture_checkpoint", return_value=checkpoint):
+            result = await api._run_case(
+                case=case,
+                database=self.database,
+                workspace=self.workspace,
+                gateway=SimpleNamespace(ready=True),
+                case_timeout=5.0,
+                input_fn=answer,
+                output_fn=lambda _: None,
+            )
+
+        self.assertEqual(timed_out, [False])
+        self.assertEqual(result.status, "pass")
 
     async def test_local_and_human_pass_produce_pass_while_skip_stays_nonzero(self) -> None:
         """自动证据通过后才收集 p/f/s，skip 永远保留为 skip。"""
