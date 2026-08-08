@@ -12,7 +12,7 @@ from miniclaw import __version__
 from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError
 from miniclaw.doctor import CheckStatus, run_local_checks
-from miniclaw.env import DotEnvError
+from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.evals.cases import EvalCaseError, load_cases
 from miniclaw.evals.channel import run_channel_suite
 from miniclaw.evals.runner import run_offline_suite
@@ -88,7 +88,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2
 
     if arguments.command == "doctor":
-        results = run_local_checks(paths)
+        environment = dict(os.environ)
+        try:
+            load_dotenv(Path.cwd() / ".env", environment)
+        except DotEnvError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        results = run_local_checks(paths, environment)
         for result in results:
             print(f"[{result.status.value.upper()}] {result.name}: {result.message}")
         return 2 if any(result.status is CheckStatus.FAIL for result in results) else 0
