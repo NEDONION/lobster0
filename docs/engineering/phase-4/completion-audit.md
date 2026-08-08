@@ -119,7 +119,7 @@ Provider 隐藏 reasoning 和异常原文。
 | restart / reconnect / card fallback live | 需要真实 Bot 和网络控制 | LIVE PENDING |
 | local Channel soak | `--repeat 20`，240/240 个状态机纵切 | PASS |
 | 真实 Gateway soak | 需要真实 Bot、网络与常驻运行环境 | LIVE PENDING |
-| mixed CN/EN commit、main、push | `c1069d4` observability + `269f8dd` fail-safe/local soak + `85ad45b` docs | PASS |
+| mixed CN/EN commit、main、push | `c1069d4` observability + `269f8dd` fail-safe/local soak + `2d4d032` docs | PASS |
 
 ## 6. 为什么不自动填假凭据
 
