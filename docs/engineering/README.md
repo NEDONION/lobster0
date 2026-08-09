@@ -137,6 +137,22 @@ WebSocket ready 与 Owner 私聊 Delivery 已验证；完整 15-case、长期 so
 Automation 与 Heartbeat 默认关闭；Heartbeat 当前没有 Owner IM route，Checkpoint 只覆盖主 Workspace，Rollback
 没有 CLI/TUI。Phase 6.5 Browser Agent 仍为 **PLANNED / NOT IMPLEMENTED**。
 
+## Desktop W0/W1：通用 Agent 工作台开发版
+
+`desktop/` 已实现 Electron + React 浅色四界面，并通过固定 Preload API 复用 Python Bridge。当前闭环包括首页、
+单 Agent 任务时间线、Tool/审批/取消、最近任务与 interrupted 状态、Automation 只读列表、四档 Permission Mode
+和用户触发的 Workspace 重启。Renderer 保持 sandbox、无 Node integration，不直读 SQLite、Secret 或 Workspace。
+
+当前状态为 **W0/W1 DEVELOPMENT BUILD / AUTOMATED GATE PASS / ELECTRON MANUAL PENDING**。真实 Python Bridge 的
+Desktop hello 和隔离 Electron 进程 smoke 已通过；安装包、签名、鼠标/键盘视觉验收、真实 Provider LIVE smoke、
+Artifact 和 Sub-agent 未完成。
+
+| 文档或代码 | 当前定位 |
+| --- | --- |
+| [通用桌面 Agent 工作台设计](../architecture/20260809_通用桌面Agent工作台设计.md) | W0/W1 已实现边界与 W2/W3 规划。 |
+| [W0/W1 实施计划](../superpowers/plans/2026-08-09-desktop-workbench-w0-w1.md) | RED→GREEN 施工与最终门禁。 |
+| `desktop/` | Electron Main、固定 Preload、React 四界面和 Desktop 测试。 |
+
 ## v0.5.x Stabilization：真实运行与证据收口
 
 这些工作发生在架构 Phase 5 之后，主要加固 Feishu 和 Live Gate，不是新的架构 Phase。
@@ -154,7 +170,7 @@ Automation 与 Heartbeat 默认关闭；Heartbeat 当前没有 Owner IM route，
 | 文档 | 规划范围 | 当前事实 |
 | --- | --- | --- |
 | [OpenClaw / Hermes Gap](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | Phase 5.3 收口后到 Phase 9 的优先级和非目标。 | 路线已确认；未交付部分不能写成当前能力。 |
-| [通用桌面 Agent 工作台设计](../architecture/20260809_通用桌面Agent工作台设计.md) | 浅色四界面、通用单 Agent 闭环、Artifact、Automation 与后续受限 Sub-agent。 | `APPROVED DESIGN / IMPLEMENTATION PENDING`；没有 Desktop 实现。 |
+| [通用桌面 Agent 工作台设计](../architecture/20260809_通用桌面Agent工作台设计.md) | 浅色四界面、通用单 Agent 闭环、Artifact、Automation 与后续受限 Sub-agent。 | W0/W1 development build 自动化门禁通过；W2/W3 pending。 |
 | [能力对齐工程总方案](20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Service、Automation、Sandbox、Browser、Evolution、Memory、Skills、MCP、Provider、Sub-agent、Media。 | `APPROVED ROADMAP`。 |
 | [Phase 6.5 计划](../superpowers/plans/2026-08-08-phase-6-5-browser-agent.md) | Browser Profile、snapshot/ref、Policy、Artifact。 | 依赖 Phase 6 Sandbox。 |
 | [Phase 7 计划](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md) | Feedback、Proposal、Eval、Apply/Rollback。 | 依赖 Memory A～E 与 Phase 6。 |

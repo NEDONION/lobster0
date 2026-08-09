@@ -59,6 +59,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 | Channel | Feishu 用单张 `Claw Trail` Agent Card 展示脱敏步骤和最终回答；审批点击在原卡先显示处理中，再以成功、拒绝或失败终态收口；三平台各自独立 Transport/Delivery/Manager/queue/recovery，共享 Agent Runtime。 |
 | 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel/Memory control plane；owner-only Markdown Truth 与 Skills。 |
 | Automation | one-shot/interval/cron、durable TaskRun、E-stop、预算、Heartbeat、Approval continuation 与幂等主动投递。 |
+| Desktop | W0/W1 development build：浅色四界面、真实单 Agent 任务流、审批/取消、最近任务、只读 Automation、权限和 Workspace 切换。 |
 | Sandbox | immutable ExecutionPlan、Docker/Seatbelt fail-closed backend、Checkpoint CAS 与冲突感知 Rollback。 |
 | 运维 | `init`、`doctor`、`gateway`、`task` 控制面、Memory rebuild、结构化脱敏日志、幂等恢复与版本化 Eval。 |
 
@@ -130,6 +131,28 @@ MINICLAW_TUI=textual uv run miniclaw
 | `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios` | 跑 Phase 6 的 15 条 Automation gate 与 20 轮 soak。 |
 
 Channel 的 allowlist、Owner 身份与平台凭据配置见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
+
+### Desktop W0/W1 开发版
+
+Desktop 当前是开发构建，不是已签名安装包。它复用同一 Python Core、Policy、SQLite 与 Automation，不在
+Renderer 中复制 Agent 逻辑或直接访问本机能力。
+
+```bash
+uv sync --extra dev
+pnpm --dir tui install
+pnpm --dir tui build
+pnpm --dir desktop install
+uv run miniclaw --home /absolute/path/to/miniclaw-home init
+
+# 先在当前 shell 安全设置 MINICLAW_MODEL_API_KEY
+MINICLAW_PYTHON="$(pwd)/.venv/bin/python" \
+MINICLAW_HOME=/absolute/path/to/miniclaw-home \
+pnpm --dir desktop dev
+```
+
+当前包含首页、任务工作台、自动化只读列表和设置；没有 installer/signing、Artifact 预览、Sub-agent、
+外部 Agent adapter、Office 编辑器或深色主题。自动化跨进程测试和隔离 Electron 进程 smoke 已通过；鼠标/键盘
+视觉验收与真实模型 LIVE smoke 仍为 pending。
 
 ## 产品预览
 
@@ -298,6 +321,7 @@ src/miniclaw/
 └── tui/         # Textual fallback；默认 pi-tui 在仓库 tui/
 
 tui/             # Node.js pi-tui + Python Bridge client
+desktop/         # Electron + React 的 W0/W1 development build
 evals/           # versioned Agent / Channel scenarios
 docs/            # PRD、架构、工程、计划、发布证据与进度页
 tests/           # Python unittest
