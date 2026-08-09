@@ -1,0 +1,14 @@
+---
+import facts from '../../content-data/project-facts.json';
+
+interface Props {
+  label: string;
+}
+
+const { label } = Astro.props;
+---
+
+<div class="docs-install-sequence">
+  <div class="docs-install-sequence__label">{label}</div>
+  <pre tabindex="0"><code>{facts.install}</code></pre>
+</div>

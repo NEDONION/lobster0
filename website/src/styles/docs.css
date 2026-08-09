@@ -1,7 +1,111 @@
 @import '@fontsource-variable/archivo';
 @import '@fontsource/ibm-plex-mono/400.css';
+@import '@fontsource/ibm-plex-mono/500.css';
 
 :root {
   --sl-font: 'Archivo Variable', 'PingFang SC', 'Noto Sans SC', sans-serif;
   --sl-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --sl-color-accent-low: #18204a;
+  --sl-color-accent: #7184ff;
+  --sl-color-accent-high: #dfe3ff;
+  --sl-color-bg: #090b0f;
+  --sl-color-bg-nav: #090b0f;
+  --sl-color-bg-sidebar: #0e1117;
+  --sl-color-hairline-light: #2a303a;
+  --sl-content-width: 52rem;
+  --sl-text-5xl: clamp(2.7rem, 6vw, 5.5rem);
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #d9defe;
+  --sl-color-accent: #465de7;
+  --sl-color-accent-high: #17205c;
+  --sl-color-bg: #e9edf1;
+  --sl-color-bg-nav: #e9edf1;
+  --sl-color-bg-sidebar: #dfe4e9;
+  --sl-color-hairline-light: #aab3bd;
+}
+
+body {
+  letter-spacing: -0.005em;
+}
+
+header.header {
+  border-bottom-color: var(--sl-color-hairline-light);
+}
+
+.site-title {
+  font-weight: 680;
+  letter-spacing: -0.04em;
+}
+
+.sidebar-content a,
+.right-sidebar a {
+  font-size: 0.9rem;
+}
+
+.sl-markdown-content h1,
+.sl-markdown-content h2,
+.sl-markdown-content h3 {
+  letter-spacing: -0.045em;
+}
+
+.sl-markdown-content h1 {
+  line-height: 0.98;
+}
+
+.sl-markdown-content h2 {
+  padding-top: 1rem;
+  border-top: 1px solid var(--sl-color-hairline-light);
+}
+
+.sl-markdown-content a:not([class]) {
+  text-decoration-thickness: 0.1em;
+  text-underline-offset: 0.18em;
+}
+
+.sl-markdown-content table {
+  display: table;
+  width: 100%;
+}
+
+.sl-markdown-content th {
+  font-family: var(--sl-font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.docs-install-sequence {
+  border: 1px solid var(--sl-color-hairline-light);
+  background: #0d1015;
+  color: #dbe1e8;
+}
+
+.docs-install-sequence__label {
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid #2a303a;
+  color: #7d8793;
+  font-family: var(--sl-font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+}
+
+.docs-install-sequence pre {
+  margin: 0;
+  padding: 1rem;
+  overflow-x: auto;
+  background: transparent;
+  font-size: 0.74rem;
+  line-height: 1.75;
+}
+
+.docs-install-sequence code {
+  color: inherit;
+}
+
+@media (max-width: 50rem) {
+  :root {
+    --sl-text-5xl: clamp(2.5rem, 13vw, 4rem);
+  }
 }

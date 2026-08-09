@@ -1,0 +1,39 @@
+---
+title: 安装与启动
+description: 从源码安装 MiniClaw，完成初始化、Doctor 检查并启动 TUI。
+sidebar:
+  order: 2
+---
+
+import InstallSequence from '../../../components/docs/InstallSequence.astro';
+
+## 环境要求
+
+- Python 3.12 或更高版本。
+- [`uv`](https://docs.astral.sh/uv/) 用于 Python 环境与依赖。
+- 默认 pi-tui 需要 Node.js 22.19+ 和 `pnpm`。
+- 一个 OpenAI-compatible 模型服务及你自己的凭据。
+
+## 从源码运行
+
+下面的命令与官网首页读取同一份事实文件：
+
+<InstallSequence label="SOURCE INSTALL / SHARED FACT" />
+
+`cp .env.example .env` 只创建本地配置文件。按模板填写 Provider 和可选 Channel 配置；不要把真实
+API Key、App Secret 或 Token 提交到 Git。
+
+## 初始化与自检
+
+`miniclaw init` 创建本地所需结构；`miniclaw doctor` 检查运行环境和配置。Doctor 通过后，
+`uv run miniclaw` 启动主 TUI。
+
+:::tip[先从 TUI 开始]
+先在本地完成一次普通对话和一次需要审批的 Tool 调用，再接入消息平台。这样最容易判断问题来自
+Agent Core、Provider 还是某个 Channel Transport。
+:::
+
+## 下一步
+
+继续阅读[运行时](/docs/runtime/)和[安全边界](/docs/security/)。开发、测试与发布命令以仓库
+[README](https://github.com/NEDONION/miniclaw#readme) 和 `pyproject.toml` 为准。
