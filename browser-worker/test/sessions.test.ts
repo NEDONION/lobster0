@@ -61,7 +61,7 @@ test("always launches the exact dedicated profile root", async (t) => {
   assert.equal(launchedRoot, root);
   assert.notEqual(launchedRoot, join(tmpdir(), "personal-browser-profile"));
   assert.equal(launchOptions.serviceWorkers, "block");
-  assert.equal(launchOptions.acceptDownloads, false);
+  assert.equal(launchOptions.acceptDownloads, true);
 });
 
 test("closes idle sessions and their browser context", async (t) => {

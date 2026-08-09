@@ -1,8 +1,10 @@
 """模型可见且只经 BrowserClient 执行的固定浏览器动作。"""
 
 import re
+from pathlib import Path
 from urllib.parse import urlsplit
 
+from miniclaw.artifacts.store import ArtifactError, ArtifactStore
 from miniclaw.browser.client import BrowserClient
 from miniclaw.browser.models import BrowserAction, BrowserProtocolError
 from miniclaw.browser.policy import classify_browser_action
@@ -151,8 +153,9 @@ class BrowserTool:
         name: str,
         *,
         max_snapshot_chars: int,
+        artifact_store: ArtifactStore | None = None,
     ) -> None:
-        """绑定共享 Client、固定动作名和不可由模型放大的 snapshot 预算。"""
+        """绑定共享 Client、固定动作名、snapshot 预算与可选 ArtifactStore。"""
         if name not in _DEFINITIONS:
             raise ValueError("browser tool name is invalid")
         if type(max_snapshot_chars) is not int or not 1000 <= max_snapshot_chars <= 100_000:
@@ -160,6 +163,7 @@ class BrowserTool:
         self._client = client
         self.definition = _DEFINITIONS[name]
         self._max_snapshot_chars = max_snapshot_chars
+        self._artifact_store = artifact_store
 
     def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         """拒绝额外字段，并规范当前动作需要的有限参数。"""
@@ -237,6 +241,41 @@ class BrowserTool:
                 "browser action failed",
                 retryable=error.code in {"browser_timeout", "worker_closed"},
             )
+        artifact = result.get("artifact")
+        if artifact is not None:
+            if self._artifact_store is None:
+                return ToolResult.failure(
+                    "artifact_store_unavailable", "browser artifact import failed"
+                )
+            if (
+                not isinstance(artifact, dict)
+                or set(artifact) - {
+                    "staging_path",
+                    "declared_media_type",
+                    "source",
+                    "width",
+                    "height",
+                }
+                or not isinstance(artifact.get("staging_path"), str)
+                or not isinstance(artifact.get("declared_media_type"), str)
+                or not isinstance(artifact.get("source"), str)
+            ):
+                return ToolResult.failure(
+                    "artifact_metadata_invalid", "browser artifact import failed"
+                )
+            try:
+                imported = self._artifact_store.put(
+                    Path(artifact["staging_path"]),
+                    declared_media_type=artifact["declared_media_type"],
+                    source=artifact["source"],
+                )
+            except ArtifactError as error:
+                return ToolResult.failure(error.code, "browser artifact import failed")
+            except OSError:
+                return ToolResult.failure(
+                    "artifact_store_failed", "browser artifact import failed", retryable=True
+                )
+            result = {**result, "artifact": imported.to_tool_payload()}
         return ToolResult.success(result)
 
 
@@ -244,12 +283,14 @@ def browser_tools(
     client: BrowserClient,
     *,
     max_snapshot_chars: int = 20_000,
+    artifact_store: ArtifactStore | None = None,
 ) -> tuple[BrowserTool, ...]:
     """创建共享一个 Client 的固定八个 Browser Tool。
 
     Args:
         client: 当前 Runtime 独占的 Browser Worker 客户端。
         max_snapshot_chars: 单次 snapshot 返回的最大字符数。
+        artifact_store: 消费截图/下载 staging 文件的私有 Store。
 
     Returns:
         按动作名稳定排序的八个 Tool。
@@ -258,7 +299,12 @@ def browser_tools(
         ValueError: snapshot 预算超出 Core 允许范围。
     """
     return tuple(
-        BrowserTool(client, name, max_snapshot_chars=max_snapshot_chars)
+        BrowserTool(
+            client,
+            name,
+            max_snapshot_chars=max_snapshot_chars,
+            artifact_store=artifact_store,
+        )
         for name in sorted(_DEFINITIONS)
     )
 

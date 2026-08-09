@@ -6,6 +6,7 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
+from miniclaw.artifacts.store import ArtifactStore
 from miniclaw.bootstrap import initialize_state
 from miniclaw.browser.models import BrowserAction, BrowserProtocolError
 from miniclaw.config import load_config
@@ -29,13 +30,14 @@ class _Client:
         """初始化请求记录和可选稳定失败。"""
         self.actions: list[BrowserAction] = []
         self.error: BrowserProtocolError | None = None
+        self.result: dict[str, object] | None = None
 
     async def request(self, action: BrowserAction) -> dict[str, object]:
         """记录动作；按配置抛错或返回确定性结果。"""
         self.actions.append(action)
         if self.error is not None:
             raise self.error
-        return {"action": action.kind, "ok": True}
+        return self.result or {"action": action.kind, "ok": True}
 
 
 class BrowserToolsTest(unittest.IsolatedAsyncioTestCase):
@@ -196,6 +198,47 @@ class BrowserToolsTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertNotIn("private DOM", stale.model_text)
 
+    async def test_worker_artifact_is_imported_without_exposing_staging_path(self) -> None:
+        """Screenshot staging path 必须被 Store 消费，模型只能看到 Artifact metadata。"""
+        staged = self.paths.downloads / "worker-shot.png"
+        staged.write_bytes(_png(3, 2))
+        staged.chmod(0o600)
+        self.client.result = {
+            "action": "screenshot",
+            "artifact": {
+                "staging_path": str(staged),
+                "declared_media_type": "image/png",
+                "source": "browser_screenshot",
+                "width": 3,
+                "height": 2,
+            },
+        }
+        store = ArtifactStore(
+            self.database,
+            owner_id=self.context.user_id,
+            root=self.paths.artifacts,
+            staging_root=self.paths.downloads,
+            max_bytes=1024,
+        )
+        screenshot = next(
+            tool
+            for tool in browser_tools(
+                self.client,
+                max_snapshot_chars=12_000,
+                artifact_store=store,
+            )
+            if tool.definition.name == "browser_screenshot"
+        )
+
+        result = await screenshot.execute(self.context, {"full_page": False})
+
+        model_text = result.to_model_text("browser_screenshot")
+        self.assertTrue(result.ok)
+        self.assertFalse(staged.exists())
+        self.assertIn("artifact_id", model_text)
+        self.assertNotIn("staging_path", model_text)
+        self.assertNotIn(str(self.paths.downloads), model_text)
+
     async def test_runtime_exposes_browser_tools_only_when_browser_is_enabled(self) -> None:
         """Browser 开关应原子控制八个 Schema 和共享 Client 生命周期。"""
         base = load_config(self.paths, {}, {})
@@ -229,9 +272,24 @@ class BrowserToolsTest(unittest.IsolatedAsyncioTestCase):
             self.assertIn("--inactivity-timeout-ms=120000", command)
             self.assertIn("--headed=true", command)
             self.assertIn("--max-snapshot-chars=20000", command)
+            self.assertIn(f"--staging-root={self.paths.downloads}", command)
+            self.assertIn("--max-artifact-bytes=20971520", command)
         finally:
             await disabled.aclose()
             await enabled.aclose()
+
+
+def _png(width: int, height: int) -> bytes:
+    """返回只用于 MIME/IHDR 校验的最小 PNG 字节。"""
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + (13).to_bytes(4, "big")
+        + b"IHDR"
+        + width.to_bytes(4, "big")
+        + height.to_bytes(4, "big")
+        + b"\x08\x06\x00\x00\x00"
+        + b"\x00\x00\x00\x00"
+    )
 
 
 if __name__ == "__main__":

@@ -20,6 +20,8 @@ const sessions = new SessionManager({
 });
 const actions = new ActionExecutor(sessions, {
   maxSnapshotChars: options.maxSnapshotChars,
+  stagingRoot: options.stagingRoot,
+  maxArtifactBytes: options.maxArtifactBytes,
 });
 let pending = Buffer.alloc(0);
 let stopped = false;
@@ -112,6 +114,8 @@ interface ServerOptions {
   inactivityTimeoutMs: number;
   headed: boolean;
   maxSnapshotChars: number;
+  stagingRoot: string;
+  maxArtifactBytes: number;
 }
 
 function parseOptions(argumentsList: string[]): ServerOptions {
@@ -131,6 +135,8 @@ function parseOptions(argumentsList: string[]): ServerOptions {
     "inactivity-timeout-ms",
     "headed",
     "max-snapshot-chars",
+    "staging-root",
+    "max-artifact-bytes",
   ]);
   if (values.size !== expected.size || [...values.keys()].some((key) => !expected.has(key))) {
     invalidOptions();
@@ -144,6 +150,8 @@ function parseOptions(argumentsList: string[]): ServerOptions {
     inactivityTimeoutMs: positiveInteger(values, "inactivity-timeout-ms", 86_400_000),
     headed: headed === "true",
     maxSnapshotChars: positiveInteger(values, "max-snapshot-chars", 100_000),
+    stagingRoot: required(values, "staging-root"),
+    maxArtifactBytes: positiveInteger(values, "max-artifact-bytes", 100 * 1024 * 1024),
   };
 }
 

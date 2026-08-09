@@ -104,7 +104,7 @@ export class SessionManager {
     try {
       await this.#lock.acquire();
       this.#context = await this.#launch(this.#profileRoot, {
-        acceptDownloads: false,
+        acceptDownloads: true,
         executablePath: this.#executablePath,
         headless: !this.#headed,
         serviceWorkers: "block",

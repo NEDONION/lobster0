@@ -1,7 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
+import { mkdir, lstat, open, rm } from "node:fs/promises";
 import { BlockList, isIP } from "node:net";
+import { extname, join, resolve } from "node:path";
 
-import type { ElementHandle, Page, Route } from "playwright-core";
+import type { Download, ElementHandle, Page, Route } from "playwright-core";
 
 import type { BrowserRequest, JsonObject, JsonValue } from "./protocol.js";
 import { BrowserLifecycleError } from "./sessions.js";
@@ -75,6 +78,8 @@ interface BrowserSessions {
 
 export interface ActionExecutorOptions {
   maxSnapshotChars: number;
+  stagingRoot: string;
+  maxArtifactBytes: number;
 }
 
 export class BrowserActionError extends Error {
@@ -90,18 +95,26 @@ export class BrowserActionError extends Error {
 export class ActionExecutor {
   readonly #sessions: BrowserSessions;
   readonly #maxSnapshotChars: number;
+  readonly #stagingRoot: string;
+  readonly #maxArtifactBytes: number;
   readonly #guardedPages = new WeakSet<Page>();
 
   public constructor(sessions: BrowserSessions, options: ActionExecutorOptions) {
     if (
       !Number.isInteger(options.maxSnapshotChars) ||
       options.maxSnapshotChars < 1000 ||
-      options.maxSnapshotChars > 100_000
+      options.maxSnapshotChars > 100_000 ||
+      !options.stagingRoot ||
+      !Number.isInteger(options.maxArtifactBytes) ||
+      options.maxArtifactBytes < 1 ||
+      options.maxArtifactBytes > 100 * 1024 * 1024
     ) {
       throw new BrowserActionError("browser_limits_invalid", "Browser limits are invalid");
     }
     this.#sessions = sessions;
     this.#maxSnapshotChars = options.maxSnapshotChars;
+    this.#stagingRoot = resolve(options.stagingRoot);
+    this.#maxArtifactBytes = options.maxArtifactBytes;
   }
 
   public async execute(request: BrowserRequest): Promise<JsonObject> {
@@ -124,12 +137,6 @@ export class ActionExecutor {
       exactParams(request.params, []);
       await this.#sessions.closeSession(request.session_id);
       return result("close", "closed", null, null);
-    }
-    if (request.action === "screenshot") {
-      throw new BrowserActionError(
-        "browser_action_unavailable",
-        "Browser screenshot is not available",
-      );
     }
     await this.#sessions.reap();
     const page = await this.#sessions.open(request.session_id);
@@ -164,7 +171,15 @@ export class ActionExecutor {
     if (request.action === "click") {
       exactParams(request.params, ["origin", "generation", "ref", "role"]);
       const element = await this.#element(page, request.params);
+      const downloadPromise = page
+        .waitForEvent("download", { timeout: 1000 })
+        .catch(() => null);
       await element.click({ timeout: 10_000 });
+      const download = await downloadPromise;
+      if (download !== null) {
+        const artifact = await this.#stageDownload(download);
+        return { ...result("click", "ok", before, page.url()), artifact };
+      }
       await page.waitForLoadState("domcontentloaded", { timeout: 5_000 }).catch(() => undefined);
       return result("click", "ok", before, page.url());
     }
@@ -213,6 +228,42 @@ export class ActionExecutor {
       await page.mouse.wheel(0, delta);
       return result("scroll", "ok", before, page.url());
     }
+    if (request.action === "screenshot") {
+      exactParams(request.params, ["full_page"]);
+      const fullPage = booleanParam(request.params, "full_page", false);
+      const dimensions = await page.evaluate((full) => {
+        const root = document.documentElement;
+        return {
+          width: full ? Math.max(root.scrollWidth, window.innerWidth) : window.innerWidth,
+          height: full ? Math.max(root.scrollHeight, window.innerHeight) : window.innerHeight,
+        };
+      }, fullPage);
+      if (
+        dimensions.width < 1 ||
+        dimensions.height < 1 ||
+        dimensions.width > 16_384 ||
+        dimensions.height > 16_384 ||
+        dimensions.width * dimensions.height > 64_000_000
+      ) {
+        throw new BrowserActionError(
+          "browser_artifact_dimensions",
+          "Browser screenshot dimensions are denied",
+        );
+      }
+      const screenshot = await page.screenshot({
+        animations: "disabled",
+        caret: "hide",
+        fullPage,
+        type: "png",
+      });
+      const artifact = await this.#stageBuffer(screenshot, ".png", {
+        declared_media_type: "image/png",
+        source: "browser_screenshot",
+        width: dimensions.width,
+        height: dimensions.height,
+      });
+      return { ...result("screenshot", "ok", before, page.url()), artifact };
+    }
     throw new BrowserActionError("browser_action_unknown", "Browser action is unknown");
   }
 
@@ -239,6 +290,88 @@ export class ActionExecutor {
       void popup.close().catch(() => undefined);
     });
     this.#guardedPages.add(page);
+  }
+
+  async #stageDownload(download: Download): Promise<JsonObject> {
+    const path = join(this.#stagingRoot, `${randomUUID()}.download`);
+    await this.#ensureStagingRoot();
+    const handle = await open(path, "wx", 0o600);
+    let total = 0;
+    try {
+      const stream = await download.createReadStream();
+      if (stream === null) {
+        throw new BrowserActionError(
+          "browser_download_interrupted",
+          "Browser download was interrupted",
+        );
+      }
+      for await (const part of stream) {
+        const chunk = Buffer.isBuffer(part) ? part : Buffer.from(part);
+        total += chunk.byteLength;
+        if (total > this.#maxArtifactBytes) {
+          await download.cancel().catch(() => undefined);
+          throw new BrowserActionError(
+            "browser_artifact_too_large",
+            "Browser artifact is too large",
+          );
+        }
+        await handle.write(chunk);
+      }
+      if ((await download.failure()) !== null) {
+        throw new BrowserActionError(
+          "browser_download_interrupted",
+          "Browser download was interrupted",
+        );
+      }
+      await handle.sync();
+      return {
+        staging_path: path,
+        declared_media_type: downloadMediaType(download.suggestedFilename()),
+        source: "browser_download",
+      };
+    } catch (error) {
+      await rm(path, { force: true });
+      throw error;
+    } finally {
+      await handle.close();
+    }
+  }
+
+  async #stageBuffer(
+    content: Buffer,
+    extension: string,
+    metadata: JsonObject,
+  ): Promise<JsonObject> {
+    if (content.byteLength > this.#maxArtifactBytes) {
+      throw new BrowserActionError(
+        "browser_artifact_too_large",
+        "Browser artifact is too large",
+      );
+    }
+    await this.#ensureStagingRoot();
+    const path = join(this.#stagingRoot, `${randomUUID()}${extension}`);
+    const handle = await open(path, "wx", 0o600);
+    try {
+      await handle.writeFile(content);
+      await handle.sync();
+    } catch (error) {
+      await rm(path, { force: true });
+      throw error;
+    } finally {
+      await handle.close();
+    }
+    return { staging_path: path, ...metadata };
+  }
+
+  async #ensureStagingRoot(): Promise<void> {
+    await mkdir(this.#stagingRoot, { mode: 0o700, recursive: true });
+    const state = await lstat(this.#stagingRoot);
+    if (!state.isDirectory() || state.isSymbolicLink() || (state.mode & 0o077) !== 0) {
+      throw new BrowserActionError(
+        "browser_staging_unsafe",
+        "Browser staging directory is unsafe",
+      );
+    }
   }
 }
 
@@ -349,4 +482,28 @@ function integerParam(
     throw new BrowserActionError("browser_params_invalid", "Browser params are invalid");
   }
   return value;
+}
+
+function booleanParam(params: JsonObject, name: string, fallback: boolean): boolean {
+  const value = params[name] ?? fallback;
+  if (typeof value !== "boolean") {
+    throw new BrowserActionError("browser_params_invalid", "Browser params are invalid");
+  }
+  return value;
+}
+
+function downloadMediaType(filename: string): string {
+  const extension = extname(filename).toLowerCase();
+  return (
+    {
+      ".csv": "text/csv",
+      ".jpeg": "image/jpeg",
+      ".jpg": "image/jpeg",
+      ".json": "application/json",
+      ".pdf": "application/pdf",
+      ".png": "image/png",
+      ".txt": "text/plain",
+      ".zip": "application/zip",
+    }[extension] ?? "application/octet-stream"
+  );
 }

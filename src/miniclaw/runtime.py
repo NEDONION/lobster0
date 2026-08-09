@@ -11,6 +11,7 @@ from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
+from miniclaw.artifacts.store import ArtifactStore
 from miniclaw.automation.continuation import TaskApprovalContinuation
 from miniclaw.automation.delivery import TaskDeliveryService
 from miniclaw.automation.guard import AutomationPromptGuard
@@ -407,6 +408,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
                 f"{config.browser.inactivity_timeout_seconds * 1000}",
                 f"--headed={str(config.browser.headed).lower()}",
                 f"--max-snapshot-chars={config.browser.max_snapshot_chars}",
+                f"--staging-root={paths.downloads}",
+                f"--max-artifact-bytes={config.browser.download_max_bytes}",
             )
         )
         if config.browser.enabled
@@ -416,6 +419,13 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         browser_tools(
             browser_client,
             max_snapshot_chars=config.browser.max_snapshot_chars,
+            artifact_store=ArtifactStore(
+                database,
+                owner_id=owner.id,
+                root=paths.artifacts,
+                staging_root=paths.downloads,
+                max_bytes=config.browser.download_max_bytes,
+            ),
         )
         if browser_client is not None
         else ()

@@ -34,7 +34,11 @@ test(
     t.after(() => manager.close());
     const page = await manager.open("session-1");
     await page.goto(`file://${resolve(fixtureRoot, "index.html")}`);
-    const actions = new ActionExecutor(manager, { maxSnapshotChars: 20_000 });
+    const actions = new ActionExecutor(manager, {
+      maxSnapshotChars: 20_000,
+      stagingRoot: join(profile, "staging"),
+      maxArtifactBytes: 5 * 1024 * 1024,
+    });
 
     const first = await actions.execute(request("snapshot", {}));
     assert.equal(first.provenance, "untrusted_web_content");
@@ -113,7 +117,11 @@ test(
     t.after(() => manager.close());
     const page = await manager.open("session-1");
     await page.goto(`file://${resolve(fixtureRoot, "dynamic.html")}`);
-    const actions = new ActionExecutor(manager, { maxSnapshotChars: 20_000 });
+    const actions = new ActionExecutor(manager, {
+      maxSnapshotChars: 20_000,
+      stagingRoot: join(profile, "staging"),
+      maxArtifactBytes: 5 * 1024 * 1024,
+    });
     const result = await actions.execute(request("snapshot", {}));
     const snapshot = result.snapshot as {
       generation: string;
@@ -142,7 +150,11 @@ test(
 
 test("open accepts only HTTPS and returns before/after URLs", async () => {
   const page = new FakePage();
-  const actions = new ActionExecutor(new FakeSessions(page), { maxSnapshotChars: 20_000 });
+  const actions = new ActionExecutor(new FakeSessions(page), {
+    maxSnapshotChars: 20_000,
+    stagingRoot: join(tmpdir(), "miniclaw-browser-unused-staging"),
+    maxArtifactBytes: 5 * 1024 * 1024,
+  });
 
   const result = await actions.execute(request("open", { url: "https://93.184.216.34/path" }));
 
@@ -173,6 +185,8 @@ test("versioned server dispatches close through ActionExecutor", async (t) => {
       "--inactivity-timeout-ms=120000",
       "--headed=false",
       "--max-snapshot-chars=20000",
+      `--staging-root=${join(profile, "staging")}`,
+      "--max-artifact-bytes=5242880",
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
