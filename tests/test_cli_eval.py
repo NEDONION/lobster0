@@ -36,12 +36,15 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((code, error), (0, ""))
         lines = output.splitlines()
-        self.assertEqual(len(lines), 86)
+        self.assertEqual(len(lines), 101)
         self.assertEqual(lines, sorted(lines))
         self.assertTrue(any(line.startswith("CORE-001 active core ") for line in lines))
         self.assertTrue(any(line.startswith("PROTO-001 active provider ") for line in lines))
         self.assertTrue(
             any(line.startswith("MEM-AUTO-001 active memory_autopilot ") for line in lines)
+        )
+        self.assertTrue(
+            any(line.startswith("AUTO-001 active automation_runtime ") for line in lines)
         )
 
     def test_validate_reports_case_count_without_initializing_state(self) -> None:
@@ -52,7 +55,7 @@ class CliEvalTest(unittest.TestCase):
                 ["eval", "validate", "--root", str(SCENARIO_ROOT)]
             )
 
-        self.assertEqual((code, output, error), (0, "Validated 86 eval cases.\n", ""))
+        self.assertEqual((code, output, error), (0, "Validated 101 eval cases.\n", ""))
         self.assertFalse(missing_home.exists())
 
     def test_run_offline_prints_pass_rows_and_summary(self) -> None:
@@ -89,7 +92,7 @@ class CliEvalTest(unittest.TestCase):
         self.assertNotIn("NEVER_PRESENT", output)
 
     def test_run_channel_and_all_print_independent_gate_summaries(self) -> None:
-        """Channel 32-case gate 可单跑，all 必须同时报告 Agent 与 Channel。"""
+        """Channel gate 可单跑，all 必须报告 Agent、Channel 与 Automation。"""
         channel_code, channel_output, channel_error = run_cli(
             ["eval", "run", "--suite", "channel", "--root", str(SCENARIO_ROOT)]
         )
@@ -103,6 +106,44 @@ class CliEvalTest(unittest.TestCase):
         self.assertEqual((all_code, all_error), (0, ""))
         self.assertIn("Offline eval: 39/39 passed, 0 failed", all_output)
         self.assertIn("Channel eval: 32/32 passed, 0 failed", all_output)
+        self.assertIn("Automation eval: 15/15 passed, 0 failed", all_output)
+
+    def test_run_automation_prints_versioned_cases_and_summary(self) -> None:
+        """Automation suite 必须精确执行 15 条真实组件 fixture。"""
+        code, output, error = run_cli(
+            ["eval", "run", "--suite", "automation", "--root", str(SCENARIO_ROOT)]
+        )
+
+        self.assertEqual((code, error), (0, ""))
+        self.assertIn("PASS AUTO-001", output)
+        self.assertIn("PASS AUTO-015", output)
+        self.assertIn("Automation eval: 15/15 passed, 0 failed", output)
+
+    def test_run_automation_json_is_commit_bound_and_redacted(self) -> None:
+        """Automation JSON gate 只包含 ID/count/commit，不包含 Prompt 或路径。"""
+        code, output, error = run_cli(
+            [
+                "eval",
+                "run",
+                "--suite",
+                "automation",
+                "--repeat",
+                "2",
+                "--json",
+                "--root",
+                str(SCENARIO_ROOT),
+            ]
+        )
+
+        self.assertEqual((code, error), (0, ""))
+        report = json.loads(output)
+        self.assertEqual(report["suite"], "automation")
+        self.assertEqual(report["cases_per_run"], 15)
+        self.assertEqual((report["passed"], report["failed"]), (30, 0))
+        self.assertEqual(report["case_ids"], [f"AUTO-{index:03d}" for index in range(1, 16)])
+        serialized = json.dumps(report, ensure_ascii=False).lower()
+        self.assertNotIn("prompt", serialized)
+        self.assertNotIn("workspace", serialized)
 
     def test_run_channel_repeat_reports_local_soak_evidence(self) -> None:
         """repeat 应重复真实 Channel 纵切，并只输出聚合的本地 soak 证据。"""

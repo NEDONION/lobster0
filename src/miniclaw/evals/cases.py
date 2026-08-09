@@ -24,6 +24,7 @@ _CASE_FIELDS = {
     "tags",
     "channel",
     "memory",
+    "automation",
 }
 _EXPECTATION_FIELDS = {
     "answer_contains",
@@ -43,6 +44,10 @@ _EXPECTATION_FIELDS = {
     "live_local_evidence",
     "live_human_evidence",
     "memory_evidence",
+    "automation_status",
+    "delivery_count",
+    "automation_evidence",
+    "forbidden_automation",
 }
 _RESPONSE_FIELDS = {
     "content",
@@ -55,7 +60,7 @@ _RESPONSE_FIELDS = {
 }
 _TOOL_CALL_FIELDS = {"call_id", "name", "arguments"}
 _STATUSES = {"active", "planned", "retired"}
-_LAYERS = {"offline", "live", "channel", "soak", "manual_sensitive"}
+_LAYERS = {"offline", "live", "channel", "automation", "soak", "manual_sensitive"}
 _TOOL_STATUSES = {
     "waiting_approval",
     "succeeded",
@@ -95,6 +100,7 @@ _CHANNEL_FIXTURES = {
     "guild_no_mention",
     "thread",
     "isolation",
+    "compact_reply",
 }
 _MEMORY_FIXTURES = frozenset(
     {
@@ -108,6 +114,56 @@ _MEMORY_FIXTURES = frozenset(
         "checkpoint_and_lease_recovery",
         "direct_edit_and_legacy_migration",
         "chinese_recall_integrity",
+    }
+)
+_AUTOMATION_FIXTURES = frozenset(
+    {
+        "scheduler_idempotency",
+        "bounded_misfire",
+        "durable_estop",
+        "secret_prompt_guard",
+        "recursive_prompt_guard",
+        "immutable_run_snapshot",
+        "terminal_and_recovery",
+        "waiting_approval",
+        "approval_continuation",
+        "delivery_idempotency",
+        "execution_plan_binding",
+        "docker_hardening",
+        "checkpoint_quota",
+        "rollback_conflict",
+        "heartbeat_reconcile",
+    }
+)
+_AUTOMATION_STATUSES = frozenset(
+    {"allowed", "denied", "failed", "halted", "queued", "succeeded", "waiting_approval"}
+)
+_AUTOMATION_EVIDENCE = frozenset(
+    {
+        "one_slot_only",
+        "bounded_misfire",
+        "zero_claim",
+        "secret_not_persisted",
+        "recursive_control_denied",
+        "snapshot_immutable",
+        "terminal_required",
+        "stale_run_interrupted",
+        "lease_released",
+        "approval_id_bound",
+        "continuation_terminal",
+        "original_budget_preserved",
+        "delivery_once",
+        "destination_immutable",
+        "plan_hash_bound",
+        "exact_argv",
+        "network_none",
+        "read_only_rootfs",
+        "quota_fail_closed",
+        "no_side_effect",
+        "preview_hash_bound",
+        "concurrent_edit_preserved",
+        "one_system_task",
+        "active_hours_bounded",
     }
 )
 _MEMORY_EVIDENCE = frozenset(
@@ -209,6 +265,10 @@ class EvalExpectation:
     live_local_evidence: tuple[str, ...]
     live_human_evidence: tuple[str, ...]
     memory_evidence: tuple[str, ...]
+    automation_status: str | None
+    delivery_count: int | None
+    automation_evidence: tuple[str, ...]
+    forbidden_automation: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,6 +294,7 @@ class EvalCase:
     source: str
     channel_fixture: str | None
     memory_fixture: str | None
+    automation_fixture: str | None
 
 
 def load_cases(root: Path) -> tuple[EvalCase, ...]:
@@ -298,6 +359,29 @@ def load_feishu_live_cases(root: Path) -> tuple[EvalCase, ...]:
     return cases
 
 
+def load_automation_cases(root: Path) -> tuple[EvalCase, ...]:
+    """加载固定十五条 active Automation v1 场景。
+
+    Args:
+        root: 版本化 JSONL 场景目录。
+
+    Returns:
+        按 ID 排序的十五条 Automation 场景。
+
+    Raises:
+        EvalCaseError: 数据集数量、ID 或 schema 不符合发布契约。
+    """
+    cases = tuple(
+        case
+        for case in load_cases(root)
+        if case.status == "active" and case.capability == "automation_runtime"
+    )
+    expected_ids = tuple(f"AUTO-{index:03d}" for index in range(1, 16))
+    if tuple(case.id for case in cases) != expected_ids:
+        raise EvalCaseError("automation suite must contain exactly AUTO-001..AUTO-015")
+    return cases
+
+
 def _reject_json_constant(value: str) -> None:
     """拒绝 Python JSON 扩展支持的 NaN 与 Infinity。"""
     del value
@@ -334,6 +418,7 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         raise EvalCaseError(f"invalid approval action at {source}")
     responses = _parse_offline(value.get("offline"), source)
     memory_fixture = _parse_memory(value.get("memory"), source)
+    automation_fixture = _parse_automation(value.get("automation"), source)
     if status == "active" and "offline" in layers and not responses and memory_fixture is None:
         raise EvalCaseError(f"active offline case has no responses at {source}")
     channel_fixture = _parse_channel(value.get("channel"), source)
@@ -352,6 +437,19 @@ def _parse_case(raw: object, source: str) -> EvalCase:
             )
         if responses or channel_fixture is not None or not expected.memory_evidence:
             raise EvalCaseError(f"memory fixture has invalid execution fields at {source}")
+    if automation_fixture is not None:
+        if (
+            status != "active"
+            or layers != ("automation",)
+            or capability != "automation_runtime"
+        ):
+            raise EvalCaseError(
+                f"automation fixture must be active automation_runtime at {source}"
+            )
+        if responses or channel_fixture is not None or memory_fixture is not None:
+            raise EvalCaseError(f"automation fixture has invalid execution fields at {source}")
+        if expected.automation_status is None or not expected.automation_evidence:
+            raise EvalCaseError(f"automation fixture has no expected evidence at {source}")
     if status == "active" and layers == ("live",) and capability != "feishu_e2e":
         raise EvalCaseError(f"active live case must use feishu_e2e capability at {source}")
     if capability == "feishu_e2e":
@@ -385,6 +483,7 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         source=source,
         channel_fixture=channel_fixture,
         memory_fixture=memory_fixture,
+        automation_fixture=automation_fixture,
     )
 
 
@@ -409,6 +508,20 @@ def _parse_memory(raw: object, source: str) -> str | None:
     fixture = _string(value.get("fixture"), source, "memory.fixture")
     if fixture not in _MEMORY_FIXTURES:
         raise EvalCaseError(f"invalid memory fixture at {source}")
+    return fixture
+
+
+def _parse_automation(raw: object, source: str) -> str | None:
+    """解析封闭 Automation v1 fixture，不接受脚本、环境或凭据。"""
+    if raw is None:
+        return None
+    value = _object(raw, source, "automation")
+    _reject_unknown(value, {"schema", "fixture"}, source)
+    if _string(value.get("schema"), source, "automation.schema") != "automation.v1":
+        raise EvalCaseError(f"unsupported automation schema at {source}")
+    fixture = _string(value.get("fixture"), source, "automation.fixture")
+    if fixture not in _AUTOMATION_FIXTURES:
+        raise EvalCaseError(f"invalid automation fixture at {source}")
     return fixture
 
 
@@ -554,6 +667,25 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         "memory",
         _MEMORY_EVIDENCE,
     )
+    automation_status = _optional_string(value.get("automation_status"), source)
+    if automation_status is not None and automation_status not in _AUTOMATION_STATUSES:
+        raise EvalCaseError(f"invalid automation status at {source}")
+    delivery_count = value.get("delivery_count")
+    if delivery_count is not None:
+        delivery_count = _integer(delivery_count, source, "delivery_count")
+        if delivery_count < 0:
+            raise EvalCaseError(f"delivery_count must be non-negative at {source}")
+    automation_evidence = _parse_live_evidence(
+        value.get("automation_evidence", []),
+        source,
+        "automation",
+        _AUTOMATION_EVIDENCE,
+    )
+    forbidden_automation = _strings(
+        value.get("forbidden_automation", []),
+        source,
+        "forbidden_automation",
+    )
     return EvalExpectation(
         answer_contains=_strings(value.get("answer_contains", []), source, "answer_contains"),
         answer_excludes=_strings(value.get("answer_excludes", []), source, "answer_excludes"),
@@ -576,6 +708,10 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         live_local_evidence=live_local_evidence,
         live_human_evidence=live_human_evidence,
         memory_evidence=memory_evidence,
+        automation_status=automation_status,
+        delivery_count=delivery_count,
+        automation_evidence=automation_evidence,
+        forbidden_automation=forbidden_automation,
     )
 
 

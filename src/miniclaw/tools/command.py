@@ -1,10 +1,9 @@
-"""不经过 Shell、环境隔离且有界的 exact-argv 命令 Tool。"""
+"""不经过 Shell、通过 immutable ExecutionPlan 执行的命令 Tool。"""
 
-import asyncio
 import os
-import signal
-import time
+import shutil
 from pathlib import Path
+from typing import cast
 
 from miniclaw.policy.command import (
     SAFE_EXECUTABLE_PATH,
@@ -12,6 +11,15 @@ from miniclaw.policy.command import (
     normalize_command,
 )
 from miniclaw.providers.base import JsonValue
+from miniclaw.sandbox.base import (
+    ExecutionPlan,
+    ExecutionReceipt,
+    SandboxBackendName,
+    SandboxPlanError,
+)
+from miniclaw.sandbox.docker import DockerSandbox
+from miniclaw.sandbox.host import HostSandbox
+from miniclaw.sandbox.seatbelt import SeatbeltSandbox
 from miniclaw.tools.base import (
     ToolContext,
     ToolDefinition,
@@ -20,7 +28,6 @@ from miniclaw.tools.base import (
     ToolValidationError,
 )
 
-_STREAM_LIMIT = 1024 * 1024
 _MAX_ARGS = 64
 _MAX_ARGV_BYTES = 32 * 1024
 
@@ -65,6 +72,11 @@ class RunCommandTool:
         max_timeout_seconds: int = 120,
         executable_path: str = SAFE_EXECUTABLE_PATH,
         owner_home: Path | None = None,
+        automation_backend: str = "host",
+        sandbox_image: str = "miniclaw-sandbox:phase6",
+        sandbox_memory_mib: int = 512,
+        sandbox_cpu_seconds: int = 60,
+        sandbox_pids_limit: int = 128,
     ) -> None:
         if (
             type(timeout_seconds) is not int
@@ -79,10 +91,24 @@ class RunCommandTool:
             raise ValueError("executable_path must be a non-empty string")
         if owner_home is not None and not owner_home.is_absolute():
             raise ValueError("owner_home must be absolute")
+        if automation_backend not in {"host", "docker", "seatbelt"}:
+            raise ValueError("automation_backend is invalid")
+        for value, name, maximum in (
+            (sandbox_memory_mib, "sandbox_memory_mib", 32_768),
+            (sandbox_cpu_seconds, "sandbox_cpu_seconds", 3600),
+            (sandbox_pids_limit, "sandbox_pids_limit", 4096),
+        ):
+            if type(value) is not int or not 1 <= value <= maximum:
+                raise ValueError(f"{name} is invalid")
         self._timeout_seconds = timeout_seconds
         self._max_timeout_seconds = max_timeout_seconds
         self._executable_path = executable_path
         self._owner_home = owner_home
+        self._automation_backend = cast(SandboxBackendName, automation_backend)
+        self._sandbox_image = sandbox_image
+        self._sandbox_memory_mib = sandbox_memory_mib
+        self._sandbox_cpu_seconds = sandbox_cpu_seconds
+        self._sandbox_pids_limit = sandbox_pids_limit
 
     def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         """校验 program、字符串 argv 和不可放大的 timeout。"""
@@ -120,7 +146,20 @@ class RunCommandTool:
         context: ToolContext,
         arguments: dict[str, JsonValue],
     ) -> ToolResult:
-        """以 shell=False、stdin EOF、最小环境和独立进程组执行命令。"""
+        """兼容直接调用：构造一次 Plan 后交给 Host backend 执行。"""
+        try:
+            plan = self.build_execution_plan(context, arguments)
+            result, _ = await self.execute_plan(context, plan)
+        except SandboxPlanError as error:
+            return ToolResult.failure(error.code, error.code)
+        return result
+
+    def build_execution_plan(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ExecutionPlan:
+        """把 Policy 规范化的 exact argv 固化为 Host ExecutionPlan。"""
         program = arguments["program"]
         args = arguments["args"]
         timeout = arguments["timeout_seconds"]
@@ -135,102 +174,68 @@ class RunCommandTool:
                 executable_path=self._executable_path,
             )
         except CommandPolicyError as error:
-            return ToolResult.failure(error.code, str(error))
+            raise SandboxPlanError(error.code, str(error)) from None
+        environment = _safe_environment(self._executable_path, self._owner_home)
+        automation = context.source == "automation"
+        if automation:
+            environment.pop("HOME", None)
+        backend = self._automation_backend if automation else "host"
+        planned_program = (
+            Path(normalized.resolved_program).name
+            if backend == "docker"
+            else normalized.resolved_program
+        )
+        return ExecutionPlan(
+            argv=(planned_program, *normalized.args),
+            cwd=context.workspace,
+            environment_names=tuple(environment),
+            read_roots=(context.workspace,) if automation else (),
+            write_roots=() if automation else (context.workspace,),
+            timeout_seconds=timeout,
+            memory_mib=self._sandbox_memory_mib if automation else 512,
+            cpu_seconds=self._sandbox_cpu_seconds if automation else timeout,
+            pids_limit=self._sandbox_pids_limit if automation else 64,
+            network_mode="none",
+            backend=backend,
+        )
 
-        started = time.monotonic()
-        try:
-            process = await asyncio.create_subprocess_exec(
-                normalized.resolved_program,
-                *normalized.args,
-                cwd=context.workspace,
-                env=_safe_environment(self._executable_path, self._owner_home),
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                start_new_session=True,
+    async def execute_plan(
+        self,
+        context: ToolContext,
+        plan: ExecutionPlan,
+    ) -> tuple[ToolResult, ExecutionReceipt]:
+        """只执行传入 plan，不从 arguments 重新生成或替换批准内容。"""
+        del context
+        environment = _safe_environment(self._executable_path, self._owner_home)
+        if plan.backend == "host":
+            backend = HostSandbox(environment.get)
+        elif plan.backend == "docker":
+            docker_executable = shutil.which("docker") or "/usr/bin/docker"
+            backend = DockerSandbox(
+                image=self._sandbox_image,
+                docker_executable=str(Path(docker_executable).resolve()),
+                environment_resolver=environment.get,
             )
-        except OSError:
-            return ToolResult.failure("command_failed", "command could not be started")
-        assert process.stdout is not None and process.stderr is not None
-        wait_task = asyncio.create_task(process.wait())
-        stdout_task = asyncio.create_task(_read_bounded(process.stdout))
-        stderr_task = asyncio.create_task(_read_bounded(process.stderr))
-        tasks = (wait_task, stdout_task, stderr_task)
-        try:
-            _, pending = await asyncio.wait(
-                tasks,
-                timeout=timeout,
-                return_when=asyncio.ALL_COMPLETED,
+        else:
+            backend = SeatbeltSandbox(environment_resolver=environment.get)
+        receipt = await backend.execute(plan)
+        if receipt.timed_out:
+            return (
+                ToolResult.failure("tool_timeout", "command exceeded its timeout"),
+                receipt,
             )
-            if pending:
-                await _terminate_process_group(process)
-                await asyncio.gather(*tasks)
-                return ToolResult.failure("tool_timeout", "command exceeded its timeout")
-        except asyncio.CancelledError:
-            await _terminate_process_group(process)
-            await asyncio.gather(*tasks, return_exceptions=True)
-            raise
-
-        stdout, stdout_truncated = stdout_task.result()
-        stderr, stderr_truncated = stderr_task.result()
         data: dict[str, JsonValue] = {
-            "program": Path(normalized.resolved_program).name,
-            "args": list(normalized.args),
-            "cwd": str(context.workspace),
-            "exit_code": process.returncode,
-            "stdout": stdout.decode("utf-8", errors="replace"),
-            "stderr": stderr.decode("utf-8", errors="replace"),
-            "stdout_truncated": stdout_truncated,
-            "stderr_truncated": stderr_truncated,
-            "duration_ms": max(0, round((time.monotonic() - started) * 1000)),
+            "program": Path(plan.argv[0]).name,
+            "args": list(plan.argv[1:]),
+            "cwd": str(plan.cwd),
+            "exit_code": receipt.exit_code,
+            "stdout": receipt.stdout,
+            "stderr": receipt.stderr,
+            "stdout_truncated": receipt.stdout_truncated,
+            "stderr_truncated": receipt.stderr_truncated,
+            "duration_ms": receipt.duration_ms,
         }
-        return ToolResult.success(data)
-
-
-async def _read_bounded(
-    stream: asyncio.StreamReader,
-) -> tuple[bytes, bool]:
-    """并发排空一个进程流，但最多保留 1 MiB。"""
-    kept = bytearray()
-    truncated = False
-    while chunk := await stream.read(64 * 1024):
-        available = _STREAM_LIMIT - len(kept)
-        if available > 0:
-            kept.extend(chunk[:available])
-        if len(chunk) > available:
-            truncated = True
-    return bytes(kept), truncated
-
-
-async def _terminate_process_group(process: asyncio.subprocess.Process) -> None:
-    """先 TERM 后 KILL 独立进程组，确保 timeout 不留下子进程。"""
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        await process.wait()
-        return
-    for _ in range(20):
-        await asyncio.sleep(0.1)
-        if not _process_group_exists(process.pid):
-            await process.wait()
-            return
-    if _process_group_exists(process.pid):
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-    await process.wait()
-
-
-def _process_group_exists(process_group_id: int) -> bool:
-    """用 signal 0 探测独立进程组是否仍有成员。"""
-    try:
-        os.killpg(process_group_id, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        return ToolResult.success(data), receipt
 
 
 def _safe_environment(

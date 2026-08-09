@@ -66,6 +66,7 @@ class ConfigTest(unittest.TestCase):
                 "memory_forget",
                 "memory_correct",
                 "memory_review_list",
+                "manage_task",
             ),
         )
         self.assertEqual(config.tools.run_command.timeout_seconds, 30)
@@ -572,9 +573,14 @@ class ConfigTest(unittest.TestCase):
             ('[heartbeat]\nactive_hours_start = "8:00"\n', "active_hours_start"),
             ('[heartbeat]\nactive_hours_start = "09:00"\nactive_hours_end = "09:00"\n',
              "active hours"),
+            ("[heartbeat]\nenabled = true\n", "requires automation.enabled"),
             ('[sandbox]\nbackend = "process"\n', "sandbox.backend"),
             ('[sandbox]\nnetwork = "host"\n', "sandbox.network"),
             ('[sandbox]\nimage = "bad image"\n', "sandbox.image"),
+            (
+                '[automation]\nenabled = true\n\n[sandbox]\nimage = "miniclaw-sandbox:phase6"\n',
+                "sha256 digest",
+            ),
             ("[sandbox]\nmemory_mib = 0\n", "sandbox.memory_mib"),
             ("[checkpoint]\nmax_entries = 10001\n", "checkpoint.max_entries"),
             ("[checkpoint]\nmax_file_bytes = 2097152\nmax_total_bytes = 1048576\n",

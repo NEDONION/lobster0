@@ -34,6 +34,7 @@ BUILTIN_TOOL_NAMES = (
     "memory_forget",
     "memory_correct",
     "memory_review_list",
+    "manage_task",
 )
 DEFAULT_TOOL_MODE = "autopilot"
 
@@ -844,6 +845,8 @@ def load_config(
     )
     if heartbeat_active_hours_start == heartbeat_active_hours_end:
         raise ConfigError("heartbeat active hours must not be empty")
+    if heartbeat_enabled and not automation_enabled:
+        raise ConfigError("heartbeat.enabled requires automation.enabled")
     sandbox_backend = _enum_string(
         sandbox_raw.get("backend", "docker"),
         "sandbox.backend",
@@ -852,6 +855,15 @@ def load_config(
     sandbox_image = _sandbox_image(
         sandbox_raw.get("image", "miniclaw-sandbox:phase6"), "sandbox.image"
     )
+    if (
+        automation_enabled
+        and sandbox_backend == "docker"
+        and re.fullmatch(r"[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}", sandbox_image)
+        is None
+    ):
+        raise ConfigError(
+            "sandbox.image must use a sha256 digest when Docker automation is enabled"
+        )
     sandbox_network = _enum_string(
         sandbox_raw.get("network", "none"),
         "sandbox.network",

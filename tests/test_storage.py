@@ -13,9 +13,12 @@ from miniclaw.storage.repositories import OwnerRepository
 
 EXPECTED_TABLES = {
     "approvals",
+    "automation_control",
     "audit_events",
     "channel_identities",
+    "checkpoints",
     "deliveries",
+    "execution_plans",
     "eval_runs",
     "feedback",
     "messages",
@@ -34,6 +37,8 @@ EXPECTED_TABLES = {
     "proposals",
     "schema_migrations",
     "sessions",
+    "scheduled_tasks",
+    "task_runs",
     "tool_runs",
     "turns",
     "users",
@@ -68,10 +73,10 @@ class StorageTest(unittest.TestCase):
             busy_timeout = connection.execute("PRAGMA busy_timeout").fetchone()[0]
             journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
 
-        self.assertEqual(first, (1, 2, 3, 4))
+        self.assertEqual(first, (1, 2, 3, 4, 5))
         self.assertEqual(second, ())
         self.assertEqual(tables, EXPECTED_TABLES)
-        self.assertEqual(current_schema_version(database), 4)
+        self.assertEqual(current_schema_version(database), 5)
         self.assertEqual(foreign_keys, 1)
         self.assertEqual(busy_timeout, 5000)
         self.assertEqual(journal_mode, "wal")
@@ -92,6 +97,46 @@ class StorageTest(unittest.TestCase):
                     """,
                     (999, "cli", "local", "missing-owner", "active", "now", "now"),
                 )
+
+    def test_phase6_v5_schema_has_durable_automation_and_delivery_bindings(self) -> None:
+        """v5 必须包含 Task Ledger、E-stop、Checkpoint、Plan 与主动投递关联。"""
+        database = Database(self.database_path)
+
+        self.assertEqual(apply_migrations(database), (1, 2, 3, 4, 5))
+
+        with database.connect_read_only() as connection:
+            tables = {
+                row[0]
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                )
+            }
+            task_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(scheduled_tasks)")
+            }
+            run_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(task_runs)")
+            }
+            delivery_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(deliveries)")
+            }
+            approval_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(approvals)")
+            }
+            checkpoint_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(checkpoints)")
+            }
+
+        self.assertTrue(
+            {"scheduled_tasks", "task_runs", "automation_control", "checkpoints",
+             "execution_plans"}.issubset(tables)
+        )
+        self.assertIn("system_key", task_columns)
+        self.assertTrue({"approval_id", "response_json"}.issubset(run_columns))
+        self.assertIn("task_run_id", delivery_columns)
+        self.assertIn("execution_plan_hash", approval_columns)
+        self.assertIn("tool_run_id", checkpoint_columns)
+        self.assertEqual(current_schema_version(database), 5)
 
     def test_owner_is_created_once_and_preserved(self) -> None:
         """重复初始化不能插入第二个 Owner 或覆盖已有显示名。"""
@@ -177,7 +222,7 @@ class StorageTest(unittest.TestCase):
                 (now,),
             )
 
-        self.assertEqual(apply_migrations(database), (2, 3, 4))
+        self.assertEqual(apply_migrations(database), (2, 3, 4, 5))
 
         with database.connect() as connection:
             event = connection.execute(
@@ -265,10 +310,10 @@ class StorageTest(unittest.TestCase):
             )
             connection.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-                (5, "future"),
+                (6, "future"),
             )
 
-        with self.assertRaisesRegex(MigrationError, "newer schema version 5"):
+        with self.assertRaisesRegex(MigrationError, "newer schema version 6"):
             apply_migrations(database)
 
 

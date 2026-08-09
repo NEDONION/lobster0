@@ -199,8 +199,8 @@ class DiscordTransportTest(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("private", repr(raised.exception))
                 await transport.disconnect()
 
-    async def test_typing_context_and_progress_send_edit_are_always_cleaned(self) -> None:
-        """Typing context 使用 opaque token 清理，preview 不替代最终 durable delivery。"""
+    async def test_typing_context_and_progress_edit_into_compact_final(self) -> None:
+        """短回答应原地替换 progress，并准确报告完整可见字符数。"""
         client = FakeDiscordClient(send_outcomes=(700,))
         transport = self._transport(client)
         await transport.connect()
@@ -212,19 +212,62 @@ class DiscordTransportTest(unittest.IsolatedAsyncioTestCase):
             _progress("第一段"),
             idempotency_key="progress",
         )
-        await transport.update_progress(
+        final = "# 完整回答\n\n\n- 第一项"
+        completed = await transport.update_progress(
             receipt.platform_message_id,
-            _progress("完整回答", completed=True),
+            _progress(final, completed=True),
         )
         await transport.stop_typing(token)
         await transport.stop_typing(token)
 
         self.assertEqual(client.typing_started, [600])
         self.assertEqual(client.typing_stopped, ["typing-handle"])
-        self.assertIn("Claw Trail", client.sent[0]["text"])
-        self.assertIn("第一段", client.sent[0]["text"])
-        self.assertIn("最终内容见下一条消息", client.edited[0]["text"])
+        self.assertEqual(
+            client.sent[0]["text"],
+            "⏳ **MiniClaw 正在处理**\n正在理解请求",
+        )
+        self.assertEqual(client.edited[0]["text"], "**完整回答**\n\n- 第一项")
+        self.assertEqual(completed.visible_answer_chars, len(final))
+        self.assertNotIn("Claw Trail", client.edited[0]["text"])
         self.assertTrue(client.edited[0]["suppress_mentions"])
+        await transport.disconnect()
+
+    async def test_over_limit_final_keeps_durable_delivery_required(self) -> None:
+        """完整回答超限时 progress 只收口状态并返回零可见正文。"""
+        client = FakeDiscordClient(send_outcomes=(700,))
+        transport = self._transport(client)
+        await transport.connect()
+        receipt = await transport.create_progress(
+            self._event(),
+            _progress("partial"),
+            idempotency_key="progress",
+        )
+
+        completed = await transport.update_progress(
+            receipt.platform_message_id,
+            _progress("x" * 2001, completed=True),
+        )
+
+        self.assertEqual(completed.visible_answer_chars, 0)
+        self.assertEqual(
+            client.edited[0]["text"],
+            "✅ **已完成**\n回答较长，正在分段发送。",
+        )
+        await transport.disconnect()
+
+    async def test_durable_send_compacts_headings_without_enabling_mentions(self) -> None:
+        """Outbox 文本也使用紧凑 renderer，且仍永久关闭 mentions。"""
+        client = FakeDiscordClient(send_outcomes=(701,))
+        transport = self._transport(client)
+        await transport.connect()
+
+        await transport.send(
+            self._outbound("# 标题\n\n\n@everyone 正文"),
+            idempotency_key="local",
+        )
+
+        self.assertEqual(client.sent[0]["text"], "**标题**\n\n@everyone 正文")
+        self.assertTrue(client.sent[0]["suppress_mentions"])
         await transport.disconnect()
 
     def _outbound(self, content: str) -> OutboundMessage:

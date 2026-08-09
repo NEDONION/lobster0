@@ -75,6 +75,7 @@ class ModelResponse:
     input_tokens: int | None
     output_tokens: int | None
     provider_request_id: str | None
+    cost_microusd: int | None = None
 
 
 type StreamHandler = Callable[[str], Awaitable[None]]

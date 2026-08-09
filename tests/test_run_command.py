@@ -187,6 +187,39 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
             ):
                 tool.validate(arguments)  # type: ignore[arg-type]
 
+    def test_automation_plan_uses_configured_read_only_backend(self) -> None:
+        """无人值守命令默认只读 mount，并使用配置 backend/resource limits。"""
+        context = ToolContext(
+            user_id=1,
+            session_id=1,
+            turn_id=1,
+            state_home=self.context.state_home,
+            workspace=self.workspace,
+            read_only_roots=(),
+            source="automation",
+            task_run_id=1,
+        )
+        tool = RunCommandTool(
+            automation_backend="docker",
+            sandbox_image="example/miniclaw@sha256:" + "a" * 64,
+            sandbox_memory_mib=1024,
+            sandbox_cpu_seconds=120,
+            sandbox_pids_limit=256,
+        )
+
+        plan = tool.build_execution_plan(
+            context,
+            tool.validate({"program": sys.executable, "args": ["script.py"]}),
+        )
+
+        self.assertEqual(plan.backend, "docker")
+        self.assertEqual(plan.argv[0], Path(plan.argv[0]).name)
+        self.assertFalse(Path(plan.argv[0]).is_absolute())
+        self.assertEqual(plan.read_roots, (self.workspace,))
+        self.assertEqual(plan.write_roots, ())
+        self.assertEqual((plan.memory_mib, plan.cpu_seconds, plan.pids_limit), (1024, 120, 256))
+        self.assertNotIn("HOME", plan.environment_names)
+
 
 if __name__ == "__main__":
     unittest.main()

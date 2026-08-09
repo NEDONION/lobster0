@@ -109,6 +109,19 @@ class PolicyEngine:
             )
         if definition.risk is ToolRisk.CRITICAL:
             return PolicyDecision(PolicyAction.DENY, "critical_action")
+        if (
+            definition.risk is ToolRisk.HIGH
+            and self._permission_state.mode is not PermissionMode.YOLO
+        ):
+            return PolicyDecision(
+                PolicyAction.REQUIRE_APPROVAL,
+                "high_risk_approval_required",
+                normalized_arguments=normalized_arguments,
+                approval_modes=available_approval_decisions(
+                    definition.name,
+                    normalized_arguments,
+                ),
+            )
         if self._automatic_owner_action(context):
             return PolicyDecision(
                 PolicyAction.ALLOW,

@@ -37,6 +37,7 @@ class FakeApprovalRepository:
             tool_run_id=12,
             tool_name="write_file",
             arguments_hash="hash-private",
+            execution_plan_hash=None,
             summary=self.summary,
             status="pending",
             expires_at=datetime.now(UTC) + timedelta(minutes=10),

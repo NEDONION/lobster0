@@ -1,16 +1,32 @@
-"""CLI 与 TUI 共用的唯一 Agent 运行期装配。"""
+"""CLI、TUI 与 Gateway 共用的唯一 Agent/Automation 运行期装配。"""
 
+import json
 import sys
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
+from miniclaw.automation.continuation import TaskApprovalContinuation
+from miniclaw.automation.delivery import TaskDeliveryService
+from miniclaw.automation.guard import AutomationPromptGuard
+from miniclaw.automation.heartbeat import HeartbeatReconciler
+from miniclaw.automation.models import DeliveryTarget
+from miniclaw.automation.repository import (
+    AutomationControlRepository,
+    ScheduledTaskRepository,
+    TaskRunRepository,
+)
+from miniclaw.automation.runner import TaskRunner
+from miniclaw.automation.scheduler import Scheduler
 from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.checkpoints.store import CheckpointStore
 from miniclaw.config import AppConfig, resolve_permission_roots
 from miniclaw.memory.buffer import MemoryBufferRepository
 from miniclaw.memory.console import MemoryConsole
@@ -44,6 +60,7 @@ from miniclaw.policy.executables import discover_executables
 from miniclaw.policy.modes import PermissionState
 from miniclaw.policy.network import normalize_network_rule
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
+from miniclaw.skills.loader import SkillLoader
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
@@ -59,6 +76,7 @@ from miniclaw.storage.tooling import (
     PolicyRuleRepository,
     ToolRunRepository,
 )
+from miniclaw.tools.automation import ManageTaskTool
 from miniclaw.tools.base import ToolDefinition
 from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
@@ -77,6 +95,7 @@ from miniclaw.tools.memory_v2 import (
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
+from miniclaw.tools.task_completion import CompleteTaskTool
 from miniclaw.tools.web import HttpGetTool
 
 
@@ -94,21 +113,89 @@ class AgentRuntime:
     memory_console: MemoryConsole
     memory_worker: MemoryWorker = field(repr=False)
     memory_scheduler: MemoryFlushScheduler = field(repr=False)
+    task_runner: TaskRunner = field(repr=False)
+    scheduler: Scheduler = field(repr=False)
+    heartbeat_reconciler: HeartbeatReconciler = field(repr=False)
+    automation_control: AutomationControlRepository = field(repr=False)
+    automation_enabled: bool
+    database: Database = field(repr=False)
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
+    _started: bool = field(default=False, init=False, repr=False)
+    _background_started: bool = field(default=False, init=False, repr=False)
+    _closed: bool = field(default=False, init=False, repr=False)
 
     async def astart(self) -> None:
-        """幂等启动 Memory Worker，并立即恢复遗留 retry/checkpoint。"""
+        """幂等恢复 Automation，再启动 Runner/Scheduler 与 Memory Worker。"""
+        if self._started:
+            return
+        if self._closed:
+            raise RuntimeError("runtime is already closed")
         await self.memory_worker.start()
+        if self.automation_enabled:
+            now = datetime.now(UTC)
+            recovery = self.task_runner.recover_startup(now=now)
+            heartbeat = self.heartbeat_reconciler.reconcile(now)
+            control = self.automation_control.status()
+            if control.halted:
+                _record_automation_event(
+                    self.database,
+                    self.owner_id,
+                    "automation.halted",
+                    {
+                        "revision": control.revision,
+                        "requeued": recovery.requeued,
+                        "interrupted": recovery.interrupted,
+                    },
+                )
+            else:
+                await self.task_runner.start()
+                try:
+                    await self.scheduler.start()
+                except BaseException:
+                    await self.task_runner.stop()
+                    raise
+                self._background_started = True
+                _record_automation_event(
+                    self.database,
+                    self.owner_id,
+                    "automation.started",
+                    {
+                        "heartbeat_enqueued": heartbeat.enqueued,
+                        "interrupted": recovery.interrupted,
+                        "requeued": recovery.requeued,
+                    },
+                )
+        self._started = True
+
+    async def astop_background(self) -> None:
+        """先停止 Scheduler intake，再停止/取消 bounded TaskRunner workers。"""
+        if not self._background_started:
+            return
+        await self.scheduler.stop()
+        await self.task_runner.stop()
+        self._background_started = False
+        _record_automation_event(
+            self.database,
+            self.owner_id,
+            "automation.stopped",
+            {"reason": "runtime_shutdown"},
+        )
 
     async def aclose(self) -> None:
-        """有界 flush/停止 Memory Worker，再关闭唯一 Provider 客户端。"""
+        """停止后台 Task/Memory Worker，再关闭唯一 Provider 客户端。"""
+        if self._closed:
+            return
+        await self.astop_background()
         self.memory_scheduler.schedule()
         try:
             await self.memory_worker.flush_once(timeout=3.0)
         finally:
-            await self.memory_worker.stop(timeout=3.0)
-            await self.provider.aclose()
+            try:
+                await self.memory_worker.stop(timeout=3.0)
+            finally:
+                await self.provider.aclose()
+                self._closed = True
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
@@ -141,6 +228,9 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     owner = OwnerRepository(database).get_or_create()
     runs = ToolRunRepository(database)
     runs.interrupt_stale_runs()
+    scheduled_tasks = ScheduledTaskRepository(database)
+    task_runs = TaskRunRepository(database)
+    automation_control = AutomationControlRepository(database)
     provider = OpenAICompatibleProvider(
         config.provider.base_url,
         api_key,
@@ -170,6 +260,20 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     )
     network_rules = tuple(
         dict.fromkeys((*configured_network_rules, *rules.network_rules(owner.id)))
+    )
+    checkpoint_store = (
+        CheckpointStore(
+            database,
+            owner_id=owner.id,
+            workspace=effective_workspace.path,
+            state_home=paths.home,
+            max_entries=config.checkpoint.max_entries,
+            max_total_bytes=config.checkpoint.max_total_bytes,
+            max_file_bytes=config.checkpoint.max_file_bytes,
+            max_count=config.checkpoint.max_count,
+        )
+        if config.checkpoint.enabled
+        else None
     )
     memory = MemoryStore(paths)
     memory_retrieval = MemoryRetrieval(database)
@@ -245,6 +349,14 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         EditFileTool(),
         GlobTool(),
         GrepTool(),
+        ManageTaskTool(
+            scheduled_tasks,
+            task_runs,
+            AutomationPromptGuard(SkillLoader(paths.skills)),
+            config.channels,
+            enabled=config.automation.enabled,
+            misfire_grace_seconds=config.automation.misfire_grace_seconds,
+        ),
         HttpGetTool(
             timeout_seconds=config.tools.http_get.timeout_seconds,
             max_response_bytes=config.tools.http_get.max_response_bytes,
@@ -255,6 +367,11 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             max_timeout_seconds=config.tools.run_command.max_timeout_seconds,
             executable_path=executable_environment.path_value,
             owner_home=permission_roots.owner_home,
+            automation_backend=config.sandbox.backend,
+            sandbox_image=config.sandbox.image,
+            sandbox_memory_mib=config.sandbox.memory_mib,
+            sandbox_cpu_seconds=config.sandbox.cpu_seconds,
+            sandbox_pids_limit=config.sandbox.pids_limit,
         ),
         ReadMemoryTool(memory),
         ProposeMemoryTool(memory),
@@ -270,8 +387,9 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
     )
+    execution_tools = (*tools, CompleteTaskTool())
     executor = ToolExecutor(
-        ToolRegistry(tools),
+        ToolRegistry(execution_tools),
         PolicyEngine(
             security=config.tools.security,
             ask=config.tools.ask,
@@ -285,7 +403,18 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         approvals=approvals,
         policy_rules=rules,
         approval_ttl_seconds=config.tools.approval_ttl_seconds,
+        checkpoint_store=checkpoint_store,
     )
+    task_delivery = TaskDeliveryService(
+        DeliveryRepository(database),
+        task_runs,
+        channel_max_chars={
+            "feishu": config.channels.feishu.message_max_chars,
+            "telegram": config.channels.telegram.message_max_chars,
+            "discord": config.channels.discord.message_max_chars,
+        },
+    )
+    automation_audit = partial(_record_automation_event, database, owner.id)
     service = TurnService(
         owner_id=owner.id,
         model=config.agent.model,
@@ -317,8 +446,41 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             wake=memory_scheduler.schedule,
             wake_threshold=5,
         ),
+        automation_gate=lambda: not automation_control.status().halted,
+        automation_continuation=TaskApprovalContinuation(
+            task_runs,
+            delivery=task_delivery,
+            audit=automation_audit,
+        ),
         state_home=paths.home,
         workspace=effective_workspace,
+    )
+    task_runner = TaskRunner(
+        task_runs,
+        automation_control,
+        service,
+        allowed_tool_names=frozenset(
+            tool.definition.name for tool in execution_tools
+        ),
+        lease_seconds=config.automation.lease_seconds,
+        max_concurrent_runs=config.automation.max_concurrent_runs,
+        delivery=task_delivery,
+        audit=automation_audit,
+    )
+    scheduler = Scheduler(
+        scheduled_tasks,
+        task_runs,
+        automation_control,
+        max_active_tasks=config.automation.max_active_tasks,
+        misfire_grace_seconds=config.automation.misfire_grace_seconds,
+    )
+    heartbeat_reconciler = HeartbeatReconciler(
+        config.heartbeat,
+        owner_id=owner.id,
+        tasks=scheduled_tasks,
+        runs=task_runs,
+        max_concurrent_runs=config.automation.max_concurrent_runs,
+        delivery=DeliveryTarget("none", "none"),
     )
     return AgentRuntime(
         owner_id=owner.id,
@@ -338,11 +500,48 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         ),
         memory_worker=memory_worker,
         memory_scheduler=memory_scheduler,
+        task_runner=task_runner,
+        scheduler=scheduler,
+        heartbeat_reconciler=heartbeat_reconciler,
+        automation_control=automation_control,
+        automation_enabled=config.automation.enabled,
+        database=database,
         tool_definitions=tuple(
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)
         ),
         provider=provider,
     )
+
+
+def _record_automation_event(
+    database: Database,
+    owner_id: int,
+    event_type: str,
+    metadata: dict[str, int | str],
+) -> None:
+    """持久化只含 code/count/revision 的 Automation lifecycle audit。"""
+    allowed = {
+        "automation.started",
+        "automation.halted",
+        "automation.stopped",
+        "task_run.claimed",
+        "task_run.waiting_approval",
+        "task_run.terminal",
+    }
+    if event_type not in allowed:
+        raise ValueError("automation lifecycle event is invalid")
+    with database.connect() as connection:
+        connection.execute(
+            "INSERT INTO audit_events (event_type, user_id, summary, metadata_json, "
+            "created_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                event_type,
+                owner_id,
+                event_type,
+                json.dumps(metadata, separators=(",", ":"), sort_keys=True),
+                datetime.now(UTC).isoformat(),
+            ),
+        )
 
 
 def limits_for_channel(config: AppConfig, channel: str) -> ChannelLimits:

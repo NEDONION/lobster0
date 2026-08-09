@@ -35,6 +35,19 @@ class FakeRuntime:
 
 
 @dataclass(slots=True)
+class FakeLifecycleRuntime(FakeRuntime):
+    """记录 Runtime-owned background workers 的独立停止阶段。"""
+
+    async def astart(self) -> None:
+        """记录 background startup。"""
+        self.log.append("runtime.start")
+
+    async def astop_background(self) -> None:
+        """记录停止 Scheduler intake/Runner。"""
+        self.log.append("runtime.background.stop")
+
+
+@dataclass(slots=True)
 class FakeManager:
     name: str
     log: list[str]
@@ -316,6 +329,22 @@ class GatewaySupervisorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(channels[1].state, "degraded")
         self.assertNotIn("runtime.close", log)
         await supervisor.shutdown(force_event=asyncio.Event())
+
+    async def test_background_intake_stops_before_channel_ingress_and_delivery(self) -> None:
+        """关停先停止 Scheduler/Runner，再停止 Channel 接收与 Outbox。"""
+        log: list[str] = []
+        runtime = FakeLifecycleRuntime(log)
+        channel = self._channel("feishu", log)
+        supervisor = GatewaySupervisor(runtime=runtime, channels=(channel,))
+        await supervisor.start(ready=lambda _: None)
+
+        await supervisor.shutdown(force_event=asyncio.Event())
+
+        self.assertLess(
+            log.index("runtime.background.stop"),
+            log.index("feishu.transport.stop_receiving"),
+        )
+        self.assertEqual(log.count("runtime.background.stop"), 1)
 
     async def test_gateway_factory_creates_one_runtime_and_one_pipeline_per_channel(
         self,

@@ -1,6 +1,7 @@
 """通过真实 Agent/Policy/Tool/SQLite 链路运行确定性离线场景。"""
 
 import json
+import logging
 import time
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -44,6 +45,8 @@ from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
 from miniclaw.tools.web import HttpGetTool
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,8 +184,14 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
                         decision=ApprovalDecision.ONCE,
                     )
         except ApprovalError as error:
+            _LOGGER.debug(
+                "offline_eval_approval_failed case=%s code=%s",
+                case.id,
+                error.code,
+            )
             execution_error_code = error.code
         except Exception:  # noqa: BLE001 - eval 边界只输出短码并继续后续 case
+            _LOGGER.debug("offline_eval_execution_failed case=%s", case.id, exc_info=True)
             execution_error_code = "execution_error"
         tool_runs, audit_events, approval_statuses = _observations(database)
         failures = _verify(

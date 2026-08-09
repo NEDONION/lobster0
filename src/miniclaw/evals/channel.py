@@ -260,6 +260,7 @@ class _ApprovalRepository:
             1,
             "write_file",
             "hash",
+            None,
             "write_file note.txt",
             "pending",
             datetime.now(UTC) + timedelta(minutes=5),

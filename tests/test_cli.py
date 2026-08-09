@@ -5,13 +5,24 @@ import io
 import sys
 import tempfile
 import unittest
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from miniclaw.automation.models import (  # noqa: E402
+    DeliveryTarget,
+    ScheduleKind,
+    ScheduleSpec,
+    TaskBudget,
+)
+from miniclaw.automation.repository import ScheduledTaskRepository  # noqa: E402
 from miniclaw.cli import main  # noqa: E402
+from miniclaw.paths import build_state_paths  # noqa: E402
+from miniclaw.storage.database import Database  # noqa: E402
+from miniclaw.storage.repositories import OwnerRepository  # noqa: E402
 
 
 def run_cli(arguments: list[str]) -> tuple[int, str, str]:
@@ -70,9 +81,101 @@ class CliTest(unittest.TestCase):
         self.assertIn("doctor", help_text)
         self.assertIn("eval", help_text)
         self.assertIn("gateway", help_text)
+        self.assertIn("task", help_text)
         self.assertIn("all enabled IM channels", help_text)
         self.assertNotIn("chat", help_text)
         self.assertNotIn("approvals", help_text)
+
+    def test_task_commands_are_repository_only_and_redact_private_fields(self) -> None:
+        """list/show/run/runs 不加载 Provider，且不输出 Prompt 或 conversation ID。"""
+        with tempfile.TemporaryDirectory() as directory:
+            run_cli(["init", "--home", directory])
+            paths = build_state_paths(Path(directory).resolve())
+            database = Database(paths.database)
+            owner = OwnerRepository(database).get_or_create()
+            sentinel = "SECRET_SENTINEL"
+            task = ScheduledTaskRepository(database).create(
+                owner_id=owner.id,
+                name="daily report",
+                schedule=ScheduleSpec(
+                    ScheduleKind.INTERVAL,
+                    "3600",
+                    "UTC",
+                    datetime.now(UTC) + timedelta(hours=1),
+                ),
+                prompt=f"summarize {sentinel}",
+                skill_names=(),
+                delivery=DeliveryTarget(
+                    "explicit",
+                    "feishu",
+                    "default",
+                    "oc_external_id",
+                ),
+                policy_profile="automation-default",
+                budget=TaskBudget(),
+            )
+            with mock.patch(
+                "miniclaw.runtime.create_runtime",
+                side_effect=AssertionError("Provider runtime must not load"),
+            ) as runtime_factory:
+                listed = run_cli(["task", "--home", directory, "list"])
+                shown = run_cli(
+                    ["task", "--home", directory, "show", str(task.id)]
+                )
+                started = run_cli(
+                    ["task", "--home", directory, "run", str(task.id)]
+                )
+                runs = run_cli(
+                    ["task", "--home", directory, "runs", str(task.id)]
+                )
+
+        self.assertTrue(all(result[0] == 0 for result in (listed, shown, started, runs)))
+        output = "".join(result[1] for result in (listed, shown, started, runs))
+        self.assertIn("daily report", output)
+        self.assertIn("status=queued", output)
+        self.assertNotIn(sentinel, output)
+        self.assertNotIn("oc_external_id", output)
+        runtime_factory.assert_not_called()
+
+    def test_task_lifecycle_halt_and_errors_have_stable_exit_codes(self) -> None:
+        """pause/resume/cancel 与 E-stop 本地持久化，非法 transition 返回 4。"""
+        with tempfile.TemporaryDirectory() as directory:
+            run_cli(["init", "--home", directory])
+            paths = build_state_paths(Path(directory).resolve())
+            database = Database(paths.database)
+            owner = OwnerRepository(database).get_or_create()
+            task = ScheduledTaskRepository(database).create(
+                owner_id=owner.id,
+                name="lifecycle",
+                schedule=ScheduleSpec(
+                    ScheduleKind.INTERVAL,
+                    "3600",
+                    "UTC",
+                    datetime.now(UTC) + timedelta(hours=1),
+                ),
+                prompt="safe",
+                skill_names=(),
+                delivery=DeliveryTarget("none", "none"),
+                policy_profile="automation-default",
+                budget=TaskBudget(),
+            )
+
+            paused = run_cli(["task", "--home", directory, "pause", str(task.id)])
+            resumed = run_cli(["task", "--home", directory, "resume", str(task.id)])
+            halted = run_cli(
+                ["task", "--home", directory, "halt", "--reason", "incident"]
+            )
+            blocked = run_cli(["task", "--home", directory, "run", str(task.id)])
+            active = run_cli(["task", "--home", directory, "unhalt"])
+            cancelled = run_cli(["task", "--home", directory, "cancel", str(task.id)])
+            invalid = run_cli(["task", "--home", directory, "resume", str(task.id)])
+            missing = run_cli(["task", "--home", directory, "show", "999999"])
+
+        self.assertEqual((paused[0], resumed[0], halted[0], active[0], cancelled[0]), (0,) * 5)
+        self.assertIn("automation halted", halted[1])
+        self.assertIn("automation active", active[1])
+        self.assertEqual((blocked[0], invalid[0], missing[0]), (4, 4, 4))
+        self.assertIn("automation_halted", blocked[2])
 
     def test_legacy_chat_tui_and_approval_aliases_are_not_commands(self) -> None:
         """历史 REPL、TUI 别名和审批 CLI 都不能形成第二个人类交互入口。"""
@@ -115,7 +218,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("invalid TOML", error)
 
     def test_doctor_reports_healthy_initialized_state(self) -> None:
-        """doctor 应输出 Personal 权限、Memory、三平台与数据库的二十三项 PASS。"""
+        """doctor 应输出含 Automation、Memory、三平台与数据库的二十七项 PASS。"""
         with tempfile.TemporaryDirectory() as directory:
             run_cli(["init", "--home", directory])
             node = Path(directory) / "test-node"
@@ -136,7 +239,7 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(error, "")
-        self.assertEqual(output.count("[PASS]"), 23)
+        self.assertEqual(output.count("[PASS]"), 27)
 
     def test_doctor_returns_two_for_corrupt_config(self) -> None:
         """损坏配置应显示失败项并使用配置错误退出码 2。"""
