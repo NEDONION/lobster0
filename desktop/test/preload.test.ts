@@ -1,8 +1,28 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 
 import { createDesktopApi } from "../src/common/api";
+import electronConfig from "../electron.vite.config";
 
 describe("Desktop Preload API", () => {
+  it("builds a CommonJS preload that Electron sandbox can execute", () => {
+    expect(electronConfig).toMatchObject({
+      preload: {
+        build: {
+          rollupOptions: {
+            output: { entryFileNames: "[name].js", format: "cjs" },
+          },
+        },
+      },
+    });
+  });
+
+  it("ships an explicit Renderer content security policy", () => {
+    const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+    expect(html).toContain('http-equiv="Content-Security-Policy"');
+    expect(html).toContain("default-src 'self'");
+  });
+
   it("exposes only the approved fixed methods", () => {
     const api = createDesktopApi(async () => undefined, () => () => undefined);
 

@@ -19,7 +19,7 @@ function createWindow(): void {
     backgroundColor: "#f7f8fa",
     titleBarStyle: "hiddenInset",
     webPreferences: {
-      preload: join(currentDirectory, "../preload/index.mjs"),
+      preload: join(currentDirectory, "../preload/index.js"),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

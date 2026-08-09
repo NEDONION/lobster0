@@ -3,7 +3,16 @@ import { defineConfig } from "electron-vite";
 
 export default defineConfig({
   main: {},
-  preload: {},
+  preload: {
+    build: {
+      rollupOptions: {
+        output: {
+          entryFileNames: "[name].js",
+          format: "cjs",
+        },
+      },
+    },
+  },
   renderer: {
     root: ".",
     plugins: [react()],
