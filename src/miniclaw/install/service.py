@@ -7,9 +7,8 @@ import os
 import plistlib
 import pwd
 import re
-import shlex
 import stat
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Never
@@ -31,6 +30,17 @@ _PATH = "/usr/local/bin:/usr/bin:/bin"
 _TIMEOUT_SECONDS = 30.0
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _MAX_SERVICE_BYTES = 1024 * 1024
+_SPEC_SEAL = object()
+type _ServiceFields = tuple[
+    ServicePlatform,
+    str,
+    Path,
+    bytes,
+    tuple[tuple[str, ...], ...],
+    tuple[str, ...],
+    tuple[str, ...],
+    tuple[tuple[str, ...], ...],
+]
 
 
 class ServicePlatform(StrEnum):
@@ -41,6 +51,22 @@ class ServicePlatform(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class _ServiceEvidence:
+    """绑定 render 时已经验证的 layout、target UID 与所有派生路径。"""
+
+    seal: object
+    platform: ServicePlatform
+    owner_uid: int
+    home: Path
+    launcher: Path
+    state_home: Path
+    secrets_file: Path
+    stdout_log: Path
+    stderr_log: Path
+    bound_spec: object | None = field(default=None, repr=False, compare=False)
+
+
+@dataclass(frozen=True, slots=True, init=False)
 class ServiceSpec:
     """保存一个受管 service 文件和 exact manager commands。
 
@@ -55,7 +81,7 @@ class ServiceSpec:
         uninstall_argvs: 停止、注销和刷新 manager 的 exact argv。
 
     Raises:
-        InstallError: 任一字段不是 closed-world user-service contract。
+        TypeError: 调用方尝试绕过 render_service_spec 直接构造。
     """
 
     platform: ServicePlatform
@@ -66,10 +92,11 @@ class ServiceSpec:
     status_argv: tuple[str, ...]
     restart_argv: tuple[str, ...]
     uninstall_argvs: tuple[tuple[str, ...], ...]
+    _evidence: _ServiceEvidence = field(repr=False, compare=False)
 
-    def __post_init__(self) -> None:
-        """重新解析内容并校验 path、UID domain 与全部 exact argv。"""
-        _validate_service_spec(self)
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        """禁止调用方直接构造；必须由 render_service_spec 绑定 layout。"""
+        raise TypeError("ServiceSpec must be built by render_service_spec")
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,16 +129,84 @@ def render_service_spec(layout: InstallLayout, platform: ServicePlatform) -> Ser
         _service_failed()
     home = _layout_home(layout, uid)
     _require_safe_path(home)
+    evidence = _ServiceEvidence(
+        seal=_SPEC_SEAL,
+        platform=platform,
+        owner_uid=uid,
+        home=home,
+        launcher=layout.launcher,
+        state_home=layout.state_home,
+        secrets_file=layout.secrets_file,
+        stdout_log=layout.state_home / "logs" / "gateway.stdout.log",
+        stderr_log=layout.state_home / "logs" / "gateway.stderr.log",
+    )
+    return _build_service_spec(evidence)
+
+
+def _build_service_spec(evidence: _ServiceEvidence) -> ServiceSpec:
+    """从 sealed layout evidence 私有构造 canonical ServiceSpec。"""
+    if evidence.bound_spec is not None:
+        _service_failed()
+    values = _canonical_service_fields(evidence)
+    spec = object.__new__(ServiceSpec)
+    for name, value in zip(
+        (
+            "platform",
+            "label",
+            "path",
+            "content",
+            "install_argvs",
+            "status_argv",
+            "restart_argv",
+            "uninstall_argvs",
+        ),
+        values,
+        strict=True,
+    ):
+        object.__setattr__(spec, name, value)
+    object.__setattr__(spec, "_evidence", evidence)
+    object.__setattr__(evidence, "bound_spec", spec)
+    _validate_service_spec(spec)
+    return spec
+
+
+def _canonical_service_fields(
+    evidence: _ServiceEvidence,
+) -> _ServiceFields:
+    """从 sealed evidence 重新生成全部 public path/content/argv 字段。"""
+    if (
+        type(evidence) is not _ServiceEvidence
+        or evidence.seal is not _SPEC_SEAL
+        or type(evidence.platform) is not ServicePlatform
+        or type(evidence.owner_uid) is not int
+        or evidence.owner_uid <= 0
+    ):
+        _service_failed()
+    for path in (
+        evidence.home,
+        evidence.launcher,
+        evidence.state_home,
+        evidence.secrets_file,
+        evidence.stdout_log,
+        evidence.stderr_log,
+    ):
+        _require_safe_path(path)
+    if (
+        evidence.secrets_file != evidence.state_home / "secrets.env"
+        or evidence.stdout_log != evidence.state_home / "logs/gateway.stdout.log"
+        or evidence.stderr_log != evidence.state_home / "logs/gateway.stderr.log"
+    ):
+        _service_failed()
     arguments = (
-        str(layout.launcher),
+        str(evidence.launcher),
         "gateway",
         "--home",
-        str(layout.state_home),
+        str(evidence.state_home),
     )
-    if platform is ServicePlatform.SYSTEMD_USER:
+    if evidence.platform is ServicePlatform.SYSTEMD_USER:
         label = _SYSTEMD_LABEL
-        path = home / ".config" / "systemd" / "user" / label
-        content = _render_systemd(arguments, layout.secrets_file)
+        path = evidence.home / ".config" / "systemd" / "user" / label
+        content = _render_systemd(arguments, evidence.secrets_file)
         install = (
             ("/usr/bin/systemctl", "--user", "daemon-reload"),
             ("/usr/bin/systemctl", "--user", "enable", "--now", label),
@@ -124,23 +219,28 @@ def render_service_spec(layout: InstallLayout, platform: ServicePlatform) -> Ser
         )
     else:
         label = _LAUNCHD_LABEL
-        path = home / "Library" / "LaunchAgents" / f"{label}.plist"
-        content = _render_launchd(arguments, layout)
-        domain = f"gui/{uid}"
+        path = evidence.home / "Library" / "LaunchAgents" / f"{label}.plist"
+        content = _render_launchd(
+            arguments,
+            evidence.secrets_file,
+            evidence.stdout_log,
+            evidence.stderr_log,
+        )
+        domain = f"gui/{evidence.owner_uid}"
         target = f"{domain}/{label}"
         install = (("/bin/launchctl", "bootstrap", domain, str(path)),)
         status_argv = ("/bin/launchctl", "print", target)
         restart_argv = ("/bin/launchctl", "kickstart", "-k", target)
-        uninstall = (("/bin/launchctl", "bootout", domain, str(path)),)
-    return ServiceSpec(
-        platform=platform,
-        label=label,
-        path=path,
-        content=content,
-        install_argvs=install,
-        status_argv=status_argv,
-        restart_argv=restart_argv,
-        uninstall_argvs=uninstall,
+        uninstall = (("/bin/launchctl", "bootout", target),)
+    return (
+        evidence.platform,
+        label,
+        path,
+        content,
+        install,
+        status_argv,
+        restart_argv,
+        uninstall,
     )
 
 
@@ -180,8 +280,15 @@ def service_install(
     temporary, temporary_identity = _write_temporary(spec)
     quarantined: _QuarantinedPath | None = None
     published_identity: tuple[int, int] | None = None
+    launchd_transition_started = False
+    launchd_old_stopped = False
     try:
         _validate_temporary(spec, temporary, selected)
+        if owner is not None and spec.platform is ServicePlatform.LAUNCHD:
+            if _run(spec, selected, spec.uninstall_argvs[0]).returncode != 0:
+                _service_failed()
+            launchd_transition_started = True
+            launchd_old_stopped = True
         if owner is not None:
             quarantined = _quarantine_expected(
                 spec.path,
@@ -203,14 +310,27 @@ def service_install(
         _fsync_directory(spec.path.parent)
         if managed_file_sha256(spec.path, expected_mode=0o600, require_symlink=False) != wanted:
             _ownership_failed()
+        if spec.platform is ServicePlatform.LAUNCHD:
+            launchd_transition_started = True
         _run_install_and_health(spec, selected)
-        if quarantined is not None and not quarantined.discard():
-            _ownership_failed()
+        if quarantined is not None:
+            _discard_quarantine(quarantined, committed_service_file=True)
         return wanted
     except BaseException as error:
         if temporary_identity is not None:
             _unlink_exact(temporary, temporary_identity)
-        _rollback_install(spec, selected, published_identity, quarantined)
+        if spec.platform is ServicePlatform.LAUNCHD:
+            _rollback_launchd_install(
+                spec,
+                selected,
+                published_identity,
+                quarantined,
+                transition_started=launchd_transition_started,
+                old_stopped=launchd_old_stopped,
+                old_identity=owner.identity if owner is not None else None,
+            )
+        else:
+            _rollback_install(spec, selected, published_identity, quarantined)
         if isinstance(error, InstallError):
             raise
         raise InstallError("service_install_failed", "service") from None
@@ -292,26 +412,34 @@ def service_uninstall(
     """
     _validate_service_spec(spec)
     selected = _runner(runner)
-    owner = _preflight_owned(spec.path, expected_sha256)
-    if owner is None:
+    if type(expected_sha256) is not str or _HASH.fullmatch(expected_sha256) is None:
         _ownership_failed()
+    if not _lexists(spec.path):
+        return
+    owner = _preflight_owned(spec.path, expected_sha256)
+    assert owner is not None
     first = spec.uninstall_argvs[0]
     if _run(spec, selected, first).returncode != 0:
         _service_failed()
     quarantined: _QuarantinedPath | None = None
+    deletion_committed = False
     try:
         quarantined = _quarantine_expected(spec.path, owner.identity, require_symlink=False)
         if quarantined is None:
             _ownership_failed()
+        deletion_committed = True
         for argv in spec.uninstall_argvs[1:]:
             if _run(spec, selected, argv).returncode != 0:
                 _service_failed()
-        if not quarantined.discard():
-            _ownership_failed()
+        _discard_quarantine(quarantined, committed_service_file=True)
     except BaseException as error:
-        if quarantined is not None:
-            quarantined.restore()
-        _best_effort_register(spec, selected)
+        if deletion_committed:
+            if quarantined is not None:
+                _discard_quarantine(quarantined, committed_service_file=False)
+        else:
+            if quarantined is not None:
+                _restore_quarantine(quarantined)
+            _best_effort_register(spec, selected)
         if isinstance(error, InstallError):
             raise
         raise InstallError("service_install_failed", "service") from None
@@ -321,8 +449,8 @@ def _render_systemd(arguments: tuple[str, ...], secrets_file: Path) -> bytes:
     """生成无 shell、无 root 字段且完成 specifier escaping 的 unit。"""
     for value in (*arguments, str(secrets_file)):
         _require_safe_text(value)
-    executable = " ".join(_systemd_word(value) for value in arguments)
-    environment = _systemd_word(f"MINICLAW_ENV_FILE={secrets_file}")
+    executable = " ".join(_systemd_exec_word(value) for value in arguments)
+    environment = _systemd_environment_word(f"MINICLAW_ENV_FILE={secrets_file}")
     return (
         "[Unit]\n"
         "Description=MiniClaw Gateway\n"
@@ -342,13 +470,18 @@ def _render_systemd(arguments: tuple[str, ...], secrets_file: Path) -> bytes:
     ).encode()
 
 
-def _render_launchd(arguments: tuple[str, ...], layout: InstallLayout) -> bytes:
+def _render_launchd(
+    arguments: tuple[str, ...],
+    secrets_file: Path,
+    stdout_log: Path,
+    stderr_log: Path,
+) -> bytes:
     """使用 plistlib 生成 exact ProgramArguments 与 owner log paths。"""
-    for value in (*arguments, str(layout.secrets_file), str(layout.state_home)):
+    for value in (*arguments, str(secrets_file), str(stdout_log), str(stderr_log)):
         _require_safe_text(value)
     document = {
         "EnvironmentVariables": {
-            "MINICLAW_ENV_FILE": str(layout.secrets_file),
+            "MINICLAW_ENV_FILE": str(secrets_file),
             "PATH": _PATH,
         },
         "KeepAlive": {"SuccessfulExit": False},
@@ -356,70 +489,39 @@ def _render_launchd(arguments: tuple[str, ...], layout: InstallLayout) -> bytes:
         "ProcessType": "Background",
         "ProgramArguments": list(arguments),
         "RunAtLoad": True,
-        "StandardErrorPath": str(layout.state_home / "logs" / "gateway.stderr.log"),
-        "StandardOutPath": str(layout.state_home / "logs" / "gateway.stdout.log"),
+        "StandardErrorPath": str(stderr_log),
+        "StandardOutPath": str(stdout_log),
         "Umask": 0o077,
     }
     return plistlib.dumps(document, fmt=plistlib.FMT_XML, sort_keys=True)
 
 
 def _validate_service_spec(spec: object) -> None:
-    """重新解析 direct-constructor spec 并闭合所有派生关系。"""
+    """从 sealed evidence 重建并比较全部 public 字段。"""
     if type(spec) is not ServiceSpec:
         _service_failed()
     assert isinstance(spec, ServiceSpec)
+    evidence = getattr(spec, "_evidence", None)
+    expected = _canonical_service_fields(evidence)
+    try:
+        actual = (
+            spec.platform,
+            spec.label,
+            spec.path,
+            spec.content,
+            spec.install_argvs,
+            spec.status_argv,
+            spec.restart_argv,
+            spec.uninstall_argvs,
+        )
+    except AttributeError:
+        _service_failed()
     if (
-        type(spec.platform) is not ServicePlatform
-        or type(spec.label) is not str
-        or not isinstance(spec.path, Path)
+        actual != expected
+        or evidence.bound_spec is not spec
+        or evidence.owner_uid != os.geteuid()
         or type(spec.content) is not bytes
         or not 1 <= len(spec.content) <= _MAX_SERVICE_BYTES
-        or type(spec.install_argvs) is not tuple
-        or type(spec.status_argv) is not tuple
-        or type(spec.restart_argv) is not tuple
-        or type(spec.uninstall_argvs) is not tuple
-    ):
-        _service_failed()
-    _require_safe_path(spec.path)
-    home, uid = _spec_home_uid(spec)
-    if spec.platform is ServicePlatform.SYSTEMD_USER:
-        if spec.label != _SYSTEMD_LABEL or spec.path != (
-            home / ".config/systemd/user" / _SYSTEMD_LABEL
-        ):
-            _service_failed()
-        arguments, secrets = _parse_systemd(spec.content)
-        expected_install = (
-            ("/usr/bin/systemctl", "--user", "daemon-reload"),
-            ("/usr/bin/systemctl", "--user", "enable", "--now", spec.label),
-        )
-        expected_status = ("/usr/bin/systemctl", "--user", "is-active", spec.label)
-        expected_restart = ("/usr/bin/systemctl", "--user", "restart", spec.label)
-        expected_uninstall = (
-            ("/usr/bin/systemctl", "--user", "disable", "--now", spec.label),
-            ("/usr/bin/systemctl", "--user", "daemon-reload"),
-        )
-    else:
-        if spec.label != _LAUNCHD_LABEL or spec.path != (
-            home / "Library/LaunchAgents" / f"{_LAUNCHD_LABEL}.plist"
-        ):
-            _service_failed()
-        arguments, secrets = _parse_launchd(spec.content)
-        domain = f"gui/{uid}"
-        target = f"{domain}/{spec.label}"
-        expected_install = (("/bin/launchctl", "bootstrap", domain, str(spec.path)),)
-        expected_status = ("/bin/launchctl", "print", target)
-        expected_restart = ("/bin/launchctl", "kickstart", "-k", target)
-        expected_uninstall = (("/bin/launchctl", "bootout", domain, str(spec.path)),)
-    if (
-        spec.install_argvs != expected_install
-        or spec.status_argv != expected_status
-        or spec.restart_argv != expected_restart
-        or spec.uninstall_argvs != expected_uninstall
-        or len(arguments) != 4
-        or arguments[1:] != ("gateway", "--home", arguments[3])
-        or not Path(arguments[0]).is_absolute()
-        or not Path(arguments[3]).is_absolute()
-        or secrets != Path(arguments[3]) / "secrets.env"
     ):
         _service_failed()
     for argv in (*spec.install_argvs, spec.status_argv, spec.restart_argv, *spec.uninstall_argvs):
@@ -461,8 +563,8 @@ def _parse_systemd(content: bytes) -> tuple[tuple[str, ...], Path]:
         or not lines[9].startswith("Environment=")
     ):
         _service_failed()
-    arguments = _systemd_split(lines[7].removeprefix("ExecStart="))
-    environment = _systemd_split(lines[9].removeprefix("Environment="))
+    arguments = _parse_systemd_exec(lines[7].removeprefix("ExecStart="))
+    environment = _parse_systemd_environment(lines[9].removeprefix("Environment="))
     if len(environment) != 1 or not environment[0].startswith("MINICLAW_ENV_FILE="):
         _service_failed()
     return arguments, Path(environment[0].split("=", 1)[1])
@@ -509,24 +611,90 @@ def _parse_launchd(content: bytes) -> tuple[tuple[str, ...], Path]:
     return tuple(arguments), Path(environment["MINICLAW_ENV_FILE"])
 
 
-def _systemd_word(value: str) -> str:
-    """转义 systemd specifier，并仅在需要时双引号包裹一个 argv。"""
-    escaped = value.replace("%", "%%").replace("\\", "\\\\").replace('"', '\\"')
+def _systemd_exec_word(value: str) -> str:
+    """按 systemd ExecStart 规则 literal 化一个 exact argv。"""
+    _require_safe_text(value)
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("$", "$$")
+        .replace("%", "%%")
+    )
     needs_quotes = any(character.isspace() or character in '\\"' for character in value)
     return f'"{escaped}"' if needs_quotes else escaped
 
 
-def _systemd_split(value: str) -> tuple[str, ...]:
-    """解析 renderer 支持的 systemd quoting 子集并拒绝未转义 specifier。"""
-    try:
-        words = shlex.split(value, posix=True)
-    except ValueError:
-        _service_failed()
+def _systemd_environment_word(value: str) -> str:
+    """按 systemd Environment 规则编码赋值且保持 `$` literal。"""
+    _require_safe_text(value)
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+    needs_quotes = any(character.isspace() or character in '\\"' for character in value)
+    return f'"{escaped}"' if needs_quotes else escaped
+
+
+def _parse_systemd_exec(value: str) -> tuple[str, ...]:
+    """解析 renderer 的 ExecStart 子集并还原 literal `$` 与 `%`。"""
+    return _parse_systemd_words(value, decode_dollar=True)
+
+
+def _parse_systemd_environment(value: str) -> tuple[str, ...]:
+    """解析 renderer 的 Environment 子集且不展开 literal `$`。"""
+    return _parse_systemd_words(value, decode_dollar=False)
+
+
+def _parse_systemd_words(value: str, *, decode_dollar: bool) -> tuple[str, ...]:
+    """以独立 state machine 解析受限 systemd quoting，拒绝歧义 escape。"""
+    _require_safe_text(value)
     result: list[str] = []
-    for word in words:
-        if re.search(r"(?<!%)%(?!%)", word) is not None:
-            _service_failed()
-        result.append(word.replace("%%", "%"))
+    current: list[str] = []
+    quoted = False
+    active = False
+    index = 0
+    while index < len(value):
+        character = value[index]
+        if character == '"':
+            quoted = not quoted
+            active = True
+            index += 1
+            continue
+        if character == "\\":
+            index += 1
+            if index >= len(value) or value[index] not in {'"', "\\"}:
+                _service_failed()
+            current.append(value[index])
+            active = True
+            index += 1
+            continue
+        if not quoted and character.isspace():
+            if active:
+                result.append("".join(current))
+                current = []
+                active = False
+            index += 1
+            continue
+        if character == "%":
+            if index + 1 >= len(value) or value[index + 1] != "%":
+                _service_failed()
+            current.append("%")
+            active = True
+            index += 2
+            continue
+        if decode_dollar and character == "$":
+            if index + 1 >= len(value) or value[index + 1] != "$":
+                _service_failed()
+            current.append("$")
+            active = True
+            index += 2
+            continue
+        current.append(character)
+        active = True
+        index += 1
+    if quoted:
+        _service_failed()
+    if active:
+        result.append("".join(current))
+    if not result:
+        _service_failed()
     return tuple(result)
 
 
@@ -547,20 +715,15 @@ def _layout_home(layout: InstallLayout, uid: int) -> Path:
 
 
 def _spec_home_uid(spec: ServiceSpec) -> tuple[Path, int]:
-    """从固定 service path 和当前 non-root target user 恢复 Home/UID。"""
-    uid = os.geteuid()
-    if type(uid) is not int or uid <= 0:
+    """从 sealed render evidence 返回 target Home/UID。"""
+    evidence = getattr(spec, "_evidence", None)
+    if (
+        type(evidence) is not _ServiceEvidence
+        or evidence.seal is not _SPEC_SEAL
+        or evidence.owner_uid != os.geteuid()
+    ):
         _service_failed()
-    if spec.platform is ServicePlatform.SYSTEMD_USER:
-        if len(spec.path.parents) < 4:
-            _service_failed()
-        home = spec.path.parents[3]
-    else:
-        if len(spec.path.parents) < 3:
-            _service_failed()
-        home = spec.path.parents[2]
-    _require_safe_path(home)
-    return home, uid
+    return evidence.home, evidence.owner_uid
 
 
 def _manager_environment(spec: ServiceSpec) -> dict[str, str]:
@@ -743,12 +906,49 @@ def _rollback_install(
     if published_identity is not None:
         current = _quarantine_expected(spec.path, published_identity, require_symlink=False)
         if current is not None:
-            current.discard()
-    restored = prior is not None and prior.restore()
+            _discard_quarantine(current, committed_service_file=False)
+    restored = prior is not None and _restore_quarantine(prior)
     if restored:
         _best_effort_register(spec, runner)
     else:
         _best_effort_unregister(spec, runner)
+
+
+def _rollback_launchd_install(
+    spec: ServiceSpec,
+    runner: CommandRunner,
+    published_identity: tuple[int, int] | None,
+    prior: _QuarantinedPath | None,
+    *,
+    transition_started: bool,
+    old_stopped: bool,
+    old_identity: tuple[int, int] | None,
+) -> None:
+    """按 target 清理新 job，再恢复旧 LaunchAgent file/job。"""
+    if not transition_started:
+        return
+    _best_effort_unregister(spec, runner)
+    if published_identity is not None:
+        try:
+            current = _quarantine_expected(spec.path, published_identity, require_symlink=False)
+            if current is not None:
+                _discard_quarantine(current, committed_service_file=False)
+        except InstallError:
+            pass
+    restored = prior is not None and _restore_quarantine(prior)
+    if not restored and old_identity is not None:
+        restored = _path_matches_identity(spec.path, old_identity)
+    if old_stopped and restored:
+        _best_effort_restore_launchd(spec, runner)
+
+
+def _best_effort_restore_launchd(spec: ServiceSpec, runner: CommandRunner) -> None:
+    """恢复旧文件后逐项尝试 bootstrap 与 print，不泄漏任一步错误。"""
+    for argv in (*spec.install_argvs, spec.status_argv):
+        try:
+            _run(spec, runner, argv)
+        except InstallError:
+            pass
 
 
 def _best_effort_register(spec: ServiceSpec, runner: CommandRunner) -> None:
@@ -770,9 +970,11 @@ def _best_effort_unregister(spec: ServiceSpec, runner: CommandRunner) -> None:
 
 
 def _launchd_logs(spec: ServiceSpec) -> tuple[Path, Path]:
-    """从已 strict 解析的 plist 返回 stdout/stderr 路径。"""
-    document = plistlib.loads(spec.content)
-    return Path(document["StandardOutPath"]), Path(document["StandardErrorPath"])
+    """从 sealed render evidence 返回 stdout/stderr 路径。"""
+    evidence = getattr(spec, "_evidence", None)
+    if type(evidence) is not _ServiceEvidence or evidence.seal is not _SPEC_SEAL:
+        _service_failed()
+    return evidence.stdout_log, evidence.stderr_log
 
 
 def _launchd_log_parent(spec: ServiceSpec) -> Path:
@@ -900,8 +1102,47 @@ def _write_all(descriptor: int, payload: bytes) -> None:
 def _unlink_exact(path: Path, identity: tuple[int, int]) -> None:
     """仅隔离并删除仍匹配调用方 inode 的目录项。"""
     quarantined = _quarantine_expected(path, identity, require_symlink=False)
-    if quarantined is not None and not quarantined.discard():
-        _ownership_failed()
+    if quarantined is not None:
+        _discard_quarantine(quarantined, committed_service_file=False)
+
+
+def _restore_quarantine(quarantined: _QuarantinedPath) -> bool:
+    """恢复 public token；private cleanup 失败后按 public inode 判断真实结果。"""
+    if quarantined.restore():
+        return True
+    try:
+        metadata = quarantined.original.lstat()
+    except OSError:
+        return False
+    return (metadata.st_dev, metadata.st_ino) == quarantined.identity
+
+
+def _path_matches_identity(path: Path, identity: tuple[int, int]) -> bool:
+    """no-follow 判断公开目录项是否仍是调用方绑定的 inode。"""
+    try:
+        metadata = path.lstat()
+    except OSError:
+        return False
+    return (metadata.st_dev, metadata.st_ino) == identity
+
+
+def _discard_quarantine(
+    quarantined: _QuarantinedPath,
+    *,
+    committed_service_file: bool,
+) -> None:
+    """提交 public 删除后 best-effort 回收 private residue，不再伪造 rollback。"""
+    if committed_service_file:
+        try:
+            _service_private_gc_hook(quarantined.original)
+        except OSError:
+            return
+    quarantined.discard()
+
+
+def _service_private_gc_hook(path: Path) -> None:
+    """为 committed-delete private GC regression 提供无副作用切入点。"""
+    del path
 
 
 def _lexists(path: Path) -> bool:
