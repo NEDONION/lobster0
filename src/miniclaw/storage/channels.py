@@ -103,6 +103,7 @@ class StoredDelivery:
 
     id: int
     message_id: int | None
+    task_run_id: int | None
     channel: str
     account_id: str
     external_conversation_id: str
@@ -538,6 +539,70 @@ class DeliveryRepository:
             rows = self._list_parts(connection, message_id, channel, kind)
         return tuple(_delivery_from_row(row) for row in rows)
 
+    def create_task_parts(
+        self,
+        *,
+        task_run_id: int,
+        channel: str,
+        account_id: str,
+        external_conversation_id: str,
+        reply_to_message_id: str,
+        kind: DeliveryKind,
+        contents: Sequence[str],
+    ) -> tuple[StoredDelivery, ...]:
+        """按 TaskRun/part 幂等保存主动投递，重复调用不得改变目标或正文。"""
+        if type(task_run_id) is not int or task_run_id <= 0:
+            raise ChannelStateError("invalid_task_run_delivery")
+        if not contents or any(
+            not isinstance(content, str) or not content for content in contents
+        ):
+            raise ChannelStateError("invalid_delivery_content")
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            existing = self._list_task_parts(connection, task_run_id, channel, kind)
+            if existing:
+                if not _delivery_parts_match(
+                    existing,
+                    account_id,
+                    external_conversation_id,
+                    reply_to_message_id,
+                    contents,
+                ):
+                    raise ChannelStateError("delivery_content_conflict")
+                return tuple(_delivery_from_row(row) for row in existing)
+            now = self._clock().isoformat()
+            for part_index, content in enumerate(contents):
+                content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                idempotency_key = _task_idempotency_key(task_run_id, part_index)
+                connection.execute(
+                    """
+                    INSERT INTO deliveries (
+                        message_id, task_run_id, channel, account_id,
+                        external_conversation_id, reply_to_message_id,
+                        delivery_kind, part_index, content, content_hash,
+                        idempotency_key, status, attempts, created_at, updated_at
+                    ) VALUES (
+                        NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?, ?
+                    )
+                    """,
+                    (
+                        task_run_id,
+                        channel,
+                        account_id,
+                        external_conversation_id,
+                        reply_to_message_id,
+                        kind,
+                        part_index,
+                        content,
+                        content_hash,
+                        idempotency_key,
+                        now,
+                        now,
+                    ),
+                )
+            rows = self._list_task_parts(connection, task_run_id, channel, kind)
+        return tuple(_delivery_from_row(row) for row in rows)
+
     def claim_next(self, channel: str, account_id: str) -> StoredDelivery | None:
         """原子 claim 当前可发送且没有未完成前序 part 的最早 Delivery。"""
         now = self._clock().isoformat()
@@ -557,7 +622,13 @@ class DeliveryRepository:
                   )
                   AND NOT EXISTS (
                     SELECT 1 FROM deliveries AS prior
-                    WHERE prior.message_id = candidate.message_id
+                    WHERE (
+                        (candidate.task_run_id IS NOT NULL
+                         AND prior.task_run_id = candidate.task_run_id)
+                        OR
+                        (candidate.task_run_id IS NULL
+                         AND prior.message_id = candidate.message_id)
+                    )
                       AND prior.channel = candidate.channel
                       AND prior.delivery_kind = candidate.delivery_kind
                       AND prior.part_index < candidate.part_index
@@ -804,6 +875,23 @@ class DeliveryRepository:
             (message_id, channel, kind),
         ).fetchall()
 
+    @staticmethod
+    def _list_task_parts(
+        connection: sqlite3.Connection,
+        task_run_id: int,
+        channel: str,
+        kind: DeliveryKind,
+    ) -> list[sqlite3.Row]:
+        """按分片顺序读取一个 TaskRun 的同类主动投递。"""
+        return connection.execute(
+            """
+            SELECT * FROM deliveries
+            WHERE task_run_id = ? AND channel = ? AND delivery_kind = ?
+            ORDER BY part_index
+            """,
+            (task_run_id, channel, kind),
+        ).fetchall()
+
 
 def _delivery_parts_match(
     rows: Sequence[sqlite3.Row],
@@ -832,6 +920,13 @@ def _idempotency_key(
     """生成不含正文、固定 32 字符且跨进程稳定的发送 UUID。"""
     source = f"{message_id}:{channel}:{account_id}:{kind}:{part_index}"
     return hashlib.sha256(source.encode("utf-8")).hexdigest()[:32]
+
+
+def _task_idempotency_key(task_run_id: int, part_index: int) -> str:
+    """生成不含目标/正文且可跨崩溃重建的主动投递 UUID。"""
+    from uuid import NAMESPACE_URL, uuid5
+
+    return str(uuid5(NAMESPACE_URL, f"miniclaw:task-run:{task_run_id}:part:{part_index}"))
 
 
 def _identity_from_row(row: sqlite3.Row) -> ChannelIdentity:
@@ -878,6 +973,9 @@ def _delivery_from_row(row: sqlite3.Row) -> StoredDelivery:
     return StoredDelivery(
         id=int(row["id"]),
         message_id=None if row["message_id"] is None else int(row["message_id"]),
+        task_run_id=(
+            None if row["task_run_id"] is None else int(row["task_run_id"])
+        ),
         channel=str(row["channel"]),
         account_id=str(row["account_id"]),
         external_conversation_id=str(row["external_conversation_id"]),

@@ -8,6 +8,7 @@ from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
+from miniclaw.automation.delivery import TaskDeliveryService
 from miniclaw.automation.guard import AutomationPromptGuard
 from miniclaw.automation.repository import (
     AutomationControlRepository,
@@ -343,8 +344,18 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         state_home=paths.home,
         workspace=effective_workspace,
     )
+    task_runs = TaskRunRepository(database)
+    task_delivery = TaskDeliveryService(
+        DeliveryRepository(database),
+        task_runs,
+        channel_max_chars={
+            "feishu": config.channels.feishu.message_max_chars,
+            "telegram": config.channels.telegram.message_max_chars,
+            "discord": config.channels.discord.message_max_chars,
+        },
+    )
     task_runner = TaskRunner(
-        TaskRunRepository(database),
+        task_runs,
         automation_control,
         service,
         allowed_tool_names=frozenset(
@@ -352,6 +363,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         ),
         lease_seconds=config.automation.lease_seconds,
         max_concurrent_runs=config.automation.max_concurrent_runs,
+        delivery=task_delivery,
     )
     return AgentRuntime(
         owner_id=owner.id,

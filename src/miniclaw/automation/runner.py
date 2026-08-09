@@ -1,6 +1,7 @@
 """从 durable TaskRun claim 工作并在隔离 Turn 中有界执行。"""
 
 import asyncio
+import logging
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ from typing import Protocol
 
 from miniclaw.agent.runner import AgentRunBudget
 from miniclaw.agent.turn import TurnExecutionProfile, TurnResult
-from miniclaw.automation.models import RunStatus, TaskRunSnapshot
+from miniclaw.automation.models import RunStatus, TaskResponse, TaskRun, TaskRunSnapshot
 from miniclaw.automation.repository import (
     AutomationControlRepository,
     AutomationStateError,
@@ -24,6 +25,8 @@ from miniclaw.providers.base import (
     ProviderServerError,
     ProviderTimeoutError,
 )
+
+_LOGGER = logging.getLogger(__name__)
 
 
 def _utc_now() -> datetime:
@@ -43,6 +46,18 @@ class AutomationTurnHandler(Protocol):
         profile: TurnExecutionProfile,
     ) -> TurnResult:
         """执行一次 fresh automation Session 并返回终态或 Approval。"""
+        ...
+
+
+class TaskDeliveryProjector(Protocol):
+    """收窄 Runner 对 durable Channel 投影服务的依赖。"""
+
+    def project(self, run: TaskRun, response: TaskResponse) -> tuple[object, ...]:
+        """幂等投影成功响应。"""
+        ...
+
+    def recover(self) -> int:
+        """补投影崩溃窗口中的既有成功 Run。"""
         ...
 
 
@@ -73,6 +88,7 @@ class TaskRunner:
         lease_seconds: int,
         max_concurrent_runs: int = 1,
         clock: Callable[[], datetime] | None = None,
+        delivery: TaskDeliveryProjector | None = None,
     ) -> None:
         """绑定状态仓储、Turn handler、Tool allowlist、lease 与 Worker 上限。"""
         if type(lease_seconds) is not int or lease_seconds < 10:
@@ -92,6 +108,7 @@ class TaskRunner:
         self._lease_seconds = lease_seconds
         self._max_concurrent_runs = max_concurrent_runs
         self._clock = clock or _utc_now
+        self._delivery = delivery
         self._wake_event = asyncio.Event()
         self._stopping = False
         self._workers: tuple[asyncio.Task[None], ...] = ()
@@ -103,7 +120,10 @@ class TaskRunner:
 
     def recover_startup(self, *, now: datetime) -> RecoveryResult:
         """启动前恢复过期 lease，绝不自动重放可能已有副作用的 running Run。"""
-        return self._runs.recover_stale(now=now)
+        recovered = self._runs.recover_stale(now=now)
+        if self._delivery is not None:
+            self._delivery.recover()
+        return recovered
 
     async def run_once(self, worker_id: str, now: datetime) -> TaskRunAttempt | None:
         """claim 并执行最多一个 queued Run，所有分支都结算或转 waiting。"""
@@ -245,6 +265,11 @@ class TaskRunner:
             session_id=result.session_id,
             turn_id=result.turn_id,
         )
+        if self._delivery is not None:
+            try:
+                self._delivery.project(completed, result.terminal_response)
+            except Exception:  # noqa: BLE001 - Run 已终态，Outbox 由 recovery 补投影
+                _LOGGER.warning("task_delivery_projection_failed", exc_info=False)
         return TaskRunAttempt(
             completed.id,
             completed.task_id,

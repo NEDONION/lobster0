@@ -567,6 +567,18 @@ class TaskRunRepository:
             raise AutomationStateError("task_run_not_found")
         return _run_from_row(row)
 
+    def list_succeeded(self) -> tuple[TaskRun, ...]:
+        """按 ID 列出可幂等补投影的 succeeded Run。"""
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM task_runs
+                WHERE status = 'succeeded' AND response_json IS NOT NULL
+                ORDER BY id
+                """
+            ).fetchall()
+        return tuple(_run_from_row(row) for row in rows)
+
     def list(
         self,
         *,

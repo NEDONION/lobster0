@@ -14,13 +14,14 @@ from miniclaw.automation.models import (
     ScheduleSpec,
     TaskBudget,
     TaskResponse,
+    TaskRun,
 )
 from miniclaw.automation.repository import (
     AutomationControlRepository,
     ScheduledTaskRepository,
     TaskRunRepository,
 )
-from miniclaw.automation.runner import TaskRunner
+from miniclaw.automation.runner import TaskDeliveryProjector, TaskRunner
 from miniclaw.policy.engine import PolicyAction, PolicyDecision
 from miniclaw.providers.base import ProviderServerError, ToolCall
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
@@ -56,6 +57,25 @@ class _FakeAutomationTurns:
         if isinstance(outcome, BaseException):
             raise outcome
         return outcome
+
+
+class _FakeDeliveryProjector:
+    """记录 terminal projection 与启动恢复调用。"""
+
+    def __init__(self) -> None:
+        """创建空投影记录。"""
+        self.projected = []
+        self.recoveries = 0
+
+    def project(self, run: TaskRun, response: TaskResponse) -> tuple[object, ...]:
+        """记录完整终态对象，不制造真实 Outbox。"""
+        self.projected.append((run, response))
+        return ()
+
+    def recover(self) -> int:
+        """记录一次启动补投影。"""
+        self.recoveries += 1
+        return 0
 
 
 def _turn_result(
@@ -145,6 +165,7 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         turns: _FakeAutomationTurns,
         *,
         lease_seconds: int = 10,
+        delivery: TaskDeliveryProjector | None = None,
     ) -> TaskRunner:
         """创建只开放 read_file 与 terminal Tool 的单 Worker。"""
         return TaskRunner(
@@ -155,6 +176,7 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
                 {"read_file", "complete_task", "manage_task"}
             ),
             lease_seconds=lease_seconds,
+            delivery=delivery,
         )
 
     async def test_success_uses_snapshot_profile_and_filters_manage_task(self) -> None:
@@ -172,6 +194,23 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("complete_task", profile.allowed_tool_names)
         self.assertNotIn("manage_task", profile.allowed_tool_names)
         self.assertEqual(profile.budget.max_turns, self.task.budget.max_turns)
+
+    async def test_success_projects_terminal_response_and_recovery_is_idempotent(self) -> None:
+        """成功结算后才投影；启动恢复会要求同一 projector 补齐崩溃窗口。"""
+        response = TaskResponse(True, "主动通知")
+        delivery = _FakeDeliveryProjector()
+        runner = self._runner(
+            _FakeAutomationTurns([self._result(terminal=response)]),
+            delivery=delivery,
+        )
+
+        attempt = await runner.run_once("worker-a", self.now)
+        runner.recover_startup(now=self.now)
+
+        self.assertEqual(attempt.status, RunStatus.SUCCEEDED)
+        self.assertEqual(delivery.projected[0][1], response)
+        self.assertEqual(delivery.projected[0][0].status, RunStatus.SUCCEEDED)
+        self.assertEqual(delivery.recoveries, 1)
 
     async def test_each_run_uses_a_fresh_non_user_session_key(self) -> None:
         """同一 Task 的两个 Run 也不能共享临时对话历史。"""
