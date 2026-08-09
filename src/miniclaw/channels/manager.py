@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from miniclaw.agent.events import RunEventHandler
-from miniclaw.agent.runner import AgentNoProgressError
+from miniclaw.agent.runner import AgentLoopLimitError, AgentNoProgressError
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
     ApprovalCommandOutcome,
@@ -1004,6 +1004,12 @@ def _failure_profile(error: Exception) -> tuple[str, str, str]:
             "连续多轮没有新的成功 Tool 结果，已停止重复执行。",
             "请检查 Claw Trail 与 ToolRun；调整请求后重试。",
         )
+    if isinstance(error, AgentLoopLimitError):
+        return (
+            "Agent Tool Loop",
+            "模型在硬预算收口轮仍请求 Tool；最后一次 Tool 请求未执行。",
+            "请检查 Claw Trail、Turn/Event 与 ToolRun；调整任务范围或硬预算后重试。",
+        )
     if isinstance(error, ProviderProtocolError):
         return (
             "模型响应校验",
@@ -1025,6 +1031,7 @@ def _failure_error_code(error: Exception) -> str:
     """把公开异常类型映射为稳定错误码，未知异常使用 Channel 兜底码。"""
     mappings = (
         (AgentNoProgressError, "loop_no_progress"),
+        (AgentLoopLimitError, "loop_limit"),
         (ProviderAuthenticationError, "provider_authentication"),
         (ProviderRateLimitError, "provider_rate_limit"),
         (ProviderTimeoutError, "provider_timeout"),

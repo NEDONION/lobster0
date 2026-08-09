@@ -420,6 +420,10 @@ def load_config(
     raw = _read_config(paths.config)
     _reject_unknown(raw, _TOP_LEVEL_KEYS, "")
     agent_raw = _section(raw, "agent", _AGENT_KEYS)
+    hard_budget_is_explicit = (
+        "max_tool_iterations_hard" in agent_raw
+        or "MINICLAW_MAX_TOOL_ITERATIONS_HARD" in source
+    )
     provider_raw = _section(raw, "provider", _PROVIDER_KEYS)
     workspace_raw = _section(raw, "workspace", _WORKSPACE_KEYS)
     permissions_raw = _section(raw, "permissions", _PERMISSION_KEYS)
@@ -943,7 +947,9 @@ def load_config(
     if "workspace" in explicit:
         workspace_path = _absolute_path(explicit["workspace"], "override.workspace")
 
-    if max_tool_iterations_hard < max_tool_iterations:
+    if not hard_budget_is_explicit:
+        max_tool_iterations_hard = max(max_tool_iterations_hard, max_tool_iterations)
+    elif max_tool_iterations_hard < max_tool_iterations:
         raise ConfigError(
             "agent.max_tool_iterations_hard must be greater than or equal to "
             "agent.max_tool_iterations"

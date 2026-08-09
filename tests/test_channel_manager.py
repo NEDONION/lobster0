@@ -11,7 +11,7 @@ from typing import Any
 from unittest import mock
 
 from miniclaw.agent.events import RunEvent
-from miniclaw.agent.runner import AgentNoProgressError
+from miniclaw.agent.runner import AgentLoopLimitError, AgentNoProgressError
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
     ApprovalCommandOutcome,
@@ -122,7 +122,11 @@ class TrackingTurnService:
                     else (
                         "loop_no_progress"
                         if isinstance(error, AgentNoProgressError)
-                        else "provider_server_error"
+                        else (
+                            "loop_limit"
+                            if isinstance(error, AgentLoopLimitError)
+                            else "provider_server_error"
+                        )
                     )
                 )
                 self.turns.fail(turn.id, error_code, "safe failure")
@@ -720,6 +724,85 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("当前模型轮次：7", final)
         self.assertIn("连续无进展轮次：2", final)
         self.assertNotIn("channel_turn_failed", final)
+        self.assertNotIn("private unreadable Turn", final)
+
+    async def test_loop_limit_failure_explains_unexecuted_final_tool_request(self) -> None:
+        """硬预算收口仍请求 Tool 时应说明最后请求未执行并保留审计编号。"""
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            failure=AgentLoopLimitError("private tool arguments and result"),
+        )
+        transport = ManagerCapabilityTransport()
+        manager = self._manager(
+            service,
+            queue_size=2,
+            worker_count=1,
+            observer=ChannelObserver(self.database),
+        )
+        manager.attach_experience(
+            ChannelCapabilities(
+                transport=transport,
+                streaming_card=True,
+                update_interval=0.01,
+            )
+        )
+
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_loop_limit", "finish task"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        final = repr(transport.cards[-1])
+        self.assertIn("Agent Tool Loop", final)
+        self.assertIn("loop_limit", final)
+        self.assertIn("硬预算收口轮仍请求 Tool", final)
+        self.assertIn("最后一次 Tool 请求未执行", final)
+        self.assertIn("调整任务范围", final)
+        self.assertIn("Turn #", final)
+        self.assertIn("Event #", final)
+        self.assertIn("0 个真实 ToolRun", final)
+        self.assertNotIn("private tool arguments and result", final)
+
+    async def test_loop_limit_fallback_code_survives_unreadable_turn(self) -> None:
+        """Turn 不可读时 loop limit 仍应使用类型回退码和安全诊断。"""
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            failure=AgentLoopLimitError("private loop detail"),
+        )
+        transport = ManagerCapabilityTransport()
+        manager = self._manager(service, queue_size=2, worker_count=1)
+        manager.attach_experience(
+            ChannelCapabilities(
+                transport=transport,
+                streaming_card=True,
+                update_interval=0.01,
+            )
+        )
+
+        with mock.patch.object(
+            self.turns,
+            "get_by_inbound",
+            side_effect=ConversationStateError("private unreadable Turn"),
+        ):
+            await manager.start()
+            try:
+                await manager.receive(self._message("om_loop_unreadable", "finish"))
+                await manager.wait_idle(timeout=2)
+            finally:
+                await manager.stop()
+
+        final = repr(transport.cards[-1])
+        self.assertIn("loop_limit", final)
+        self.assertIn("最后一次 Tool 请求未执行", final)
+        self.assertIn("Event #", final)
+        self.assertNotIn("channel_turn_failed", final)
+        self.assertNotIn("private loop detail", final)
         self.assertNotIn("private unreadable Turn", final)
 
     async def test_cancelled_turn_finishes_same_card_with_debug_diagnostics(self) -> None:

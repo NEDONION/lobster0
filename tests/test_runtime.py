@@ -128,6 +128,25 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 await runtime.aclose()
 
+    async def test_runtime_receives_hard_budget_expanded_from_legacy_soft_config(self) -> None:
+        """旧配置仅给较大 soft 时 Runtime 应收到相同的计算后 hard。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            initialize_state(paths)
+            paths.config.write_text(
+                "[agent]\nmax_tool_iterations = 100\n",
+                encoding="utf-8",
+            )
+            config = load_config(paths, {}, {})
+
+            runtime = create_runtime(config, paths, "test-key")
+            try:
+                runner = runtime.service._runner
+                self.assertEqual(runner._max_iterations, 100)
+                self.assertEqual(runner._hard_max_iterations, 100)
+            finally:
+                await runtime.aclose()
+
     async def test_channel_limits_map_all_typed_config_without_secrets(self) -> None:
         """三个平台应稳定映射同一公共预算，不复制 Manager factory。"""
         with tempfile.TemporaryDirectory() as directory:

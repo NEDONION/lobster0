@@ -280,17 +280,18 @@ def _escape_raw_html(line: str) -> str:
 
 
 def _table_cells(line: str) -> list[str] | None:
-    """解析一行原始文本；表格行返回单元格列表，普通文本返回 None。"""
+    """解析可选左右外框管道的表格行，普通文本返回 None。"""
     stripped = line.strip()
-    if (
-        not stripped.startswith("|")
-        or not stripped.endswith("|")
-        or _is_escaped(stripped, len(stripped) - 1)
-    ):
+    delimiters = _table_delimiter_indexes(stripped)
+    if not delimiters:
         return None
+    leading = delimiters[0] == 0
+    trailing = delimiters[-1] == len(stripped) - 1
+    body_start = 1 if leading else 0
+    body_end = len(stripped) - 1 if trailing else len(stripped)
+    body = stripped[body_start:body_end]
     cells: list[str] = []
     current: list[str] = []
-    body = stripped[1:-1]
     index = 0
     while index < len(body):
         char = body[index]
@@ -307,7 +308,23 @@ def _table_cells(line: str) -> list[str] | None:
             current.append(char)
         index += 1
     cells.append("".join(current).strip())
-    return cells if cells else None
+    return cells if len(cells) >= 2 else None
+
+
+def _table_delimiter_indexes(text: str) -> list[int]:
+    """返回 code span 外且未转义的管道位置，用于识别表格列边界。"""
+    delimiters: list[int] = []
+    index = 0
+    while index < len(text):
+        if text[index] == "`" and not _is_escaped(text, index):
+            code_end = _inline_code_span_end(text, index)
+            if code_end is not None:
+                index = code_end
+                continue
+        if text[index] == "|" and not _is_escaped(text, index):
+            delimiters.append(index)
+        index += 1
+    return delimiters
 
 
 def _inline_code_segments(text: str) -> list[tuple[str, bool]]:
@@ -426,8 +443,11 @@ def _status_label(status: ProgressStatus) -> str:
 
 
 def _escape_markdown(text: str) -> str:
-    """转义会改变内联代码语义的 Markdown 字符。"""
-    return text.replace("\\", "\\\\").replace("`", "\\`")
+    """把内部公开字段编码为 Markdown 中不可执行的严格纯文本。"""
+    encoded = (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+    return re.sub(r"([\\`*_{}\[\]()#+\-.!|>~])", r"\\\1", encoded)
 
 
 def _card_size(card: dict[str, JsonValue]) -> int:

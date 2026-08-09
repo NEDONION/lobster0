@@ -107,6 +107,43 @@ class ConfigTest(unittest.TestCase):
                 {},
             )
 
+    def test_legacy_toml_soft_budget_expands_implicit_hard_budget(self) -> None:
+        """旧 TOML 只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
+        self.paths.config.write_text(
+            "[agent]\nmax_tool_iterations = 100\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(self.paths, {}, {})
+
+        self.assertEqual(config.agent.max_tool_iterations, 100)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 100)
+
+    def test_legacy_environment_soft_budget_expands_implicit_hard_budget(self) -> None:
+        """旧环境变量只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
+        config = load_config(
+            self.paths,
+            {"MINICLAW_MAX_TOOL_ITERATIONS": "100"},
+            {},
+        )
+
+        self.assertEqual(config.agent.max_tool_iterations, 100)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 100)
+
+    def test_toml_hard_remains_explicit_when_environment_overrides_soft(self) -> None:
+        """TOML 显式 hard 不得被环境 soft 静默提升。"""
+        self.paths.config.write_text(
+            "[agent]\nmax_tool_iterations_hard = 80\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ConfigError, "max_tool_iterations_hard"):
+            load_config(
+                self.paths,
+                {"MINICLAW_MAX_TOOL_ITERATIONS": "100"},
+                {},
+            )
+
     def test_explicit_safe_tool_mode_overrides_autopilot_default(self) -> None:
         """用户显式选择 safe 时必须保留审批模式。"""
         self.paths.config.write_text('[tools]\nmode = "safe"\n', encoding="utf-8")

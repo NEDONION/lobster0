@@ -140,6 +140,60 @@ class FeishuAgentCardTest(unittest.TestCase):
         self.assertIn("&lt;at id=all&gt;&lt;/at&gt;", final_content)
         self.assertNotIn("| --- |", final_content)
 
+    def test_table_tokenizer_accepts_all_outer_pipe_variants(self) -> None:
+        """表格无论有无左右外框管道都应识别，且必须保留单元格内容。"""
+        variants = (
+            "项目 | 内容\n--- | ---\n标题 | 无外框",
+            "| 项目 | 内容\n| --- | ---\n| 标题 | 仅左框",
+            "项目 | 内容 |\n--- | --- |\n标题 | 仅右框 |",
+            "| 项目 | 内容 |\n| --- | --- |\n| 标题 | 双边框 |",
+        )
+
+        for answer in variants:
+            with self.subTest(answer=answer):
+                final_content = self._final_content(answer)
+                self.assertIn("- **标题**：", final_content)
+                self.assertNotIn("--- | ---", final_content)
+
+    def test_internal_card_fields_are_strict_plain_text_markdown(self) -> None:
+        """内部摘要与轨迹字段必须实体化 mention 和预编码实体，不能变回标签。"""
+        progress = AgentProgress(
+            status="running",
+            summary=(
+                "摘要 <at id=all></at> &lt;at id=all&gt; `code` \\ "
+                "**bold** [link](https://example.com)"
+            ),
+            steps=(
+                ProgressStep(
+                    1,
+                    None,
+                    "标题 <at id=all></at> &lt;",
+                    "详情 <at id=all></at> &lt;",
+                    "running",
+                ),
+            ),
+            public_text="过程 <at id=all></at> &lt;",
+            final_answer="",
+            iterations=1,
+            tool_calls=0,
+            input_tokens=None,
+            output_tokens=None,
+            duration_ms=1,
+        )
+
+        rendered = json.dumps(
+            render_agent_progress_card(progress).card,
+            ensure_ascii=False,
+        )
+
+        self.assertNotIn("<at id=all>", rendered)
+        self.assertIn("&lt;at id=all&gt;&lt;/at&gt;", rendered)
+        self.assertIn("&amp;lt;at id=all&amp;gt;", rendered)
+        self.assertIn("\\\\`code\\\\`", rendered)
+        self.assertIn("\\\\", rendered)
+        self.assertIn("\\\\*\\\\*bold\\\\*\\\\*", rendered)
+        self.assertIn("\\\\[link\\\\]\\\\(https://example\\\\.com\\\\)", rendered)
+
     def test_incomplete_or_mismatched_table_rows_are_not_silently_lost(self) -> None:
         """无数据行的伪表格保留原文，真实表格只消费列宽匹配的数据行。"""
         incomplete = "| 项目 | 内容 |\n| --- | --- |\n| | |\n普通段落"

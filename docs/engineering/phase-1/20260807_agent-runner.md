@@ -149,8 +149,9 @@ Result，但不会复用这一条错误码冒充不同原因。
   持久化稳定错误码 `loop_no_progress`。
 
 这既允许复杂任务在持续有效进展时使用 32～64 轮，也让重复 `help`、`inspect` 或副作用 Tool 不会无界重跑。
-审批等待、取消、Policy deny 和 Provider 失败保持各自原有终态，不由预算策略自动延长或重试。诊断只暴露阶段、
-轮次、Tool 数和 Turn/Event 编号，不能暴露 Prompt、Tool 参数、Tool 原始结果或 Provider 原文。
+审批等待、取消、Policy deny 和 Provider 失败保持各自原有终态，不由预算策略自动延长或重试。`loop_limit`
+失败卡会明确说明收口轮仍请求 Tool 且最后请求未执行。诊断只暴露阶段、轮次、Tool 数和 Turn/Event 编号，不能
+暴露 Prompt、Tool 参数、Tool 原始结果或 Provider 原文。
 
 ## 9. 空响应
 
