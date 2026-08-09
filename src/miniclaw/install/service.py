@@ -8,6 +8,7 @@ import plistlib
 import pwd
 import re
 import stat
+import weakref
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -41,6 +42,17 @@ type _ServiceFields = tuple[
     tuple[str, ...],
     tuple[tuple[str, ...], ...],
 ]
+type _EvidenceFields = tuple[
+    object,
+    ServicePlatform,
+    int,
+    Path,
+    Path,
+    Path,
+    Path,
+    Path,
+    Path,
+]
 
 
 class ServicePlatform(StrEnum):
@@ -66,7 +78,7 @@ class _ServiceEvidence:
     bound_spec: object | None = field(default=None, repr=False, compare=False)
 
 
-@dataclass(frozen=True, slots=True, init=False)
+@dataclass(frozen=True, slots=True, init=False, weakref_slot=True)
 class ServiceSpec:
     """保存一个受管 service 文件和 exact manager commands。
 
@@ -97,6 +109,20 @@ class ServiceSpec:
     def __init__(self, *_args: object, **_kwargs: object) -> None:
         """禁止调用方直接构造；必须由 render_service_spec 绑定 layout。"""
         raise TypeError("ServiceSpec must be built by render_service_spec")
+
+
+@dataclass(frozen=True, slots=True)
+class _ServiceSnapshot:
+    """保存 spec 对象之外、按 identity 绑定的 immutable canonical snapshot。"""
+
+    fields: _ServiceFields
+    evidence: _EvidenceFields
+
+
+_SPEC_SNAPSHOTS: dict[
+    int,
+    tuple[weakref.ReferenceType[ServiceSpec], _ServiceSnapshot],
+] = {}
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,8 +192,56 @@ def _build_service_spec(evidence: _ServiceEvidence) -> ServiceSpec:
         object.__setattr__(spec, name, value)
     object.__setattr__(spec, "_evidence", evidence)
     object.__setattr__(evidence, "bound_spec", spec)
+    identity = id(spec)
+    reference = weakref.ref(
+        spec,
+        lambda released, spec_identity=identity: _release_service_snapshot(
+            spec_identity,
+            released,
+        ),
+    )
+    _SPEC_SNAPSHOTS[identity] = (
+        reference,
+        _ServiceSnapshot(values, _evidence_fields(evidence)),
+    )
     _validate_service_spec(spec)
     return spec
+
+
+def _release_service_snapshot(
+    identity: int,
+    reference: weakref.ReferenceType[ServiceSpec],
+) -> None:
+    """spec 回收时仅删除仍匹配同一 weakref 的 identity snapshot。"""
+    current = _SPEC_SNAPSHOTS.get(identity)
+    if current is not None and current[0] is reference:
+        del _SPEC_SNAPSHOTS[identity]
+
+
+def _registered_snapshot(spec: ServiceSpec) -> _ServiceSnapshot:
+    """按 object identity 返回外部 snapshot，并拒绝 id reuse/copy。"""
+    registered = _SPEC_SNAPSHOTS.get(id(spec))
+    if registered is None or registered[0]() is not spec:
+        _service_failed()
+    return registered[1]
+
+
+def _evidence_fields(evidence: object) -> _EvidenceFields:
+    """读取全部 evidence 字段供 immutable snapshot exact 比较。"""
+    if type(evidence) is not _ServiceEvidence:
+        _service_failed()
+    assert isinstance(evidence, _ServiceEvidence)
+    return (
+        evidence.seal,
+        evidence.platform,
+        evidence.owner_uid,
+        evidence.home,
+        evidence.launcher,
+        evidence.state_home,
+        evidence.secrets_file,
+        evidence.stdout_log,
+        evidence.stderr_log,
+    )
 
 
 def _canonical_service_fields(
@@ -281,14 +355,13 @@ def service_install(
     quarantined: _QuarantinedPath | None = None
     published_identity: tuple[int, int] | None = None
     launchd_transition_started = False
-    launchd_old_stopped = False
+    launchd_new_registration_started = False
     try:
         _validate_temporary(spec, temporary, selected)
         if owner is not None and spec.platform is ServicePlatform.LAUNCHD:
+            launchd_transition_started = True
             if _run(spec, selected, spec.uninstall_argvs[0]).returncode != 0:
                 _service_failed()
-            launchd_transition_started = True
-            launchd_old_stopped = True
         if owner is not None:
             quarantined = _quarantine_expected(
                 spec.path,
@@ -312,6 +385,7 @@ def service_install(
             _ownership_failed()
         if spec.platform is ServicePlatform.LAUNCHD:
             launchd_transition_started = True
+            launchd_new_registration_started = True
         _run_install_and_health(spec, selected)
         if quarantined is not None:
             _discard_quarantine(quarantined, committed_service_file=True)
@@ -326,7 +400,7 @@ def service_install(
                 published_identity,
                 quarantined,
                 transition_started=launchd_transition_started,
-                old_stopped=launchd_old_stopped,
+                new_registration_started=launchd_new_registration_started,
                 old_identity=owner.identity if owner is not None else None,
             )
         else:
@@ -415,6 +489,10 @@ def service_uninstall(
     if type(expected_sha256) is not str or _HASH.fullmatch(expected_sha256) is None:
         _ownership_failed()
     if not _lexists(spec.path):
+        if spec.platform is ServicePlatform.SYSTEMD_USER:
+            for argv in spec.uninstall_argvs[1:]:
+                if _run(spec, selected, argv).returncode != 0:
+                    _service_failed()
         return
     owner = _preflight_owned(spec.path, expected_sha256)
     assert owner is not None
@@ -497,12 +575,12 @@ def _render_launchd(
 
 
 def _validate_service_spec(spec: object) -> None:
-    """从 sealed evidence 重建并比较全部 public 字段。"""
+    """按外部 identity snapshot 比较全部 public/evidence 字段。"""
     if type(spec) is not ServiceSpec:
         _service_failed()
     assert isinstance(spec, ServiceSpec)
+    snapshot = _registered_snapshot(spec)
     evidence = getattr(spec, "_evidence", None)
-    expected = _canonical_service_fields(evidence)
     try:
         actual = (
             spec.platform,
@@ -517,9 +595,10 @@ def _validate_service_spec(spec: object) -> None:
     except AttributeError:
         _service_failed()
     if (
-        actual != expected
+        actual != snapshot.fields
+        or _evidence_fields(evidence) != snapshot.evidence
         or evidence.bound_spec is not spec
-        or evidence.owner_uid != os.geteuid()
+        or snapshot.evidence[2] != os.geteuid()
         or type(spec.content) is not bytes
         or not 1 <= len(spec.content) <= _MAX_SERVICE_BYTES
     ):
@@ -620,7 +699,7 @@ def _systemd_exec_word(value: str) -> str:
         .replace("$", "$$")
         .replace("%", "%%")
     )
-    needs_quotes = any(character.isspace() or character in '\\"' for character in value)
+    needs_quotes = any(character.isspace() or character in "\\\"'" for character in value)
     return f'"{escaped}"' if needs_quotes else escaped
 
 
@@ -628,7 +707,7 @@ def _systemd_environment_word(value: str) -> str:
     """按 systemd Environment 规则编码赋值且保持 `$` literal。"""
     _require_safe_text(value)
     escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
-    needs_quotes = any(character.isspace() or character in '\\"' for character in value)
+    needs_quotes = any(character.isspace() or character in "\\\"'" for character in value)
     return f'"{escaped}"' if needs_quotes else escaped
 
 
@@ -672,6 +751,8 @@ def _parse_systemd_words(value: str, *, decode_dollar: bool) -> tuple[str, ...]:
                 active = False
             index += 1
             continue
+        if character == "'" and not quoted:
+            _service_failed()
         if character == "%":
             if index + 1 >= len(value) or value[index + 1] != "%":
                 _service_failed()
@@ -715,15 +796,12 @@ def _layout_home(layout: InstallLayout, uid: int) -> Path:
 
 
 def _spec_home_uid(spec: ServiceSpec) -> tuple[Path, int]:
-    """从 sealed render evidence 返回 target Home/UID。"""
-    evidence = getattr(spec, "_evidence", None)
-    if (
-        type(evidence) is not _ServiceEvidence
-        or evidence.seal is not _SPEC_SEAL
-        or evidence.owner_uid != os.geteuid()
-    ):
+    """从外部 immutable snapshot 返回 target Home/UID。"""
+    snapshot = _registered_snapshot(spec)
+    uid = snapshot.evidence[2]
+    if uid != os.geteuid():
         _service_failed()
-    return evidence.home, evidence.owner_uid
+    return snapshot.evidence[3], uid
 
 
 def _manager_environment(spec: ServiceSpec) -> dict[str, str]:
@@ -921,34 +999,59 @@ def _rollback_launchd_install(
     prior: _QuarantinedPath | None,
     *,
     transition_started: bool,
-    old_stopped: bool,
+    new_registration_started: bool,
     old_identity: tuple[int, int] | None,
 ) -> None:
-    """按 target 清理新 job，再恢复旧 LaunchAgent file/job。"""
+    """确认新 target inactive 后才移动 plist，并严格恢复旧 file/job。"""
     if not transition_started:
         return
-    _best_effort_unregister(spec, runner)
+    if new_registration_started and not _launchd_confirm_inactive(spec, runner):
+        _recovery_required()
     if published_identity is not None:
         try:
             current = _quarantine_expected(spec.path, published_identity, require_symlink=False)
-            if current is not None:
-                _discard_quarantine(current, committed_service_file=False)
+            if current is None:
+                _recovery_required()
+            _discard_quarantine(current, committed_service_file=False)
         except InstallError:
-            pass
+            _recovery_required()
     restored = prior is not None and _restore_quarantine(prior)
     if not restored and old_identity is not None:
         restored = _path_matches_identity(spec.path, old_identity)
-    if old_stopped and restored:
-        _best_effort_restore_launchd(spec, runner)
+    if old_identity is not None:
+        if not restored or not _launchd_restore_old_manager(spec, runner):
+            _recovery_required()
 
 
-def _best_effort_restore_launchd(spec: ServiceSpec, runner: CommandRunner) -> None:
-    """恢复旧文件后逐项尝试 bootstrap 与 print，不泄漏任一步错误。"""
-    for argv in (*spec.install_argvs, spec.status_argv):
-        try:
-            _run(spec, runner, argv)
-        except InstallError:
-            pass
+def _launchd_confirm_inactive(spec: ServiceSpec, runner: CommandRunner) -> bool:
+    """要求 bootout 成功，或用随后 print 的非零状态确认 target inactive。"""
+    bootout = _manager_attempt(spec, runner, spec.uninstall_argvs[0])
+    if bootout is not None and bootout.returncode == 0:
+        return True
+    status = _manager_attempt(spec, runner, spec.status_argv)
+    return status is not None and status.returncode != 0
+
+
+def _launchd_restore_old_manager(spec: ServiceSpec, runner: CommandRunner) -> bool:
+    """逐项检查旧定义 bootstrap 与 print 均精确成功。"""
+    registered = True
+    for argv in spec.install_argvs:
+        result = _manager_attempt(spec, runner, argv)
+        registered = registered and result is not None and result.returncode == 0
+    status = _manager_attempt(spec, runner, spec.status_argv)
+    return registered and status is not None and status.returncode == 0
+
+
+def _manager_attempt(
+    spec: ServiceSpec,
+    runner: CommandRunner,
+    argv: tuple[str, ...],
+) -> CommandResult | None:
+    """捕获已脱敏 manager exception，并把 returncode 留给 rollback 状态机判断。"""
+    try:
+        return _run(spec, runner, argv)
+    except InstallError:
+        return None
 
 
 def _best_effort_register(spec: ServiceSpec, runner: CommandRunner) -> None:
@@ -970,11 +1073,9 @@ def _best_effort_unregister(spec: ServiceSpec, runner: CommandRunner) -> None:
 
 
 def _launchd_logs(spec: ServiceSpec) -> tuple[Path, Path]:
-    """从 sealed render evidence 返回 stdout/stderr 路径。"""
-    evidence = getattr(spec, "_evidence", None)
-    if type(evidence) is not _ServiceEvidence or evidence.seal is not _SPEC_SEAL:
-        _service_failed()
-    return evidence.stdout_log, evidence.stderr_log
+    """从外部 immutable snapshot 返回 stdout/stderr 路径。"""
+    evidence = _registered_snapshot(spec).evidence
+    return evidence[7], evidence[8]
 
 
 def _launchd_log_parent(spec: ServiceSpec) -> Path:
@@ -1159,6 +1260,11 @@ def _lexists(path: Path) -> bool:
 def _service_failed() -> Never:
     """抛出不含 path、输出或 Secret 的稳定 service error。"""
     raise InstallError("service_install_failed", "service")
+
+
+def _recovery_required() -> Never:
+    """保留恢复证据并抛出稳定 rollback conflict。"""
+    raise InstallError("rollback_conflict", "service")
 
 
 def _ownership_failed() -> Never:

@@ -12,12 +12,14 @@ class FakeLaunchctlRunner:
         *,
         active_target: str | None = None,
         enforce_manager_state: bool = False,
+        side_effecting_calls: frozenset[int] = frozenset(),
     ) -> None:
-        """保存预设结果，并可模拟 active label collision。"""
+        """保存结果，并可让指定失败调用仍产生真实 manager side effect。"""
         self.calls: list[tuple[tuple[str, ...], dict[str, str], float]] = []
         self.outcomes = list(outcomes)
         self.active_target = active_target
         self.enforce_manager_state = enforce_manager_state
+        self.side_effecting_calls = side_effecting_calls
 
     def run(
         self,
@@ -27,8 +29,18 @@ class FakeLaunchctlRunner:
         timeout: float,
     ) -> CommandResult:
         """记录一次调用，并返回下一项或零退出结果。"""
+        call_index = len(self.calls)
         self.calls.append((argv, dict(env), timeout))
-        outcome = self.outcomes.pop(0) if self.outcomes else self._manager_outcome(argv)
+        explicit = bool(self.outcomes)
+        outcome = self.outcomes.pop(0) if explicit else 0
+        if (
+            self.enforce_manager_state
+            and argv[0] == "/bin/launchctl"
+            and (not explicit or outcome == 0 or call_index in self.side_effecting_calls)
+        ):
+            manager_outcome = self._manager_outcome(argv)
+            if not explicit or outcome == 0 and manager_outcome != 0:
+                outcome = manager_outcome
         if isinstance(outcome, BaseException):
             raise outcome
         if type(outcome) is not int:

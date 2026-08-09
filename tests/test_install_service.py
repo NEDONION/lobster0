@@ -132,6 +132,46 @@ class InstallServiceTests(unittest.TestCase):
             (f"MINICLAW_ENV_FILE={layout.secrets_file}",),
         )
 
+    def test_systemd_apostrophe_only_paths_are_double_quoted_and_exact(self) -> None:
+        """仅含 apostrophe 的路径也必须双引号编码，裸 apostrophe 必须拒绝。"""
+        home = self.home.parent / "owner'apostrophe"
+        home.mkdir(mode=0o700)
+        layout = InstallLayout.user(home, version="0.7.0")
+        spec = render_service_spec(layout, ServicePlatform.SYSTEMD_USER)
+        text = spec.content.decode("utf-8")
+        exec_value = next(
+            line.removeprefix("ExecStart=")
+            for line in text.splitlines()
+            if line.startswith("ExecStart=")
+        )
+        environment_value = next(
+            line.removeprefix("Environment=")
+            for line in text.splitlines()
+            if line.startswith("Environment=MINICLAW_ENV_FILE=")
+            or line.startswith('Environment="MINICLAW_ENV_FILE=')
+        )
+
+        self.assertEqual(
+            exec_value,
+            f'"{layout.launcher}" gateway --home "{layout.state_home}"',
+        )
+        self.assertEqual(
+            environment_value,
+            f'"MINICLAW_ENV_FILE={layout.secrets_file}"',
+        )
+        self.assertEqual(
+            service_module._parse_systemd_exec(exec_value),
+            (str(layout.launcher), "gateway", "--home", str(layout.state_home)),
+        )
+        self.assertEqual(
+            service_module._parse_systemd_environment(environment_value),
+            (f"MINICLAW_ENV_FILE={layout.secrets_file}",),
+        )
+        with self.assertRaisesRegex(InstallError, "service_install_failed"):
+            service_module._parse_systemd_exec("/tmp/owner'apostrophe")
+        with self.assertRaisesRegex(InstallError, "service_install_failed"):
+            service_module._parse_systemd_environment("NAME=owner'apostrophe")
+
     def test_launchd_plist_uses_exact_arguments_environment_and_owner_logs(self) -> None:
         """字符串命令或相对日志路径会重新引入 shell/工作目录依赖。"""
         sentinel = "sentinel-launchd-secret"
@@ -226,6 +266,59 @@ class InstallServiceTests(unittest.TestCase):
                     self.assertRaisesRegex(InstallError, "service_install_failed"),
                 ):
                     service_status(forged, FakeSystemctlRunner())
+
+    def test_lifecycle_rejects_synchronized_public_and_evidence_tampering(self) -> None:
+        """同步改写 spec 与内部 evidence 也不得替换 render 时的可信 snapshot。"""
+        for platform in (ServicePlatform.SYSTEMD_USER, ServicePlatform.LAUNCHD):
+            for case in ("same-evidence-fields", "replacement-evidence"):
+                with self.subTest(platform=platform, case=case):
+                    spec = render_service_spec(self.layout, platform)
+                    alternate_home = self.home.parent / f"alternate-{platform.value}-{case}"
+                    alternate_home.mkdir(mode=0o700)
+                    replacement = render_service_spec(
+                        InstallLayout.user(alternate_home, version="0.7.0"),
+                        platform,
+                    )
+                    for field in (
+                        "platform",
+                        "label",
+                        "path",
+                        "content",
+                        "install_argvs",
+                        "status_argv",
+                        "restart_argv",
+                        "uninstall_argvs",
+                    ):
+                        object.__setattr__(spec, field, getattr(replacement, field))
+                    if case == "same-evidence-fields":
+                        for field in (
+                            "platform",
+                            "owner_uid",
+                            "home",
+                            "launcher",
+                            "state_home",
+                            "secrets_file",
+                            "stdout_log",
+                            "stderr_log",
+                        ):
+                            object.__setattr__(
+                                spec._evidence,
+                                field,
+                                getattr(replacement._evidence, field),
+                            )
+                    else:
+                        object.__setattr__(spec, "_evidence", replacement._evidence)
+                        object.__setattr__(replacement._evidence, "bound_spec", spec)
+
+                    with self.assertRaisesRegex(InstallError, "service_install_failed"):
+                        service_status(spec, FakeSystemctlRunner())
+
+            for field, value in (("seal", object()), ("bound_spec", object())):
+                with self.subTest(platform=platform, evidence_field=field):
+                    spec = render_service_spec(self.layout, platform)
+                    object.__setattr__(spec._evidence, field, value)
+                    with self.assertRaisesRegex(InstallError, "service_install_failed"):
+                        service_status(spec, FakeSystemctlRunner())
 
     def test_render_rejects_root_and_control_paths(self) -> None:
         """Gateway 不得由 UID 0 注册，控制字符也不得进入 unit/plist。"""
@@ -376,7 +469,7 @@ class InstallServiceTests(unittest.TestCase):
             (
                 "old-bootout",
                 (0, 1),
-                [("bootout",)],
+                [("bootout",), ("bootstrap",), ("print",)],
             ),
             (
                 "new-bootstrap",
@@ -457,6 +550,130 @@ class InstallServiceTests(unittest.TestCase):
             ],
         )
 
+    def test_launchd_rollback_removes_new_plist_only_after_confirmed_inactive(self) -> None:
+        """rollback bootout 失败时必须用 print 确认 inactive，否则保留 recovery evidence。"""
+        for inactive_returncode, expected_code, keep_new in (
+            (3, "service_install_failed", False),
+            (0, "rollback_conflict", True),
+        ):
+            with self.subTest(inactive_returncode=inactive_returncode):
+                home = self.home.parent / f"fresh-inactive-{inactive_returncode}"
+                home.mkdir(mode=0o700)
+                spec = render_service_spec(
+                    InstallLayout.user(home, version="0.7.0"),
+                    ServicePlatform.LAUNCHD,
+                )
+                target = f"gui/{self.uid}/{spec.label}"
+                runner = FakeLaunchctlRunner((0, 0, 1, 1, inactive_returncode))
+
+                with self.assertRaises(InstallError) as caught:
+                    service_install(spec, runner)
+
+                self.assertEqual(caught.exception.code, expected_code)
+                self.assertEqual(spec.path.exists(), keep_new)
+                if keep_new:
+                    self.assertEqual(spec.path.read_bytes(), spec.content)
+                self.assertEqual(
+                    [call[0] for call in runner.calls if call[0][0] == "/bin/launchctl"],
+                    [
+                        ("/bin/launchctl", "bootstrap", f"gui/{self.uid}", str(spec.path)),
+                        ("/bin/launchctl", "print", target),
+                        ("/bin/launchctl", "bootout", target),
+                        ("/bin/launchctl", "print", target),
+                    ],
+                )
+
+        spec = self.launchd()
+        target = f"gui/{self.uid}/{spec.label}"
+        old = plistlib.dumps({"Label": spec.label, "OldDefinition": True})
+        spec.path.parent.mkdir(parents=True, mode=0o700)
+        spec.path.write_bytes(old)
+        spec.path.chmod(0o600)
+        runner = FakeLaunchctlRunner((0, 0, 0, 1, 1, 0))
+
+        with self.assertRaises(InstallError) as caught:
+            service_install(
+                spec,
+                runner,
+                expected_sha256=hashlib.sha256(old).hexdigest(),
+            )
+
+        self.assertEqual(caught.exception.code, "rollback_conflict")
+        self.assertEqual(spec.path.read_bytes(), spec.content)
+        residues = list(spec.path.parent.glob(f".{spec.path.name}.quarantine-*"))
+        self.assertEqual(len(residues), 1)
+        self.assertEqual((residues[0] / "entry").read_bytes(), old)
+        self.assertEqual(
+            [call[0][1] for call in runner.calls if call[0][0] == "/bin/launchctl"],
+            ["bootout", "bootstrap", "print", "bootout", "print"],
+        )
+
+    def test_launchd_uncertain_old_bootout_restores_old_job_with_checked_health(self) -> None:
+        """old bootout 即使 nonzero/exception 有副作用，也必须恢复 bootstrap 与 print。"""
+        for failure in (1, RuntimeError("sentinel-old-bootout")):
+            with self.subTest(failure_type=type(failure).__name__):
+                home = self.home.parent / f"old-uncertain-{type(failure).__name__}"
+                home.mkdir(mode=0o700)
+                spec = render_service_spec(
+                    InstallLayout.user(home, version="0.7.0"),
+                    ServicePlatform.LAUNCHD,
+                )
+                target = f"gui/{self.uid}/{spec.label}"
+                old = plistlib.dumps({"Label": spec.label, "Failure": type(failure).__name__})
+                spec.path.parent.mkdir(parents=True, mode=0o700)
+                spec.path.write_bytes(old)
+                spec.path.chmod(0o600)
+                runner = FakeLaunchctlRunner(
+                    (0, failure, 0, 0),
+                    active_target=target,
+                    enforce_manager_state=True,
+                    side_effecting_calls=frozenset({1}),
+                )
+
+                with self.assertRaises(InstallError) as caught:
+                    service_install(
+                        spec,
+                        runner,
+                        expected_sha256=hashlib.sha256(old).hexdigest(),
+                    )
+
+                self.assertEqual(caught.exception.code, "service_install_failed")
+                self.assertNotIn("sentinel", str(caught.exception))
+                self.assertEqual(spec.path.read_bytes(), old)
+                self.assertEqual(runner.active_target, target)
+                self.assertEqual(
+                    [call[0][1] for call in runner.calls if call[0][0] == "/bin/launchctl"],
+                    ["bootout", "bootstrap", "print"],
+                )
+
+    def test_launchd_old_restore_manager_failures_require_recovery(self) -> None:
+        """旧文件恢复后 bootstrap 或 print 任一步失败都不得声称 rollback 完成。"""
+        for stage, outcomes in (
+            ("bootstrap", (0, 0, 0, 1, 0, 1, 0)),
+            ("print", (0, 0, 0, 1, 0, 0, 1)),
+        ):
+            with self.subTest(stage=stage):
+                home = self.home.parent / f"restore-{stage}"
+                home.mkdir(mode=0o700)
+                spec = render_service_spec(
+                    InstallLayout.user(home, version="0.7.0"),
+                    ServicePlatform.LAUNCHD,
+                )
+                old = plistlib.dumps({"Label": spec.label, "Stage": stage})
+                spec.path.parent.mkdir(parents=True, mode=0o700)
+                spec.path.write_bytes(old)
+                spec.path.chmod(0o600)
+
+                with self.assertRaises(InstallError) as caught:
+                    service_install(
+                        spec,
+                        FakeLaunchctlRunner(outcomes),
+                        expected_sha256=hashlib.sha256(old).hexdigest(),
+                    )
+
+                self.assertEqual(caught.exception.code, "rollback_conflict")
+                self.assertEqual(spec.path.read_bytes(), old)
+
     def test_launchd_replacement_quarantine_failure_restores_old_job(self) -> None:
         """old target 已 bootout 后若 quarantine 未提交，也必须恢复旧定义与 health。"""
         spec = self.launchd()
@@ -494,7 +711,6 @@ class InstallServiceTests(unittest.TestCase):
         self.assertEqual(
             [call[0] for call in runner.calls if call[0][0] == "/bin/launchctl"],
             [
-                ("/bin/launchctl", "bootout", target),
                 ("/bin/launchctl", "bootout", target),
                 ("/bin/launchctl", "bootstrap", f"gui/{self.uid}", str(spec.path)),
                 ("/bin/launchctl", "print", target),
@@ -677,7 +893,50 @@ class InstallServiceTests(unittest.TestCase):
                     self.assertTrue(list(spec.path.parent.glob(f".{spec.path.name}.quarantine-*")))
                 retry = FakeSystemctlRunner()
                 service_uninstall(spec, retry, expected_sha256=digest)
-                self.assertEqual(retry.calls, [])
+                self.assertEqual(
+                    [call[0] for call in retry.calls],
+                    [("/usr/bin/systemctl", "--user", "daemon-reload")],
+                )
+
+    def test_systemd_absent_uninstall_retries_only_daemon_reload(self) -> None:
+        """committed delete 后只重试 daemon-reload，成功收敛、失败继续稳定报错。"""
+        for retry_returncode in (0, 1):
+            with self.subTest(retry_returncode=retry_returncode):
+                home = self.home.parent / f"reload-retry-{retry_returncode}"
+                home.mkdir(mode=0o700)
+                spec = render_service_spec(
+                    InstallLayout.user(home, version="0.7.0"),
+                    ServicePlatform.SYSTEMD_USER,
+                )
+                digest = service_install(spec, FakeSystemctlRunner())
+                with self.assertRaisesRegex(InstallError, "service_install_failed"):
+                    service_uninstall(
+                        spec,
+                        FakeSystemctlRunner((0, 1)),
+                        expected_sha256=digest,
+                    )
+                self.assertFalse(spec.path.exists())
+
+                retry = FakeSystemctlRunner((retry_returncode,))
+                if retry_returncode == 0:
+                    service_uninstall(spec, retry, expected_sha256=digest)
+                else:
+                    with self.assertRaises(InstallError) as caught:
+                        service_uninstall(spec, retry, expected_sha256=digest)
+                    self.assertEqual(caught.exception.code, "service_install_failed")
+                self.assertEqual(
+                    [call[0] for call in retry.calls],
+                    [("/usr/bin/systemctl", "--user", "daemon-reload")],
+                )
+
+    def test_launchd_absent_uninstall_remains_noop(self) -> None:
+        """LaunchAgent 没有 post-delete reload，absent owned path 不得调用 launchctl。"""
+        spec = self.launchd()
+        runner = FakeLaunchctlRunner()
+
+        service_uninstall(spec, runner, expected_sha256="0" * 64)
+
+        self.assertEqual(runner.calls, [])
 
     def test_uninstall_precommit_quarantine_fsync_failure_restores_file_and_job(self) -> None:
         """public delete durability 前失败时必须保留 owned file 并恢复 manager。"""
