@@ -46,7 +46,7 @@ website/
 ├── src/styles/globals.css
 ├── tests/e2e/
 ├── next.config.mjs
-├── proxy.ts
+├── src/proxy.ts
 ├── source.config.ts
 └── playwright.config.ts
 ```
@@ -208,7 +208,7 @@ Expected: all PASS. Commit with `feat(website): 迁移到 Next.js 与 Fumadocs f
 - Create: `website/src/content/site.ts`
 - Create: `website/src/content/site.test.ts`
 - Create: `website/src/lib/i18n.ts`
-- Create: `website/proxy.ts`
+- Create: `website/src/proxy.ts`
 - Create: `website/src/components/marketing/MarketingHome.tsx`
 - Create: `website/src/components/marketing/MarketingHeader.tsx`
 - Create: `website/src/components/marketing/MarketingFooter.tsx`

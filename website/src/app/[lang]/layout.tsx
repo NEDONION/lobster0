@@ -4,8 +4,10 @@ import '@/styles/globals.css';
 
 import type { ReactNode } from 'react';
 
+import { locales } from '@/lib/i18n';
+
 export function generateStaticParams() {
-  return [{ lang: 'zh-CN' }, { lang: 'en' }];
+  return locales.map((lang) => ({ lang }));
 }
 
 export default async function LocaleLayout({
