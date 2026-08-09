@@ -896,7 +896,7 @@ git commit -m "feat(installer): 增加 managed layout lock 与 receipt"
 - Create: `tests/install/fake_uv.py`
 
 **Interfaces:**
-- Consumes: `InstallLayout`, verified wheel/requirements/Node/TUI/installer-pyz paths, managed uv executable and `ReleaseManifest`.
+- Consumes: `InstallLayout`, verified wheel/requirements/Node/TUI/installer-pyz paths, managed uv executable, bootstrap-verified managed Python root/executable and `ReleaseManifest`.
 - Produces: `RuntimeBuilder.build(...) -> RuntimeReceipt`, `RuntimeBuilder.smoke(...)`, `activate_runtime(layout, receipt)`, `retain_current_and_previous(layout)`.
 
 - [ ] **Step 1: Write command/order/crash RED tests**
@@ -956,7 +956,7 @@ After export, a test parses every non-comment logical requirement and requires a
 Runtime argv sequence is:
 
 ```text
-uv venv --python 3.12 <staging>/venv
+uv venv --relocatable --python <staging>/python/bin/python3.12 --no-python-downloads <staging>/venv
 uv pip install --python <staging>/venv/bin/python --require-hashes -r requirements-all.lock
 uv pip install --python <staging>/venv/bin/python --no-deps <verified-wheel>
 <staging>/venv/bin/python -I -m miniclaw --version
@@ -964,7 +964,7 @@ uv pip install --python <staging>/venv/bin/python --no-deps <verified-wheel>
 <staging>/node/bin/node <staging>/tui/dist/main.js --smoke
 ```
 
-Copy only verified Node/TUI directories from safe extraction plus verified `miniclaw-installer.pyz`, chmod dirs 0700 and files 0600/required executables 0700, write runtime receipt/manifest 0600, fsync tree boundary, then rename staging to immutable `runtimes/0.7.0`. Activation creates a relative `current.next` symlink and `os.replace`s it over `current`; no in-place venv update exists.
+Copy the bootstrap-verified managed Python tree into `staging/python` through descriptor-bound no-follow reads, then build the venv from that explicit internal interpreter with downloads disabled. Copy only verified Node/TUI directories from safe extraction plus verified `miniclaw-installer.pyz`, chmod dirs 0700 and files 0600/required executables 0700, write runtime receipt/manifest 0600 and fsync the tree boundary. Before activation, publish staging as immutable `runtimes/0.7.0`, repair only the venv's interpreter link/config to the known final-internal Python path, and rerun an exact final-path smoke which requires both the resolved executable and `sys.base_prefix` to remain under that Runtime. A bootstrap/system/user Python outside the Runtime is never accepted. Activation creates a relative `current.next` symlink and atomically switches it over `current`; no in-place venv update exists.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -1274,7 +1274,7 @@ Expected: FAIL because template and renderer are absent.
 
 - [ ] **Step 3: Implement the nine bootstrap operations only**
 
-The rendered shell uses `set -eu`, `umask 077`, `trap` cleanup, `mktemp -d`, `uname -s/-m`, exact case mapping, `curl -fL --proto '=https' --tlsv1.2 --retry 3`, `sha256sum` or `shasum -a 256`, and `tar -xzf`. It downloads the fixed uv 0.12.0 archive, verifies its embedded platform hash, extracts the uv executable, downloads exact `v0.7.0/release-manifest.json` and `miniclaw-installer.pyz`, verifies embedded size/hash, sets private `UV_PYTHON_INSTALL_DIR`, runs `uv python install 3.12`, resolves the managed interpreter with `uv python find --managed-python 3.12`, then `exec`s the pyz with internal `--manifest-file`, `--manifest-sha256` and original public flags. It never parses manifest JSON, edits config, invokes sudo, writes service files or touches `current`.
+The rendered shell uses `set -eu`, `umask 077`, `trap` cleanup, `mktemp -d`, `uname -s/-m`, exact case mapping, `curl -fL --proto '=https' --tlsv1.2 --retry 3`, `sha256sum` or `shasum -a 256`, and `tar -xzf`. It downloads the fixed uv 0.12.0 archive, verifies its embedded platform hash, extracts the uv executable, downloads exact `v0.7.0/release-manifest.json` and `miniclaw-installer.pyz`, verifies embedded size/hash, sets private `UV_PYTHON_INSTALL_DIR`, runs `uv python install 3.12`, resolves the managed interpreter with `uv python find --managed-python 3.12`, then `exec`s the pyz with internal `--manifest-file`, `--manifest-sha256`, `--managed-python-root`, `--managed-python-executable` and original public flags. The pyz binds both Python paths to the private bootstrap tree before Task 8 copies them into the versioned Runtime; it never resolves or downloads Python again. The shell never parses manifest JSON, edits config, invokes sudo, writes service files or touches `current`.
 
 - [ ] **Step 4: Run GREEN and shell syntax gates**
 
