@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { marketingCopy, siteFacts, type Locale } from '@/content/site';
 import { localizedPath } from '@/lib/i18n';
 
+import { BrandMark } from './BrandMark';
 import { ClawTrace } from './ClawTrace';
-import { CommandCopy } from './CommandCopy';
 import { EvidenceStrip } from './EvidenceStrip';
 
 export function HeroRuntime({ locale }: { locale: Locale }) {
@@ -14,6 +14,7 @@ export function HeroRuntime({ locale }: { locale: Locale }) {
     <section className="marketing-section hero-shell" id="hero" aria-labelledby="hero-title">
       <div className="site-shell hero-runtime">
         <div className="hero-runtime__copy">
+          <BrandMark className="hero-runtime__mark" size={76} title="MiniClaw" />
           <p className="section-kicker">{copy.hero.eyebrow}</p>
           <h1 id="hero-title">{copy.hero.title}</h1>
           <p className="hero-runtime__lead">{copy.hero.lead}</p>
@@ -27,14 +28,8 @@ export function HeroRuntime({ locale }: { locale: Locale }) {
               <span aria-hidden="true">↗</span>
             </a>
           </div>
-          <CommandCopy
-            command={siteFacts.install}
-            copiedLabel={copy.hero.copiedLabel}
-            label={copy.hero.copyLabel}
-            title={copy.hero.installLabel}
-          />
         </div>
-        <ClawTrace copy={copy.trace} />
+        <ClawTrace copy={copy.trace} surfaces={copy.hero.surfaces} />
         <EvidenceStrip copy={copy.evidence} />
       </div>
     </section>

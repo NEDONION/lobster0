@@ -8,11 +8,12 @@ import { useReducedMotionPreference } from '@/lib/motion';
 
 interface ClawTraceProps {
   copy: MarketingCopy['trace'];
+  surfaces: MarketingCopy['hero']['surfaces'];
 }
 
 const traceDuration = 2400;
 
-export function ClawTrace({ copy }: ClawTraceProps) {
+export function ClawTrace({ copy, surfaces }: ClawTraceProps) {
   const traceRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotionPreference();
   const [started, setStarted] = useState(false);
@@ -74,18 +75,30 @@ export function ClawTrace({ copy }: ClawTraceProps) {
   }, [lastIndex, reducedMotion, started]);
 
   return (
-    <div className="claw-trace" ref={traceRef}>
-      <div className="claw-trace__topline">
-        <div>
-          <span>{copy.eyebrow}</span>
-          <strong>{copy.title}</strong>
-        </div>
-        <span className="claw-trace__status">
-          <i aria-hidden="true" /> runtime.connected
-        </span>
+    <div className="claw-trace hero-network" ref={traceRef}>
+      <svg aria-hidden="true" className="hero-network__route" viewBox="0 0 1200 360">
+        <path d="M80 185 C220 70 350 305 515 176 S810 74 1120 184" />
+        <path className="hero-network__route-pulse" d="M80 185 C220 70 350 305 515 176 S810 74 1120 184" />
+      </svg>
+      <span aria-hidden="true" className="hero-network__signal hero-network__signal--one" />
+      <span aria-hidden="true" className="hero-network__signal hero-network__signal--two" />
+      <span aria-hidden="true" className="hero-network__signal hero-network__signal--three" />
+      <ul className="hero-network__surfaces" aria-label="MiniClaw surfaces">
+        {surfaces.map((surface, index) => (
+          <li className="hero-surface-card" data-surface={index + 1} key={surface.name}>
+            <span aria-hidden="true">{surface.name.slice(0, 2).toUpperCase()}</span>
+            <strong>{surface.name}</strong>
+            <small>{surface.role}</small>
+            <i>{surface.note}</i>
+          </li>
+        ))}
+      </ul>
+      <div className="hero-network__caption">
+        <span>{copy.eyebrow}</span>
+        <strong>{copy.title}</strong>
+        <small>{copy.description}</small>
       </div>
-      <p className="claw-trace__description">{copy.description}</p>
-      <ol aria-label="Claw Trace">
+      <ol aria-label={copy.ariaLabel} className="hero-network__trace">
         {copy.steps.map((step, index) => {
           const state = index < visibleIndex ? 'complete' : index === visibleIndex ? 'active' : 'pending';
 
@@ -98,12 +111,8 @@ export function ClawTrace({ copy }: ClawTraceProps) {
               key={step.event}
               transition={{ duration: reducedMotion ? 0 : 0.22, ease: 'easeOut' }}
             >
-              <span className="claw-trace__rail" aria-hidden="true">
-                <i />
-              </span>
-              <span className="claw-trace__index">{String(index + 1).padStart(2, '0')}</span>
+              <span aria-hidden="true" className="claw-trace__rail"><i /></span>
               <span className="claw-trace__event">{step.event}</span>
-              <span className="claw-trace__detail">{step.detail}</span>
               <span className="claw-trace__state">{state === 'active' ? step.state : state}</span>
             </motion.li>
           );

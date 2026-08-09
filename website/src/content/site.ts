@@ -50,8 +50,14 @@ export interface MarketingCopy {
     installLabel: string;
     copyLabel: string;
     copiedLabel: string;
+    surfaces: readonly {
+      name: string;
+      role: string;
+      note: string;
+    }[];
   };
   trace: {
+    ariaLabel: string;
     eyebrow: string;
     title: string;
     description: string;
@@ -157,17 +163,24 @@ export const marketingCopy = {
       language: 'English',
     },
     hero: {
-      eyebrow: 'LOCAL-FIRST / OPEN SOURCE',
-      title: '小而完整，真正能行动。',
+      eyebrow: '本地优先 · 开源 · 边界可检查',
+      title: '你的本地行动助手。',
       lead:
-        'MiniClaw 把 Agent、Policy、Approval、Tool 与 Memory 放进一个本地 Core。你从熟悉的入口发出请求，也始终看得见它为何行动、获准做了什么。',
+        '从熟悉的入口发出请求。MiniClaw 在你的机器上理解意图、检查边界、请求审批，并把任务安全做完。',
       primaryCta: '5 分钟开始',
       secondaryCta: '查看源码',
       installLabel: '从源码启动',
       copyLabel: '复制命令',
       copiedLabel: '已复制',
+      surfaces: [
+        { name: 'TUI', role: '本地界面', note: '完整控制' },
+        { name: '飞书', role: '工作入口', note: '团队协作' },
+        { name: 'Telegram', role: '移动入口', note: '随时触达' },
+        { name: 'Discord', role: '社区入口', note: '独立交付' },
+      ],
     },
     trace: {
+      ariaLabel: 'MiniClaw 运行轨迹',
       eyebrow: 'CLAW TRACE / 01',
       title: '行动不是黑盒。',
       description: '一次请求穿过真实运行时的六个状态，每一步都有边界、结果与归属。',
@@ -299,16 +312,23 @@ export const marketingCopy = {
     },
     hero: {
       eyebrow: 'LOCAL-FIRST / OPEN SOURCE',
-      title: 'Small by design. Ready to act.',
+      title: 'Your local agent, ready to act.',
       lead:
-        'MiniClaw brings Agent, Policy, Approval, Tools, and Memory into one local core. Ask from a surface you already use—and always see why it acts and what it was allowed to do.',
+        'Ask from a surface you already use. MiniClaw understands intent, checks boundaries, requests approval, and finishes the work on your machine.',
       primaryCta: 'Start in 5 minutes',
       secondaryCta: 'View source',
       installLabel: 'Run from source',
       copyLabel: 'Copy commands',
       copiedLabel: 'Copied',
+      surfaces: [
+        { name: 'TUI', role: 'Local control', note: 'Full visibility' },
+        { name: 'Feishu', role: 'Work surface', note: 'Team delivery' },
+        { name: 'Telegram', role: 'Mobile surface', note: 'Always reachable' },
+        { name: 'Discord', role: 'Community', note: 'Isolated delivery' },
+      ],
     },
     trace: {
+      ariaLabel: 'Claw Trace',
       eyebrow: 'CLAW TRACE / 01',
       title: 'Action is not a black box.',
       description: 'A request crosses six real runtime states, each with a boundary, result, and owner.',

@@ -14,4 +14,15 @@ describe('MarketingHome', () => {
     expect(screen.getByRole('link', { name: '文档' })).toHaveAttribute('href', '/docs');
     expect(screen.getByRole('link', { name: 'English' })).toHaveAttribute('href', '/en');
   });
+
+  it('uses the three-arrow brand and localized surface cards', () => {
+    const { container } = render(<MarketingHome locale="zh-CN" />);
+
+    expect(container.querySelectorAll('[data-brand-mark]')).toHaveLength(2);
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('你的本地行动助手');
+    expect(screen.getByText('本地界面')).toBeInTheDocument();
+    expect(screen.getByText('工作入口')).toBeInTheDocument();
+    expect(screen.getByText('移动入口')).toBeInTheDocument();
+    expect(screen.getByText('社区入口')).toBeInTheDocument();
+  });
 });

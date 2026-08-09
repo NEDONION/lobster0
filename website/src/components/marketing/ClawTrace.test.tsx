@@ -25,7 +25,7 @@ describe('ClawTrace', () => {
 
   it('renders the complete runtime path as an ordered list', () => {
     setReducedMotion(false);
-    render(<ClawTrace copy={marketingCopy.en.trace} />);
+    render(<ClawTrace copy={marketingCopy.en.trace} surfaces={marketingCopy.en.hero.surfaces} />);
 
     expect(screen.getByRole('list', { name: 'Claw Trace' }).tagName).toBe('OL');
     for (const step of marketingCopy.en.trace.steps) {
@@ -37,7 +37,7 @@ describe('ClawTrace', () => {
 
   it('shows the final state immediately under reduced motion', async () => {
     setReducedMotion(true);
-    render(<ClawTrace copy={marketingCopy.en.trace} />);
+    render(<ClawTrace copy={marketingCopy.en.trace} surfaces={marketingCopy.en.hero.surfaces} />);
 
     await waitFor(() => {
       expect(screen.getByText('RESULT_DELIVERED').closest('li')).toHaveAttribute(
@@ -45,5 +45,20 @@ describe('ClawTrace', () => {
         'step',
       );
     });
+  });
+
+  it('keeps all six runtime events around the four localized surfaces', () => {
+    setReducedMotion(false);
+    render(
+      <ClawTrace
+        copy={marketingCopy['zh-CN'].trace}
+        surfaces={marketingCopy['zh-CN'].hero.surfaces}
+      />,
+    );
+
+    expect(screen.getByRole('list', { name: 'MiniClaw 运行轨迹' })).toHaveTextContent(
+      'POLICY_CHECK',
+    );
+    expect(screen.getAllByRole('listitem')).toHaveLength(10);
   });
 });

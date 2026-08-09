@@ -3,6 +3,8 @@ import Link from 'next/link';
 import { marketingCopy, siteFacts, type Locale } from '@/content/site';
 import { localizedPath } from '@/lib/i18n';
 
+import { BrandMark } from './BrandMark';
+
 export function MarketingHeader({ locale }: { locale: Locale }) {
   const copy = marketingCopy[locale];
   const alternateLocale: Locale = locale === 'zh-CN' ? 'en' : 'zh-CN';
@@ -11,9 +13,7 @@ export function MarketingHeader({ locale }: { locale: Locale }) {
     <header className="marketing-header">
       <div className="site-shell marketing-header__inner">
         <Link className="brand" href={localizedPath(locale, '/')} aria-label="MiniClaw home">
-          <span className="brand__mark" aria-hidden="true">
-            M
-          </span>
+          <BrandMark className="brand__mark" size={36} />
           <span>MiniClaw</span>
         </Link>
         <nav className="marketing-nav" aria-label={locale === 'zh-CN' ? '主导航' : 'Primary'}>
