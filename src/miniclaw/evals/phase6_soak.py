@@ -425,6 +425,31 @@ def finish_soak(session: SoakSession) -> SoakCheckpoint:
     return passed
 
 
+def fail_soak(session: SoakSession, code: str) -> SoakCheckpoint:
+    """用一个稳定错误码永久终结 running soak。
+
+    Args:
+        session: 当前 start/resume session。
+        code: 不包含底层异常详情的稳定错误码。
+
+    Returns:
+        failed 或既有 terminal checkpoint。
+
+    Raises:
+        SoakMonitorError: code 或 session identity 无效。
+    """
+    if not isinstance(code, str) or re.fullmatch(r"[a-z][a-z0-9_]{2,63}", code) is None:
+        raise SoakMonitorError("soak_failure_code_invalid")
+    current = load_soak_checkpoint(session.checkpoint_path)
+    _require_identity(
+        current,
+        (session.commit, session.run_token_hash, session.state_home_hash, session.duration_seconds),
+    )
+    if current.status != "running":
+        return current
+    return _fail_checkpoint(session.checkpoint_path, current, (code,))
+
+
 def load_soak_checkpoint(path: Path) -> SoakCheckpoint:
     """安全读取 owner-only checkpoint 并验证精确 schema。
 

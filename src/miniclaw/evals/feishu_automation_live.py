@@ -1107,6 +1107,81 @@ def build_automation_evidence_report(
     }
 
 
+def validate_automation_evidence_report(report: Mapping[str, object]) -> bool:
+    """严格重建并验证已经读取的 Automation Evidence。
+
+    Args:
+        report: private JSON 文件中的候选 object。
+
+    Returns:
+        exact schema、case、计数与 release status 全部可重建时返回 ``True``。
+    """
+    expected_keys = {
+        "schema_version",
+        "suite",
+        "commit",
+        "started_at",
+        "finished_at",
+        "checks",
+        "counts",
+        "secret_matches",
+        "release_status",
+    }
+    if not isinstance(report, Mapping) or set(report) != expected_keys:
+        return False
+    checks = report.get("checks")
+    if not isinstance(checks, list):
+        return False
+    results: list[AutomationLiveCaseResult] = []
+    for check in checks:
+        if not isinstance(check, Mapping) or set(check) != {
+            "case_id",
+            "status",
+            "evidence",
+            "human_status",
+            "error_code",
+        }:
+            return False
+        evidence = check.get("evidence")
+        if not isinstance(evidence, list):
+            return False
+        passed: list[str] = []
+        failed: list[str] = []
+        for item in evidence:
+            if (
+                not isinstance(item, Mapping)
+                or set(item) != {"key", "status"}
+                or not isinstance(item.get("key"), str)
+                or item.get("status") not in {"pass", "fail"}
+            ):
+                return False
+            (passed if item["status"] == "pass" else failed).append(item["key"])
+        try:
+            results.append(
+                AutomationLiveCaseResult(
+                    check["case_id"],
+                    check["status"],
+                    tuple(passed),
+                    tuple(failed),
+                    check["human_status"],
+                    check["error_code"],
+                )
+            )
+        except (TypeError, ValueError):
+            return False
+    try:
+        rebuilt = build_automation_evidence_report(
+            commit=report["commit"],
+            started_at=report["started_at"],
+            finished_at=report["finished_at"],
+            results=results,
+            secret_matches=report["secret_matches"],
+        )
+    except (TypeError, ValueError):
+        return False
+    return rebuilt == dict(report)
+
+
 def _valid_input(
     checkpoint: AutomationLiveCheckpoint,
     case: EvalCase,

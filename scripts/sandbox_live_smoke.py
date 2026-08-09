@@ -9,6 +9,14 @@ import tempfile
 from pathlib import Path
 from typing import cast
 
+from miniclaw.evals.production_evidence import (
+    ProductionEvidenceError,
+    build_seatbelt_evidence_report,
+    clean_repository_commit,
+    prepare_private_directory,
+    utc_timestamp,
+    write_private_json,
+)
 from miniclaw.policy.command import SAFE_EXECUTABLE_PATH
 from miniclaw.policy.executables import discover_executables
 from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxBackendName
@@ -27,6 +35,10 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--confirm-live", action="store_true")
     parser.add_argument("--image", help="Docker image pinned as name@sha256:digest")
     parser.add_argument("--executable", help="Exact backend executable path")
+    parser.add_argument(
+        "--output-dir",
+        help="owner-only directory for commit-bound Seatbelt evidence",
+    )
     parser.add_argument(
         "--probe",
         choices=("python", "node-chain"),
@@ -47,6 +59,22 @@ async def _run(args: argparse.Namespace) -> int:
     if args.backend == "docker" and args.probe != "python":
         print("--probe node-chain is only supported by Seatbelt", file=sys.stderr)
         return 2
+    output_value = getattr(args, "output_dir", None)
+    output_dir: Path | None = None
+    commit: str | None = None
+    started_at = utc_timestamp()
+    if output_value is not None:
+        if args.backend != "seatbelt":
+            print("--output-dir is only supported by Seatbelt", file=sys.stderr)
+            return 2
+        try:
+            output_dir = Path(output_value).expanduser()
+            if not output_dir.is_absolute():
+                output_dir = (Path.cwd() / output_dir).resolve(strict=False)
+            commit = clean_repository_commit(Path.cwd())
+        except (OSError, ProductionEvidenceError):
+            print("production evidence preflight failed", file=sys.stderr)
+            return 2
     with tempfile.TemporaryDirectory(prefix="miniclaw-sandbox-smoke-") as directory:
         root = Path(directory).resolve()
         workspace = root / "workspace"
@@ -131,6 +159,24 @@ async def _run(args: argparse.Namespace) -> int:
                 args.probe if args.backend == "seatbelt" else None,
             )
         )
+        if output_dir is not None and commit is not None:
+            try:
+                finished_at = utc_timestamp()
+                report = build_seatbelt_evidence_report(
+                    commit=commit,
+                    probe=args.probe,
+                    started_at=started_at,
+                    finished_at=finished_at,
+                    contained=safe,
+                    secret_matches=0,
+                )
+                prepare_private_directory(output_dir)
+                suffix = finished_at.replace("-", "").replace(":", "").replace(".", "")
+                target = output_dir / f"{args.probe}-{suffix}.json"
+                write_private_json(target, report)
+            except ProductionEvidenceError:
+                print("production evidence write failed", file=sys.stderr)
+                return 1
         return 0 if safe else 1
 
 

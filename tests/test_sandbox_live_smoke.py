@@ -2,13 +2,20 @@
 
 import argparse
 import io
+import json
 import stat
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
+from miniclaw.sandbox.base import (
+    ExecutableRef,
+    ExecutionPlan,
+    ExecutionReceipt,
+    SandboxPlanError,
+)
 from miniclaw.sandbox.docker import RootlessClientTransport
 from scripts import sandbox_live_smoke
 
@@ -297,6 +304,49 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, 3)
         self.assertEqual(error.getvalue(), "seatbelt probe is unavailable\n")
         self.assertNotIn("private path", error.getvalue())
+
+    async def test_seatbelt_output_is_private_and_bound_to_clean_commit(self) -> None:
+        """显式 output-dir 才写 0600、schema-valid 的 commit-bound Evidence。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "evidence"
+            arguments = argparse.Namespace(
+                backend="seatbelt",
+                engine=None,
+                confirm_live=True,
+                image=None,
+                executable=None,
+                probe="python",
+                output_dir=str(output_dir),
+            )
+            backend = _SuccessfulSeatbeltBackend()
+            with (
+                mock.patch(
+                    "scripts.sandbox_live_smoke.clean_repository_commit",
+                    return_value="a" * 40,
+                ),
+                mock.patch(
+                    "scripts.sandbox_live_smoke._seatbelt_probe",
+                    return_value=("/usr/bin/python3", "/usr/bin"),
+                ),
+                mock.patch(
+                    "scripts.sandbox_live_smoke.capture_executable_chain",
+                    return_value=(ExecutableRef(Path("/usr/bin/python3"), "b" * 64),),
+                ),
+                mock.patch(
+                    "scripts.sandbox_live_smoke.SeatbeltSandbox",
+                    return_value=backend,
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                result = await sandbox_live_smoke._run(arguments)
+
+            self.assertEqual(result, 0)
+            files = tuple(output_dir.glob("*.json"))
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+            report = json.loads(files[0].read_text(encoding="utf-8"))
+            self.assertEqual(report["commit"], "a" * 40)
+            self.assertEqual(report["release_status"], "SEATBELT_CONTAINMENT_VERIFIED")
 
 
 if __name__ == "__main__":

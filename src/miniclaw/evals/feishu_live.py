@@ -910,6 +910,18 @@ def write_evidence(path: Path, report: Mapping[str, object]) -> None:
         raise FeishuLiveError(code) from None
 
 
+def validate_evidence_report(report: Mapping[str, object]) -> bool:
+    """公开验证已经读取的 Feishu Channel Evidence。
+
+    Args:
+        report: 来自 private Evidence 文件的 JSON object。
+
+    Returns:
+        字段、计数、case 和 release status 可重新推导时返回 ``True``。
+    """
+    return _is_valid_report(report)
+
+
 def scan_secret_matches(paths: Sequence[Path], secrets: Sequence[str]) -> int:
     """有界扫描普通小文件并只返回 exact secret 的匿名命中次数。"""
     try:

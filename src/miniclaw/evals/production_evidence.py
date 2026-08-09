@@ -4,6 +4,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 from collections.abc import Iterator, Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -30,6 +31,7 @@ _FORBIDDEN_KEYS = frozenset(
         "workspace_path",
     }
 )
+_SEATBELT_PROBES = frozenset({"python", "node-chain"})
 
 
 class ProductionEvidenceError(RuntimeError):
@@ -65,6 +67,167 @@ def validate_commit(value: object) -> str:
 def utc_timestamp() -> str:
     """返回带微秒的 UTC Evidence 时间戳。"""
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def clean_repository_commit(root: Path) -> str:
+    """返回 clean、非 detached 仓库的完整 commit。
+
+    Args:
+        root: 当前 release candidate 仓库根。
+
+    Returns:
+        lowercase 40-hex commit。
+
+    Raises:
+        ProductionEvidenceError: Git 不可用、HEAD 非法、detached 或工作树不干净。
+    """
+    try:
+        resolved = root.resolve(strict=True)
+        head = subprocess.run(
+            ("/usr/bin/git", "rev-parse", "--verify", "HEAD"),
+            cwd=resolved,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        branch = subprocess.run(
+            ("/usr/bin/git", "symbolic-ref", "--quiet", "HEAD"),
+            cwd=resolved,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status = subprocess.run(
+            ("/usr/bin/git", "status", "--porcelain", "--untracked-files=normal"),
+            cwd=resolved,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        raise ProductionEvidenceError("repository_state_invalid") from None
+    commit = head.stdout.strip().lower()
+    if (
+        head.returncode != 0
+        or branch.returncode != 0
+        or status.returncode != 0
+        or status.stdout
+        or re.fullmatch(r"[0-9a-f]{40}", commit) is None
+    ):
+        raise ProductionEvidenceError("repository_state_invalid")
+    return commit
+
+
+def prepare_private_directory(path: Path) -> None:
+    """创建或验证当前用户 0700、非 symlink 的 Evidence 目录。
+
+    Args:
+        path: Evidence 最终目录。
+
+    Raises:
+        ProductionEvidenceError: 创建失败、owner/mode/type 不安全。
+    """
+    try:
+        if not isinstance(path, Path) or not path.is_absolute() or path.is_symlink():
+            raise ProductionEvidenceError("evidence_directory_unsafe")
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        metadata = path.lstat()
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or stat.S_ISLNK(metadata.st_mode)
+            or metadata.st_uid != os.getuid()
+            or metadata.st_mode & 0o077
+        ):
+            raise ProductionEvidenceError("evidence_directory_unsafe")
+    except ProductionEvidenceError:
+        raise
+    except OSError:
+        raise ProductionEvidenceError("evidence_directory_unsafe") from None
+
+
+def build_seatbelt_evidence_report(
+    *,
+    commit: str,
+    probe: str,
+    started_at: str,
+    finished_at: str,
+    contained: bool,
+    secret_matches: int,
+) -> dict[str, object]:
+    """构造单个 Seatbelt executable-chain probe 的封闭 Evidence。
+
+    Args:
+        commit: 当前 clean release candidate commit。
+        probe: ``python`` 或 ``node-chain``。
+        started_at: 带微秒的 UTC 起始时间。
+        finished_at: 带微秒的 UTC 结束时间。
+        contained: Workspace allow、外部 Secret deny 与 network deny 是否全部成立。
+        secret_matches: 输出/Evidence 的 exact Secret 匿名命中数。
+
+    Returns:
+        可交给 :func:`write_private_json` 的固定 schema。
+
+    Raises:
+        ProductionEvidenceError: 任一字段不符合封闭契约。
+    """
+    normalized = validate_commit(commit)
+    if (
+        probe not in _SEATBELT_PROBES
+        or not _is_timestamp(started_at)
+        or not _is_timestamp(finished_at)
+        or type(contained) is not bool
+        or type(secret_matches) is not int
+        or secret_matches < 0
+    ):
+        raise ProductionEvidenceError("invalid_seatbelt_evidence")
+    verified = contained and secret_matches == 0
+    return {
+        "schema_version": 1,
+        "suite": "seatbelt-containment",
+        "commit": normalized,
+        "probe": probe,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "contained": contained,
+        "secret_matches": secret_matches,
+        "release_status": (
+            "SEATBELT_CONTAINMENT_VERIFIED"
+            if verified
+            else "SEATBELT_CONTAINMENT_FAILED"
+        ),
+    }
+
+
+def validate_seatbelt_evidence_report(report: Mapping[str, object]) -> bool:
+    """重新构造并验证一个 Seatbelt private Evidence report。"""
+    expected = {
+        "schema_version",
+        "suite",
+        "commit",
+        "probe",
+        "started_at",
+        "finished_at",
+        "contained",
+        "secret_matches",
+        "release_status",
+    }
+    if not isinstance(report, Mapping) or set(report) != expected:
+        return False
+    try:
+        rebuilt = build_seatbelt_evidence_report(
+            commit=report["commit"],
+            probe=report["probe"],
+            started_at=report["started_at"],
+            finished_at=report["finished_at"],
+            contained=report["contained"],
+            secret_matches=report["secret_matches"],
+        )
+    except (ProductionEvidenceError, TypeError):
+        return False
+    return rebuilt == dict(report)
 
 
 def write_private_json(path: Path, payload: Mapping[str, object]) -> None:
@@ -214,3 +377,14 @@ def _read_bounded_regular_file(path: Path) -> bytes | None:
         return None
     finally:
         os.close(descriptor)
+
+
+def _is_timestamp(value: object) -> bool:
+    """验证带微秒的 UTC Evidence timestamp。"""
+    if not isinstance(value, str):
+        return False
+    try:
+        datetime.strptime(value, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=UTC)
+    except ValueError:
+        return False
+    return True
