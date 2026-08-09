@@ -1,23 +1,19 @@
 """提供安装器 Tier 1 平台检测与显式高权限动作计划。"""
 
+import hashlib
 import os
 import platform as host_platform
 import pwd
 import re
+import shutil
 import stat
+import subprocess
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, Protocol, cast
 
 from miniclaw.install.models import InstallError, InstallRequest, PlatformKey
-from miniclaw.policy.command import SAFE_EXECUTABLE_PATH
-from miniclaw.sandbox.base import SandboxUnavailableError
-from miniclaw.sandbox.docker import (
-    RootlessClientTransport,
-    discover_rootless_client_transport,
-)
-from miniclaw.sandbox.seatbelt import SeatbeltSandbox
 
 _ARCHITECTURES = {
     "amd64": "x86_64",
@@ -32,6 +28,10 @@ _OS_RELEASE_VALUE = re.compile(r"^[A-Za-z0-9._-]+$")
 _MACOS_VERSION = re.compile(r"^(0|[1-9][0-9]*)(?:\.(0|[1-9][0-9]*)){1,2}$")
 _RHEL_VERSION = re.compile(r"^(?:9|10)(?:\.(?:0|[1-9][0-9]*))?$")
 _USER_NAME = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+_PINNED_IMAGE = re.compile(r"^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$")
+_SAFE_EXECUTABLE_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
+_MAX_INSTALLER_BYTES = 268_435_456
 _ROOTLESS_TOOLS = {
     "/usr/bin/dockerd-rootless-setuptool.sh",
     "/usr/share/docker.io/contrib/dockerd-rootless-setuptool.sh",
@@ -60,9 +60,90 @@ _DNF_INSTALL = (
     "shadow-utils",
     "dbus-daemon",
 )
+_APT_REASON = "install fixed Debian rootless dependencies"
+_DNF_REASON = "install fixed RHEL rootless dependencies"
+_SETUP_REASON = "configure rootless Docker for target user"
+_LINGER_REASON = "enable confirmed headless user service"
+_SYSTEM_PREFIX_REASON = "rerun verified installer for explicit system prefix"
+_CONTAINMENT_PROGRAM = (
+    "import pathlib,socket\n"
+    "try:\n pathlib.Path('/must-not-write').write_text('x')\n"
+    "except OSError:\n print('root-write-denied')\n"
+    "else:\n print('root-write-open')\n"
+    "try:\n socket.create_connection(('1.1.1.1',53),timeout=1).close()\n"
+    "except OSError:\n print('network-denied')\n"
+    "else:\n print('network-open')\n"
+)
 
 
-class BackendProbe(Protocol):
+@dataclass(frozen=True, slots=True)
+class SandboxVerification:
+    """保存 production containment 使用的固定 pinned image。
+
+    Args:
+        container_image: Linux 必须提供的 digest-pinned sandbox image；macOS 为 ``None``。
+    """
+
+    container_image: str | None
+
+    def __post_init__(self) -> None:
+        """拒绝可变 image tag 或非字符串输入。
+
+        Raises:
+            InstallError: image 不是 ``name@sha256:<64hex>`` 或 ``None``。
+        """
+        if self.container_image is not None and (
+            type(self.container_image) is not str
+            or _PINNED_IMAGE.fullmatch(self.container_image) is None
+        ):
+            raise InstallError("system_dependency_missing", "platform")
+
+
+@dataclass(frozen=True, slots=True)
+class InstallerArtifactEvidence:
+    """绑定 verified installer artifact 的 lexical path 与 expected SHA-256。
+
+    Args:
+        path: 将被 exact argv 执行的本地 installer artifact。
+        expected_sha256: manifest/bootstrap 已验证的 lowercase SHA-256。
+    """
+
+    path: Path
+    expected_sha256: str
+
+    def __post_init__(self) -> None:
+        """只接受绝对 lexical Path 与规范 SHA-256；文件事实由执行边界重验。
+
+        Raises:
+            InstallError: path/hash 类型或 lexical 形式无效。
+        """
+        if (
+            not isinstance(self.path, Path)
+            or not _lexical_absolute(self.path)
+            or type(self.expected_sha256) is not str
+            or _SHA256.fullmatch(self.expected_sha256) is None
+        ):
+            raise InstallError("privilege_denied", "system_argvs")
+
+
+@dataclass(frozen=True, slots=True, init=False)
+class ActivationEvidence:
+    """表示 production backend 已为同一非 root UID 完成本地 containment 验证。"""
+
+    backend: Literal["docker-rootless", "podman-rootless", "seatbelt"]
+    uid: int
+    verification: str
+
+    def __new__(cls) -> "ActivationEvidence":
+        """拒绝 public constructor；evidence 只能由本模块验证函数铸造。
+
+        Raises:
+            TypeError: 所有公开构造尝试。
+        """
+        raise TypeError("ActivationEvidence cannot be constructed directly")
+
+
+class _BackendProbe(Protocol):
     """定义本地 Sandbox 证据与 no-follow 文件事实边界。"""
 
     def require_backend(
@@ -76,76 +157,48 @@ class BackendProbe(Protocol):
         """返回固定路径且不跟随 symlink 的本地文件事实。"""
 
 
-class LocalBackendProbe:
-    """组合 Phase 6 backend discovery 与显式 containment 证据。"""
+class LocalPlatformProbe:
+    """用 stdlib 固定路径、rootless socket 与 live containment 派生 production readiness。"""
 
-    def __init__(
-        self,
-        *,
-        containment_check: Callable[[str, RootlessClientTransport | None], None],
-        discover_rootless: Callable[..., RootlessClientTransport] | None = None,
-        seatbelt: SeatbeltSandbox | None = None,
-        lstat: Callable[[Path], os.stat_result] | None = None,
-    ) -> None:
-        """绑定真实 discovery/Seatbelt 和一个成功时只返回 None 的 containment check。
+    def __init__(self, verification: SandboxVerification) -> None:
+        """绑定 digest-pinned containment 需求，不提供 dependency injection。
 
         Args:
-            containment_check: 实际 containment evidence verifier；成功必须返回 ``None``。
-            discover_rootless: 测试可注入的 Phase 6 discovery boundary。
-            seatbelt: 测试可注入的真实 ``SeatbeltSandbox``。
-            lstat: 测试可注入的 no-follow 文件读取器。
+            verification: Linux image 或 macOS 无 image 的 strict 需求。
 
         Raises:
-            ValueError: containment check 不可调用。
+            InstallError: verification 不是 strict public model。
         """
-        if not callable(containment_check):
-            raise ValueError("containment_check must be callable")
-        self._containment_check = containment_check
-        self._discover_rootless = (
-            discover_rootless_client_transport
-            if discover_rootless is None
-            else discover_rootless
-        )
-        self._seatbelt = SeatbeltSandbox() if seatbelt is None else seatbelt
-        self._lstat = os.lstat if lstat is None else lstat
+        if type(verification) is not SandboxVerification:
+            raise InstallError("system_dependency_missing", "platform")
+        self._verification = verification
 
     def require_backend(
         self,
         platform: "DetectedPlatform",
         account: pwd.struct_passwd,
     ) -> None:
-        """验证 backend executable/context，并要求同一 backend 的 containment evidence。
+        """验证 backend executable/socket/context，并执行 fixed live containment smoke。
 
         Args:
             platform: 已校验 Tier 1 平台。
             account: 已验证的实际运行用户 passwd 记录。
 
         Raises:
-            InstallError: Phase 6 discovery、Seatbelt availability 或 containment 不通过。
+            InstallError: executable、socket/context 或 containment 不通过。
         """
         try:
-            if platform.os == "linux":
-                transport = self._discover_rootless(
-                    platform.sandbox_backend,
-                    SAFE_EXECUTABLE_PATH,
-                    Path(account.pw_dir),
-                    platform_name="linux",
-                    effective_uid=account.pw_uid,
-                    lstat=self._lstat,
-                )
-                if transport.engine != platform.sandbox_backend:
-                    raise SandboxUnavailableError()
-                evidence = self._containment_check(platform.sandbox_backend, transport)
+            if platform.os == "macos":
+                if self._verification.container_image is not None:
+                    raise InstallError("system_dependency_missing", "platform")
+                _verify_seatbelt_containment(account)
             else:
-                if not self._seatbelt.availability().available:
-                    raise SandboxUnavailableError()
-                evidence = self._containment_check("seatbelt", None)
-        except InstallError:
-            raise
-        except Exception as error:
-            raise InstallError("system_dependency_missing", "platform") from error
-        if evidence is not None:
-            raise InstallError("system_dependency_missing", "platform")
+                image = self._verification.container_image
+                if image is None:
+                    raise InstallError("system_dependency_missing", "platform")
+                _verify_rootless_containment(platform, account, image)
+        except Exception:
+            raise InstallError("system_dependency_missing", "platform") from None
 
     def lstat(self, path: Path) -> os.stat_result:
         """用同一个 no-follow boundary 返回 setup tool 本地事实。
@@ -159,7 +212,10 @@ class LocalBackendProbe:
         Raises:
             OSError: 路径不存在或不可访问。
         """
-        return self._lstat(path)
+        try:
+            return os.lstat(path)
+        except Exception:
+            raise InstallError("system_dependency_missing", "system_argvs") from None
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,6 +322,7 @@ class PrivilegeAction:
             or not 1 <= len(self.reason) <= 200
             or not self.reason.isprintable()
             or not _privilege_argv_allowed(self.category, self.argv)
+            or self.reason != _privilege_reason(self.category, self.argv)
         ):
             raise InstallError("system_dependency_missing", "system_argvs")
 
@@ -499,13 +556,47 @@ def build_dependency_actions(
     platform: DetectedPlatform,
     request: InstallRequest,
     *,
-    probe: BackendProbe,
+    verification: SandboxVerification,
+    installer_artifact: InstallerArtifactEvidence | None = None,
+) -> tuple[PrivilegeAction, ...]:
+    """使用不可注入的 install-local production probe 构造权限动作。
+
+    Args:
+        platform: 已验证 Tier 1 平台。
+        request: canonical installer 请求。
+        verification: backend live containment 需求。
+        installer_artifact: system-prefix rerun 的 verified installer artifact。
+    Returns:
+        immutable exact privilege actions。
+
+    Raises:
+        InstallError: 本地 readiness、账号、artifact 或请求不安全。
+    """
+    effective_uid, original_user, original_uid = _production_identity()
+    return _build_dependency_actions_with_probe(
+        platform,
+        request,
+        probe=LocalPlatformProbe(verification),
+        verification=verification,
+        installer_artifact=installer_artifact,
+        effective_uid=effective_uid,
+        original_user=original_user,
+        original_uid=original_uid,
+    )
+
+
+def _build_dependency_actions_with_probe(
+    platform: DetectedPlatform,
+    request: InstallRequest,
+    *,
+    probe: _BackendProbe,
+    verification: SandboxVerification | None = None,
+    installer_artifact: InstallerArtifactEvidence | None = None,
     effective_uid: int | None = None,
     original_user: str | None = None,
     original_uid: int | None = None,
     getpwuid: Callable[[int], pwd.struct_passwd] | None = None,
     getpwnam: Callable[[str], pwd.struct_passwd] | None = None,
-    rerun_argv: tuple[str, ...] = (),
 ) -> tuple[PrivilegeAction, ...]:
     """从已校验请求、真实账号和显式本地 probe 构造固定权限 argv。
 
@@ -518,7 +609,8 @@ def build_dependency_actions(
         original_uid: root 调用的原始非 root UID。
         getpwuid: 测试可注入的 UID 账号解析器。
         getpwnam: 测试可注入的用户名账号解析器。
-        rerun_argv: 非 root system-prefix 使用的已验证 installer exact argv。
+        verification: production containment 需求；private fake seam 可为 ``None``。
+        installer_artifact: non-root system-prefix 的 verified installer artifact。
 
     Returns:
         可供 dry-run 精确展示的不可变权限动作集合。
@@ -546,8 +638,8 @@ def build_dependency_actions(
         probe.require_backend(platform, account)
     except InstallError:
         backend_ready = False
-    except Exception as error:
-        raise InstallError("system_dependency_missing", "platform") from error
+    except Exception:
+        raise InstallError("system_dependency_missing", "platform") from None
     else:
         backend_ready = True
     if not backend_ready and platform.os == "macos":
@@ -560,12 +652,12 @@ def build_dependency_actions(
                 _action(
                     "system-package",
                     _APT_UPDATE,
-                    "install fixed Debian rootless dependencies",
+                    _APT_REASON,
                 ),
                 _action(
                     "system-package",
                     _APT_INSTALL,
-                    "install fixed Debian rootless dependencies",
+                    _APT_REASON,
                 ),
             )
         )
@@ -574,23 +666,9 @@ def build_dependency_actions(
             _action(
                 "system-package",
                 _DNF_INSTALL,
-                "install fixed RHEL rootless dependencies",
+                _DNF_REASON,
             )
         )
-    if not backend_ready and platform.distro_id in _DEBIAN_FAMILY:
-        tool = _select_setup_tool(probe.lstat, account)
-        if tool is not None:
-            argv = (str(tool), "install")
-            if selected_uid == 0:
-                argv = ("/usr/bin/sudo", "-u", account.pw_name, "--", *argv)
-            actions.append(
-                PrivilegeAction(
-                    category="system-package",
-                    argv=argv,
-                    requires_sudo=selected_uid == 0,
-                    reason="configure rootless Docker for target user",
-                )
-            )
     if request.service is True and platform.os == "linux":
         actions.append(
             _action(
@@ -601,17 +679,20 @@ def build_dependency_actions(
                     "enable-linger",
                     account.pw_name,
                 ),
-                "enable confirmed headless user service",
+                _LINGER_REASON,
             )
         )
     if request.system_prefix and selected_uid != 0:
-        _validate_rerun_argv(rerun_argv)
+        if installer_artifact is None:
+            raise InstallError("privilege_denied", "system_argvs")
+        _validate_installer_artifact(installer_artifact, account)
+        rerun_argv = _canonical_rerun_argv(installer_artifact.path, request)
         actions.append(
             PrivilegeAction(
                 category="system-prefix",
                 argv=("/usr/bin/sudo", "--", *rerun_argv),
                 requires_sudo=True,
-                reason="rerun verified installer for explicit system prefix",
+                reason=_SYSTEM_PREFIX_REASON,
             )
         )
     return tuple(actions)
@@ -622,14 +703,56 @@ def verify_privilege_action(
     platform: DetectedPlatform,
     request: InstallRequest,
     *,
-    probe: BackendProbe,
+    verification: SandboxVerification,
+    installer_artifact: InstallerArtifactEvidence | None = None,
+    after_execution: bool = False,
+) -> ActivationEvidence | tuple[PrivilegeAction, ...] | None:
+    """使用 production LocalPlatformProbe 执行 action revalidation。
+
+    Args:
+        action: 待执行 exact action。
+        platform: 绑定 Tier 1 平台。
+        request: 绑定 canonical request。
+        verification: backend containment 需求。
+        installer_artifact: system-prefix verified artifact evidence。
+        after_execution: 动作已完成时强制 backend re-probe。
+
+    Returns:
+        after-execution backend evidence；执行前返回 ``None``。
+
+    Raises:
+        InstallError: 任一绑定或本地证据不安全。
+    """
+    effective_uid, original_user, original_uid = _production_identity()
+    return _verify_privilege_action_with_probe(
+        action,
+        platform,
+        request,
+        probe=LocalPlatformProbe(verification),
+        verification=verification,
+        installer_artifact=installer_artifact,
+        effective_uid=effective_uid,
+        original_user=original_user,
+        original_uid=original_uid,
+        after_execution=after_execution,
+    )
+
+
+def _verify_privilege_action_with_probe(
+    action: PrivilegeAction,
+    platform: DetectedPlatform,
+    request: InstallRequest,
+    *,
+    probe: _BackendProbe,
+    verification: SandboxVerification | None = None,
+    installer_artifact: InstallerArtifactEvidence | None = None,
     effective_uid: int | None = None,
     original_user: str | None = None,
     original_uid: int | None = None,
     getpwuid: Callable[[int], pwd.struct_passwd] | None = None,
     getpwnam: Callable[[str], pwd.struct_passwd] | None = None,
     after_execution: bool = False,
-) -> None:
+) -> ActivationEvidence | tuple[PrivilegeAction, ...] | None:
     """执行前重验 action 文件与账号，setup 后再验证同用户 backend。
 
     Args:
@@ -685,12 +808,12 @@ def verify_privilege_action(
         if action.argv != expected:
             raise InstallError("privilege_denied", "system_argvs")
         if after_execution:
-            try:
-                probe.require_backend(platform, account)
-            except InstallError:
-                raise
-            except Exception as error:
-                raise InstallError("system_dependency_missing", "platform") from error
+            return _verify_activation_ready_with_probe(
+                platform,
+                account,
+                probe=probe,
+                verification=verification,
+            )
     if action.category == "linger":
         if (
             platform.os != "linux"
@@ -709,13 +832,115 @@ def verify_privilege_action(
         ):
             raise InstallError("privilege_denied", "system_argvs")
     elif action.category == "system-prefix":
-        rerun = action.argv[2:]
+        if installer_artifact is None:
+            raise InstallError("privilege_denied", "system_argvs")
+        _validate_installer_artifact(installer_artifact, account)
+        expected_rerun = _canonical_rerun_argv(installer_artifact.path, request)
         if (
             selected_uid == 0
             or not request.system_prefix
-            or rerun[1] != request.action
+            or action.argv != ("/usr/bin/sudo", "--", *expected_rerun)
         ):
             raise InstallError("privilege_denied", "system_argvs")
+    if after_execution and action.category == "system-package":
+        try:
+            return _verify_activation_ready_with_probe(
+                platform,
+                account,
+                probe=probe,
+                verification=verification,
+            )
+        except InstallError:
+            if action.argv == _APT_UPDATE:
+                return (_action("system-package", _APT_INSTALL, _APT_REASON),)
+            if action.argv == _APT_INSTALL:
+                tool = _select_setup_tool(probe.lstat, account)
+                if tool is None:
+                    raise InstallError("system_dependency_missing", "platform") from None
+                setup_argv = (str(tool), "install")
+                if selected_uid == 0:
+                    setup_argv = (
+                        "/usr/bin/sudo",
+                        "-u",
+                        account.pw_name,
+                        "--",
+                        *setup_argv,
+                    )
+                return (
+                    PrivilegeAction(
+                        category="system-package",
+                        argv=setup_argv,
+                        requires_sudo=selected_uid == 0,
+                        reason=_SETUP_REASON,
+                    ),
+                )
+            raise
+    return None
+
+
+def verify_activation_ready(
+    platform: DetectedPlatform,
+    *,
+    verification: SandboxVerification,
+) -> ActivationEvidence:
+    """用不可注入 production probe 返回 activation 必需的 typed evidence。
+
+    Args:
+        platform: 已验证 Tier 1 平台。
+        verification: live containment 需求。
+    Returns:
+        只能由本函数生成的 ``ActivationEvidence``。
+
+    Raises:
+        InstallError: 账号或 backend local evidence 不完整。
+    """
+    effective_uid, original_user, original_uid = _production_identity()
+    account = _resolve_invoking_user(
+        effective_uid,
+        original_user,
+        original_uid,
+    )
+    return _verify_activation_ready_with_probe(
+        platform,
+        account,
+        probe=LocalPlatformProbe(verification),
+        verification=verification,
+    )
+
+
+def _verify_activation_ready_with_probe(
+    platform: DetectedPlatform,
+    account: pwd.struct_passwd,
+    *,
+    probe: _BackendProbe,
+    verification: SandboxVerification | None = None,
+) -> ActivationEvidence:
+    """private test seam：成功 probe 后铸造不可公开构造的 activation evidence。
+
+    Args:
+        platform: 已验证平台。
+        account: 已验证 non-root account。
+        probe: production probe 或 private offline fake。
+        verification: production containment requirement。
+
+    Returns:
+        与 backend/UID/image 精确绑定的 activation evidence。
+
+    Raises:
+        InstallError: probe 动态失败或输入错配。
+    """
+    try:
+        probe.require_backend(platform, account)
+    except Exception:
+        raise InstallError("system_dependency_missing", "platform") from None
+    evidence = object.__new__(ActivationEvidence)
+    object.__setattr__(evidence, "backend", platform.sandbox_backend)
+    object.__setattr__(evidence, "uid", account.pw_uid)
+    marker = "test-private"
+    if verification is not None:
+        marker = verification.container_image or "seatbelt-local"
+    object.__setattr__(evidence, "verification", marker)
+    return evidence
 
 
 def _parse_os_release(text: str) -> dict[str, str]:
@@ -734,8 +959,8 @@ def _parse_os_release(text: str) -> dict[str, str]:
         raise InstallError("unsupported_platform", "platform")
     try:
         encoded = text.encode("utf-8")
-    except UnicodeEncodeError as error:
-        raise InstallError("unsupported_platform", "platform") from error
+    except UnicodeEncodeError:
+        raise InstallError("unsupported_platform", "platform") from None
     if not 1 <= len(encoded) <= 65_536:
         raise InstallError("unsupported_platform", "platform")
     values: dict[str, str] = {}
@@ -841,6 +1066,22 @@ def _validate_invoking_user(
         raise InstallError("privilege_denied", "platform")
 
 
+def _production_identity() -> tuple[int, str | None, int | None]:
+    """读取不可注入的当前 euid，并在 root 时绑定真实 sudo 原用户。
+
+    Returns:
+        effective UID、可选 original user 与 original UID。
+
+    Raises:
+        InstallError: root 没有可验证的 ``SUDO_USER``/``SUDO_UID``。
+    """
+    effective_uid = os.geteuid()
+    if effective_uid != 0:
+        return effective_uid, None, None
+    user, uid = _resolve_original_user()
+    return effective_uid, user, uid
+
+
 def _resolve_invoking_user(
     effective_uid: object,
     original_user: object,
@@ -879,8 +1120,8 @@ def _resolve_invoking_user(
             account = uid_lookup(cast(int, selected_uid))
     except InstallError:
         raise
-    except Exception as error:
-        raise InstallError("privilege_denied", "platform") from error
+    except Exception:
+        raise InstallError("privilege_denied", "platform") from None
     if type(account) is not pwd.struct_passwd:
         raise InstallError("privilege_denied", "platform")
     if account.pw_uid <= 0 or account.pw_uid != selected_uid and selected_uid != 0:
@@ -960,8 +1201,8 @@ def _require_real_user(
     lookup = pwd.getpwnam if getpwnam is None else getpwnam
     try:
         account = lookup(cast(str, user))
-    except Exception as error:
-        raise InstallError("privilege_denied", "platform") from error
+    except Exception:
+        raise InstallError("privilege_denied", "platform") from None
     if (
         type(account) is not pwd.struct_passwd
         or account.pw_uid != uid
@@ -989,8 +1230,8 @@ def _read_os_release() -> str:
         raise InstallError("unsupported_platform", "platform")
     try:
         return data.decode("utf-8")
-    except UnicodeDecodeError as error:
-        raise InstallError("unsupported_platform", "platform") from error
+    except UnicodeDecodeError:
+        raise InstallError("unsupported_platform", "platform") from None
 
 
 def _select_setup_tool(
@@ -1073,14 +1314,355 @@ def _setup_tool_from_action(action: PrivilegeAction) -> Path | None:
     return None
 
 
-def _validate_rerun_argv(argv: object) -> None:
-    """限制 non-root system-prefix 为一个 exact verified-installer rerun argv。
+def _verify_seatbelt_containment(account: pwd.struct_passwd) -> None:
+    """验证 fixed Seatbelt executable 并执行 deny-default local smoke。
 
     Args:
-        argv: 调用方绑定当前 InstallRequest 的 installer argv。
+        account: 必须与当前 non-root 用户一致的账号。
 
     Raises:
-        InstallError: argv 含 shell、非绝对程序、sudo 或缺少 ``--system-prefix``。
+        InstallError: platform、executable 或 smoke 不可用。
+    """
+    executable = Path("/usr/bin/sandbox-exec")
+    profile = (
+        '(version 1) (deny default) (deny network*) (allow process-exec '
+        '(literal "/usr/bin/true"))'
+    )
+    try:
+        if host_platform.system() != "Darwin" or not _regular_executable(executable, account):
+            raise OSError
+        completed = _run_local_probe(
+            (str(executable), "-p", profile, "--", "/usr/bin/true"),
+            account,
+            {},
+        )
+        if completed.returncode != 0 or completed.stdout or completed.stderr:
+            raise OSError
+    except Exception:
+        raise InstallError("system_dependency_missing", "platform") from None
+
+
+def _verify_rootless_containment(
+    platform: DetectedPlatform,
+    account: pwd.struct_passwd,
+    image: str,
+) -> None:
+    """按 Phase 6 socket contract 验证 rootless CLI 并运行 hardened containment smoke。
+
+    Args:
+        platform: Linux Tier 1 backend。
+        account: socket owner 与实际 CLI 用户。
+        image: digest-pinned sandbox image。
+
+    Raises:
+        InstallError: CLI、socket/context、Podman compatibility 或 containment 不通过。
+    """
+    try:
+        runtime = Path("/run/user") / str(account.pw_uid)
+        engine_runtime = (
+            runtime
+            if platform.sandbox_backend == "docker-rootless"
+            else runtime / "podman"
+        )
+        socket = (
+            runtime / "docker.sock"
+            if platform.sandbox_backend == "docker-rootless"
+            else engine_runtime / "podman.sock"
+        )
+        for directory in dict.fromkeys((runtime, engine_runtime)):
+            fact = os.lstat(directory)
+            if (
+                not stat.S_ISDIR(fact.st_mode)
+                or fact.st_uid != account.pw_uid
+                or stat.S_IMODE(fact.st_mode) != 0o700
+            ):
+                raise OSError
+        socket_fact = os.lstat(socket)
+        if not stat.S_ISSOCK(socket_fact.st_mode) or socket_fact.st_uid != account.pw_uid:
+            raise OSError
+        if platform.sandbox_backend == "podman-rootless":
+            requested = Path("/usr/bin/docker")
+            resolved = requested.resolve(strict=True)
+            if resolved != Path("/usr/bin/podman") or not _regular_executable(
+                resolved,
+                account,
+            ):
+                raise OSError
+            executable = requested
+            socket_name = "CONTAINER_HOST"
+        else:
+            discovered = shutil.which("docker", path=_SAFE_EXECUTABLE_PATH)
+            if discovered is None:
+                raise OSError
+            executable = Path(discovered).resolve(strict=True)
+            if executable.name != "docker" or not _regular_executable(executable, account):
+                raise OSError
+            socket_name = "DOCKER_HOST"
+        environment = {
+            "HOME": account.pw_dir,
+            "XDG_RUNTIME_DIR": str(runtime),
+            socket_name: f"unix://{socket}",
+        }
+        if platform.sandbox_backend == "podman-rootless":
+            version = _run_local_probe((str(executable), "--version"), account, environment)
+            if version.returncode != 0 or b"podman" not in version.stdout.lower():
+                raise OSError
+        argv = (
+            str(executable),
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            "32",
+            "--memory",
+            "128m",
+            "--user",
+            "65532:65532",
+            "--tmpfs",
+            "/tmp:rw,nosuid,nodev,noexec,size=16m",
+            "--",
+            image,
+            "python",
+            "-c",
+            _CONTAINMENT_PROGRAM,
+        )
+        completed = _run_local_probe(argv, account, environment)
+        if (
+            completed.returncode != 0
+            or completed.stdout != b"root-write-denied\nnetwork-denied\n"
+            or completed.stderr
+        ):
+            raise OSError
+    except Exception:
+        raise InstallError("system_dependency_missing", "platform") from None
+
+
+def _regular_executable(path: Path, account: pwd.struct_passwd) -> bool:
+    """用 no-follow final fact 验证 regular file 与目标账号 execute bit。
+
+    Args:
+        path: resolved absolute executable。
+        account: 实际执行账号。
+
+    Returns:
+        final path 非 symlink regular 且可执行时为 ``True``。
+    """
+    try:
+        fact = os.lstat(path)
+    except Exception:
+        return False
+    return stat.S_ISREG(fact.st_mode) and _mode_executable_by(fact, account)
+
+
+def _run_local_probe(
+    argv: tuple[str, ...],
+    account: pwd.struct_passwd,
+    environment: dict[str, str],
+) -> subprocess.CompletedProcess[bytes]:
+    """以同一目标用户和固定最小环境执行 bounded local probe argv。
+
+    Args:
+        argv: 固定 probe argv。
+        account: 实际执行的 non-root 用户。
+        environment: 本地派生的 HOME/runtime/socket 环境。
+
+    Returns:
+        stdout/stderr 都不超过 4096 bytes 的完成结果。
+
+    Raises:
+        InstallError: subprocess 失败、超时或输出超限。
+    """
+    minimal = {"PATH": _SAFE_EXECUTABLE_PATH, "LANG": "C.UTF-8", **environment}
+    command = argv
+    child_environment = minimal
+    if os.geteuid() == 0:
+        assignments = tuple(f"{key}={value}" for key, value in sorted(minimal.items()))
+        command = (
+            "/usr/bin/sudo",
+            "-u",
+            account.pw_name,
+            "--",
+            "/usr/bin/env",
+            "-i",
+            *assignments,
+            *argv,
+        )
+        child_environment = {"PATH": _SAFE_EXECUTABLE_PATH, "LANG": "C.UTF-8"}
+    try:
+        completed = subprocess.run(
+            command,
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            timeout=45,
+            check=False,
+            env=child_environment,
+        )
+        if len(completed.stdout) > 4096 or len(completed.stderr) > 4096:
+            raise OSError
+        return completed
+    except Exception:
+        raise InstallError("system_dependency_missing", "platform") from None
+
+
+def _lexical_absolute(path: Path) -> bool:
+    """判断 Path 是无 dot-segment 的 absolute lexical 路径。
+
+    Args:
+        path: 待校验路径。
+
+    Returns:
+        路径绝对、非 root 且规范字符串不变化时为 ``True``。
+    """
+    return (
+        path.is_absolute()
+        and path != Path(path.anchor)
+        and ".." not in path.parts
+        and str(path) == os.path.normpath(str(path))
+    )
+
+
+def _validate_installer_artifact(
+    evidence: InstallerArtifactEvidence,
+    account: pwd.struct_passwd,
+) -> None:
+    """no-follow 验证 artifact 全路径、regular/execute 事实并重算 SHA-256。
+
+    Args:
+        evidence: strict lexical path 与 expected hash。
+        account: 实际执行 artifact 的账号。
+
+    Raises:
+        InstallError: 任一 component 是 symlink、文件不可执行、超限或 hash 漂移。
+    """
+    if type(evidence) is not InstallerArtifactEvidence:
+        raise InstallError("privilege_denied", "system_argvs")
+    try:
+        current = Path(evidence.path.anchor)
+        for part in evidence.path.parts[1:]:
+            current /= part
+            fact = os.lstat(current)
+            if stat.S_ISLNK(fact.st_mode):
+                raise OSError
+            if current != evidence.path and not stat.S_ISDIR(fact.st_mode):
+                raise OSError
+        final = os.lstat(evidence.path)
+        if (
+            not stat.S_ISREG(final.st_mode)
+            or final.st_size < 1
+            or final.st_size > _MAX_INSTALLER_BYTES
+            or not _mode_executable_by(final, account)
+        ):
+            raise OSError
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(evidence.path, flags)
+        try:
+            opened = os.fstat(descriptor)
+            if (
+                opened.st_dev != final.st_dev
+                or opened.st_ino != final.st_ino
+                or not stat.S_ISREG(opened.st_mode)
+            ):
+                raise OSError
+            digest = hashlib.sha256()
+            count = 0
+            while chunk := os.read(descriptor, 1_048_576):
+                count += len(chunk)
+                if count > _MAX_INSTALLER_BYTES:
+                    raise OSError
+                digest.update(chunk)
+        finally:
+            os.close(descriptor)
+        if count != final.st_size or digest.hexdigest() != evidence.expected_sha256:
+            raise OSError
+    except Exception:
+        raise InstallError("privilege_denied", "system_argvs") from None
+
+
+def _mode_executable_by(fact: os.stat_result, account: pwd.struct_passwd) -> bool:
+    """判断 no-follow stat mode 对目标账号的对应 execute bit 是否有效。
+
+    Args:
+        fact: ``lstat``/``fstat`` 文件事实。
+        account: 目标 non-root 账号。
+
+    Returns:
+        owner、primary group 或 other 对应 execute bit 有效时为 ``True``。
+    """
+    if fact.st_uid == account.pw_uid:
+        executable = stat.S_IXUSR
+    elif fact.st_gid == account.pw_gid:
+        executable = stat.S_IXGRP
+    else:
+        executable = stat.S_IXOTH
+    return bool(fact.st_mode & executable)
+
+
+def _canonical_rerun_argv(
+    executable: Path,
+    request: InstallRequest,
+) -> tuple[str, ...]:
+    """把完整 InstallRequest 规范化成唯一 system-prefix rerun argv。
+
+    Args:
+        executable: 已验证 installer artifact lexical path。
+        request: strict immutable installer request。
+
+    Returns:
+        固定字段顺序、无默认语义漂移的 exact argv。
+
+    Raises:
+        InstallError: 请求不是 system-prefix 或 executable 不规范。
+    """
+    if (
+        type(request) is not InstallRequest
+        or not request.system_prefix
+        or not _lexical_absolute(executable)
+    ):
+        raise InstallError("privilege_denied", "system_argvs")
+    argv = [str(executable), request.action]
+    if request.version is not None:
+        argv.extend(("--version", request.version))
+    argv.extend(("--channel", request.channel, "--state-home", str(request.state_home)))
+    argv.append("--system-prefix")
+    if not request.onboard:
+        argv.append("--no-onboard")
+    if request.config_file is not None:
+        argv.extend(("--config", str(request.config_file)))
+    if request.secrets_file is not None:
+        argv.extend(("--secrets-file", str(request.secrets_file)))
+    if request.service is True:
+        argv.append("--install-service")
+    elif request.service is False:
+        argv.append("--no-service")
+    if request.allow_system_packages:
+        argv.append("--allow-system-packages")
+    if request.dry_run:
+        argv.append("--dry-run")
+    if request.json_output:
+        argv.append("--json")
+    if request.verbose:
+        argv.append("--verbose")
+    if request.purge_data:
+        argv.append("--purge-data")
+    if request.confirm_data_loss:
+        argv.append("--yes-i-understand-data-loss")
+    return tuple(argv)
+
+
+def _validate_rerun_argv(argv: object) -> None:
+    """限制 public system-prefix action 为 canonical flag order。
+
+    Args:
+        argv: 不含 sudo wrapper 的 installer argv。
+
+    Raises:
+        InstallError: argv 含 shell、任意 flag 或字段顺序不规范。
     """
     if (
         type(argv) is not tuple
@@ -1167,10 +1749,104 @@ def _rerun_argv_allowed(argv: tuple[str, ...]) -> bool:
     Returns:
         程序绝对、动作封闭且最后参数是 ``--system-prefix`` 时为 ``True``。
     """
-    return (
-        len(argv) >= 3
-        and Path(argv[0]).is_absolute()
-        and Path(argv[0]).name not in {"sh", "bash", "zsh", "fish", "env", "sudo"}
-        and argv[1] in {"install", "update", "uninstall"}
-        and argv[-1] == "--system-prefix"
+    if (
+        len(argv) < 7
+        or not _lexical_absolute(Path(argv[0]))
+        or Path(argv[0]).name in {"sh", "bash", "zsh", "fish", "env", "sudo"}
+        or argv[1] not in {"install", "update", "uninstall"}
+    ):
+        return False
+    index = 2
+    if argv[index] == "--version":
+        version = None if index + 1 >= len(argv) else argv[index + 1]
+        if version is None or re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version) is None:
+            return False
+        index += 2
+    if argv[index : index + 2] not in {
+        ("--channel", "stable"),
+        ("--channel", "dev"),
+    }:
+        return False
+    index += 2
+    if (
+        argv[index] != "--state-home"
+        or index + 1 >= len(argv)
+        or not _lexical_absolute(Path(argv[index + 1]))
+    ):
+        return False
+    index += 2
+    if index >= len(argv) or argv[index] != "--system-prefix":
+        return False
+    index += 1
+    pairs = {"--config", "--secrets-file"}
+    singles = (
+        "--no-onboard",
+        "--install-service",
+        "--no-service",
+        "--allow-system-packages",
+        "--dry-run",
+        "--json",
+        "--verbose",
+        "--purge-data",
+        "--yes-i-understand-data-loss",
     )
+    ordered_flags = ("--no-onboard", "--config", "--secrets-file", *singles[1:])
+    order = {name: position for position, name in enumerate(ordered_flags)}
+    previous = -1
+    service_seen = False
+    while index < len(argv):
+        flag = argv[index]
+        position = order.get(flag)
+        if position is None or position <= previous:
+            return False
+        if flag in {"--install-service", "--no-service"}:
+            if service_seen:
+                return False
+            service_seen = True
+        previous = position
+        if flag in pairs:
+            if index + 1 >= len(argv) or not _lexical_absolute(Path(argv[index + 1])):
+                return False
+            index += 2
+        else:
+            index += 1
+    return True
+
+
+def _privilege_reason(category: object, argv: tuple[str, ...]) -> str | None:
+    """返回与 exact category/argv 唯一绑定的安全展示 reason。
+
+    Args:
+        category: strict action category。
+        argv: exact action argv。
+
+    Returns:
+        固定 reason；无匹配时为 ``None``。
+    """
+    if category == "system-package":
+        if argv in {_APT_UPDATE, _APT_INSTALL}:
+            return _APT_REASON
+        if argv == _DNF_INSTALL:
+            return _DNF_REASON
+        if _setup_tool_from_action_argv(argv) is not None:
+            return _SETUP_REASON
+    if category == "linger":
+        return _LINGER_REASON
+    if category == "system-prefix":
+        return _SYSTEM_PREFIX_REASON
+    return None
+
+
+def _setup_tool_from_action_argv(argv: tuple[str, ...]) -> Path | None:
+    """从尚未构造 PrivilegeAction 的 argv 提取 setup tool。
+
+    Args:
+        argv: exact action argv。
+
+    Returns:
+        固定 setup path 或 ``None``。
+    """
+    for argument in argv:
+        if argument in _ROOTLESS_TOOLS:
+            return Path(argument)
+    return None
