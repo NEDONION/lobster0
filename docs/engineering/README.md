@@ -161,6 +161,7 @@ Core。当前为 `TARGET CONFIRMED / D1-D5 IMPLEMENTATION PENDING`。
 | [桌面多 Agent 开发需求](../product/20260810_桌面多Agent工作台开发需求.md) | D1～D5 产品范围与完成标准。 |
 | [LobsterAI-first 桌面设计](../architecture/20260810_LobsterAI-first桌面多Agent设计.md) | 新信息架构、Core 边界与安全设计。 |
 | [D1～D5 分 Phase 落地](desktop/20260810_桌面多Agent分Phase落地.md) | 文档先行、TDD 顺序和退出条件。 |
+| [D1 打开即聊设计](../superpowers/specs/2026-08-10-desktop-d1-conversation-shell-design.md) | 首屏 Composer、合并左栏、浅色视觉和状态迁移。 |
 | [W0/W1 实施计划](../superpowers/plans/2026-08-09-desktop-workbench-w0-w1.md) | RED→GREEN 施工与最终门禁。 |
 | `desktop/` | Electron Main、固定 Preload、React 四界面和 Desktop 测试。 |
 

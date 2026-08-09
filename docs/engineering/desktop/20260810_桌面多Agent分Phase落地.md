@@ -51,6 +51,8 @@ flowchart LR
 
 ## 4. D1：LobsterAI-first 打开即聊
 
+独立设计：[Desktop D1 打开即聊设计](../../superpowers/specs/2026-08-10-desktop-d1-conversation-shell-design.md)。
+
 ### 4.1 用户结果
 
 - 启动后中央立即显示大对话框；
