@@ -1392,6 +1392,63 @@ class InstallPlatformsTest(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 0.8)
         self.assertIsNone(raised.exception.__cause__)
 
+    def test_round5a_cleanup_crossing_grace_deadline_still_kills_and_reaps(self) -> None:
+        """grace 计时跨过 deadline 后仍必须 KILL 并 reap 忽略 TERM 的 leader。"""
+        process = subprocess.Popen(
+            (
+                sys.executable,
+                "-c",
+                "import signal,time;"
+                "signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                "print('ready',flush=True);time.sleep(20)",
+            ),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+        assert process.stdout is not None
+        self.assertEqual(process.stdout.readline(), b"ready\n")
+        clock = iter((0.0, 0.0, 0.04, 0.06))
+        cleanup_error: BaseException | None = None
+        returncode: int | None = None
+        signals: list[int] = []
+        reaped_returncode: int | None = None
+        try:
+            with (
+                mock.patch.object(
+                    platforms_module.time,
+                    "monotonic",
+                    side_effect=lambda: next(clock, 0.06),
+                ),
+                mock.patch.object(
+                    platforms_module.os,
+                    "killpg",
+                    wraps=os.killpg,
+                ) as killpg,
+            ):
+                try:
+                    returncode = platforms_module._cleanup_probe_process_group(process)
+                except BaseException as error:
+                    cleanup_error = error
+                signals = [call.args[1] for call in killpg.call_args_list]
+                reaped_returncode = process.returncode
+        finally:
+            if process.returncode is None:
+                os.killpg(process.pid, platforms_module.signal.SIGKILL)
+                process.wait(timeout=1)
+            process.stdout.close()
+        self.assertIsNone(
+            cleanup_error,
+            f"cleanup emitted {signals!r} and left returncode {reaped_returncode!r}",
+        )
+        self.assertEqual(
+            signals,
+            [platforms_module.signal.SIGTERM, platforms_module.signal.SIGKILL],
+        )
+        self.assertEqual(returncode, -platforms_module.signal.SIGKILL)
+        self.assertEqual(reaped_returncode, -platforms_module.signal.SIGKILL)
+
     def test_local_macos_probe_uses_fixed_seatbelt_containment(self) -> None:
         """production macOS probe 必须执行 fixed sandbox-exec deny-default smoke。"""
         macos = detect_macos("15.0", "arm64")

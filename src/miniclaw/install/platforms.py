@@ -1644,31 +1644,61 @@ def _cleanup_probe_process_group(process: subprocess.Popen[bytes]) -> int:
         OSError: 进程组无法在 bounded cleanup deadline 内回收。
     """
     process_group = process.pid
-    cleanup_deadline = time.monotonic() + _PROCESS_GROUP_CLEANUP_SECONDS
+    cleanup_deadline: float | None = None
+    cleanup_failed = False
     try:
-        os.killpg(process_group, signal.SIGTERM)
-    except OSError:
-        pass
-    grace_deadline = min(cleanup_deadline, time.monotonic() + _PROCESS_GROUP_TERM_SECONDS)
-    while time.monotonic() < grace_deadline:
-        time.sleep(min(0.01, grace_deadline - time.monotonic()))
-    try:
-        os.killpg(process_group, signal.SIGKILL)
-    except OSError:
-        pass
-    while True:
         try:
-            reaped_pid, status = os.waitpid(process.pid, os.WNOHANG)
-        except ChildProcessError:
+            os.killpg(process_group, signal.SIGTERM)
+        except OSError:
+            pass
+        cleanup_deadline = time.monotonic() + _PROCESS_GROUP_CLEANUP_SECONDS
+        grace_deadline = min(cleanup_deadline, time.monotonic() + _PROCESS_GROUP_TERM_SECONDS)
+        while True:
+            remaining = grace_deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            time.sleep(min(0.01, remaining))
+    except Exception:
+        cleanup_failed = True
+    finally:
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+        except OSError:
+            pass
+        except Exception:
+            cleanup_failed = True
+        try:
+            while True:
+                reaped_pid, status = os.waitpid(
+                    process.pid,
+                    0 if cleanup_deadline is None else os.WNOHANG,
+                )
+                if reaped_pid == process.pid:
+                    break
+                try:
+                    assert cleanup_deadline is not None
+                    remaining = cleanup_deadline - time.monotonic()
+                except Exception:
+                    cleanup_failed = True
+                    cleanup_deadline = None
+                    continue
+                if remaining <= 0:
+                    raise OSError
+                try:
+                    time.sleep(min(remaining, 0.01))
+                except Exception:
+                    cleanup_failed = True
+                    cleanup_deadline = None
+        except Exception:
             raise OSError from None
-        if reaped_pid == process.pid:
-            returncode = os.waitstatus_to_exitcode(status)
-            process.returncode = returncode
-            return returncode
-        remaining = cleanup_deadline - time.monotonic()
-        if remaining <= 0:
-            raise OSError
-        time.sleep(min(remaining, 0.01))
+    try:
+        returncode = os.waitstatus_to_exitcode(status)
+        process.returncode = returncode
+    except Exception:
+        raise OSError from None
+    if cleanup_failed:
+        raise OSError from None
+    return returncode
 
 
 def _lexical_absolute(path: Path) -> bool:
