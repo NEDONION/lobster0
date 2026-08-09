@@ -6,7 +6,7 @@
 
 **Architecture:** One Next.js 16 App Router application owns marketing and docs routes. Fumadocs supplies MDX, page trees, search, and Docs Layout; a `[lang]` route plus Fumadocs proxy keeps Chinese prefix-free and English under `/en`. Static content stays in Server Components while Claw Trace, capability tabs, and workbench tabs are focused Client Component islands.
 
-**Tech Stack:** Next.js 16.3.0, React 19.2.8, Fumadocs Core/UI 16.14.2, Fumadocs MDX 15.2.2, Tailwind CSS 4.3.3, Motion 13.0.0, TypeScript 7.0.2, Vitest 4.1.10, Testing Library 16.3.2, Playwright 1.62.1, Vercel.
+**Tech Stack:** Next.js 16.3.0, React 19.2.8, Fumadocs Core/UI 16.14.2, Fumadocs MDX 15.2.2, Tailwind CSS 4.3.3, Motion 13.0.0, TypeScript 6.0.3, Vitest 4.1.10, Testing Library 16.3.2, Playwright 1.62.1, Vercel.
 
 ## Global Constraints
 
@@ -17,7 +17,8 @@
 - Desktop marketing length targets 2.8–3.2 viewports; mobile protects readability and 44px touch targets.
 - Facts remain one Python core, four surfaces, 18 tools, 33 Channel cases, 15 Automation cases, four permission modes.
 - State that Implementation PASS is not Live PASS; never present planned behavior as implemented.
-- Use `#07090D`, `#0D1118`, `#EEF1F5`, `#5B6CFF`, `#73F7C4`, and `#F2B84B`.
+- Use a light workbench palette: `#F4F6FA`, `#FFFFFF`, `#10131A`, `#667085`, `#5B6CFF`,
+  `#73F7C4`, and `#F2B84B`; reserve `#171B24` for terminals and dark evidence.
 - Use Instrument Sans, IBM Plex Mono, and system Chinese sans-serif fonts.
 - Tabs support ARIA, ArrowLeft/ArrowRight/Home/End, URL hash restore, invalid-hash fallback, and visible focus.
 - Reduced-motion mode reveals final states without sequencing or spatial motion.
@@ -68,6 +69,7 @@ tests only after the Next replacement passes local build and browser checks in T
 - Create: `website/src/app/[lang]/layout.tsx`
 - Create: `website/src/app/[lang]/page.tsx`
 - Create: `website/src/styles/globals.css`
+- Create: `website/src/types/styles.d.ts`
 - Modify: `website/package.json`
 - Replace mechanically: `website/package-lock.json`
 - Modify: `website/tsconfig.json`
@@ -106,8 +108,9 @@ Expected: FAIL because `scripts.dev` is `astro dev` and Next config is absent.
 
 - [ ] **Step 3: Replace the package contract and lockfile**
 
-Set scripts to `next dev`, `next build`, `next start`, `eslint .`, `tsc --noEmit`, `vitest run`, and
-`playwright test`. Pin direct dependencies exactly:
+Set scripts to `next dev`, `next build --webpack`, `next start`, `eslint .`, `tsc --noEmit`, `vitest run`,
+and `playwright test`. Webpack is explicit because Turbopack's PostCSS worker cannot bind its temporary port
+inside the local managed execution environment. Pin direct dependencies exactly:
 
 ```json
 {
@@ -128,8 +131,8 @@ Pin dev dependencies to `@playwright/test@1.62.1`, `@tailwindcss/postcss@4.3.3`,
 `@testing-library/dom@10.4.1`, `@testing-library/jest-dom@7.0.0`,
 `@testing-library/react@16.3.2`, `@testing-library/user-event@14.6.3`, `@types/mdx@2.0.14`,
 `@types/node@26.2.0`, `@types/react@19.2.18`, `@types/react-dom@19.2.4`,
-`@vitejs/plugin-react@6.0.5`, `eslint@10.8.1`, `eslint-config-next@16.3.0`, `jsdom@30.0.1`,
-`tailwindcss@4.3.3`, `typescript@7.0.2`, and `vitest@4.1.10`. Run `npm install` to regenerate
+`@vitejs/plugin-react@6.0.5`, `eslint@9.39.5`, `eslint-config-next@16.3.0`, `jsdom@29.1.1`,
+`tailwindcss@4.3.3`, `typescript@6.0.3`, and `vitest@4.1.10`. Run `npm install` to regenerate
 the lockfile.
 
 - [ ] **Step 4: Add framework configuration**
