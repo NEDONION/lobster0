@@ -44,6 +44,60 @@ from miniclaw.tools.task_completion import CompleteTaskTool
 from tests.fakes.fake_provider import FakeProvider
 
 
+class _AutomationContinuationProbe:
+    """记录 Automation Approval continuation 的 durable Run hook。"""
+
+    def __init__(self) -> None:
+        """创建空事件列表。"""
+        self.events: list[tuple[str, int, int | None]] = []
+        self.failures: list[tuple[str, bool, bool]] = []
+
+    def begin(self, profile: TurnExecutionProfile, approval_id: int) -> None:
+        """记录 side effect 前的 Run resume。"""
+        self.events.append(("begin", profile.task_run_id or 0, approval_id))
+
+    def settle(
+        self,
+        profile: TurnExecutionProfile,
+        approval_id: int,
+        result,
+    ) -> None:
+        """记录 continuation 的可观察终态。"""
+        self.events.append(("settle", profile.task_run_id or 0, result.approval_id))
+
+    def fail(
+        self,
+        profile: TurnExecutionProfile,
+        approval_id: int,
+        *,
+        error_code: str,
+        session_id: int,
+        turn_id: int | None,
+        interrupted: bool = False,
+        timed_out: bool = False,
+    ) -> None:
+        """记录 continuation 异常结算，不保存错误正文。"""
+        del session_id
+        self.failures.append((error_code, interrupted, timed_out))
+        self.events.append(("fail", profile.task_run_id or 0, turn_id or approval_id))
+
+
+class _SlowSecondProvider(FakeProvider):
+    """第一次返回 Approval Tool Call，第二次永久等待 cancellation。"""
+
+    async def complete(
+        self,
+        request: ModelRequest,
+        on_text: StreamHandler | None = None,
+    ) -> ModelResponse:
+        """第二次调用等待 TurnService 的 Automation deadline。"""
+        if len(self.requests) == 1:
+            self.requests.append(request)
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+        return await super().complete(request, on_text)
+
+
 class _ContextProbeTool:
     """记录模型不可伪造的 ToolContext，供信任传播测试断言。"""
 
@@ -249,6 +303,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             ToolRunRepository(self.database),
             approvals=approvals,
         )
+        continuation = _AutomationContinuationProbe()
         service = TurnService(
             owner_id=self.owner.id,
             model="deepseek-v4-pro",
@@ -258,6 +313,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             context=self.context,
             runner=AgentRunner(provider, executor),
             approvals=approvals,
+            automation_continuation=continuation,
             state_home=self.paths.home,
             workspace=WorkspaceConfig(path=self.paths.workspace),
             automation_gate=lambda: True,
@@ -285,9 +341,84 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(destination.read_text(encoding="utf-8"), "bound")
         self.assertEqual(result.terminal_response.text, "已写入")
         self.assertEqual(
+            continuation.events,
+            [("begin", 17, waiting.approval_id), ("settle", 17, None)],
+        )
+        self.assertEqual(
             [schema["function"]["name"] for schema in provider.requests[1].tools],
             ["complete_task", "write_file"],
         )
+
+    async def test_automation_approval_continuation_enforces_original_wall_clock(self) -> None:
+        """审批后 Tool+Provider 续跑仍受原始 Automation timeout 约束。"""
+        provider = _SlowSecondProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=(
+                        ToolCall(
+                            "call_timeout_write",
+                            "write_file",
+                            {"path": "timeout.txt", "content": "bounded"},
+                        ),
+                    ),
+                    reasoning_content="write",
+                    finish_reason="tool_calls",
+                    input_tokens=2,
+                    output_tokens=1,
+                    provider_request_id="req_timeout_wait",
+                ),
+            )
+        )
+        approvals = ApprovalRepository(self.database)
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(), CompleteTaskTool())),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+            approvals=approvals,
+        )
+        continuation = _AutomationContinuationProbe()
+        service = TurnService(
+            owner_id=self.owner.id,
+            model="deepseek-v4-pro",
+            sessions=self.sessions,
+            messages=self.messages,
+            turns=self.turns,
+            context=self.context,
+            runner=AgentRunner(provider, executor),
+            approvals=approvals,
+            automation_continuation=continuation,
+            state_home=self.paths.home,
+            workspace=WorkspaceConfig(path=self.paths.workspace),
+            automation_gate=lambda: True,
+        )
+        profile = TurnExecutionProfile(
+            source="automation",
+            task_run_id=29,
+            allowed_tool_names=frozenset({"write_file", "complete_task"}),
+            budget=AgentRunBudget(
+                max_turns=3,
+                max_tool_calls=2,
+                timeout_seconds=1,
+            ),
+            automation_gate=lambda: True,
+        )
+        waiting = await service.handle_automation(
+            task_id=23,
+            task_run_id=29,
+            text="perform the bounded action",
+            profile=profile,
+        )
+
+        result = await service.continue_approval(
+            self.owner.id,
+            waiting.approval_id,
+            decision=ApprovalDecision.ONCE,
+        )
+
+        self.assertEqual(result.error_code, "task_timeout")
+        self.assertEqual(continuation.failures, [("task_timeout", False, True)])
+        self.assertEqual(self.turns.get(result.turn_id).status, "failed")
 
     async def test_feishu_inbound_uses_stable_id_and_duplicate_reuses_result(self) -> None:
         """Channel 重投同一消息不能产生第二个 Turn、User Message 或 Provider 请求。"""

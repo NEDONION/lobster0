@@ -4,12 +4,14 @@ import json
 import sys
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 
 from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
+from miniclaw.automation.continuation import TaskApprovalContinuation
 from miniclaw.automation.delivery import TaskDeliveryService
 from miniclaw.automation.guard import AutomationPromptGuard
 from miniclaw.automation.heartbeat import HeartbeatReconciler
@@ -403,6 +405,16 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         approval_ttl_seconds=config.tools.approval_ttl_seconds,
         checkpoint_store=checkpoint_store,
     )
+    task_delivery = TaskDeliveryService(
+        DeliveryRepository(database),
+        task_runs,
+        channel_max_chars={
+            "feishu": config.channels.feishu.message_max_chars,
+            "telegram": config.channels.telegram.message_max_chars,
+            "discord": config.channels.discord.message_max_chars,
+        },
+    )
+    automation_audit = partial(_record_automation_event, database, owner.id)
     service = TurnService(
         owner_id=owner.id,
         model=config.agent.model,
@@ -433,17 +445,13 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             wake_threshold=5,
         ),
         automation_gate=lambda: not automation_control.status().halted,
+        automation_continuation=TaskApprovalContinuation(
+            task_runs,
+            delivery=task_delivery,
+            audit=automation_audit,
+        ),
         state_home=paths.home,
         workspace=effective_workspace,
-    )
-    task_delivery = TaskDeliveryService(
-        DeliveryRepository(database),
-        task_runs,
-        channel_max_chars={
-            "feishu": config.channels.feishu.message_max_chars,
-            "telegram": config.channels.telegram.message_max_chars,
-            "discord": config.channels.discord.message_max_chars,
-        },
     )
     task_runner = TaskRunner(
         task_runs,
@@ -455,12 +463,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         lease_seconds=config.automation.lease_seconds,
         max_concurrent_runs=config.automation.max_concurrent_runs,
         delivery=task_delivery,
-        audit=lambda event_type, metadata: _record_automation_event(
-            database,
-            owner.id,
-            event_type,
-            metadata,
-        ),
+        audit=automation_audit,
     )
     scheduler = Scheduler(
         scheduled_tasks,

@@ -54,6 +54,7 @@ class AgentRunBudget:
 
     max_turns: int
     max_tool_calls: int
+    timeout_seconds: int = 600
     max_input_tokens: int = 64_000
     max_output_tokens: int = 16_000
     max_cost_microusd: int | None = None
@@ -63,6 +64,7 @@ class AgentRunBudget:
         for name in (
             "max_turns",
             "max_tool_calls",
+            "timeout_seconds",
             "max_input_tokens",
             "max_output_tokens",
         ):

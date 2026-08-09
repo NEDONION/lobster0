@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest import mock
 
 from miniclaw.agent.turn import TurnExecutionProfile, TurnResult
 from miniclaw.automation.models import (
@@ -18,6 +19,7 @@ from miniclaw.automation.models import (
 )
 from miniclaw.automation.repository import (
     AutomationControlRepository,
+    AutomationStateError,
     ScheduledTaskRepository,
     TaskRunRepository,
 )
@@ -307,6 +309,47 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(stored.worker_id)
         self.assertIsNone(stored.lease_expires_at)
 
+    async def test_waiting_run_resumes_only_with_bound_approval_id(self) -> None:
+        """审批 continuation 只能用当前 Run 绑定的 Approval 重新取得 lease。"""
+        approval = ApprovalRepository(self.database, clock=lambda: self.now).create_waiting(
+            ToolContext(
+                user_id=self.owner.id,
+                session_id=self.session.id,
+                turn_id=self.turn.id,
+                state_home=Path(self.temporary_directory.name),
+                workspace=Path(self.temporary_directory.name),
+                read_only_roots=(),
+            ),
+            ToolCall("call_resume", "read_file", {"path": "status.txt"}),
+            {"path": "status.txt"},
+            PolicyDecision(PolicyAction.REQUIRE_APPROVAL, "approval_required"),
+            ttl_seconds=600,
+            summary="read_file status.txt",
+        )
+        waiting = await self._runner(
+            _FakeAutomationTurns([self._result(approval_id=approval.id)])
+        ).run_once("worker-a", self.now)
+
+        with self.assertRaisesRegex(AutomationStateError, "task_run_transition"):
+            self.runs.resume_waiting(
+                waiting.run_id,
+                approval.id + 1,
+                worker_id="approval-continuation",
+                now=self.now,
+                lease_seconds=10,
+            )
+        resumed = self.runs.resume_waiting(
+            waiting.run_id,
+            approval.id,
+            worker_id="approval-continuation",
+            now=self.now,
+            lease_seconds=10,
+        )
+
+        self.assertEqual(resumed.status, RunStatus.RUNNING)
+        self.assertEqual(resumed.worker_id, "approval-continuation")
+        self.assertIsNotNone(resumed.lease_expires_at)
+
     async def test_timeout_marks_terminal_and_leaves_no_renewal_task(self) -> None:
         """wall-clock timeout 必须结算 timed_out，不能遗留 lease coroutine。"""
         attempt = await self._runner(
@@ -340,6 +383,27 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         recovered = runner.recover_startup(now=self.now + timedelta(seconds=11))
 
         self.assertEqual((recovered.requeued, recovered.interrupted), (1, 1))
+
+    async def test_worker_loop_survives_unexpected_repository_failure(self) -> None:
+        """单次 claim 异常只能进入退避，不能永久杀死后台 Worker。"""
+        runner = self._runner(_FakeAutomationTurns([]))
+        original = runner.run_once
+        calls = 0
+
+        async def flaky_run_once(worker_id: str, now: datetime):
+            """第一次模拟 SQLite 故障，之后回到空队列。"""
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise RuntimeError("repository unavailable")
+            return await original(worker_id, now)
+
+        with mock.patch.object(runner, "run_once", side_effect=flaky_run_once):
+            await runner.start()
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            self.assertTrue(runner.running)
+            await runner.stop()
 
 
 if __name__ == "__main__":

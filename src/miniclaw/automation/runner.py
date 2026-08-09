@@ -330,7 +330,18 @@ class TaskRunner:
     async def _worker_loop(self, worker_id: str) -> None:
         """串行 claim Run；空队列用 Event 等待且不阻塞事件循环。"""
         while not self._stopping:
-            attempt = await self.run_once(worker_id, self._now())
+            try:
+                attempt = await self.run_once(worker_id, self._now())
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 - 单次 Repository 故障不能杀死常驻 Worker
+                _LOGGER.warning("automation_worker_iteration_failed", exc_info=False)
+                self._wake_event.clear()
+                try:
+                    await asyncio.wait_for(self._wake_event.wait(), timeout=1.0)
+                except TimeoutError:
+                    pass
+                continue
             if attempt is not None:
                 continue
             self._wake_event.clear()
@@ -415,6 +426,7 @@ def _agent_budget(snapshot: TaskRunSnapshot) -> AgentRunBudget:
     return AgentRunBudget(
         max_turns=budget.max_turns,
         max_tool_calls=budget.max_tool_calls,
+        timeout_seconds=budget.timeout_seconds,
         max_input_tokens=budget.max_input_tokens,
         max_output_tokens=budget.max_output_tokens,
         max_cost_microusd=budget.max_cost_microusd,

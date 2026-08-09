@@ -7,7 +7,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 from uuid import uuid4
 
 from miniclaw.agent.compaction import ContextCompactor
@@ -92,6 +92,37 @@ class TurnExecutionProfile:
             raise ValueError("automation turn profile is incomplete")
 
 
+class AutomationApprovalContinuation(Protocol):
+    """收窄 TurnService 对 durable TaskRun 审批续跑的状态机依赖。"""
+
+    def begin(self, profile: TurnExecutionProfile, approval_id: int) -> None:
+        """在任何已批准 Tool side effect 前恢复绑定的 waiting Run。"""
+        ...
+
+    def settle(
+        self,
+        profile: TurnExecutionProfile,
+        approval_id: int,
+        result: TurnResult,
+    ) -> None:
+        """把 continuation 的 Approval 或 terminal result 写回 TaskRun。"""
+        ...
+
+    def fail(
+        self,
+        profile: TurnExecutionProfile,
+        approval_id: int,
+        *,
+        error_code: str,
+        session_id: int,
+        turn_id: int | None,
+        interrupted: bool = False,
+        timed_out: bool = False,
+    ) -> None:
+        """以稳定错误码结算已经开始但失败的 continuation。"""
+        ...
+
+
 class TurnService:
     """协调 Session、Context、Runner 与终态持久化。"""
 
@@ -109,6 +140,7 @@ class TurnService:
         compactor: ContextCompactor | None = None,
         memory_capture: MemoryCapture | None = None,
         automation_gate: Callable[[], bool] | None = None,
+        automation_continuation: AutomationApprovalContinuation | None = None,
         state_home: Path,
         workspace: WorkspaceConfig,
     ) -> None:
@@ -123,6 +155,7 @@ class TurnService:
             context: 负责身份文件与历史组合的 ContextBuilder。
             runner: 负责模型与 Tool Call 循环的 AgentRunner。
             memory_capture: 可选的 completed Turn durable capture，不运行提取器。
+            automation_continuation: 可选的 durable TaskRun 审批续跑结算器。
             state_home: 当前实例的状态根目录。
             workspace: 当前可写与额外只读文件边界。
         """
@@ -139,6 +172,7 @@ class TurnService:
         self._compactor = compactor
         self._memory_capture = memory_capture
         self._automation_gate = automation_gate
+        self._automation_continuation = automation_continuation
         self._state_home = state_home
         self._workspace = workspace
 
@@ -509,17 +543,37 @@ class TurnService:
         parent = self._turns.get(approval.turn_id)
         if parent.status != "waiting_approval":
             raise ApprovalError("already_decided", "approval Turn is not waiting")
+        profile = self._continuation_profile(parent.runtime_snapshot)
 
         approved = decision is not ApprovalDecision.DENY
-        if approved:
-            self._approvals.validate_decision(user_id, approval_id, decision)
-            if approval.status == "pending":
-                self._approvals.approve(user_id, approval_id)
-            elif approval.status != "approved":
-                raise ApprovalError("already_decided", "approval is not pending")
-            run = self._approvals.consume(user_id, approval_id)
-        else:
-            run = self._approvals.deny(user_id, approval_id)
+        continuation_started = False
+        try:
+            if approved:
+                self._approvals.validate_decision(user_id, approval_id, decision)
+                if approval.status == "pending":
+                    self._approvals.approve(user_id, approval_id)
+                elif approval.status != "approved":
+                    raise ApprovalError("already_decided", "approval is not pending")
+                if profile is not None and self._automation_continuation is not None:
+                    self._automation_continuation.begin(profile, approval_id)
+                    continuation_started = True
+                run = self._approvals.consume(user_id, approval_id)
+            else:
+                if profile is not None and self._automation_continuation is not None:
+                    self._automation_continuation.begin(profile, approval_id)
+                    continuation_started = True
+                run = self._approvals.deny(user_id, approval_id)
+        except Exception:
+            if continuation_started:
+                assert profile is not None and self._automation_continuation is not None
+                self._automation_continuation.fail(
+                    profile,
+                    approval_id,
+                    error_code="approval_continuation_failed",
+                    session_id=parent.session_id,
+                    turn_id=None,
+                )
+            raise
 
         child = self._turns.create_continuation(
             parent.session_id,
@@ -532,15 +586,19 @@ class TurnService:
             parent.runtime_snapshot,
             user_id=user_id,
         )
-        profile = self._continuation_profile(parent.runtime_snapshot)
         started = time.monotonic()
+        deadline = (
+            None
+            if profile is None or profile.budget is None
+            else asyncio.get_running_loop().time() + profile.budget.timeout_seconds
+        )
         try:
             await emit(
                 on_event,
                 RunEvent("turn_started", child.id, {"session_id": parent.session_id}),
             )
             if approved:
-                model_text = await self._runner.execute_approved(
+                approved_execution = self._runner.execute_approved(
                     self._tool_context(
                         user_id,
                         parent.session_id,
@@ -553,6 +611,11 @@ class TurnService:
                     decision,
                     on_event,
                 )
+                if deadline is None:
+                    model_text = await approved_execution
+                else:
+                    async with asyncio.timeout_at(deadline):
+                        model_text = await approved_execution
             else:
                 model_text = ToolResult.failure(
                     "approval_denied",
@@ -599,7 +662,7 @@ class TurnService:
                         **_automation_snapshot(profile),
                     },
                 )
-            result = await self._runner.run(
+            agent_execution = self._runner.run(
                 request,
                 on_text,
                 tool_context=self._tool_context(
@@ -617,9 +680,14 @@ class TurnService:
                 on_event=on_event,
                 budget=None if profile is None else profile.budget,
             )
+            if deadline is None:
+                result = await agent_execution
+            else:
+                async with asyncio.timeout_at(deadline):
+                    result = await agent_execution
             if result.error_code is not None:
                 self._turns.fail(child.id, result.error_code, result.error_code)
-                return TurnResult(
+                turn_result = TurnResult(
                     turn_id=child.id,
                     session_id=parent.session_id,
                     content="",
@@ -630,6 +698,10 @@ class TurnService:
                     approval_id=None,
                     error_code=result.error_code,
                 )
+                if continuation_started:
+                    assert profile is not None and self._automation_continuation is not None
+                    self._automation_continuation.settle(profile, approval_id, turn_result)
+                return turn_result
             assistant = self._persist_result(
                 child.id,
                 parent.session_id,
@@ -649,8 +721,49 @@ class TurnService:
                         },
                     ),
                 )
+        except TimeoutError:
+            self._turns.fail(child.id, "task_timeout", "task_timeout")
+            if continuation_started:
+                assert profile is not None and self._automation_continuation is not None
+                self._automation_continuation.fail(
+                    profile,
+                    approval_id,
+                    error_code="task_timeout",
+                    session_id=parent.session_id,
+                    turn_id=child.id,
+                    timed_out=True,
+                )
+            await emit(
+                on_event,
+                RunEvent(
+                    "turn_failed",
+                    child.id,
+                    {"error_code": "task_timeout", "duration_ms": _elapsed_ms(started)},
+                ),
+            )
+            return TurnResult(
+                turn_id=child.id,
+                session_id=parent.session_id,
+                content="",
+                input_tokens=0,
+                output_tokens=0,
+                provider_request_id=None,
+                message_id=None,
+                approval_id=None,
+                error_code="task_timeout",
+            )
         except asyncio.CancelledError:
             self._turns.cancel(child.id)
+            if continuation_started:
+                assert profile is not None and self._automation_continuation is not None
+                self._automation_continuation.fail(
+                    profile,
+                    approval_id,
+                    error_code="task_cancelled",
+                    session_id=parent.session_id,
+                    turn_id=child.id,
+                    interrupted=True,
+                )
             await emit(
                 on_event,
                 RunEvent(
@@ -663,6 +776,15 @@ class TurnService:
         except (ContextError, ConversationDataError, AgentError, ProviderError) as error:
             error_code = _error_code(error)
             self._turns.fail(child.id, error_code, str(error))
+            if continuation_started:
+                assert profile is not None and self._automation_continuation is not None
+                self._automation_continuation.fail(
+                    profile,
+                    approval_id,
+                    error_code=error_code,
+                    session_id=parent.session_id,
+                    turn_id=child.id,
+                )
             await emit(
                 on_event,
                 RunEvent(
@@ -676,7 +798,7 @@ class TurnService:
             )
             raise
 
-        return TurnResult(
+        turn_result = TurnResult(
             turn_id=child.id,
             session_id=parent.session_id,
             content=result.content,
@@ -688,6 +810,10 @@ class TurnService:
             terminal_response=result.terminal_response,
             error_code=result.error_code,
         )
+        if continuation_started:
+            assert profile is not None and self._automation_continuation is not None
+            self._automation_continuation.settle(profile, approval_id, turn_result)
+        return turn_result
 
     def _tool_context(
         self,
@@ -740,6 +866,7 @@ class TurnService:
             parsed_budget = AgentRunBudget(
                 max_turns=cast(int, budget.get("max_turns")),
                 max_tool_calls=cast(int, budget.get("max_tool_calls")),
+                timeout_seconds=cast(int, budget.get("timeout_seconds")),
                 max_input_tokens=cast(int, budget.get("max_input_tokens")),
                 max_output_tokens=cast(int, budget.get("max_output_tokens")),
                 max_cost_microusd=cast(int | None, budget.get("max_cost_microusd")),
@@ -908,6 +1035,7 @@ def _automation_snapshot(profile: TurnExecutionProfile) -> dict[str, JsonValue]:
         "automation_budget": {
             "max_turns": budget.max_turns,
             "max_tool_calls": budget.max_tool_calls,
+            "timeout_seconds": budget.timeout_seconds,
             "max_input_tokens": budget.max_input_tokens,
             "max_output_tokens": budget.max_output_tokens,
             "max_cost_microusd": budget.max_cost_microusd,

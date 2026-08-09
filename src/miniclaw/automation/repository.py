@@ -848,6 +848,43 @@ class TaskRunRepository:
             ).fetchone()
         return _run_from_row(row)
 
+    def resume_waiting(
+        self,
+        run_id: int,
+        approval_id: int,
+        *,
+        worker_id: str,
+        now: datetime,
+        lease_seconds: int,
+    ) -> TaskRun:
+        """用绑定的 Approval 把 waiting Run 原子恢复为持 lease 的 running。"""
+        if type(approval_id) is not int or approval_id <= 0:
+            raise ValueError("approval_id must be a positive integer")
+        if not isinstance(worker_id, str) or not worker_id.strip():
+            raise ValueError("worker_id must be non-empty")
+        if type(lease_seconds) is not int or lease_seconds < 10:
+            raise ValueError("lease_seconds must be an integer of at least 10")
+        current = _as_utc(now, "approval continuation time")
+        lease = current + timedelta(seconds=lease_seconds)
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            _raise_if_halted(connection)
+            updated = connection.execute(
+                """
+                UPDATE task_runs
+                SET status = 'running', worker_id = ?, lease_expires_at = ?,
+                    approval_id = NULL
+                WHERE id = ? AND status = 'waiting_approval' AND approval_id = ?
+                """,
+                (worker_id.strip(), lease.isoformat(), run_id, approval_id),
+            )
+            if updated.rowcount != 1:
+                raise AutomationStateError("task_run_transition")
+            row = connection.execute(
+                "SELECT * FROM task_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+        return _run_from_row(row)
+
     def finish(
         self,
         run_id: int,
