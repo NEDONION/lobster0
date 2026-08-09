@@ -1,0 +1,31 @@
+---
+title: 多入口
+description: TUI、飞书、Telegram 和 Discord 如何接入同一个 MiniClaw Core。
+---
+
+## 四个入口
+
+- **TUI：**本地主界面，适合初次配置、审批与排障。
+- **飞书：**工作场景入口，拥有独立 Transport 与 Delivery 边界。
+- **Telegram：**移动消息入口，队列和运行状态独立。
+- **Discord：**社区消息入口，平台故障不会共享给其他 Channel。
+
+## 配置顺序
+
+1. 先按[安装与启动](/docs/getting-started)让 TUI 与 Provider 正常工作。
+2. 在本地 `.env` 中填写目标平台需要的凭据，绝不提交真实 Secret。
+3. 运行 Doctor 和对应的离线 Channel gate。
+4. 再进行目标平台的真实回调、消息接收与发送验证。
+
+## 如何解读门禁
+
+仓库保留飞书 12 条，以及 Telegram、Discord 各 10 条 versioned case；连同共享场景组成 33 条
+Channel cases。fake SDK 与本地 soak 验证实现语义和稳定性，但不能替代平台网络、权限、回调配置
+与真实身份的验收。
+
+> **Live 状态**
+>
+> Implementation PASS 不应写成 Live PASS。部署前请查看当前发布证据，确认目标平台的真实平台
+> Live Gate 是否已经完成；未完成时应明确记录剩余验证。
+
+场景源文件位于 [evals](https://github.com/NEDONION/miniclaw/tree/main/evals)。

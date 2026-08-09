@@ -1,0 +1,4 @@
+{
+  "title": "MiniClaw 文档",
+  "pages": ["index", "getting-started", "runtime", "security", "channels", "memory"]
+}

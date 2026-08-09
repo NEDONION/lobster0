@@ -1333,6 +1333,27 @@ pre {
   font-size: 0.78rem;
 }
 
+.docs-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 720;
+  letter-spacing: -0.025em;
+}
+
+.docs-brand > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--signal);
+  color: white;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  box-shadow: 0 7px 18px color-mix(in srgb, var(--signal) 22%, transparent);
+}
+
 @media (max-width: 1040px) {
   .claw-trace li {
     grid-template-columns: 18px 26px minmax(145px, 1fr) auto;

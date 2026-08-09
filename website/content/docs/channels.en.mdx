@@ -1,0 +1,31 @@
+---
+title: Surfaces
+description: How TUI, Feishu, Telegram, and Discord connect to the same MiniClaw core.
+---
+
+## Four surfaces
+
+- **TUI:** the local primary interface for setup, approval, and diagnostics.
+- **Feishu:** a work surface with isolated Transport and Delivery boundaries.
+- **Telegram:** a mobile messaging surface with its own queue and runtime state.
+- **Discord:** a community surface whose platform failure state remains isolated.
+
+## Configuration order
+
+1. Follow [Install and run](/en/docs/getting-started) until the TUI and Provider work.
+2. Add target platform credentials to local `.env` configuration; never commit a real secret.
+3. Run Doctor and the offline Channel gate for that platform.
+4. Then verify real callback, receive, and send behavior on the target platform.
+
+## Reading gate results
+
+The repository preserves 12 Feishu cases and 10 cases each for Telegram and Discord; together with shared
+scenarios they form 33 Channel cases. Fake SDK and local soak evidence validate implementation semantics
+and stability, not platform networking, permissions, callback configuration, or real identity.
+
+> **Live status**
+>
+> Never rewrite Implementation PASS as Live PASS. Before deployment, inspect current release evidence for
+> the target platform's real-platform Live Gate and record any remaining validation explicitly.
+
+The source scenarios live under [evals](https://github.com/NEDONION/miniclaw/tree/main/evals).

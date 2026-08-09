@@ -1,0 +1,28 @@
+---
+title: 记忆
+description: Owner Memory 的 Markdown Truth、SQLite Projection 与跨渠道边界。
+---
+
+## Owner 是边界
+
+长期记忆属于 Owner。只有解析为同一个 Owner 的会话才能共享 Owner Memory；Channel 名称本身不是
+授权依据。
+
+## Markdown Truth
+
+Markdown 文件是长期事实源：可读、可审查、可版本化，也便于所有者直接修正。长期事实不应只存在于
+不可解释的索引或模型上下文中。
+
+## SQLite Projection
+
+SQLite 保存结构化 control plane 与可重建投影。它帮助检索、关联和治理，但不取代 Markdown Truth。
+如果投影损坏，应能够从事实源重建。
+
+## 披露边界
+
+- Secret 不写入 Memory。
+- 工具输出进入长期记忆前需要明确语义和所有者边界。
+- 跨渠道共享只发生在同一个 Owner 上下文内。
+- 删除或修正长期事实时，应同步重建相关投影。
+
+更深入的数据职责见[系统架构](https://github.com/NEDONION/miniclaw/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md)。
