@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import re
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import uuid4
@@ -17,8 +17,11 @@ from miniclaw.channels.base import (
     SendReceipt,
     sanitize_inbound_text,
 )
+from miniclaw.channels.discord_rendering import (
+    render_discord_progress,
+    render_discord_text,
+)
 from miniclaw.channels.experience import ProgressReceipt
-from miniclaw.channels.feishu_cards import render_compact_progress
 from miniclaw.channels.observability import ChannelObserver
 from miniclaw.channels.progress import AgentProgress
 from miniclaw.config import DiscordConfig
@@ -354,10 +357,16 @@ class DiscordTransport:
         match = _MULTIPART_PREFIX.match(message.content)
         if match is not None and int(match.group(1)) > 1:
             reply_to = None
+        visible = render_discord_text(
+            message.content,
+            max_chars=self._config.message_max_chars,
+        )
+        if visible is None:
+            raise ChannelTransportError("discord_format_error")
         return await self._send_text(
             target_id=target_id,
             reply_to_message_id=reply_to,
-            text=message.content,
+            text=visible,
         )
 
     async def start_typing(self, event: StoredInboundEvent) -> str | None:
@@ -405,7 +414,10 @@ class DiscordTransport:
         receipt = await self._send_text(
             target_id=_target_from_conversation(event.external_conversation_id),
             reply_to_message_id=_parse_snowflake_text(event.reply_to_message_id),
-            text=_bounded_discord_text(render_compact_progress(progress)),
+            text=render_discord_progress(
+                progress,
+                max_chars=self._config.message_max_chars,
+            ),
         )
         return ProgressReceipt(receipt.platform_message_id)
 
@@ -414,13 +426,22 @@ class DiscordTransport:
         platform_message_id: str,
         progress: AgentProgress,
     ) -> ProgressReceipt:
-        """edit 同一 progress，终态只作提示，durable final reply 仍独立发送。"""
+        """edit 同一 progress；完整终态由原消息承载，超限时保留 durable fallback。"""
         target_id, message_id = _parse_platform_message(platform_message_id)
-        display = replace(progress, final_answer="")
-        visible = render_compact_progress(display)
-        if progress.status == "completed":
-            visible += "\n\n最终内容见下一条消息"
-        visible = _bounded_discord_text(visible)
+        visible_answer_chars = 0
+        visible = None
+        if progress.status in {"completed", "incomplete"} and progress.final_answer:
+            visible = render_discord_text(
+                progress.final_answer,
+                max_chars=self._config.message_max_chars,
+            )
+            if visible is not None:
+                visible_answer_chars = len(progress.final_answer)
+        if visible is None:
+            visible = render_discord_progress(
+                progress,
+                max_chars=self._config.message_max_chars,
+            )
         try:
             result = await self._client.edit_message(
                 target_id=target_id,
@@ -432,7 +453,7 @@ class DiscordTransport:
             raise _discord_error(error, operation="progress") from None
         if result is False:
             raise ChannelTransportError("discord_progress_failed")
-        return ProgressReceipt(platform_message_id)
+        return ProgressReceipt(platform_message_id, visible_answer_chars)
 
     async def _send_text(
         self,
@@ -747,10 +768,6 @@ def _parse_platform_message(value: str) -> tuple[int, int]:
     if not _snowflake(target_id) or not _snowflake(message_id):
         raise ChannelTransportError("discord_target_invalid")
     return target_id, message_id
-
-
-def _bounded_discord_text(text: str) -> str:
-    return text[:2000]
 
 
 def _discord_error(error: BaseException, *, operation: str) -> ChannelTransportError:
