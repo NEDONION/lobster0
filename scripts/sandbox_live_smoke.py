@@ -70,7 +70,7 @@ async def _run(args: argparse.Namespace) -> int:
             cpu_seconds=10,
             pids_limit=64,
             network_mode="none",
-            backend=cast(SandboxBackendName, backend_name),
+            backend=cast(SandboxBackendName, args.backend),
         )
         receipt: ExecutionReceipt = await backend.execute(plan)
         safe = (

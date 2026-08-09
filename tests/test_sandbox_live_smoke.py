@@ -3,12 +3,39 @@
 import argparse
 import io
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
+from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
 from miniclaw.sandbox.docker import RootlessClientTransport
 from scripts import sandbox_live_smoke
+
+
+class _SuccessfulDockerBackend:
+    """模拟外部 daemon 成功执行，同时保留收到的真实 ExecutionPlan。"""
+
+    def __init__(self) -> None:
+        """初始化尚未执行的 plan 观察值。"""
+        self.plan: ExecutionPlan | None = None
+
+    async def execute(self, plan: ExecutionPlan) -> ExecutionReceipt:
+        """写入 containment probe 结果并返回绑定真实 plan hash 的 receipt。"""
+        self.plan = plan
+        (plan.cwd / "result.txt").write_text("workspace-write-ok", encoding="utf-8")
+        return ExecutionReceipt(
+            plan_hash=plan.sha256,
+            backend="docker",
+            exit_code=0,
+            signal=None,
+            timed_out=False,
+            stdout="outside-secret-denied\nnetwork-denied\n",
+            stderr="",
+            stdout_truncated=False,
+            stderr_truncated=False,
+            duration_ms=1,
+            changed_paths=(),
+        )
 
 
 class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
@@ -30,6 +57,39 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, 2)
         self.assertIn("--engine is required", error.getvalue())
+
+    async def test_successful_rootless_run_keeps_docker_plan_backend(self) -> None:
+        """Rootless engine 只用于发现/报告，immutable plan backend 必须仍为 docker。"""
+        arguments = argparse.Namespace(
+            backend="docker",
+            engine="podman-rootless",
+            confirm_live=True,
+            image="example/miniclaw@sha256:" + "a" * 64,
+            executable=None,
+        )
+        backend = _SuccessfulDockerBackend()
+        output = io.StringIO()
+
+        with (
+            mock.patch(
+                "scripts.sandbox_live_smoke._rootless_backend",
+                return_value=(backend, "podman-rootless"),
+            ),
+            redirect_stdout(output),
+        ):
+            try:
+                result = await sandbox_live_smoke._run(arguments)
+            except SandboxPlanError as error:
+                self.fail(f"rootless smoke constructed an invalid plan: {error.code}")
+
+        self.assertEqual(result, 0)
+        self.assertIsNotNone(backend.plan)
+        assert backend.plan is not None
+        self.assertEqual(backend.plan.backend, "docker")
+        self.assertEqual(
+            output.getvalue(),
+            "engine=podman-rootless containment=PASS\n",
+        )
 
     def test_rootless_backend_uses_production_discovery_and_stable_identity(self) -> None:
         """Smoke handoff 必须使用生产 transport，并仅返回稳定 engine identity。"""
