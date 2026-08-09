@@ -14,8 +14,24 @@ test('marketing page keeps its dense three-screen interaction contract', async (
   await page.goto('/');
 
   await expect(page.locator('main > section.marketing-section')).toHaveCount(3);
+  await expect(page.locator('[data-brand-mark]').first()).toBeVisible();
+  await expect(page.locator('.hero-surface-card')).toHaveCount(4);
   await expect(page.getByRole('tablist').nth(0).getByRole('tab')).toHaveCount(5);
   await expect(page.getByRole('tablist').nth(1).getByRole('tab')).toHaveCount(3);
+
+  const heroSize = await page
+    .locator('#hero-title')
+    .evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+  const sectionSize = await page
+    .locator('#product-title')
+    .evaluate((node) => parseFloat(getComputedStyle(node).fontSize));
+  const signalDuration = await page
+    .locator('.hero-network__signal')
+    .first()
+    .evaluate((node) => parseFloat(getComputedStyle(node).animationDuration));
+  expect(heroSize).toBeLessThanOrEqual(54);
+  expect(sectionSize).toBeLessThanOrEqual(36);
+  expect(signalDuration).toBeGreaterThan(0);
 
   await page.goto('/#safety');
   await expect(page.locator('#safety-tab')).toHaveAttribute('aria-selected', 'true');
@@ -45,7 +61,7 @@ test('marketing page keeps its dense three-screen interaction contract', async (
 
   await page.getByRole('link', { exact: true, name: 'English' }).click();
   await expect(page).toHaveURL('/en');
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Small by design. Ready to act.');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your local agent, ready to act.');
   expect(pageErrors).toEqual([]);
 });
 
@@ -56,4 +72,9 @@ test('reduced motion renders the final trace and static tab state immediately', 
   await expect(page.locator('.claw-trace li').last()).toHaveAttribute('aria-current', 'step');
   await expect(page.locator('.claw-trace li').last()).toHaveAttribute('data-state', 'active');
   await expect(page.locator('#memory-panel')).toHaveAttribute('data-reduced-motion', 'true');
+  const signalDuration = await page
+    .locator('.hero-network__signal')
+    .first()
+    .evaluate((node) => parseFloat(getComputedStyle(node).animationDuration));
+  expect(signalDuration).toBeLessThanOrEqual(0.001);
 });

@@ -5,12 +5,13 @@ import { HeroRuntime } from './HeroRuntime';
 import { MarketingFooter } from './MarketingFooter';
 import { MarketingHeader } from './MarketingHeader';
 import { Workbench } from './Workbench';
+import styles from './MarketingHome.module.css';
 
 export function MarketingHome({ locale }: { locale: Locale }) {
   const copy = marketingCopy[locale];
 
   return (
-    <div className="marketing-page">
+    <div className={`${styles.root} marketing-page`}>
       <MarketingHeader locale={locale} />
       <main>
         <HeroRuntime locale={locale} />

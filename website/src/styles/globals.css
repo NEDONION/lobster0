@@ -1,15 +1,17 @@
 @import 'tailwindcss';
 
 :root {
-  --canvas: #f4f6fa;
+  --canvas: #f4f7fb;
   --surface: #ffffff;
-  --ink: #10131a;
+  --ink: #121722;
   --terminal: #171b24;
-  --muted: #667085;
-  --line: #dfe4ec;
-  --signal: #5b6cff;
-  --safe: #73f7c4;
-  --warn: #f2b84b;
+  --muted: #647087;
+  --line: #dce3ee;
+  --signal: #4267f5;
+  --safe: #2caf88;
+  --warn: #e4a93d;
+  --coral: #f16c56;
+  --violet: #7567d9;
   --font-sans: 'Instrument Sans Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
 }
