@@ -1,0 +1,299 @@
+"""MiniClaw fresh setup 的安全配置与交互测试。"""
+
+import contextlib
+import io
+import os
+import stat
+import tempfile
+import unittest
+from pathlib import Path
+from types import TracebackType
+from unittest import mock
+
+from miniclaw.config import load_config
+from miniclaw.paths import build_state_paths
+from miniclaw.setup import (
+    SetupAnswers,
+    SetupError,
+    run_interactive_setup,
+    validate_secret_value,
+    write_fresh_setup,
+)
+
+PINNED_IMAGE = "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64
+
+
+class _FakeTty:
+    """提供独立读写缓冲的最小双工 TTY fake。"""
+
+    def __init__(self, responses: list[str]) -> None:
+        """保存依次返回的非 Secret 回答。"""
+        self._responses = iter(responses)
+        self.output = io.StringIO()
+
+    def __enter__(self) -> "_FakeTty":
+        """把 fake 作为 context manager 返回。"""
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """保持测试缓冲可读，不吞掉异常。"""
+        del exc_type, exc_value, traceback
+
+    def readline(self) -> str:
+        """返回下一条预置回答。"""
+        return next(self._responses)
+
+    def write(self, value: str) -> int:
+        """记录非 Secret 提示文本。"""
+        return self.output.write(value)
+
+    def flush(self) -> None:
+        """匹配真实 TTY 的 flush 接口。"""
+
+
+class SetupTest(unittest.TestCase):
+    """验证 setup 只写 fresh、私密且可加载的本地状态。"""
+
+    def setUp(self) -> None:
+        """为每个测试准备尚不存在的状态根。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.root = Path(self.temporary_directory.name)
+        self.paths = build_state_paths(self.root / "state")
+
+    def test_fresh_setup_writes_private_config_and_secrets_without_echo(self) -> None:
+        """启用飞书时应写固定 env 名、私密文件且配置不含 Secret。"""
+        answers = SetupAnswers(
+            enable_feishu=True,
+            feishu_owner_open_id="ou_owner",
+            enable_telegram=False,
+            telegram_owner_user_id=None,
+            enable_discord=False,
+            discord_owner_user_id=None,
+        )
+        secrets = {
+            "MINICLAW_MODEL_API_KEY": "sentinel-model-key",
+            "MINICLAW_FEISHU_APP_ID": "cli_app",
+            "MINICLAW_FEISHU_APP_SECRET": "sentinel-app-secret",
+        }
+
+        with mock.patch("miniclaw.setup.os.fsync", wraps=os.fsync) as fsync:
+            result = write_fresh_setup(
+                self.paths,
+                answers,
+                secrets,
+                sandbox_image=PINNED_IMAGE,
+            )
+
+        self.assertEqual(stat.S_IMODE(self.paths.home.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(self.paths.config.stat().st_mode), 0o600)
+        self.assertEqual(stat.S_IMODE(self.paths.secrets_file.stat().st_mode), 0o600)
+        self.assertEqual(fsync.call_count, 2)
+        config = load_config(self.paths, {})
+        self.assertTrue(config.channels.feishu.enabled)
+        self.assertFalse(config.channels.telegram.enabled)
+        self.assertFalse(config.channels.discord.enabled)
+        self.assertEqual(config.sandbox.image, PINNED_IMAGE)
+        config_text = self.paths.config.read_text(encoding="utf-8")
+        self.assertNotIn("sentinel", config_text)
+        self.assertIn('app_id_env = "MINICLAW_FEISHU_APP_ID"', config_text)
+        self.assertIn('app_secret_env = "MINICLAW_FEISHU_APP_SECRET"', config_text)
+        self.assertEqual(
+            self.paths.secrets_file.read_text(encoding="utf-8"),
+            "MINICLAW_MODEL_API_KEY=sentinel-model-key\n"
+            "MINICLAW_FEISHU_APP_ID=cli_app\n"
+            "MINICLAW_FEISHU_APP_SECRET=sentinel-app-secret\n",
+        )
+        self.assertGreater(result.owner.id, 0)
+
+    def test_setup_refuses_existing_files_and_unsafe_secret_text(self) -> None:
+        """已有 config/Secret 与 dotenv 不安全值都必须在合并前拒绝。"""
+        self.paths.home.mkdir(mode=0o700)
+        self.paths.config.write_text("owned", encoding="utf-8")
+        with self.assertRaisesRegex(SetupError, "already exists"):
+            write_fresh_setup(
+                self.paths,
+                SetupAnswers.defaults(),
+                {"MINICLAW_MODEL_API_KEY": "x"},
+                sandbox_image=PINNED_IMAGE,
+            )
+
+        self.paths.config.unlink()
+        self.paths.secrets_file.write_text("owned", encoding="utf-8")
+        with self.assertRaisesRegex(SetupError, "already exists"):
+            write_fresh_setup(
+                self.paths,
+                SetupAnswers.defaults(),
+                {"MINICLAW_MODEL_API_KEY": "x"},
+                sandbox_image=PINNED_IMAGE,
+            )
+        self.assertFalse(self.paths.config.exists())
+
+        for value in ("", " leading", "trailing ", "'quoted", '"quoted', "a\rb", "a\nb", "a\0b"):
+            with self.subTest(value=repr(value)), self.assertRaisesRegex(
+                SetupError, "unsafe secret"
+            ):
+                validate_secret_value(value)
+        self.assertEqual(validate_secret_value("safe=#value"), "safe=#value")
+
+    def test_setup_rejects_unsafe_home_and_invalid_answers_before_writing(self) -> None:
+        """state home 的 symlink/宽权限与无效 Owner ID 都应 fail closed。"""
+        target = self.root / "target"
+        target.mkdir(mode=0o700)
+        self.paths.home.symlink_to(target, target_is_directory=True)
+        with self.assertRaisesRegex(SetupError, "symbolic link"):
+            write_fresh_setup(
+                self.paths,
+                SetupAnswers.defaults(),
+                {"MINICLAW_MODEL_API_KEY": "x"},
+                sandbox_image=PINNED_IMAGE,
+            )
+        self.paths.home.unlink()
+        self.paths.home.write_text("not a directory", encoding="utf-8")
+        with self.assertRaisesRegex(SetupError, "directory"):
+            write_fresh_setup(
+                self.paths,
+                SetupAnswers.defaults(),
+                {"MINICLAW_MODEL_API_KEY": "x"},
+                sandbox_image=PINNED_IMAGE,
+            )
+        self.paths.home.unlink()
+        self.paths.home.mkdir(mode=0o755)
+        with self.assertRaisesRegex(SetupError, "0700"):
+            write_fresh_setup(
+                self.paths,
+                SetupAnswers.defaults(),
+                {"MINICLAW_MODEL_API_KEY": "x"},
+                sandbox_image=PINNED_IMAGE,
+            )
+
+        self.paths.home.chmod(0o700)
+        invalid_answers = (
+            SetupAnswers(True, "invalid", False, None, False, None),
+            SetupAnswers(False, None, True, True, False, None),
+            SetupAnswers(False, None, False, None, True, 0),
+        )
+        for answers in invalid_answers:
+            with self.subTest(answers=answers), self.assertRaisesRegex(
+                SetupError, "Owner"
+            ):
+                write_fresh_setup(
+                    self.paths,
+                    answers,
+                    {"MINICLAW_MODEL_API_KEY": "x"},
+                    sandbox_image=PINNED_IMAGE,
+                )
+        self.assertFalse(self.paths.config.exists())
+        self.assertFalse(self.paths.secrets_file.exists())
+
+    def test_setup_writes_telegram_and_discord_owner_allowlists(self) -> None:
+        """Telegram/Discord 应使用固定 Token env 名与同一 Owner allowlist。"""
+        answers = SetupAnswers(False, None, True, 123, True, 456)
+        secrets = {
+            "MINICLAW_MODEL_API_KEY": "model",
+            "MINICLAW_TELEGRAM_BOT_TOKEN": "telegram",
+            "MINICLAW_DISCORD_BOT_TOKEN": "discord",
+        }
+
+        write_fresh_setup(self.paths, answers, secrets, PINNED_IMAGE)
+
+        config = load_config(self.paths, {})
+        self.assertEqual(config.channels.telegram.owner_user_id, 123)
+        self.assertEqual(config.channels.telegram.allowed_user_ids, (123,))
+        self.assertEqual(config.channels.discord.owner_user_id, 456)
+        self.assertEqual(config.channels.discord.allowed_user_ids, (456,))
+        self.assertIn(
+            'bot_token_env = "MINICLAW_TELEGRAM_BOT_TOKEN"',
+            self.paths.config.read_text(encoding="utf-8"),
+        )
+        self.assertIn(
+            'bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"',
+            self.paths.config.read_text(encoding="utf-8"),
+        )
+
+    def test_interactive_enabled_channels_hide_every_credential(self) -> None:
+        """启用三个 Channel 时所有凭据都必须通过 getpass 且不回显。"""
+        tty = _FakeTty(["y\n", "ou_owner\n", "y\n", "123\n", "y\n", "456\n"])
+        sentinels = ["model", "app-id", "app-secret", "telegram", "discord"]
+
+        with (
+            mock.patch("miniclaw.setup._open_tty", return_value=tty),
+            mock.patch("miniclaw.setup.getpass.getpass", side_effect=sentinels) as hidden,
+        ):
+            run_interactive_setup(self.paths, sandbox_image=PINNED_IMAGE)
+
+        self.assertEqual(hidden.call_count, 5)
+        self.assertEqual(
+            [call.args[0] for call in hidden.call_args_list],
+            [
+                "Model API key: ",
+                "Feishu App ID: ",
+                "Feishu App Secret: ",
+                "Telegram Bot token: ",
+                "Discord Bot token: ",
+            ],
+        )
+        visible = tty.output.getvalue()
+        self.assertTrue(all(sentinel not in visible for sentinel in sentinels))
+
+    def test_setup_requires_exact_fixed_secret_names_for_enabled_channels(self) -> None:
+        """Secret 文件只接受模型与已启用 Channel 的固定变量名。"""
+        answers = SetupAnswers(True, "ou_owner", False, None, False, None)
+        cases = (
+            {"MINICLAW_MODEL_API_KEY": "x"},
+            {
+                "MINICLAW_MODEL_API_KEY": "x",
+                "MINICLAW_FEISHU_APP_ID": "id",
+                "MINICLAW_FEISHU_APP_SECRET": "secret",
+                "UNEXPECTED_TOKEN": "secret",
+            },
+        )
+        for secrets in cases:
+            with self.subTest(names=tuple(secrets)), self.assertRaisesRegex(
+                SetupError, "required Secret names"
+            ):
+                write_fresh_setup(
+                    self.paths,
+                    answers,
+                    secrets,
+                    sandbox_image=PINNED_IMAGE,
+                )
+        self.assertFalse(self.paths.config.exists())
+
+    def test_interactive_setup_reads_tty_and_uses_getpass_with_zero_channels(self) -> None:
+        """交互 setup 应允许零 Channel，并只用 getpass 读取模型 Secret。"""
+        tty = _FakeTty(["n\n", "n\n", "n\n"])
+        sentinel = "interactive-sentinel"
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with (
+            mock.patch("miniclaw.setup._open_tty", return_value=tty) as open_tty,
+            mock.patch("miniclaw.setup.getpass.getpass", return_value=sentinel) as hidden,
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+        ):
+            result = run_interactive_setup(self.paths, sandbox_image=PINNED_IMAGE)
+
+        open_tty.assert_called_once_with()
+        hidden.assert_called_once_with("Model API key: ", stream=tty)
+        config = load_config(self.paths, {})
+        self.assertFalse(config.channels.feishu.enabled)
+        self.assertFalse(config.channels.telegram.enabled)
+        self.assertFalse(config.channels.discord.enabled)
+        self.assertEqual(
+            self.paths.secrets_file.read_text(encoding="utf-8"),
+            f"MINICLAW_MODEL_API_KEY={sentinel}\n",
+        )
+        self.assertGreater(result.owner.id, 0)
+        visible = tty.output.getvalue() + stdout.getvalue() + stderr.getvalue()
+        self.assertNotIn(sentinel, visible)
+
+
+if __name__ == "__main__":
+    unittest.main()

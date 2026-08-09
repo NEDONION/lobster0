@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.bootstrap import BootstrapError, initialize_state
-from miniclaw.config import load_config
+from miniclaw.bootstrap import BootstrapError, initialize_state, render_default_config
+from miniclaw.config import ConfigError, load_config
 from miniclaw.paths import build_state_paths
 
 
@@ -131,6 +131,28 @@ class BootstrapTest(unittest.TestCase):
 
         with self.assertRaisesRegex(BootstrapError, "symbolic link"):
             initialize_state(self.paths)
+
+    def test_pinned_sandbox_image_is_rendered_and_strictly_validated(self) -> None:
+        """安装器只可覆盖为 MiniClaw GHCR 的 lowercase sha256 digest。"""
+        pinned = "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64
+
+        result = initialize_state(self.paths, sandbox_image=pinned)
+
+        self.assertGreater(result.owner.id, 0)
+        self.assertEqual(load_config(self.paths, {}, {}).sandbox.image, pinned)
+        self.assertIn(
+            f'image = "{pinned}"',
+            render_default_config(self.paths, sandbox_image=pinned),
+        )
+        for invalid in (
+            "miniclaw-sandbox:latest",
+            "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "A" * 64,
+            "ghcr.io/other/miniclaw-sandbox@sha256:" + "a" * 64,
+        ):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(
+                ConfigError, "digest-pinned"
+            ):
+                render_default_config(self.paths, sandbox_image=invalid)
 
 
 if __name__ == "__main__":
