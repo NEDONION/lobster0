@@ -58,6 +58,7 @@ class FakeRunner:
         self.tui_smoke = b'{"component":"pi-tui","status":"ok","version":"0.7.0"}\n'
         self.before_run: Callable[[tuple[str, ...]], None] | None = None
         self.venv_symlink_target: str | None = None
+        self.miniclaw_mode: int | None = 0o700
 
     def run(
         self,
@@ -85,8 +86,12 @@ class FakeRunner:
                 encoding="utf-8",
             )
             (python.parents[1] / "pyvenv.cfg").chmod(0o600)
-            (python.parent / "miniclaw").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-            (python.parent / "miniclaw").chmod(0o755)
+            if self.miniclaw_mode is not None:
+                (python.parent / "miniclaw").write_text(
+                    "#!/bin/sh\nexit 0\n",
+                    encoding="utf-8",
+                )
+                (python.parent / "miniclaw").chmod(self.miniclaw_mode)
             if self.venv_symlink_target is not None:
                 (python.parent / "escape").symlink_to(self.venv_symlink_target)
         if argv[-1:] == ("--version",) and "/node/" in argv[0]:
@@ -481,6 +486,7 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_system_runtime_is_root_owned_public_program_data_and_activates(self) -> None:
         """system Runtime 的 0700/0600 发布树会让目标用户无法启动。"""
+        (self.node / "README.md").chmod(0o700)
         system_prefix = self.root / "usr-local-lib" / "miniclaw"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
@@ -545,6 +551,19 @@ class InstallRuntimeTests(unittest.TestCase):
                         if path in executable_paths:
                             self.assertEqual(mode & 0o001, 0o001, path)
 
+            self.assertEqual(
+                json.loads(
+                    (layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
+                        encoding="utf-8"
+                    )
+                )["executables"],
+                [
+                    "miniclaw-installer.pyz",
+                    "node/bin/node",
+                    "python/bin/python3.12",
+                    "venv/bin/miniclaw",
+                ],
+            )
             self.assertEqual(os.readlink(layout.current), "runtimes/0.7.0")
             self.assertEqual(
                 RuntimeReceipt.load(
@@ -558,6 +577,7 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_user_runtime_keeps_exact_private_modes(self) -> None:
         """system 权限分支不得把默认用户 Runtime 扩大成 public-readable。"""
+        (self.node / "README.md").chmod(0o700)
         RuntimeBuilder(self.runner).build(self.inputs)
         executable_paths = {
             self.layout.runtime / "miniclaw-installer.pyz",
@@ -576,6 +596,63 @@ class InstallRuntimeTests(unittest.TestCase):
                 if stat.S_ISREG(item.st_mode):
                     expected = 0o700 if path in executable_paths else 0o600
                     self.assertEqual(stat.S_IMODE(item.st_mode), expected, path)
+        self.assertEqual(
+            json.loads(
+                (self.layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
+                    encoding="utf-8"
+                )
+            )["executables"],
+            [
+                "miniclaw-installer.pyz",
+                "node/bin/node",
+                "python/bin/python3.12",
+                "venv/bin/miniclaw",
+            ],
+        )
+
+    def test_user_runtime_requires_executable_miniclaw_entrypoint(self) -> None:
+        """user Runtime 的必需 miniclaw entry script 为 0600 时必须拒绝。"""
+        runner = FakeRunner()
+        runner.miniclaw_mode = 0o600
+
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(runner).build(self.inputs)
+
+        self.assertFalse(self.layout.staging.exists())
+        self.assertFalse(self.layout.runtime.exists())
+
+    def test_system_runtime_requires_present_miniclaw_entrypoint(self) -> None:
+        """system Runtime 也不能在缺少必需 miniclaw entry script 时发布。"""
+        system_prefix = self.root / "missing-entry-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "missing-entry-bin" / "miniclaw"
+        state_home = self.home / "missing-entry-state"
+        state_home.mkdir(mode=0o700)
+        runner = FakeRunner()
+        runner.miniclaw_mode = None
+
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            with (
+                mock.patch.object(runtime_module, "_is_root_builder", return_value=True),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                RuntimeBuilder(runner).build(replace(self.inputs, layout=layout))
+
+        self.assertFalse(layout.staging.exists())
+        self.assertFalse(layout.runtime.exists())
 
     def test_system_runtime_rejects_non_root_before_write(self) -> None:
         """非 root builder 即使持有 system layout 也不能创建任何程序目录。"""
@@ -864,7 +941,6 @@ class InstallRuntimeTests(unittest.TestCase):
         invalid = self._write_runtime_receipt("0.6.0")
         current = self._write_runtime_receipt("0.7.0")
         invalid_node = invalid / "node" / "bin" / "node"
-        invalid_node.parent.mkdir(mode=0o700, parents=True)
         invalid_node.write_bytes(b"invalid mode\n")
         invalid_node.chmod(0o777)
         self.layout.current.symlink_to("runtimes/0.7.0")
@@ -881,7 +957,10 @@ class InstallRuntimeTests(unittest.TestCase):
         valid_previous = self._write_runtime_receipt("0.5.0")
         invalid = self._write_runtime_receipt("0.6.0")
         current = self._write_runtime_receipt("0.7.0")
-        executable_manifest = b'{"executables":["release-manifest.json"]}\n'
+        executable_manifest = (
+            b'{"executables":["miniclaw-installer.pyz","node/bin/node",'
+            b'"python/bin/python3.12","release-manifest.json","venv/bin/miniclaw"]}\n'
+        )
         (invalid / runtime_module._EXECUTABLES_FILENAME).write_bytes(executable_manifest)
         (invalid / runtime_module._EXECUTABLES_FILENAME).chmod(0o600)
         receipt_document = json.loads(
@@ -1056,7 +1135,15 @@ class InstallRuntimeTests(unittest.TestCase):
         """production subprocess runner 必须能在 closed-world env 中完成离线 fake build。"""
         self._write_private(
             self.uv,
-            Path("tests/install/fake_uv.py").read_bytes(),
+            Path("tests/install/fake_uv.py")
+            .read_bytes()
+            .replace(
+                b'(package / "__main__.py").write_bytes(_MINICLAW_MAIN)\n',
+                b'(package / "__main__.py").write_bytes(_MINICLAW_MAIN)\n'
+                b'            entry = python.parent / "miniclaw"\n'
+                b'            entry.write_bytes(b"#!/bin/sh\\nexit 0\\n")\n'
+                b'            entry.chmod(0o700)\n',
+            ),
             0o700,
         )
         self._write_private(
@@ -1454,7 +1541,29 @@ class InstallRuntimeTests(unittest.TestCase):
         runtime.mkdir(mode=0o700)
         manifest = self._manifest_for_version(version)
         artifacts = {artifact.kind: artifact for artifact in manifest.artifacts}
-        executable_manifest = b'{"executables":[]}\n'
+        executable_paths = (
+            "miniclaw-installer.pyz",
+            "node/bin/node",
+            "python/bin/python3.12",
+            "venv/bin/miniclaw",
+        )
+        for relative in executable_paths:
+            executable = runtime.joinpath(*relative.split("/"))
+            executable.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            for parent in executable.parents:
+                if parent == runtime:
+                    break
+                parent.chmod(0o700)
+            executable.write_bytes(b"fixture executable\n")
+            executable.chmod(0o700)
+        executable_manifest = (
+            json.dumps(
+                {"executables": list(executable_paths)},
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode()
         receipt = RuntimeReceipt(
             version=version,
             git_commit=manifest.git_commit,

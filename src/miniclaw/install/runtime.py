@@ -63,6 +63,12 @@ _TRANSIENT_RUNTIME_NAMES = frozenset({".home", ".inputs", ".tmp", ".uv-cache"})
 _RUNTIME_METADATA_PATHS = frozenset(
     {_EXECUTABLES_FILENAME, "install-receipt.json", "release-manifest.json"}
 )
+_REQUIRED_RUNTIME_EXECUTABLES = (
+    "miniclaw-installer.pyz",
+    "node/bin/node",
+    "python/bin/python3.12",
+    "venv/bin/miniclaw",
+)
 _MAX_RECEIPT_BYTES = 64 * 1024
 _MAX_METADATA_BYTES = 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024
@@ -534,10 +540,16 @@ class RuntimeBuilder:
                 _COMMAND_TIMEOUT_SECONDS,
                 (private_tokens["uv"], private_tokens["wheel"]),
             )
-            _harden_and_fsync_tree(inputs.layout.staging, 0o700)
-            executable_paths = _verify_runtime_tree(
+            executable_paths = _required_runtime_executables(inputs.layout.staging)
+            _harden_and_fsync_tree(
+                inputs.layout.staging,
+                0o700,
+                executable_paths=executable_paths,
+            )
+            _verify_runtime_tree(
                 inputs.layout.staging,
                 program_mode=0o700,
+                expected_executables=executable_paths,
                 allow_transient=True,
             )
             executable_manifest = _executable_manifest_bytes(executable_paths)
@@ -564,7 +576,11 @@ class RuntimeBuilder:
                 receipt.to_bytes(),
                 0o600,
             )
-            _harden_and_fsync_tree(inputs.layout.staging, 0o700)
+            _harden_and_fsync_tree(
+                inputs.layout.staging,
+                0o700,
+                executable_paths=executable_paths,
+            )
             _verify_runtime_tree(
                 inputs.layout.staging,
                 program_mode=0o700,
@@ -1759,10 +1775,20 @@ def _copy_verified_file(token: _FileToken, destination: Path, mode: int) -> None
             os.close(destination_descriptor)
 
 
-def _harden_and_fsync_tree(root: Path, program_mode: int) -> None:
-    """按 user/system 程序 mode 收敛 Runtime 并 fsync tree boundary。"""
+def _harden_and_fsync_tree(
+    root: Path,
+    program_mode: int,
+    *,
+    executable_paths: tuple[str, ...] | None = None,
+) -> None:
+    """按显式 executable 闭包收敛 Runtime；未提供时仅用于 private venv 预处理。"""
     if program_mode not in {0o700, 0o755}:
         _runtime_failed()
+    executable_set = (
+        None
+        if executable_paths is None
+        else set(_validate_executable_paths(list(executable_paths)))
+    )
     data_mode = 0o644 if program_mode == 0o755 else 0o600
     directories: list[Path] = []
     for directory, names, files in os.walk(root, topdown=True, followlinks=False):
@@ -1784,7 +1810,13 @@ def _harden_and_fsync_tree(root: Path, program_mode: int) -> None:
                 _runtime_failed()
             descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             try:
-                mode = program_mode if stat.S_IMODE(metadata.st_mode) & 0o111 else data_mode
+                relative = path.relative_to(root).as_posix()
+                is_program = (
+                    bool(stat.S_IMODE(metadata.st_mode) & 0o111)
+                    if executable_set is None
+                    else relative in executable_set
+                )
+                mode = program_mode if is_program else data_mode
                 os.fchmod(descriptor, mode)
                 os.fsync(descriptor)
             finally:
@@ -1809,6 +1841,20 @@ def _executable_manifest_bytes(paths: tuple[str, ...]) -> bytes:
     ).encode()
 
 
+def _required_runtime_executables(root: Path) -> tuple[str, ...]:
+    """验证四个 verified-source Runtime entrypoints 存在且原本可执行。"""
+    for relative in _REQUIRED_RUNTIME_EXECUTABLES:
+        path = root.joinpath(*PurePosixPath(relative).parts)
+        try:
+            mode = stat.S_IMODE(path.lstat().st_mode)
+        except OSError:
+            _runtime_failed()
+        if mode != 0o700:
+            _runtime_failed()
+        _verify_executable(path, expected_mode=mode)
+    return _REQUIRED_RUNTIME_EXECUTABLES
+
+
 def _validate_executable_paths(values: object) -> tuple[str, ...]:
     """校验 executable 清单是排序、唯一、非 transient 的 relative paths。"""
     if type(values) is not list or len(values) > _MAX_TREE_ENTRIES:
@@ -1829,7 +1875,7 @@ def _validate_executable_paths(values: object) -> tuple[str, ...]:
             _runtime_failed()
         paths.append(value)
     result = tuple(paths)
-    if result != tuple(sorted(set(result))):
+    if result != _REQUIRED_RUNTIME_EXECUTABLES:
         _runtime_failed()
     return result
 
