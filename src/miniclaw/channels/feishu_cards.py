@@ -22,9 +22,9 @@ _STEP_ICON = {
     "waiting": "◷",
     "incomplete": "!",
 }
-_LIST_PREFIX = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.+)$")
-_HEADING_PREFIX = re.compile(r"^\s*#{1,6}\s+(.+)$")
 _TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
+_FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,}).*$")
+_HTML_TAG = re.compile(r"<!--.*?-->|</?[A-Za-z][^>\n]*>")
 _KEY_VALUE_FIRST_HEADERS = frozenset({"项目", "字段", "属性", "名称"})
 _KEY_VALUE_SECOND_HEADERS = frozenset({"内容", "值", "信息", "详情"})
 
@@ -69,7 +69,15 @@ def render_agent_progress_card(progress: AgentProgress) -> RenderedProgressCard:
             low = middle + 1
         else:
             high = middle - 1
-    return RenderedProgressCard(best_card, best_visible)
+    visible = _safe_markdown_prefix_length(answer, best_visible)
+    if visible != best_visible:
+        best_card = _build_card(
+            progress,
+            answer[:visible],
+            detail_indexes,
+            answer_trimmed=visible < len(answer),
+        )
+    return RenderedProgressCard(best_card, visible)
 
 
 def render_compact_progress(progress: AgentProgress) -> str:
@@ -125,9 +133,9 @@ def _build_card(
             ]
         )
     if answer or (answer_trimmed and progress.final_answer):
-        answer_content = _escape_markdown(_answer_as_bullets(answer))
+        answer_content = _render_answer_markdown(answer)
         if answer_trimmed:
-            answer_content += "\n- _答案过长，剩余内容将继续发送。_"
+            answer_content += "\n\n> _答案过长，剩余内容将继续发送。_"
         elements.extend(
             [
                 {"tag": "hr"},
@@ -168,51 +176,208 @@ def _trail_markdown(steps: tuple[ProgressStep, ...], detail_indexes: set[int]) -
     return "\n".join(lines)
 
 
-def _answer_as_bullets(answer: str) -> str:
-    """把最终回答转为项目符号；参数是原始答案，返回无表格的 Markdown 列表。"""
-    source = answer.splitlines()
-    bullets: list[str] = []
+def _render_answer_markdown(answer: str) -> str:
+    """规范化最终回答 Markdown，保留结构并仅降级 fence 外的表格。
+
+    参数：
+        answer：模型返回的原始最终回答。
+
+    返回：
+        适合飞书 Card Markdown 组件的内容；代码 fence 内文本不作变换。
+    """
+    source = answer.split("\n")
+    rendered: list[str] = []
     index = 0
+    active_fence: str | None = None
     while index < len(source):
         line = source[index]
-        cells = _table_cells(line)
-        separator = _table_cells(source[index + 1]) if index + 1 < len(source) else None
-        if cells is not None and separator is not None and _is_table_separator(separator):
-            index += 2
-            rows: list[list[str]] = []
-            while index < len(source):
-                row = _table_cells(source[index])
-                if row is None:
-                    break
-                rows.append(row)
-                index += 1
-            bullets.extend(_table_bullets(cells, rows))
+        if active_fence is not None:
+            rendered.append(line)
+            if _is_fence_close(line, active_fence):
+                active_fence = None
+            index += 1
             continue
 
-        content = line.strip()
-        index += 1
-        if not content:
+        opening_fence = _fence_marker(line)
+        if opening_fence is not None:
+            rendered.append(line)
+            active_fence = opening_fence
+            index += 1
             continue
-        list_match = _LIST_PREFIX.fullmatch(content)
-        heading_match = _HEADING_PREFIX.fullmatch(content)
-        if list_match is not None:
-            content = list_match.group(1).strip()
-        elif heading_match is not None:
-            content = f"**{heading_match.group(1).strip()}**"
-        elif content.startswith(">"):
-            content = content[1:].strip()
-        if content:
-            bullets.append(f"- {content}")
-    return "\n".join(bullets)
+
+        cells = _table_cells(line)
+        separator = _table_cells(source[index + 1]) if index + 1 < len(source) else None
+        if (
+            cells is not None
+            and separator is not None
+            and len(cells) == len(separator)
+            and _is_table_separator(separator)
+        ):
+            next_index = index + 2
+            rows: list[list[str]] = []
+            while next_index < len(source):
+                row = _table_cells(source[next_index])
+                if row is None or len(row) != len(cells) or not any(row):
+                    break
+                rows.append(row)
+                next_index += 1
+            if rows:
+                rendered.extend(_table_bullets(cells, rows))
+                index = next_index
+                continue
+
+        rendered.append(_escape_raw_html(line))
+        index += 1
+
+    if active_fence is not None:
+        rendered.append(active_fence)
+    return "\n".join(rendered)
+
+
+def _safe_markdown_prefix_length(answer: str, limit: int) -> int:
+    """返回不超过字符上限、优先落在 Markdown 结构边界的原始偏移。
+
+    参数：
+        answer：未规范化的原始最终回答。
+        limit：已由 Card 字节预算确认安全的最大字符偏移。
+
+    返回：
+        原始 `answer` 的精确前缀长度；单行文本不会因缺少边界而变成空字符串。
+    """
+    visible = min(max(limit, 0), len(answer))
+    if visible == 0 or visible == len(answer) or answer[:visible].endswith("\n"):
+        return visible
+
+    newline = answer.rfind("\n", 0, visible)
+    return newline + 1 if newline >= 0 else visible
+
+
+def _fence_marker(line: str) -> str | None:
+    """识别 Markdown fence 起始行，返回用于匹配闭合行的原始 marker。"""
+    match = _FENCE_OPEN.match(line)
+    return match.group(1) if match is not None else None
+
+
+def _is_fence_close(line: str, marker: str) -> bool:
+    """判断给定行是否闭合指定 Markdown fence。"""
+    stripped = line.lstrip()
+    if not stripped.startswith(marker[0] * len(marker)):
+        return False
+    closing = len(stripped) - len(stripped.lstrip(marker[0]))
+    return closing >= len(marker) and not stripped[closing:].strip()
+
+
+def _escape_raw_html(line: str) -> str:
+    """把代码 fence 外的原始 HTML 标签转为可见文本，避免触发飞书专用标签。"""
+    def escape_tag(match: re.Match[str]) -> str:
+        """转义单个已识别的 HTML 标签。"""
+        return match.group(0).replace("<", "&lt;").replace(">", "&gt;")
+
+    return "".join(
+        segment if is_code else _HTML_TAG.sub(escape_tag, segment)
+        for segment, is_code in _inline_code_segments(line)
+    )
 
 
 def _table_cells(line: str) -> list[str] | None:
-    """解析一行原始文本；表格行返回单元格列表，普通文本返回 None。"""
+    """解析可选左右外框管道的表格行，普通文本返回 None。"""
     stripped = line.strip()
-    if not stripped.startswith("|") or not stripped.endswith("|"):
+    delimiters = _table_delimiter_indexes(stripped)
+    if not delimiters:
         return None
-    cells = [cell.strip() for cell in stripped[1:-1].split("|")]
-    return cells if cells else None
+    leading = delimiters[0] == 0
+    trailing = delimiters[-1] == len(stripped) - 1
+    body_start = 1 if leading else 0
+    body_end = len(stripped) - 1 if trailing else len(stripped)
+    body = stripped[body_start:body_end]
+    cells: list[str] = []
+    current: list[str] = []
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char == "`" and not _is_escaped(body, index):
+            code_end = _inline_code_span_end(body, index)
+            if code_end is not None:
+                current.append(body[index:code_end])
+                index = code_end
+                continue
+        if char == "|" and not _is_escaped(body, index):
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    cells.append("".join(current).strip())
+    if len(cells) >= 2 or ((leading or trailing) and len(cells) == 1):
+        return cells
+    return None
+
+
+def _table_delimiter_indexes(text: str) -> list[int]:
+    """返回 code span 外且未转义的管道位置，用于识别表格列边界。"""
+    delimiters: list[int] = []
+    index = 0
+    while index < len(text):
+        if text[index] == "`" and not _is_escaped(text, index):
+            code_end = _inline_code_span_end(text, index)
+            if code_end is not None:
+                index = code_end
+                continue
+        if text[index] == "|" and not _is_escaped(text, index):
+            delimiters.append(index)
+        index += 1
+    return delimiters
+
+
+def _inline_code_segments(text: str) -> list[tuple[str, bool]]:
+    """把文本分为普通段和匹配的行内 code span，返回段内容及其代码标记。"""
+    segments: list[tuple[str, bool]] = []
+    plain_start = 0
+    index = 0
+    while index < len(text):
+        if text[index] == "`" and not _is_escaped(text, index):
+            code_end = _inline_code_span_end(text, index)
+            if code_end is not None:
+                if plain_start < index:
+                    segments.append((text[plain_start:index], False))
+                segments.append((text[index:code_end], True))
+                index = code_end
+                plain_start = index
+                continue
+        index += 1
+    if plain_start < len(text):
+        segments.append((text[plain_start:], False))
+    return segments
+
+
+def _inline_code_span_end(text: str, start: int) -> int | None:
+    """返回从未转义反引号开始的同长度行内 code span 结束偏移。"""
+    marker_end = start
+    while marker_end < len(text) and text[marker_end] == "`":
+        marker_end += 1
+    marker_length = marker_end - start
+    index = marker_end
+    while index < len(text):
+        if text[index] != "`" or _is_escaped(text, index):
+            index += 1
+            continue
+        candidate_end = index
+        while candidate_end < len(text) and text[candidate_end] == "`":
+            candidate_end += 1
+        if candidate_end - index == marker_length:
+            return candidate_end
+        index = candidate_end
+    return None
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    """判断指定位置是否被奇数个连续反斜线转义。"""
+    backslashes = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 1
 
 
 def _is_table_separator(cells: list[str]) -> bool:
@@ -228,7 +393,7 @@ def _table_bullets(headers: list[str], rows: list[list[str]]) -> list[str]:
         and headers[1] in _KEY_VALUE_SECOND_HEADERS
     ):
         return [
-            f"- **{row[0]}**：{row[1]}"
+            f"- **{_escape_raw_html(row[0])}**：{_escape_raw_html(row[1])}"
             for row in rows
             if len(row) >= 2 and row[0] and row[1]
         ]
@@ -236,7 +401,7 @@ def _table_bullets(headers: list[str], rows: list[list[str]]) -> list[str]:
     bullets: list[str] = []
     for row in rows:
         fields = [
-            f"**{header}**：{value}"
+            f"**{_escape_raw_html(header)}**：{_escape_raw_html(value)}"
             for header, value in zip(headers, row, strict=False)
             if header and value
         ]
@@ -249,7 +414,7 @@ def _metrics(progress: AgentProgress) -> str:
     """生成不含供应商标识或请求 ID 的公开运行指标。"""
     parts = [
         f"{len(progress.steps)} 步",
-        f"{progress.tool_calls} 个工具",
+        f"{progress.tool_calls} 次工具请求",
         f"{progress.iterations} 轮模型",
     ]
     if progress.duration_ms is not None:
@@ -280,8 +445,11 @@ def _status_label(status: ProgressStatus) -> str:
 
 
 def _escape_markdown(text: str) -> str:
-    """转义会改变内联代码语义的 Markdown 字符。"""
-    return text.replace("\\", "\\\\").replace("`", "\\`")
+    """把内部公开字段编码为 Markdown 中不可执行的严格纯文本。"""
+    encoded = (
+        text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+    return re.sub(r"([\\`*_{}\[\]()#+\-.!|>~])", r"\\\1", encoded)
 
 
 def _card_size(card: dict[str, JsonValue]) -> int:

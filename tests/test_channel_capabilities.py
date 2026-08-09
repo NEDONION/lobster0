@@ -213,6 +213,50 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
             activity.idempotency_key,
         )
 
+    async def test_duplicate_tool_event_closes_card_step_and_labels_request_count(self) -> None:
+        """重复调用终态必须在同一卡片显示为已跳过，并把 footer 标为请求次数。"""
+        transport = FakeCapabilityTransport()
+        activity = self._activity(transport)
+        await activity.start()
+        await activity.on_event(
+            RunEvent(
+                "model_usage",
+                1,
+                {"iteration": 2, "tool_calls": 2},
+            )
+        )
+        await activity.on_event(
+            RunEvent(
+                "tool_requested",
+                1,
+                {
+                    "call_id": "call_duplicate",
+                    "tool_name": "read_file",
+                    "arguments": {"path": "private-alias.txt"},
+                },
+            )
+        )
+        self.clock.value = 0.6
+        await activity.on_event(
+            RunEvent(
+                "tool_finished",
+                1,
+                {
+                    "call_id": "call_duplicate",
+                    "tool_name": "read_file",
+                    "status": "failed",
+                    "error_code": "duplicate_tool_call",
+                },
+            )
+        )
+        await activity.finish(content="stopped", failed=True)
+
+        final = repr(transport.cards_updated[-1][1])
+        self.assertIn("✕", final)
+        self.assertIn("重复 Tool 请求，已跳过执行", final)
+        self.assertIn("2 次工具请求", final)
+        self.assertNotIn("private-alias.txt", final)
+
     async def test_card_failures_are_contained_and_final_can_fall_back(self) -> None:
         """卡片创建/更新失败只关闭进度能力，让 Manager 继续 durable Markdown。"""
         for transport in (

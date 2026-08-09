@@ -206,7 +206,8 @@ def _render_default_config(paths: StatePaths) -> str:
     """生成包含 DeepSeek V4 Pro 默认 Provider 的稳定 TOML 配置。"""
     workspace = json.dumps(str(paths.workspace), ensure_ascii=False)
     return (
-        '[agent]\nmodel = "deepseek-v4-pro"\nmax_tool_iterations = 8\n'
+        '[agent]\nmodel = "deepseek-v4-pro"\nmax_tool_iterations = 32\n'
+        "max_tool_iterations_hard = 64\nmax_no_progress_iterations = 3\n"
         "context_budget_tokens = 32000\ntool_result_max_chars = 20000\n\n"
         '[ui]\nlanguage = "zh-CN"\n\n'
         '[provider]\nbase_url = "https://api.deepseek.com"\n'

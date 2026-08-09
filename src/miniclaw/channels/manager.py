@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from miniclaw.agent.events import RunEventHandler
+from miniclaw.agent.runner import AgentLoopLimitError, AgentNoProgressError
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
     ApprovalCommandOutcome,
@@ -493,6 +494,7 @@ class ChannelManager:
                     stage=stage,
                     reason=reason,
                     suggestion=suggestion,
+                    error=error,
                 )
                 final_delivery_required = True
                 if activity is not None:
@@ -746,8 +748,9 @@ class ChannelManager:
         stage: str,
         reason: str,
         suggestion: str,
+        error: Exception | None = None,
     ) -> str:
-        """生成不包含异常正文的有界失败诊断，并关联内部 Turn 与 ToolRun。"""
+        """生成不含异常正文的诊断，并关联 Turn、ToolRun 与安全整数指标。"""
         turn_id: int | None = None
         persisted_error_code: str | None = None
         try:
@@ -767,12 +770,12 @@ class ChannelManager:
             except Exception:
                 tool_count = None
         if tool_count == 0:
-            tool_status = "0 个 Tool，未发生 Tool 副作用。"
+            tool_status = "0 个真实 ToolRun，未发生 Tool 副作用。"
         elif tool_count is None:
             tool_status = "暂时无法读取；请检查 ToolRun 审计记录确认是否有副作用。"
         else:
             tool_status = (
-                f"已请求 {tool_count} 个 Tool；系统不会自动重试，"
+                f"已记录 {tool_count} 个真实 ToolRun；系统不会自动重试，"
                 "请检查 ToolRun 确认副作用。"
             )
         references: list[str] = []
@@ -781,16 +784,26 @@ class ChannelManager:
         if event.storage_rowid > 0:
             references.append(f"Event #{event.storage_rowid}")
         debug_reference = " · ".join(references) or "未生成内部编号"
-        return "\n".join(
+        diagnostics = [
+            f"- 失败阶段：{stage}",
+            f"- 错误码：`{error_code}`",
+            f"- 原因：{reason}",
+            f"- 调试编号：{debug_reference}",
+        ]
+        if isinstance(error, AgentNoProgressError):
+            diagnostics.extend(
+                (
+                    f"- 当前模型轮次：{error.model_iteration}",
+                    f"- 连续无进展轮次：{error.no_progress_iterations}",
+                )
+            )
+        diagnostics.extend(
             (
-                f"- 失败阶段：{stage}",
-                f"- 错误码：`{error_code}`",
-                f"- 原因：{reason}",
-                f"- 调试编号：{debug_reference}",
                 f"- Tool 状态：{tool_status}",
                 f"- 下一步：{suggestion}",
             )
         )
+        return "\n".join(diagnostics)
 
     async def _recover_stale(self) -> None:
         """恢复遗留 Inbox/Delivery，绝不重放已经开始的 Turn。"""
@@ -985,6 +998,18 @@ class ChannelManager:
 
 def _failure_profile(error: Exception) -> tuple[str, str, str]:
     """把异常类型映射为安全失败阶段、原因和行动建议。"""
+    if isinstance(error, AgentNoProgressError):
+        return (
+            "Agent Tool Loop",
+            "连续多轮没有新的成功 Tool 结果，已停止重复执行。",
+            "请检查 Claw Trail 与 ToolRun；调整请求后重试。",
+        )
+    if isinstance(error, AgentLoopLimitError):
+        return (
+            "Agent Tool Loop",
+            "模型在无 Tool 的预算收口轮仍请求 Tool；最后一次 Tool 请求未执行。",
+            "请检查 Claw Trail 与 ToolRun；拆分任务或调整预算配置后重试。",
+        )
     if isinstance(error, ProviderProtocolError):
         return (
             "模型响应校验",
@@ -1005,6 +1030,8 @@ def _failure_profile(error: Exception) -> tuple[str, str, str]:
 def _failure_error_code(error: Exception) -> str:
     """把公开异常类型映射为稳定错误码，未知异常使用 Channel 兜底码。"""
     mappings = (
+        (AgentNoProgressError, "loop_no_progress"),
+        (AgentLoopLimitError, "loop_limit"),
         (ProviderAuthenticationError, "provider_authentication"),
         (ProviderRateLimitError, "provider_rate_limit"),
         (ProviderTimeoutError, "provider_timeout"),

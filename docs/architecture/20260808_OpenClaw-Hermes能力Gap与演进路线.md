@@ -35,7 +35,7 @@ MiniClaw 现在已经像一个“你叫它，它就能干活的新员工”：
 
 | 能力域 | MiniClaw 当前状态 | 代码或证据入口 |
 | --- | --- | --- |
-| Agent Core | OpenAI-compatible Provider、原生 Tool Calling、最多 8 轮工具循环 | `src/miniclaw/agent/`、`src/miniclaw/providers/` |
+| Agent Core | OpenAI-compatible Provider、原生 Tool Calling、32 轮软预算 / 64 轮硬预算 / 连续 3 轮无进展保护；收口轮无 Tool schema，重复语义 Tool 不重执行 | `src/miniclaw/agent/`、`src/miniclaw/providers/` |
 | TUI | Python Core + TypeScript pi-tui、NDJSON v1、流式回答、Trace、审批、真实遥测 | `src/miniclaw/bridge/`、`tui/` |
 | Tool | 系统信息、文件读写、搜索、HTTPS GET、exact-argv 命令、Memory | `src/miniclaw/tools/` |
 | 安全 | Workspace/Personal Guard、敏感路径硬拒绝、四档权限、参数绑定审批 | `src/miniclaw/policy/` |

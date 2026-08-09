@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import shutil
 import tempfile
 import unittest
 from dataclasses import replace
@@ -11,6 +12,7 @@ from miniclaw.agent.events import RunEvent
 from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
+    AgentNoProgressError,
     AgentRunBudget,
     AgentRunner,
     AgentRunStatus,
@@ -18,6 +20,7 @@ from miniclaw.agent.runner import (
 )
 from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
+from miniclaw.policy.command import SAFE_EXECUTABLE_PATH
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import JsonValue, ModelMessage, ModelRequest, ModelResponse, ToolCall
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
@@ -31,8 +34,9 @@ from miniclaw.tools.base import (
     ToolRisk,
     ToolValidationError,
 )
+from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.filesystem import WriteFileTool
+from miniclaw.tools.filesystem import ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.task_completion import CompleteTaskTool
 from tests.fakes.fake_provider import FakeProvider
@@ -141,6 +145,32 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
             ToolRunRepository(self.database),
         )
 
+    def test_constructor_uses_adaptive_defaults_and_rejects_invalid_budgets(self) -> None:
+        """Runner 默认预算固定，并拒绝不可能的 adaptive budget 组合。"""
+        provider = FakeProvider(())
+        runner = AgentRunner(provider)
+
+        self.assertEqual(
+            (
+                runner._max_iterations,
+                runner._hard_max_iterations,
+                runner._max_no_progress_iterations,
+            ),
+            (32, 64, 3),
+        )
+        invalid_budgets = (
+            ({"hard_max_iterations": 0}, "hard_max_iterations"),
+            ({"max_no_progress_iterations": True}, "max_no_progress_iterations"),
+            (
+                {"max_iterations": 40, "hard_max_iterations": 32},
+                "hard_max_iterations",
+            ),
+        )
+        for kwargs, expected in invalid_budgets:
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ValueError, expected):
+                    AgentRunner(provider, **kwargs)
+
     async def test_complete_task_ends_automation_without_extra_provider_turn(self) -> None:
         """terminal Tool 成功后必须直接返回结构化结果，不再询问 Provider。"""
         call = ToolCall(
@@ -234,6 +264,82 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(outcome.error_code, "automation_halted")
+        self.assertEqual(tool.executions, 1)
+
+    async def test_e_stop_preempts_semantic_duplicate_filter(self) -> None:
+        """E-stop 必须先于语义去重收口，不能继续请求 Provider。"""
+        calls = (
+            ToolCall("call_before_halt", "echo", {"text": "same"}),
+            ToolCall("call_after_halt", "echo", {"text": "same"}),
+        )
+        provider = FakeProvider(
+            (
+                response("", tool_calls=calls),
+                response("must not continue"),
+            )
+        )
+        halted = False
+
+        class HaltingEchoTool(_EchoTool):
+            """首次执行后拉起 E-stop，第二次请求与其语义相同。"""
+
+            async def execute(
+                self,
+                context: ToolContext,
+                arguments: dict[str, JsonValue],
+            ) -> ToolResult:
+                """执行一次后立即关闭后续 Automation。"""
+                nonlocal halted
+                result = await super().execute(context, arguments)
+                halted = True
+                return result
+
+        tool = HaltingEchoTool()
+        executor = self.executor(tool)
+
+        outcome = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=replace(
+                self.tool_context,
+                source="automation",
+                task_run_id=11,
+                allowed_tool_names=frozenset({"echo"}),
+                automation_gate=lambda: not halted,
+            ),
+            budget=AgentRunBudget(max_turns=3, max_tool_calls=2),
+        )
+
+        self.assertEqual(outcome.error_code, "automation_halted")
+        self.assertEqual(tool.executions, 1)
+        self.assertEqual(len(provider.requests), 1)
+
+    async def test_semantic_duplicate_does_not_consume_real_tool_budget(self) -> None:
+        """不会真实执行的 duplicate 不能被误报为 Tool budget 超限。"""
+        calls = (
+            ToolCall("call_first", "echo", {"text": "same"}),
+            ToolCall("call_duplicate", "echo", {"text": "same"}),
+        )
+        provider = FakeProvider(
+            (
+                response("", tool_calls=calls),
+                response("done"),
+            )
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        outcome = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=replace(
+                self.tool_context,
+                source="automation",
+                task_run_id=12,
+            ),
+            budget=AgentRunBudget(max_turns=3, max_tool_calls=1),
+        )
+
+        self.assertIsNone(outcome.error_code)
+        self.assertEqual(outcome.content, "done")
         self.assertEqual(tool.executions, 1)
 
     async def test_reported_usage_budget_stops_before_any_tool(self) -> None:
@@ -547,13 +653,270 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(EmptyModelResponseError):
             await AgentRunner(provider).run(request())
 
-    async def test_eighth_tool_response_stops_before_executing_more_side_effects(self) -> None:
-        """第八次仍请求工具时必须停止，且不能执行已经无法继续回传的最后动作。"""
+    async def test_successful_progress_extends_soft_budget_and_hard_round_has_no_tools(
+        self,
+    ) -> None:
+        """新颖成功 Tool 可越过 soft budget，但 hard 轮必须强制无工具收口。"""
+        calls = tuple(
+            response(
+                "",
+                tool_calls=(ToolCall(f"call_{index}", "echo", {"text": str(index)}),),
+            )
+            for index in range(4)
+        )
+        provider = FakeProvider((*calls, response("wrapped")))
+        executor = self.executor(_EchoTool())
+
+        result = await AgentRunner(
+            provider,
+            executor,
+            max_iterations=3,
+            hard_max_iterations=5,
+            max_no_progress_iterations=3,
+        ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        self.assertEqual(result.content, "wrapped")
+        self.assertEqual(result.iterations, 5)
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(provider.requests[-1].messages[-1].role, "system")
+        self.assertIn("evidence", provider.requests[-1].messages[-1].content.lower())
+        self.assertNotIn(
+            provider.requests[-1].messages[-1],
+            result.intermediate_messages,
+        )
+
+    async def test_failed_tool_does_not_extend_soft_budget(self) -> None:
+        """没有新颖成功结果的上一批不能把带工具请求延长到 soft 边界。"""
+        missing = ToolCall("call_missing", "missing", {})
+        provider = FakeProvider(
+            (
+                response("", tool_calls=(missing,)),
+                response("fallback without more tools"),
+            )
+        )
+
+        result = await AgentRunner(
+            provider,
+            max_iterations=2,
+            hard_max_iterations=4,
+        ).run(request())
+
+        self.assertEqual(result.content, "fallback without more tools")
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(provider.requests[-1].messages[-1].role, "system")
+
+    async def test_soft_finalization_rejects_tool_call_without_executing_it(self) -> None:
+        """soft 收口轮仍请求 Tool 时必须停止，且最后请求不产生 Tool 副作用。"""
+        provider = FakeProvider(
+            (
+                response(
+                    "",
+                    tool_calls=(ToolCall("call_missing", "missing", {}),),
+                ),
+                response(
+                    "",
+                    tool_calls=(ToolCall("call_final", "echo", {"text": "never"}),),
+                ),
+            )
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        with self.assertRaises(AgentLoopLimitError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=2,
+                hard_max_iterations=4,
+            ).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+            )
+
+        self.assertEqual(len(provider.requests), 2)
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(tool.executions, 0)
+
+    async def test_three_repeated_tool_fingerprints_stop_without_reexecution(self) -> None:
+        """相同 Tool 语义只能真实执行一次，连续三个重复模型轮次稳定停止。"""
         provider = FakeProvider(
             tuple(
                 response(
                     "",
-                    tool_calls=(ToolCall(f"call_loop_{index}", "echo", {"text": "x"}),),
+                    tool_calls=(
+                        ToolCall(f"call_{index}", "echo", {"text": "same"}),
+                    ),
+                )
+                for index in range(4)
+            )
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
+
+        with self.assertRaises(AgentNoProgressError) as stopped:
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=8,
+                hard_max_iterations=12,
+                max_no_progress_iterations=3,
+            ).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+                on_event=capture,
+            )
+
+        self.assertEqual(tool.executions, 1)
+        self.assertEqual(len(provider.requests), 4)
+        self.assertEqual(
+            (
+                stopped.exception.no_progress_iterations,
+                stopped.exception.model_iteration,
+            ),
+            (3, 4),
+        )
+        duplicate_result = json.loads(provider.requests[2].messages[-1].content)
+        self.assertEqual(
+            duplicate_result,
+            {"ok": False, "error": "duplicate_tool_call", "tool": "echo"},
+        )
+        requested = [event for event in events if event.kind == "tool_requested"]
+        finished = [event for event in events if event.kind == "tool_finished"]
+        self.assertEqual(len(requested), 4)
+        self.assertEqual(len(finished), 4)
+        self.assertEqual(
+            [event.data["status"] for event in finished],
+            ["succeeded", "failed", "failed", "failed"],
+        )
+        self.assertEqual(
+            [event.data.get("error_code") for event in finished[1:]],
+            ["duplicate_tool_call"] * 3,
+        )
+
+    async def test_omitted_and_explicit_defaults_share_prepared_fingerprint(self) -> None:
+        """省略与显式默认参数必须只执行一次同一 prepared Tool 语义。"""
+        target = self.paths.workspace / "defaults.txt"
+        target.write_text("hello\n", encoding="utf-8")
+        calls = (
+            ToolCall("call_omitted", "read_file", {"path": "defaults.txt"}),
+            ToolCall(
+                "call_explicit",
+                "read_file",
+                {"path": "defaults.txt", "offset": 1, "limit": 200},
+            ),
+        )
+        provider = FakeProvider(
+            tuple(response("", tool_calls=(call,)) for call in calls)
+        )
+        executor = self.executor(ReadFileTool())
+
+        with self.assertRaises(AgentNoProgressError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=4,
+                hard_max_iterations=6,
+                max_no_progress_iterations=1,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        with self.database.connect_read_only() as connection:
+            tool_runs = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool_runs, 1)
+
+    async def test_equivalent_workspace_paths_share_prepared_fingerprint(self) -> None:
+        """相对路径别名规范到同一 Workspace 目标后必须只执行一次。"""
+        target = self.paths.workspace / "same-path.txt"
+        target.write_text("hello\n", encoding="utf-8")
+        calls = (
+            ToolCall(
+                "call_plain",
+                "read_file",
+                {"path": "same-path.txt", "offset": 1, "limit": 200},
+            ),
+            ToolCall(
+                "call_alias",
+                "read_file",
+                {"path": "./same-path.txt", "offset": 1, "limit": 200},
+            ),
+        )
+        provider = FakeProvider(
+            tuple(response("", tool_calls=(call,)) for call in calls)
+        )
+        executor = self.executor(ReadFileTool())
+
+        with self.assertRaises(AgentNoProgressError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=4,
+                hard_max_iterations=6,
+                max_no_progress_iterations=1,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        with self.database.connect_read_only() as connection:
+            tool_runs = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool_runs, 1)
+
+    async def test_equivalent_command_programs_share_policy_normalized_fingerprint(
+        self,
+    ) -> None:
+        """命令名与同一 resolved executable 必须只执行一次规范命令。"""
+        resolved_program = shutil.which("pwd", path=SAFE_EXECUTABLE_PATH)
+        if resolved_program is None:
+            self.skipTest("pwd is unavailable in the fixed executable path")
+        executor = ToolExecutor(
+            ToolRegistry(
+                (RunCommandTool(executable_path=SAFE_EXECUTABLE_PATH),)
+            ),
+            PolicyEngine(
+                security="full",
+                ask="off",
+                executable_path=SAFE_EXECUTABLE_PATH,
+            ),
+            ToolRunRepository(self.database),
+        )
+        calls = (
+            ToolCall("call_name", "run_command", {"program": "pwd", "args": []}),
+            ToolCall(
+                "call_resolved",
+                "run_command",
+                {
+                    "program": resolved_program,
+                    "args": [],
+                    "timeout_seconds": 30,
+                },
+            ),
+        )
+        provider = FakeProvider(
+            tuple(response("", tool_calls=(call,)) for call in calls)
+        )
+
+        with self.assertRaises(AgentNoProgressError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=4,
+                hard_max_iterations=6,
+                max_no_progress_iterations=1,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        with self.database.connect_read_only() as connection:
+            tool_runs = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool_runs, 1)
+
+    async def test_eighth_tool_response_stops_before_executing_more_side_effects(self) -> None:
+        """hard 收口轮即使仍返回 Tool Call，也不能执行无法继续回传的动作。"""
+        provider = FakeProvider(
+            tuple(
+                response(
+                    "",
+                    tool_calls=(
+                        ToolCall(f"call_loop_{index}", "echo", {"text": str(index)}),
+                    ),
                 )
                 for index in range(8)
             )
@@ -562,13 +925,20 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         executor = self.executor(tool)
 
         with self.assertRaises(AgentLoopLimitError):
-            await AgentRunner(provider, executor, max_iterations=8).run(
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=3,
+                hard_max_iterations=8,
+            ).run(
                 request(*executor.schemas),
                 tool_context=self.tool_context,
             )
 
         self.assertEqual(len(provider.requests), 8)
         self.assertEqual(tool.executions, 7)
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(provider.requests[-1].messages[-1].role, "system")
 
     async def test_cancellation_propagates_without_becoming_agent_failure(self) -> None:
         """Runner 不得吞掉 CancelledError，TurnService 需要据此保存 cancelled。"""

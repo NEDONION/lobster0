@@ -6,6 +6,8 @@ import sqlite3
 import sys
 import tempfile
 import unittest
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -181,6 +183,137 @@ class _InvalidResultTool(_BrokenTool):
         return ToolResult.success({"value": float("nan")})
 
 
+class _DefaultingTool(_EchoTool):
+    """补齐可选参数并记录 prepare/execute 次数的测试 Tool。"""
+
+    definition = ToolDefinition(
+        name="defaulting",
+        description="Default a limit.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self) -> None:
+        """初始化验证与执行计数。"""
+        self.validations = 0
+        self.executions = 0
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """校验文本并把省略的 limit 规范为 10。"""
+        self.validations += 1
+        if set(arguments) - {"text", "limit"} or not isinstance(
+            arguments.get("text"), str
+        ):
+            raise ToolValidationError("text must be a string")
+        limit = arguments.get("limit", 10)
+        if type(limit) is not int:
+            raise ToolValidationError("limit must be an integer")
+        return {"text": arguments["text"], "limit": limit}
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """记录执行并回显规范参数。"""
+        del context
+        self.executions += 1
+        return ToolResult.success(arguments)
+
+
+class _NestedArgumentsTool:
+    """记录嵌套规范参数的 low-risk 测试 Tool。"""
+
+    definition = ToolDefinition(
+        name="nested",
+        description="Record a nested target.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "target": {"type": "string"},
+                "options": {"type": "object"},
+            },
+            "required": ["target", "options"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self) -> None:
+        """初始化实际执行参数记录。"""
+        self.executed_arguments: dict[str, JsonValue] | None = None
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """校验 target 与嵌套字符串 labels，并返回独立规范副本。"""
+        target = arguments.get("target")
+        options = arguments.get("options")
+        if (
+            set(arguments) != {"target", "options"}
+            or not isinstance(target, str)
+            or not isinstance(options, dict)
+        ):
+            raise ToolValidationError("target and options are required")
+        labels = options.get("labels")
+        if not isinstance(labels, list) or any(
+            not isinstance(label, str) for label in labels
+        ):
+            raise ToolValidationError("options.labels must be strings")
+        return {"target": target, "options": {"labels": list(labels)}}
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """记录实际参数并返回成功。"""
+        del context
+        self.executed_arguments = deepcopy(arguments)
+        return ToolResult.success(arguments)
+
+
+class _BlockingTool(_EchoTool):
+    """在副作用后等待放行，以复现并发重复 execute。"""
+
+    definition = ToolDefinition(
+        name="blocking",
+        description="Block after one execution starts.",
+        parameters={"type": "object", "properties": {}, "additionalProperties": False},
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self) -> None:
+        """初始化执行计数和并发同步事件。"""
+        self.executions = 0
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """只接受空参数。"""
+        if arguments:
+            raise ToolValidationError("arguments must be empty")
+        return {}
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """记录一次副作用，等待测试放行后返回。"""
+        del context, arguments
+        self.executions += 1
+        self.started.set()
+        await self.release.wait()
+        return ToolResult.success({"executions": self.executions})
+
+
 class _WorkspaceReadTool:
     """模拟只读文件 Tool 的路径参数与成功执行。"""
 
@@ -295,6 +428,136 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run["policy_action"], "allow")
         self.assertEqual(run["tool_name"], "echo")
         self.assertEqual([row[0] for row in events], ["tool.started", "tool.succeeded"])
+
+    async def test_prepared_call_is_normalized_once_and_executed_without_revalidation(
+        self,
+    ) -> None:
+        """prepare 的规范参数必须原样进入执行，不能二次 validate 产生 TOCTOU。"""
+        tool = _DefaultingTool()
+        executor = self.executor(tool)
+
+        prepared = executor.prepare(
+            self.context,
+            ToolCall("call_default", "defaulting", {"text": "hello"}),
+        )
+        outcome = await executor.execute_prepared(
+            self.context,
+            prepared,
+        )
+
+        self.assertEqual(
+            prepared.call.arguments,
+            {"text": "hello", "limit": 10},
+        )
+        self.assertEqual(json.loads(outcome.model_text)["data"]["limit"], 10)
+        self.assertEqual((tool.validations, tool.executions), (1, 1))
+
+    async def test_prepared_arguments_are_immutable_against_nested_external_mutation(
+        self,
+    ) -> None:
+        """外部篡改 prepared 暴露的嵌套参数不能改变真实执行或审计目标。"""
+        tool = _NestedArgumentsTool()
+        executor = self.executor(tool)
+        prepared = executor.prepare(
+            self.context,
+            ToolCall(
+                "call_nested",
+                "nested",
+                {"target": "safe", "options": {"labels": ["approved"]}},
+            ),
+        )
+
+        exposed = prepared.call.arguments
+        exposed["target"] = "tampered"
+        options = exposed["options"]
+        assert isinstance(options, dict)
+        labels = options["labels"]
+        assert isinstance(labels, list)
+        labels.append("bypass")
+        outcome = await executor.execute_prepared(self.context, prepared)
+
+        expected = {"target": "safe", "options": {"labels": ["approved"]}}
+        self.assertEqual(prepared.call.arguments, expected)
+        self.assertEqual(tool.executed_arguments, expected)
+        self.assertEqual(json.loads(outcome.model_text)["data"], expected)
+        with self.database.connect_read_only() as connection:
+            stored = connection.execute(
+                "SELECT arguments_json FROM tool_runs"
+            ).fetchone()[0]
+        self.assertEqual(json.loads(stored), expected)
+
+    async def test_prepared_call_is_consumed_once_under_concurrent_execution(self) -> None:
+        """并发 execute_prepared 只能一个进入 ToolRun 与真实副作用。"""
+        tool = _BlockingTool()
+        executor = self.executor(tool)
+        prepared = executor.prepare(
+            self.context,
+            ToolCall("call_once", "blocking", {}),
+        )
+
+        first = asyncio.create_task(executor.execute_prepared(self.context, prepared))
+        await tool.started.wait()
+        second = asyncio.create_task(executor.execute_prepared(self.context, prepared))
+        await asyncio.sleep(0)
+        tool.release.set()
+        first_result, second_result = await asyncio.gather(
+            first,
+            second,
+            return_exceptions=True,
+        )
+
+        self.assertNotIsInstance(first_result, Exception)
+        self.assertIsInstance(second_result, ValueError)
+        self.assertIn("already been consumed", str(second_result))
+        with self.database.connect_read_only() as connection:
+            run_count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool.executions, 1)
+        self.assertEqual(run_count, 1)
+
+    async def test_prepared_approval_is_consumed_before_second_record_can_be_created(
+        self,
+    ) -> None:
+        """同一 prepared Approval 只能创建一个 waiting ToolRun 与审批记录。"""
+        approvals = ApprovalRepository(self.database)
+        executor = self.executor(_ApprovalTool(), approvals=approvals)
+        prepared = executor.prepare(
+            self.context,
+            ToolCall("call_approval_once", "approval", {}),
+        )
+
+        first = await executor.execute_prepared(self.context, prepared)
+        with self.assertRaisesRegex(ValueError, "already been consumed"):
+            await executor.execute_prepared(self.context, prepared)
+
+        self.assertIsNotNone(first.approval_id)
+        with self.database.connect_read_only() as connection:
+            run_count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+            approval_count = connection.execute("SELECT COUNT(*) FROM approvals").fetchone()[0]
+        self.assertEqual((run_count, approval_count), (1, 1))
+
+    async def test_prepared_call_rejects_other_executor_and_context_without_consuming(
+        self,
+    ) -> None:
+        """错误执行器或 Context 必须先拒绝，且不能消费合法执行机会。"""
+        owner = self.executor(_EchoTool())
+        foreign = self.executor(_EchoTool())
+        prepared = owner.prepare(
+            self.context,
+            ToolCall("call_bound", "echo", {"text": "hello"}),
+        )
+        other_context = replace(self.context)
+        self.assertIsNot(other_context, self.context)
+
+        with self.assertRaisesRegex(ValueError, "execution context"):
+            await foreign.execute_prepared(self.context, prepared)
+        with self.assertRaisesRegex(ValueError, "execution context"):
+            await owner.execute_prepared(other_context, prepared)
+        outcome = await owner.execute_prepared(self.context, prepared)
+
+        self.assertEqual(json.loads(outcome.model_text)["data"], {"text": "hello"})
+        with self.database.connect_read_only() as connection:
+            run_count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(run_count, 1)
 
     async def test_dynamic_effective_risk_is_applied_before_policy_persistence(self) -> None:
         """action 绑定的 HIGH 风险必须创建 Approval，不能按静态 LOW 执行。"""
@@ -1044,8 +1307,18 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
             ).fetchall()
         self.assertEqual(len(stored), 1)
         self.assertEqual(len(events), 1)
-        self.assertNotIn("ok", stored[0]["rule_json"])
-        self.assertNotIn("status", events[0]["metadata_json"])
+        self.assertEqual(
+            json.loads(stored[0]["rule_json"]),
+            {
+                "args": ["status"],
+                "resolved_program": str(program.resolve()),
+                "type": "exact_argv",
+            },
+        )
+        self.assertEqual(
+            set(json.loads(events[0]["metadata_json"])),
+            {"approval_id", "policy_rule_id", "tool_name"},
+        )
 
     async def test_failed_command_never_creates_session_or_persistent_rule(self) -> None:
         """执行失败时 Session/Always 都不能产生可复用规则。"""

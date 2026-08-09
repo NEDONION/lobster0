@@ -1,10 +1,12 @@
 """Tool 参数校验、Policy、执行和持久化的唯一入口。"""
 
 import asyncio
+import json
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
+from threading import Lock
 from urllib.parse import urlsplit
 
 from miniclaw.agent.events import RunEvent, RunEventHandler, emit
@@ -13,9 +15,10 @@ from miniclaw.policy.approvals import (
     ApprovalDecision,
     ApprovalError,
     available_approval_decisions,
+    canonical_arguments_json,
 )
 from miniclaw.policy.command import NormalizedCommand
-from miniclaw.policy.engine import PolicyAction, PolicyEngine
+from miniclaw.policy.engine import PolicyAction, PolicyDecision, PolicyEngine
 from miniclaw.policy.network import NetworkRule, normalize_network_rule
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
@@ -38,6 +41,58 @@ class ToolExecution:
     approval_id: int | None = None
     succeeded: bool = False
     result: ToolResult | None = None
+
+
+class _PreparedConsumption:
+    """以线程锁原子记录 prepared plan 是否已经被消费。"""
+
+    def __init__(self) -> None:
+        """初始化尚未消费的单次执行状态。"""
+        self._lock = Lock()
+        self._consumed = False
+
+    def consume(self) -> bool:
+        """首次调用原子标记为已消费并返回 True，之后返回 False。"""
+        with self._lock:
+            if self._consumed:
+                return False
+            self._consumed = True
+            return True
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedToolCall:
+    """保存参数快照不可变、只能消费一次的 Tool 执行计划。"""
+
+    _call_id: str
+    _tool_name: str
+    _arguments_json: str = field(repr=False)
+    _context: ToolContext = field(repr=False)
+    _tool: Tool | None = field(repr=False)
+    _decision: PolicyDecision | None = field(repr=False)
+    _execution_plan: ExecutionPlan | None = field(repr=False)
+    _model_text: str | None = field(repr=False)
+    _unstarted_result: ToolResult | None = field(repr=False)
+    _unstarted_status: str | None = field(repr=False)
+    _executor_token: object = field(repr=False)
+    _consumption: _PreparedConsumption = field(
+        default_factory=_PreparedConsumption,
+        repr=False,
+        compare=False,
+    )
+
+    @property
+    def call(self) -> ToolCall:
+        """从不可变 JSON 快照恢复一个外部可安全修改的独立 ToolCall 副本。"""
+        arguments = json.loads(self._arguments_json)
+        if not isinstance(arguments, dict):
+            raise RuntimeError("prepared Tool arguments snapshot is invalid")
+        return ToolCall(self._call_id, self._tool_name, arguments)
+
+    @property
+    def unstarted_result(self) -> ToolResult | None:
+        """返回预检已确定的无副作用结果，供 Runner 优先处理控制面终止。"""
+        return self._unstarted_result
 
 
 class ToolExecutor:
@@ -69,6 +124,7 @@ class ToolExecutor:
         self._execution_plans = execution_plans or runs.execution_plans
         self._checkpoint_store = checkpoint_store
         self._approval_ttl_seconds = approval_ttl_seconds
+        self._prepare_token = object()
 
     @property
     def schemas(self) -> tuple[dict[str, JsonValue], ...]:
@@ -83,6 +139,19 @@ class ToolExecutor:
         on_event: RunEventHandler | None = None,
     ) -> ToolExecution:
         """按 get → validate → policy → start → execute → finish 执行。"""
+        prepared = self.prepare(context, call)
+        return await self.execute_prepared(context, prepared, on_event=on_event)
+
+    def prepare(self, context: ToolContext, call: ToolCall) -> PreparedToolCall:
+        """一次完成 Tool 参数校验与 Policy 规范化，返回绑定当前执行器的计划。
+
+        Args:
+            context: 不可由模型伪造的当前 Tool 运行边界。
+            call: Provider 返回的原始 Tool Call。
+
+        Returns:
+            携带规范参数、Policy 决策或稳定预检失败的执行计划。
+        """
         if (
             context.allowed_tool_names is not None
             and call.name not in context.allowed_tool_names
@@ -91,13 +160,18 @@ class ToolExecutor:
                 "tool_not_allowed",
                 "tool is not allowed in this execution profile",
             )
-            return await _finish_unstarted(
-                context,
-                call,
-                result.to_model_text(call.name),
-                "denied",
-                on_event,
-                result=result,
+            return PreparedToolCall(
+                _call_id=call.call_id,
+                _tool_name=call.name,
+                _arguments_json=canonical_arguments_json(call.arguments),
+                _context=context,
+                _tool=None,
+                _decision=None,
+                _execution_plan=None,
+                _model_text=result.to_model_text(call.name),
+                _unstarted_result=result,
+                _unstarted_status="denied",
+                _executor_token=self._prepare_token,
             )
         if (
             context.source == "automation"
@@ -108,63 +182,92 @@ class ToolExecutor:
                 "automation_halted",
                 "automation is halted",
             )
-            return await _finish_unstarted(
-                context,
-                call,
-                result.to_model_text(call.name),
-                "denied",
-                on_event,
-                result=result,
+            return PreparedToolCall(
+                _call_id=call.call_id,
+                _tool_name=call.name,
+                _arguments_json=canonical_arguments_json(call.arguments),
+                _context=context,
+                _tool=None,
+                _decision=None,
+                _execution_plan=None,
+                _model_text=result.to_model_text(call.name),
+                _unstarted_result=result,
+                _unstarted_status="denied",
+                _executor_token=self._prepare_token,
             )
         tool = self._registry.get(call.name)
         if tool is None:
-            return await _finish_unstarted(
-                context,
-                call,
-                ToolResult.failure(
-                    "tool_not_found",
-                    f"tool is not available: {call.name}",
-                ).to_model_text(call.name),
-                "rejected",
-                on_event,
+            result = ToolResult.failure(
+                "tool_not_found",
+                f"tool is not available: {call.name}",
+            )
+            return PreparedToolCall(
+                _call_id=call.call_id,
+                _tool_name=call.name,
+                _arguments_json=canonical_arguments_json(call.arguments),
+                _context=context,
+                _tool=None,
+                _decision=None,
+                _execution_plan=None,
+                _model_text=result.to_model_text(call.name),
+                _unstarted_result=result,
+                _unstarted_status="rejected",
+                _executor_token=self._prepare_token,
             )
         try:
             arguments = tool.validate(call.arguments)
         except ToolValidationError as error:
-            return await _finish_unstarted(
-                context,
-                call,
-                ToolResult.failure(
-                    "invalid_arguments",
-                    str(error),
-                ).to_model_text(call.name),
-                "rejected",
-                on_event,
+            result = ToolResult.failure("invalid_arguments", str(error))
+            return PreparedToolCall(
+                _call_id=call.call_id,
+                _tool_name=call.name,
+                _arguments_json=canonical_arguments_json(call.arguments),
+                _context=context,
+                _tool=None,
+                _decision=None,
+                _execution_plan=None,
+                _model_text=result.to_model_text(call.name),
+                _unstarted_result=result,
+                _unstarted_status="rejected",
+                _executor_token=self._prepare_token,
             )
-
         prepare = getattr(tool, "prepare", None)
         if prepare is not None:
             try:
                 arguments = prepare(context, arguments)
             except ValueError as error:
                 code = _safe_prepare_error_code(error)
-                return await _finish_unstarted(
-                    context,
-                    call,
-                    ToolResult.failure(code, code).to_model_text(call.name),
-                    "rejected",
-                    on_event,
+                result = ToolResult.failure(code, code)
+                return PreparedToolCall(
+                    _call_id=call.call_id,
+                    _tool_name=call.name,
+                    _arguments_json=canonical_arguments_json(call.arguments),
+                    _context=context,
+                    _tool=None,
+                    _decision=None,
+                    _execution_plan=None,
+                    _model_text=result.to_model_text(call.name),
+                    _unstarted_result=result,
+                    _unstarted_status="rejected",
+                    _executor_token=self._prepare_token,
                 )
             if not isinstance(arguments, dict):
-                return await _finish_unstarted(
-                    context,
-                    call,
-                    ToolResult.failure(
-                        "invalid_arguments",
-                        "tool preparation returned invalid arguments",
-                    ).to_model_text(call.name),
-                    "rejected",
-                    on_event,
+                result = ToolResult.failure(
+                    "invalid_arguments",
+                    "tool preparation returned invalid arguments",
+                )
+                return PreparedToolCall(
+                    _call_id=call.call_id,
+                    _tool_name=call.name,
+                    _arguments_json=canonical_arguments_json(call.arguments),
+                    _context=context,
+                    _tool=None,
+                    _decision=None,
+                    _execution_plan=None,
+                    _model_text=result.to_model_text(call.name),
+                    _unstarted_result=result,
+                    _unstarted_status="rejected",
+                    _executor_token=self._prepare_token,
                 )
 
         definition = tool.definition
@@ -172,15 +275,22 @@ class ToolExecutor:
         if effective_risk is not None:
             risk = effective_risk(arguments)
             if not isinstance(risk, ToolRisk):
-                return await _finish_unstarted(
-                    context,
-                    call,
-                    ToolResult.failure(
-                        "invalid_tool_risk",
-                        "tool returned invalid effective risk",
-                    ).to_model_text(call.name),
-                    "rejected",
-                    on_event,
+                result = ToolResult.failure(
+                    "invalid_tool_risk",
+                    "tool returned invalid effective risk",
+                )
+                return PreparedToolCall(
+                    _call_id=call.call_id,
+                    _tool_name=call.name,
+                    _arguments_json=canonical_arguments_json(arguments),
+                    _context=context,
+                    _tool=None,
+                    _decision=None,
+                    _execution_plan=None,
+                    _model_text=result.to_model_text(call.name),
+                    _unstarted_result=result,
+                    _unstarted_status="rejected",
+                    _executor_token=self._prepare_token,
                 )
             definition = replace(definition, risk=risk)
 
@@ -193,25 +303,96 @@ class ToolExecutor:
                 try:
                     candidate = build_plan(context, arguments)
                 except SandboxPlanError as error:
-                    return await _finish_unstarted(
-                        context,
-                        call,
-                        ToolResult.failure(error.code, error.code).to_model_text(call.name),
-                        "rejected",
-                        on_event,
+                    result = ToolResult.failure(error.code, error.code)
+                    return PreparedToolCall(
+                        _call_id=call.call_id,
+                        _tool_name=call.name,
+                        _arguments_json=canonical_arguments_json(arguments),
+                        _context=context,
+                        _tool=None,
+                        _decision=None,
+                        _execution_plan=None,
+                        _model_text=result.to_model_text(call.name),
+                        _unstarted_result=result,
+                        _unstarted_status="rejected",
+                        _executor_token=self._prepare_token,
                     )
                 if not isinstance(candidate, ExecutionPlan):
-                    return await _finish_unstarted(
-                        context,
-                        call,
-                        ToolResult.failure(
-                            "execution_plan_invalid",
-                            "tool returned invalid execution plan",
-                        ).to_model_text(call.name),
-                        "rejected",
-                        on_event,
+                    result = ToolResult.failure(
+                        "execution_plan_invalid",
+                        "tool returned invalid execution plan",
+                    )
+                    return PreparedToolCall(
+                        _call_id=call.call_id,
+                        _tool_name=call.name,
+                        _arguments_json=canonical_arguments_json(arguments),
+                        _context=context,
+                        _tool=None,
+                        _decision=None,
+                        _execution_plan=None,
+                        _model_text=result.to_model_text(call.name),
+                        _unstarted_result=result,
+                        _unstarted_status="rejected",
+                        _executor_token=self._prepare_token,
                     )
                 execution_plan = candidate
+        return PreparedToolCall(
+            _call_id=call.call_id,
+            _tool_name=call.name,
+            _arguments_json=canonical_arguments_json(arguments),
+            _context=context,
+            _tool=tool,
+            _decision=decision,
+            _execution_plan=execution_plan,
+            _model_text=None,
+            _unstarted_result=None,
+            _unstarted_status=None,
+            _executor_token=self._prepare_token,
+        )
+
+    async def execute_prepared(
+        self,
+        context: ToolContext,
+        prepared: PreparedToolCall,
+        *,
+        on_event: RunEventHandler | None = None,
+    ) -> ToolExecution:
+        """执行同一执行器和 ToolContext 生成的不可变单次计划。
+
+        Args:
+            context: prepare 时绑定的同一个 Tool 运行边界。
+            prepared: 已完成校验、Policy 规范化与 Sandbox Plan 绑定的计划。
+            on_event: 可选的结构化运行事件回调。
+
+        Returns:
+            模型可见结果、可选审批 ID 与原始 ToolResult。
+
+        Raises:
+            ValueError: 计划来自其他执行器、不同 Context 或已被消费。
+            asyncio.CancelledError: Tool 执行被调用方取消。
+        """
+        if (
+            prepared._executor_token is not self._prepare_token
+            or prepared._context is not context
+        ):
+            raise ValueError("prepared Tool call does not belong to this execution context")
+        if not prepared._consumption.consume():
+            raise ValueError("prepared Tool call has already been consumed")
+        call = prepared.call
+        if prepared._model_text is not None:
+            assert prepared._unstarted_status is not None
+            return await _finish_unstarted(
+                context,
+                call,
+                prepared._model_text,
+                prepared._unstarted_status,
+                on_event,
+            )
+        tool = prepared._tool
+        decision = prepared._decision
+        assert tool is not None and decision is not None
+        arguments = call.arguments
+        execution_plan = prepared._execution_plan
         if decision.action is not PolicyAction.ALLOW:
             if decision.action is PolicyAction.DENY:
                 self._runs.deny(context, call, arguments, decision.error_code)

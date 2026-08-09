@@ -562,20 +562,27 @@ flowchart LR
 
 代码位置：`src/miniclaw/agent/runner.py`
 
-Phase 1 的临时 `Mapping[str, ToolHandler]` 已删除，不保留两套执行 API。Runner 现在只接收：
+Phase 1 的临时 `Mapping[str, ToolHandler]` 已删除，不保留两套执行 API。当前 Runner 接收：
 
 ```python
-AgentRunner(provider, executor=None, max_iterations=8)
+AgentRunner(
+    provider,
+    executor=None,
+    max_iterations=32,
+    hard_max_iterations=64,
+    max_no_progress_iterations=3,
+)
 ```
 
 当模型返回 Tool Call：
 
-1. 先检查是否已到最后一轮；
+1. 根据 32 轮软预算、64 轮硬预算和上一批的新成功 Tool 结果决定是否进入无 Tool 收口；
 2. 有 Executor 但没有 ToolContext 时抛 `AgentError`；
 3. 保存 Assistant Tool Call Message；
-4. 按模型数组顺序逐个调用 Executor；
-5. 保存每个 Tool Message；
-6. 用追加后的消息发起下一轮模型请求。
+4. 对语义重复的 Tool Call 返回 `duplicate_tool_call`，不重新执行真实 Tool；
+5. 按模型数组顺序逐个调用其余 Executor；
+6. 保存每个 Tool Message，并在连续 3 轮没有新成功结果时以 `loop_no_progress` 结束；
+7. 用追加后的消息发起下一轮模型请求。
 
 `AgentRunResult.intermediate_messages` 返回不可变 tuple，供 TurnRepository 在成功事务中保存。
 
@@ -715,7 +722,8 @@ flowchart TD
 | 用户取消 | `CancelledError` 继续向上 | ToolRun interrupted，Turn cancelled |
 | 最终模型轮失败 | 原 ProviderError | 保留已完成 Tool 消息，Turn failed |
 | 历史 metadata 损坏 | `ConversationDataError` | 当前 Turn failed |
-| 模型第 8 轮仍调 Tool | `AgentLoopLimitError` | 最后一批 Tool 不执行 |
+| 32 轮未获有效扩展或第 64 轮收口仍调 Tool | `AgentLoopLimitError` | 收口请求不提供 Tool schema；最后一批 Tool 不执行 |
+| 连续 3 轮没有新成功 Tool 结果 | `AgentNoProgressError` / `loop_no_progress` | 重复 Tool 不重新执行；Turn failed |
 
 ## 17. 测试矩阵
 

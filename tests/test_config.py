@@ -20,8 +20,8 @@ class ConfigTest(unittest.TestCase):
         self.paths = build_state_paths(self.home)
         self.workspace = self.home / "custom-workspace"
 
-    def test_missing_file_uses_predictable_defaults(self) -> None:
-        """尚未生成配置文件时应返回可预测且不含密钥值的默认配置。"""
+    def test_missing_file_uses_adaptive_agent_defaults(self) -> None:
+        """尚未生成配置文件时应使用自适应 Agent loop 默认预算。"""
         config = load_config(
             self.paths,
             {"MINICLAW_MODEL_API_KEY": "secret-must-stay-outside-config"},
@@ -29,7 +29,9 @@ class ConfigTest(unittest.TestCase):
         )
 
         self.assertEqual(config.agent.model, "provider/model")
-        self.assertEqual(config.agent.max_tool_iterations, 8)
+        self.assertEqual(config.agent.max_tool_iterations, 32)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 64)
+        self.assertEqual(config.agent.max_no_progress_iterations, 3)
         self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
@@ -83,6 +85,65 @@ class ConfigTest(unittest.TestCase):
             "MINICLAW_FEISHU_APP_SECRET",
         )
         self.assertNotIn("secret-must-stay-outside-config", repr(config))
+
+    def test_agent_budget_rejects_hard_limit_below_soft_limit(self) -> None:
+        """hard tool loop 上限不能低于常规 soft 上限。"""
+        self.paths.config.write_text(
+            "[agent]\nmax_tool_iterations = 40\nmax_tool_iterations_hard = 32\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ConfigError, "max_tool_iterations_hard"):
+            load_config(self.paths, {}, {})
+
+    def test_agent_budget_rejects_hard_limit_below_environment_soft_limit(self) -> None:
+        """环境变量覆盖后 hard tool loop 上限仍不能低于 soft 上限。"""
+        with self.assertRaisesRegex(ConfigError, "max_tool_iterations_hard"):
+            load_config(
+                self.paths,
+                {
+                    "MINICLAW_MAX_TOOL_ITERATIONS": "40",
+                    "MINICLAW_MAX_TOOL_ITERATIONS_HARD": "32",
+                },
+                {},
+            )
+
+    def test_legacy_toml_soft_budget_expands_implicit_hard_budget(self) -> None:
+        """旧 TOML 只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
+        self.paths.config.write_text(
+            "[agent]\nmax_tool_iterations = 100\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(self.paths, {}, {})
+
+        self.assertEqual(config.agent.max_tool_iterations, 100)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 100)
+
+    def test_legacy_environment_soft_budget_expands_implicit_hard_budget(self) -> None:
+        """旧环境变量只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
+        config = load_config(
+            self.paths,
+            {"MINICLAW_MAX_TOOL_ITERATIONS": "100"},
+            {},
+        )
+
+        self.assertEqual(config.agent.max_tool_iterations, 100)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 100)
+
+    def test_toml_hard_remains_explicit_when_environment_overrides_soft(self) -> None:
+        """TOML 显式 hard 不得被环境 soft 静默提升。"""
+        self.paths.config.write_text(
+            "[agent]\nmax_tool_iterations_hard = 80\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ConfigError, "max_tool_iterations_hard"):
+            load_config(
+                self.paths,
+                {"MINICLAW_MAX_TOOL_ITERATIONS": "100"},
+                {},
+            )
 
     def test_explicit_safe_tool_mode_overrides_autopilot_default(self) -> None:
         """用户显式选择 safe 时必须保留审批模式。"""
@@ -278,12 +339,16 @@ class ConfigTest(unittest.TestCase):
             {
                 "MINICLAW_MODEL_NAME": "env-model",
                 "MINICLAW_MAX_TOOL_ITERATIONS": "6",
+                "MINICLAW_MAX_TOOL_ITERATIONS_HARD": "12",
+                "MINICLAW_MAX_NO_PROGRESS_ITERATIONS": "4",
             },
             {"model": "cli-model"},
         )
 
         self.assertEqual(config.agent.model, "cli-model")
         self.assertEqual(config.agent.max_tool_iterations, 6)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 12)
+        self.assertEqual(config.agent.max_no_progress_iterations, 4)
         self.assertEqual(config.provider.base_url, "https://file.example/v1")
         self.assertEqual(config.workspace.path, self.workspace)
 
@@ -318,6 +383,20 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "max_tool_iterations"):
             load_config(self.paths, {}, {})
 
+    def test_new_agent_budget_keys_reject_invalid_toml_integers(self) -> None:
+        """新增 hard 与无进展预算必须拒绝零值和 bool TOML。"""
+        for content, expected in (
+            ("[agent]\nmax_tool_iterations_hard = 0\n", "max_tool_iterations_hard"),
+            (
+                "[agent]\nmax_no_progress_iterations = true\n",
+                "max_no_progress_iterations",
+            ),
+        ):
+            with self.subTest(content=content):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
+
     def test_unknown_key_is_rejected(self) -> None:
         """拼错的配置项必须立即失败，而不是静默使用默认值。"""
         self.paths.config.write_text("[agent]\nmax_iterations = 8\n", encoding="utf-8")
@@ -339,6 +418,16 @@ class ConfigTest(unittest.TestCase):
         """整数环境变量写错时必须指出变量名，不能回退到不透明的默认值。"""
         with self.assertRaisesRegex(ConfigError, "MINICLAW_MAX_TOOL_ITERATIONS"):
             load_config(self.paths, {"MINICLAW_MAX_TOOL_ITERATIONS": "many"}, {})
+
+    def test_new_agent_budget_environment_values_must_be_integers(self) -> None:
+        """新增 Agent 预算环境变量不能把非整数静默回退为默认值。"""
+        for key in (
+            "MINICLAW_MAX_TOOL_ITERATIONS_HARD",
+            "MINICLAW_MAX_NO_PROGRESS_ITERATIONS",
+        ):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ConfigError, key):
+                    load_config(self.paths, {key: "many"}, {})
 
     def test_relative_read_only_root_is_rejected(self) -> None:
         """附加只读根也必须是绝对路径，不能成为 Workspace 逃逸入口。"""
