@@ -55,6 +55,8 @@ from miniclaw.storage.migrations import MigrationError, apply_migrations
 from miniclaw.storage.repositories import OwnerRepository
 from miniclaw.tui_launcher import TuiLaunchError, run_default_tui
 
+_SERVICE_OPTIONAL_CHECKS = frozenset({"pi_tui", "browser"})
+
 
 def build_parser() -> argparse.ArgumentParser:
     """创建裸 TUI 与 setup/init/doctor/eval 维护命令的解析器。"""
@@ -492,7 +494,7 @@ def _service_install_preflight(paths: StatePaths) -> None:
     if collect_enabled_channels(config) != ("feishu",):
         raise GatewayConfigError("service production target must be Feishu only")
     if any(
-        result.status is CheckStatus.FAIL
+        result.status is CheckStatus.FAIL and result.name not in _SERVICE_OPTIONAL_CHECKS
         for result in run_local_checks(paths, environment)
     ):
         raise ServiceError("service_preflight_failed")

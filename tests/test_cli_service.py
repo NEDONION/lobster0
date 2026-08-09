@@ -5,9 +5,12 @@ import io
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
-from miniclaw.cli import _launchd_service, build_parser, main
+from miniclaw.cli import _launchd_service, _service_install_preflight, build_parser, main
+from miniclaw.doctor import CheckResult, CheckStatus
+from miniclaw.gateway import GatewayConfigError
 from miniclaw.install.service import ServiceError, ServiceSpec, ServiceStatus
 from miniclaw.paths import build_state_paths
 
@@ -142,6 +145,57 @@ class ServiceCliTest(unittest.TestCase):
 
         self.assertIs(service, sentinel)
         self.assertEqual(render.call_args.kwargs["launcher"], launcher)
+
+    def test_install_preflight_ignores_unrelated_tui_and_browser_failures(self) -> None:
+        """Gateway service 不应被未使用的 TUI/Browser readiness 阻塞。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            checks = (
+                CheckResult("workspace", CheckStatus.PASS, "ready"),
+                CheckResult("pi_tui", CheckStatus.FAIL, "not built"),
+                CheckResult("browser", CheckStatus.FAIL, "disabled"),
+            )
+            with (
+                mock.patch("miniclaw.cli.load_dotenv"),
+                mock.patch("miniclaw.cli.load_config", return_value=SimpleNamespace()),
+                mock.patch(
+                    "miniclaw.cli.collect_enabled_channels",
+                    return_value=("feishu",),
+                ),
+                mock.patch("miniclaw.cli.run_local_checks", return_value=checks),
+            ):
+                _service_install_preflight(paths)
+
+    def test_install_preflight_rejects_core_failure_and_second_channel(self) -> None:
+        """Workspace 等必需项失败或启用第二平台时必须在写 plist 前拒绝。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            with (
+                mock.patch("miniclaw.cli.load_dotenv"),
+                mock.patch("miniclaw.cli.load_config", return_value=SimpleNamespace()),
+                mock.patch(
+                    "miniclaw.cli.collect_enabled_channels",
+                    return_value=("feishu", "discord"),
+                ),
+            ):
+                with self.assertRaises(GatewayConfigError):
+                    _service_install_preflight(paths)
+            with (
+                mock.patch("miniclaw.cli.load_dotenv"),
+                mock.patch("miniclaw.cli.load_config", return_value=SimpleNamespace()),
+                mock.patch(
+                    "miniclaw.cli.collect_enabled_channels",
+                    return_value=("feishu",),
+                ),
+                mock.patch(
+                    "miniclaw.cli.run_local_checks",
+                    return_value=(
+                        CheckResult("workspace", CheckStatus.FAIL, "private detail"),
+                    ),
+                ),
+            ):
+                with self.assertRaisesRegex(ServiceError, "service_preflight_failed"):
+                    _service_install_preflight(paths)
 
 
 if __name__ == "__main__":
