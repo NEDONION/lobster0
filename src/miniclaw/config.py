@@ -51,6 +51,7 @@ _TOP_LEVEL_KEYS = frozenset(
         "heartbeat",
         "sandbox",
         "checkpoint",
+        "browser",
     }
 )
 _AGENT_KEYS = frozenset(
@@ -163,6 +164,19 @@ _SANDBOX_KEYS = frozenset(
 )
 _CHECKPOINT_KEYS = frozenset(
     {"enabled", "max_entries", "max_total_bytes", "max_file_bytes", "max_count"}
+)
+_BROWSER_KEYS = frozenset(
+    {
+        "enabled",
+        "backend",
+        "profile",
+        "headed",
+        "allow_personal_profile",
+        "max_tabs",
+        "max_snapshot_chars",
+        "inactivity_timeout_seconds",
+        "download_max_bytes",
+    }
 )
 _OVERRIDE_KEYS = frozenset({"model", "base_url", "api_key_env", "workspace"})
 _ENVIRONMENT_NAME = re.compile(r"[A-Z_][A-Z0-9_]*\Z")
@@ -382,6 +396,21 @@ class CheckpointConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class BrowserConfig:
+    """保存专用 Browser Worker 的开关、Profile 和资源预算。"""
+
+    enabled: bool = False
+    backend: str = "local"
+    profile: str = "miniclaw"
+    headed: bool = True
+    allow_personal_profile: bool = False
+    max_tabs: int = 8
+    max_snapshot_chars: int = 20_000
+    inactivity_timeout_seconds: int = 120
+    download_max_bytes: int = 20 * 1024 * 1024
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     """汇总 Phase 0 已实现的强类型配置。"""
 
@@ -396,6 +425,7 @@ class AppConfig:
     heartbeat: HeartbeatConfig = HeartbeatConfig()
     sandbox: SandboxConfig = SandboxConfig()
     checkpoint: CheckpointConfig = CheckpointConfig()
+    browser: BrowserConfig = BrowserConfig()
 
 
 def load_config(
@@ -435,6 +465,7 @@ def load_config(
     heartbeat_raw = _section(raw, "heartbeat", _HEARTBEAT_KEYS)
     sandbox_raw = _section(raw, "sandbox", _SANDBOX_KEYS)
     checkpoint_raw = _section(raw, "checkpoint", _CHECKPOINT_KEYS)
+    browser_raw = _section(raw, "browser", _BROWSER_KEYS)
     feishu_raw = _section(
         channels_raw,
         "feishu",
@@ -918,6 +949,48 @@ def load_config(
         minimum=1,
         maximum=1000,
     )
+    browser_enabled = _boolean(browser_raw.get("enabled", False), "browser.enabled")
+    browser_backend = _enum_string(
+        browser_raw.get("backend", "local"),
+        "browser.backend",
+        frozenset({"local"}),
+    )
+    browser_profile = _enum_string(
+        browser_raw.get("profile", "miniclaw"),
+        "browser.profile",
+        frozenset({"miniclaw", "personal"}),
+    )
+    browser_headed = _boolean(browser_raw.get("headed", True), "browser.headed")
+    browser_allow_personal_profile = _boolean(
+        browser_raw.get("allow_personal_profile", False),
+        "browser.allow_personal_profile",
+    )
+    if browser_profile == "personal" and not browser_allow_personal_profile:
+        raise ConfigError("browser.profile personal requires allow_personal_profile")
+    browser_max_tabs = _bounded_integer(
+        browser_raw.get("max_tabs", 8),
+        "browser.max_tabs",
+        minimum=1,
+        maximum=16,
+    )
+    browser_max_snapshot_chars = _bounded_integer(
+        browser_raw.get("max_snapshot_chars", 20_000),
+        "browser.max_snapshot_chars",
+        minimum=1000,
+        maximum=100_000,
+    )
+    browser_inactivity_timeout_seconds = _bounded_integer(
+        browser_raw.get("inactivity_timeout_seconds", 120),
+        "browser.inactivity_timeout_seconds",
+        minimum=30,
+        maximum=3600,
+    )
+    browser_download_max_bytes = _bounded_integer(
+        browser_raw.get("download_max_bytes", 20 * 1024 * 1024),
+        "browser.download_max_bytes",
+        minimum=1024 * 1024,
+        maximum=100 * 1024 * 1024,
+    )
 
     model = _environment_string(source, "MINICLAW_MODEL_NAME", model)
     max_tool_iterations = _environment_integer(
@@ -1080,6 +1153,17 @@ def load_config(
             max_total_bytes=checkpoint_max_total_bytes,
             max_file_bytes=checkpoint_max_file_bytes,
             max_count=checkpoint_max_count,
+        ),
+        browser=BrowserConfig(
+            enabled=browser_enabled,
+            backend=browser_backend,
+            profile=browser_profile,
+            headed=browser_headed,
+            allow_personal_profile=browser_allow_personal_profile,
+            max_tabs=browser_max_tabs,
+            max_snapshot_chars=browser_max_snapshot_chars,
+            inactivity_timeout_seconds=browser_inactivity_timeout_seconds,
+            download_max_bytes=browser_download_max_bytes,
         ),
     )
 

@@ -57,6 +57,12 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("[heartbeat]\nenabled = false", template)
         self.assertIn('[sandbox]\nbackend = "docker"', template)
         self.assertIn("[checkpoint]\nenabled = true", template)
+        self.assertIn("[browser]\nenabled = false", template)
+        self.assertIn('profile = "miniclaw"', template)
+        self.assertFalse(config.browser.enabled)
+        for path in (self.paths.browser, self.paths.artifacts, self.paths.downloads):
+            self.assertTrue(path.is_dir())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o700)
         self.assertNotIn("cli_", template)
         env_example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(
             encoding="utf-8"

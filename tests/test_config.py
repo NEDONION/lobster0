@@ -80,11 +80,61 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.channels.discord.message_max_chars, 2000)
         self.assertEqual(config.channels.feishu.account_id, "default")
         self.assertEqual(config.channels.feishu.owner_open_id, "")
+        self.assertFalse(config.browser.enabled)
+        self.assertEqual(config.browser.backend, "local")
+        self.assertEqual(config.browser.profile, "miniclaw")
+        self.assertTrue(config.browser.headed)
+        self.assertFalse(config.browser.allow_personal_profile)
+        self.assertEqual(config.browser.max_tabs, 8)
+        self.assertEqual(config.browser.max_snapshot_chars, 20_000)
+        self.assertEqual(config.browser.inactivity_timeout_seconds, 120)
+        self.assertEqual(config.browser.download_max_bytes, 20 * 1024 * 1024)
         self.assertEqual(
             config.channels.feishu.app_secret_env,
             "MINICLAW_FEISHU_APP_SECRET",
         )
         self.assertNotIn("secret-must-stay-outside-config", repr(config))
+
+    def test_browser_section_is_bounded_and_personal_profile_requires_opt_in(self) -> None:
+        """Browser 预算必须有界，Personal Profile 必须显式双重确认。"""
+        valid = (
+            "[browser]\n"
+            "enabled = true\n"
+            'backend = "local"\n'
+            'profile = "personal"\n'
+            "headed = false\n"
+            "allow_personal_profile = true\n"
+            "max_tabs = 4\n"
+            "max_snapshot_chars = 10000\n"
+            "inactivity_timeout_seconds = 60\n"
+            "download_max_bytes = 1048576\n"
+        )
+        self.paths.config.write_text(valid, encoding="utf-8")
+
+        browser = load_config(self.paths, {}, {}).browser
+
+        self.assertTrue(browser.enabled)
+        self.assertEqual(browser.profile, "personal")
+        self.assertFalse(browser.headed)
+        self.assertEqual(browser.max_tabs, 4)
+
+        invalid = (
+            ("[browser]\nunknown = true\n", "browser.unknown"),
+            ('[browser]\nbackend = "remote"\n', "browser.backend"),
+            ('[browser]\nprofile = "personal"\n', "allow_personal_profile"),
+            ("[browser]\nmax_tabs = 0\n", "browser.max_tabs"),
+            ("[browser]\nmax_snapshot_chars = 999\n", "browser.max_snapshot_chars"),
+            (
+                "[browser]\ninactivity_timeout_seconds = 29\n",
+                "browser.inactivity_timeout_seconds",
+            ),
+            ("[browser]\ndownload_max_bytes = 104857601\n", "browser.download_max_bytes"),
+        )
+        for content, expected in invalid:
+            with self.subTest(expected=expected):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
 
     def test_agent_budget_rejects_hard_limit_below_soft_limit(self) -> None:
         """hard tool loop 上限不能低于常规 soft 上限。"""
