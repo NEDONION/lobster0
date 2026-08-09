@@ -1,0 +1,359 @@
+"""验证 installer manifest 与不可变请求模型的 fail-closed 契约。"""
+
+import dataclasses
+import json
+import unittest
+from pathlib import Path
+
+from miniclaw.install.models import (
+    InstallError,
+    InstallEvent,
+    InstallPlan,
+    InstallRequest,
+    PlatformKey,
+    ReleaseManifest,
+)
+
+
+class InstallModelsTest(unittest.TestCase):
+    """覆盖 manifest 信任边界以及计划输出的脱敏边界。"""
+
+    fixture = Path("tests/install/manifest_v1.json")
+    schema = Path("release/manifest.schema.json")
+
+    def setUp(self) -> None:
+        """为每个用例载入一份可独立修改的 fixture。"""
+        self.document = json.loads(self.fixture.read_text(encoding="utf-8"))
+
+    def manifest_bytes(self, mutation: dict[str, object] | None = None) -> bytes:
+        """返回应用顶层修改后的紧凑 manifest 字节。"""
+        document = dict(self.document)
+        if mutation:
+            document.update(mutation)
+        return json.dumps(document, separators=(",", ":")).encode()
+
+    def artifact_mutation(self, **changes: object) -> bytes:
+        """返回只修改首个 artifact 的 manifest。"""
+        artifact = dict(self.document["artifacts"][0])
+        artifact.update(changes)
+        self.document["artifacts"][0] = artifact
+        return self.manifest_bytes()
+
+    def request(self, **changes: object) -> InstallRequest:
+        """构造一个不含 Secret 值的有效安装请求。"""
+        values: dict[str, object] = {
+            "action": "install",
+            "version": "0.7.0",
+            "channel": "stable",
+            "prefix": Path("/opt/miniclaw"),
+            "state_home": Path("/var/lib/miniclaw"),
+            "system_prefix": False,
+            "onboard": True,
+            "config_file": Path("/private/import-config.toml"),
+            "secrets_file": Path("/private/import-secrets.env"),
+            "service": True,
+            "allow_system_packages": False,
+            "dry_run": False,
+            "json_output": False,
+            "verbose": False,
+            "purge_data": False,
+            "confirm_data_loss": False,
+        }
+        values.update(changes)
+        return InstallRequest(**values)  # type: ignore[arg-type]
+
+    def test_manifest_accepts_exact_v1_and_selects_one_platform_artifact(self) -> None:
+        """有效 v1 fixture 应解析成不可变值并精确选择目标 TUI。"""
+        manifest = ReleaseManifest.from_bytes(self.fixture.read_bytes())
+
+        self.assertEqual(manifest.version, "0.7.0")
+        self.assertEqual(manifest.database_schema, 5)
+        selected = manifest.require_artifact("tui", PlatformKey("linux", "x86_64"))
+        self.assertEqual(selected.component_version, "0.7.0")
+        with self.assertRaises(dataclasses.FrozenInstanceError):
+            manifest.version = "0.8.0"  # type: ignore[misc]
+
+    def test_manifest_rejects_unknown_missing_and_duplicate_json_keys(self) -> None:
+        """所有对象必须 exact-key，JSON 文本中的重复键也不得被覆盖。"""
+        for data in (
+            self.manifest_bytes({"mystery": True}),
+            self.manifest_bytes({"product": "other"}),
+            self.manifest_bytes({"version": "v0.7"}),
+        ):
+            with self.subTest(data=data[:100]), self.assertRaisesRegex(
+                InstallError, "manifest_invalid"
+            ):
+                ReleaseManifest.from_bytes(data)
+
+        del self.document["features"]
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(self.manifest_bytes())
+
+        duplicate = self.fixture.read_text(encoding="utf-8").replace(
+            '"product": "miniclaw",',
+            '"product": "miniclaw", "product": "miniclaw",',
+            1,
+        )
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(duplicate.encode())
+
+    def test_manifest_normalizes_malicious_json_types_and_depth(self) -> None:
+        """错误容器类型和极深 JSON 都必须归一化为稳定错误。"""
+        documents = []
+        for field in ("kind", "source_repository"):
+            artifact = dict(self.document["artifacts"][0])
+            artifact[field] = {"unhashable": True}
+            documents.append({**self.document, "artifacts": [artifact]})
+        artifact = dict(self.document["artifacts"][0])
+        artifact["platform"] = {"os": {"unhashable": True}, "arch": "x86_64"}
+        documents.extend(
+            (
+                {**self.document, "artifacts": [artifact]},
+                {**self.document, "features": [{"unhashable": True}]},
+                {**self.document, "product": ["miniclaw"]},
+            )
+        )
+        for document in documents:
+            with self.subTest(document=document), self.assertRaisesRegex(
+                InstallError, "manifest_invalid"
+            ):
+                ReleaseManifest.from_bytes(json.dumps(document).encode())
+
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(("[" * 2_000 + "]" * 2_000).encode())
+
+    def test_manifest_rejects_bad_commit_hash_size_and_integer_bool(self) -> None:
+        """commit/hash/size/schema 整数必须规范且 bool 不能冒充 int。"""
+        cases = (
+            self.manifest_bytes({"git_commit": "a" * 39}),
+            self.artifact_mutation(sha256="A" * 64),
+            self.artifact_mutation(sha256=""),
+            self.artifact_mutation(size=0),
+            self.artifact_mutation(size=1_073_741_825),
+            self.manifest_bytes({"database_schema": True}),
+            self.manifest_bytes({"schema_version": True}),
+        )
+        for data in cases:
+            with self.subTest(data=data[:100]), self.assertRaisesRegex(
+                InstallError, "manifest_invalid"
+            ):
+                ReleaseManifest.from_bytes(data)
+
+    def test_manifest_rejects_untrusted_urls_and_repositories(self) -> None:
+        """artifact URL 必须是无附加信息的 allowlisted HTTPS 来源。"""
+        cases = (
+            "http://github.com/NEDONION/miniclaw/releases/download/v0.7.0/a.whl",
+            "https://user@github.com/NEDONION/miniclaw/releases/download/v0.7.0/a.whl",
+            "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/a.whl?x=1",
+            "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/a.whl#x",
+            "https://github.com/OTHER/miniclaw/releases/download/v0.7.0/a.whl",
+            "https://github.com/NEDONION/other/releases/download/v0.7.0/a.whl",
+        )
+        for url in cases:
+            with self.subTest(url=url), self.assertRaisesRegex(
+                InstallError, "manifest_invalid"
+            ):
+                ReleaseManifest.from_bytes(self.artifact_mutation(url=url))
+
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(
+                self.artifact_mutation(source_repository="https://github.com/OTHER/miniclaw")
+            )
+
+    def test_manifest_rejects_unknown_features_and_unsupported_platforms(self) -> None:
+        """feature 与 Release platform 必须来自封闭集合且覆盖完整 Tier 1。"""
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(self.manifest_bytes({"features": ["browser"]}))
+
+        platforms = list(self.document["supported_platforms"])
+        platforms[0] = {"os": "windows", "arch": "x86_64"}
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(self.manifest_bytes({"supported_platforms": platforms}))
+
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(
+                self.artifact_mutation(platform={"os": "linux", "arch": "riscv64"})
+            )
+
+    def test_manifest_rejects_invalid_node_policy_and_database_order(self) -> None:
+        """Node 只接受既定 22/24 范围，DB readable schema 不得超前。"""
+        node_cases = (
+            {
+                "default": "25.0.0",
+                "accepted": self.document["node"]["accepted"],
+            },
+            {
+                "default": "24.18.0",
+                "accepted": [
+                    {"minimum": "20.0.0", "maximum_exclusive": "21.0.0"},
+                    {"minimum": "24.15.0", "maximum_exclusive": "25.0.0"},
+                ],
+            },
+            {
+                "default": "24.18.0",
+                "accepted": [
+                    {"minimum": "23.0.0", "maximum_exclusive": "22.0.0"},
+                    {"minimum": "24.15.0", "maximum_exclusive": "25.0.0"},
+                ],
+            },
+        )
+        for node in node_cases:
+            with self.subTest(node=node), self.assertRaisesRegex(
+                InstallError, "manifest_invalid"
+            ):
+                ReleaseManifest.from_bytes(self.manifest_bytes({"node": node}))
+
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(
+                self.manifest_bytes({"minimum_readable_schema": 6})
+            )
+
+    def test_manifest_enforces_byte_and_artifact_budgets(self) -> None:
+        """manifest 超过 1 MiB 或 artifact 超过 128 条必须在构造前拒绝。"""
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(b" " * 1_048_577)
+
+        artifacts = [dict(self.document["artifacts"][0]) for _ in range(129)]
+        for index, artifact in enumerate(artifacts):
+            artifact["filename"] = f"artifact-{index}.whl"
+            artifact["kind"] = "wheel" if index % 2 == 0 else "sdist"
+            artifact["component_version"] = f"0.7.{index}"
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(self.manifest_bytes({"artifacts": artifacts}))
+
+    def test_manifest_rejects_duplicate_artifacts_and_ambiguous_selection(self) -> None:
+        """filename、artifact identity 和兼容平台选择都必须唯一。"""
+        first = dict(self.document["artifacts"][0])
+        second = dict(first)
+        second["sha256"] = "d" * 64
+        for field, value in (
+            ("filename", "other.whl"),
+            ("component_version", "0.7.1"),
+        ):
+            duplicate = dict(second)
+            duplicate[field] = value
+            with self.subTest(field=field), self.assertRaisesRegex(
+                InstallError, "manifest_invalid"
+            ):
+                ReleaseManifest.from_bytes(
+                    self.manifest_bytes({"artifacts": [first, duplicate]})
+                )
+
+        universal_tui = dict(self.document["artifacts"][1])
+        universal_tui["filename"] = "miniclaw-tui-0.7.0-any-any.tar.gz"
+        universal_tui["platform"] = {"os": "any", "arch": "any"}
+        manifest = ReleaseManifest.from_bytes(
+            self.manifest_bytes(
+                {"artifacts": [*self.document["artifacts"], universal_tui]}
+            )
+        )
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            manifest.require_artifact("tui", PlatformKey("linux", "x86_64"))
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            manifest.require_artifact("node", PlatformKey("linux", "x86_64"))
+
+    def test_request_models_reject_invalid_types_paths_and_versions(self) -> None:
+        """请求的 enum、semver、绝对路径和 bool 字段必须严格。"""
+        self.assertEqual(self.request().version, "0.7.0")
+        for changes in (
+            {"action": "repair"},
+            {"action": []},
+            {"channel": "nightly"},
+            {"version": "v0.7.0"},
+            {"version": "0.8.0-rc.1", "channel": "stable"},
+            {"prefix": Path("relative")},
+            {"prefix": Path("/opt/miniclaw\nSECRET_SENTINEL")},
+            {"state_home": Path("relative")},
+            {"config_file": Path("relative.toml")},
+            {"secrets_file": Path("relative.env")},
+            {"dry_run": 1},
+            {"service": 1},
+            {"prefix": Path("/opt/miniclaw"), "system_prefix": True},
+        ):
+            with self.subTest(changes=changes), self.assertRaises(InstallError):
+                self.request(**changes)
+
+    def test_plan_summary_excludes_config_secrets_and_state_home(self) -> None:
+        """计划摘要仅展示安全字段，不得泄漏输入配置和 Secret 路径。"""
+        request = self.request(
+            config_file=Path("/private/CONFIG_SENTINEL.toml"),
+            secrets_file=Path("/private/SECRET_SENTINEL.env"),
+            state_home=Path("/private/STATE_SENTINEL"),
+        )
+        manifest = ReleaseManifest.from_bytes(self.fixture.read_bytes())
+        plan = InstallPlan(
+            request=request,
+            manifest=manifest,
+            platform=PlatformKey("linux", "x86_64"),
+            distro_id="ubuntu",
+            distro_version="24.04",
+            service_manager="systemd-user",
+            program_prefix=Path("/opt/miniclaw"),
+            state_home=request.state_home,
+            artifact_filenames=("miniclaw-tui-0.7.0-linux-x86_64.tar.gz",),
+            system_argvs=(("apt-get", "install", "-y", "libsqlite3-0"),),
+            install_service=True,
+            run_onboarding=True,
+        )
+
+        summary = plan.safe_summary()
+        self.assertEqual(
+            summary,
+            "version=0.7.0 platform=linux/x86_64 prefix=/opt/miniclaw "
+            "service=True onboarding=True",
+        )
+        self.assertNotIn("CONFIG_SENTINEL", summary)
+        self.assertNotIn("SECRET_SENTINEL", summary)
+        self.assertNotIn("STATE_SENTINEL", summary)
+        with self.assertRaisesRegex(InstallError, "plan_invalid"):
+            dataclasses.replace(plan, platform="linux")  # type: ignore[arg-type]
+        with self.assertRaisesRegex(InstallError, "plan_invalid"):
+            dataclasses.replace(plan, program_prefix=Path("/opt/miniclaw\nSECRET_SENTINEL"))
+        with self.assertRaisesRegex(InstallError, "plan_invalid"):
+            dataclasses.replace(
+                plan,
+                artifact_filenames=({"unhashable": True},),  # type: ignore[arg-type]
+            )
+
+    def test_event_and_error_details_are_bounded_and_redacted(self) -> None:
+        """稳定错误与事件 detail 不得保留凭据、URL、私有路径或无限文本。"""
+        unsafe = (
+            "token=TOP_SECRET https://user:pass@example.com/x /Users/alice/private "
+            + "x" * 900
+        )
+        error = InstallError("manifest_invalid", unsafe)
+        event = InstallEvent("install.failed", "error", error.code, unsafe)
+
+        for value in (error.detail, str(error), event.detail):
+            self.assertLessEqual(len(value), 500 + len("manifest_invalid: "))
+            self.assertNotIn("TOP_SECRET", value)
+            self.assertNotIn("user:pass", value)
+            self.assertNotIn("/Users/alice", value)
+        with self.assertRaisesRegex(InstallError, "event_invalid"):
+            InstallEvent("install.failed", [], None, "detail")  # type: ignore[arg-type]
+        fallback = InstallError([], "detail")  # type: ignore[arg-type]
+        self.assertEqual(fallback.code, "installer_error")
+
+    def test_json_schema_mirrors_closed_world_python_contract(self) -> None:
+        """schema 应可由 stdlib 读取并镜像主要 closed-world 常量。"""
+        schema = json.loads(self.schema.read_text(encoding="utf-8"))
+
+        self.assertEqual(schema["additionalProperties"], False)
+        self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
+        self.assertEqual(schema["properties"]["database_schema"]["const"], 5)
+        self.assertEqual(schema["properties"]["artifacts"]["maxItems"], 128)
+        self.assertEqual(schema["properties"]["node"]["properties"]["default"]["const"], "24.18.0")
+        self.assertEqual(
+            schema["properties"]["supported_platforms"]["minItems"],
+            schema["properties"]["supported_platforms"]["maxItems"],
+        )
+        self.assertTrue(
+            all(
+                definition.get("additionalProperties") is False
+                for definition in schema["$defs"].values()
+            )
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "product": "miniclaw",
+  "version": "0.7.0",
+  "git_commit": "0123456789abcdef0123456789abcdef01234567",
+  "python": "3.12",
+  "node": {
+    "default": "24.18.0",
+    "accepted": [
+      {"minimum": "22.22.3", "maximum_exclusive": "23.0.0"},
+      {"minimum": "24.15.0", "maximum_exclusive": "25.0.0"}
+    ]
+  },
+  "artifacts": [
+    {
+      "kind": "wheel",
+      "filename": "miniclaw_agent-0.7.0-py3-none-any.whl",
+      "url": "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/miniclaw_agent-0.7.0-py3-none-any.whl",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "size": 123456,
+      "media_type": "application/zip",
+      "platform": {"os": "any", "arch": "any"},
+      "component_version": "0.7.0",
+      "source_repository": "https://github.com/NEDONION/miniclaw",
+      "license_ref": "MIT",
+      "upstream_sha256": null
+    },
+    {
+      "kind": "tui",
+      "filename": "miniclaw-tui-0.7.0-linux-x86_64.tar.gz",
+      "url": "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/miniclaw-tui-0.7.0-linux-x86_64.tar.gz",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size": 654321,
+      "media_type": "application/gzip",
+      "platform": {"os": "linux", "arch": "x86_64"},
+      "component_version": "0.7.0",
+      "source_repository": "https://github.com/NEDONION/miniclaw",
+      "license_ref": "MIT",
+      "upstream_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ],
+  "supported_platforms": [
+    {"os": "linux", "arch": "x86_64"},
+    {"os": "linux", "arch": "arm64"},
+    {"os": "macos", "arch": "x86_64"},
+    {"os": "macos", "arch": "arm64"}
+  ],
+  "features": ["agent", "tools", "memory", "skills", "tui", "feishu", "telegram", "discord", "gateway", "automation", "sandbox", "checkpoint"],
+  "database_schema": 5,
+  "minimum_readable_schema": 5
+}
