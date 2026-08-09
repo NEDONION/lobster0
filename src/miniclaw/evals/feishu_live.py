@@ -16,7 +16,7 @@ from typing import Any
 from miniclaw.channels.supervisor import GatewaySecrets
 from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.doctor import CheckResult, CheckStatus, run_local_checks
-from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from miniclaw.evals.cases import EvalCase, EvalCaseError, load_feishu_live_cases
 from miniclaw.evals.gateway_process import ManagedGateway, ManagedGatewayError
 from miniclaw.evals.production_evidence import (
@@ -294,9 +294,7 @@ def _confirmed_path(value: str | None, default: Path) -> Path:
 def _load_preflight(*, project_root: Path, home: str | None, root: Path) -> LivePreflight:
     """加载私密环境并在创建网络对象前完成全部 fail-closed 检查。"""
     try:
-        environment = dict(os.environ)
-        load_dotenv(project_root / ".env", environment)
-        paths = build_state_paths(resolve_home(home, environment))
+        environment, paths = _load_live_environment(project_root=project_root, home=home)
         config = load_config(paths, environment)
         cases = load_feishu_live_cases(root)
         checks = run_local_checks(paths, environment)
@@ -326,6 +324,19 @@ def _load_preflight(*, project_root: Path, home: str | None, root: Path) -> Live
         ValueError,
     ):
         raise FeishuLiveError("feishu_live_preflight_failed") from None
+
+
+def _load_live_environment(
+    *,
+    project_root: Path,
+    home: str | None,
+) -> tuple[dict[str, str], StatePaths]:
+    """按 Gateway 规则加载安装态 Secret，并保留开发目录 ``.env`` 语义。"""
+    environment = dict(os.environ)
+    provisional = build_state_paths(resolve_home(home, environment))
+    dotenv = resolve_dotenv_path(provisional, environment, cwd=project_root)
+    load_dotenv(dotenv, environment)
+    return environment, build_state_paths(resolve_home(home, environment))
 
 
 def _validate_preflight_state(

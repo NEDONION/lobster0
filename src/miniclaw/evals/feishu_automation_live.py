@@ -36,13 +36,17 @@ from miniclaw.automation.repository import (
 from miniclaw.channels.supervisor import GatewaySecrets
 from miniclaw.config import AppConfig, ConfigError, load_config
 from miniclaw.doctor import CheckResult, CheckStatus, run_local_checks
-from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.env import DotEnvError
 from miniclaw.evals.cases import (
     EvalCase,
     EvalCaseError,
     load_feishu_automation_live_cases,
 )
-from miniclaw.evals.feishu_live import _pending_approval_count, _repository_state
+from miniclaw.evals.feishu_live import (
+    _load_live_environment,
+    _pending_approval_count,
+    _repository_state,
+)
 from miniclaw.evals.gateway_process import ManagedGateway, ManagedGatewayError
 from miniclaw.evals.production_evidence import (
     ProductionEvidenceError,
@@ -56,8 +60,6 @@ from miniclaw.gateway_lease import GatewayLease, GatewayLeaseError
 from miniclaw.paths import (
     PathConfigurationError,
     StatePaths,
-    build_state_paths,
-    resolve_home,
 )
 from miniclaw.storage.channels import DeliveryRepository
 from miniclaw.storage.database import Database, DatabaseError
@@ -184,9 +186,7 @@ def _load_automation_preflight(
 ) -> AutomationLivePreflight:
     """加载配置并在建网前验证 clean commit、单飞书和 Owner DM 路由。"""
     try:
-        environment = dict(os.environ)
-        load_dotenv(project_root / ".env", environment)
-        paths = build_state_paths(resolve_home(home, environment))
+        environment, paths = _load_live_environment(project_root=project_root, home=home)
         config = load_config(paths, environment)
         cases = load_feishu_automation_live_cases(root)
         checks = run_local_checks(paths, environment)
