@@ -1,5 +1,7 @@
 # MiniClaw Phase 6：自治任务、Sandbox 与 Checkpoint 设计
 
+> 发布目标：`v0.7.0`。仓库现有 `v0.6.0`/`v0.6.1` 已用于 Memory Autopilot，Phase 6 不覆盖旧 release record。
+
 > 状态：**APPROVED DESIGN / IMPLEMENTATION PENDING**
 >
 > 日期：2026-08-09
@@ -352,6 +354,7 @@ CREATE TABLE scheduled_tasks (
     delivery_json TEXT NOT NULL,
     policy_profile TEXT NOT NULL,
     budget_json TEXT NOT NULL,
+    system_key TEXT,
     status TEXT NOT NULL
         CHECK(status IN ('active', 'paused', 'completed', 'cancelled')),
     next_run_at TEXT,
@@ -363,6 +366,10 @@ CREATE TABLE scheduled_tasks (
 
 CREATE INDEX scheduled_tasks_due_idx
 ON scheduled_tasks(status, next_run_at, id);
+
+CREATE UNIQUE INDEX scheduled_tasks_system_key_idx
+ON scheduled_tasks(owner_id, system_key)
+WHERE system_key IS NOT NULL;
 ```
 
 `version` 用于 update/pause/resume 的 optimistic concurrency，避免模型用旧列表结果覆盖用户刚完成的修改。
@@ -375,6 +382,7 @@ CREATE TABLE task_runs (
     task_id INTEGER NOT NULL REFERENCES scheduled_tasks(id),
     session_id INTEGER REFERENCES sessions(id),
     turn_id INTEGER REFERENCES turns(id),
+    approval_id INTEGER REFERENCES approvals(id),
     scheduled_for TEXT NOT NULL,
     idempotency_key TEXT NOT NULL UNIQUE,
     snapshot_json TEXT NOT NULL,
@@ -389,6 +397,7 @@ CREATE TABLE task_runs (
     started_at TEXT,
     completed_at TEXT,
     result_preview TEXT,
+    response_json TEXT,
     error_code TEXT,
     usage_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
@@ -408,11 +417,14 @@ CREATE TABLE automation_control (
     halted INTEGER NOT NULL CHECK(halted IN (0, 1)),
     reason TEXT,
     revision INTEGER NOT NULL,
+    scheduler_heartbeat_at TEXT,
     updated_at TEXT NOT NULL
 );
 
-INSERT INTO automation_control(singleton, halted, reason, revision, updated_at)
-VALUES (1, 0, NULL, 1, CURRENT_TIMESTAMP);
+INSERT INTO automation_control(
+    singleton, halted, reason, revision, scheduler_heartbeat_at, updated_at
+)
+VALUES (1, 0, NULL, 1, NULL, CURRENT_TIMESTAMP);
 ```
 
 只有本地 CLI/运维代码能修改该行；模型 Tool 没有 halt/unhalt action。Scheduler 和 Runner 每次产生/claim 新工作前均
@@ -426,6 +438,7 @@ CREATE TABLE checkpoints (
     owner_id INTEGER NOT NULL REFERENCES users(id),
     turn_id INTEGER REFERENCES turns(id),
     task_run_id INTEGER REFERENCES task_runs(id),
+    tool_run_id INTEGER REFERENCES tool_runs(id),
     manifest_json TEXT NOT NULL,
     manifest_hash TEXT NOT NULL,
     status TEXT NOT NULL CHECK(status IN ('captured', 'restored', 'expired')),
@@ -440,6 +453,47 @@ ON checkpoints(owner_id, created_at DESC, id DESC);
 
 Blob 使用 `state/checkpoints/blobs/<sha256>`，mode `0600`，同内容只保存一次。manifest 不记录绝对 Home 路径，只记录
 Workspace 相对路径、类型、mode、size、before hash 和 after hash。
+
+### 8.5 `execution_plans` 与 Approval binding
+
+```sql
+CREATE TABLE execution_plans (
+    tool_run_id INTEGER PRIMARY KEY REFERENCES tool_runs(id),
+    schema_version INTEGER NOT NULL,
+    plan_json TEXT NOT NULL,
+    plan_hash TEXT NOT NULL,
+    backend TEXT NOT NULL CHECK(backend IN ('host', 'docker', 'seatbelt')),
+    receipt_json TEXT,
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+
+ALTER TABLE approvals ADD COLUMN execution_plan_hash TEXT;
+```
+
+- 只有需要 Sandbox 的 ToolRun 才有 `execution_plans` 行；
+- `ToolRunRepository.start()` 与 plan row 在同一 transaction 创建；
+- Approval 创建时复制同一个 plan hash；
+- continuation 同时校验 `arguments_hash`、Approval plan hash、plan row hash 和重新 canonicalize 的 hash；
+- receipt 的 plan hash 必须与 plan row 一致才可终结 ToolRun；
+- legacy Approval 的新列为空，继续按原参数绑定逻辑工作，但不能用于 Phase 6 Sandbox resume。
+
+### 8.6 主动投递关联
+
+v5 为现有 `deliveries` 增加 nullable `task_run_id`。普通 IM Delivery 继续以 `message_id` 关联；主动任务 Delivery
+以 `task_run_id` 关联，两者必须且只能有一个非空。
+
+```sql
+ALTER TABLE deliveries ADD COLUMN task_run_id INTEGER REFERENCES task_runs(id);
+
+CREATE UNIQUE INDEX deliveries_task_run_part_idx
+ON deliveries(task_run_id, channel, part_index, delivery_kind)
+WHERE task_run_id IS NOT NULL;
+```
+
+Repository 在写入时检查 `(message_id IS NULL) != (task_run_id IS NULL)`。`TaskRunner` 先把完整、结构化
+`TaskResponse` 写入 `task_runs.response_json` 并提交，Projector 再创建 Delivery。这样即使进程在两步之间崩溃，重启仍能
+从 Run 恢复完整回答；不能只保存截断的 `result_preview`。
 
 ## 9. 状态机
 
@@ -671,7 +725,7 @@ Heartbeat 是 system-owned ScheduledTask，不是第二个 Scheduler。
 class ExecutionPlan:
     argv: tuple[str, ...]
     cwd: Path
-    environment: tuple[tuple[str, str], ...]
+    environment_names: tuple[str, ...]
     read_roots: tuple[Path, ...]
     write_roots: tuple[Path, ...]
     timeout_seconds: int
@@ -683,7 +737,8 @@ class ExecutionPlan:
 ```
 
 `execution_plan_sha256(plan: ExecutionPlan) -> str` 使用版本化 canonical JSON：UTF-8、sorted keys、无浮点、
-Path 规范化、环境变量排序。Approval 保存 plan hash；
+Path 规范化、环境变量名排序。Plan、数据库、Approval 与 Receipt 都不保存环境变量值；Backend 只在执行瞬间从受管
+Secret/config 边界解析允许的名称。Approval 保存 plan hash；
 恢复执行只读取持久化 plan，不重新接受模型参数。
 
 ```mermaid
@@ -778,7 +833,8 @@ Secret environment、完整私人路径或未截断 Tool output。
 
 ## 19. 配置
 
-新增顶层配置，默认全部关闭，升级不改变现有行为：
+新增顶层配置时，Automation/Heartbeat 默认关闭；Sandbox 没有自动 Run 时不主动执行；Checkpoint 默认开启但只在既有
+受 Policy 允许的写 Tool 前增加恢复点，不改变成功回复格式：
 
 ```toml
 [automation]
@@ -818,8 +874,8 @@ max_count = 100
 启动顺序：
 
 ```text
-config/db → AgentRuntime → Delivery workers → TaskRunner workers
-→ Scheduler/Heartbeat → Channel transports
+config/db/migration → stale lease recovery → Heartbeat reconcile
+→ Delivery workers → TaskRunner workers → Scheduler → Channel transports
 ```
 
 关闭顺序：

@@ -24,6 +24,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/engineering/phase-5/20260808_completion-audit.md"),
     Path("docs/engineering/phase-5/20260809_memory-autopilot.md"),
     Path("docs/superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md"),
+    Path("docs/superpowers/plans/2026-08-09-phase-6-autonomy-sandbox.md"),
     Path("docs/getting-started/20260807_本地运行指南.md"),
     Path("docs/evals/README.md"),
     Path("docs/evals/releases/v0.5.0.md"),

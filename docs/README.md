@@ -157,8 +157,10 @@
   跨渠道 Identity/Disclosure、Durable Flush、FTS5、自动治理、Reconcile 与 legacy migration。
 - [Phase 5.2 生产稳定化计划](superpowers/plans/2026-08-08-phase-5-2-production-hardening.md)：
   系统服务、health、Docker、飞书 15/15 与 24 小时 soak。
-- [Phase 6 自治运行与 Sandbox 计划](superpowers/plans/2026-08-08-phase-6-autonomy-runtime-and-sandbox.md)：
-  Scheduler、Task Ledger、Heartbeat、主动投递、预算、OS Sandbox 与 Checkpoint。
+- [Phase 6 自治运行与 Sandbox 当前实施计划](superpowers/plans/2026-08-09-phase-6-autonomy-sandbox.md)：
+  Phase 5.3 Evidence 收口，以及 Scheduler、Task Ledger、Heartbeat、主动投递、预算、OS Sandbox 与 Checkpoint 的逐项 TDD 任务；发布目标为 v0.7.0。
+- [Phase 6 历史实施计划](superpowers/plans/2026-08-08-phase-6-autonomy-runtime-and-sandbox.md)：
+  已被 2026-08-09 当前计划取代，仅保留为设计演进记录。
 - [Phase 6 自治任务、Sandbox 与 Checkpoint 设计](superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md)：
   已确认的 durable state machine、隔离 Session、Budget、ExecutionPlan、Docker/Seatbelt 与回滚边界。
 - [Phase 6.5 Browser Agent 计划](superpowers/plans/2026-08-08-phase-6-5-browser-agent.md)：

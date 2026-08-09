@@ -1,5 +1,9 @@
 # MiniClaw Phase 6 Autonomy Runtime and Sandbox Implementation Plan
 
+> **SUPERSEDED / 历史计划：** 当前实施以
+> [`2026-08-09-phase-6-autonomy-sandbox.md`](2026-08-09-phase-6-autonomy-sandbox.md) 为准。
+> 本文保留作设计演进记录，不得按其中旧 schema 编号、旧接口或旧完成条件开发。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 交付重启可恢复的定时/后台任务、Heartbeat、主动投递、任务预算、OS Sandbox 和工作区 Checkpoint，使 MiniClaw 能在无人盯屏时安全工作。
