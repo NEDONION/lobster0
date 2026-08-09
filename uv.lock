@@ -504,8 +504,7 @@ wheels = [
 ]
 
 [[package]]
-name = "miniclaw"
-version = "0.1.0"
+name = "miniclaw-agent"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },
@@ -514,6 +513,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "discord-py" },
+    { name = "lark-channel-sdk" },
+    { name = "python-telegram-bot" },
+]
 channels = [
     { name = "discord-py" },
     { name = "lark-channel-sdk" },
@@ -535,17 +539,20 @@ telegram = [
 [package.metadata]
 requires-dist = [
     { name = "croniter", specifier = ">=6.2,<7" },
+    { name = "discord-py", marker = "extra == 'all'", specifier = ">=2.4,<3" },
     { name = "discord-py", marker = "extra == 'channels'", specifier = ">=2.4,<3" },
     { name = "discord-py", marker = "extra == 'discord'", specifier = ">=2.4,<3" },
     { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "lark-channel-sdk", marker = "extra == 'all'", specifier = ">=1.2,<2" },
     { name = "lark-channel-sdk", marker = "extra == 'channels'", specifier = ">=1.2,<2" },
     { name = "lark-channel-sdk", marker = "extra == 'feishu'", specifier = ">=1.2,<2" },
+    { name = "python-telegram-bot", marker = "extra == 'all'", specifier = ">=21,<23" },
     { name = "python-telegram-bot", marker = "extra == 'channels'", specifier = ">=21,<23" },
     { name = "python-telegram-bot", marker = "extra == 'telegram'", specifier = ">=21,<23" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9" },
     { name = "textual", specifier = ">=8.2,<9" },
 ]
-provides-extras = ["dev", "feishu", "telegram", "discord", "channels"]
+provides-extras = ["dev", "feishu", "telegram", "discord", "channels", "all"]
 
 [[package]]
 name = "multidict"

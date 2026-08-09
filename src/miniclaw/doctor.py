@@ -25,6 +25,8 @@ from miniclaw.paths import StatePaths
 from miniclaw.policy.command import CommandPolicyError, normalize_command
 from miniclaw.policy.executables import ExecutableEnvironment, discover_executables
 from miniclaw.policy.network import NetworkPolicyError, normalize_network_rule
+from miniclaw.sandbox.base import SandboxUnavailableError
+from miniclaw.sandbox.docker import discover_rootless_client_transport
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import LATEST_SCHEMA_VERSION
 from miniclaw.tui_launcher import MINIMUM_NODE_VERSION, inspect_pi_tui
@@ -371,11 +373,25 @@ def _check_sandbox_checkpoint(
     if config is None:
         return CheckResult(name, CheckStatus.FAIL, "sandbox configuration is unavailable")
     backend = config.sandbox.backend
-    available = (
-        backend == "host"
-        or backend == "docker" and shutil.which("docker") is not None
-        or backend == "seatbelt" and Path("/usr/bin/sandbox-exec").is_file()
-    )
+    display_backend = config.sandbox.container_engine if backend == "docker" else backend
+    if backend == "docker":
+        try:
+            roots = _permission_roots(config)
+            executables = _executable_environment(config)
+            discover_rootless_client_transport(
+                config.sandbox.container_engine,
+                executables.path_value,
+                roots.owner_home,
+            )
+        except (OSError, RuntimeError, SandboxUnavailableError, ValueError):
+            available = False
+        else:
+            available = True
+    else:
+        available = (
+            backend == "host"
+            or backend == "seatbelt" and Path("/usr/bin/sandbox-exec").is_file()
+        )
     quota_mib = config.checkpoint.max_total_bytes // (1024 * 1024)
     checkpoint_path = paths.home / "checkpoints"
     path_ready = checkpoint_path.is_dir() or os.access(paths.home, os.W_OK)
@@ -385,13 +401,19 @@ def _check_sandbox_checkpoint(
         return CheckResult(
             name,
             CheckStatus.FAIL,
-            f"required {backend} sandbox backend is unavailable",
+            f"required {display_backend} sandbox backend is unavailable",
         )
-    state = "available" if available else "not required while automation is disabled"
+    state = (
+        "rootless client ready"
+        if backend == "docker" and available
+        else "available"
+        if available
+        else "not required while automation is disabled"
+    )
     return CheckResult(
         name,
         CheckStatus.PASS,
-        f"{backend} backend {state}; checkpoint quota={quota_mib}MiB",
+        f"{display_backend} backend {state}; checkpoint quota={quota_mib}MiB",
     )
 
 

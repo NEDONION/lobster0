@@ -45,7 +45,7 @@ test(
     try {
       const hello = await client.hello();
       assert.equal(hello.protocol, 1);
-      assert.equal(hello.core_version, "0.1.0");
+      assert.equal(hello.core_version, "0.7.0");
       assert.equal(Array.isArray(hello.tools), true);
       assert.equal(Array.isArray(hello.capabilities), true);
       await client.shutdown();

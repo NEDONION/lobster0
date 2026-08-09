@@ -1,6 +1,8 @@
 """MiniClaw Textual TUI 的无头交互测试。"""
 
 import asyncio
+import contextlib
+import io
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +15,7 @@ from textual.events import Paste
 from textual.widgets import Button, Collapsible, Static, TextArea
 
 from miniclaw.agent.events import RunEvent
+from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.tools.base import ToolDefinition, ToolRisk
@@ -21,6 +24,7 @@ from miniclaw.tui.app import (
     MiniClawApp,
     ReasoningCard,
     ToolCard,
+    _load_runtime,
     _terminal_safe,
 )
 
@@ -210,6 +214,34 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 ),
             ),
         )
+
+    def test_runtime_loads_installed_secret_file_without_echoing_it(self) -> None:
+        """Textual TUI 只读取显式安装态 Secret 文件，且不向终端回显其内容。"""
+        initialize_state(self.paths)
+        sentinel = "tui-installed-secret"
+        self.paths.secrets_file.write_text(
+            f"MINICLAW_MODEL_API_KEY={sentinel}\n",
+            encoding="utf-8",
+        )
+        self.paths.secrets_file.chmod(0o600)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with (
+            contextlib.redirect_stdout(stdout),
+            contextlib.redirect_stderr(stderr),
+            mock.patch.dict(
+                "miniclaw.tui.app.os.environ",
+                {"MINICLAW_ENV_FILE": str(self.paths.secrets_file)},
+                clear=True,
+            ),
+            mock.patch("miniclaw.tui.app.create_runtime", return_value=self.runtime) as factory,
+        ):
+            runtime = _load_runtime(self.paths)
+
+        self.assertIs(runtime, self.runtime)
+        self.assertEqual(factory.call_args.args[2], sentinel)
+        self.assertNotIn(sentinel, stdout.getvalue() + stderr.getvalue())
 
     async def test_enter_runs_one_turn_and_shift_enter_keeps_a_newline(self) -> None:
         """Enter 发送并清空输入；Shift+Enter 只在同一输入框内换行。"""

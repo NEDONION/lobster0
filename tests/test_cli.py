@@ -1,5 +1,6 @@
 """MiniClaw 命令行入口的行为测试。"""
 
+import argparse
 import contextlib
 import io
 import sys
@@ -19,8 +20,10 @@ from miniclaw.automation.models import (  # noqa: E402
     TaskBudget,
 )
 from miniclaw.automation.repository import ScheduledTaskRepository  # noqa: E402
-from miniclaw.cli import main  # noqa: E402
+from miniclaw.cli import build_parser, main  # noqa: E402
+from miniclaw.config import load_config  # noqa: E402
 from miniclaw.paths import build_state_paths  # noqa: E402
+from miniclaw.setup import SetupAnswers, write_fresh_setup  # noqa: E402
 from miniclaw.storage.database import Database  # noqa: E402
 from miniclaw.storage.repositories import OwnerRepository  # noqa: E402
 
@@ -66,7 +69,7 @@ class CliTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "0"):
                 main(["--version"])
 
-        self.assertIn("miniclaw 0.1.0", output.getvalue())
+        self.assertIn("miniclaw 0.7.0", output.getvalue())
 
     def test_help_lists_tui_gateway_and_maintenance_commands(self) -> None:
         """帮助包含唯一 TUI、gateway 和维护命令，不恢复 chat/approval 分叉。"""
@@ -78,6 +81,7 @@ class CliTest(unittest.TestCase):
 
         help_text = output.getvalue()
         self.assertIn("init", help_text)
+        self.assertIn("setup", help_text)
         self.assertIn("doctor", help_text)
         self.assertIn("eval", help_text)
         self.assertIn("gateway", help_text)
@@ -85,6 +89,30 @@ class CliTest(unittest.TestCase):
         self.assertIn("all enabled IM channels", help_text)
         self.assertNotIn("chat", help_text)
         self.assertNotIn("approvals", help_text)
+
+    def test_setup_and_init_expose_no_secret_valued_options(self) -> None:
+        """parser 全树不得提供 API Key、Token 或 App Secret argv。"""
+        parser = build_parser()
+        pending = [parser]
+        all_options: set[str] = set()
+        commands: dict[str, argparse.ArgumentParser] = {}
+        while pending:
+            selected = pending.pop()
+            for action in selected._actions:
+                all_options.update(action.option_strings)
+                if isinstance(action, argparse._SubParsersAction):
+                    commands.update(action.choices)
+                    pending.extend(action.choices.values())
+
+        self.assertTrue({"--api-key", "--token", "--app-secret"}.isdisjoint(all_options))
+        for command in ("setup", "init"):
+            with self.subTest(command=command):
+                options = {
+                    option
+                    for action in commands[command]._actions
+                    for option in action.option_strings
+                }
+                self.assertEqual(options, {"-h", "--help", "--home", "--sandbox-image"})
 
     def test_task_commands_are_repository_only_and_redact_private_fields(self) -> None:
         """list/show/run/runs 不加载 Provider，且不输出 Prompt 或 conversation ID。"""
@@ -197,6 +225,69 @@ class CliTest(unittest.TestCase):
         self.assertIn("Initialized MiniClaw", first_output)
         self.assertIn("already initialized", second_output)
 
+    def test_setup_dispatches_only_home_and_digest_without_secret_output(self) -> None:
+        """CLI setup 只转交 state home 与非 Secret image digest。"""
+        pinned = "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64
+        fake_result = mock.Mock()
+        fake_result.owner.id = 7
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch(
+                "miniclaw.cli.run_interactive_setup", return_value=fake_result
+            ) as interactive,
+        ):
+            exit_code, output, error = run_cli(
+                ["setup", "--home", directory, "--sandbox-image", pinned]
+            )
+
+        self.assertEqual((exit_code, error), (0, ""))
+        self.assertIn("Configured MiniClaw", output)
+        self.assertNotIn("key", output.casefold())
+        interactive.assert_called_once()
+        call = interactive.call_args
+        self.assertEqual(call.args[0].home, Path(directory).resolve())
+        self.assertEqual(call.kwargs, {"sandbox_image": pinned})
+
+    def test_setup_rejects_lexical_symlink_home_before_resolution(self) -> None:
+        """CLI setup 不得先把 existing symlink home 解引用成可写 target。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target"
+            target.mkdir(mode=0o700)
+            link = root / "state"
+            link.symlink_to(target, target_is_directory=True)
+
+            def setup_without_tty(paths, *, sandbox_image):
+                return write_fresh_setup(
+                    paths,
+                    SetupAnswers.defaults(),
+                    {"MINICLAW_MODEL_API_KEY": "test-only-key"},
+                    sandbox_image,
+                )
+
+            with mock.patch(
+                "miniclaw.cli.run_interactive_setup",
+                side_effect=setup_without_tty,
+            ):
+                exit_code, output, error = run_cli(["setup", "--home", str(link)])
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(output, "")
+            self.assertIn("symbolic link", error)
+            self.assertEqual(tuple(target.iterdir()), ())
+
+    def test_init_accepts_digest_pinned_sandbox_image_and_stays_idempotent(self) -> None:
+        """init 的唯一新增值参数应写入 pin，重复执行仍不覆盖配置。"""
+        pinned = "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64
+        with tempfile.TemporaryDirectory() as directory:
+            first = run_cli(["init", "--home", directory, "--sandbox-image", pinned])
+            second = run_cli(["init", "--home", directory, "--sandbox-image", pinned])
+            config = load_config(build_state_paths(Path(directory).resolve()), {})
+
+        self.assertEqual((first[0], second[0]), (0, 0))
+        self.assertEqual(config.sandbox.image, pinned)
+        self.assertIn("already initialized", second[1])
+
     def test_init_rejects_relative_home_with_exit_code_two(self) -> None:
         """CLI 必须把相对状态目录分类为可操作的配置错误。"""
         exit_code, output, error = run_cli(["init", "--home", "relative"])
@@ -281,7 +372,7 @@ class CliTest(unittest.TestCase):
             entry.write_text("// test entry\n", encoding="utf-8")
 
             with (
-                mock.patch("miniclaw.cli.Path.cwd", return_value=root),
+                mock.patch("miniclaw.env.Path.cwd", return_value=root),
                 mock.patch.dict(
                     "miniclaw.cli.os.environ",
                     {
@@ -295,6 +386,51 @@ class CliTest(unittest.TestCase):
                 exit_code, output, error = run_cli(
                     ["doctor", "--home", str(state)]
                 )
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("missing environment", output)
+        self.assertNotIn(secret, output + error)
+
+    def test_doctor_loads_installed_secret_file_without_echoing_it(self) -> None:
+        """doctor 应只加载显式安装态 Secret 文件，且不向诊断输出泄露凭据。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state"
+            run_cli(["init", "--home", str(state)])
+            with (state / "config.toml").open("a", encoding="utf-8") as config_file:
+                config_file.write(
+                    "\n[channels.feishu]\n"
+                    "enabled = true\n"
+                    'owner_open_id = "ou_owner"\n'
+                    'allowed_open_ids = ["ou_owner"]\n'
+                )
+            secret = "doctor-installed-secret"
+            dotenv = state / "secrets.env"
+            dotenv.write_text(
+                "MINICLAW_FEISHU_APP_ID=cli_test\n"
+                f"MINICLAW_FEISHU_APP_SECRET={secret}\n",
+                encoding="utf-8",
+            )
+            dotenv.chmod(0o600)
+            node = root / "test-node"
+            node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+            node.chmod(0o700)
+            entry = root / "main.js"
+            entry.write_text("// test entry\n", encoding="utf-8")
+
+            with (
+                mock.patch.dict(
+                    "miniclaw.cli.os.environ",
+                    {
+                        "MINICLAW_ENV_FILE": str(dotenv),
+                        "MINICLAW_NODE": str(node),
+                        "MINICLAW_TUI_ENTRY": str(entry),
+                    },
+                    clear=True,
+                ),
+                mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()),
+            ):
+                exit_code, output, error = run_cli(["doctor", "--home", str(state)])
 
         self.assertEqual(exit_code, 0)
         self.assertNotIn("missing environment", output)

@@ -160,7 +160,15 @@ _HEARTBEAT_KEYS = frozenset(
     }
 )
 _SANDBOX_KEYS = frozenset(
-    {"backend", "image", "network", "memory_mib", "cpu_seconds", "pids_limit"}
+    {
+        "backend",
+        "container_engine",
+        "image",
+        "network",
+        "memory_mib",
+        "cpu_seconds",
+        "pids_limit",
+    }
 )
 _CHECKPOINT_KEYS = frozenset(
     {"enabled", "max_entries", "max_total_bytes", "max_file_bytes", "max_count"}
@@ -377,6 +385,7 @@ class SandboxConfig:
     """保存 Sandbox 后端及不可由模型扩大的资源限制。"""
 
     backend: str = "docker"
+    container_engine: str = "docker-rootless"
     image: str = "miniclaw-sandbox:phase6"
     network: str = "none"
     memory_mib: int = 512
@@ -883,6 +892,11 @@ def load_config(
         "sandbox.backend",
         frozenset({"host", "docker", "seatbelt"}),
     )
+    sandbox_container_engine = _enum_string(
+        sandbox_raw.get("container_engine", "docker-rootless"),
+        "sandbox.container_engine",
+        frozenset({"docker-rootless", "podman-rootless"}),
+    )
     sandbox_image = _sandbox_image(
         sandbox_raw.get("image", "miniclaw-sandbox:phase6"), "sandbox.image"
     )
@@ -1141,6 +1155,7 @@ def load_config(
         ),
         sandbox=SandboxConfig(
             backend=sandbox_backend,
+            container_engine=sandbox_container_engine,
             image=sandbox_image,
             network=sandbox_network,
             memory_mib=sandbox_memory_mib,

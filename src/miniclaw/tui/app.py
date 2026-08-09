@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
@@ -22,7 +21,7 @@ from miniclaw import __version__
 from miniclaw.agent.events import RunEvent, display_tool_arguments
 from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError, load_config
-from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from miniclaw.paths import StatePaths
 from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.runtime import create_runtime
@@ -1122,8 +1121,8 @@ def run_tui(paths: StatePaths) -> int:
 
 
 def _load_runtime(paths: StatePaths) -> AgentRuntime:
-    """从当前 `.env` 和已初始化状态装配唯一 Runtime。"""
-    load_dotenv(Path.cwd() / ".env")
+    """从统一 Secret 路径和已初始化状态装配唯一 Runtime。"""
+    load_dotenv(resolve_dotenv_path(paths, os.environ))
     config = load_config(paths)
     api_key = os.environ.get(config.provider.api_key_env, "").strip()
     if not api_key:

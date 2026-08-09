@@ -25,7 +25,7 @@ from miniclaw.automation.repository import (
 from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError
 from miniclaw.doctor import CheckStatus, run_local_checks
-from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from miniclaw.evals.automation import run_automation_suite
 from miniclaw.evals.cases import EvalCaseError, load_automation_cases, load_cases
 from miniclaw.evals.channel import run_channel_suite
@@ -37,6 +37,7 @@ from miniclaw.gateway import (
     run_gateway,
 )
 from miniclaw.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
+from miniclaw.setup import SetupError, run_interactive_setup
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import MigrationError, apply_migrations
 from miniclaw.storage.repositories import OwnerRepository
@@ -44,7 +45,7 @@ from miniclaw.tui_launcher import TuiLaunchError, run_default_tui
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """创建裸 TUI 与 init/doctor/eval 维护命令的解析器。"""
+    """创建裸 TUI 与 setup/init/doctor/eval 维护命令的解析器。"""
     parser = argparse.ArgumentParser(
         prog="miniclaw",
         description="MiniClaw — a tiny self-hosted personal agent. Run bare to open the TUI.",
@@ -57,6 +58,20 @@ def build_parser() -> argparse.ArgumentParser:
         "--home",
         dest="command_home",
         help="absolute MiniClaw state directory",
+    )
+    init_parser.add_argument(
+        "--sandbox-image",
+        help="digest-pinned MiniClaw Sandbox image",
+    )
+    setup_parser = subparsers.add_parser("setup", help="configure a fresh MiniClaw state")
+    setup_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute MiniClaw state directory",
+    )
+    setup_parser.add_argument(
+        "--sandbox-image",
+        help="digest-pinned MiniClaw Sandbox image",
     )
     doctor_parser = subparsers.add_parser("doctor", help="check local MiniClaw state")
     doctor_parser.add_argument(
@@ -155,6 +170,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     home = getattr(arguments, "command_home", None) or arguments.home
     try:
+        if arguments.command == "setup":
+            selected_home = (
+                home or os.environ.get("MINICLAW_HOME") or Path.home() / ".miniclaw"
+            )
+            if Path(selected_home).expanduser().is_symlink():
+                raise PathConfigurationError(
+                    "MiniClaw setup home must not be a symbolic link"
+                )
         paths = build_state_paths(resolve_home(home))
     except (PathConfigurationError, ConfigError) as error:
         print(f"error: {error}", file=sys.stderr)
@@ -163,7 +186,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.command == "doctor":
         environment = dict(os.environ)
         try:
-            load_dotenv(Path.cwd() / ".env", environment)
+            load_dotenv(resolve_dotenv_path(paths, environment), environment)
         except DotEnvError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
@@ -173,7 +196,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 2 if any(result.status is CheckStatus.FAIL for result in results) else 0
 
     if arguments.command == "init":
-        return _run_init(paths)
+        return _run_init(paths, arguments.sandbox_image)
+
+    if arguments.command == "setup":
+        return _run_setup(paths, arguments.sandbox_image)
 
     if arguments.command == "task":
         return _run_task(paths, arguments)
@@ -209,10 +235,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 130
 
 
-def _run_init(paths: StatePaths) -> int:
-    """初始化状态并保留既有稳定退出码。"""
+def _run_init(paths: StatePaths, sandbox_image: str | None = None) -> int:
+    """初始化状态并保留既有稳定退出码。
+
+    Args:
+        paths: 已解析的 MiniClaw 状态路径。
+        sandbox_image: 首次配置使用的 digest-pinned Sandbox image。
+
+    Returns:
+        成功为 0、配置错误为 2、持久化错误为 5。
+    """
     try:
-        result = initialize_state(paths)
+        result = initialize_state(paths, sandbox_image=sandbox_image)
     except ConfigError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
@@ -223,6 +257,31 @@ def _run_init(paths: StatePaths) -> int:
         print(f"Initialized MiniClaw at {paths.home} (owner {result.owner.id}).")
     else:
         print(f"MiniClaw is already initialized at {paths.home} (owner {result.owner.id}).")
+    return 0
+
+
+def _run_setup(paths: StatePaths, sandbox_image: str | None) -> int:
+    """运行 fresh-only 交互 setup 并映射稳定退出码。
+
+    Args:
+        paths: 已解析的 MiniClaw 状态路径。
+        sandbox_image: 安装器提供的 digest-pinned Sandbox image。
+
+    Returns:
+        成功为 0、输入或配置错误为 2、持久化错误为 5、取消为 130。
+    """
+    try:
+        result = run_interactive_setup(paths, sandbox_image=sandbox_image)
+    except (ConfigError, SetupError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    except (BootstrapError, DatabaseError, MigrationError, OSError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 5
+    except KeyboardInterrupt:
+        print("Cancelled.", file=sys.stderr)
+        return 130
+    print(f"Configured MiniClaw at {paths.home} (owner {result.owner.id}).")
     return 0
 
 
