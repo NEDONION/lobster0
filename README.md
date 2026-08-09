@@ -139,7 +139,7 @@ MINICLAW_TUI=textual uv run miniclaw
 
 Channel 的 allowlist、Owner 身份与平台凭据配置见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
 
-### Desktop W0/W1 开发版
+### Desktop W0/W1 开发版与 D1～D5 新目标
 
 Desktop 当前是开发构建，不是已签名安装包。它复用同一 Python Core、Policy、SQLite 与 Automation，不在
 Renderer 中复制 Agent 逻辑或直接访问本机能力。
@@ -171,9 +171,16 @@ MINICLAW_ENV_FILE=/absolute/path/to/miniclaw-home/secrets.env \
 pnpm --dir desktop dev
 ```
 
-当前包含首页、任务工作台、自动化只读列表和设置；没有 installer/signing、Artifact 预览、Sub-agent、
-外部 Agent adapter、Office 编辑器或深色主题。自动化跨进程测试和隔离 Electron 进程 smoke 已通过；鼠标/键盘
-视觉验收与真实模型 LIVE smoke 仍为 pending。
+当前可运行版本包含首页、任务工作台、自动化只读列表和设置；自动化跨进程测试和隔离 Electron 进程 smoke 已通过。
+它仍是 W0/W1 历史基线：输入框藏在任务页，Artifact、Sub-agent、installer/signing、鼠标/键盘视觉验收和真实模型
+LIVE smoke 尚未完成。
+
+新的 D1～D5 目标已确认：以 LobsterAI Cowork 为主体，让首屏直接显示大对话框、附件、模型、Workspace 和 Agent
+选择；吸收 OpenAgents 的 Agent 列表、任务线程、参与状态和右侧共享产物；底层继续只使用 MiniClaw Core、Policy、
+Approval、ArtifactStore 和 SQLite。当前处于设计完成、实现 pending，详见
+[桌面多 Agent 开发需求](docs/product/20260810_桌面多Agent工作台开发需求.md)、
+[架构设计](docs/architecture/20260810_LobsterAI-first桌面多Agent设计.md)和
+[分 Phase 落地方案](docs/engineering/desktop/20260810_桌面多Agent分Phase落地.md)。
 
 ## 产品预览
 
