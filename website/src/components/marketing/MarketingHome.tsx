@@ -1,5 +1,6 @@
 import { marketingCopy, type Locale } from '@/content/site';
 
+import { CapabilityExplorer } from './CapabilityExplorer';
 import { HeroRuntime } from './HeroRuntime';
 import { MarketingFooter } from './MarketingFooter';
 import { MarketingHeader } from './MarketingHeader';
@@ -13,18 +14,7 @@ export function MarketingHome({ locale }: { locale: Locale }) {
       <main>
         <HeroRuntime locale={locale} />
 
-        <section className="marketing-section" id="product" aria-labelledby="product-title">
-          <div className="site-shell section-frame">
-            <p className="section-kicker">{copy.product.eyebrow}</p>
-            <h2 id="product-title">{copy.product.title}</h2>
-            <p className="section-lead">{copy.product.lead}</p>
-            <div className="shell-preview" aria-label={copy.nav.product}>
-              {copy.capabilities.map((capability) => (
-                <span key={capability.id}>{capability.label}</span>
-              ))}
-            </div>
-          </div>
-        </section>
+        <CapabilityExplorer locale={locale} />
 
         <section className="marketing-section" id="workbench" aria-labelledby="workbench-title">
           <div className="site-shell section-frame">

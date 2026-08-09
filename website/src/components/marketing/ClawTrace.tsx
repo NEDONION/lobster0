@@ -1,35 +1,20 @@
 'use client';
 
 import { motion } from 'motion/react';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { MarketingCopy } from '@/content/site';
+import { useReducedMotionPreference } from '@/lib/motion';
 
 interface ClawTraceProps {
   copy: MarketingCopy['trace'];
 }
 
 const traceDuration = 2400;
-const reducedMotionQuery = '(prefers-reduced-motion: reduce)';
-
-function subscribeToReducedMotion(onChange: () => void) {
-  if (typeof window.matchMedia !== 'function') return () => undefined;
-  const media = window.matchMedia(reducedMotionQuery);
-  media.addEventListener('change', onChange);
-  return () => media.removeEventListener('change', onChange);
-}
-
-function getReducedMotionPreference() {
-  return typeof window.matchMedia === 'function' && window.matchMedia(reducedMotionQuery).matches;
-}
 
 export function ClawTrace({ copy }: ClawTraceProps) {
   const traceRef = useRef<HTMLDivElement>(null);
-  const reducedMotion = useSyncExternalStore(
-    subscribeToReducedMotion,
-    getReducedMotionPreference,
-    () => false,
-  );
+  const reducedMotion = useReducedMotionPreference();
   const [started, setStarted] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
   const lastIndex = copy.steps.length - 1;
