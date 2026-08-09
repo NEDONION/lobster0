@@ -182,7 +182,9 @@ def download_artifact(
         if response is not None:
             _close_response(response)
         if replaced and not succeeded:
-            _remove_owned_path(destination)
+            cleanup = _quarantine_failed_download(destination)
+            if cleanup is not None:
+                _remove_owned_path(cleanup)
         if created_part:
             _remove_owned_path(part)
 
@@ -249,11 +251,19 @@ def extract_tar_gz(
             raise InstallError("manifest_invalid", "manifest")
         os.replace(work, destination)
         replaced = True
-        if original_moved:
-            previous.rmdir()
-            original_moved = False
         _fsync_directory(destination.parent)
         succeeded = True
+        if original_moved:
+            try:
+                previous.rmdir()
+            except OSError:
+                pass
+            else:
+                original_moved = False
+                try:
+                    _fsync_directory(destination.parent)
+                except OSError:
+                    pass
         return tuple(destination.joinpath(*PurePosixPath(member.name).parts) for member in members)
     except InstallError:
         raise
@@ -262,7 +272,10 @@ def extract_tar_gz(
     finally:
         if not succeeded:
             if replaced:
-                _remove_owned_path(destination)
+                try:
+                    os.replace(destination, work)
+                except OSError:
+                    pass
             if destination_existed:
                 _restore_empty_destination(destination, previous, original_moved)
             _remove_owned_path(work)
@@ -539,6 +552,31 @@ def _remove_owned_path(path: Path) -> None:
             shutil.rmtree(path)
     except OSError:
         pass
+
+
+def _quarantine_failed_download(destination: Path) -> Path | None:
+    """先把失败 final 原子移到唯一 private 路径，再交给 best-effort cleanup。"""
+    descriptor: int | None = None
+    cleanup: Path | None = None
+    try:
+        descriptor, name = tempfile.mkstemp(
+            prefix=f".{destination.name}.cleanup-",
+            dir=destination.parent,
+        )
+        os.close(descriptor)
+        descriptor = None
+        cleanup = Path(name)
+        os.replace(destination, cleanup)
+        return cleanup
+    except OSError:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if cleanup is not None:
+            _remove_owned_path(cleanup)
+        return None
 
 
 def _restore_empty_destination(destination: Path, previous: Path, original_moved: bool) -> None:

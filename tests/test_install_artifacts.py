@@ -224,6 +224,52 @@ class InstallArtifactTests(unittest.TestCase):
         self.assertFalse(target.exists())
         self.assertFalse(target.with_name(f"{target.name}.part").exists())
 
+    def test_download_quarantines_failed_final_when_unlink_fails_and_retry_succeeds(self) -> None:
+        """cleanup unlink 失败也必须先移走 final，且 private residue 不能阻塞重试。"""
+        body = b"trusted"
+        target = self.root / "fsync-retry.tar.gz"
+        real_fsync_directory = artifact_transport._fsync_directory
+        attempts = 0
+
+        def fail_first_parent_fsync(directory: Path) -> None:
+            """仅让第一次 final parent fsync 失败。"""
+            nonlocal attempts
+            if directory == target.parent:
+                attempts += 1
+                if attempts == 1:
+                    raise OSError("SECRET_PARENT_FSYNC")
+            real_fsync_directory(directory)
+
+        with (
+            mock.patch.object(
+                artifact_transport,
+                "_fsync_directory",
+                side_effect=fail_first_parent_fsync,
+            ),
+            mock.patch.object(Path, "unlink", side_effect=OSError("SECRET_CLEANUP")),
+        ):
+            with self.assertRaises(InstallError) as caught:
+                download_artifact(
+                    self.artifact(body),
+                    target,
+                    opener=FakeOpener(FakeResponse(body)),
+                )
+            self.assertEqual(caught.exception.code, "artifact_download_failed")
+            self.assertNotIn("SECRET", str(caught.exception))
+            self.assertFalse(target.exists())
+            self.assertFalse(target.with_name(f"{target.name}.part").exists())
+
+            result = download_artifact(
+                self.artifact(body),
+                target,
+                opener=FakeOpener(FakeResponse(body)),
+            )
+
+        self.assertEqual(result.read_bytes(), body)
+        residues = tuple(self.root.glob(f".{target.name}.cleanup-*"))
+        self.assertLessEqual(len(residues), 1)
+        self.assertLessEqual(sum(path.stat().st_size for path in residues), len(body))
+
     def test_download_rejects_duplicate_case_insensitive_security_headers(self) -> None:
         """真实 HTTPMessage 中重复 CL/Location/Encoding 不能靠首值绕过校验。"""
         body = b"trusted"
@@ -304,6 +350,114 @@ class InstallArtifactTests(unittest.TestCase):
         self.assertTrue(fsync_destination.is_dir())
         self.assertEqual(list(fsync_destination.iterdir()), [])
         self.assertEqual(stat.S_IMODE(fsync_destination.stat().st_mode), 0o700)
+
+    def test_tar_rollback_is_atomic_when_private_cleanup_rmtree_fails(self) -> None:
+        """commit fsync 失败须先隐藏 new tree、恢复 previous，再 best-effort 清 private residue。"""
+        archive = make_archive(self.root / "atomic-rollback.tar.gz", "valid")
+        destination = self.root / "atomic-rollback"
+        destination.mkdir(mode=0o700)
+        limits = ExtractionLimits(32, 4096)
+        real_fsync_directory = artifact_transport._fsync_directory
+        previous_seen = False
+
+        def fail_commit_fsync(directory: Path) -> None:
+            """记录 previous 仍在，再让第一次 final parent fsync 失败。"""
+            nonlocal previous_seen
+            if directory == destination.parent and (destination / "README").exists():
+                previous_seen = any(
+                    path.name.startswith(f".{destination.name}.extract-")
+                    and path.name.endswith(".previous")
+                    for path in destination.parent.iterdir()
+                )
+                raise OSError("SECRET_COMMIT_FSYNC")
+            real_fsync_directory(directory)
+
+        with (
+            mock.patch.object(
+                artifact_transport,
+                "_fsync_directory",
+                side_effect=fail_commit_fsync,
+            ),
+            mock.patch.object(
+                artifact_transport.shutil,
+                "rmtree",
+                side_effect=OSError("SECRET_CLEANUP"),
+            ),
+        ):
+            with self.assertRaises(InstallError) as caught:
+                extract_tar_gz(archive, destination, limits)
+
+        self.assertEqual(caught.exception.code, "manifest_invalid")
+        self.assertNotIn("SECRET", str(caught.exception))
+        self.assertTrue(previous_seen)
+        self.assertTrue(destination.is_dir())
+        self.assertEqual(list(destination.iterdir()), [])
+        self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o700)
+        residues = tuple(destination.parent.glob(f".{destination.name}.extract-*"))
+        self.assertLessEqual(len(residues), 1)
+        residue_bytes = sum(
+            path.stat().st_size
+            for residue in residues
+            for path in residue.rglob("*")
+            if path.is_file()
+        )
+        self.assertLessEqual(residue_bytes, limits.max_bytes)
+
+    def test_tar_durable_commit_survives_previous_cleanup_and_second_fsync_failures(self) -> None:
+        """第一次 parent fsync 后 cleanup 失败只能留下 private residue，不能回退 final。"""
+        archive = make_archive(self.root / "durable-cleanup.tar.gz", "valid")
+
+        rmdir_destination = self.root / "rmdir-cleanup"
+        rmdir_destination.mkdir(mode=0o700)
+        real_rmdir = Path.rmdir
+
+        def fail_previous_rmdir(path: Path) -> None:
+            """只拒绝删除 durable commit 的 empty previous。"""
+            if path.name.endswith(".previous"):
+                raise OSError("SECRET_PREVIOUS_CLEANUP")
+            real_rmdir(path)
+
+        with mock.patch.object(
+            Path,
+            "rmdir",
+            autospec=True,
+            side_effect=fail_previous_rmdir,
+        ):
+            extracted = extract_tar_gz(
+                archive,
+                rmdir_destination,
+                ExtractionLimits(32, 4096),
+            )
+        self.assertTrue(extracted)
+        self.assertEqual((rmdir_destination / "README").read_bytes(), b"trusted\n")
+
+        fsync_destination = self.root / "second-fsync-cleanup"
+        fsync_destination.mkdir(mode=0o700)
+        real_fsync_directory = artifact_transport._fsync_directory
+        final_parent_fsyncs = 0
+
+        def fail_second_final_parent_fsync(directory: Path) -> None:
+            """第一次 durability fsync 成功，只让 cleanup 后第二次 fsync 失败。"""
+            nonlocal final_parent_fsyncs
+            if directory == fsync_destination.parent and (fsync_destination / "README").exists():
+                final_parent_fsyncs += 1
+                if final_parent_fsyncs == 2:
+                    raise OSError("SECRET_SECOND_FSYNC")
+            real_fsync_directory(directory)
+
+        with mock.patch.object(
+            artifact_transport,
+            "_fsync_directory",
+            side_effect=fail_second_final_parent_fsync,
+        ):
+            extracted = extract_tar_gz(
+                archive,
+                fsync_destination,
+                ExtractionLimits(32, 4096),
+            )
+        self.assertTrue(extracted)
+        self.assertEqual(final_parent_fsyncs, 2)
+        self.assertEqual((fsync_destination / "README").read_bytes(), b"trusted\n")
 
     def test_download_revalidates_every_redirect_and_only_allows_github_asset_hop(self) -> None:
         """绕过任一 redirect 校验都会允许凭据、query、fragment 或外部 host。"""
