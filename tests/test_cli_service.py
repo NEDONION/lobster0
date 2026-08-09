@@ -8,7 +8,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from miniclaw.cli import _launchd_service, _service_install_preflight, build_parser, main
+from miniclaw.cli import (
+    _launchd_service,
+    _service_install_preflight,
+    _service_repository_commit,
+    build_parser,
+    main,
+)
 from miniclaw.doctor import CheckResult, CheckStatus
 from miniclaw.gateway import GatewayConfigError
 from miniclaw.install.service import ServiceError, ServiceSpec, ServiceStatus
@@ -139,6 +145,10 @@ class ServiceCliTest(unittest.TestCase):
                     "miniclaw.cli.render_launchd_service",
                     return_value=spec,
                 ) as render,
+                mock.patch(
+                    "miniclaw.cli._service_repository_commit",
+                    return_value="a" * 40,
+                ),
                 mock.patch("miniclaw.cli.LaunchdService", return_value=sentinel),
             ):
                 service = _launchd_service(paths)
@@ -196,6 +206,26 @@ class ServiceCliTest(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ServiceError, "service_preflight_failed"):
                     _service_install_preflight(paths)
+
+    def test_repository_commit_requires_clean_exact_head(self) -> None:
+        """dirty status 或无效 HEAD 不能进入 Gateway provenance。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            clean = (
+                mock.Mock(returncode=0, stdout="a" * 40 + "\n"),
+                mock.Mock(returncode=0, stdout=""),
+            )
+            with mock.patch("miniclaw.cli.subprocess.run", side_effect=clean):
+                self.assertEqual(_service_repository_commit(root), "a" * 40)
+            dirty = (
+                mock.Mock(returncode=0, stdout="a" * 40 + "\n"),
+                mock.Mock(returncode=0, stdout=" M private-file\n"),
+            )
+            with (
+                mock.patch("miniclaw.cli.subprocess.run", side_effect=dirty),
+                self.assertRaisesRegex(ServiceError, "service_repository_dirty"),
+            ):
+                _service_repository_commit(root)
 
 
 if __name__ == "__main__":

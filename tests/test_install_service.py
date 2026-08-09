@@ -67,6 +67,7 @@ class LaunchdServiceTest(unittest.TestCase):
             working_directory=self.working_directory,
             launch_agents=self.launch_agents,
             dotenv_path=self.dotenv,
+            commit="a" * 40,
         )
         self.runner = _Runner()
         self.service = LaunchdService(
@@ -89,10 +90,25 @@ class LaunchdServiceTest(unittest.TestCase):
         self.assertEqual(value["KeepAlive"], {"SuccessfulExit": False})
         self.assertEqual(
             value["EnvironmentVariables"],
-            {"MINICLAW_ENV_FILE": str(self.dotenv)},
+            {
+                "MINICLAW_ENV_FILE": str(self.dotenv),
+                "MINICLAW_GATEWAY_COMMIT": "a" * 40,
+            },
         )
         self.assertNotIn(b"SECRET_SENTINEL", self.spec.content)
         self.assertEqual(self.spec.sha256, hashlib.sha256(self.spec.content).hexdigest())
+
+    def test_plist_rejects_invalid_commit_provenance(self) -> None:
+        """LaunchAgent 不能以 unknown、dirty 占位符或非 40-hex 启动。"""
+        with self.assertRaisesRegex(ServiceError, "service_spec_invalid"):
+            render_launchd_service(
+                launcher=self.launcher,
+                state_home=self.state_home,
+                working_directory=self.working_directory,
+                launch_agents=self.launch_agents,
+                dotenv_path=self.dotenv,
+                commit="unknown",
+            )
 
     def test_install_is_owner_only_and_idempotent_when_running(self) -> None:
         """重复 install 不能覆盖未知文件，也不能重复 bootstrap 已运行 job。"""

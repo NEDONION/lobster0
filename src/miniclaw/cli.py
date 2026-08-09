@@ -469,8 +469,57 @@ def _launchd_service(paths: StatePaths) -> LaunchdService:
         working_directory=Path.cwd().resolve(strict=True),
         launch_agents=Path.home().resolve(strict=True) / "Library" / "LaunchAgents",
         dotenv_path=resolve_dotenv_path(paths, os.environ),
+        commit=_service_repository_commit(Path.cwd()),
     )
     return LaunchdService(spec)
+
+
+def _service_repository_commit(root: Path) -> str:
+    """返回 LaunchAgent 必须绑定的 clean repository commit。
+
+    Args:
+        root: 调用 service install/status 时的仓库工作目录。
+
+    Returns:
+        当前 HEAD 的 lowercase 40-hex commit。
+
+    Raises:
+        ServiceError: root 不安全、Git 不可用、HEAD 无效或工作树不干净。
+    """
+    try:
+        resolved = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise ServiceError("service_repository_invalid") from None
+    if resolved != root or not resolved.is_dir():
+        raise ServiceError("service_repository_invalid")
+    try:
+        head = subprocess.run(
+            ("/usr/bin/git", "rev-parse", "--verify", "HEAD"),
+            cwd=resolved,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status = subprocess.run(
+            ("/usr/bin/git", "status", "--porcelain", "--untracked-files=normal"),
+            cwd=resolved,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise ServiceError("service_repository_invalid") from None
+    commit = head.stdout.strip().lower()
+    if (
+        head.returncode != 0
+        or status.returncode != 0
+        or status.stdout
+        or re.fullmatch(r"[0-9a-f]{40}", commit) is None
+    ):
+        raise ServiceError("service_repository_dirty")
+    return commit
 
 
 def _service_install_preflight(paths: StatePaths) -> None:

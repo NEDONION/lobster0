@@ -69,6 +69,7 @@ def render_launchd_service(
     working_directory: Path,
     launch_agents: Path,
     dotenv_path: Path,
+    commit: str,
 ) -> ServiceSpec:
     """渲染固定 label/argv 的 MiniClaw LaunchAgent。
 
@@ -78,6 +79,7 @@ def render_launchd_service(
         working_directory: 启动时不变化的项目或安装目录。
         launch_agents: 当前用户的 LaunchAgents 目录。
         dotenv_path: owner-only dotenv 文件；plist 只保存路径，不复制内容。
+        commit: Gateway provenance 绑定的 clean 40-hex Git commit。
 
     Returns:
         包含 deterministic plist bytes、目标路径与摘要的服务规范。
@@ -88,11 +90,14 @@ def render_launchd_service(
     paths = (launcher, state_home, working_directory, launch_agents, dotenv_path)
     if any(not isinstance(path, Path) or not path.is_absolute() for path in paths) or any(
         _has_control(str(path)) for path in paths
-    ):
+    ) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
         raise ServiceError("service_spec_invalid")
     logs = state_home / "logs"
     payload = {
-        "EnvironmentVariables": {"MINICLAW_ENV_FILE": str(dotenv_path)},
+        "EnvironmentVariables": {
+            "MINICLAW_ENV_FILE": str(dotenv_path),
+            "MINICLAW_GATEWAY_COMMIT": commit,
+        },
         "KeepAlive": {"SuccessfulExit": False},
         "Label": _LABEL,
         "ProgramArguments": [
