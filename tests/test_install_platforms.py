@@ -1,36 +1,36 @@
 """验证 Tier 1 平台检测、Runtime pin 与显式权限计划。"""
 
 import hashlib
+import inspect
 import json
 import os
 import pwd
 import runpy
 import stat
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
 from miniclaw.install import platforms as platforms_module
-from miniclaw.install.models import InstallError, InstallRequest, PlatformKey
+from miniclaw.install.models import InstallError, InstallRequest, PlatformKey, ReleaseManifest
 from miniclaw.install.platforms import (
-    ActivationEvidence,
+    DependencyPlan,
     DetectedPlatform,
-    InstallerArtifactEvidence,
     LocalPlatformProbe,
+    ManualRerunInstruction,
     PrivilegeAction,
-    SandboxVerification,
+    _build_dependency_actions_with_probe,
     _verify_activation_ready_with_probe,
     detect_linux,
     detect_macos,
     detect_platform,
     node_version_supported,
     verify_activation_ready,
-)
-from miniclaw.install.platforms import (
-    _build_dependency_actions_with_probe as build_dependency_actions,
 )
 from miniclaw.install.platforms import (
     _verify_privilege_action_with_probe as verify_privilege_action,
@@ -51,6 +51,16 @@ def _account(name: str = "alice", uid: int = 1001) -> pwd.struct_passwd:
 def _file_fact(mode: int, uid: int = 0, gid: int = 0) -> SimpleNamespace:
     """返回 no-follow lstat 所需的最小文件事实。"""
     return SimpleNamespace(st_mode=mode, st_uid=uid, st_gid=gid)
+
+
+def build_dependency_plan(*args: object, **kwargs: object) -> DependencyPlan:
+    """调用 private offline seam 并保留 manual instruction。"""
+    return _build_dependency_actions_with_probe(*args, **kwargs)  # type: ignore[arg-type]
+
+
+def build_dependency_actions(*args: object, **kwargs: object) -> tuple[PrivilegeAction, ...]:
+    """为既有 action 断言只投影可执行 capability 集合。"""
+    return build_dependency_plan(*args, **kwargs).actions
 
 
 class _BackendProbe:
@@ -87,17 +97,70 @@ class InstallPlatformsTest(unittest.TestCase):
     runtime_versions = Path("release/runtime-versions.json")
 
     def setUp(self) -> None:
-        """创建真实 no-symlink executable installer artifact fixture。"""
+        """创建 manifest-bound installer 与 sandbox-image artifact fixtures。"""
         self.installer_directory = tempfile.TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.installer_directory.cleanup)
         self.installer = Path(self.installer_directory.name) / "miniclaw-installer.pyz"
         body = b"verified installer fixture\n"
         self.installer.write_bytes(body)
         self.installer.chmod(0o755)
-        self.installer_artifact = InstallerArtifactEvidence(
-            self.installer,
-            hashlib.sha256(body).hexdigest(),
+        self.sandbox_artifact = (
+            Path(self.installer_directory.name) / "miniclaw-sandbox-image-digest.txt"
         )
+        self.sandbox_artifact.write_bytes(b"example/miniclaw@sha256:" + b"a" * 64 + b"\n")
+        self.manifest = self.release_manifest()
+
+    def release_manifest(self, version: str = "0.7.0") -> ReleaseManifest:
+        """按当前 fixture bytes 构造 Task4 strict ReleaseManifest。"""
+        artifacts = []
+        for kind, path, media_type in (
+            ("installer", self.installer, "application/zip"),
+            ("sandbox-image", self.sandbox_artifact, "text/plain"),
+        ):
+            body = path.read_bytes()
+            artifacts.append(
+                {
+                    "kind": kind,
+                    "filename": path.name,
+                    "url": (
+                        "https://github.com/NEDONION/miniclaw/releases/download/"
+                        f"v{version}/{path.name}"
+                    ),
+                    "sha256": hashlib.sha256(body).hexdigest(),
+                    "size": len(body),
+                    "media_type": media_type,
+                    "platform": {"os": "any", "arch": "any"},
+                    "component_version": version,
+                    "source_repository": "https://github.com/NEDONION/miniclaw",
+                    "license_ref": "MIT",
+                    "upstream_sha256": None,
+                }
+            )
+        document = {
+            "schema_version": 1,
+            "product": "miniclaw",
+            "version": version,
+            "git_commit": "0" * 40,
+            "python": "3.12",
+            "node": {
+                "default": "24.18.0",
+                "accepted": [
+                    {"minimum": "22.22.3", "maximum_exclusive": "23.0.0"},
+                    {"minimum": "24.15.0", "maximum_exclusive": "25.0.0"},
+                ],
+            },
+            "artifacts": artifacts,
+            "supported_platforms": [
+                {"os": "linux", "arch": "x86_64"},
+                {"os": "linux", "arch": "arm64"},
+                {"os": "macos", "arch": "x86_64"},
+                {"os": "macos", "arch": "arm64"},
+            ],
+            "features": [],
+            "database_schema": 5,
+            "minimum_readable_schema": 5,
+        }
+        return ReleaseManifest.from_bytes(json.dumps(document).encode("utf-8"))
 
     @staticmethod
     def os_release(distro: str, version: str) -> str:
@@ -144,9 +207,7 @@ class InstallPlatformsTest(unittest.TestCase):
                     detected = detect_linux(self.os_release(distro, version), machine)
                     self.assertEqual(detected.artifact_platform, PlatformKey("linux", arch))
                     expected = (
-                        "docker-rootless"
-                        if distro in {"ubuntu", "debian"}
-                        else "podman-rootless"
+                        "docker-rootless" if distro in {"ubuntu", "debian"} else "podman-rootless"
                     )
                     self.assertEqual(detected.sandbox_backend, expected)
 
@@ -243,8 +304,11 @@ class InstallPlatformsTest(unittest.TestCase):
             ),
         )
         for create in invalid_models:
-            with self.subTest(create=create), self.assertRaisesRegex(
-                InstallError, "system_dependency_missing|unsupported_platform"
+            with (
+                self.subTest(create=create),
+                self.assertRaisesRegex(
+                    InstallError, "system_dependency_missing|unsupported_platform"
+                ),
             ):
                 create()
 
@@ -274,8 +338,9 @@ class InstallPlatformsTest(unittest.TestCase):
                 getpwuid=missing_lookup,
             ),
         ):
-            with self.subTest(detect=detect), self.assertRaisesRegex(
-                InstallError, "privilege_denied"
+            with (
+                self.subTest(detect=detect),
+                self.assertRaisesRegex(InstallError, "privilege_denied"),
             ):
                 detect()
 
@@ -285,11 +350,14 @@ class InstallPlatformsTest(unittest.TestCase):
             detect_linux("ID=ubuntu\nVERSION_ID=24.04\n#\ud800", "x86_64")
 
         current = pwd.getpwuid(os.geteuid())
-        with mock.patch.dict(
-            os.environ,
-            {"SUDO_USER": current.pw_name, "SUDO_UID": "9" * 5_000},
-            clear=True,
-        ), self.assertRaisesRegex(InstallError, "privilege_denied"):
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"SUDO_USER": current.pw_name, "SUDO_UID": "9" * 5_000},
+                clear=True,
+            ),
+            self.assertRaisesRegex(InstallError, "privilege_denied"),
+        ):
             detect_platform(
                 self.request(),
                 system="Darwin",
@@ -323,8 +391,9 @@ class InstallPlatformsTest(unittest.TestCase):
             (self.os_release("ubuntu", "24.04"), "x86_64", {"wsl": True}),
         )
         for text, machine, facts in cases:
-            with self.subTest(text=text, machine=machine, facts=facts), self.assertRaisesRegex(
-                InstallError, "unsupported_platform"
+            with (
+                self.subTest(text=text, machine=machine, facts=facts),
+                self.assertRaisesRegex(InstallError, "unsupported_platform"),
             ):
                 detect_linux(text, machine, **facts)
 
@@ -338,8 +407,9 @@ class InstallPlatformsTest(unittest.TestCase):
             "ID=ubuntu\n",
         )
         for text in cases:
-            with self.subTest(text=text), self.assertRaisesRegex(
-                InstallError, "unsupported_platform"
+            with (
+                self.subTest(text=text),
+                self.assertRaisesRegex(InstallError, "unsupported_platform"),
             ):
                 detect_linux(text, "x86_64")
 
@@ -367,8 +437,9 @@ class InstallPlatformsTest(unittest.TestCase):
             {"effective_uid": 0, "original_user": "bad user", "original_uid": 1000},
             {"effective_uid": 0, "original_user": "alice", "original_uid": True},
         ):
-            with self.subTest(facts=facts), self.assertRaisesRegex(
-                InstallError, "privilege_denied"
+            with (
+                self.subTest(facts=facts),
+                self.assertRaisesRegex(InstallError, "privilege_denied"),
             ):
                 detect_linux(linux, "x86_64", **facts)
 
@@ -403,12 +474,10 @@ class InstallPlatformsTest(unittest.TestCase):
         probe = _BackendProbe(
             ready=False,
             files={
-                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(
-                    stat.S_IFREG | 0o755
-                )
+                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(stat.S_IFREG | 0o755)
             },
         )
-        actions = build_dependency_actions(
+        plan = build_dependency_plan(
             ubuntu,
             self.request(
                 allow_system_packages=True,
@@ -417,12 +486,13 @@ class InstallPlatformsTest(unittest.TestCase):
                 prefix=None,
             ),
             probe=probe,
-            installer_artifact=self.installer_artifact,
+            manifest=self.manifest,
+            installer_artifact_path=self.installer,
             effective_uid=1001,
             getpwuid=lambda uid: _account(uid=uid),
         )
         self.assertEqual(
-            tuple(action.argv for action in actions),
+            tuple(action.argv for action in plan.actions),
             (
                 ("/usr/bin/sudo", "/usr/bin/apt-get", "update"),
                 (
@@ -438,30 +508,36 @@ class InstallPlatformsTest(unittest.TestCase):
                     "fuse-overlayfs",
                 ),
                 ("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", "alice"),
-                (
-                    "/usr/bin/sudo",
-                    "--",
-                    str(self.installer),
-                    "install",
-                    "--version",
-                    "0.7.0",
-                    "--channel",
-                    "stable",
-                    "--state-home",
-                    "/var/lib/miniclaw",
-                    "--system-prefix",
-                    "--install-service",
-                    "--allow-system-packages",
-                    "--dry-run",
-                ),
             ),
         )
-        self.assertTrue(all(isinstance(action, PrivilegeAction) for action in actions))
-        self.assertTrue(all(not hasattr(action, "approved") for action in actions))
-        self.assertTrue(
-            all(action.requires_sudo for action in actions if action.argv[0].endswith("sudo"))
+        self.assertEqual(
+            plan.manual_rerun.argv if plan.manual_rerun else None,
+            (
+                "/usr/bin/sudo",
+                "--",
+                str(self.installer),
+                "install",
+                "--version",
+                "0.7.0",
+                "--channel",
+                "stable",
+                "--state-home",
+                "/var/lib/miniclaw",
+                "--system-prefix",
+                "--install-service",
+                "--allow-system-packages",
+                "--dry-run",
+            ),
         )
-        rendered = json.dumps([list(action.argv) for action in actions])
+        self.assertTrue(all(isinstance(action, PrivilegeAction) for action in plan.actions))
+        self.assertTrue(all(not hasattr(action, "approved") for action in plan.actions))
+        self.assertTrue(
+            all(action.requires_sudo for action in plan.actions if action.argv[0].endswith("sudo"))
+        )
+        rendered = json.dumps(
+            [list(action.argv) for action in plan.actions]
+            + ([list(plan.manual_rerun.argv)] if plan.manual_rerun else [])
+        )
         self.assertNotIn(";", rendered)
         self.assertNotIn("docker group", rendered)
         self.assertNotIn("/var/run/docker.sock", rendered)
@@ -480,9 +556,7 @@ class InstallPlatformsTest(unittest.TestCase):
         probe = _BackendProbe(
             ready=False,
             files={
-                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(
-                    stat.S_IFREG | 0o755
-                )
+                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(stat.S_IFREG | 0o755)
             },
         )
         actions = build_dependency_actions(
@@ -490,8 +564,6 @@ class InstallPlatformsTest(unittest.TestCase):
             self.request(
                 allow_system_packages=True,
                 service=True,
-                system_prefix=True,
-                prefix=None,
             ),
             probe=probe,
             effective_uid=0,
@@ -553,17 +625,19 @@ class InstallPlatformsTest(unittest.TestCase):
         )
         self.assertEqual(
             tuple(action.argv for action in actions),
-            ((
-                "/usr/bin/sudo",
-                "/usr/bin/dnf",
-                "install",
-                "-y",
-                "podman-docker",
-                "slirp4netns",
-                "fuse-overlayfs",
-                "shadow-utils",
-                "dbus-daemon",
-            ),),
+            (
+                (
+                    "/usr/bin/sudo",
+                    "/usr/bin/dnf",
+                    "install",
+                    "-y",
+                    "podman-docker",
+                    "slirp4netns",
+                    "fuse-overlayfs",
+                    "shadow-utils",
+                    "dbus-daemon",
+                ),
+            ),
         )
         self.assertEqual(rhel.sandbox_backend, "podman-rootless")
         with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
@@ -592,8 +666,9 @@ class InstallPlatformsTest(unittest.TestCase):
             (self.request(), {"backend_ready": True}),
             (self.request(allow_system_packages=False), _BackendProbe(ready=False)),
         ):
-            with self.subTest(request=request, probe=probe), self.assertRaisesRegex(
-                InstallError, "system_dependency_missing"
+            with (
+                self.subTest(request=request, probe=probe),
+                self.assertRaisesRegex(InstallError, "system_dependency_missing"),
             ):
                 build_dependency_actions(
                     ubuntu,
@@ -631,12 +706,12 @@ class InstallPlatformsTest(unittest.TestCase):
     def test_public_dependency_api_rejects_duck_typed_probe(self) -> None:
         """production build 不能让调用方用 no-op fake 伪造 backend readiness。"""
         ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        verification = SandboxVerification("example/miniclaw@sha256:" + "a" * 64)
         with self.assertRaises(TypeError):
             production_build_dependency_actions(
                 ubuntu,
                 self.request(),
-                verification=verification,
+                manifest=self.manifest,
+                sandbox_artifact_path=self.sandbox_artifact,
                 probe=_BackendProbe(ready=True),
             )
         action = PrivilegeAction(
@@ -650,13 +725,15 @@ class InstallPlatformsTest(unittest.TestCase):
                 action,
                 ubuntu,
                 self.request(service=True),
-                verification=verification,
+                manifest=self.manifest,
+                sandbox_artifact_path=self.sandbox_artifact,
                 probe=_BackendProbe(ready=True),
             )
         with self.assertRaises(TypeError):
             verify_activation_ready(
                 ubuntu,
-                verification=verification,
+                manifest=self.manifest,
+                sandbox_artifact_path=self.sandbox_artifact,
                 probe=_BackendProbe(ready=True),
             )
 
@@ -677,9 +754,7 @@ class InstallPlatformsTest(unittest.TestCase):
         probe = _BackendProbe(
             ready=False,
             files={
-                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(
-                    stat.S_IFLNK | 0o777
-                ),
+                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(stat.S_IFLNK | 0o777),
                 Path("/usr/share/docker.io/contrib/dockerd-rootless-setuptool.sh"): (
                     _file_fact(stat.S_IFREG | 0o755)
                 ),
@@ -717,9 +792,7 @@ class InstallPlatformsTest(unittest.TestCase):
         root_only = _BackendProbe(
             ready=False,
             files={
-                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(
-                    stat.S_IFREG | 0o700
-                )
+                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(stat.S_IFREG | 0o700)
             },
         )
         restricted = build_dependency_actions(
@@ -830,41 +903,17 @@ class InstallPlatformsTest(unittest.TestCase):
                 ubuntu,
                 self.request(service=False),
             ),
-            (
-                PrivilegeAction(
-                    category="system-prefix",
-                    argv=(
-                        "/usr/bin/sudo",
-                        "--",
-                        str(self.installer),
-                        "update",
-                        "--version",
-                        "0.7.0",
-                        "--channel",
-                        "stable",
-                        "--state-home",
-                        "/var/lib/miniclaw",
-                        "--system-prefix",
-                        "--no-service",
-                        "--dry-run",
-                    ),
-                    requires_sudo=True,
-                    reason="rerun verified installer for explicit system prefix",
-                ),
-                ubuntu,
-                self.request(action="install", system_prefix=True, prefix=None),
-            ),
         )
         for action, platform, request in cases:
-            with self.subTest(action=action), self.assertRaisesRegex(
-                InstallError, "privilege_denied|system_dependency_missing"
+            with (
+                self.subTest(action=action),
+                self.assertRaisesRegex(InstallError, "privilege_denied|system_dependency_missing"),
             ):
                 verify_privilege_action(
                     action,
                     platform,
                     request,
                     probe=probe,
-                    installer_artifact=self.installer_artifact,
                     effective_uid=1001,
                     getpwuid=lambda uid: _account(uid=uid),
                 )
@@ -877,10 +926,8 @@ class InstallPlatformsTest(unittest.TestCase):
                 ubuntu,
                 self.request(system_prefix=True, prefix=None),
                 probe=_BackendProbe(ready=True),
-                installer_artifact=InstallerArtifactEvidence(
-                    Path("/tmp/caller-selected"),
-                    "a" * 64,
-                ),
+                manifest=self.manifest,
+                installer_artifact_path=Path("/tmp/caller-selected"),
                 effective_uid=1001,
                 getpwuid=lambda uid: _account(uid=uid),
             )
@@ -902,15 +949,18 @@ class InstallPlatformsTest(unittest.TestCase):
             purge_data=True,
             confirm_data_loss=True,
         )
-        actions = build_dependency_actions(
+        plan = build_dependency_plan(
             ubuntu,
             request,
             probe=_BackendProbe(ready=True),
-            installer_artifact=self.installer_artifact,
+            manifest=self.manifest,
+            installer_artifact_path=self.installer,
             effective_uid=1001,
             getpwuid=lambda uid: _account(uid=uid),
         )
-        system_prefix = next(action for action in actions if action.category == "system-prefix")
+        system_prefix = plan.manual_rerun
+        self.assertIsInstance(system_prefix, ManualRerunInstruction)
+        assert system_prefix is not None
         self.assertEqual(
             system_prefix.argv,
             (
@@ -938,23 +988,23 @@ class InstallPlatformsTest(unittest.TestCase):
                 "--yes-i-understand-data-loss",
             ),
         )
-        verify_privilege_action(
-            system_prefix,
-            ubuntu,
-            request,
-            probe=_BackendProbe(ready=True),
-            installer_artifact=self.installer_artifact,
-            effective_uid=1001,
-            getpwuid=lambda uid: _account(uid=uid),
-        )
-        self.installer.write_bytes(b"replacement after plan\n")
-        try:
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
             verify_privilege_action(
-                system_prefix,
+                system_prefix,  # type: ignore[arg-type]
                 ubuntu,
                 request,
                 probe=_BackendProbe(ready=True),
-                installer_artifact=self.installer_artifact,
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
+        self.installer.write_bytes(b"replacement after plan\n")
+        try:
+            build_dependency_plan(
+                ubuntu,
+                request,
+                probe=_BackendProbe(ready=True),
+                manifest=self.manifest,
+                installer_artifact_path=self.installer,
                 effective_uid=1001,
                 getpwuid=lambda uid: _account(uid=uid),
             )
@@ -968,51 +1018,40 @@ class InstallPlatformsTest(unittest.TestCase):
         """symlink/wrong hash 及 missing/reordered canonical flags 都不能进入执行边界。"""
         ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
         request = self.request(system_prefix=True, prefix=None, json_output=True)
-        for evidence in (
-            InstallerArtifactEvidence(self.installer, "a" * 64),
-            InstallerArtifactEvidence(
-                Path(self.installer_directory.name) / "installer-link",
-                self.installer_artifact.expected_sha256,
-            ),
-        ):
-            if evidence.path.name == "installer-link":
-                evidence.path.symlink_to(self.installer)
-            with self.subTest(evidence=evidence), self.assertRaisesRegex(
-                InstallError, "privilege_denied"
-            ):
-                build_dependency_actions(
-                    ubuntu,
-                    request,
-                    probe=_BackendProbe(ready=True),
-                    installer_artifact=evidence,
-                    effective_uid=1001,
-                    getpwuid=lambda uid: _account(uid=uid),
-                )
-        action = next(
-            item
-            for item in build_dependency_actions(
+        original = self.installer.read_bytes()
+        self.installer.write_bytes(b"wrong hash\n")
+        with self.assertRaisesRegex(InstallError, "privilege_denied"):
+            build_dependency_plan(
                 ubuntu,
                 request,
                 probe=_BackendProbe(ready=True),
-                installer_artifact=self.installer_artifact,
+                manifest=self.manifest,
+                installer_artifact_path=self.installer,
                 effective_uid=1001,
                 getpwuid=lambda uid: _account(uid=uid),
             )
-            if item.category == "system-prefix"
-        )
-        drifted = PrivilegeAction(
-            category="system-prefix",
-            argv=tuple(argument for argument in action.argv if argument != "--json"),
-            requires_sudo=True,
-            reason="rerun verified installer for explicit system prefix",
-        )
+        self.installer.write_bytes(original)
+        target = self.installer.with_name("real-installer.pyz")
+        self.installer.rename(target)
+        self.installer.symlink_to(target)
         with self.assertRaisesRegex(InstallError, "privilege_denied"):
-            verify_privilege_action(
-                drifted,
+            build_dependency_plan(
                 ubuntu,
                 request,
                 probe=_BackendProbe(ready=True),
-                installer_artifact=self.installer_artifact,
+                manifest=self.manifest,
+                installer_artifact_path=self.installer,
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
+        forged = object.__new__(ManualRerunInstruction)
+        object.__setattr__(forged, "argv", ("/usr/bin/sudo", "--", "/tmp/evil"))
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
+            verify_privilege_action(
+                forged,  # type: ignore[arg-type]
+                ubuntu,
+                request,
+                probe=_BackendProbe(ready=True),
                 effective_uid=1001,
                 getpwuid=lambda uid: _account(uid=uid),
             )
@@ -1186,20 +1225,40 @@ class InstallPlatformsTest(unittest.TestCase):
             stderr=b"",
         )
         platform = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        verification = SandboxVerification("example/miniclaw@sha256:" + "a" * 64)
+        local_probe = LocalPlatformProbe(
+            platform,
+            manifest=self.manifest,
+            sandbox_artifact_path=self.sandbox_artifact,
+        )
         with (
             mock.patch.object(platforms_module.shutil, "which", return_value=str(docker)),
             mock.patch.object(platforms_module.os, "lstat", side_effect=lstat),
             mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
-            mock.patch.object(platforms_module.subprocess, "run", return_value=completed) as run,
+            mock.patch.object(platforms_module, "_run_local_probe", return_value=completed) as run,
         ):
-            LocalPlatformProbe(verification).require_backend(platform, _account())
+            local_probe.require_backend(platform, _account())
         argv = run.call_args.args[0]
         self.assertIn(("--network", "none"), tuple(zip(argv, argv[1:], strict=False)))
         self.assertIn("--read-only", argv)
+        entrypoint = argv.index("--entrypoint")
+        self.assertEqual(
+            argv[entrypoint : entrypoint + 5],
+            (
+                "--entrypoint",
+                "python",
+                "--",
+                self.sandbox_artifact.read_text(encoding="utf-8").strip(),
+                "-c",
+            ),
+        )
         self.assertNotIn("/var/run/docker.sock", repr(run.call_args))
         with self.assertRaises(TypeError):
-            LocalPlatformProbe(verification, runner=lambda argv: completed)  # type: ignore[call-arg]
+            LocalPlatformProbe(  # type: ignore[call-arg]
+                platform,
+                manifest=self.manifest,
+                sandbox_artifact_path=self.sandbox_artifact,
+                runner=lambda argv: completed,
+            )
         renamed = docker.with_name("podman")
         renamed.write_bytes(docker.read_bytes())
         renamed.chmod(0o755)
@@ -1207,23 +1266,190 @@ class InstallPlatformsTest(unittest.TestCase):
             mock.patch.object(platforms_module.shutil, "which", return_value=str(renamed)),
             mock.patch.object(platforms_module.os, "lstat", side_effect=lstat),
             mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
-            mock.patch.object(platforms_module.subprocess, "run", return_value=completed),
+            mock.patch.object(platforms_module, "_run_local_probe", return_value=completed),
             self.assertRaisesRegex(InstallError, "system_dependency_missing"),
         ):
-            LocalPlatformProbe(verification).require_backend(platform, _account())
+            local_probe.require_backend(platform, _account())
 
     def test_activation_evidence_requires_successful_private_or_production_probe(self) -> None:
-        """activation evidence 不能公开构造，且只在同 UID probe 成功后返回。"""
+        """private fake 只返回测试结果，production 不暴露可消费 capability。"""
         platform = detect_macos("15.0", "arm64")
         evidence = _verify_activation_ready_with_probe(
             platform,
             _account(),
             probe=_BackendProbe(ready=True),
         )
-        self.assertIsInstance(evidence, ActivationEvidence)
         self.assertEqual((evidence.backend, evidence.uid), ("seatbelt", 1001))
-        with self.assertRaises(TypeError):
-            ActivationEvidence()  # type: ignore[call-arg]
+        self.assertFalse(hasattr(platforms_module, "ActivationEvidence"))
+
+    def test_round3_system_prefix_is_manual_instruction_not_privilege_capability(self) -> None:
+        """non-root system-prefix 只返回展示指令，不能进入自动高权限执行器。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        result = build_dependency_plan(
+            ubuntu,
+            self.request(system_prefix=True, prefix=None),
+            probe=_BackendProbe(ready=True),
+            manifest=self.manifest,
+            installer_artifact_path=self.installer,
+            effective_uid=1001,
+            getpwuid=lambda uid: _account(uid=uid),
+        )
+        manual = result.manual_rerun
+        assert manual is not None
+        self.assertNotIsInstance(manual, PrivilegeAction)
+        with self.assertRaisesRegex(InstallError, "privilege_denied|system_dependency_missing"):
+            verify_privilege_action(
+                manual,  # type: ignore[arg-type]
+                ubuntu,
+                self.request(system_prefix=True, prefix=None),
+                probe=_BackendProbe(ready=True),
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
+
+    def test_round3_system_prefix_privilege_category_is_closed(self) -> None:
+        """即使 argv 形状正确，system-prefix 也不能构造自动执行 capability。"""
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
+            PrivilegeAction(
+                category="system-prefix",
+                argv=(
+                    "/usr/bin/sudo",
+                    "--",
+                    str(self.installer),
+                    "install",
+                    "--channel",
+                    "stable",
+                    "--state-home",
+                    "/var/lib/miniclaw",
+                    "--system-prefix",
+                ),
+                requires_sudo=True,
+                reason="rerun verified installer for explicit system prefix",
+            )
+
+    def test_round3_root_system_prefix_waits_for_bootstrap_loaded_receipt(self) -> None:
+        """Task12 未提供 current-loaded receipt 前，root system-prefix 必须 fail closed。"""
+        ubuntu = detect_linux(
+            self.os_release("ubuntu", "24.04"),
+            "x86_64",
+            effective_uid=0,
+            original_user="alice",
+            original_uid=1001,
+            getpwnam=lambda name: _account(name=name),
+        )
+        with self.assertRaisesRegex(InstallError, "privilege_denied"):
+            build_dependency_plan(
+                ubuntu,
+                self.request(system_prefix=True, prefix=None),
+                probe=_BackendProbe(ready=True),
+                effective_uid=0,
+                original_user="alice",
+                original_uid=1001,
+                getpwnam=lambda name: _account(name=name),
+            )
+
+    def test_round3_receipts_cannot_be_caller_self_signed(self) -> None:
+        """caller 不能用任意 hash/image 公开铸造 installer 或 sandbox receipt。"""
+        self.assertFalse(hasattr(platforms_module, "InstallerArtifactEvidence"))
+        self.assertFalse(hasattr(platforms_module, "SandboxVerification"))
+
+    def test_round3_dev_prerelease_uses_install_request_semver_contract(self) -> None:
+        """manual rerun 复用 Task4 dev prerelease，不再做第二套窄版本解析。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        result = build_dependency_plan(
+            ubuntu,
+            self.request(
+                version="0.8.0-rc.1+build.7",
+                channel="dev",
+                system_prefix=True,
+                prefix=None,
+            ),
+            probe=_BackendProbe(ready=True),
+            manifest=self.release_manifest("0.8.0-rc.1+build.7"),
+            installer_artifact_path=self.installer,
+            effective_uid=1001,
+            getpwuid=lambda uid: _account(uid=uid),
+        )
+        manual = result.manual_rerun
+        assert manual is not None
+        self.assertIn("0.8.0-rc.1+build.7", manual.argv)
+        self.assertNotIsInstance(manual, PrivilegeAction)
+
+    def test_round3_production_activation_has_no_evidence_injection(self) -> None:
+        """production activation 必须当场构造 LocalPlatformProbe，不能消费 evidence。"""
+        parameters = inspect.signature(verify_activation_ready).parameters
+        self.assertNotIn("verification", parameters)
+        self.assertNotIn("evidence", parameters)
+        macos = detect_macos("15.0", "arm64")
+        account = _account()
+        with (
+            mock.patch.object(
+                platforms_module,
+                "_production_identity",
+                return_value=(1001, None, None),
+            ),
+            mock.patch.object(
+                platforms_module,
+                "_resolve_invoking_user",
+                return_value=account,
+            ),
+            mock.patch.object(platforms_module, "LocalPlatformProbe") as probe_type,
+        ):
+            self.assertIsNone(verify_activation_ready(macos))
+        probe_type.assert_called_once_with(
+            macos,
+            manifest=None,
+            sandbox_artifact_path=None,
+        )
+        probe_type.return_value.require_backend.assert_called_once_with(macos, account)
+
+    def test_round3_containment_uses_entrypoint_python(self) -> None:
+        """容器 smoke 用 exact entrypoint，image 后不再接受可变程序名。"""
+        source = inspect.getsource(platforms_module._verify_rootless_containment)
+        self.assertIn('"--entrypoint",\n            "python"', source)
+        self.assertNotIn('image,\n            "python",', source)
+
+    def test_round3_probe_does_not_capture_unbounded_output_with_run(self) -> None:
+        """本地 probe 必须从 PIPE 流式限额，禁止 subprocess.run capture 后检查。"""
+        source = inspect.getsource(platforms_module._run_local_probe)
+        self.assertIn("subprocess.Popen", source)
+        self.assertNotIn("capture_output=True", source)
+
+    def test_round3_probe_terminates_and_reaps_on_stream_budget_overrun(self) -> None:
+        """stdout 超限时立即终止仍在 sleep 的 child，并隐藏动态 cause。"""
+        programs = (
+            "import sys,time;sys.stdout.write('x'*5000);sys.stdout.flush();time.sleep(10)",
+            "import sys,time;sys.stdout.write('x'*2500);sys.stderr.write('y'*2500);"
+            "sys.stdout.flush();sys.stderr.flush();time.sleep(10)",
+        )
+        for program in programs:
+            with self.subTest(program=program):
+                started = time.monotonic()
+                try:
+                    with mock.patch.object(platforms_module.os, "geteuid", return_value=1001):
+                        platforms_module._run_local_probe(
+                            (sys.executable, "-c", program),
+                            _account(),
+                            {},
+                        )
+                except InstallError as error:
+                    self.assertRegex(str(error), "system_dependency_missing")
+                    self.assertIsNone(error.__cause__)
+                else:
+                    self.fail("stream budget overrun must fail closed")
+                self.assertLess(time.monotonic() - started, 3)
+
+    def test_round3_sandbox_receipt_rehashes_before_live_probe(self) -> None:
+        """receipt 构造后同路径替换必须在 socket/CLI probe 前被 hash 重验阻断。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        probe = LocalPlatformProbe(
+            ubuntu,
+            manifest=self.manifest,
+            sandbox_artifact_path=self.sandbox_artifact,
+        )
+        self.sandbox_artifact.write_bytes(b"example/miniclaw@sha256:" + b"b" * 64 + b"\n")
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
+            probe.require_backend(ubuntu, _account())
 
     def test_local_macos_probe_uses_fixed_seatbelt_containment(self) -> None:
         """production macOS probe 必须执行 fixed sandbox-exec deny-default smoke。"""
@@ -1243,12 +1469,9 @@ class InstallPlatformsTest(unittest.TestCase):
                 return_value=_file_fact(stat.S_IFREG | 0o755),
             ),
             mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
-            mock.patch.object(platforms_module.subprocess, "run", return_value=completed) as run,
+            mock.patch.object(platforms_module, "_run_local_probe", return_value=completed) as run,
         ):
-            LocalPlatformProbe(SandboxVerification(None)).require_backend(
-                macos,
-                _account(),
-            )
+            LocalPlatformProbe(macos).require_backend(macos, _account())
         argv = run.call_args.args[0]
         self.assertEqual(argv[0], str(seatbelt))
         self.assertIn("(deny default)", argv[2])
@@ -1257,7 +1480,11 @@ class InstallPlatformsTest(unittest.TestCase):
     def test_rhel_probe_requires_usr_bin_docker_to_exact_podman(self) -> None:
         """RHEL compatibility 只接受 /usr/bin/docker 精确解析到 /usr/bin/podman。"""
         rocky = detect_linux(self.os_release("rocky", "10.0"), "x86_64")
-        verification = SandboxVerification("example/miniclaw@sha256:" + "a" * 64)
+        local_probe = LocalPlatformProbe(
+            rocky,
+            manifest=self.manifest,
+            sandbox_artifact_path=self.sandbox_artifact,
+        )
         runtime = Path("/run/user/1001")
         podman_runtime = runtime / "podman"
         socket = podman_runtime / "podman.sock"
@@ -1277,6 +1504,7 @@ class InstallPlatformsTest(unittest.TestCase):
                 b"",
             ),
         )
+        real_lstat = os.lstat
         real_resolve = Path.resolve
 
         def resolve(path: Path, strict: bool = False) -> Path:
@@ -1289,13 +1517,15 @@ class InstallPlatformsTest(unittest.TestCase):
             mock.patch.object(
                 platforms_module.os,
                 "lstat",
-                side_effect=lambda path: facts[Path(path)],
+                side_effect=lambda path: (
+                    facts[Path(path)] if Path(path) in facts else real_lstat(path)
+                ),
             ),
             mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
             mock.patch.object(platforms_module.Path, "resolve", autospec=True, side_effect=resolve),
-            mock.patch.object(platforms_module.subprocess, "run", side_effect=completed),
+            mock.patch.object(platforms_module, "_run_local_probe", side_effect=completed),
         ):
-            LocalPlatformProbe(verification).require_backend(rocky, _account())
+            local_probe.require_backend(rocky, _account())
 
         def escape(path: Path, strict: bool = False) -> Path:
             """模拟 /usr/bin/docker 被替换为受信目录外 podman symlink。"""
@@ -1307,14 +1537,16 @@ class InstallPlatformsTest(unittest.TestCase):
             mock.patch.object(
                 platforms_module.os,
                 "lstat",
-                side_effect=lambda path: facts[Path(path)],
+                side_effect=lambda path: (
+                    facts[Path(path)] if Path(path) in facts else real_lstat(path)
+                ),
             ),
             mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
             mock.patch.object(platforms_module.Path, "resolve", autospec=True, side_effect=escape),
-            mock.patch.object(platforms_module.subprocess, "run", side_effect=completed),
+            mock.patch.object(platforms_module, "_run_local_probe", side_effect=completed),
             self.assertRaisesRegex(InstallError, "system_dependency_missing"),
         ):
-            LocalPlatformProbe(verification).require_backend(rocky, _account())
+            local_probe.require_backend(rocky, _account())
 
     def test_runtime_versions_are_exact_and_hash_bound(self) -> None:
         """bootstrap Runtime 版本、官方 URL 与四平台 hash 必须是唯一固定事实。"""
@@ -1347,10 +1579,7 @@ class InstallPlatformsTest(unittest.TestCase):
                 {"linux-x86_64", "linux-arm64", "macos-x86_64", "macos-arm64"},
             )
             self.assertTrue(
-                all(
-                    item["url"].startswith("https://")
-                    for item in runtime["archives"].values()
-                )
+                all(item["url"].startswith("https://") for item in runtime["archives"].values())
             )
 
 
