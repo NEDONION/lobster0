@@ -64,6 +64,9 @@ class LauncherSandbox:
         if self._dependencies:
             (self.root / "tui" / "node_modules").mkdir()
             (self.root / "desktop" / "node_modules").mkdir()
+            shared_dist = self.root / "desktop/node_modules/@miniclaw/pi-tui/dist"
+            shared_dist.mkdir(parents=True)
+            (shared_dist / "bridge-client.js").touch()
         if self._initialized:
             (self.state_home / "config.toml").write_text("[provider]\n", encoding="utf-8")
             secret = self.state_home / "secrets.env"
@@ -86,6 +89,20 @@ else
 fi
 if [[ -n "${MINICLAW_TEST_FAIL_MATCH:-}" && "$*" == "$MINICLAW_TEST_FAIL_MATCH" ]]; then
   exit "${MINICLAW_TEST_FAIL_CODE:-1}"
+fi
+if [[ "$*" == "pnpm --dir tui build" ]]; then
+  mkdir -p tui/dist
+  touch tui/dist/bridge-client.js
+elif [[ "$*" == "pnpm --dir desktop install --frozen-lockfile" \
+  || "$*" == "pnpm --dir desktop install --force --frozen-lockfile" ]]; then
+  mkdir -p desktop/node_modules/@miniclaw/pi-tui
+  if [[ -f tui/dist/bridge-client.js ]]; then
+    mkdir -p desktop/node_modules/@miniclaw/pi-tui/dist
+    touch desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js
+  fi
+elif [[ "$*" == "pnpm --dir desktop dev" \
+  && ! -f desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js ]]; then
+  exit 19
 fi
 """,
         )
@@ -234,8 +251,8 @@ class DesktopLauncherTest(unittest.TestCase):
             self.assertEqual(
                 sandbox.log_lines(),
                 [
-                    f"miniclaw init --home {sandbox.state_home}",
                     "corepack pnpm --dir tui build",
+                    f"miniclaw init --home {sandbox.state_home}",
                     (
                         "corepack pnpm --dir desktop dev "
                         f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
@@ -254,9 +271,9 @@ class DesktopLauncherTest(unittest.TestCase):
                 [
                     "uv sync --extra dev",
                     "corepack pnpm --dir tui install --frozen-lockfile",
+                    "corepack pnpm --dir tui build",
                     "corepack pnpm --dir desktop install --frozen-lockfile",
                     f"miniclaw setup --home {sandbox.state_home}",
-                    "corepack pnpm --dir tui build",
                     (
                         "corepack pnpm --dir desktop dev "
                         f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
@@ -312,6 +329,27 @@ class DesktopLauncherTest(unittest.TestCase):
             self.assertNotIn(
                 "pnpm --dir desktop dev",
                 "\n".join(sandbox.log_lines()),
+            )
+
+    def test_incomplete_desktop_dependency_is_reinstalled_after_tui_build(self) -> None:
+        """残缺的本地 TUI 快照必须在构建共享 Client 后自动刷新。"""
+        with LauncherSandbox(initialized=True, dependencies=True) as sandbox:
+            shutil.rmtree(sandbox.root / "desktop/node_modules/@miniclaw/pi-tui/dist")
+
+            result = sandbox.run()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                sandbox.log_lines(),
+                [
+                    "corepack pnpm --dir tui build",
+                    "corepack pnpm --dir desktop install --force --frozen-lockfile",
+                    f"miniclaw init --home {sandbox.state_home}",
+                    (
+                        "corepack pnpm --dir desktop dev "
+                        f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
+                    ),
+                ],
             )
 
 

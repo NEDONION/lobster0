@@ -38,8 +38,11 @@ fi
 if [[ ! -d "$REPOSITORY_ROOT/tui/node_modules" ]]; then
   corepack pnpm --dir tui install --frozen-lockfile
 fi
+corepack pnpm --dir tui build
 if [[ ! -d "$REPOSITORY_ROOT/desktop/node_modules" ]]; then
   corepack pnpm --dir desktop install --frozen-lockfile
+elif [[ ! -f "$REPOSITORY_ROOT/desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js" ]]; then
+  corepack pnpm --dir desktop install --force --frozen-lockfile
 fi
 
 readonly STATE_HOME="$(
@@ -57,5 +60,4 @@ fi
 if [[ -z "${MINICLAW_ENV_FILE:-}" && -f "$STATE_HOME/secrets.env" ]]; then
   export MINICLAW_ENV_FILE="$STATE_HOME/secrets.env"
 fi
-corepack pnpm --dir tui build
 corepack pnpm --dir desktop dev

@@ -2,7 +2,7 @@
 
 > 状态：`IMPLEMENTATION PASS / ELECTRON MANUAL PENDING`
 
-实现证据：6/6 launcher 行为测试、941/941 Python、41/41 TUI TypeScript、28/28 Desktop tests，以及 Desktop typecheck/build、Ruff 和文档校验均通过。真实模型 LIVE smoke、Electron 鼠标/键盘视觉验收和 installer/signing 仍待完成。
+实现证据：7/7 launcher 行为测试、942/942 Python、41/41 TUI TypeScript、28/28 Desktop tests，以及 Desktop typecheck/build、Ruff 和文档校验均通过。真实模型 LIVE smoke、Electron 鼠标/键盘视觉验收和 installer/signing 仍待完成。
 
 ## 1. 目标
 
@@ -17,12 +17,13 @@
 1. 从自身位置解析仓库根目录，不依赖 Finder 或终端的当前目录；
 2. 检查 macOS、`uv`、Node.js `>=22.19.0` 和 Corepack；
 3. 缺少 Python 虚拟环境时执行 `uv sync --extra dev`；
-4. 缺少 TUI 或 Desktop 的 `node_modules` 时按锁文件安装依赖；
-5. 构建共享的 `@miniclaw/pi-tui`；
-6. 首次使用默认状态目录时运行现有 `miniclaw setup`；
-7. 已有状态目录时运行幂等 `miniclaw init`；
-8. 选择现有 owner-only Secret 文件并启动 Electron development build；
-9. 任一步失败时停止，显示可操作的短错误并保留终端窗口供用户查看。
+4. 缺少 TUI 的 `node_modules` 时按锁文件安装依赖；
+5. 构建共享的 `@miniclaw/pi-tui`，确保 Desktop 安装能包含真实 `dist`；
+6. 缺少 Desktop 的 `node_modules` 时按锁文件安装依赖；若本地 TUI 快照残缺，则强制刷新一次；
+7. 首次使用默认状态目录时运行现有 `miniclaw setup`；
+8. 已有状态目录时运行幂等 `miniclaw init`；
+9. 选择现有 owner-only Secret 文件并启动 Electron development build；
+10. 任一步失败时停止，显示可操作的短错误并保留终端窗口供用户查看。
 
 脚本不负责：
 
@@ -46,17 +47,18 @@
 ### 4.1 首次启动
 
 1. 用户双击 `start-desktop.command`；
-2. 脚本检查系统运行时并只安装缺失的项目依赖；
-3. 脚本调用 `miniclaw setup --home "$MINICLAW_HOME"`；
-4. 现有 setup 从 `/dev/tty` 收集模型 API Key，并允许用户选择是否启用三个 Channel；
-5. setup 以 `0700` 状态目录和 `0600` Secret 文件保存配置；
-6. 脚本设置 Desktop 需要的进程环境并执行 `corepack pnpm --dir desktop dev`。
+2. 脚本检查系统运行时，安装缺失的 TUI 依赖并构建共享 Client；
+3. 共享 Client 构建完成后，脚本才安装缺失的 Desktop 依赖；
+4. 脚本调用 `miniclaw setup --home "$MINICLAW_HOME"`；
+5. 现有 setup 从 `/dev/tty` 收集模型 API Key，并允许用户选择是否启用三个 Channel；
+6. setup 以 `0700` 状态目录和 `0600` Secret 文件保存配置；
+7. 脚本设置 Desktop 需要的进程环境并执行 `corepack pnpm --dir desktop dev`。
 
 ### 4.2 后续启动
 
-1. 已存在 `config.toml` 时不再调用 fresh-only setup；
-2. 脚本调用 `miniclaw init --home "$MINICLAW_HOME"` 补齐迁移和缺失的非 Secret 状态；
-3. 依赖目录存在时不重复联网安装，但始终快速构建共享 TUI，避免 Desktop 使用过期 Bridge client；
+1. 依赖目录存在时不重复联网安装，但始终快速构建共享 TUI；若 Desktop 中的本地 TUI 快照残缺，则自动刷新；
+2. 已存在 `config.toml` 时不再调用 fresh-only setup；
+3. 脚本调用 `miniclaw init --home "$MINICLAW_HOME"` 补齐迁移和缺失的非 Secret 状态；
 4. Electron 继承当前 shell 环境和选定的 Secret 文件路径后启动。
 
 ## 5. 安全边界

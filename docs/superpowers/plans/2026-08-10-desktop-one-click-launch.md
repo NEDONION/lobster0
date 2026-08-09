@@ -90,11 +90,11 @@ readonly STATE_HOME="$("$REPOSITORY_ROOT/.venv/bin/python" -c 'from miniclaw.pat
 export MINICLAW_HOME="$STATE_HOME"
 export MINICLAW_PYTHON="$REPOSITORY_ROOT/.venv/bin/python"
 
+corepack pnpm --dir tui build
 "$REPOSITORY_ROOT/.venv/bin/miniclaw" init --home "$STATE_HOME"
 if [[ -z "${MINICLAW_ENV_FILE:-}" && -f "$STATE_HOME/secrets.env" ]]; then
   export MINICLAW_ENV_FILE="$STATE_HOME/secrets.env"
 fi
-corepack pnpm --dir tui build
 corepack pnpm --dir desktop dev
 ```
 
@@ -148,9 +148,9 @@ def test_first_run_prepares_missing_dependencies_then_uses_setup(self) -> None:
         [
             "uv sync --extra dev",
             "corepack pnpm --dir tui install --frozen-lockfile",
+            "corepack pnpm --dir tui build",
             "corepack pnpm --dir desktop install --frozen-lockfile",
             f"miniclaw setup --home {sandbox.state_home}",
-            "corepack pnpm --dir tui build",
             (
                 "corepack pnpm --dir desktop dev "
                 f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
@@ -182,8 +182,11 @@ fi
 if [[ ! -d "$REPOSITORY_ROOT/tui/node_modules" ]]; then
   corepack pnpm --dir tui install --frozen-lockfile
 fi
+corepack pnpm --dir tui build
 if [[ ! -d "$REPOSITORY_ROOT/desktop/node_modules" ]]; then
   corepack pnpm --dir desktop install --frozen-lockfile
+elif [[ ! -f "$REPOSITORY_ROOT/desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js" ]]; then
+  corepack pnpm --dir desktop install --force --frozen-lockfile
 fi
 ```
 
@@ -197,7 +200,7 @@ else
 fi
 ```
 
-setup/init 必须位于依赖准备之后、TUI build 之前，保持测试规定的稳定顺序。
+TUI build 必须位于 Desktop install 之前；残缺的本地 TUI 快照强制刷新一次；setup/init 位于项目依赖准备之后，保持测试规定的稳定顺序。
 
 - [ ] **Step 4: 运行两个行为测试并确认 GREEN**
 
