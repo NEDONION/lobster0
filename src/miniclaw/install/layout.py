@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Literal, Never, cast
 
 from miniclaw.install.models import InstallError, InstallPlan, InstallRequest
+from miniclaw.install.platforms import _production_identity, _resolve_invoking_user
 from miniclaw.install.receipt import (
     _quarantine_expected,
-    _QuarantinedPath,
     managed_file_sha256,
     verify_managed_file,
 )
@@ -204,31 +204,23 @@ class InstallLayout:
         """
         if type(plan) is not InstallPlan:
             raise InstallError("plan_invalid", "model")
+        effective_uid, original_user, original_uid = _production_identity()
+        account = _resolve_invoking_user(effective_uid, original_user, original_uid)
+        uid = account.pw_uid
+        home = Path(account.pw_dir)
         system = plan.request.system_prefix
         if system:
             if plan.program_prefix != _SYSTEM_PREFIX:
                 raise InstallError("plan_invalid", "program_prefix")
-            state_uid = _nearest_existing_uid(plan.state_home)
-            if state_uid <= 0:
-                raise InstallError("privilege_denied", "state_home")
-            try:
-                account = pwd.getpwuid(state_uid)
-            except KeyError as error:
-                raise InstallError("privilege_denied", "state_home") from error
-            home = Path(account.pw_dir)
-            if account.pw_uid != state_uid or not plan.state_home.is_relative_to(home):
-                raise InstallError("privilege_denied", "state_home")
             command = _SYSTEM_COMMAND
         else:
-            uid = os.geteuid()
-            home = _plan_user_home(plan.program_prefix, plan.state_home, uid)
             command = home / ".local" / "bin" / "miniclaw"
         return cls._build(
             plan.program_prefix,
             plan.state_home,
             command,
             plan.manifest.version,
-            owner_uid=state_uid if system else uid,
+            owner_uid=uid,
             user_home=home,
         )
 
@@ -262,6 +254,7 @@ class InstallLayout:
                 _request_invalid()
         if not _safe_absolute_path(user_home) or user_home == Path("/"):
             _request_invalid()
+        _validate_trusted_chain(user_home, uid)
         try:
             home_owner = user_home.lstat().st_uid
         except FileNotFoundError:
@@ -519,7 +512,7 @@ def install_launcher(
                 expected_uid=os.geteuid(),
                 expected_mode=mode,
             ) != hashlib.sha256(payload).hexdigest():
-                _replace_regular(layout.launcher, payload, mode, launcher_token)
+                _ownership_invalid()
         relative_target = os.path.relpath(layout.launcher, start=layout.command_link.parent)
         if not _lexists(layout.command_link):
             link_identity = _create_symlink(layout.command_link, relative_target)
@@ -527,7 +520,7 @@ def install_launcher(
             if link_token is None:
                 _ownership_invalid()
             if os.readlink(layout.command_link) != relative_target:
-                _replace_symlink(layout.command_link, relative_target, link_token)
+                _ownership_invalid()
         return (
             managed_file_sha256(
                 layout.launcher,
@@ -757,8 +750,7 @@ def _quarantine_owned_lock(
     ):
         quarantined.restore()
         return False
-    quarantined.discard()
-    return True
+    return quarantined.discard()
 
 
 def _probe_process(pid: int) -> tuple[ProcessState, str | None]:
@@ -839,6 +831,7 @@ def _validate_install_root(path: Path, home: Path, expected_uid: int) -> None:
     _validate_lexical_root(path, allow_home=False)
     if path == home:
         _request_invalid()
+    _validate_trusted_chain(path, expected_uid)
     anchor = home if path.is_relative_to(home) else _nearest_existing(path)
     _validate_existing_chain(path, anchor, expected_uid)
     if _lexists(path):
@@ -851,6 +844,7 @@ def _validate_system_prefix(path: Path) -> None:
     """校验固定 system prefix 的现有 root-owned no-follow chain。"""
     if path != _SYSTEM_PREFIX:
         _request_invalid()
+    _validate_trusted_chain(path, 0)
     _validate_existing_chain(path, Path("/"), 0, allow_root=True)
     if _lexists(path):
         metadata = path.lstat()
@@ -888,6 +882,33 @@ def _validate_existing_chain(
             or stat.S_IMODE(metadata.st_mode) & 0o022
             or metadata.st_uid != expected_uid
             and not (allow_root and metadata.st_uid == 0)
+        ):
+            _request_invalid()
+
+
+def _validate_trusted_chain(path: Path, expected_uid: int) -> None:
+    """从 filesystem root 逐组件 lstat，拒绝 symlink 与可替换 ancestor。"""
+    if not _safe_absolute_path(path) or type(expected_uid) is not int or expected_uid < 0:
+        _request_invalid()
+    current = Path("/")
+    candidates = [current]
+    for part in path.parts[1:]:
+        current /= part
+        candidates.append(current)
+    for candidate in candidates:
+        try:
+            metadata = candidate.lstat()
+        except FileNotFoundError:
+            break
+        except OSError:
+            _request_invalid()
+        mode = stat.S_IMODE(metadata.st_mode)
+        sticky_root = metadata.st_uid == 0 and bool(metadata.st_mode & stat.S_ISVTX)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid not in {0, expected_uid}
+            or mode & 0o022
+            and not sticky_root
         ):
             _request_invalid()
 
@@ -984,56 +1005,6 @@ def _create_symlink(path: Path, target: str) -> tuple[int, int]:
         raise
 
 
-def _replace_regular(path: Path, payload: bytes, mode: int, token: _ManagedToken) -> None:
-    """隔离匹配 preflight token 的旧文件，再无覆盖发布完整 regular file。"""
-    temporary, identity = _prepare_regular(path, payload, mode)
-    old: _QuarantinedPath | None = None
-    published = False
-    try:
-        old = _quarantine_managed(path, token)
-        os.link(temporary, path, follow_symlinks=False)
-        published = True
-        _unlink_same_inode(temporary, identity)
-        metadata = path.lstat()
-        if (metadata.st_dev, metadata.st_ino) != identity or metadata.st_nlink != 1:
-            _ownership_invalid()
-        _fsync_directory(path.parent)
-        old.discard()
-    except BaseException:
-        if published:
-            _unlink_same_inode(path, identity)
-        _unlink_same_inode(temporary, identity)
-        if old is not None:
-            old.restore()
-        raise
-
-
-def _replace_symlink(path: Path, target: str, token: _ManagedToken) -> None:
-    """隔离匹配 preflight token 的旧 link，再以 EEXIST 语义发布新 link。"""
-    old: _QuarantinedPath | None = None
-    identity: tuple[int, int] | None = None
-    try:
-        old = _quarantine_managed(path, token)
-        os.symlink(target, path)
-        metadata = path.lstat()
-        if (
-            not stat.S_ISLNK(metadata.st_mode)
-            or metadata.st_uid != os.geteuid()
-            or metadata.st_nlink != 1
-            or os.readlink(path) != target
-        ):
-            _ownership_invalid()
-        identity = (metadata.st_dev, metadata.st_ino)
-        _fsync_directory(path.parent)
-        old.discard()
-    except BaseException:
-        if identity is not None:
-            _unlink_same_inode(path, identity)
-        if old is not None:
-            old.restore()
-        raise
-
-
 def _prepare_regular(path: Path, payload: bytes, mode: int) -> tuple[Path, tuple[int, int]]:
     """在目标同目录用 O_EXCL temp 完整写入、chmod 并 fsync regular bytes。"""
     descriptor, temporary_name = tempfile.mkstemp(
@@ -1056,29 +1027,6 @@ def _prepare_regular(path: Path, payload: bytes, mode: int) -> tuple[Path, tuple
         raise
     finally:
         os.close(descriptor)
-
-
-def _quarantine_managed(path: Path, token: _ManagedToken) -> _QuarantinedPath:
-    """隔离目录项并在私有 pathname 上重验 receipt hash 与 metadata token。"""
-    quarantined = _quarantine_expected(
-        path,
-        token.identity,
-        require_symlink=token.require_symlink,
-    )
-    if quarantined is None:
-        _ownership_invalid()
-    try:
-        verify_managed_file(
-            quarantined.private,
-            token.sha256,
-            expected_uid=os.geteuid(),
-            expected_mode=token.expected_mode,
-            require_symlink=token.require_symlink,
-        )
-    except InstallError:
-        quarantined.restore()
-        raise
-    return quarantined
 
 
 def _write_all(descriptor: int, payload: bytes) -> None:
@@ -1106,8 +1054,8 @@ def _fsync_directory(path: Path) -> None:
 def _unlink_same_inode(path: Path, identity: tuple[int, int]) -> None:
     """隔离公开 pathname 后，仅清理仍匹配调用方 token 的目录项。"""
     quarantined = _quarantine_expected(path, identity)
-    if quarantined is not None:
-        quarantined.discard()
+    if quarantined is not None and not quarantined.discard():
+        _ownership_invalid()
 
 
 def _strict_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -1133,49 +1081,6 @@ def _nearest_existing(path: Path) -> Path:
             current = current.parent
         except OSError:
             _request_invalid()
-
-
-def _nearest_existing_uid(path: Path) -> int:
-    """返回最近 existing ancestor 的 UID。"""
-    try:
-        return _nearest_existing(path).lstat().st_uid
-    except OSError:
-        _request_invalid()
-
-
-def _common_user_anchor(program_prefix: Path, state_home: Path, uid: int) -> Path:
-    """为 user plan 选择同时包含 program/state 且由当前 owner 持有的最近锚点。"""
-    program_ancestor = _nearest_existing(program_prefix)
-    state_ancestor = _nearest_existing(state_home)
-    if program_ancestor == program_prefix:
-        program_ancestor = _nearest_existing(program_prefix.parent)
-    if state_ancestor == state_home:
-        state_ancestor = _nearest_existing(state_home.parent)
-    candidates = (program_ancestor, *program_ancestor.parents)
-    anchor = next(
-        (candidate for candidate in candidates if state_ancestor.is_relative_to(candidate)),
-        None,
-    )
-    if anchor is None:
-        _request_invalid()
-    metadata = anchor.lstat()
-    if metadata.st_uid != uid or stat.S_IMODE(metadata.st_mode) & 0o022:
-        _request_invalid()
-    return anchor
-
-
-def _plan_user_home(program_prefix: Path, state_home: Path, uid: int) -> Path:
-    """从 plan 的目标根选择真实 Home 或可信上级，绝不返回 install root。"""
-    if state_home.name == ".miniclaw":
-        home = state_home.parent
-    elif program_prefix.name == ".miniclaw":
-        home = program_prefix.parent
-    else:
-        home = _common_user_anchor(program_prefix, state_home, uid)
-    if home in {program_prefix, state_home}:
-        _request_invalid()
-    _validate_existing_chain(home, home, uid)
-    return home
 
 
 def _validate_lexical_root(path: object, *, allow_home: bool) -> None:

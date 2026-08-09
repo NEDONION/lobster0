@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import hashlib
 import hmac
 import json
 import os
 import re
 import stat
+import sys
 import tempfile
 import unicodedata
 from dataclasses import dataclass
@@ -66,27 +69,37 @@ class _QuarantinedPath:
     identity: tuple[int, int]
 
     def restore(self) -> bool:
-        """仅在公开 pathname 仍缺失时以 O_EXCL 语义恢复目录项。"""
+        """按目录项类型无覆盖恢复，且仅在清理与 parent fsync 后报告成功。"""
         try:
-            os.link(self.private, self.original, follow_symlinks=False)
-        except (FileExistsError, OSError):
-            return False
-        try:
-            self.private.unlink()
+            metadata = self.private.lstat()
+            _quarantine_restore_hook(self.original)
+            if stat.S_ISDIR(metadata.st_mode):
+                _rename_no_replace(self.private, self.original)
+            elif stat.S_ISREG(metadata.st_mode) or stat.S_ISLNK(metadata.st_mode):
+                os.link(self.private, self.original, follow_symlinks=False)
+                _fsync_directory(self.original.parent)
+                self.private.unlink()
+            else:
+                return False
             self.directory.rmdir()
             _fsync_directory(self.original.parent)
         except OSError:
-            pass
+            return False
         return True
 
-    def discard(self) -> None:
-        """删除已经验证且位于 owner-only 私有目录内的目录项。"""
+    def discard(self) -> bool:
+        """删除已验证的私有目录项，仅在清理与 parent fsync 后报告成功。"""
         try:
-            self.private.unlink()
+            metadata = self.private.lstat()
+            if stat.S_ISDIR(metadata.st_mode):
+                self.private.rmdir()
+            else:
+                self.private.unlink()
             self.directory.rmdir()
             _fsync_directory(self.original.parent)
         except OSError:
-            pass
+            return False
+        return True
 
 
 @dataclass(frozen=True, slots=True)
@@ -481,6 +494,7 @@ def _read_private_regular(path: Path, expected_uid: int) -> bytes:
 
 def _validate_private_parent(path: Path, expected_uid: int) -> None:
     """校验 receipt parent 为 no-follow owner-only directory。"""
+    _validate_trusted_directory_chain(path, expected_uid)
     try:
         metadata = path.lstat()
     except OSError as error:
@@ -491,6 +505,31 @@ def _validate_private_parent(path: Path, expected_uid: int) -> None:
         or stat.S_IMODE(metadata.st_mode) & 0o077
     ):
         _invalid()
+
+
+def _validate_trusted_directory_chain(path: Path, expected_uid: int) -> None:
+    """从 filesystem root 逐组件 lstat receipt parent，拒绝 symlink ancestor。"""
+    if not _safe_absolute_path(path) or type(expected_uid) is not int or expected_uid < 0:
+        _invalid()
+    current = Path("/")
+    candidates = [current]
+    for part in path.parts[1:]:
+        current /= part
+        candidates.append(current)
+    for candidate in candidates:
+        try:
+            metadata = candidate.lstat()
+        except OSError:
+            _invalid()
+        mode = stat.S_IMODE(metadata.st_mode)
+        sticky_root = metadata.st_uid == 0 and bool(metadata.st_mode & stat.S_ISVTX)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid not in {0, expected_uid}
+            or mode & 0o022
+            and not sticky_root
+        ):
+            _invalid()
 
 
 def _restore_receipt(
@@ -532,13 +571,14 @@ def _restore_receipt(
         try:
             _fsync_directory(path.parent)
         except OSError:
-            pass
-        quarantined.discard()
+            _invalid()
+        if not quarantined.discard():
+            _invalid()
     except OSError:
         if published and identity is not None:
             _unlink_same_inode(path, identity)
-        if quarantined is not None:
-            quarantined.restore()
+        if quarantined is not None and not quarantined.restore():
+            _invalid()
     finally:
         if identity is not None:
             _unlink_same_inode(recovery, identity)
@@ -566,8 +606,8 @@ def _write_all(descriptor: int, payload: bytes) -> None:
 def _unlink_same_inode(path: Path, identity: tuple[int, int]) -> None:
     """把公开 pathname 隔离后，仅清理匹配调用方 token 的目录项。"""
     quarantined = _quarantine_expected(path, identity)
-    if quarantined is not None:
-        quarantined.discard()
+    if quarantined is not None and not quarantined.discard():
+        _invalid()
 
 
 def _quarantine_expected(
@@ -578,32 +618,83 @@ def _quarantine_expected(
 ) -> _QuarantinedPath | None:
     """原子隔离公开目录项并验证 inode/type token，失配时安全恢复。"""
     directory: Path | None = None
+    quarantined: _QuarantinedPath | None = None
+    moved = False
     try:
         directory = Path(tempfile.mkdtemp(prefix=f".{path.name}.quarantine-", dir=path.parent))
         directory.chmod(0o700)
         private = directory / "entry"
         _quarantine_race_hook(path)
         os.rename(path, private)
-        metadata = private.lstat()
+        moved = True
         quarantined = _QuarantinedPath(path, private, directory, identity)
+        metadata = private.lstat()
         matches_type = require_symlink is None or stat.S_ISLNK(metadata.st_mode) == require_symlink
         if (metadata.st_dev, metadata.st_ino) != identity or not matches_type:
-            quarantined.restore()
+            if not quarantined.restore():
+                _invalid()
             return None
         _fsync_directory(path.parent)
         return quarantined
-    except OSError:
+    except InstallError:
+        raise
+    except BaseException as error:
+        if moved and quarantined is not None:
+            if not quarantined.restore():
+                _invalid()
+            _invalid()
         if directory is not None:
             try:
                 directory.rmdir()
             except OSError:
                 pass
-        return None
+        if isinstance(error, OSError):
+            return None
+        raise
 
 
 def _quarantine_race_hook(path: Path) -> None:
     """为 deterministic race regression 提供无副作用切入点。"""
     del path
+
+
+def _quarantine_restore_hook(path: Path) -> None:
+    """为 deterministic no-clobber restore regression 提供无副作用切入点。"""
+    del path
+
+
+def _rename_no_replace(source: Path, destination: Path) -> None:
+    """用 Linux/macOS 原子 no-replace rename 恢复 directory。"""
+    library = ctypes.CDLL(None, use_errno=True)
+    encoded_source = os.fsencode(source)
+    encoded_destination = os.fsencode(destination)
+    if sys.platform == "darwin":
+        try:
+            operation = library.renamex_np
+        except AttributeError as error:
+            raise OSError(errno.ENOTSUP, "no-replace rename unavailable") from error
+        operation.argtypes = (ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint)
+        operation.restype = ctypes.c_int
+        result = operation(encoded_source, encoded_destination, 0x00000004)
+    elif sys.platform.startswith("linux"):
+        try:
+            operation = library.renameat2
+        except AttributeError as error:
+            raise OSError(errno.ENOTSUP, "no-replace rename unavailable") from error
+        operation.argtypes = (
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        )
+        operation.restype = ctypes.c_int
+        result = operation(-100, encoded_source, -100, encoded_destination, 1)
+    else:
+        raise OSError(errno.ENOTSUP, "no-replace rename unavailable")
+    if result != 0:
+        error_number = ctypes.get_errno()
+        raise OSError(error_number, os.strerror(error_number))
 
 
 def _validate_relative_path(value: object) -> None:

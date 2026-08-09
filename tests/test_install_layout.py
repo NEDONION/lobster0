@@ -43,7 +43,7 @@ class InstallLayoutTests(unittest.TestCase):
     def setUp(self) -> None:
         """创建 owner-only 临时 Home。"""
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve(strict=True)
         self.root.chmod(0o700)
         self.home = self.root / "home"
         self.home.mkdir(mode=0o700)
@@ -142,6 +142,18 @@ class InstallLayoutTests(unittest.TestCase):
         unsafe.chmod(0o707)
         with self.assertRaisesRegex(InstallError, "request_invalid"):
             InstallLayout.for_request(self.request(prefix=unsafe / "miniclaw"), self.account)
+
+    def test_home_and_roots_reject_symlink_in_any_ancestor_component(self) -> None:
+        """只 lstat Home 自身会漏掉更上层 symlink ancestor，后续根仍可被重定向。"""
+        real_parent = self.root / "real-parent"
+        real_parent.mkdir(mode=0o700)
+        nested_home = real_parent / "nested-home"
+        nested_home.mkdir(mode=0o700)
+        linked_parent = self.root / "linked-parent"
+        linked_parent.symlink_to(real_parent, target_is_directory=True)
+
+        with self.assertRaisesRegex(InstallError, "request_invalid"):
+            InstallLayout.user(linked_parent / "nested-home", version="0.7.0")
 
     def test_request_binds_user_and_system_state_to_target_owner(self) -> None:
         """system prefix 只能改变程序根，state 和命令仍归原非 root 用户。"""
@@ -533,7 +545,21 @@ class InstallLayoutTests(unittest.TestCase):
         prefix.mkdir(mode=0o700)
         request = self.request(prefix=prefix, state_home=prefix, onboard=True)
 
-        layout = InstallLayout.for_plan(self.plan(request, prefix))
+        with (
+            mock.patch.object(
+                layout_module,
+                "_production_identity",
+                create=True,
+                return_value=(os.geteuid(), None, None),
+            ),
+            mock.patch.object(
+                layout_module,
+                "_resolve_invoking_user",
+                create=True,
+                return_value=self.account,
+            ),
+        ):
+            layout = InstallLayout.for_plan(self.plan(request, prefix))
 
         self.assertEqual(layout.program_prefix, prefix)
         self.assertEqual(layout.command_link, self.home / ".local" / "bin" / "miniclaw")
@@ -550,54 +576,89 @@ class InstallLayoutTests(unittest.TestCase):
             onboard=True,
         )
         plan = self.plan(request, system_prefix)
-        wrong = pwd.struct_passwd(
-            ("alice", "x", os.geteuid(), os.getegid(), "Fixture", "/other/home", "/bin/sh")
-        )
         with (
             mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
             mock.patch.object(layout_module, "_SYSTEM_COMMAND", self.root / "bin" / "miniclaw"),
             mock.patch.object(layout_module, "_validate_system_prefix"),
-            mock.patch.object(layout_module.pwd, "getpwuid", return_value=wrong),
+            mock.patch.object(
+                layout_module,
+                "_production_identity",
+                create=True,
+                return_value=(0, "alice", os.geteuid()),
+            ),
+            mock.patch.object(
+                layout_module,
+                "_resolve_invoking_user",
+                create=True,
+                side_effect=InstallError("privilege_denied", "platform"),
+            ),
             self.assertRaisesRegex(InstallError, "privilege_denied"),
         ):
             InstallLayout.for_plan(plan)
 
-    def test_launcher_replace_races_preserve_foreign_regular_and_symlink(self) -> None:
-        """preflight token 后的 foreign replacement 不能被 regular/link commit 覆盖。"""
-        prefix = self.home / "program"
-        command = self.home / ".local" / "bin" / "miniclaw"
-        first = InstallLayout._build(prefix, self.home / "state-a", command, "0.7.0")
-        launcher_hash, link_hash = install_launcher(first)
-        second = InstallLayout._build(prefix, self.home / "state-b", command, "0.7.0")
-        real_regular = layout_module._replace_regular
-
-        def replace_regular_race(*args: object, **kwargs: object) -> None:
-            """在 commit helper 入口替换 launcher。"""
-            first.launcher.unlink()
-            first.launcher.write_bytes(b"foreign-regular")
-            first.launcher.chmod(0o700)
-            real_regular(*args, **kwargs)  # type: ignore[arg-type]
+    def test_for_plan_binds_production_passwd_home_not_custom_install_roots(self) -> None:
+        """custom prefix/state 不能反推 Home；command 必须绑定 current/sudo passwd Home。"""
+        identity_home = self.root / "identity-home"
+        identity_home.mkdir(mode=0o700)
+        account = _account(identity_home)
+        prefix = self.home / "custom-program"
+        state = self.home / "custom-state"
+        request = self.request(prefix=prefix, state_home=state)
+        production = mock.Mock(return_value=(0, "alice", os.geteuid()))
+        resolver = mock.Mock(return_value=account)
 
         with (
             mock.patch.object(
                 layout_module,
-                "_replace_regular",
-                side_effect=replace_regular_race,
+                "_production_identity",
+                create=True,
+                new=production,
             ),
-            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
+            mock.patch.object(
+                layout_module,
+                "_resolve_invoking_user",
+                create=True,
+                new=resolver,
+            ),
         ):
+            layout = InstallLayout.for_plan(self.plan(request, prefix))
+
+        self.assertEqual(layout.command_link, identity_home / ".local" / "bin" / "miniclaw")
+        production.assert_called_once_with()
+        resolver.assert_called_once_with(0, "alice", os.geteuid())
+
+    def test_launcher_updates_are_inode_stable_or_fail_without_enoent_window(self) -> None:
+        """成功重入保持目录项；内容/target 变化 fail closed，不能 remove-then-publish。"""
+        prefix = self.home / "program"
+        command = self.home / ".local" / "bin" / "miniclaw"
+        first = InstallLayout._build(prefix, self.home / "state-a", command, "0.7.0")
+        launcher_hash, link_hash = install_launcher(first)
+        launcher_before = first.launcher.lstat()
+        link_before = first.command_link.lstat()
+        launcher_bytes = first.launcher.read_bytes()
+        link_target = os.readlink(first.command_link)
+
+        self.assertEqual(
+            install_launcher(
+                first,
+                launcher_sha256=launcher_hash,
+                command_link_sha256=link_hash,
+            ),
+            (launcher_hash, link_hash),
+        )
+        self.assertEqual(first.launcher.lstat().st_ino, launcher_before.st_ino)
+        self.assertEqual(first.command_link.lstat().st_ino, link_before.st_ino)
+
+        second = InstallLayout._build(prefix, self.home / "state-b", command, "0.7.0")
+        with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
             install_launcher(
                 second,
                 launcher_sha256=launcher_hash,
                 command_link_sha256=link_hash,
             )
-        self.assertEqual(first.launcher.read_bytes(), b"foreign-regular")
+        self.assertEqual(first.launcher.read_bytes(), launcher_bytes)
+        self.assertEqual(first.launcher.lstat().st_ino, launcher_before.st_ino)
 
-        # 重新建立受管 launcher，只单独触发 command-link target update。
-        first.launcher.unlink()
-        first.launcher.write_bytes(render_launcher(first))
-        first.launcher.chmod(0o700)
-        launcher_hash = layout_module.managed_file_sha256(first.launcher)
         other_prefix = self.home / "other-program"
         link_update = InstallLayout._build(
             other_prefix,
@@ -605,27 +666,14 @@ class InstallLayoutTests(unittest.TestCase):
             command,
             "0.7.0",
         )
-        real_symlink = layout_module._replace_symlink
-
-        def replace_symlink_race(*args: object, **kwargs: object) -> None:
-            """在 link commit helper 入口替换 command symlink。"""
-            command.unlink()
-            command.symlink_to("foreign-target")
-            real_symlink(*args, **kwargs)  # type: ignore[arg-type]
-
-        with (
-            mock.patch.object(
-                layout_module,
-                "_replace_symlink",
-                side_effect=replace_symlink_race,
-            ),
-            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
-        ):
+        with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
             install_launcher(
                 link_update,
                 command_link_sha256=link_hash,
             )
-        self.assertEqual(os.readlink(command), "foreign-target")
+        self.assertEqual(os.readlink(command), link_target)
+        self.assertEqual(command.lstat().st_ino, link_before.st_ino)
+        self.assertFalse(link_update.launcher.exists())
 
 
 if __name__ == "__main__":

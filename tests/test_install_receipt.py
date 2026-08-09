@@ -26,7 +26,7 @@ class InstallReceiptTests(unittest.TestCase):
     def setUp(self) -> None:
         """创建 owner-only receipt 目录。"""
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve(strict=True)
         self.root.chmod(0o700)
         self.path = self.root / "install-receipt.json"
 
@@ -296,6 +296,102 @@ class InstallReceiptTests(unittest.TestCase):
         ):
             receipt_module._unlink_same_inode(target, identity)
         self.assertEqual(target.read_bytes(), replacement)
+
+    def test_quarantine_post_rename_failure_restores_or_keeps_explicit_evidence(self) -> None:
+        """rename 后异常不能让公开 entry 消失；恢复失败必须显式报错并保留证据。"""
+        target = self.root / "owned"
+        target.write_bytes(b"owned")
+        metadata = target.lstat()
+        identity = (metadata.st_dev, metadata.st_ino)
+        real_fsync = receipt_module._fsync_directory
+        failed = False
+
+        def fail_once(path: Path) -> None:
+            """只让 quarantine rename 后的首次 parent fsync 失败。"""
+            nonlocal failed
+            if not failed:
+                failed = True
+                raise OSError("POST_RENAME_FSYNC")
+            real_fsync(path)
+
+        with (
+            mock.patch.object(receipt_module, "_fsync_directory", side_effect=fail_once),
+            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
+        ):
+            receipt_module._quarantine_expected(target, identity)
+        self.assertEqual(target.read_bytes(), b"owned")
+        self.assertEqual(target.lstat().st_nlink, 1)
+
+        with (
+            mock.patch.object(receipt_module, "_fsync_directory", side_effect=OSError("CRASH")),
+            mock.patch.object(receipt_module._QuarantinedPath, "restore", return_value=False),
+            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
+        ):
+            receipt_module._quarantine_expected(target, identity)
+        evidence = tuple(self.root.glob(".owned.quarantine-*/*"))
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0].read_bytes(), b"owned")
+
+    def test_quarantine_mismatch_restore_is_type_aware_and_never_claims_partial_success(
+        self,
+    ) -> None:
+        """regular private unlink 失败及 nonempty directory mismatch 都不能被当成正常 miss。"""
+        regular = self.root / "regular"
+        regular.write_bytes(b"foreign")
+        wrong_identity = (regular.lstat().st_dev, regular.lstat().st_ino + 1)
+        real_unlink = Path.unlink
+
+        def fail_private_unlink(path: Path, *args: object, **kwargs: object) -> None:
+            """只阻断 quarantine private entry 的最终删除。"""
+            if path.name == "entry":
+                raise OSError("PRIVATE_UNLINK")
+            real_unlink(path, *args, **kwargs)
+
+        with (
+            mock.patch.object(Path, "unlink", autospec=True, side_effect=fail_private_unlink),
+            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
+        ):
+            receipt_module._quarantine_expected(regular, wrong_identity)
+        self.assertEqual(regular.read_bytes(), b"foreign")
+
+        directory = self.root / "foreign-dir"
+        directory.mkdir(mode=0o700)
+        (directory / "child").write_bytes(b"keep")
+        metadata = directory.lstat()
+        result = receipt_module._quarantine_expected(
+            directory,
+            (metadata.st_dev, metadata.st_ino + 1),
+        )
+        self.assertIsNone(result)
+        self.assertEqual((directory / "child").read_bytes(), b"keep")
+
+    def test_directory_restore_race_preserves_competitor_and_private_evidence(self) -> None:
+        """directory 恢复遇到新 public path 时不能覆盖竞态项或丢失 nonempty 原目录。"""
+        directory = self.root / "directory"
+        directory.mkdir(mode=0o700)
+        (directory / "child").write_bytes(b"private-evidence")
+        metadata = directory.lstat()
+        wrong_identity = (metadata.st_dev, metadata.st_ino + 1)
+
+        def create_competitor(path: Path) -> None:
+            """在 no-clobber restore 前创建竞态 public directory。"""
+            path.mkdir(mode=0o700)
+            (path / "competitor").write_bytes(b"competitor")
+
+        with (
+            mock.patch.object(
+                receipt_module,
+                "_quarantine_restore_hook",
+                create=True,
+                side_effect=create_competitor,
+            ),
+            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
+        ):
+            receipt_module._quarantine_expected(directory, wrong_identity)
+        self.assertEqual((directory / "competitor").read_bytes(), b"competitor")
+        evidence = tuple(self.root.glob(".directory.quarantine-*/entry/child"))
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(evidence[0].read_bytes(), b"private-evidence")
 
     def test_receipt_constructor_enforces_bounded_normalized_casefold_unique_paths(self) -> None:
         """构造态若允许 load 会拒绝的 path/payload，write 就无法保证 closed-world receipt。"""
