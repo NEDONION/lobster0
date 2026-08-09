@@ -60,3 +60,17 @@ test("client requests use one compact UTF-8 NDJSON line", () => {
     payload: { session_key: "default", text: "你好\nMiniClaw" },
   });
 });
+
+test("Desktop session queries use the shared versioned request union", () => {
+  assert.equal(
+    JSON.parse(encodeRequest("sessions-1", "session.list", { limit: 20 })).type,
+    "session.list",
+  );
+  assert.deepEqual(
+    JSON.parse(encodeRequest("history-1", "session.history", {
+      session_key: "task-1",
+      limit: 100,
+    })).payload,
+    { session_key: "task-1", limit: 100 },
+  );
+});

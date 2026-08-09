@@ -6,6 +6,8 @@ import {
   type AppState,
 } from "@miniclaw/pi-tui/state";
 
+import type { SessionHistory } from "../common/api";
+
 export type DesktopTaskStatus =
   | "idle"
   | "running"
@@ -49,6 +51,48 @@ export function continueDesktopApproval(state: DesktopTaskState): DesktopTaskSta
 
 export function cancelDesktopTask(state: DesktopTaskState): DesktopTaskState {
   return { ...state, status: "cancelled", run: terminal(state.run), error: null };
+}
+
+export function hydrateSession(history: SessionHistory): DesktopTaskState {
+  let state = createDesktopTaskState(history.sessionKey);
+  for (const message of history.messages) {
+    if (message.role === "user") {
+      state = appendDesktopUser(state, message.content);
+    } else {
+      state = {
+        ...state,
+        run: reduceFrame(state.run, {
+          v: 1,
+          type: "event.turn_finished",
+          payload: { turn_id: message.turnId ?? 0, content: message.content },
+        }),
+      };
+    }
+  }
+  const latest = history.turns.at(-1);
+  if (!latest) {
+    return state;
+  }
+  if (latest.status === "failed" && latest.errorCode === "runtime_interrupted") {
+    return { ...state, status: "interrupted", error: "上次运行意外中断" };
+  }
+  if (latest.status === "failed") {
+    return {
+      ...state,
+      status: "failed",
+      error: `本轮失败：${stableCode(latest.errorCode, "agent")}`,
+    };
+  }
+  if (latest.status === "queued" || latest.status === "running") {
+    return { ...state, status: "running" };
+  }
+  if (latest.status === "waiting_approval") {
+    return { ...state, status: "waiting_approval" };
+  }
+  if (latest.status === "cancelled") {
+    return { ...state, status: "cancelled" };
+  }
+  return { ...state, status: latest.status === "completed" ? "completed" : "idle" };
 }
 
 export function reduceDesktopFrame(

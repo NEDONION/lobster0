@@ -1,5 +1,4 @@
 import type {
-  JsonValue,
   PermissionMode,
   ServerFrame,
 } from "@miniclaw/pi-tui/protocol";
@@ -24,15 +23,28 @@ export interface StartTurnInput {
 
 export interface SessionSummary {
   sessionKey: string;
+  title: string;
   updatedAt: string;
   status: string;
+}
+
+export interface SessionTurn {
+  turnId: number;
+  status: string;
+  errorCode: string | null;
+}
+
+export interface SessionMessage {
+  role: "user" | "assistant";
+  content: string;
+  turnId: number | null;
 }
 
 export interface SessionHistory {
   sessionKey: string;
   updatedAt: string;
-  turns: Record<string, JsonValue>[];
-  messages: Record<string, JsonValue>[];
+  turns: SessionTurn[];
+  messages: SessionMessage[];
 }
 
 export interface AutomationSummary {

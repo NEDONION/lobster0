@@ -43,9 +43,15 @@ export function registerDesktopIpc(
     }
     return bridge.setPermissionMode(record.mode);
   });
+  register(DESKTOP_CHANNELS.sessionsList, (payload) => {
+    const input = validateSessionListInput(payload);
+    return bridge.listSessions(input.limit);
+  });
+  register(DESKTOP_CHANNELS.sessionLoad, (payload) => {
+    const input = validateHistoryInput(payload);
+    return bridge.loadSession(input.sessionKey, input.limit);
+  });
   for (const channel of [
-    DESKTOP_CHANNELS.sessionsList,
-    DESKTOP_CHANNELS.sessionLoad,
     DESKTOP_CHANNELS.automationsList,
     DESKTOP_CHANNELS.workspaceChoose,
   ]) {
@@ -88,6 +94,26 @@ export function validateApprovalInput(payload: unknown): {
   };
 }
 
+export function validateSessionListInput(payload: unknown): { limit: number } {
+  const record = exactRecord(payload, ["limit"], "invalid_session_query");
+  const limit = integerBetween(record.limit, 1, 50, "invalid_session_query");
+  return { limit };
+}
+
+export function validateHistoryInput(payload: unknown): {
+  sessionKey: string;
+  limit: number;
+} {
+  const record = exactRecord(payload, ["sessionKey", "limit"], "invalid_session_query");
+  if (!boundedString(record.sessionKey, 256)) {
+    throw new DesktopRequestError("invalid_session_query", "任务标识无效");
+  }
+  return {
+    sessionKey: record.sessionKey,
+    limit: integerBetween(record.limit, 1, 200, "invalid_session_query"),
+  };
+}
+
 function exactRecord(
   value: unknown,
   keys: readonly string[],
@@ -107,4 +133,11 @@ function exactRecord(
 
 function boundedString(value: unknown, maximum: number): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= maximum && !value.includes("\0");
+}
+
+function integerBetween(value: unknown, minimum: number, maximum: number, code: string): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new DesktopRequestError(code, "Desktop 数量边界无效");
+  }
+  return value;
 }

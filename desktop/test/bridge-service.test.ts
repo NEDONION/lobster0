@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ServerFrame } from "@miniclaw/pi-tui/protocol";
+import type { JsonValue, RequestType, ServerFrame } from "@miniclaw/pi-tui/protocol";
 
 import { BridgeService } from "../src/main/bridge-service";
 
@@ -19,6 +19,7 @@ const HELLO = {
 class FakeClient {
   public readonly helloCalls: [string | undefined, string | undefined][] = [];
   public readonly turns: [string, string][] = [];
+  public readonly requests: [RequestType, Record<string, JsonValue>][] = [];
   private eventHandler: ((frame: ServerFrame) => void) | undefined;
 
   public async hello(clientName?: string, clientVersion?: string): Promise<typeof HELLO> {
@@ -39,6 +40,29 @@ class FakeClient {
 
   public async startTurn(sessionKey: string, text: string): Promise<void> {
     this.turns.push([sessionKey, text]);
+  }
+
+  public async request(
+    type: RequestType,
+    payload: Record<string, JsonValue>,
+  ): Promise<Record<string, JsonValue>> {
+    this.requests.push([type, payload]);
+    if (type === "session.list") {
+      return {
+        sessions: [{
+          session_key: "task-1",
+          title: "整理报告",
+          updated_at: "2026-08-09T00:00:00+00:00",
+          status: "completed",
+        }],
+      };
+    }
+    return {
+      session_key: "task-1",
+      updated_at: "2026-08-09T00:00:00+00:00",
+      turns: [{ turn_id: 7, status: "failed", error_code: "runtime_interrupted" }],
+      messages: [{ role: "user", content: "整理报告", turn_id: 7 }],
+    };
   }
 
   public async cancelTurn(): Promise<void> {}
@@ -118,5 +142,30 @@ describe("BridgeService", () => {
       payload: { turn_id: 7, content: "完成" },
     });
     expect(service.status).toBe("idle");
+  });
+
+  it("maps bounded Core session responses to the Desktop API", async () => {
+    const client = new FakeClient();
+    const service = new BridgeService(() => client, {});
+    await service.start();
+
+    const sessions = await service.listSessions(20);
+    const history = await service.loadSession("task-1", 100);
+
+    expect(client.requests).toEqual([
+      ["session.list", { limit: 20 }],
+      ["session.history", { session_key: "task-1", limit: 100 }],
+    ]);
+    expect(sessions[0]).toEqual({
+      sessionKey: "task-1",
+      title: "整理报告",
+      updatedAt: "2026-08-09T00:00:00+00:00",
+      status: "completed",
+    });
+    expect(history.turns[0]).toEqual({
+      turnId: 7,
+      status: "failed",
+      errorCode: "runtime_interrupted",
+    });
   });
 });

@@ -3,6 +3,7 @@
 import sqlite3
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 
 from miniclaw.bootstrap import initialize_state
@@ -42,6 +43,57 @@ class ConversationRepositoryTest(unittest.TestCase):
         self.assertNotEqual(first.id, other.id)
         self.assertEqual(first.channel, "cli")
         self.assertEqual(first.account_id, "local")
+
+    def test_cli_sessions_are_owner_scoped_and_newest_first(self) -> None:
+        """Desktop 最近任务不能越过 Owner，且新 Session 排在前面。"""
+        first = self.sessions.get_or_create_cli(self.owner.id, "task-old")
+        second = self.sessions.get_or_create_cli(self.owner.id, "task-new")
+        with self.database.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO users (display_name, created_at) VALUES (?, ?)",
+                ("other", datetime.now(UTC).isoformat()),
+            )
+            other_owner_id = int(cursor.lastrowid)
+        self.sessions.get_or_create_cli(other_owner_id, "other-task")
+
+        listed = self.sessions.list_cli(self.owner.id, 10)
+
+        self.assertEqual(
+            [session.external_conversation_id for session in listed],
+            [second.external_conversation_id, first.external_conversation_id],
+        )
+        self.assertEqual(
+            self.sessions.get_cli(self.owner.id, "task-new"),
+            second,
+        )
+        self.assertIsNone(self.sessions.get_cli(self.owner.id, "other-task"))
+
+    def test_stale_queued_and_running_turns_fail_as_runtime_interrupted(self) -> None:
+        """进程重启只收敛无法继续的前台 Turn，不破坏等待审批状态。"""
+        session = self.sessions.get_or_create_cli(self.owner.id, "recovery")
+        queued = self.turns.create_with_user_message(session.id, "queued", "model", "q")
+        running = self.turns.create_with_user_message(session.id, "running", "model", "r")
+        self.turns.mark_running(running.id)
+        waiting = self.turns.create_with_user_message(session.id, "waiting", "model", "w")
+        self.turns.mark_running(waiting.id)
+        self.turns.wait_for_approval(
+            waiting.id,
+            session.id,
+            7,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id=None,
+            iterations=1,
+        )
+
+        count = self.turns.interrupt_stale()
+
+        self.assertEqual(count, 2)
+        for turn in (queued, running):
+            recovered = self.turns.get(turn.id)
+            self.assertEqual(recovered.status, "failed")
+            self.assertEqual(recovered.error_code, "runtime_interrupted")
+        self.assertEqual(self.turns.get(waiting.id).status, "waiting_approval")
 
     def test_generic_session_supports_feishu_without_changing_cli_wrapper(self) -> None:
         """通用 Session 应保留 Channel/account 边界，CLI 包装仍复用旧键。"""

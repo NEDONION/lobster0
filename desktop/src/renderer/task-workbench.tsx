@@ -1,11 +1,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 
-import type { ApprovalDecision, DesktopBootstrap } from "../common/api";
+import type {
+  ApprovalDecision,
+  DesktopBootstrap,
+  SessionHistory,
+  SessionSummary,
+} from "../common/api";
 import {
   appendDesktopUser,
   cancelDesktopTask,
   continueDesktopApproval,
   createDesktopTaskState,
+  hydrateSession,
   reduceDesktopFrame,
   type DesktopTaskStatus,
 } from "./task-state";
@@ -14,6 +20,9 @@ interface TaskWorkbenchProps {
   sessionKey: string;
   bootstrap: DesktopBootstrap | null;
   bootstrapError: string | null;
+  initialHistory: SessionHistory | null;
+  sessions: SessionSummary[];
+  onSelectSession: (sessionKey: string) => void;
 }
 
 const STATUS_LABELS: Record<DesktopTaskStatus, string> = {
@@ -37,8 +46,13 @@ export function TaskWorkbench({
   sessionKey,
   bootstrap,
   bootstrapError,
+  initialHistory,
+  sessions,
+  onSelectSession,
 }: TaskWorkbenchProps): React.JSX.Element {
-  const [task, setTask] = useState(() => createDesktopTaskState(sessionKey));
+  const [task, setTask] = useState(() => (
+    initialHistory ? hydrateSession(initialHistory) : createDesktopTaskState(sessionKey)
+  ));
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [resolvingApproval, setResolvingApproval] = useState(false);
@@ -105,15 +119,36 @@ export function TaskWorkbench({
       <aside className="task-list-panel">
         <div className="panel-heading">
           <span>任务</span>
-          <strong>1</strong>
+          <strong>
+            {sessions.some((item) => item.sessionKey === sessionKey)
+              ? sessions.length
+              : sessions.length + 1}
+          </strong>
         </div>
-        <button aria-current="page" className="task-row" data-active="true" type="button">
-          <span className="task-row-dot" aria-hidden="true" />
-          <span>
-            <strong>当前任务</strong>
-            <small>{STATUS_LABELS[task.status]}</small>
-          </span>
-        </button>
+        <div className="task-list-scroll">
+          <button aria-current="page" className="task-row" data-active="true" type="button">
+            <span className="task-row-dot" aria-hidden="true" />
+            <span>
+              <strong>{sessions.find((item) => item.sessionKey === sessionKey)?.title ?? "当前任务"}</strong>
+              <small>{STATUS_LABELS[task.status]}</small>
+            </span>
+          </button>
+          {sessions.filter((item) => item.sessionKey !== sessionKey).map((session) => (
+            <button
+              className="task-row"
+              data-active="false"
+              key={session.sessionKey}
+              onClick={() => onSelectSession(session.sessionKey)}
+              type="button"
+            >
+              <span className="task-row-dot" aria-hidden="true" />
+              <span>
+                <strong>{session.title}</strong>
+                <small>{session.status}</small>
+              </span>
+            </button>
+          ))}
+        </div>
         <div className="task-context">
           <span>工作目录</span>
           <strong>{bootstrap?.workspace ?? "等待 Core"}</strong>

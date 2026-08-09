@@ -11,6 +11,7 @@ from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.providers.base import JsonValue
 from miniclaw.runtime import AgentRuntime
 
+from .conversations import ConversationQueryError
 from .protocol import BridgeFrame, BridgeRequest, ProtocolError, decode_request, encode_frame
 
 
@@ -98,6 +99,8 @@ class BridgeServer:
                         "tools",
                         "approvals",
                         "telemetry",
+                        "sessions",
+                        "history",
                     ],
                 },
             )
@@ -142,6 +145,36 @@ class BridgeServer:
             return True
         if request.type == "permissions.set":
             await self._set_permission_mode(request)
+            return True
+        if request.type == "session.list":
+            limit = request.payload["limit"]
+            assert isinstance(limit, int) and not isinstance(limit, bool)
+            result = self._runtime.conversation_console.list_sessions(
+                self._runtime.owner_id,
+                limit=limit,
+            )
+            await self._ok(request.request_id, result)
+            return True
+        if request.type == "session.history":
+            limit = request.payload["limit"]
+            session_key = request.payload["session_key"]
+            assert isinstance(limit, int) and not isinstance(limit, bool)
+            assert isinstance(session_key, str)
+            try:
+                result = self._runtime.conversation_console.history(
+                    self._runtime.owner_id,
+                    session_key=session_key,
+                    limit=limit,
+                )
+            except ConversationQueryError as error:
+                await self._error(
+                    request.request_id,
+                    error.code,
+                    str(error),
+                    retryable=False,
+                )
+                return True
+            await self._ok(request.request_id, result)
             return True
         if request.type == "session.new":
             if self._active_task is not None or self._pending_approval_id is not None:

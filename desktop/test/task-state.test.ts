@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { ServerFrame } from "@miniclaw/pi-tui/protocol";
 
+import type { SessionHistory } from "../src/common/api";
 import {
   appendDesktopUser,
   cancelDesktopTask,
   continueDesktopApproval,
   createDesktopTaskState,
+  hydrateSession,
   reduceDesktopFrame,
 } from "../src/renderer/task-state";
 
@@ -86,5 +88,24 @@ describe("Desktop task state", () => {
 
     expect(state.status).toBe(status);
     expect(state.error).toBe(error);
+  });
+
+  it("hydrates persisted messages and marks interrupted runtime state", () => {
+    const history: SessionHistory = {
+      sessionKey: "task-1",
+      updatedAt: "2026-08-09T00:00:00+00:00",
+      turns: [{ turnId: 7, status: "failed", errorCode: "runtime_interrupted" }],
+      messages: [
+        { role: "user", content: "整理报告", turnId: 7 },
+        { role: "assistant", content: "未完成的草稿", turnId: 7 },
+      ],
+    };
+
+    const state = hydrateSession(history);
+
+    expect(state.run.timeline.map((item) => item.kind)).toEqual(["user", "assistant"]);
+    expect(state.run.lastAssistantText).toBe("未完成的草稿");
+    expect(state.status).toBe("interrupted");
+    expect(state.error).toBe("上次运行意外中断");
   });
 });

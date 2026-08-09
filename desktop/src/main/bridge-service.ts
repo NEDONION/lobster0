@@ -12,6 +12,8 @@ import {
 import type {
   ApprovalDecision,
   DesktopBootstrap,
+  SessionHistory,
+  SessionSummary,
   StartTurnInput,
 } from "../common/api";
 
@@ -26,6 +28,7 @@ type BridgeStatus =
 type BridgePort = Pick<
   BridgeClient,
   | "hello"
+  | "request"
   | "onEvent"
   | "onFatal"
   | "startTurn"
@@ -121,6 +124,62 @@ export class BridgeService {
       this.bootstrapData = { ...this.bootstrapData, permissionMode: selected };
     }
     return selected;
+  }
+
+  public async listSessions(limit: number): Promise<SessionSummary[]> {
+    const response = await this.requireClient().request("session.list", { limit });
+    const sessions = response.sessions;
+    if (!Array.isArray(sessions)) {
+      throw protocolError();
+    }
+    return sessions.map((value) => {
+      const record = recordValue(value);
+      return {
+        sessionKey: stringValue(record.session_key),
+        title: stringValue(record.title),
+        updatedAt: stringValue(record.updated_at),
+        status: stringValue(record.status),
+      };
+    });
+  }
+
+  public async loadSession(
+    sessionKey: string,
+    limit: number,
+  ): Promise<SessionHistory> {
+    const response = await this.requireClient().request("session.history", {
+      session_key: sessionKey,
+      limit,
+    });
+    const turns = response.turns;
+    const messages = response.messages;
+    if (!Array.isArray(turns) || !Array.isArray(messages)) {
+      throw protocolError();
+    }
+    return {
+      sessionKey: stringValue(response.session_key),
+      updatedAt: stringValue(response.updated_at),
+      turns: turns.map((value) => {
+        const record = recordValue(value);
+        return {
+          turnId: positiveInteger(record.turn_id),
+          status: stringValue(record.status),
+          errorCode: nullableString(record.error_code),
+        };
+      }),
+      messages: messages.map((value) => {
+        const record = recordValue(value);
+        const role = record.role;
+        if (role !== "user" && role !== "assistant") {
+          throw protocolError();
+        }
+        return {
+          role,
+          content: stringValue(record.content),
+          turnId: nullablePositiveInteger(record.turn_id),
+        };
+      }),
+    };
   }
 
   public async stop(): Promise<void> {
@@ -226,4 +285,33 @@ function stringArray(value: JsonValue | undefined): string[] {
     throw new BridgeRequestError("bridge_protocol", "MiniClaw Core 握手数据无效");
   }
   return value as string[];
+}
+
+function recordValue(value: JsonValue): Record<string, JsonValue> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw protocolError();
+  }
+  return value;
+}
+
+function positiveInteger(value: JsonValue | undefined): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0) {
+    throw protocolError();
+  }
+  return value;
+}
+
+function nullablePositiveInteger(value: JsonValue | undefined): number | null {
+  return value === null ? null : positiveInteger(value);
+}
+
+function nullableString(value: JsonValue | undefined): string | null {
+  if (value === null) {
+    return null;
+  }
+  return stringValue(value);
+}
+
+function protocolError(): BridgeRequestError {
+  return new BridgeRequestError("bridge_protocol", "MiniClaw Core 返回了无效数据");
 }

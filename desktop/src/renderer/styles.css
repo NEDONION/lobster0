@@ -246,6 +246,93 @@ button:focus-visible {
   font-size: 18px;
 }
 
+.home-grid {
+  display: grid;
+  max-width: 980px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 18px;
+}
+
+.home-create-button {
+  padding: 9px 14px;
+}
+
+.recent-card {
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 12px 38px rgba(29, 36, 51, 0.05);
+}
+
+.recent-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.recent-heading strong {
+  color: var(--text-primary);
+}
+
+.recent-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+
+.recent-list button {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-primary);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.recent-list button:hover {
+  background: #f2f4f7;
+}
+
+.recent-list span {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.recent-list strong,
+.recent-list small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-list small,
+.recent-list time,
+.recent-empty,
+.recent-error {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.recent-empty,
+.recent-error {
+  margin: 22px 0 0;
+}
+
+.recent-error {
+  color: var(--danger);
+}
+
 .draft-line {
   height: 42px;
   border: 1px dashed #cbd5e1;
@@ -324,11 +411,21 @@ button:focus-visible {
   gap: 10px;
   margin: 10px;
   padding: 12px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid transparent;
   border-radius: 10px;
   color: var(--text-primary);
-  background: var(--accent-soft);
+  background: transparent;
+  cursor: pointer;
   text-align: left;
+}
+
+.task-row:hover {
+  background: #f2f4f7;
+}
+
+.task-row[data-active="true"] {
+  border-color: #bfdbfe;
+  background: var(--accent-soft);
 }
 
 .task-row > span:last-child {
@@ -359,7 +456,16 @@ button:focus-visible {
   height: 7px;
   margin-top: 5px;
   border-radius: 999px;
+  background: #98a2b3;
+}
+
+.task-row[data-active="true"] .task-row-dot {
   background: var(--accent);
+}
+
+.task-list-scroll {
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .task-context {
@@ -723,6 +829,10 @@ button:focus-visible {
 
   .workspace-task {
     padding-inline: 16px;
+  }
+
+  .home-grid {
+    grid-template-columns: 1fr;
   }
 
   .task-layout {

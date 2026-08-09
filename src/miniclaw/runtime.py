@@ -23,6 +23,7 @@ from miniclaw.automation.repository import (
 )
 from miniclaw.automation.runner import TaskRunner
 from miniclaw.automation.scheduler import Scheduler
+from miniclaw.bridge.conversations import ConversationConsole
 from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
@@ -111,6 +112,7 @@ class AgentRuntime:
     permission_state: PermissionState
     service: TurnService
     memory_console: MemoryConsole
+    conversation_console: ConversationConsole
     memory_worker: MemoryWorker = field(repr=False)
     memory_scheduler: MemoryFlushScheduler = field(repr=False)
     task_runner: TaskRunner = field(repr=False)
@@ -199,7 +201,20 @@ class AgentRuntime:
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
-    """按已校验配置装配内置 Tool、Memory Service 和唯一 TurnService。"""
+    """按已校验配置装配唯一 Agent、Automation 与查询 Runtime。
+
+    Args:
+        config: 已通过类型与安全校验的应用配置。
+        paths: 当前 MiniClaw 状态目录集合。
+        api_key: 仅传给 Provider 的运行期密钥值。
+
+    Returns:
+        拥有 Provider、TurnService、Console 与后台组件生命周期的 Runtime。
+
+    Raises:
+        OSError: Workspace、数据库或本地存储初始化失败。
+        ValueError: 已校验配置与运行环境仍存在不一致。
+    """
     permission_roots = resolve_permission_roots(
         config.permissions,
         config.workspace.path,
@@ -228,6 +243,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     owner = OwnerRepository(database).get_or_create()
     runs = ToolRunRepository(database)
     runs.interrupt_stale_runs()
+    turns = TurnRepository(database)
+    turns.interrupt_stale()
     scheduled_tasks = ScheduledTaskRepository(database)
     task_runs = TaskRunRepository(database)
     automation_control = AutomationControlRepository(database)
@@ -420,7 +437,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         model=config.agent.model,
         sessions=SessionRepository(database),
         messages=messages,
-        turns=TurnRepository(database),
+        turns=turns,
         context=ContextBuilder(
             paths,
             memory,
@@ -498,6 +515,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             memory_reconciler,
             memory_scheduler.schedule,
         ),
+        conversation_console=ConversationConsole(database),
         memory_worker=memory_worker,
         memory_scheduler=memory_scheduler,
         task_runner=task_runner,

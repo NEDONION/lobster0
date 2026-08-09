@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from miniclaw.agent.events import RunEvent
 from miniclaw.bootstrap import initialize_state
 from miniclaw.bridge.__main__ import build_parser
+from miniclaw.bridge.conversations import ConversationQueryError
 from miniclaw.bridge.server import BridgeServer
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision
@@ -160,6 +161,26 @@ class BlockingTurnService:
             raise
 
 
+class FakeConversationConsole:
+    """记录 Bridge 注入的 Owner 与查询参数，并返回有限安全数据。"""
+
+    def __init__(self) -> None:
+        """初始化空调用记录。"""
+        self.calls: list[tuple] = []
+
+    def list_sessions(self, owner_id: int, *, limit: int) -> dict:
+        """返回一个固定最近任务摘要。"""
+        self.calls.append(("list", owner_id, limit))
+        return {"sessions": [{"session_key": "task-1", "status": "completed"}]}
+
+    def history(self, owner_id: int, *, session_key: str, limit: int) -> dict:
+        """返回固定历史，missing 使用稳定查询错误。"""
+        self.calls.append(("history", owner_id, session_key, limit))
+        if session_key == "missing":
+            raise ConversationQueryError("session_not_found", "任务不存在")
+        return {"session_key": session_key, "turns": [], "messages": []}
+
+
 def _runtime(service) -> SimpleNamespace:
     """创建只暴露 Bridge 所需公开字段的 Runtime。"""
     return SimpleNamespace(
@@ -174,6 +195,7 @@ def _runtime(service) -> SimpleNamespace:
         memory_console=SimpleNamespace(
             command=lambda **values: {"echo": values},
         ),
+        conversation_console=FakeConversationConsole(),
     )
 
 
@@ -267,6 +289,52 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await task, 0)
         self.assertEqual(writer.frames[-1]["type"], "response.ok")
         self.assertEqual(writer.frames[-1]["id"], "stop-1")
+
+    async def test_session_queries_bind_owner_and_return_stable_missing_error(self) -> None:
+        """Desktop 查询必须使用 Runtime Owner，缺失 Session 不能终止 Bridge。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+
+        await reader.feed(_request("list-1", "session.list", {"limit": 20}))
+        listed = await writer.wait_for_id("list-1")
+        self.assertEqual(listed["type"], "response.ok")
+        self.assertEqual(listed["payload"]["sessions"][0]["session_key"], "task-1")
+
+        await reader.feed(
+            _request(
+                "history-1",
+                "session.history",
+                {"session_key": "task-1", "limit": 100},
+            )
+        )
+        history = await writer.wait_for_id("history-1")
+        self.assertEqual(history["type"], "response.ok")
+        self.assertEqual(history["payload"]["session_key"], "task-1")
+
+        await reader.feed(
+            _request(
+                "history-missing",
+                "session.history",
+                {"session_key": "missing", "limit": 100},
+            )
+        )
+        missing = await writer.wait_for_id("history-missing")
+        self.assertEqual(missing["type"], "response.error")
+        self.assertEqual(missing["payload"]["code"], "session_not_found")
+        self.assertEqual(
+            runtime.conversation_console.calls,
+            [
+                ("list", 1, 20),
+                ("history", 1, "task-1", 100),
+                ("history", 1, "missing", 100),
+            ],
+        )
+
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        self.assertEqual(await task, 0)
 
     async def test_memory_command_routes_only_validated_core_arguments(self) -> None:
         """Bridge 把已验证 action/query/limit 路由到 Runtime Console。"""
