@@ -16,6 +16,8 @@ from miniclaw.policy.command import NormalizedCommand
 from miniclaw.policy.engine import PolicyAction, PolicyEngine
 from miniclaw.policy.network import NetworkRule, normalize_network_rule
 from miniclaw.providers.base import JsonValue, ToolCall
+from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
+from miniclaw.sandbox.repository import ExecutionPlanRepository
 from miniclaw.storage.tooling import (
     ApprovalRepository,
     PolicyRuleRepository,
@@ -48,6 +50,7 @@ class ToolExecutor:
         result_max_chars: int = 20_000,
         approvals: ApprovalRepository | None = None,
         policy_rules: PolicyRuleRepository | None = None,
+        execution_plans: ExecutionPlanRepository | None = None,
         approval_ttl_seconds: int = 600,
     ) -> None:
         if type(result_max_chars) is not int or result_max_chars <= 0:
@@ -60,6 +63,7 @@ class ToolExecutor:
         self._result_max_chars = result_max_chars
         self._approvals = approvals
         self._policy_rules = policy_rules
+        self._execution_plans = execution_plans or runs.execution_plans
         self._approval_ttl_seconds = approval_ttl_seconds
 
     @property
@@ -178,6 +182,32 @@ class ToolExecutor:
 
         decision = self._policy.authorize(definition, context, arguments)
         arguments = decision.normalized_arguments or arguments
+        execution_plan: ExecutionPlan | None = None
+        if decision.action is not PolicyAction.DENY:
+            build_plan = getattr(tool, "build_execution_plan", None)
+            if build_plan is not None:
+                try:
+                    candidate = build_plan(context, arguments)
+                except SandboxPlanError as error:
+                    return await _finish_unstarted(
+                        context,
+                        call,
+                        ToolResult.failure(error.code, error.code).to_model_text(call.name),
+                        "rejected",
+                        on_event,
+                    )
+                if not isinstance(candidate, ExecutionPlan):
+                    return await _finish_unstarted(
+                        context,
+                        call,
+                        ToolResult.failure(
+                            "execution_plan_invalid",
+                            "tool returned invalid execution plan",
+                        ).to_model_text(call.name),
+                        "rejected",
+                        on_event,
+                    )
+                execution_plan = candidate
         if decision.action is not PolicyAction.ALLOW:
             if decision.action is PolicyAction.DENY:
                 self._runs.deny(context, call, arguments, decision.error_code)
@@ -189,6 +219,7 @@ class ToolExecutor:
                     decision,
                     ttl_seconds=self._approval_ttl_seconds,
                     summary=_approval_summary(call.name, arguments),
+                    execution_plan=execution_plan,
                 )
                 await emit(
                     on_event,
@@ -228,7 +259,13 @@ class ToolExecutor:
                 on_event,
             )
 
-        run_id = self._runs.start(context, call, arguments, decision)
+        run_id = self._runs.start(
+            context,
+            call,
+            arguments,
+            decision,
+            execution_plan=execution_plan,
+        )
         return await self._execute_started(
             context,
             tool,
@@ -236,6 +273,7 @@ class ToolExecutor:
             run_id,
             call.call_id,
             on_event,
+            execution_plan=execution_plan,
         )
 
     async def execute_approved(
@@ -303,6 +341,27 @@ class ToolExecutor:
                 "failed",
                 on_event,
             )
+        execution_plan: ExecutionPlan | None = None
+        if getattr(tool, "execute_plan", None) is not None:
+            try:
+                execution_plan = self._execution_plans.get(run.id)
+                if (
+                    run.execution_plan_hash is None
+                    or execution_plan.sha256 != run.execution_plan_hash
+                ):
+                    raise SandboxPlanError("execution_plan_mismatch")
+            except SandboxPlanError as error:
+                result = ToolResult.failure(error.code, error.code)
+                model_text = result.to_model_text(run.tool_name)
+                self._runs.fail(run.id, model_text, 0, error.code)
+                return await _finish_unstarted(
+                    context,
+                    ToolCall(run.tool_call_id, run.tool_name, run.arguments),
+                    model_text,
+                    "failed",
+                    on_event,
+                    result=result,
+                )
         execution = await self._execute_started(
             context,
             tool,
@@ -310,6 +369,7 @@ class ToolExecutor:
             run.id,
             run.tool_call_id,
             on_event,
+            execution_plan=execution_plan,
         )
         if execution.succeeded and decision in {
             ApprovalDecision.SESSION,
@@ -380,6 +440,8 @@ class ToolExecutor:
         run_id: int,
         call_id: str,
         on_event: RunEventHandler | None,
+        *,
+        execution_plan: ExecutionPlan | None = None,
     ) -> ToolExecution:
         """执行并终结一个已经处于 running 的 ToolRun。"""
         started = time.monotonic()
@@ -392,13 +454,30 @@ class ToolExecutor:
                     {"call_id": call_id, "tool_name": tool.definition.name},
                 ),
             )
-            result = await tool.execute(context, arguments)
+            receipt: ExecutionReceipt | None = None
+            execute_plan = getattr(tool, "execute_plan", None)
+            if execution_plan is not None and execute_plan is not None:
+                planned = await execute_plan(context, execution_plan)
+                if (
+                    not isinstance(planned, tuple)
+                    or len(planned) != 2
+                    or not isinstance(planned[0], ToolResult)
+                    or not isinstance(planned[1], ExecutionReceipt)
+                ):
+                    raise TypeError("tool returned an invalid planned result")
+                result, receipt = planned
+                self._execution_plans.complete(run_id, receipt)
+            else:
+                result = await tool.execute(context, arguments)
             if not isinstance(result, ToolResult):
                 raise TypeError("tool returned an invalid result")
             model_text = result.to_model_text(tool.definition.name)
         except asyncio.CancelledError:
             self._runs.interrupt(run_id, _elapsed_ms(started))
             raise
+        except SandboxPlanError as error:
+            result = ToolResult.failure(error.code, error.code)
+            model_text = result.to_model_text(tool.definition.name)
         except Exception:  # noqa: BLE001 - 内部异常必须在 Tool 边界脱敏
             result = ToolResult.failure("tool_failed", "tool execution failed")
             model_text = result.to_model_text(tool.definition.name)

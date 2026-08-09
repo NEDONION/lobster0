@@ -21,6 +21,8 @@ from miniclaw.policy.engine import PolicyDecision
 from miniclaw.policy.modes import PermissionMode
 from miniclaw.policy.network import NetworkPolicyError, NetworkRule, normalize_network_rule
 from miniclaw.providers.base import JsonValue, ToolCall
+from miniclaw.sandbox.base import ExecutionPlan
+from miniclaw.sandbox.repository import ExecutionPlanRepository, insert_execution_plan
 from miniclaw.storage.database import Database
 from miniclaw.tools.base import ToolContext
 
@@ -74,6 +76,7 @@ class StoredApproval:
     tool_run_id: int
     tool_name: str
     arguments_hash: str
+    execution_plan_hash: str | None
     summary: str
     status: str
     expires_at: datetime
@@ -99,6 +102,7 @@ class StoredToolRun:
     tool_name: str
     arguments: dict[str, JsonValue]
     arguments_hash: str
+    execution_plan_hash: str | None
     status: str
 
 
@@ -123,6 +127,7 @@ class ApprovalRepository:
         *,
         ttl_seconds: int,
         summary: str,
+        execution_plan: ExecutionPlan | None = None,
     ) -> StoredApproval:
         """原子创建 waiting ToolRun、pending Approval 和脱敏审计。"""
         if type(ttl_seconds) is not int or ttl_seconds <= 0:
@@ -152,12 +157,14 @@ class ApprovalRepository:
                 ),
             )
             run_id = int(run_cursor.lastrowid)
+            if execution_plan is not None:
+                insert_execution_plan(connection, run_id, execution_plan)
             approval_cursor = connection.execute(
                 """
                 INSERT INTO approvals (
                     user_id, turn_id, tool_run_id, tool_name, arguments_hash,
-                    summary, status, expires_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                    summary, status, expires_at, created_at, execution_plan_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
                 """,
                 (
                     context.user_id,
@@ -168,6 +175,7 @@ class ApprovalRepository:
                     summary.strip(),
                     expires_at.isoformat(),
                     now.isoformat(),
+                    execution_plan.sha256 if execution_plan is not None else None,
                 ),
             )
             approval_id = int(approval_cursor.lastrowid)
@@ -243,6 +251,9 @@ class ApprovalRepository:
             or expected_hash != row["tool_run_arguments_hash"]
         ):
             raise ApprovalError("hash_mismatch", "approval arguments no longer match")
+        plan_failure = _execution_plan_access_error(row)
+        if plan_failure is not None:
+            raise plan_failure
         return ApprovalPresentation(
             approval=approval,
             grant_modes=available_approval_decisions(row["tool_name"], arguments),
@@ -338,6 +349,9 @@ class ApprovalRepository:
             or expected_hash != row["tool_run_arguments_hash"]
         ):
             raise ApprovalError("hash_mismatch", "approval arguments no longer match")
+        plan_failure = _execution_plan_access_error(row)
+        if plan_failure is not None:
+            raise plan_failure
         if decision not in available_approval_decisions(row["tool_name"], arguments):
             raise ApprovalError("scope_forbidden", "approval scope is not allowed")
 
@@ -391,6 +405,7 @@ class ApprovalRepository:
                     tool_name=row["tool_name"],
                     arguments={},
                     arguments_hash=row["arguments_hash"],
+                    execution_plan_hash=row["execution_plan_hash"],
                     status="denied",
                 )
         if failure is not None:
@@ -423,6 +438,8 @@ class ApprovalRepository:
                         "hash_mismatch",
                         "approval arguments no longer match",
                     )
+                if failure is None:
+                    failure = _execution_plan_access_error(row)
             if failure is None:
                 approval_update = connection.execute(
                     """
@@ -459,6 +476,7 @@ class ApprovalRepository:
                     tool_name=row["tool_name"],
                     arguments=arguments,
                     arguments_hash=expected_hash,
+                    execution_plan_hash=row["execution_plan_hash"],
                     status="running",
                 )
         if failure is not None:
@@ -674,12 +692,18 @@ class ToolRunRepository:
     def __init__(self, database: Database) -> None:
         self._database = database
 
+    @property
+    def execution_plans(self) -> ExecutionPlanRepository:
+        """返回与 ToolRun 共用数据库的 plan repository。"""
+        return ExecutionPlanRepository(self._database)
+
     def start(
         self,
         context: ToolContext,
         call: ToolCall,
         arguments: dict[str, JsonValue],
         decision: PolicyDecision,
+        execution_plan: ExecutionPlan | None = None,
     ) -> int:
         """在一个事务中创建 running ToolRun 与 started 审计事件。"""
         arguments_json = _arguments_json(arguments)
@@ -704,6 +728,8 @@ class ToolRunRepository:
                 ),
             )
             run_id = int(cursor.lastrowid)
+            if execution_plan is not None:
+                insert_execution_plan(connection, run_id, execution_plan)
             connection.execute(
                 """
                 INSERT INTO audit_events (
@@ -930,10 +956,12 @@ def _approval_join_row(
         """
         SELECT a.*, tr.tool_call_id, tr.arguments_json,
                tr.arguments_hash AS tool_run_arguments_hash,
-               tr.status AS tool_run_status, t.session_id
+               tr.status AS tool_run_status, t.session_id,
+               ep.plan_hash AS stored_execution_plan_hash
         FROM approvals a
         JOIN tool_runs tr ON tr.id = a.tool_run_id
         JOIN turns t ON t.id = a.turn_id
+        LEFT JOIN execution_plans ep ON ep.tool_run_id = tr.id
         WHERE a.id = ?
         """,
         (approval_id,),
@@ -946,6 +974,17 @@ def _approval_access_error(row: sqlite3.Row | None, user_id: int) -> ApprovalErr
         return ApprovalError("not_found", "approval was not found")
     if row["user_id"] != user_id:
         return ApprovalError("not_owner", "approval belongs to a different owner")
+    return None
+
+
+def _execution_plan_access_error(row: sqlite3.Row) -> ApprovalError | None:
+    """校验 Approval 复制的 plan hash 与 immutable plan row 一致。"""
+    approval_hash = row["execution_plan_hash"]
+    stored_hash = row["stored_execution_plan_hash"]
+    if approval_hash is None and stored_hash is None:
+        return None
+    if approval_hash != stored_hash:
+        return ApprovalError("hash_mismatch", "approval execution plan no longer matches")
     return None
 
 
@@ -1142,6 +1181,7 @@ def _approval_from_row(row: sqlite3.Row) -> StoredApproval:
         tool_run_id=row["tool_run_id"],
         tool_name=row["tool_name"],
         arguments_hash=row["arguments_hash"],
+        execution_plan_hash=row["execution_plan_hash"],
         summary=row["summary"],
         status=row["status"],
         expires_at=_parse_time(row["expires_at"]),

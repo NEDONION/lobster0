@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import ApprovalDecision
+from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
@@ -560,6 +560,94 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("+create", summary)
         self.assertNotIn(secret, summary)
         self.assertNotIn("private-token", summary)
+
+    async def test_command_approval_binds_the_same_canonical_execution_plan(self) -> None:
+        """Approval、plan row 与重新 canonicalize 的 hash 必须完全一致。"""
+        approvals = ApprovalRepository(self.database)
+        executor = self.executor(RunCommandTool(), approvals=approvals)
+
+        outcome = await executor.execute(
+            self.context,
+            ToolCall(
+                "bound-plan",
+                "run_command",
+                {"program": sys.executable, "args": ["script.py"]},
+            ),
+        )
+
+        assert outcome.approval_id is not None
+        approval = approvals.get(self.context.user_id, outcome.approval_id)
+        with self.database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT plan_json, plan_hash, receipt_json FROM execution_plans "
+                "WHERE tool_run_id = ?",
+                (approval.tool_run_id,),
+            ).fetchone()
+        self.assertEqual(approval.execution_plan_hash, row["plan_hash"])
+        self.assertIsNone(row["receipt_json"])
+        self.assertNotIn("MINICLAW_MODEL_API_KEY", row["plan_json"])
+
+    async def test_approved_command_rejects_tampered_plan_before_side_effect(self) -> None:
+        """批准后 plan JSON 被改动时，恢复必须失败且不能重新生成命令执行。"""
+        marker = self.context.workspace / "must-not-exist"
+        program = self.context.workspace / "write-marker"
+        program.write_text(
+            f"#!/bin/sh\nprintf touched > {marker}\n",
+            encoding="utf-8",
+        )
+        program.chmod(0o700)
+        approvals = ApprovalRepository(self.database)
+        executor = self.executor(RunCommandTool(), approvals=approvals)
+        pending = await executor.execute(
+            self.context,
+            ToolCall(
+                "tampered-plan",
+                "run_command",
+                {"program": str(program), "args": []},
+            ),
+        )
+        assert pending.approval_id is not None
+        approvals.approve(self.context.user_id, pending.approval_id)
+        run = approvals.consume(self.context.user_id, pending.approval_id)
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE execution_plans SET plan_json = replace(plan_json, ?, ?) "
+                "WHERE tool_run_id = ?",
+                (str(program), sys.executable, run.id),
+            )
+
+        execution = await executor.execute_approved(
+            self.context,
+            run,
+            approval_id=pending.approval_id,
+            decision=ApprovalDecision.ONCE,
+        )
+
+        self.assertFalse(execution.succeeded)
+        assert execution.result is not None
+        self.assertEqual(execution.result.error_code, "execution_plan_mismatch")
+        self.assertFalse(marker.exists())
+
+    async def test_approval_rejects_plan_hash_changed_after_creation(self) -> None:
+        """Approval 展示和消费都不能接受与 plan row 不一致的复制 hash。"""
+        approvals = ApprovalRepository(self.database)
+        pending = await self.executor(RunCommandTool(), approvals=approvals).execute(
+            self.context,
+            ToolCall(
+                "changed-plan-hash",
+                "run_command",
+                {"program": sys.executable, "args": ["script.py"]},
+            ),
+        )
+        assert pending.approval_id is not None
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE approvals SET execution_plan_hash = ? WHERE id = ?",
+                ("0" * 64, pending.approval_id),
+            )
+
+        with self.assertRaisesRegex(ApprovalError, "execution plan no longer matches"):
+            approvals.presentation(self.context.user_id, pending.approval_id)
 
     async def test_personal_external_write_requires_once_then_creates_file(self) -> None:
         """Personal 外部写根在批准前无副作用，Allow once 后才创建文件。"""
