@@ -112,6 +112,22 @@ class InstallReleaseTests(unittest.TestCase):
             ):
                 resolve_release_source(channel, version)  # type: ignore[arg-type]
 
+    def test_explicit_and_dev_api_reject_huge_numeric_semver_with_stable_error(self) -> None:
+        """超长 numeric identifier 不得让 int 限制的 raw ValueError 穿出边界。"""
+        oversized_identifier = "9" * 19
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            resolve_release_source("stable", f"{oversized_identifier}.0.0")
+
+        huge = "9" * 5000
+        with self.assertRaises(InstallError) as explicit:
+            resolve_release_source("stable", f"{huge}.0.0")
+        self.assertEqual(explicit.exception.code, "manifest_invalid")
+
+        body = json.dumps([release(f"{huge}.0.0-rc.1")]).encode("utf-8")
+        with self.assertRaises(InstallError) as discovered:
+            resolve_release_source("dev", None, opener=FakeOpener(FakeResponse(body)))
+        self.assertEqual(discovered.exception.code, "manifest_invalid")
+
     def test_dev_discovers_highest_prerelease_from_exact_bounded_api(self) -> None:
         """draft/stable 排除或字典序排序错误都会选择错误的 dev Release。"""
         rows = [

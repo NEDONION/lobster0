@@ -14,6 +14,8 @@ _API_BYTES = 1_048_576
 _API_ROWS = 20
 _API_URL = "https://api.github.com/repos/NEDONION/miniclaw/releases?per_page=20"
 _HASH = re.compile(r"^[0-9a-f]{64}$")
+_MAX_VERSION_CHARS = 128
+_MAX_NUMERIC_IDENTIFIER_DIGITS = 18
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +49,7 @@ class ReleaseSource:
                 "release-manifest.json"
             )
         else:
-            parsed = _parse_semver(self.requested_version, "version")
+            parsed = _parse_release_semver(self.requested_version)
             prerelease = parsed[3]
             if (self.channel == "stable" and prerelease is not None) or (
                 self.channel == "dev" and prerelease is None
@@ -174,7 +176,7 @@ def _parse_candidate(row: object) -> tuple[str, str] | None:
     if not tag.startswith("v"):
         _invalid()
     version = tag[1:]
-    parsed = _parse_semver(version, "version")
+    parsed = _parse_release_semver(version)
     if parsed[4] is not None or (parsed[3] is None) != (not prerelease_flag):
         _invalid()
     if draft or not prerelease_flag:
@@ -207,7 +209,7 @@ def _sort_key(
     candidate: tuple[str, str],
 ) -> tuple[int, int, int, tuple[tuple[int, int | str], ...]]:
     """返回遵循 SemVer prerelease numeric/alphanumeric 规则的排序 key。"""
-    parsed = _parse_semver(candidate[0], "version")
+    parsed = _parse_release_semver(candidate[0])
     prerelease = parsed[3]
     if prerelease is None:
         _invalid()
@@ -221,3 +223,25 @@ def _sort_key(
 def _invalid() -> Never:
     """抛出统一且不含远端 body 的 manifest 错误。"""
     raise InstallError("manifest_invalid", "manifest")
+
+
+def _parse_release_semver(
+    value: object,
+) -> tuple[int, int, int, str | None, str | None]:
+    """在 int 转换前限制 Release SemVer 总长与 numeric identifier 长度。"""
+    if type(value) is not str or not 1 <= len(value) <= _MAX_VERSION_CHARS:
+        _invalid()
+    semantic = value.split("+", 1)[0]
+    core, separator, prerelease = semantic.partition("-")
+    identifiers = core.split(".")
+    if separator:
+        identifiers.extend(prerelease.split("."))
+    if any(
+        identifier.isdecimal() and len(identifier) > _MAX_NUMERIC_IDENTIFIER_DIGITS
+        for identifier in identifiers
+    ):
+        _invalid()
+    try:
+        return _parse_semver(value, "version")
+    except (InstallError, ValueError, OverflowError) as error:
+        raise InstallError("manifest_invalid", "manifest") from error

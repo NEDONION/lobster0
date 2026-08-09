@@ -7,9 +7,12 @@ import io
 import stat
 import tempfile
 import unittest
+from http.client import HTTPMessage
 from pathlib import Path
+from unittest import mock
 from urllib.request import Request
 
+from miniclaw.install import artifacts as artifact_transport
 from miniclaw.install.artifacts import ExtractionLimits, download_artifact, extract_tar_gz
 from miniclaw.install.models import Artifact, InstallError, PlatformKey
 from tests.install.make_archives import make_archive
@@ -23,7 +26,7 @@ class FakeResponse(io.BytesIO):
         body: bytes,
         *,
         status: int = 200,
-        headers: dict[str, str] | None = None,
+        headers: object | None = None,
     ) -> None:
         """保存响应体、状态码和大小写不敏感场景所需 headers。"""
         super().__init__(body)
@@ -200,6 +203,108 @@ class InstallArtifactTests(unittest.TestCase):
         self.assertEqual(part.read_bytes(), b"keep-part")
         self.assertFalse(blocked.exists())
 
+    def test_download_removes_final_when_parent_fsync_fails_after_replace(self) -> None:
+        """replace 后 durability failure 不得把失败下载留在 final target。"""
+        body = b"trusted"
+        target = self.root / "fsync-failed.tar.gz"
+        with mock.patch.object(
+            artifact_transport,
+            "_fsync_directory",
+            side_effect=OSError("SECRET_PARENT_FSYNC"),
+        ):
+            with self.assertRaises(InstallError) as caught:
+                download_artifact(
+                    self.artifact(body),
+                    target,
+                    opener=FakeOpener(FakeResponse(body)),
+                )
+
+        self.assertEqual(caught.exception.code, "artifact_download_failed")
+        self.assertNotIn("SECRET", str(caught.exception))
+        self.assertFalse(target.exists())
+        self.assertFalse(target.with_name(f"{target.name}.part").exists())
+
+    def test_download_rejects_duplicate_case_insensitive_security_headers(self) -> None:
+        """真实 HTTPMessage 中重复 CL/Location/Encoding 不能靠首值绕过校验。"""
+        body = b"trusted"
+        asset_url = "https://release-assets.githubusercontent.com/asset/trusted"
+        cases: list[tuple[str, FakeOpener]] = []
+
+        lengths = HTTPMessage()
+        lengths["Content-Length"] = "7"
+        lengths["content-length"] = "7"
+        cases.append(("length", FakeOpener(FakeResponse(body, headers=lengths))))
+
+        encodings = HTTPMessage()
+        encodings["Content-Encoding"] = "identity"
+        encodings["content-encoding"] = "identity"
+        cases.append(("encoding", FakeOpener(FakeResponse(body, headers=encodings))))
+
+        locations = HTTPMessage()
+        locations["Location"] = asset_url
+        locations["location"] = "https://evil.example/second"
+        cases.append(
+            (
+                "location",
+                FakeOpener(
+                    FakeResponse(b"", status=302, headers=locations),
+                    FakeResponse(body),
+                ),
+            )
+        )
+
+        for name, opener in cases:
+            with self.subTest(name=name):
+                target = self.root / f"duplicate-{name}.tar.gz"
+                with self.assertRaisesRegex(InstallError, "artifact_download_failed"):
+                    download_artifact(self.artifact(body), target, opener=opener)
+                self.assertFalse(target.exists())
+
+    def test_tar_restores_existing_empty_destination_on_replace_or_fsync_failure(self) -> None:
+        """archive commit 失败必须恢复原 empty 0700 destination，不能使其消失或非空。"""
+        archive = make_archive(self.root / "commit-failure.tar.gz", "valid")
+        real_replace = artifact_transport.os.replace
+        real_fsync_directory = artifact_transport._fsync_directory
+
+        replace_destination = self.root / "replace-failure"
+        replace_destination.mkdir(mode=0o700)
+
+        def fail_work_replace(source: str | Path, target: str | Path) -> None:
+            """只让 extraction work 到 final 的 replace 失败，允许 rollback。"""
+            name = Path(source).name
+            if name.startswith(f".{replace_destination.name}.extract-") and not name.endswith(
+                ".previous"
+            ):
+                raise OSError("SECRET_REPLACE_FAILURE")
+            real_replace(source, target)
+
+        with mock.patch.object(artifact_transport.os, "replace", side_effect=fail_work_replace):
+            with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+                extract_tar_gz(archive, replace_destination, ExtractionLimits(32, 4096))
+        self.assertTrue(replace_destination.is_dir())
+        self.assertEqual(list(replace_destination.iterdir()), [])
+        self.assertEqual(stat.S_IMODE(replace_destination.stat().st_mode), 0o700)
+
+        fsync_destination = self.root / "fsync-failure"
+        fsync_destination.mkdir(mode=0o700)
+
+        def fail_final_parent(directory: Path) -> None:
+            """只在 final 已落位后模拟 parent fsync 失败。"""
+            if directory == fsync_destination.parent and (fsync_destination / "README").exists():
+                raise OSError("SECRET_FSYNC_FAILURE")
+            real_fsync_directory(directory)
+
+        with mock.patch.object(
+            artifact_transport,
+            "_fsync_directory",
+            side_effect=fail_final_parent,
+        ):
+            with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+                extract_tar_gz(archive, fsync_destination, ExtractionLimits(32, 4096))
+        self.assertTrue(fsync_destination.is_dir())
+        self.assertEqual(list(fsync_destination.iterdir()), [])
+        self.assertEqual(stat.S_IMODE(fsync_destination.stat().st_mode), 0o700)
+
     def test_download_revalidates_every_redirect_and_only_allows_github_asset_hop(self) -> None:
         """绕过任一 redirect 校验都会允许凭据、query、fragment 或外部 host。"""
         body = b"trusted"
@@ -335,6 +440,17 @@ class InstallArtifactTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallError, "manifest_invalid"):
             extract_tar_gz(archive, occupied, ExtractionLimits(32, 4096))
         self.assertEqual(keep.read_bytes(), b"user-data")
+
+    def test_tar_rejects_bounded_pax_gnu_longname_and_sparse_pseudo_metadata(self) -> None:
+        """raw tar budget/type gate 必须在 tarfile 吞掉 pseudo headers 前拒绝它们。"""
+        for kind in ("pax", "gnu_longname", "gnu_sparse"):
+            with self.subTest(kind=kind):
+                archive = make_archive(self.root / f"pseudo-{kind}.tar.gz", kind)
+                destination = self.root / f"pseudo-output-{kind}"
+                destination.mkdir(mode=0o700)
+                with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+                    extract_tar_gz(archive, destination, ExtractionLimits(2, 32))
+                self.assertEqual(list(destination.iterdir()), [])
 
     def test_extraction_limits_reject_bool_zero_and_excessive_values(self) -> None:
         """bool 或无界预算不得绕过 dataclass 的整数限制。"""

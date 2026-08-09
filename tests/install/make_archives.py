@@ -17,7 +17,12 @@ def _add_file(archive: tarfile.TarFile, name: str, body: bytes, mode: int = 0o64
 
 def make_archive(path: Path, kind: str) -> Path:
     """创建一种有效或恶意 archive fixture 并返回路径。"""
-    with tarfile.open(path, "w:gz") as archive:
+    options: dict[str, object] = {}
+    if kind == "pax":
+        options["pax_headers"] = {"comment": "x" * 5_000_000}
+    if kind in {"gnu_longname", "gnu_sparse"}:
+        options["format"] = tarfile.GNU_FORMAT
+    with tarfile.open(path, "w:gz", **options) as archive:
         if kind == "valid":
             directory = tarfile.TarInfo("bin/")
             directory.type = tarfile.DIRTYPE
@@ -61,6 +66,14 @@ def make_archive(path: Path, kind: str) -> Path:
                 _add_file(archive, f"files/{index}", b"")
         elif kind == "too_large":
             _add_file(archive, "large", b"x" * 4097)
+        elif kind == "pax":
+            _add_file(archive, "payload", b"x")
+        elif kind == "gnu_longname":
+            _add_file(archive, "a" * 200, b"x")
+        elif kind == "gnu_sparse":
+            member = tarfile.TarInfo("sparse")
+            member.type = tarfile.GNUTYPE_SPARSE
+            archive.addfile(member)
         else:
             raise ValueError(f"unknown archive fixture: {kind}")
     return path

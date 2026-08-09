@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import hmac
 import http.client
@@ -121,6 +122,8 @@ def download_artifact(
         raise InstallError("artifact_download_failed", "artifacts")
     response: _Response | None = None
     created_part = False
+    replaced = False
+    succeeded = False
     try:
         response = _open_verified_response(artifact.url, opener)
         if _response_status(response) != 200:
@@ -160,7 +163,9 @@ def download_artifact(
             raise InstallError("artifact_download_failed", "artifacts")
         os.replace(part, destination)
         created_part = False
+        replaced = True
         _fsync_directory(destination.parent)
+        succeeded = True
         return destination
     except InstallError:
         raise
@@ -176,11 +181,10 @@ def download_artifact(
     finally:
         if response is not None:
             _close_response(response)
+        if replaced and not succeeded:
+            _remove_owned_path(destination)
         if created_part:
-            try:
-                part.unlink(missing_ok=True)
-            except OSError:
-                pass
+            _remove_owned_path(part)
 
 
 def extract_tar_gz(
@@ -218,29 +222,50 @@ def extract_tar_gz(
             raise InstallError("manifest_invalid", "manifest")
     executable_names = _validate_executable_paths(executable_paths)
     work = Path(tempfile.mkdtemp(prefix=f".{destination.name}.extract-", dir=destination.parent))
-    committed = False
+    previous = work.with_name(f"{work.name}.previous")
+    original_moved = False
+    replaced = False
+    succeeded = False
     try:
-        members = _validated_members(archive, work, limits)
-        regular_names = {member.name for member in members if member.isreg()}
-        if not executable_names.issubset(regular_names):
-            raise InstallError("manifest_invalid", "manifest")
-        _extract_validated_members(archive, work, members, limits, executable_names)
+        with tempfile.TemporaryFile(mode="w+b") as raw_archive:
+            _decompress_bounded_tar(archive, raw_archive, limits)
+            _validate_raw_tar(raw_archive, limits)
+            members = _validated_members(raw_archive, work, limits)
+            regular_names = {member.name for member in members if member.isreg()}
+            if not executable_names.issubset(regular_names):
+                raise InstallError("manifest_invalid", "manifest")
+            _extract_validated_members(
+                raw_archive,
+                work,
+                members,
+                limits,
+                executable_names,
+            )
         _fsync_tree(work)
         if destination_existed:
-            destination.rmdir()
+            os.replace(destination, previous)
+            original_moved = True
         elif _lexists(destination):
             raise InstallError("manifest_invalid", "manifest")
         os.replace(work, destination)
-        committed = True
+        replaced = True
+        if original_moved:
+            previous.rmdir()
+            original_moved = False
         _fsync_directory(destination.parent)
+        succeeded = True
         return tuple(destination.joinpath(*PurePosixPath(member.name).parts) for member in members)
     except InstallError:
         raise
     except (OSError, EOFError, tarfile.TarError, ValueError) as error:
         raise InstallError("manifest_invalid", "manifest") from error
     finally:
-        if not committed:
-            shutil.rmtree(work, ignore_errors=True)
+        if not succeeded:
+            if replaced:
+                _remove_owned_path(destination)
+            if destination_existed:
+                _restore_empty_destination(destination, previous, original_moved)
+            _remove_owned_path(work)
 
 
 def _safe_member_path(root: Path, name: str) -> Path:
@@ -303,8 +328,10 @@ def _open_verified_response(
         status = _response_status(response)
         if status not in _REDIRECT_STATUSES:
             return response
-        location = _header(response, "Location")
-        _close_response(response)
+        try:
+            location = _header(response, "Location", code)
+        finally:
+            _close_response(response)
         if location is None or redirect_count >= _MAX_REDIRECTS:
             raise InstallError(code, "artifacts")
         previous, current = current, urljoin(current, location)
@@ -450,15 +477,20 @@ def _close_response(response: _Response) -> None:
         pass
 
 
-def _header(response: _Response, name: str) -> str | None:
-    """大小写不敏感地读取 urllib/fake response header。"""
+def _header(response: _Response, name: str, code: str) -> str | None:
+    """大小写不敏感地读取唯一 header，并拒绝重复安全字段。"""
     headers = getattr(response, "headers", None)
     if headers is not None:
         items = getattr(headers, "items", None)
         if callable(items):
+            values = []
             for key, value in items():
                 if str(key).casefold() == name.casefold():
-                    return str(value)
+                    values.append(str(value))
+            if len(values) > 1:
+                raise InstallError(code, "artifacts")
+            if values:
+                return values[0]
     getter = getattr(response, "getheader", None)
     if callable(getter):
         value = getter(name)
@@ -468,7 +500,7 @@ def _header(response: _Response, name: str) -> str | None:
 
 def _content_length(response: _Response, code: str) -> int | None:
     """解析非负十进制 Content-Length，不接受符号或空白。"""
-    value = _header(response, "Content-Length")
+    value = _header(response, "Content-Length", code)
     if value is None:
         return None
     if not value.isascii() or not value.isdecimal():
@@ -478,7 +510,7 @@ def _content_length(response: _Response, code: str) -> int | None:
 
 def _require_identity_encoding(response: _Response, code: str) -> None:
     """拒绝会破坏 size/hash 语义的压缩 HTTP content encoding。"""
-    value = _header(response, "Content-Encoding")
+    value = _header(response, "Content-Encoding", code)
     if value is not None and value.casefold() != "identity":
         raise InstallError(code, "artifacts")
 
@@ -496,6 +528,30 @@ def _safe_absolute_path(path: object) -> bool:
 def _lexists(path: Path) -> bool:
     """在不跟随 symlink 的情况下判断目录项是否存在。"""
     return os.path.lexists(path)
+
+
+def _remove_owned_path(path: Path) -> None:
+    """尽力删除本次调用创建的 file/tree，且不让 cleanup error 掩盖稳定错误。"""
+    try:
+        if path.is_symlink() or path.is_file():
+            path.unlink(missing_ok=True)
+        elif path.is_dir():
+            shutil.rmtree(path)
+    except OSError:
+        pass
+
+
+def _restore_empty_destination(destination: Path, previous: Path, original_moved: bool) -> None:
+    """失败时尽力恢复调用前的 empty destination，并固定为 0700。"""
+    try:
+        if original_moved and _lexists(previous) and not _lexists(destination):
+            os.replace(previous, destination)
+        if not _lexists(destination):
+            destination.mkdir(mode=0o700)
+        if destination.is_dir() and not destination.is_symlink():
+            destination.chmod(0o700)
+    except OSError:
+        pass
 
 
 def _regular_file_without_symlink(path: Path) -> bool:
@@ -519,8 +575,72 @@ def _validate_executable_paths(values: Collection[str]) -> frozenset[str]:
     return frozenset(names)
 
 
-def _validated_members(
+def _decompress_bounded_tar(
     archive: Path,
+    output: BinaryIO,
+    limits: ExtractionLimits,
+) -> None:
+    """把 gzip 流解到临时文件，并在 metadata 解析前限制 raw tar 字节。"""
+    raw_limit = limits.max_bytes + limits.max_entries * 1024 + 10_240
+    total = 0
+    with archive.open("rb") as compressed, gzip.GzipFile(fileobj=compressed) as source:
+        while True:
+            chunk = source.read(min(_CHUNK_BYTES, raw_limit - total + 1))
+            if not chunk:
+                break
+            if total + len(chunk) > raw_limit:
+                raise InstallError("manifest_invalid", "manifest")
+            output.write(chunk)
+            total += len(chunk)
+    output.flush()
+    output.seek(0)
+
+
+def _validate_raw_tar(archive: BinaryIO, limits: ExtractionLimits) -> None:
+    """逐 block 拒绝 PAX/GNU/sparse pseudo headers 并验证 raw manifest 预算。"""
+    archive.seek(0)
+    entries = 0
+    declared_bytes = 0
+    zero_blocks = 0
+    while True:
+        block = archive.read(tarfile.BLOCKSIZE)
+        if not block:
+            break
+        if len(block) != tarfile.BLOCKSIZE:
+            raise InstallError("manifest_invalid", "manifest")
+        if block == tarfile.NUL * tarfile.BLOCKSIZE:
+            zero_blocks += 1
+            continue
+        if zero_blocks:
+            raise InstallError("manifest_invalid", "manifest")
+        try:
+            member = tarfile.TarInfo.frombuf(block, "utf-8", "surrogateescape")
+        except tarfile.HeaderError as error:
+            raise InstallError("manifest_invalid", "manifest") from error
+        if member.type not in {tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE}:
+            raise InstallError("manifest_invalid", "manifest")
+        entries += 1
+        if entries > limits.max_entries:
+            raise InstallError("manifest_invalid", "manifest")
+        if member.size < 0 or (member.type == tarfile.DIRTYPE and member.size):
+            raise InstallError("manifest_invalid", "manifest")
+        declared_bytes += member.size
+        if declared_bytes > limits.max_bytes:
+            raise InstallError("manifest_invalid", "manifest")
+        padded_size = (member.size + tarfile.BLOCKSIZE - 1) // tarfile.BLOCKSIZE
+        remaining = padded_size * tarfile.BLOCKSIZE
+        while remaining:
+            chunk = archive.read(min(_CHUNK_BYTES, remaining))
+            if not chunk:
+                raise InstallError("manifest_invalid", "manifest")
+            remaining -= len(chunk)
+    if entries == 0 or zero_blocks < 2:
+        raise InstallError("manifest_invalid", "manifest")
+    archive.seek(0)
+
+
+def _validated_members(
+    archive: BinaryIO,
     root: Path,
     limits: ExtractionLimits,
 ) -> tuple[tarfile.TarInfo, ...]:
@@ -531,7 +651,8 @@ def _validated_members(
     regular: set[tuple[str, ...]] = set()
     paths: set[tuple[str, ...]] = set()
     declared_bytes = 0
-    with tarfile.open(archive, "r:gz") as source:
+    archive.seek(0)
+    with tarfile.open(fileobj=archive, mode="r:") as source:
         for member in source:
             if len(members) >= limits.max_entries:
                 raise InstallError("manifest_invalid", "manifest")
@@ -574,7 +695,7 @@ def _validated_members(
 
 
 def _extract_validated_members(
-    archive: Path,
+    archive: BinaryIO,
     root: Path,
     expected: tuple[tarfile.TarInfo, ...],
     limits: ExtractionLimits,
@@ -582,7 +703,8 @@ def _extract_validated_members(
 ) -> None:
     """第二遍按 actual bytes 预算手工写出已验证的 regular/dir members。"""
     actual_total = 0
-    with tarfile.open(archive, "r:gz") as source:
+    archive.seek(0)
+    with tarfile.open(fileobj=archive, mode="r:") as source:
         members = tuple(source)
         if tuple((item.name, item.type, item.size) for item in members) != tuple(
             (item.name, item.type, item.size) for item in expected
