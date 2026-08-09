@@ -175,6 +175,9 @@ class GatewaySupervisor:
         """先关闭所有入口，再按反向平台/反向层级清理，Runtime 仅一次。"""
         if self._runtime_closed:
             return
+        stop_background = getattr(self.runtime, "astop_background", None)
+        if callable(stop_background):
+            await _cleanup(stop_background(), force_event)
         for channel in self.channels:
             if channel._transport_connected:
                 try:

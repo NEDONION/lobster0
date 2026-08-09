@@ -89,6 +89,7 @@ class TaskRunner:
         max_concurrent_runs: int = 1,
         clock: Callable[[], datetime] | None = None,
         delivery: TaskDeliveryProjector | None = None,
+        audit: Callable[[str, dict[str, int | str]], None] | None = None,
     ) -> None:
         """绑定状态仓储、Turn handler、Tool allowlist、lease 与 Worker 上限。"""
         if type(lease_seconds) is not int or lease_seconds < 10:
@@ -109,6 +110,7 @@ class TaskRunner:
         self._max_concurrent_runs = max_concurrent_runs
         self._clock = clock or _utc_now
         self._delivery = delivery
+        self._audit_callback = audit
         self._wake_event = asyncio.Event()
         self._stopping = False
         self._workers: tuple[asyncio.Task[None], ...] = ()
@@ -140,6 +142,10 @@ class TaskRunner:
             raise
         if claimed is None:
             return None
+        self._audit(
+            "task_run.claimed",
+            {"run_id": claimed.id, "task_id": claimed.task_id, "attempt": claimed.attempt},
+        )
         snapshot = claimed.snapshot
         if snapshot is None:
             return self._finish_failure(
@@ -224,6 +230,14 @@ class TaskRunner:
                 turn_id=result.turn_id,
                 approval_id=result.approval_id,
             )
+            self._audit(
+                "task_run.waiting_approval",
+                {
+                    "approval_id": result.approval_id,
+                    "run_id": waiting.id,
+                    "task_id": waiting.task_id,
+                },
+            )
             return TaskRunAttempt(
                 waiting.id,
                 waiting.task_id,
@@ -270,6 +284,10 @@ class TaskRunner:
                 self._delivery.project(completed, result.terminal_response)
             except Exception:  # noqa: BLE001 - Run 已终态，Outbox 由 recovery 补投影
                 _LOGGER.warning("task_delivery_projection_failed", exc_info=False)
+        self._audit(
+            "task_run.terminal",
+            {"run_id": completed.id, "task_id": completed.task_id, "status": "succeeded"},
+        )
         return TaskRunAttempt(
             completed.id,
             completed.task_id,
@@ -354,6 +372,15 @@ class TaskRunner:
             session_id=session_id,
             turn_id=turn_id,
         )
+        self._audit(
+            "task_run.terminal",
+            {
+                "error_code": error_code,
+                "run_id": completed.id,
+                "task_id": task_id,
+                "status": completed.status.value,
+            },
+        )
         return TaskRunAttempt(
             completed.id,
             task_id,
@@ -363,6 +390,15 @@ class TaskRunner:
             turn_id=turn_id,
             error_code=error_code,
         )
+
+    def _audit(self, event_type: str, metadata: dict[str, int | str]) -> None:
+        """best-effort 发出只含 ID/code/count 的结构化 lifecycle audit。"""
+        if self._audit_callback is None:
+            return
+        try:
+            self._audit_callback(event_type, metadata)
+        except Exception:  # noqa: BLE001 - Audit 不改变已经持久化的 Run 状态
+            _LOGGER.warning("automation_audit_failed", exc_info=False)
 
     def _automation_allowed(self) -> bool:
         """每次 Tool 执行前读取 durable E-stop。"""

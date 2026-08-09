@@ -824,6 +824,8 @@ def load_config(
     )
     if heartbeat_active_hours_start == heartbeat_active_hours_end:
         raise ConfigError("heartbeat active hours must not be empty")
+    if heartbeat_enabled and not automation_enabled:
+        raise ConfigError("heartbeat.enabled requires automation.enabled")
     sandbox_backend = _enum_string(
         sandbox_raw.get("backend", "docker"),
         "sandbox.backend",

@@ -484,6 +484,7 @@ class ConfigTest(unittest.TestCase):
             ('[heartbeat]\nactive_hours_start = "8:00"\n', "active_hours_start"),
             ('[heartbeat]\nactive_hours_start = "09:00"\nactive_hours_end = "09:00"\n',
              "active hours"),
+            ("[heartbeat]\nenabled = true\n", "requires automation.enabled"),
             ('[sandbox]\nbackend = "process"\n', "sandbox.backend"),
             ('[sandbox]\nnetwork = "host"\n', "sandbox.network"),
             ('[sandbox]\nimage = "bad image"\n', "sandbox.image"),

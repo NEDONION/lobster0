@@ -5,6 +5,7 @@ import sys
 import tempfile
 import tomllib
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
@@ -171,6 +172,74 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(context.owner_home, owner_home)
                 self.assertIn(owner_home, context.read_only_roots)
                 self.assertIn(documents, context.write_roots)
+            finally:
+                await runtime.aclose()
+
+    async def test_automation_lifecycle_is_inert_by_default_and_owned_when_enabled(self) -> None:
+        """默认不启动；启用后 Runtime 负责 recovery、Runner、Scheduler 与反向停止。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            initialize_state(paths)
+            base = load_config(paths)
+            disabled = create_runtime(base, paths, "test-key")
+            try:
+                await disabled.astart()
+                self.assertFalse(disabled.task_runner.running)
+                self.assertFalse(disabled.scheduler.running)
+            finally:
+                await disabled.aclose()
+
+            enabled_config = replace(
+                base,
+                automation=replace(base.automation, enabled=True),
+                sandbox=replace(
+                    base.sandbox,
+                    image="example/miniclaw@sha256:" + "a" * 64,
+                ),
+            )
+            enabled = create_runtime(enabled_config, paths, "test-key")
+            try:
+                await enabled.astart()
+                self.assertTrue(enabled.task_runner.running)
+                self.assertTrue(enabled.scheduler.running)
+                with enabled.database.connect_read_only() as connection:
+                    events = connection.execute(
+                        "SELECT event_type FROM audit_events "
+                        "WHERE event_type LIKE 'automation.%' ORDER BY id"
+                    ).fetchall()
+                self.assertEqual([row["event_type"] for row in events], ["automation.started"])
+            finally:
+                await enabled.aclose()
+            self.assertFalse(enabled.task_runner.running)
+            self.assertFalse(enabled.scheduler.running)
+
+    async def test_halted_runtime_recovers_but_starts_no_automation_workers(self) -> None:
+        """durable E-stop 在 startup 时必须阻止 Scheduler 和 Runner claim。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            initialize_state(paths)
+            base = load_config(paths)
+            config = replace(
+                base,
+                automation=replace(base.automation, enabled=True),
+                sandbox=replace(
+                    base.sandbox,
+                    image="example/miniclaw@sha256:" + "b" * 64,
+                ),
+            )
+            runtime = create_runtime(config, paths, "test-key")
+            runtime.automation_control.halt("local test halt")
+            try:
+                await runtime.astart()
+                self.assertFalse(runtime.task_runner.running)
+                self.assertFalse(runtime.scheduler.running)
+                with runtime.database.connect_read_only() as connection:
+                    event = connection.execute(
+                        "SELECT event_type, metadata_json FROM audit_events "
+                        "WHERE event_type = 'automation.halted'"
+                    ).fetchone()
+                self.assertIsNotNone(event)
+                self.assertNotIn("local test halt", event["metadata_json"])
             finally:
                 await runtime.aclose()
 

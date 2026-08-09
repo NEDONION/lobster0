@@ -166,6 +166,7 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         *,
         lease_seconds: int = 10,
         delivery: TaskDeliveryProjector | None = None,
+        audit: list[tuple[str, dict[str, int | str]]] | None = None,
     ) -> TaskRunner:
         """创建只开放 read_file 与 terminal Tool 的单 Worker。"""
         return TaskRunner(
@@ -177,6 +178,11 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
             ),
             lease_seconds=lease_seconds,
             delivery=delivery,
+            audit=(
+                (lambda event_type, metadata: audit.append((event_type, metadata)))
+                if audit is not None
+                else None
+            ),
         )
 
     async def test_success_uses_snapshot_profile_and_filters_manage_task(self) -> None:
@@ -194,6 +200,24 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("complete_task", profile.allowed_tool_names)
         self.assertNotIn("manage_task", profile.allowed_tool_names)
         self.assertEqual(profile.budget.max_turns, self.task.budget.max_turns)
+
+    async def test_lifecycle_audit_contains_only_ids_codes_and_status(self) -> None:
+        """claimed/terminal audit 不能复制 Task prompt 或完整 completion。"""
+        audit: list[tuple[str, dict[str, int | str]]] = []
+        response = TaskResponse(True, "PRIVATE_COMPLETION_BODY")
+
+        await self._runner(
+            _FakeAutomationTurns([self._result(terminal=response)]),
+            audit=audit,
+        ).run_once("worker-a", self.now)
+
+        self.assertEqual(
+            [event_type for event_type, _ in audit],
+            ["task_run.claimed", "task_run.terminal"],
+        )
+        serialized = repr(audit)
+        self.assertNotIn(self.task.prompt, serialized)
+        self.assertNotIn(response.text, serialized)
 
     async def test_success_projects_terminal_response_and_recovery_is_idempotent(self) -> None:
         """成功结算后才投影；启动恢复会要求同一 projector 补齐崩溃窗口。"""
