@@ -1,9 +1,10 @@
 """基于 Tool 风险等级的最小默认 Policy。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import cast
 
+from miniclaw.browser.policy import BROWSER_TOOL_NAMES, classify_browser_action
 from miniclaw.policy.approvals import ApprovalDecision, available_approval_decisions
 from miniclaw.policy.command import (
     SAFE_EXECUTABLE_PATH,
@@ -85,6 +86,26 @@ class PolicyEngine:
         if definition.name == "http_get":
             return self._authorize_http(context, arguments)
         normalized_arguments = arguments
+        if definition.name in BROWSER_TOOL_NAMES:
+            classification = classify_browser_action(definition.name, arguments)
+            if classification.error_code is not None:
+                return PolicyDecision(
+                    PolicyAction.DENY,
+                    classification.error_code,
+                    classification.error_code,
+                )
+            definition = replace(definition, risk=classification.risk)
+            if definition.name == "browser_open":
+                url = cast(str, arguments["url"])
+                try:
+                    target = validate_https_target(
+                        url,
+                        self._network_resolver,
+                        allowed_ports=(443,),
+                    )
+                except NetworkPolicyError as error:
+                    return PolicyDecision(PolicyAction.DENY, str(error), error.code)
+                normalized_arguments = {**arguments, "url": target.url}
         path_argument = _READ_PATH_ARGUMENTS.get(definition.name)
         if path_argument is not None:
             raw_path = cast(str, arguments[path_argument])

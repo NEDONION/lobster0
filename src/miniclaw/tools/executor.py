@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import urlsplit
 
-from miniclaw.agent.events import RunEvent, RunEventHandler, emit
+from miniclaw.agent.events import RunEvent, RunEventHandler, display_tool_arguments, emit
 from miniclaw.checkpoints.store import CheckpointError, CheckpointStore
 from miniclaw.policy.approvals import (
     ApprovalDecision,
@@ -416,7 +416,7 @@ class ToolExecutor:
                             "call_id": call.call_id,
                             "tool_name": call.name,
                             "summary": approval.summary,
-                            "arguments": arguments,
+                            "arguments": display_tool_arguments(call.name, arguments),
                             "expires_at": approval.expires_at.isoformat(),
                             "grant_modes": [
                                 mode.value for mode in decision.approval_modes
@@ -806,6 +806,23 @@ def _approval_summary(tool_name: str, arguments: dict[str, JsonValue]) -> str:
             if hostname is not None:
                 host_text = f"[{hostname}]" if ":" in hostname else hostname
                 return f"http_get https://{host_text}:{port}"
+    if tool_name in {"browser_click", "browser_type", "browser_press"}:
+        origin = arguments.get("origin")
+        role = arguments.get("role")
+        if isinstance(origin, str) and isinstance(role, str):
+            try:
+                parsed = urlsplit(origin)
+                hostname = parsed.hostname
+                port = parsed.port or 443
+            except ValueError:
+                hostname = None
+            if hostname is not None:
+                host_text = f"[{hostname}]" if ":" in hostname else hostname
+                summary = f"{tool_name} https://{host_text}:{port} · {role}"
+                text = arguments.get("text")
+                if tool_name == "browser_type" and isinstance(text, str):
+                    summary += f" · {len(text)} chars"
+                return summary
     path = arguments.get("path")
     if isinstance(path, str):
         return f"{tool_name} {Path(path).name}"

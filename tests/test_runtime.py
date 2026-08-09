@@ -14,6 +14,8 @@ from miniclaw.config import load_config
 from miniclaw.memory.models import DisclosureContext
 from miniclaw.paths import build_state_paths
 from miniclaw.runtime import create_channel_manager, create_runtime, limits_for_channel
+from miniclaw.storage.conversations import SessionRepository, TurnRepository
+from miniclaw.storage.database import Database
 
 
 class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
@@ -106,6 +108,27 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 await runtime.aclose()
             self.assertFalse(runtime.memory_worker.running)
+
+    async def test_create_runtime_settles_stale_foreground_turns(self) -> None:
+        """Desktop 重启时遗留 running Turn 必须可见为 runtime_interrupted。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            owner = initialize_state(paths).owner
+            database = Database(paths.database)
+            session = SessionRepository(database).get_or_create_cli(owner.id, "desktop-stale")
+            turns = TurnRepository(database)
+            stale = turns.create_with_user_message(session.id, "stale", "model", "未完成")
+            turns.mark_running(stale.id)
+
+            runtime = create_runtime(load_config(paths), paths, "test-key")
+            try:
+                recovered = turns.get(stale.id)
+                self.assertEqual(recovered.status, "failed")
+                self.assertEqual(recovered.error_code, "runtime_interrupted")
+                listed = runtime.conversation_console.list_sessions(owner.id, limit=10)
+                self.assertEqual(listed["sessions"][0]["session_key"], "desktop-stale")
+            finally:
+                await runtime.aclose()
 
     async def test_create_runtime_passes_all_adaptive_budgets_to_runner(self) -> None:
         """Runtime 必须把 soft、hard 与无进展预算原样交给 AgentRunner。"""

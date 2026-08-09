@@ -31,6 +31,7 @@
 | 13 | v0.5.3 Core | SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner、异常 Tool 历史恢复 | 562 tests；Feishu/Discord 15/15 Pending | [Release v0.5.3](../evals/releases/v0.5.3.md) |
 | 14 | v0.6.0～v0.6.1 | Memory Autopilot A～E 与回调/续跑加固 | 671 tests；39/39 Agent；平台 Live 结论不变 | [Release v0.6.0](../evals/releases/v0.6.0.md) |
 | 15 | v0.7.0 | Phase 6 Task/Scheduler/Runner、Sandbox、Checkpoint/Rollback | 798 tests；15/15 Automation；Docker live verified | [Release v0.7.0](../evals/releases/v0.7.0.md) |
+| 16 | v0.6.5 capability record | Phase 6.5 专用 Chromium、snapshot/ref、Browser Policy 与 Artifact | 925 tests；14/14 Worker；18/18 Browser；live smoke pending | [Release v0.6.5](../evals/releases/v0.6.5.md) |
 
 ## 3. 当前主线
 
@@ -38,16 +39,17 @@
 flowchart LR
     P53["v0.5.3 Live Evidence 收口"] --> MA["Memory A～E IMPLEMENTED"]
     MA --> P6["Phase 6 IMPLEMENTED"]
-    P6 --> P65["Phase 6.5 Browser Agent"]
+    P6 --> P65["Phase 6.5 Browser IMPLEMENTED"]
     P65 --> P7["Phase 7 Controlled Evolution"]
     P7 --> P8["Phase 8 Skills + MCP + Provider"]
     P8 --> P9["Phase 9 Sub-agent + Multimodal"]
 ```
 
-Memory Autopilot A～E 与 Phase 6 已进入 `main`，当前本地状态为 **IMPLEMENTATION PASS**：798/798 Python、
-35/35 TypeScript、39/39 Agent、33/33 Channel、660/660 local Channel soak 与 15/15 Automation。Feishu 为
+Memory Autopilot A～E、Phase 6 与 Phase 6.5 Browser 已进入 `main`，当前本地状态为 **IMPLEMENTATION PASS**：
+925/925 Python、36/36 TUI TypeScript、14/14 Browser Worker、39/39 Agent、33/33 Channel、660/660 local
+Channel soak、15/15 Automation、18/18 Browser 与 360/360 Browser soak。Feishu 为
 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Docker 为 **LIVE VERIFIED**，Telegram/Discord/Seatbelt
-仍需独立收口。下一条功能主线是 **Phase 6.5 Browser Agent**。
+仍需独立收口；Browser controlled live smoke 同样 pending。下一条功能主线是 **Phase 7 Controlled Evolution**。
 
 ## 4. 更新规则
 

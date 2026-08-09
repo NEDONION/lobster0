@@ -25,6 +25,7 @@ _CASE_FIELDS = {
     "channel",
     "memory",
     "automation",
+    "browser",
 }
 _EXPECTATION_FIELDS = {
     "answer_contains",
@@ -48,6 +49,7 @@ _EXPECTATION_FIELDS = {
     "delivery_count",
     "automation_evidence",
     "forbidden_automation",
+    "browser_evidence",
 }
 _RESPONSE_FIELDS = {
     "content",
@@ -60,7 +62,15 @@ _RESPONSE_FIELDS = {
 }
 _TOOL_CALL_FIELDS = {"call_id", "name", "arguments"}
 _STATUSES = {"active", "planned", "retired"}
-_LAYERS = {"offline", "live", "channel", "automation", "soak", "manual_sensitive"}
+_LAYERS = {
+    "offline",
+    "live",
+    "channel",
+    "automation",
+    "browser",
+    "soak",
+    "manual_sensitive",
+}
 _TOOL_STATUSES = {
     "waiting_approval",
     "succeeded",
@@ -133,6 +143,62 @@ _AUTOMATION_FIXTURES = frozenset(
         "checkpoint_quota",
         "rollback_conflict",
         "heartbeat_reconcile",
+    }
+)
+_BROWSER_FIXTURES = frozenset(
+    {
+        "navigate",
+        "snapshot",
+        "click",
+        "type",
+        "press",
+        "scroll",
+        "screenshot",
+        "download",
+        "stale_ref",
+        "redirect_ssrf",
+        "localhost_denial",
+        "injection_page",
+        "password_denial",
+        "submit_approval",
+        "cancel_cleanup",
+        "worker_crash",
+        "profile_lock",
+        "artifact_ttl",
+    }
+)
+_BROWSER_EVIDENCE = frozenset(
+    {
+        "public_https_only",
+        "normalized_origin",
+        "bounded_snapshot",
+        "opaque_refs",
+        "click_high_risk",
+        "approval_required",
+        "safe_input_allowed",
+        "typed_text_redacted",
+        "enter_high_risk",
+        "scroll_bounded",
+        "artifact_id_only",
+        "png_dimensions",
+        "download_content_hashed",
+        "traversal_denied",
+        "stable_error_code",
+        "client_closed",
+        "redirect_revalidated",
+        "private_redirect_denied",
+        "localhost_denied",
+        "untrusted_provenance",
+        "prompt_not_authority",
+        "password_hard_denied",
+        "refs_not_displayed",
+        "worker_terminated",
+        "no_orphan",
+        "crash_redacted",
+        "dedicated_profile",
+        "owner_only",
+        "outside_workspace",
+        "expired_deleted",
     }
 )
 _AUTOMATION_STATUSES = frozenset(
@@ -269,6 +335,7 @@ class EvalExpectation:
     delivery_count: int | None
     automation_evidence: tuple[str, ...]
     forbidden_automation: tuple[str, ...]
+    browser_evidence: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,6 +362,7 @@ class EvalCase:
     channel_fixture: str | None
     memory_fixture: str | None
     automation_fixture: str | None
+    browser_fixture: str | None
 
 
 def load_cases(root: Path) -> tuple[EvalCase, ...]:
@@ -382,6 +450,19 @@ def load_automation_cases(root: Path) -> tuple[EvalCase, ...]:
     return cases
 
 
+def load_browser_cases(root: Path) -> tuple[EvalCase, ...]:
+    """加载固定十八条 active Browser v1 场景。"""
+    cases = tuple(
+        case
+        for case in load_cases(root)
+        if case.status == "active" and case.capability == "browser_agent"
+    )
+    expected_ids = tuple(f"BROWSER-{index:03d}" for index in range(1, 19))
+    if tuple(case.id for case in cases) != expected_ids:
+        raise EvalCaseError("browser suite must contain exactly BROWSER-001..BROWSER-018")
+    return cases
+
+
 def _reject_json_constant(value: str) -> None:
     """拒绝 Python JSON 扩展支持的 NaN 与 Infinity。"""
     del value
@@ -419,6 +500,7 @@ def _parse_case(raw: object, source: str) -> EvalCase:
     responses = _parse_offline(value.get("offline"), source)
     memory_fixture = _parse_memory(value.get("memory"), source)
     automation_fixture = _parse_automation(value.get("automation"), source)
+    browser_fixture = _parse_browser(value.get("browser"), source)
     if status == "active" and "offline" in layers and not responses and memory_fixture is None:
         raise EvalCaseError(f"active offline case has no responses at {source}")
     channel_fixture = _parse_channel(value.get("channel"), source)
@@ -450,6 +532,18 @@ def _parse_case(raw: object, source: str) -> EvalCase:
             raise EvalCaseError(f"automation fixture has invalid execution fields at {source}")
         if expected.automation_status is None or not expected.automation_evidence:
             raise EvalCaseError(f"automation fixture has no expected evidence at {source}")
+    if browser_fixture is not None:
+        if status != "active" or layers != ("browser",) or capability != "browser_agent":
+            raise EvalCaseError(
+                f"browser fixture must be active browser browser_agent at {source}"
+            )
+        if any(
+            value is not None
+            for value in (channel_fixture, memory_fixture, automation_fixture)
+        ) or responses:
+            raise EvalCaseError(f"browser fixture has invalid execution fields at {source}")
+        if not expected.browser_evidence:
+            raise EvalCaseError(f"browser fixture has no expected evidence at {source}")
     if status == "active" and layers == ("live",) and capability != "feishu_e2e":
         raise EvalCaseError(f"active live case must use feishu_e2e capability at {source}")
     if capability == "feishu_e2e":
@@ -484,6 +578,7 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         channel_fixture=channel_fixture,
         memory_fixture=memory_fixture,
         automation_fixture=automation_fixture,
+        browser_fixture=browser_fixture,
     )
 
 
@@ -522,6 +617,20 @@ def _parse_automation(raw: object, source: str) -> str | None:
     fixture = _string(value.get("fixture"), source, "automation.fixture")
     if fixture not in _AUTOMATION_FIXTURES:
         raise EvalCaseError(f"invalid automation fixture at {source}")
+    return fixture
+
+
+def _parse_browser(raw: object, source: str) -> str | None:
+    """解析封闭 Browser v1 fixture，不接受脚本、URL、路径或凭据。"""
+    if raw is None:
+        return None
+    value = _object(raw, source, "browser")
+    _reject_unknown(value, {"schema", "fixture"}, source)
+    if _string(value.get("schema"), source, "browser.schema") != "browser.v1":
+        raise EvalCaseError(f"unsupported browser schema at {source}")
+    fixture = _string(value.get("fixture"), source, "browser.fixture")
+    if fixture not in _BROWSER_FIXTURES:
+        raise EvalCaseError(f"invalid browser fixture at {source}")
     return fixture
 
 
@@ -686,6 +795,12 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         source,
         "forbidden_automation",
     )
+    browser_evidence = _parse_live_evidence(
+        value.get("browser_evidence", []),
+        source,
+        "browser",
+        _BROWSER_EVIDENCE,
+    )
     return EvalExpectation(
         answer_contains=_strings(value.get("answer_contains", []), source, "answer_contains"),
         answer_excludes=_strings(value.get("answer_excludes", []), source, "answer_excludes"),
@@ -712,6 +827,7 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         delivery_count=delivery_count,
         automation_evidence=automation_evidence,
         forbidden_automation=forbidden_automation,
+        browser_evidence=browser_evidence,
     )
 
 

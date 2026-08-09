@@ -25,6 +25,12 @@ _STEP_ICON = {
 _TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
 _FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,}).*$")
 _HTML_TAG = re.compile(r"<!--.*?-->|</?[A-Za-z][^>\n]*>")
+_FEISHU_DOCUMENT_URL_LINE = re.compile(
+    r"^(?P<prefix>[^\[\]()<\n]*?)"
+    r"(?P<url>https://(?:[A-Za-z0-9-]+\.)*(?:feishu\.cn|larksuite\.com)/"
+    r"(?:docx|wiki)/[A-Za-z0-9]+)"
+    r"(?P<suffix>[.,!?;:。，！？；：]?\s*)$"
+)
 _KEY_VALUE_FIRST_HEADERS = frozenset({"项目", "字段", "属性", "名称"})
 _KEY_VALUE_SECOND_HEADERS = frozenset({"内容", "值", "信息", "详情"})
 
@@ -268,15 +274,26 @@ def _is_fence_close(line: str, marker: str) -> bool:
 
 
 def _escape_raw_html(line: str) -> str:
-    """把代码 fence 外的原始 HTML 标签转为可见文本，避免触发飞书专用标签。"""
+    """转义代码外 HTML，并把独立飞书文档 URL 转为可点击链接。"""
     def escape_tag(match: re.Match[str]) -> str:
         """转义单个已识别的 HTML 标签。"""
         return match.group(0).replace("<", "&lt;").replace(">", "&gt;")
 
     return "".join(
-        segment if is_code else _HTML_TAG.sub(escape_tag, segment)
+        segment
+        if is_code
+        else _linkify_feishu_document_url(_HTML_TAG.sub(escape_tag, segment))
         for segment, is_code in _inline_code_segments(line)
     )
+
+
+def _linkify_feishu_document_url(text: str) -> str:
+    """把独立的飞书/Lark 文档 URL 转为显式 Markdown 链接。"""
+    match = _FEISHU_DOCUMENT_URL_LINE.fullmatch(text)
+    if match is None:
+        return text
+    target = match.group("url")
+    return f"{match.group('prefix')}[{target}]({target}){match.group('suffix')}"
 
 
 def _table_cells(line: str) -> list[str] | None:

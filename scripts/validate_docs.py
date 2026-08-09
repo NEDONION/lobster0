@@ -25,6 +25,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/engineering/phase-5/20260809_memory-autopilot.md"),
     Path("docs/engineering/phase-6/20260809_autonomy-runtime.md"),
     Path("docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md"),
+    Path("docs/engineering/phase-6/browser-agent.md"),
     Path("docs/superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md"),
     Path("docs/superpowers/plans/2026-08-09-phase-6-autonomy-sandbox.md"),
     Path("docs/getting-started/20260807_本地运行指南.md"),
@@ -35,6 +36,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/evals/releases/v0.6.0.md"),
     Path("docs/evals/releases/v0.6.1.md"),
     Path("docs/evals/releases/v0.7.0.md"),
+    Path("docs/evals/releases/v0.6.5.md"),
 )
 FACT_RELATIVE_DOCS = (
     Path("README.md"),
@@ -43,19 +45,20 @@ FACT_RELATIVE_DOCS = (
     Path("docs/architecture/20260807_系统架构.md"),
     Path("docs/engineering/README.md"),
     Path("docs/getting-started/20260807_本地运行指南.md"),
-    Path("docs/engineering/phase-6/20260809_autonomy-runtime.md"),
-    Path("docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md"),
     Path("docs/evals/README.md"),
-    Path("docs/evals/releases/v0.7.0.md"),
 )
 REQUIRED_FACTS = (
     "IMPLEMENTATION PASS",
-    "798",
-    "35/35",
+    "925",
+    "36/36",
+    "14/14",
     "39/39",
     "33/33",
     "660/660",
     "15/15",
+    "18/18",
+    "360/360",
+    "CONTROLLED LIVE SMOKE PENDING",
     "TARGETED CALLBACK LIVE VERIFIED",
     "15-CASE LIVE PENDING",
 )

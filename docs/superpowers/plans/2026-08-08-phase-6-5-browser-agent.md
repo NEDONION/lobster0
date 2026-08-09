@@ -8,6 +8,13 @@
 
 **Tech Stack:** Python 3.12、TypeScript、Node.js 22.19+、Playwright、Chromium/CDP、NDJSON、SQLite、现有 `NetworkPolicy`/`WorkspaceGuard`/`ToolExecutor`。
 
+> 实施状态（2026-08-09）：Task 1～9 的代码、确定性回归、文档与本地 release gate 已完成；
+> `925/925 Python`、`36/36 TUI`、`14/14 Browser Worker`、`18/18 Browser` 和 `360/360 soak` 通过。
+> Task 9 的 controlled public live smoke 尚未执行，因此当前结论是
+> **IMPLEMENTATION PASS / CONTROLLED LIVE SMOKE PENDING**。下方未勾选框保留原始施工模板，不作为当前状态源；
+> 当前事实以[Browser 工程文档](../../engineering/phase-6/browser-agent.md)和
+> [v0.6.5 记录](../../evals/releases/v0.6.5.md)为准。
+
 ## Global Constraints
 
 - 默认只使用 MiniClaw 专用 Profile，不读取用户日常浏览器 Profile。

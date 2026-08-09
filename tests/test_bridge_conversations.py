@@ -1,0 +1,96 @@
+"""Desktop 会话查询服务的 Owner 隔离与脱敏响应测试。"""
+
+import tempfile
+import unittest
+from datetime import UTC, datetime
+from pathlib import Path
+
+from miniclaw.bootstrap import initialize_state
+from miniclaw.bridge.conversations import ConversationConsole, ConversationQueryError
+from miniclaw.paths import build_state_paths
+from miniclaw.storage.conversations import SessionRepository, TurnRepository
+from miniclaw.storage.database import Database
+
+
+class ConversationConsoleTest(unittest.TestCase):
+    """验证 Desktop 只能读取当前 Owner 的有限可见会话数据。"""
+
+    def setUp(self) -> None:
+        """创建包含唯一 Owner 与完整 Schema 的临时数据库。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        paths = build_state_paths(Path(self.temporary_directory.name).resolve())
+        initialized = initialize_state(paths)
+        self.owner_id = initialized.owner.id
+        self.database = Database(paths.database)
+        self.sessions = SessionRepository(self.database)
+        self.turns = TurnRepository(self.database)
+        self.console = ConversationConsole(self.database)
+
+    def test_list_sessions_is_newest_first_and_contains_only_safe_summary(self) -> None:
+        """最近任务应提供可读标题和终态，但不泄露 Turn 内部字段。"""
+        old = self.sessions.get_or_create_cli(self.owner_id, "task-old")
+        old_turn = self.turns.create_with_user_message(old.id, "old", "model", "旧任务")
+        self.turns.mark_running(old_turn.id)
+        self.turns.complete_with_assistant_message(
+            old_turn.id,
+            old.id,
+            "旧结果",
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="secret-provider-id",
+            iterations=1,
+            finish_reason="stop",
+            runtime_snapshot={"secret": "must-not-leak"},
+        )
+        new = self.sessions.get_or_create_cli(self.owner_id, "task-new")
+        self.turns.create_with_user_message(new.id, "new", "model", "生成本周项目简报")
+
+        result = self.console.list_sessions(self.owner_id, limit=20)
+
+        self.assertEqual(
+            [item["session_key"] for item in result["sessions"]],
+            ["task-new", "task-old"],
+        )
+        self.assertEqual(result["sessions"][0]["title"], "生成本周项目简报")
+        self.assertEqual(result["sessions"][0]["status"], "queued")
+        self.assertNotIn("secret-provider-id", repr(result))
+        self.assertNotIn("must-not-leak", repr(result))
+
+    def test_history_is_owner_scoped_and_exposes_stable_interruption(self) -> None:
+        """历史只返回可见消息和稳定错误码，其他 Owner 按不存在处理。"""
+        session = self.sessions.get_or_create_cli(self.owner_id, "task-1")
+        turn = self.turns.create_with_user_message(session.id, "event-1", "model", "整理报告")
+        self.turns.mark_running(turn.id)
+        self.turns.interrupt_stale()
+
+        history = self.console.history(
+            self.owner_id,
+            session_key="task-1",
+            limit=100,
+        )
+
+        self.assertEqual(history["session_key"], "task-1")
+        self.assertEqual(
+            history["turns"],
+            [{"turn_id": turn.id, "status": "failed", "error_code": "runtime_interrupted"}],
+        )
+        self.assertEqual(
+            history["messages"],
+            [{"role": "user", "content": "整理报告", "turn_id": turn.id}],
+        )
+        self.assertNotIn("error_message", repr(history))
+
+        with self.database.connect() as connection:
+            cursor = connection.execute(
+                "INSERT INTO users (display_name, created_at) VALUES (?, ?)",
+                ("other", datetime.now(UTC).isoformat()),
+            )
+            other_owner_id = int(cursor.lastrowid)
+        with self.assertRaises(ConversationQueryError) as captured:
+            self.console.history(other_owner_id, session_key="task-1", limit=100)
+        self.assertEqual(captured.exception.code, "session_not_found")
+
+
+if __name__ == "__main__":
+    unittest.main()

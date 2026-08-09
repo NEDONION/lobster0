@@ -6,7 +6,7 @@ from importlib import resources
 
 from miniclaw.storage.database import Database
 
-LATEST_SCHEMA_VERSION = 5
+LATEST_SCHEMA_VERSION = 6
 
 _MIGRATION_RESOURCES = {
     1: "schema.sql",
@@ -14,6 +14,7 @@ _MIGRATION_RESOURCES = {
     3: "migrations/0003_memory_autopilot.sql",
     4: "migrations/0004_memory_maintenance.sql",
     5: "migrations/0005_autonomy.sql",
+    6: "migrations/0006_artifacts.sql",
 }
 
 

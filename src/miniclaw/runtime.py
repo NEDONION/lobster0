@@ -11,6 +11,7 @@ from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
+from miniclaw.artifacts.store import ArtifactStore
 from miniclaw.automation.continuation import TaskApprovalContinuation
 from miniclaw.automation.delivery import TaskDeliveryService
 from miniclaw.automation.guard import AutomationPromptGuard
@@ -23,6 +24,9 @@ from miniclaw.automation.repository import (
 )
 from miniclaw.automation.runner import TaskRunner
 from miniclaw.automation.scheduler import Scheduler
+from miniclaw.bridge.conversations import ConversationConsole
+from miniclaw.browser.client import BrowserClient
+from miniclaw.browser.discovery import browser_worker_root, find_chromium
 from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
@@ -78,6 +82,7 @@ from miniclaw.storage.tooling import (
 )
 from miniclaw.tools.automation import ManageTaskTool
 from miniclaw.tools.base import ToolDefinition
+from miniclaw.tools.browser import browser_tools
 from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
@@ -111,6 +116,7 @@ class AgentRuntime:
     permission_state: PermissionState
     service: TurnService
     memory_console: MemoryConsole
+    conversation_console: ConversationConsole
     memory_worker: MemoryWorker = field(repr=False)
     memory_scheduler: MemoryFlushScheduler = field(repr=False)
     task_runner: TaskRunner = field(repr=False)
@@ -121,6 +127,7 @@ class AgentRuntime:
     database: Database = field(repr=False)
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
+    browser_client: BrowserClient | None = field(default=None, repr=False)
     _started: bool = field(default=False, init=False, repr=False)
     _background_started: bool = field(default=False, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
@@ -183,7 +190,7 @@ class AgentRuntime:
         )
 
     async def aclose(self) -> None:
-        """停止后台 Task/Memory Worker，再关闭唯一 Provider 客户端。"""
+        """停止后台 Worker，再关闭 Browser 子进程和唯一 Provider 客户端。"""
         if self._closed:
             return
         await self.astop_background()
@@ -194,12 +201,29 @@ class AgentRuntime:
             try:
                 await self.memory_worker.stop(timeout=3.0)
             finally:
-                await self.provider.aclose()
-                self._closed = True
+                try:
+                    if self.browser_client is not None:
+                        await self.browser_client.close()
+                finally:
+                    await self.provider.aclose()
+                    self._closed = True
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
-    """按已校验配置装配内置 Tool、Memory Service 和唯一 TurnService。"""
+    """按已校验配置装配唯一 Agent、Automation 与查询 Runtime。
+
+    Args:
+        config: 已通过类型与安全校验的应用配置。
+        paths: 当前 MiniClaw 状态目录集合。
+        api_key: 仅传给 Provider 的运行期密钥值。
+
+    Returns:
+        拥有 Provider、TurnService、Console 与后台组件生命周期的 Runtime。
+
+    Raises:
+        OSError: Workspace、数据库或本地存储初始化失败。
+        ValueError: 已校验配置与运行环境仍存在不一致。
+    """
     permission_roots = resolve_permission_roots(
         config.permissions,
         config.workspace.path,
@@ -228,6 +252,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     owner = OwnerRepository(database).get_or_create()
     runs = ToolRunRepository(database)
     runs.interrupt_stale_runs()
+    turns = TurnRepository(database)
+    turns.interrupt_stale()
     scheduled_tasks = ScheduledTaskRepository(database)
     task_runs = TaskRunRepository(database)
     automation_control = AutomationControlRepository(database)
@@ -385,9 +411,51 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         MemoryCorrectTool(memory_governance, messages),
         MemoryReviewListTool(memory_governance),
     )
-    tools = tuple(
+    configured_tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
     )
+    browser_client = (
+        BrowserClient(
+            (
+                "node",
+                str(browser_worker_root() / "dist" / "server.js"),
+                f"--profile-root={paths.browser}",
+                f"--executable-path={find_chromium() or 'chromium'}",
+                f"--max-tabs={config.browser.max_tabs}",
+                "--inactivity-timeout-ms="
+                f"{config.browser.inactivity_timeout_seconds * 1000}",
+                f"--headed={str(config.browser.headed).lower()}",
+                f"--max-snapshot-chars={config.browser.max_snapshot_chars}",
+                f"--staging-root={paths.downloads}",
+                f"--max-artifact-bytes={config.browser.download_max_bytes}",
+            )
+        )
+        if config.browser.enabled
+        else None
+    )
+    artifact_store = (
+        ArtifactStore(
+            database,
+            owner_id=owner.id,
+            root=paths.artifacts,
+            staging_root=paths.downloads,
+            max_bytes=config.browser.download_max_bytes,
+        )
+        if browser_client is not None
+        else None
+    )
+    if artifact_store is not None:
+        artifact_store.delete_expired()
+    browser_toolset = (
+        browser_tools(
+            browser_client,
+            max_snapshot_chars=config.browser.max_snapshot_chars,
+            artifact_store=artifact_store,
+        )
+        if browser_client is not None
+        else ()
+    )
+    tools = (*configured_tools, *browser_toolset)
     execution_tools = (*tools, CompleteTaskTool())
     executor = ToolExecutor(
         ToolRegistry(execution_tools),
@@ -421,7 +489,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         model=config.agent.model,
         sessions=SessionRepository(database),
         messages=messages,
-        turns=TurnRepository(database),
+        turns=turns,
         context=ContextBuilder(
             paths,
             memory,
@@ -499,6 +567,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             memory_reconciler,
             memory_scheduler.schedule,
         ),
+        conversation_console=ConversationConsole(database),
         memory_worker=memory_worker,
         memory_scheduler=memory_scheduler,
         task_runner=task_runner,
@@ -511,6 +580,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)
         ),
         provider=provider,
+        browser_client=browser_client,
     )
 
 

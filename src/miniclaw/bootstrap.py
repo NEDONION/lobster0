@@ -253,6 +253,10 @@ def render_default_config(
         'network = "none"\nmemory_mib = 512\ncpu_seconds = 60\npids_limit = 128\n\n'
         "[checkpoint]\nenabled = true\nmax_entries = 2000\n"
         "max_total_bytes = 67108864\nmax_file_bytes = 8388608\nmax_count = 100\n\n"
+        '[browser]\nenabled = false\nbackend = "local"\nprofile = "miniclaw"\n'
+        "headed = true\nallow_personal_profile = false\nmax_tabs = 8\n"
+        "max_snapshot_chars = 20000\ninactivity_timeout_seconds = 120\n"
+        "download_max_bytes = 20971520\n\n"
         "# [channels.feishu]\n"
         "# enabled = false\n"
         '# account_id = "default"\n'

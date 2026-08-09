@@ -61,6 +61,7 @@
 | [产品需求文档](product/20260807_产品需求文档.md) | 定位、用户流程、功能范围、图解、验收标准和里程碑 |
 | [系统架构](architecture/20260807_系统架构.md) | 运行边界、主链路、计划包结构和安全原则 |
 | [OpenClaw / Hermes 能力 Gap](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 当前能力、竞品方法映射、优先级、v0.5.3 Evidence→Memory A～E→Phase 6～9 路线与非目标 |
+| [通用桌面 Agent 工作台设计](architecture/20260809_通用桌面Agent工作台设计.md) | WorkBuddy 式四界面、Codex 式浅色视觉、Electron + React、W0～W3 最小交付路线 |
 | [开发与交付时间线](engineering/20260809_development-timeline.md) | Capability Phase 与真实 Git/Release 交付顺序的对应关系 |
 | [Memory Autopilot 能力 Gap](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 当前失忆根因、EverOS/Tencent/OpenClaw 映射、L0→L3、跨渠道与分级自动治理 |
 | [Memory Autopilot 正式设计](superpowers/specs/2026-08-08-memory-autopilot-design.md) | 已确认的产品语义、存储决策、安全边界、失败策略与验收门槛 |
@@ -69,6 +70,8 @@
 | [Phase 6 Autonomy Runtime](engineering/phase-6/20260809_autonomy-runtime.md) | 已实现的 Task/Scheduler/Runner/Heartbeat、Budget、恢复与运维入口 |
 | [Phase 6 Sandbox 与 Checkpoint](engineering/phase-6/20260809_sandbox-and-checkpoint.md) | 已实现的 Plan/Approval 绑定、隔离后端、Checkpoint 与 Rollback |
 | [v0.7.0 发布证据](evals/releases/v0.7.0.md) | 798/798 Python、35/35 TypeScript、39/39 Agent、33/33 Channel、660/660 soak 与 15/15 Automation |
+| [Phase 6.5 Browser Agent](engineering/phase-6/browser-agent.md) | 已实现的专用 Profile、Worker、snapshot/ref、Policy/Approval、Artifact 与恢复 |
+| [v0.6.5 Browser 发布证据](evals/releases/v0.6.5.md) | 925/925 Python、14/14 Worker、18/18 Browser 与 360/360 soak |
 | [能力对齐工程落地总方案](engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | 模块、数据模型、配置、错误码、测试矩阵与各 Phase 退出条件 |
 
 ## 使用与开发
@@ -167,7 +170,7 @@
 - [Phase 6 自治任务、Sandbox 与 Checkpoint 设计](superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md)：
   已确认的 durable state machine、隔离 Session、Budget、ExecutionPlan、Docker/Seatbelt 与回滚边界。
 - [Phase 6.5 Browser Agent 计划](superpowers/plans/2026-08-08-phase-6-5-browser-agent.md)：
-  独立 Chromium Profile、snapshot/ref、动作审批、Artifact 与浏览器回归。
+  独立 Chromium Profile、snapshot/ref、动作审批、Artifact 与浏览器回归；已实现，保留为施工记录。
 - [Phase 7 受控进化与 Memory Reflection 计划](superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md)：
   Feedback、Reflection、Proposal、扫描、评测、人工应用与回滚。
 - [Phase 8 Skills/MCP/Provider 韧性计划](superpowers/plans/2026-08-08-phase-8-skills-mcp-provider-resilience.md)：

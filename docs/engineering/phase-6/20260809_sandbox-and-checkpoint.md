@@ -7,7 +7,7 @@
 > 边界：合约、argv、持久绑定、故障恢复和离线安全回归已通过；Docker 的真实逃逸探针已经 PASS；Seatbelt
 > 仍需把 Homebrew Framework launcher 显式纳入 immutable Plan 后重验。
 
-当前发布门禁：**798/798 Python**、**35/35 TypeScript**、**39/39 offline Agent**、
+Phase 6 发布时门禁：**798/798 Python**、**35/35 TypeScript**、**39/39 offline Agent**、
 **33/33 Channel**、**660/660 local Channel soak**、**15/15 Automation**，状态为
 **IMPLEMENTATION PASS**。Docker containment 为 **LIVE VERIFIED**；Seatbelt 为 **LIVE PENDING**。Feishu 仍为
 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**，Telegram/Discord 仍为 **LIVE PENDING**。
@@ -278,7 +278,8 @@ Python 会二次 `posix_spawn` `Resources/Python.app/.../Python`；当前 Plan �
 - Checkpoint 只覆盖主 Workspace，不覆盖 Personal 外部 write roots；
 - Rollback 没有 Owner CLI/TUI 页面；
 - 不能自动回滚未知状态的任意外部 API、消息、邮件或数据库操作；
-- Browser Agent 下载/上传隔离属于 **Phase 6.5 PLANNED / NOT IMPLEMENTED**。
+- 本 Phase 6 快照发布时 Browser Artifact 尚未实现；当前 Screenshot/Download 隔离见
+  [Phase 6.5 Browser Agent](browser-agent.md)。
 
 Autonomy 生命周期与 Task 操作见 [Autonomy Runtime](20260809_autonomy-runtime.md)，发布事实见
 [v0.7.0 Eval Record](../../evals/releases/v0.7.0.md)。

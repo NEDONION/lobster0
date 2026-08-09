@@ -154,7 +154,7 @@ export function reduceFrame(state: AppState, frame: ServerFrame): AppState {
         callId: string(payload.call_id),
         name: string(payload.tool_name),
         summary: string(payload.summary),
-        arguments: record(payload.arguments),
+        arguments: displayArguments(string(payload.tool_name), record(payload.arguments)),
         status: "requested",
         lifecycle: ["requested"],
         preview: "",
@@ -185,7 +185,7 @@ export function reduceFrame(state: AppState, frame: ServerFrame): AppState {
           callId: string(payload.call_id),
           toolName: string(payload.tool_name),
           summary: string(payload.summary),
-          arguments: record(payload.arguments),
+          arguments: displayArguments(string(payload.tool_name), record(payload.arguments)),
           grantModes: approvalModes(payload.grant_modes),
         },
       };
@@ -303,6 +303,29 @@ function nullableInteger(value: JsonValue | undefined): number | null {
 
 function record(value: JsonValue | undefined): Record<string, JsonValue> {
   return typeof value === "object" && value !== null && !Array.isArray(value) ? value : {};
+}
+
+function displayArguments(
+  toolName: string,
+  arguments_: Record<string, JsonValue>,
+): Record<string, JsonValue> {
+  if (!toolName.startsWith("browser_")) return arguments_;
+  const fields: Record<string, string[]> = {
+    browser_open: ["origin"],
+    browser_snapshot: ["cursor"],
+    browser_click: ["origin", "role"],
+    browser_type: ["origin", "role", "input_kind"],
+    browser_press: ["origin", "role", "key"],
+    browser_scroll: ["delta_y"],
+    browser_screenshot: ["full_page"],
+  };
+  const visible = Object.fromEntries(
+    (fields[toolName] ?? [])
+      .filter((name) => Object.hasOwn(arguments_, name))
+      .map((name) => [name, arguments_[name] as JsonValue]),
+  );
+  if (toolName === "browser_type") visible.text = "<redacted>";
+  return visible;
 }
 
 function approvalModes(value: JsonValue | undefined): ApprovalMode[] {

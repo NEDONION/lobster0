@@ -118,3 +118,33 @@ test("usage and approval state retain only Core-published values", () => {
   assert.deepEqual(state.pendingApproval?.grantModes, ["once", "session"]);
   assert.equal(state.busy, false);
 });
+
+test("browser activity never retains typed text or unstable refs", () => {
+  const state = reduceFrame(
+    createInitialState(),
+    frame("event.tool_requested", {
+      turn_id: 17,
+      call_id: "browser-1",
+      tool_name: "browser_type",
+      summary: "browser_type",
+      arguments: {
+        origin: "https://example.com",
+        generation: "private-generation",
+        ref: "@e7",
+        role: "textbox",
+        input_kind: "text",
+        text: "private typed value",
+      },
+    }),
+  );
+
+  const tool = state.timeline.find((item) => item.kind === "tool");
+  assert.deepEqual(tool?.arguments, {
+    origin: "https://example.com",
+    role: "textbox",
+    input_kind: "text",
+    text: "<redacted>",
+  });
+  assert.equal(JSON.stringify(tool).includes("private typed value"), false);
+  assert.equal(JSON.stringify(tool).includes("private-generation"), false);
+});

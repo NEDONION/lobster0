@@ -18,7 +18,7 @@ from textual.widgets import Button, Collapsible, Static, TextArea
 from textual.worker import Worker
 
 from miniclaw import __version__
-from miniclaw.agent.events import RunEvent
+from miniclaw.agent.events import RunEvent, display_tool_arguments
 from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError, load_config
 from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
@@ -233,7 +233,12 @@ class ToolCard(Collapsible):
         self.tool_name = _terminal_safe(tool_name)
         self.summary = _terminal_safe(summary)
         self.arguments = _terminal_safe(
-            json.dumps(arguments, ensure_ascii=False, indent=2, sort_keys=True)
+            json.dumps(
+                display_tool_arguments(tool_name, arguments),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
         )[:_TRACE_DETAIL_CHARS]
         self.status = "requested"
         self.status_history = [self.status]
@@ -365,7 +370,12 @@ class ApprovalModal(ModalScreen[ApprovalDecision]):
         self.tool_name = _terminal_safe(tool_name)
         self.summary = _terminal_safe(summary)
         self.arguments = _terminal_safe(
-            json.dumps(arguments, ensure_ascii=False, indent=2, sort_keys=True)
+            json.dumps(
+                display_tool_arguments(tool_name, arguments),
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
         )
         self.expires_at = _terminal_safe(expires_at)
 

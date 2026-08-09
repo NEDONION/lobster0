@@ -23,7 +23,7 @@ class BootstrapTest(unittest.TestCase):
         result = initialize_state(self.paths)
         config = load_config(self.paths, {}, {})
 
-        self.assertEqual(result.applied_migrations, (1, 2, 3, 4, 5))
+        self.assertEqual(result.applied_migrations, (1, 2, 3, 4, 5, 6))
         self.assertEqual(result.owner.display_name, "Owner")
         self.assertEqual(config.agent.model, "deepseek-v4-pro")
         self.assertEqual(config.agent.max_tool_iterations, 32)
@@ -57,6 +57,12 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("[heartbeat]\nenabled = false", template)
         self.assertIn('[sandbox]\nbackend = "docker"', template)
         self.assertIn("[checkpoint]\nenabled = true", template)
+        self.assertIn("[browser]\nenabled = false", template)
+        self.assertIn('profile = "miniclaw"', template)
+        self.assertFalse(config.browser.enabled)
+        for path in (self.paths.browser, self.paths.artifacts, self.paths.downloads):
+            self.assertTrue(path.is_dir())
+            self.assertEqual(path.stat().st_mode & 0o777, 0o700)
         self.assertNotIn("cli_", template)
         env_example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(
             encoding="utf-8"

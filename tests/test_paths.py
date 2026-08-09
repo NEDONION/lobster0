@@ -3,6 +3,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from stat import S_IMODE
 
 from miniclaw.paths import PathConfigurationError, build_state_paths, resolve_home
 
@@ -29,7 +30,22 @@ class StatePathsTest(unittest.TestCase):
         self.assertEqual(home, Path(directory).resolve())
         self.assertEqual(paths.database, home / "miniclaw.db")
         self.assertEqual(paths.workspace, home / "workspace")
+        self.assertEqual(paths.browser, home / "browser")
+        self.assertEqual(paths.artifacts, home / "artifacts")
+        self.assertEqual(paths.downloads, home / "downloads")
+        self.assertFalse(paths.browser.is_relative_to(paths.workspace))
         self.assertTrue(all(path == home or home in path.parents for path in paths.directories))
+
+    def test_browser_roots_are_private_and_outside_workspace(self) -> None:
+        """Browser、Artifact 与 Download 目录必须私有且不落入 Agent Workspace。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            for path in paths.directories:
+                path.mkdir(mode=0o700, parents=True, exist_ok=True)
+
+            for path in (paths.browser, paths.artifacts, paths.downloads):
+                self.assertEqual(S_IMODE(path.stat().st_mode), 0o700)
+                self.assertFalse(path.is_relative_to(paths.workspace))
 
     def test_default_home_uses_dot_miniclaw(self) -> None:
         """没有覆盖值时应使用当前用户主目录下的固定状态目录。"""

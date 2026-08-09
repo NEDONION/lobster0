@@ -27,7 +27,13 @@ from miniclaw.config import ConfigError
 from miniclaw.doctor import CheckStatus, run_local_checks
 from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from miniclaw.evals.automation import run_automation_suite
-from miniclaw.evals.cases import EvalCaseError, load_automation_cases, load_cases
+from miniclaw.evals.browser import run_browser_suite
+from miniclaw.evals.cases import (
+    EvalCaseError,
+    load_automation_cases,
+    load_browser_cases,
+    load_cases,
+)
 from miniclaw.evals.channel import run_channel_suite
 from miniclaw.evals.runner import run_offline_suite
 from miniclaw.gateway import (
@@ -121,7 +127,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
     eval_run.add_argument(
         "--suite",
-        choices=("offline", "channel", "automation", "all"),
+        choices=("offline", "channel", "automation", "browser", "all"),
         required=True,
     )
     eval_run.add_argument(
@@ -418,6 +424,9 @@ def _run_eval(arguments: argparse.Namespace) -> int:
     automation = tuple(
         case for case in cases if case.status == "active" and "automation" in case.layers
     )
+    browser = tuple(
+        case for case in cases if case.status == "active" and "browser" in case.layers
+    )
     if arguments.suite in {"offline", "all"} and not offline:
         print("error: no active offline eval cases", file=sys.stderr)
         return 2
@@ -427,6 +436,12 @@ def _run_eval(arguments: argparse.Namespace) -> int:
     if arguments.suite in {"automation", "all"}:
         try:
             automation = load_automation_cases(arguments.root)
+        except EvalCaseError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+    if arguments.suite in {"browser", "all"}:
+        try:
+            browser = load_browser_cases(arguments.root)
         except EvalCaseError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
@@ -555,6 +570,46 @@ def _run_eval(arguments: argparse.Namespace) -> int:
                 f"across {automation_runs}/{arguments.repeat} runs "
                 f"({automation_duration}ms)."
             )
+    if arguments.suite in {"browser", "all"}:
+        browser_passed = 0
+        browser_total = 0
+        browser_duration = 0
+        browser_runs = 0
+        browser_failed = 0
+        for iteration in range(1, arguments.repeat + 1):
+            browser_suite = asyncio.run(run_browser_suite(browser))
+            browser_passed += browser_suite.passed
+            browser_total += browser_suite.total
+            browser_duration += browser_suite.duration_ms
+            passed += browser_suite.passed
+            checks += browser_suite.total
+            duration_ms += browser_suite.duration_ms
+            browser_runs = iteration
+            if not json_output and (arguments.repeat == 1 or browser_suite.failed):
+                for result in browser_suite.cases:
+                    if result.passed:
+                        print(f"PASS {result.case_id} {result.duration_ms}ms")
+                    else:
+                        print(
+                            f"FAIL {result.case_id} {','.join(result.failures)} "
+                            f"run={iteration}"
+                        )
+            browser_failed += browser_suite.failed
+            failed += browser_suite.failed
+            if browser_suite.failed:
+                break
+        if json_output:
+            pass
+        elif arguments.repeat == 1:
+            print(
+                f"Browser eval: {browser_passed}/{browser_total} passed, "
+                f"{browser_failed} failed ({browser_duration}ms)."
+            )
+        else:
+            print(
+                f"Browser local soak: {browser_passed}/{browser_total} checks passed "
+                f"across {browser_runs}/{arguments.repeat} runs ({browser_duration}ms)."
+            )
     if json_output:
         selected = (
             offline
@@ -563,7 +618,9 @@ def _run_eval(arguments: argparse.Namespace) -> int:
             if arguments.suite == "channel"
             else automation
             if arguments.suite == "automation"
-            else (*offline, *channel, *automation)
+            else browser
+            if arguments.suite == "browser"
+            else (*offline, *channel, *automation, *browser)
         )
         print(
             json.dumps(
