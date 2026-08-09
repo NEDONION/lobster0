@@ -1,5 +1,6 @@
-import { marketingCopy, siteFacts, type Locale } from '@/content/site';
+import { marketingCopy, type Locale } from '@/content/site';
 
+import { HeroRuntime } from './HeroRuntime';
 import { MarketingFooter } from './MarketingFooter';
 import { MarketingHeader } from './MarketingHeader';
 
@@ -10,28 +11,7 @@ export function MarketingHome({ locale }: { locale: Locale }) {
     <div className="marketing-page">
       <MarketingHeader locale={locale} />
       <main>
-        <section className="marketing-section hero-shell" id="hero" aria-labelledby="hero-title">
-          <div className="site-shell hero-shell__grid">
-            <div className="hero-shell__copy">
-              <p className="section-kicker">{copy.hero.eyebrow}</p>
-              <h1 id="hero-title">{copy.hero.title}</h1>
-              <p>{copy.hero.lead}</p>
-              <div className="hero-shell__actions">
-                <a className="button button--primary" href={locale === 'zh-CN' ? '/docs/getting-started' : '/en/docs/getting-started'}>
-                  {copy.hero.primaryCta}
-                </a>
-                <a className="button button--secondary" href={siteFacts.links.github}>
-                  {copy.hero.secondaryCta}
-                </a>
-              </div>
-            </div>
-            <div className="instrument-placeholder" aria-label={copy.trace.title}>
-              <span>{copy.trace.eyebrow}</span>
-              <strong>{copy.trace.title}</strong>
-              <p>{copy.trace.description}</p>
-            </div>
-          </div>
-        </section>
+        <HeroRuntime locale={locale} />
 
         <section className="marketing-section" id="product" aria-labelledby="product-title">
           <div className="site-shell section-frame">
