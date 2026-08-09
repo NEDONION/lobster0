@@ -1,5 +1,8 @@
 # v0.5.2 Stabilization：飞书单卡片回复与 lark-cli Skill 工程落地
 
+> 文档性质：`HISTORICAL SNAPSHOT`。本文记录 v0.5.2 Stabilization 在 2026-08-09 发布时的实现与验证事实，
+> 不作为当前运行时规则。
+
 > 编号说明：历史材料曾称“Phase 5.2”；它是稳定化交付版本，不是新的架构 Phase。
 
 > 状态：代码与离线回归已完成；修复后 Owner DM 单卡已确认，完整 15-case 仍为 LIVE PENDING
@@ -16,14 +19,13 @@
 3. 用户问“最近修改的飞书文档”时，Agent 口头回答“没有飞书 API 工具”，没有调用已经安装并登录的官方
    `lark-cli`。
 
-修复后的用户体验是：
+在 v0.5.2 发布时，修复后的用户体验是：
 
 - 飞书卡片正文使用 Card JSON 2.0 的 `small`（12px）字号；
 - 消息到达后立即创建一张蓝色 Loading 卡，执行步骤持续更新同一 `message_id`；
 - 正常回答能完整放入时，原卡片转为绿色并展示完整轨迹和答案；
 - Provider 或 Tool Loop 失败时，原卡片转为红色并展示固定安全提示，不另发灰色失败消息；
-- 卡片内最终回答保留 CommonMark 的标题、段落、有序/无序/任务列表、引用、分隔线、链接、强调、行内代码和
-  fenced code block；只有 fence 外的真实 Markdown 表格会降级为可读 bullet 条目；
+- 卡片内最终回答统一渲染为 bullet points；Markdown 表格转换为键值条目，不依赖模型遵守排版提示；
 - 回答超过 `message_max_chars` 时，卡片保存前缀，只有未展示后缀回复到机器人自己的卡片下方；
 - 卡片创建或最终更新失败时才把完整正文回复原用户消息；
 - completed Turn 重启恢复时复用稳定 progress UUID，不追加重复普通全文；
@@ -34,6 +36,12 @@
 - Tool Call 流式分片中的空名称续片不会覆盖已经确认的合法 Tool 名。
 
 `small` 只提高屏幕上的视觉密度，不改变飞书 API 的字符上限；真正超过上限的内容仍必须走“卡片前缀 + 后缀回复”。
+
+### 当前行为补充（非 v0.5.2 快照）
+
+当前实现已演进：最终回答保留 CommonMark 的标题、段落、有序/无序/任务列表、引用、分隔线、链接、强调、
+行内代码和 fenced code block；只有 fence 外的真实 Markdown 表格会降级为可读 bullet 条目。当前单卡状态和
+配置说明见 [README](../../../README.md) 与[本地运行指南](../../getting-started/20260807_本地运行指南.md)。
 
 ## 2. 两条“飞书能力”不要混为一谈
 
