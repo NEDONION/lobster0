@@ -11,6 +11,13 @@ from miniclaw.install.models import (
     PlatformKey,
     ReleaseManifest,
 )
+from miniclaw.install.service import (
+    LaunchdService,
+    ServiceError,
+    ServiceSpec,
+    ServiceStatus,
+    render_launchd_service,
+)
 
 __all__ = [
     "Artifact",
@@ -22,4 +29,9 @@ __all__ = [
     "NodeRange",
     "PlatformKey",
     "ReleaseManifest",
+    "LaunchdService",
+    "ServiceError",
+    "ServiceSpec",
+    "ServiceStatus",
+    "render_launchd_service",
 ]
