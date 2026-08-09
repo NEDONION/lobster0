@@ -23,11 +23,10 @@ _FILENAME = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$")
 _MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,127}$")
 _LICENSE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+-]{0,127}$")
 _STABLE_NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
-_SECRET_ASSIGNMENT = re.compile(
-    r"(?i)\b(?:api[-_]?key|token|secret|password)\s*[:=]\s*\S+"
+_SAFE_PLAN_DETAIL = re.compile(
+    r"^version=[0-9A-Za-z.+-]{1,64} platform=(?:linux|macos)/(?:x86_64|arm64) "
+    r"service=(?:True|False) onboarding=(?:True|False)$"
 )
-_URL_TEXT = re.compile(r"(?i)https?://\S+")
-_PRIVATE_PATH = re.compile(r"(?<![A-Za-z0-9])(?:/[^\s]+|[A-Za-z]:\\[^\s]+)")
 
 _ARTIFACT_KINDS = {
     "wheel",
@@ -63,15 +62,105 @@ _SUPPORTED_PLATFORMS = {
     ("macos", "x86_64"),
     ("macos", "arm64"),
 }
-_SOURCE_REPOSITORIES = {
-    "https://github.com/NEDONION/miniclaw",
-    "https://github.com/astral-sh/uv",
-    "https://github.com/nodejs/node",
-    "https://github.com/earendil-works/pi-tui",
+_MINICLAW_REPOSITORY = "https://github.com/NEDONION/miniclaw"
+_NODE_REPOSITORY = "https://github.com/nodejs/node"
+_SOURCE_REPOSITORIES = {_MINICLAW_REPOSITORY, _NODE_REPOSITORY}
+_ARTIFACT_RULES = {
+    "wheel": (frozenset({"application/zip"}), "universal", _MINICLAW_REPOSITORY, False),
+    "sdist": (frozenset({"application/gzip"}), "universal", _MINICLAW_REPOSITORY, False),
+    "requirements": (frozenset({"text/plain"}), "universal", _MINICLAW_REPOSITORY, False),
+    "node": (frozenset({"application/gzip"}), "concrete", _NODE_REPOSITORY, True),
+    "tui": (frozenset({"application/gzip"}), "concrete", _MINICLAW_REPOSITORY, False),
+    "sandbox-image": (frozenset({"text/plain"}), "universal", _MINICLAW_REPOSITORY, False),
+    "runtime-image": (frozenset({"text/plain"}), "universal", _MINICLAW_REPOSITORY, False),
+    "installer": (frozenset({"application/zip"}), "universal", _MINICLAW_REPOSITORY, False),
+    "sbom": (
+        frozenset({"application/vnd.cyclonedx+json", "application/spdx+json"}),
+        "universal",
+        _MINICLAW_REPOSITORY,
+        False,
+    ),
 }
-_GITHUB_DOWNLOAD_REPOSITORIES = {
-    ("NEDONION", "miniclaw"),
-    ("astral-sh", "uv"),
+_ERROR_CODES = {
+    "unsupported_platform",
+    "install_locked",
+    "artifact_download_failed",
+    "artifact_hash_mismatch",
+    "manifest_invalid",
+    "system_dependency_missing",
+    "privilege_denied",
+    "runtime_install_failed",
+    "tui_smoke_failed",
+    "service_install_failed",
+    "doctor_blocked",
+    "activation_failed",
+    "rollback_conflict",
+    "uninstall_ownership_mismatch",
+    "request_invalid",
+    "event_invalid",
+    "plan_invalid",
+    "installer_error",
+}
+_SAFE_DETAIL_MESSAGES = {"unsafe archive path", "archive path escapes destination"}
+_SAFE_DETAIL_FIELDS = {
+    "action",
+    "allow_system_packages",
+    "artifact_filenames",
+    "artifact_selection",
+    "artifacts",
+    "artifacts.component_version",
+    "artifacts.filename",
+    "artifacts.kind",
+    "artifacts.license_ref",
+    "artifacts.media_type",
+    "artifacts.platform",
+    "artifacts.sha256",
+    "artifacts.size",
+    "artifacts.source_repository",
+    "artifacts.upstream_sha256",
+    "artifacts.url",
+    "channel",
+    "code",
+    "config_file",
+    "confirm_data_loss",
+    "database_schema",
+    "detail",
+    "distro_id",
+    "distro_version",
+    "dry_run",
+    "event",
+    "features",
+    "flags",
+    "git_commit",
+    "install_service",
+    "json_output",
+    "manifest",
+    "minimum_readable_schema",
+    "model",
+    "name",
+    "node",
+    "node.accepted",
+    "node.accepted.maximum_exclusive",
+    "node.accepted.minimum",
+    "node.default",
+    "onboard",
+    "platform",
+    "prefix",
+    "product",
+    "program_prefix",
+    "purge_data",
+    "run_onboarding",
+    "schema_version",
+    "secrets_file",
+    "service",
+    "service_manager",
+    "state_home",
+    "status",
+    "supported_platforms",
+    "system_argvs",
+    "system_prefix",
+    "version",
+    "verbose",
 }
 _EXPECTED_NODE_RANGES = (
     ((22, 22, 3), (23, 0, 0)),
@@ -101,11 +190,7 @@ class InstallError(RuntimeError):
 
     def __init__(self, code: str, detail: str) -> None:
         """保存稳定代码和不超过 500 字符的安全详情。"""
-        self.code = (
-            code
-            if type(code) is str and _STABLE_NAME.fullmatch(code)
-            else "installer_error"
-        )
+        self.code = code if type(code) is str and code in _ERROR_CODES else "installer_error"
         self.detail = _safe_detail(detail)
         super().__init__(f"{self.code}: {self.detail}")
 
@@ -157,11 +242,7 @@ class NodeRange:
     def __post_init__(self) -> None:
         """校验三段整数与严格递增边界。"""
         for value in (self.minimum, self.maximum_exclusive):
-            if (
-                type(value) is not tuple
-                or len(value) != 3
-                or any(type(part) is not int or part < 0 for part in value)
-            ):
+            if not _is_version_tuple(value):
                 _invalid("node.accepted")
         if self.minimum >= self.maximum_exclusive:
             _invalid("node.accepted")
@@ -185,7 +266,8 @@ class NodePolicy:
     def __post_init__(self) -> None:
         """固定 v0.7 的 Node 24 默认值和 22/24 LTS 范围。"""
         if (
-            self.default != (24, 18, 0)
+            not _is_version_tuple(self.default)
+            or self.default != (24, 18, 0)
             or type(self.accepted) is not tuple
             or any(type(item) is not NodeRange for item in self.accepted)
         ):
@@ -235,6 +317,8 @@ class Artifact:
         if type(self.filename) is not str or _FILENAME.fullmatch(self.filename) is None:
             _invalid("artifacts.filename")
         _validate_artifact_url(self.url)
+        if urlsplit(self.url).path.rsplit("/", 1)[-1] != self.filename:
+            _invalid("artifacts.url")
         _require_hash(self.sha256, "artifacts.sha256")
         if type(self.size) is not int or not 1 <= self.size <= _MAX_ARTIFACT_BYTES:
             _invalid("artifacts.size")
@@ -252,6 +336,7 @@ class Artifact:
             _invalid("artifacts.license_ref")
         if self.upstream_sha256 is not None:
             _require_hash(self.upstream_sha256, "artifacts.upstream_sha256")
+        _validate_artifact_rule(self)
 
 
 @dataclass(frozen=True, slots=True)
@@ -311,6 +396,13 @@ class ReleaseManifest:
         ]
         if len(filenames) != len(set(filenames)) or len(identities) != len(set(identities)):
             _invalid("artifacts")
+        default_node = ".".join(str(part) for part in self.node.default)
+        if any(
+            artifact.component_version
+            != (default_node if artifact.kind == "node" else self.version)
+            for artifact in self.artifacts
+        ):
+            _invalid("artifacts.component_version")
         self._validate_release_urls()
         if type(self.supported_platforms) is not tuple or any(
             type(item) is not PlatformKey for item in self.supported_platforms
@@ -531,7 +623,7 @@ class InstallEvent:
         if type(self.status) is not str or self.status not in {"start", "ok", "warn", "error"}:
             raise InstallError("event_invalid", "status")
         if self.code is not None and (
-            type(self.code) is not str or _STABLE_NAME.fullmatch(self.code) is None
+            type(self.code) is not str or self.code not in _ERROR_CODES
         ):
             raise InstallError("event_invalid", "code")
         if type(self.detail) is not str:
@@ -602,36 +694,41 @@ class InstallPlan:
         _validate_argvs(self.system_argvs)
         if type(self.install_service) is not bool or type(self.run_onboarding) is not bool:
             raise InstallError("plan_invalid", "flags")
+        if self.request.service is False and self.install_service:
+            raise InstallError("plan_invalid", "install_service")
+        if not self.request.onboard and self.run_onboarding:
+            raise InstallError("plan_invalid", "run_onboarding")
 
     def safe_summary(self) -> str:
         """返回不含 config、Secret 和 state home 的单行计划摘要。
 
         Returns:
-            仅含版本、平台、程序 prefix 与两个公开动作开关的摘要。
+            仅含版本、平台与两个公开动作开关的摘要。
         """
         return (
             f"version={self.manifest.version} platform={self.platform.os}/{self.platform.arch} "
-            f"prefix={self.program_prefix} service={self.install_service} "
-            f"onboarding={self.run_onboarding}"
+            f"service={self.install_service} onboarding={self.run_onboarding}"
         )
 
 
 def _safe_detail(detail: str) -> str:
-    """移除常见凭据、URL、绝对路径和换行后截断诊断文本。
+    """只保留 allowlisted 固定消息、字段名和结构化计划摘要。
 
     Args:
         detail: 可能来自不可信边界的诊断文本。
 
     Returns:
-        单行且不超过 500 字符的保守脱敏文本。
+        结构合法且不超过 500 字符的文本，否则为 redacted。
     """
-    if type(detail) is not str:
+    if type(detail) is not str or len(detail) > 500:
         return "redacted"
-    value = " ".join(detail.splitlines())
-    value = _SECRET_ASSIGNMENT.sub("[credential]", value)
-    value = _URL_TEXT.sub("[url]", value)
-    value = _PRIVATE_PATH.sub("[path]", value)
-    return value[:500]
+    if (
+        detail in _SAFE_DETAIL_MESSAGES
+        or detail in _SAFE_DETAIL_FIELDS
+        or _SAFE_PLAN_DETAIL.fullmatch(detail) is not None
+    ):
+        return detail
+    return "redacted"
 
 
 def _absolute_path_is_safe(value: object) -> bool:
@@ -647,6 +744,22 @@ def _absolute_path_is_safe(value: object) -> bool:
         return False
     rendered = str(value)
     return len(rendered) <= 4096 and all(character.isprintable() for character in rendered)
+
+
+def _is_version_tuple(value: object) -> bool:
+    """判断值是否为三个 exact non-negative int。
+
+    Args:
+        value: 待检查 Node 版本元组。
+
+    Returns:
+        仅规范三段版本返回 True，bool 返回 False。
+    """
+    return (
+        type(value) is tuple
+        and len(value) == 3
+        and all(type(part) is int and part >= 0 for part in value)
+    )
 
 
 def _invalid(field: str) -> Never:
@@ -908,6 +1021,59 @@ def _parse_features(value: object) -> tuple[str, ...]:
     return tuple(value)
 
 
+def _validate_artifact_rule(artifact: Artifact) -> None:
+    """按 kind 绑定 media、platform、source、upstream hash 与文件名。
+
+    Args:
+        artifact: 已通过基础字段校验的 Release artifact。
+
+    Raises:
+        InstallError: artifact 组合不属于 Task 15 closed-world matrix。
+    """
+    media_types, platform_mode, source_repository, upstream_required = _ARTIFACT_RULES[
+        artifact.kind
+    ]
+    platform = (artifact.platform.os, artifact.platform.arch)
+    if artifact.media_type not in media_types:
+        _invalid("artifacts.media_type")
+    if platform_mode == "universal" and platform != ("any", "any"):
+        _invalid("artifacts.platform")
+    if platform_mode == "concrete" and platform not in _SUPPORTED_PLATFORMS:
+        _invalid("artifacts.platform")
+    if artifact.source_repository != source_repository:
+        _invalid("artifacts.source_repository")
+    if (artifact.upstream_sha256 is not None) != upstream_required:
+        _invalid("artifacts.upstream_sha256")
+    if not _artifact_filename_matches(artifact):
+        _invalid("artifacts.filename")
+
+
+def _artifact_filename_matches(artifact: Artifact) -> bool:
+    """判断 filename 是否符合已知 kind 的 Release 命名。
+
+    Args:
+        artifact: 已通过基础安全文件名检查的 artifact。
+
+    Returns:
+        文件名与 kind、component version 和平台一致时返回 True。
+    """
+    version = artifact.component_version
+    platform = f"{artifact.platform.os}-{artifact.platform.arch}"
+    expected = {
+        "wheel": f"miniclaw_agent-{version}-py3-none-any.whl",
+        "sdist": f"miniclaw_agent-{version}.tar.gz",
+        "requirements": "requirements-all.lock",
+        "node": f"miniclaw-node-{version}-{platform}.tar.gz",
+        "tui": f"miniclaw-tui-{version}-{platform}.tar.gz",
+        "installer": "miniclaw-installer.pyz",
+    }
+    if artifact.kind in expected:
+        return artifact.filename == expected[artifact.kind]
+    if artifact.kind == "sbom":
+        return artifact.filename.endswith(".json")
+    return artifact.filename.endswith(".txt")
+
+
 def _validate_artifact_url(value: object) -> None:
     """限制 artifact URL 为固定官方 HTTPS 下载路径。
 
@@ -920,6 +1086,7 @@ def _validate_artifact_url(value: object) -> None:
     if (
         type(value) is not str
         or not value.isascii()
+        or not value.startswith("https://github.com/")
         or any(character.isspace() for character in value)
     ):
         _invalid("artifacts.url")
@@ -939,27 +1106,13 @@ def _validate_artifact_url(value: object) -> None:
         or "%" in parts.path
     ):
         _invalid("artifacts.url")
-    host = parts.hostname
-    if host == "github.com":
-        segments = parts.path.split("/")
-        if (
-            len(segments) != 7
-            or (segments[1], segments[2]) not in _GITHUB_DOWNLOAD_REPOSITORIES
-            or segments[3:5] != ["releases", "download"]
-            or segments[5] in {"", ".", ".."}
-            or segments[6] in {"", ".", ".."}
-        ):
-            _invalid("artifacts.url")
-    elif host == "files.pythonhosted.org":
-        if not parts.path.startswith("/packages/"):
-            _invalid("artifacts.url")
-    elif host == "nodejs.org":
-        if not parts.path.startswith("/dist/"):
-            _invalid("artifacts.url")
-    elif host == "astral.sh":
-        if not parts.path.startswith("/uv/"):
-            _invalid("artifacts.url")
-    else:
+    segments = parts.path.split("/")
+    if (
+        parts.hostname != "github.com"
+        or len(segments) != 7
+        or segments[1:5] != ["NEDONION", "miniclaw", "releases", "download"]
+        or any(segment in {"", ".", ".."} for segment in segments[5:])
+    ):
         _invalid("artifacts.url")
 
 
@@ -981,7 +1134,7 @@ def _validate_argvs(value: object) -> None:
             type(argument) is not str
             or not argument
             or len(argument) > 4096
-            or "\x00" in argument
+            or not argument.isprintable()
             for argument in argv
         ):
             raise InstallError("plan_invalid", "system_argvs")

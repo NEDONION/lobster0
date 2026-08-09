@@ -119,13 +119,13 @@
       "properties": {
         "kind": {"enum": ["wheel", "sdist", "requirements", "node", "tui", "sandbox-image", "runtime-image", "installer", "sbom"]},
         "filename": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$"},
-        "url": {"type": "string", "pattern": "^https://(?:github\\.com/(?:NEDONION/miniclaw|astral-sh/uv)/releases/download/[^/?#]+/[^/?#]+|files\\.pythonhosted\\.org/packages/[^?#]+|nodejs\\.org/dist/[^?#]+|astral\\.sh/uv/[^?#]+)$"},
+        "url": {"type": "string", "pattern": "^https://github\\.com/NEDONION/miniclaw/releases/download/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?/(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$"},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "size": {"type": "integer", "minimum": 1, "maximum": 1073741824},
         "media_type": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,127}$"},
         "platform": {"$ref": "#/$defs/platform"},
         "component_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"},
-        "source_repository": {"enum": ["https://github.com/NEDONION/miniclaw", "https://github.com/astral-sh/uv", "https://github.com/nodejs/node", "https://github.com/earendil-works/pi-tui"]},
+        "source_repository": {"enum": ["https://github.com/NEDONION/miniclaw", "https://github.com/nodejs/node"]},
         "license_ref": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,127}$"},
         "upstream_sha256": {
           "anyOf": [
@@ -133,7 +133,97 @@
             {"type": "string", "pattern": "^[0-9a-f]{64}$"}
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "wheel"}}},
+          "then": {"properties": {
+            "filename": {"pattern": "^miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?-py3-none-any\\.whl$"},
+            "url": {"pattern": "/miniclaw_agent-[0-9A-Za-z.+-]+-py3-none-any\\.whl$"},
+            "media_type": {"const": "application/zip"},
+            "platform": {"const": {"os": "any", "arch": "any"}},
+            "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},
+            "upstream_sha256": {"const": null}
+          }}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "sdist"}}},
+          "then": {"properties": {
+            "filename": {"pattern": "^miniclaw_agent-[0-9A-Za-z.+-]+\\.tar\\.gz$"},
+            "url": {"pattern": "/miniclaw_agent-[0-9A-Za-z.+-]+\\.tar\\.gz$"},
+            "media_type": {"const": "application/gzip"},
+            "platform": {"const": {"os": "any", "arch": "any"}},
+            "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},
+            "upstream_sha256": {"const": null}
+          }}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "requirements"}}},
+          "then": {"properties": {
+            "filename": {"const": "requirements-all.lock"},
+            "url": {"pattern": "/requirements-all\\.lock$"},
+            "media_type": {"const": "text/plain"},
+            "platform": {"const": {"os": "any", "arch": "any"}},
+            "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},
+            "upstream_sha256": {"const": null}
+          }}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "node"}}},
+          "then": {"properties": {
+            "filename": {"pattern": "^miniclaw-node-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
+            "url": {"pattern": "/miniclaw-node-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
+            "media_type": {"const": "application/gzip"},
+            "platform": {"not": {"const": {"os": "any", "arch": "any"}}},
+            "source_repository": {"const": "https://github.com/nodejs/node"},
+            "upstream_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "tui"}}},
+          "then": {"properties": {
+            "filename": {"pattern": "^miniclaw-tui-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
+            "url": {"pattern": "/miniclaw-tui-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
+            "media_type": {"const": "application/gzip"},
+            "platform": {"not": {"const": {"os": "any", "arch": "any"}}},
+            "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},
+            "upstream_sha256": {"const": null}
+          }}
+        },
+        {
+          "if": {"properties": {"kind": {"enum": ["sandbox-image", "runtime-image"]}}},
+          "then": {"properties": {
+            "filename": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,195}\\.txt$"},
+            "url": {"pattern": "/[A-Za-z0-9][A-Za-z0-9._+-]{0,195}\\.txt$"},
+            "media_type": {"const": "text/plain"},
+            "platform": {"const": {"os": "any", "arch": "any"}},
+            "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},
+            "upstream_sha256": {"const": null}
+          }}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "installer"}}},
+          "then": {"properties": {
+            "filename": {"const": "miniclaw-installer.pyz"},
+            "url": {"pattern": "/miniclaw-installer\\.pyz$"},
+            "media_type": {"const": "application/zip"},
+            "platform": {"const": {"os": "any", "arch": "any"}},
+            "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},
+            "upstream_sha256": {"const": null}
+          }}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "sbom"}}},
+          "then": {"properties": {
+            "filename": {"pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]{0,194}\\.json$"},
+            "url": {"pattern": "/[A-Za-z0-9][A-Za-z0-9._+-]{0,194}\\.json$"},
+            "media_type": {"enum": ["application/vnd.cyclonedx+json", "application/spdx+json"]},
+            "platform": {"const": {"os": "any", "arch": "any"}},
+            "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},
+            "upstream_sha256": {"const": null}
+          }}
+        }
+      ]
     }
   }
 }

@@ -26,6 +26,19 @@
       "upstream_sha256": null
     },
     {
+      "kind": "node",
+      "filename": "miniclaw-node-24.18.0-linux-x86_64.tar.gz",
+      "url": "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/miniclaw-node-24.18.0-linux-x86_64.tar.gz",
+      "sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "size": 555555,
+      "media_type": "application/gzip",
+      "platform": {"os": "linux", "arch": "x86_64"},
+      "component_version": "24.18.0",
+      "source_repository": "https://github.com/nodejs/node",
+      "license_ref": "MIT",
+      "upstream_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+    },
+    {
       "kind": "tui",
       "filename": "miniclaw-tui-0.7.0-linux-x86_64.tar.gz",
       "url": "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/miniclaw-tui-0.7.0-linux-x86_64.tar.gz",
@@ -36,7 +49,7 @@
       "component_version": "0.7.0",
       "source_repository": "https://github.com/NEDONION/miniclaw",
       "license_ref": "MIT",
-      "upstream_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "upstream_sha256": null
     }
   ],
   "supported_platforms": [

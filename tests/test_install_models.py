@@ -2,6 +2,7 @@
 
 import dataclasses
 import json
+import re
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,8 @@ from miniclaw.install.models import (
     InstallEvent,
     InstallPlan,
     InstallRequest,
+    NodePolicy,
+    NodeRange,
     PlatformKey,
     ReleaseManifest,
 )
@@ -61,6 +64,27 @@ class InstallModelsTest(unittest.TestCase):
         }
         values.update(changes)
         return InstallRequest(**values)  # type: ignore[arg-type]
+
+    def plan(self, request: InstallRequest | None = None, **changes: object) -> InstallPlan:
+        """构造一个只引用 fixture artifact 的有效安装计划。"""
+        selected_request = self.request() if request is None else request
+        manifest = ReleaseManifest.from_bytes(self.fixture.read_bytes())
+        values: dict[str, object] = {
+            "request": selected_request,
+            "manifest": manifest,
+            "platform": PlatformKey("linux", "x86_64"),
+            "distro_id": "ubuntu",
+            "distro_version": "24.04",
+            "service_manager": "systemd-user",
+            "program_prefix": Path("/opt/miniclaw"),
+            "state_home": selected_request.state_home,
+            "artifact_filenames": ("miniclaw-tui-0.7.0-linux-x86_64.tar.gz",),
+            "system_argvs": (("apt-get", "install", "-y", "libsqlite3-0"),),
+            "install_service": True,
+            "run_onboarding": True,
+        }
+        values.update(changes)
+        return InstallPlan(**values)  # type: ignore[arg-type]
 
     def test_manifest_accepts_exact_v1_and_selects_one_platform_artifact(self) -> None:
         """有效 v1 fixture 应解析成不可变值并精确选择目标 TUI。"""
@@ -160,6 +184,61 @@ class InstallModelsTest(unittest.TestCase):
                 self.artifact_mutation(source_repository="https://github.com/OTHER/miniclaw")
             )
 
+    def test_url_mutation_corpus_is_rejected_by_python_and_json_schema(self) -> None:
+        """同一恶意 path corpus 必须同时被 parser 和 schema URL pattern 拒绝。"""
+        valid = self.document["artifacts"][0]["url"]
+        filename = self.document["artifacts"][0]["filename"]
+        invalid_urls = (
+            valid.replace("/v0.7.0/", "/../"),
+            valid.replace("/v0.7.0/", "/%2e%2e/"),
+            valid.replace(filename, "%2e%2e"),
+            valid.replace(filename, f"bad name-{filename}"),
+            valid.replace("https://github.com", "HTTPS://GITHUB.com"),
+        )
+        schema = json.loads(self.schema.read_text(encoding="utf-8"))
+        pattern = schema["$defs"]["artifact"]["properties"]["url"]["pattern"]
+
+        self.assertIsNotNone(re.fullmatch(pattern, valid))
+        for url in invalid_urls:
+            with self.subTest(url=url):
+                with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+                    ReleaseManifest.from_bytes(self.artifact_mutation(url=url))
+                self.assertIsNone(re.fullmatch(pattern, url))
+
+    def test_artifact_kind_matrix_and_url_filename_binding_are_closed(self) -> None:
+        """kind 必须绑定 Release host、source、platform、media、upstream 与 URL basename。"""
+        wheel = dict(self.document["artifacts"][0])
+        node = dict(self.document["artifacts"][1])
+        tui = dict(self.document["artifacts"][2])
+        mutations = (
+            {**wheel, "source_repository": "https://github.com/nodejs/node"},
+            {**wheel, "platform": {"os": "linux", "arch": "x86_64"}},
+            {**wheel, "media_type": "application/gzip"},
+            {**wheel, "upstream_sha256": "f" * 64},
+            {
+                **wheel,
+                "url": wheel["url"].replace(wheel["filename"], "different.whl"),
+            },
+            {
+                **node,
+                "filename": wheel["filename"],
+                "url": node["url"].replace(node["filename"], wheel["filename"]),
+            },
+            {**node, "source_repository": "https://github.com/NEDONION/miniclaw"},
+            {**node, "platform": {"os": "any", "arch": "any"}},
+            {**node, "media_type": "application/zip"},
+            {**node, "upstream_sha256": None},
+            {**tui, "source_repository": "https://github.com/earendil-works/pi-tui"},
+            {**tui, "upstream_sha256": "f" * 64},
+        )
+        for artifact in mutations:
+            with self.subTest(artifact=artifact), self.assertRaisesRegex(
+                InstallError, "manifest_invalid"
+            ):
+                ReleaseManifest.from_bytes(
+                    self.manifest_bytes({"artifacts": [artifact]})
+                )
+
     def test_manifest_rejects_unknown_features_and_unsupported_platforms(self) -> None:
         """feature 与 Release platform 必须来自封闭集合且覆盖完整 Tier 1。"""
         with self.assertRaisesRegex(InstallError, "manifest_invalid"):
@@ -239,18 +318,18 @@ class InstallModelsTest(unittest.TestCase):
                     self.manifest_bytes({"artifacts": [first, duplicate]})
                 )
 
-        universal_tui = dict(self.document["artifacts"][1])
+        universal_tui = dict(self.document["artifacts"][2])
         universal_tui["filename"] = "miniclaw-tui-0.7.0-any-any.tar.gz"
         universal_tui["platform"] = {"os": "any", "arch": "any"}
-        manifest = ReleaseManifest.from_bytes(
-            self.manifest_bytes(
-                {"artifacts": [*self.document["artifacts"], universal_tui]}
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            ReleaseManifest.from_bytes(
+                self.manifest_bytes(
+                    {"artifacts": [*self.document["artifacts"], universal_tui]}
+                )
             )
-        )
+        manifest = ReleaseManifest.from_bytes(self.fixture.read_bytes())
         with self.assertRaisesRegex(InstallError, "manifest_invalid"):
-            manifest.require_artifact("tui", PlatformKey("linux", "x86_64"))
-        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
-            manifest.require_artifact("node", PlatformKey("linux", "x86_64"))
+            manifest.require_artifact("installer", PlatformKey("linux", "x86_64"))
 
     def test_request_models_reject_invalid_types_paths_and_versions(self) -> None:
         """请求的 enum、semver、绝对路径和 bool 字段必须严格。"""
@@ -280,28 +359,14 @@ class InstallModelsTest(unittest.TestCase):
             secrets_file=Path("/private/SECRET_SENTINEL.env"),
             state_home=Path("/private/STATE_SENTINEL"),
         )
-        manifest = ReleaseManifest.from_bytes(self.fixture.read_bytes())
-        plan = InstallPlan(
-            request=request,
-            manifest=manifest,
-            platform=PlatformKey("linux", "x86_64"),
-            distro_id="ubuntu",
-            distro_version="24.04",
-            service_manager="systemd-user",
-            program_prefix=Path("/opt/miniclaw"),
-            state_home=request.state_home,
-            artifact_filenames=("miniclaw-tui-0.7.0-linux-x86_64.tar.gz",),
-            system_argvs=(("apt-get", "install", "-y", "libsqlite3-0"),),
-            install_service=True,
-            run_onboarding=True,
-        )
+        plan = self.plan(request)
 
         summary = plan.safe_summary()
         self.assertEqual(
             summary,
-            "version=0.7.0 platform=linux/x86_64 prefix=/opt/miniclaw "
-            "service=True onboarding=True",
+            "version=0.7.0 platform=linux/x86_64 service=True onboarding=True",
         )
+        self.assertNotIn("/opt/miniclaw", summary)
         self.assertNotIn("CONFIG_SENTINEL", summary)
         self.assertNotIn("SECRET_SENTINEL", summary)
         self.assertNotIn("STATE_SENTINEL", summary)
@@ -315,24 +380,57 @@ class InstallModelsTest(unittest.TestCase):
                 artifact_filenames=({"unhashable": True},),  # type: ignore[arg-type]
             )
 
+    def test_plan_rejects_request_escalation_and_control_character_argv(self) -> None:
+        """plan 不得反转显式 false，也不得携带任何 argv 控制字符。"""
+        plan = self.plan()
+
+        for request in (
+            dataclasses.replace(plan.request, service=False),
+            dataclasses.replace(plan.request, onboard=False),
+        ):
+            with self.subTest(request=request), self.assertRaisesRegex(
+                InstallError, "plan_invalid"
+            ):
+                dataclasses.replace(plan, request=request)
+        for argument in ("line\nbreak", "tab\targument", "carriage\rreturn"):
+            with self.subTest(argument=argument), self.assertRaisesRegex(
+                InstallError, "plan_invalid"
+            ):
+                dataclasses.replace(plan, system_argvs=(("command", argument),))
+
     def test_event_and_error_details_are_bounded_and_redacted(self) -> None:
         """稳定错误与事件 detail 不得保留凭据、URL、私有路径或无限文本。"""
-        unsafe = (
-            "token=TOP_SECRET https://user:pass@example.com/x /Users/alice/private "
-            + "x" * 900
+        unsafe_values = (
+            '{"manifest":"raw","git_commit":"' + "a" * 40 + '"}',
+            "a" * 40,
+            "top_secret",
+            "Authorization: Bearer TOP_SECRET",
+            "token=TOP_SECRET https://user:pass@example.com/x /Users/alice/private",
+            "x" * 900,
         )
-        error = InstallError("manifest_invalid", unsafe)
-        event = InstallEvent("install.failed", "error", error.code, unsafe)
-
-        for value in (error.detail, str(error), event.detail):
-            self.assertLessEqual(len(value), 500 + len("manifest_invalid: "))
-            self.assertNotIn("TOP_SECRET", value)
-            self.assertNotIn("user:pass", value)
-            self.assertNotIn("/Users/alice", value)
+        for unsafe in unsafe_values:
+            error = InstallError("manifest_invalid", unsafe)
+            event = InstallEvent("install.failed", "error", error.code, unsafe)
+            with self.subTest(unsafe=unsafe):
+                self.assertEqual(error.detail, "redacted")
+                self.assertEqual(event.detail, "redacted")
+                self.assertLessEqual(len(str(error)), 500)
+                self.assertNotIn("TOP_SECRET", str(error))
+                self.assertNotIn("a" * 40, str(error))
+        self.assertEqual(InstallError("manifest_invalid", "artifacts.url").detail, "artifacts.url")
         with self.assertRaisesRegex(InstallError, "event_invalid"):
             InstallEvent("install.failed", [], None, "detail")  # type: ignore[arg-type]
         fallback = InstallError([], "detail")  # type: ignore[arg-type]
         self.assertEqual(fallback.code, "installer_error")
+
+    def test_node_tuple_segments_reject_bool_in_direct_constructors(self) -> None:
+        """Node 三段版本每一段必须是 exact int，bool 不得利用 int 相等语义。"""
+        manifest = ReleaseManifest.from_bytes(self.fixture.read_bytes())
+
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            NodeRange((22, True, 3), (23, 0, 0))
+        with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+            NodePolicy((24, 18, False), manifest.node.accepted)
 
     def test_json_schema_mirrors_closed_world_python_contract(self) -> None:
         """schema 应可由 stdlib 读取并镜像主要 closed-world 常量。"""
