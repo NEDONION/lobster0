@@ -1307,8 +1307,18 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
             ).fetchall()
         self.assertEqual(len(stored), 1)
         self.assertEqual(len(events), 1)
-        self.assertNotIn("ok", stored[0]["rule_json"])
-        self.assertNotIn("status", events[0]["metadata_json"])
+        self.assertEqual(
+            json.loads(stored[0]["rule_json"]),
+            {
+                "args": ["status"],
+                "resolved_program": str(program.resolve()),
+                "type": "exact_argv",
+            },
+        )
+        self.assertEqual(
+            set(json.loads(events[0]["metadata_json"])),
+            {"approval_id", "policy_rule_id", "tool_name"},
+        )
 
     async def test_failed_command_never_creates_session_or_persistent_rule(self) -> None:
         """执行失败时 Session/Always 都不能产生可复用规则。"""
