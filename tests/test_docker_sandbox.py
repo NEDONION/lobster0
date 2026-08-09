@@ -1,9 +1,13 @@
 """Docker sandbox deterministic hardening contract。"""
 
+import stat
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
+from types import SimpleNamespace
 
+from miniclaw.sandbox import docker as docker_module
 from miniclaw.sandbox.base import ExecutionPlan, SandboxUnavailableError
 from miniclaw.sandbox.docker import DockerSandbox
 
@@ -103,11 +107,203 @@ class DockerSandboxTest(unittest.IsolatedAsyncioTestCase):
             await backend.execute(dangerous)
         self.assertFalse(marker.exists())
 
+    def test_linux_rootless_transport_is_engine_specific_and_core_derived(self) -> None:
+        """Docker/Podman 只能使用当前非 root UID 的固定 rootless socket。"""
+        executable_root = self.workspace / "bin"
+        executable_root.mkdir()
+        executables = {}
+        for name in ("docker", "podman"):
+            executable = executable_root / name
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o700)
+            executables[name] = executable
+
+        facts = {
+            Path("/run/user/1001"): _fact(stat.S_IFDIR | 0o700, 1001),
+            Path("/run/user/1001/docker.sock"): _fact(stat.S_IFSOCK | 0o600, 1001),
+            Path("/run/user/1001/podman"): _fact(stat.S_IFDIR | 0o700, 1001),
+            Path("/run/user/1001/podman/podman.sock"): _fact(
+                stat.S_IFSOCK | 0o600, 1001
+            ),
+        }
+
+        docker = docker_module.discover_rootless_client_transport(
+            "docker-rootless",
+            str(executable_root),
+            self.workspace / "owner",
+            platform_name="linux",
+            effective_uid=1001,
+            which=lambda name, *, path: str(executables[name]),
+            lstat=_fake_lstat(facts),
+        )
+        podman = docker_module.discover_rootless_client_transport(
+            "podman-rootless",
+            str(executable_root),
+            self.workspace / "owner",
+            platform_name="linux",
+            effective_uid=1001,
+            which=lambda name, *, path: str(executables[name]),
+            lstat=_fake_lstat(facts),
+        )
+
+        self.assertEqual(docker.executable, executables["docker"])
+        self.assertEqual(
+            dict(docker.environment),
+            {
+                "HOME": str(self.workspace / "owner"),
+                "XDG_RUNTIME_DIR": "/run/user/1001",
+                "DOCKER_HOST": "unix:///run/user/1001/docker.sock",
+            },
+        )
+        self.assertEqual(podman.executable, executables["podman"])
+        self.assertEqual(
+            dict(podman.environment),
+            {
+                "HOME": str(self.workspace / "owner"),
+                "XDG_RUNTIME_DIR": "/run/user/1001",
+                "CONTAINER_HOST": "unix:///run/user/1001/podman/podman.sock",
+            },
+        )
+
+    def test_rootless_transport_rejects_root_mismatch_and_unsafe_filesystem(self) -> None:
+        """UID 0、错误 executable 和不安全 runtime/socket 必须失败关闭。"""
+        executable_root = self.workspace / "bin"
+        executable_root.mkdir()
+        docker = executable_root / "docker"
+        podman = executable_root / "podman"
+        for executable in (docker, podman):
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o700)
+        runtime = Path("/run/user/1001")
+        socket = runtime / "docker.sock"
+        safe = {
+            runtime: _fact(stat.S_IFDIR | 0o700, 1001),
+            socket: _fact(stat.S_IFSOCK | 0o600, 1001),
+        }
+
+        invalid_cases = (
+            (0, "docker-rootless", safe, lambda name, *, path: str(docker)),
+            (
+                1001,
+                "docker-rootless",
+                safe,
+                lambda name, *, path: str(podman),
+            ),
+            (
+                1001,
+                "docker-rootless",
+                {**safe, runtime: _fact(stat.S_IFLNK | 0o777, 1001)},
+                lambda name, *, path: str(docker),
+            ),
+            (
+                1001,
+                "docker-rootless",
+                {**safe, runtime: _fact(stat.S_IFDIR | 0o700, 2002)},
+                lambda name, *, path: str(docker),
+            ),
+            (
+                1001,
+                "docker-rootless",
+                {**safe, socket: _fact(stat.S_IFREG | 0o600, 1001)},
+                lambda name, *, path: str(docker),
+            ),
+            (
+                1001,
+                "docker-rootless",
+                {**safe, socket: _fact(stat.S_IFLNK | 0o777, 1001)},
+                lambda name, *, path: str(docker),
+            ),
+            (
+                1001,
+                "docker-rootless",
+                {**safe, socket: _fact(stat.S_IFSOCK | 0o600, 2002)},
+                lambda name, *, path: str(docker),
+            ),
+        )
+        for uid, engine, facts, which in invalid_cases:
+            with self.subTest(uid=uid, engine=engine, facts=facts), self.assertRaises(
+                SandboxUnavailableError
+            ):
+                docker_module.discover_rootless_client_transport(
+                    engine,
+                    str(executable_root),
+                    self.workspace / "owner",
+                    platform_name="linux",
+                    effective_uid=uid,
+                    which=which,
+                    lstat=_fake_lstat(facts),
+                )
+
+        var_run_only = {
+            runtime: _fact(stat.S_IFDIR | 0o700, 1001),
+            Path("/var/run/docker.sock"): _fact(stat.S_IFSOCK | 0o600, 1001),
+        }
+        with self.assertRaises(SandboxUnavailableError):
+            docker_module.discover_rootless_client_transport(
+                "docker-rootless",
+                str(executable_root),
+                self.workspace / "owner",
+                platform_name="linux",
+                effective_uid=1001,
+                which=lambda name, *, path: str(docker),
+                lstat=_fake_lstat(var_run_only),
+            )
+
+    def test_podman_rejects_unsafe_engine_runtime_directory(self) -> None:
+        """Podman socket 的中间 runtime 目录也必须真实且由有效 UID 拥有。"""
+        executable_root = self.workspace / "bin"
+        executable_root.mkdir()
+        podman = executable_root / "podman"
+        podman.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        podman.chmod(0o700)
+        runtime = Path("/run/user/1001")
+        podman_runtime = runtime / "podman"
+        socket = podman_runtime / "podman.sock"
+        for unsafe in (
+            _fact(stat.S_IFLNK | 0o777, 1001),
+            _fact(stat.S_IFDIR | 0o700, 2002),
+        ):
+            facts = {
+                runtime: _fact(stat.S_IFDIR | 0o700, 1001),
+                podman_runtime: unsafe,
+                socket: _fact(stat.S_IFSOCK | 0o600, 1001),
+            }
+            with self.subTest(unsafe=unsafe), self.assertRaises(
+                SandboxUnavailableError
+            ):
+                docker_module.discover_rootless_client_transport(
+                    "podman-rootless",
+                    str(executable_root),
+                    self.workspace / "owner",
+                    platform_name="linux",
+                    effective_uid=1001,
+                    which=lambda name, *, path: str(podman),
+                    lstat=_fake_lstat(facts),
+                )
+
 
 def _contains_subsequence(values: tuple[str, ...], expected: tuple[str, ...]) -> bool:
     """判断 expected 是否按连续顺序存在于 values。"""
     length = len(expected)
     return any(values[index : index + length] == expected for index in range(len(values)))
+
+
+def _fact(mode: int, uid: int) -> SimpleNamespace:
+    """创建只包含 rootless 校验所需字段的文件事实。"""
+    return SimpleNamespace(st_mode=mode, st_uid=uid)
+
+
+def _fake_lstat(
+    facts: dict[Path, SimpleNamespace],
+) -> Callable[[Path], SimpleNamespace]:
+    """返回只允许读取显式路径事实的 lstat fake。"""
+    def lstat(path: Path) -> SimpleNamespace:
+        try:
+            return facts[path]
+        except KeyError:
+            raise FileNotFoundError(path) from None
+
+    return lstat
 
 
 if __name__ == "__main__":

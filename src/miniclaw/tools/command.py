@@ -1,7 +1,6 @@
 """不经过 Shell、通过 immutable ExecutionPlan 执行的命令 Tool。"""
 
 import os
-import shutil
 from pathlib import Path
 from typing import cast
 
@@ -17,7 +16,7 @@ from miniclaw.sandbox.base import (
     SandboxBackendName,
     SandboxPlanError,
 )
-from miniclaw.sandbox.docker import DockerSandbox
+from miniclaw.sandbox.docker import DockerSandbox, discover_rootless_client_transport
 from miniclaw.sandbox.host import HostSandbox
 from miniclaw.sandbox.seatbelt import SeatbeltSandbox
 from miniclaw.tools.base import (
@@ -73,6 +72,7 @@ class RunCommandTool:
         executable_path: str = SAFE_EXECUTABLE_PATH,
         owner_home: Path | None = None,
         automation_backend: str = "host",
+        container_engine: str = "docker-rootless",
         sandbox_image: str = "miniclaw-sandbox:phase6",
         sandbox_memory_mib: int = 512,
         sandbox_cpu_seconds: int = 60,
@@ -93,6 +93,8 @@ class RunCommandTool:
             raise ValueError("owner_home must be absolute")
         if automation_backend not in {"host", "docker", "seatbelt"}:
             raise ValueError("automation_backend is invalid")
+        if container_engine not in {"docker-rootless", "podman-rootless"}:
+            raise ValueError("container_engine is invalid")
         for value, name, maximum in (
             (sandbox_memory_mib, "sandbox_memory_mib", 32_768),
             (sandbox_cpu_seconds, "sandbox_cpu_seconds", 3600),
@@ -105,6 +107,7 @@ class RunCommandTool:
         self._executable_path = executable_path
         self._owner_home = owner_home
         self._automation_backend = cast(SandboxBackendName, automation_backend)
+        self._container_engine = container_engine
         self._sandbox_image = sandbox_image
         self._sandbox_memory_mib = sandbox_memory_mib
         self._sandbox_cpu_seconds = sandbox_cpu_seconds
@@ -210,10 +213,16 @@ class RunCommandTool:
         if plan.backend == "host":
             backend = HostSandbox(environment.get)
         elif plan.backend == "docker":
-            docker_executable = shutil.which("docker") or "/usr/bin/docker"
+            transport = discover_rootless_client_transport(
+                self._container_engine,
+                self._executable_path,
+                self._owner_home,
+            )
             backend = DockerSandbox(
                 image=self._sandbox_image,
-                docker_executable=str(Path(docker_executable).resolve()),
+                container_engine=self._container_engine,
+                docker_executable=str(transport.executable),
+                client_transport=transport,
                 environment_resolver=environment.get,
             )
         else:

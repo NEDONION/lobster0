@@ -368,6 +368,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             executable_path=executable_environment.path_value,
             owner_home=permission_roots.owner_home,
             automation_backend=config.sandbox.backend,
+            container_engine=config.sandbox.container_engine,
             sandbox_image=config.sandbox.image,
             sandbox_memory_mib=config.sandbox.memory_mib,
             sandbox_cpu_seconds=config.sandbox.cpu_seconds,

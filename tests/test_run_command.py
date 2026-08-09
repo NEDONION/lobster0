@@ -1,11 +1,13 @@
 """RunCommandTool 的进程、环境、输出和超时边界测试。"""
 
 import os
+import stat
 import sys
 import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from miniclaw.tools.base import ToolContext, ToolValidationError
@@ -219,6 +221,96 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(plan.write_roots, ())
         self.assertEqual((plan.memory_mib, plan.cpu_seconds, plan.pids_limit), (1024, 120, 256))
         self.assertNotIn("HOME", plan.environment_names)
+
+    async def test_rootless_client_environment_is_host_only_and_not_persisted(self) -> None:
+        """rootless client transport 只给引擎进程，不进入 container env/Plan/Receipt。"""
+        executable_root = self.workspace / "bin"
+        executable_root.mkdir()
+        capture = self.workspace / "client-capture.txt"
+        docker = executable_root / "docker"
+        docker.write_text(
+            "#!/bin/sh\n"
+            f'printf "%s\\n%s\\n%s\\n" "$HOME" "$XDG_RUNTIME_DIR" "$DOCKER_HOST" > "{capture}"\n'
+            f'printf "%s\\n" "$@" >> "{capture}"\n'
+            "printf 'client=%s runtime=%s host=%s\\n' "
+            '"$HOME" "$XDG_RUNTIME_DIR" "$DOCKER_HOST"\n',
+            encoding="utf-8",
+        )
+        docker.chmod(0o700)
+        workload = executable_root / "workload"
+        workload.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        workload.chmod(0o700)
+        owner_home = self.workspace / "owner"
+        runtime = Path("/run/user/1001")
+        rootless_socket = runtime / "docker.sock"
+
+        context = ToolContext(
+            user_id=1,
+            session_id=1,
+            turn_id=1,
+            state_home=self.context.state_home,
+            workspace=self.workspace,
+            read_only_roots=(),
+            source="automation",
+            task_run_id=1,
+        )
+        tool = RunCommandTool(
+            executable_path=str(executable_root),
+            owner_home=owner_home,
+            automation_backend="docker",
+            container_engine="docker-rootless",
+            sandbox_image="example/miniclaw@sha256:" + "a" * 64,
+        )
+        plan = tool.build_execution_plan(
+            context,
+            tool.validate({"program": "workload", "args": ["version"]}),
+        )
+        facts = {
+            runtime: SimpleNamespace(st_mode=stat.S_IFDIR | 0o700, st_uid=1001),
+            rootless_socket: SimpleNamespace(
+                st_mode=stat.S_IFSOCK | 0o600, st_uid=1001
+            ),
+        }
+
+        def fake_lstat(path: Path) -> SimpleNamespace:
+            try:
+                return facts[path]
+            except KeyError:
+                raise FileNotFoundError(path) from None
+
+        with (
+            mock.patch("miniclaw.sandbox.docker.sys.platform", "linux"),
+            mock.patch("miniclaw.sandbox.docker.os.geteuid", return_value=1001),
+            mock.patch("miniclaw.sandbox.docker.os.lstat", side_effect=fake_lstat),
+        ):
+            result, receipt = await tool.execute_plan(context, plan)
+
+        self.assertTrue(result.ok)
+        captured = capture.read_text(encoding="utf-8").splitlines()
+        self.assertEqual(
+            captured[:3],
+            [
+                str(owner_home),
+                "/run/user/1001",
+                "unix:///run/user/1001/docker.sock",
+            ],
+        )
+        env_names = [
+            captured[index + 1]
+            for index, value in enumerate(captured)
+            if value == "--env"
+        ]
+        self.assertNotIn("HOME", env_names)
+        self.assertNotIn("XDG_RUNTIME_DIR", env_names)
+        self.assertNotIn("DOCKER_HOST", env_names)
+        self.assertNotIn("CONTAINER_HOST", env_names)
+        for persisted in (plan.canonical_json, receipt.canonical_json):
+            self.assertNotIn(str(owner_home), persisted)
+            self.assertNotIn("/run/user/1001", persisted)
+            self.assertNotIn("DOCKER_HOST", persisted)
+            self.assertNotIn("CONTAINER_HOST", persisted)
+        self.assertNotIn(str(owner_home), repr(result.data))
+        self.assertNotIn("/run/user/1001", repr(result.data))
 
 
 if __name__ == "__main__":

@@ -3,14 +3,14 @@
 
 import argparse
 import asyncio
-import shutil
 import sys
 import tempfile
 from pathlib import Path
 from typing import cast
 
+from miniclaw.policy.command import SAFE_EXECUTABLE_PATH
 from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxBackendName
-from miniclaw.sandbox.docker import DockerSandbox
+from miniclaw.sandbox.docker import DockerSandbox, discover_rootless_client_transport
 from miniclaw.sandbox.seatbelt import SeatbeltSandbox
 
 
@@ -18,6 +18,9 @@ def _arguments() -> argparse.Namespace:
     """解析必须显式确认的 live 参数。"""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--backend", choices=("docker", "seatbelt"), required=True)
+    parser.add_argument(
+        "--engine", choices=("docker-rootless", "podman-rootless")
+    )
     parser.add_argument("--confirm-live", action="store_true")
     parser.add_argument("--image", help="Docker image pinned as name@sha256:digest")
     parser.add_argument("--executable", help="Exact backend executable path")
@@ -28,6 +31,9 @@ async def _run(args: argparse.Namespace) -> int:
     """执行 workspace write、外部 Secret deny 与 network deny 探针。"""
     if not args.confirm_live:
         print("refusing live sandbox execution without --confirm-live", file=sys.stderr)
+        return 2
+    if args.backend == "docker" and args.engine is None:
+        print("--engine is required for Docker", file=sys.stderr)
         return 2
     with tempfile.TemporaryDirectory(prefix="miniclaw-sandbox-smoke-") as directory:
         root = Path(directory).resolve()
@@ -42,16 +48,12 @@ async def _run(args: argparse.Namespace) -> int:
             if not args.image:
                 print("--image with sha256 digest is required for Docker", file=sys.stderr)
                 return 2
-            executable = args.executable or shutil.which("docker")
-            if executable is None:
-                print("Docker executable is unavailable", file=sys.stderr)
+            try:
+                backend, backend_name = _rootless_backend(args)
+            except (OSError, RuntimeError, ValueError):
+                print("rootless container engine is unavailable", file=sys.stderr)
                 return 3
-            backend = DockerSandbox(
-                image=args.image,
-                docker_executable=str(Path(executable).resolve()),
-            )
             argv = ("python", "/workspace/probe.py", str(secret), "/workspace/result.txt")
-            backend_name = "docker"
         else:
             executable = args.executable or "/usr/bin/sandbox-exec"
             backend = SeatbeltSandbox(executable=executable)
@@ -78,11 +80,53 @@ async def _run(args: argparse.Namespace) -> int:
             and "network-denied" in receipt.stdout
             and "MINICLAW_SMOKE_SECRET" not in receipt.canonical_json
         )
-        print(
-            f"backend={backend_name} exit={receipt.exit_code} "
-            f"timeout={receipt.timed_out} containment={'PASS' if safe else 'FAIL'}"
-        )
+        print(_stable_status(backend_name, safe))
         return 0 if safe else 1
+
+
+def _rootless_backend(args: argparse.Namespace) -> tuple[DockerSandbox, str]:
+    """用生产发现器创建显式 rootless Docker/Podman backend。
+
+    Args:
+        args: 已解析且包含 engine、image 与可选 exact executable 的参数。
+
+    Returns:
+        已绑定验证 transport 的 backend 与稳定 engine 名称。
+
+    Raises:
+        SandboxUnavailableError: rootless executable、runtime 或 socket 不安全。
+        ValueError: engine、image 或 executable 参数无效。
+    """
+    engine = args.engine
+    if engine not in {"docker-rootless", "podman-rootless"}:
+        raise ValueError("rootless engine is required")
+    explicit = Path(args.executable).resolve() if args.executable else None
+    executable_path = str(explicit.parent) if explicit is not None else SAFE_EXECUTABLE_PATH
+    which = (
+        (lambda name, *, path: str(explicit))
+        if explicit is not None
+        else None
+    )
+    transport = discover_rootless_client_transport(
+        engine,
+        executable_path,
+        Path.home().resolve(),
+        which=which,
+    )
+    return (
+        DockerSandbox(
+            image=args.image,
+            container_engine=engine,
+            docker_executable=str(transport.executable),
+            client_transport=transport,
+        ),
+        engine,
+    )
+
+
+def _stable_status(engine: str, contained: bool) -> str:
+    """返回不含本机路径、UID 或进程细节的稳定 live 结果。"""
+    return f"engine={engine} containment={'PASS' if contained else 'FAIL'}"
 
 
 def _probe_source() -> str:

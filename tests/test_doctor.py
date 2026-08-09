@@ -20,6 +20,8 @@ from miniclaw.memory.store import MemoryStore
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.engine import PolicyAction, PolicyDecision
 from miniclaw.providers.base import ToolCall
+from miniclaw.sandbox.base import SandboxUnavailableError
+from miniclaw.sandbox.docker import RootlessClientTransport
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.tooling import ApprovalRepository
@@ -119,6 +121,53 @@ class DoctorTest(unittest.TestCase):
         sandbox = next(result for result in results if result.name == "sandbox_checkpoint")
         self.assertIs(sandbox.status, CheckStatus.FAIL)
         self.assertIn("required docker", sandbox.message)
+
+    def test_rootless_doctor_is_engine_specific_offline_and_redacted(self) -> None:
+        """Doctor 复用 rootless 边界且不打印 UID、Home 或 socket path。"""
+        initialize_state(self.paths)
+        config_text = self.paths.config.read_text(encoding="utf-8")
+        pinned_image = "example/miniclaw@sha256:" + "a" * 64
+        self.paths.config.write_text(
+            config_text.replace("[automation]\nenabled = false", "[automation]\nenabled = true")
+            .replace('image = "miniclaw-sandbox:phase6"', f'image = "{pinned_image}"')
+            .replace('container_engine = "docker-rootless"',
+                     'container_engine = "podman-rootless"'),
+            encoding="utf-8",
+        )
+        private_home = self.root / "private-owner-home"
+        private_socket = Path("/run/user/1001/podman/podman.sock")
+        transport = RootlessClientTransport(
+            engine="podman-rootless",
+            executable=Path("/usr/bin/podman"),
+            environment=(
+                ("HOME", str(private_home)),
+                ("XDG_RUNTIME_DIR", "/run/user/1001"),
+                ("CONTAINER_HOST", f"unix://{private_socket}"),
+            ),
+        )
+
+        with mock.patch(
+            "miniclaw.doctor.discover_rootless_client_transport",
+            return_value=transport,
+        ):
+            results = run_local_checks(self.paths, self.tui_environ)
+
+        sandbox = next(result for result in results if result.name == "sandbox_checkpoint")
+        self.assertIs(sandbox.status, CheckStatus.PASS)
+        self.assertIn("podman-rootless", sandbox.message)
+        self.assertIn("rootless client ready", sandbox.message)
+        self.assertNotIn("1001", sandbox.message)
+        self.assertNotIn(str(private_home), sandbox.message)
+        self.assertNotIn(str(private_socket), sandbox.message)
+
+        with mock.patch(
+            "miniclaw.doctor.discover_rootless_client_transport",
+            side_effect=SandboxUnavailableError(),
+        ):
+            failed = run_local_checks(self.paths, self.tui_environ)
+        unavailable = next(result for result in failed if result.name == "sandbox_checkpoint")
+        self.assertIs(unavailable.status, CheckStatus.FAIL)
+        self.assertIn("required podman-rootless", unavailable.message)
 
     def test_old_node_reports_actionable_pi_tui_failure(self) -> None:
         """默认 pi-tui 遇到旧 Node 时必须给出最低版本，而不是启动后崩溃。"""
