@@ -5,14 +5,20 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import stat
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
 import warnings
 import zipfile
 from dataclasses import replace
 from pathlib import Path
+from unittest import mock
 
+from miniclaw.install import runtime as runtime_module
 from miniclaw.install.layout import InstallLayout
 from miniclaw.install.models import (
     Artifact,
@@ -41,6 +47,10 @@ class FakeRunner:
         self.calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.fail_token: str | None = None
         self.version = b"miniclaw 0.7.0\n"
+        self.node_version = b"v24.18.0\n"
+        self.python_version = (3, 12, 11)
+        self.python_base_prefix: Path | None = None
+        self.python_executable: Path | None = None
         self.install_smoke = b'{"status":"ok","version":"0.7.0"}\n'
         self.tui_smoke = b'{"component":"pi-tui","status":"ok","version":"0.7.0"}\n'
 
@@ -59,8 +69,37 @@ class FakeRunner:
         if len(argv) >= 2 and argv[1] == "venv":
             python = Path(argv[-1]) / "bin" / "python"
             python.parent.mkdir(parents=True)
-            python.write_bytes(b"#!/bin/sh\nexit 0\n")
-            python.chmod(0o700)
+            internal = Path(argv[argv.index("--python") + 1])
+            python.symlink_to(internal)
+            (python.parent / "python3").symlink_to("python")
+            (python.parent / "python3.12").symlink_to("python")
+            (python.parents[1] / "pyvenv.cfg").write_text(
+                f"home = {internal.parent}\nversion_info = 3.12.11\nrelocatable = true\n",
+                encoding="utf-8",
+            )
+            (python.parents[1] / "pyvenv.cfg").chmod(0o600)
+        if argv[-1:] == ("--version",) and "/node/" in argv[0]:
+            return CommandResult(0, self.node_version, b"")
+        if len(argv) >= 3 and argv[-2] == "-c":
+            runtime = Path(argv[0]).parents[2]
+            return CommandResult(
+                0,
+                (
+                    json.dumps(
+                        {
+                            "base_prefix": str(self.python_base_prefix or runtime / "python"),
+                            "executable": str(
+                                self.python_executable
+                                or runtime / "python" / "bin" / "python3.12"
+                            ),
+                            "version": list(self.python_version),
+                        },
+                        separators=(",", ":"),
+                    )
+                    + "\n"
+                ).encode(),
+                b"",
+            )
         if argv[-2:] == ("miniclaw", "--version"):
             return CommandResult(0, self.version, b"")
         if argv[-3:] == ("miniclaw", "install-smoke", "--json"):
@@ -108,6 +147,15 @@ class InstallRuntimeTests(unittest.TestCase):
         self._write_private(self.tui / "dist" / "main.js", b"// verified tui\n")
         self.uv = self.sources / "uv"
         self._write_private(self.uv, b"#!/bin/sh\nexit 0\n", 0o700)
+        self.managed_python = self.sources / "managed-python"
+        self.managed_python.mkdir(mode=0o700)
+        (self.managed_python / "bin").mkdir(mode=0o700)
+        managed_executable = Path(sys.base_prefix) / "bin" / "python3.12"
+        shutil.copyfile(managed_executable, self.managed_python / "bin" / "python3.12")
+        (self.managed_python / "bin" / "python3.12").chmod(0o700)
+        (self.managed_python / "bin" / "python3").symlink_to("python3.12")
+        (self.managed_python / "lib").mkdir(mode=0o700)
+        self.managed_python_executable = self.managed_python / "bin" / "python3.12"
         self.platform = PlatformKey("linux", "x86_64")
         self.manifest = self._manifest()
         self.inputs = RuntimeInputs(
@@ -120,6 +168,8 @@ class InstallRuntimeTests(unittest.TestCase):
             tui=self.tui,
             installer=self.installer,
             uv=self.uv,
+            managed_python_root=self.managed_python,
+            managed_python_executable=self.managed_python_executable,
         )
         self.runner = FakeRunner()
 
@@ -248,39 +298,51 @@ class InstallRuntimeTests(unittest.TestCase):
         receipt = RuntimeBuilder(self.runner).build(self.inputs)
 
         python = self.layout.staging / "venv" / "bin" / "python"
+        internal_python = self.layout.staging / "python" / "bin" / "python3.12"
+        private_inputs = self.layout.staging / ".inputs"
         node = self.layout.staging / "node" / "bin" / "node"
         tui = self.layout.staging / "tui" / "dist" / "main.js"
         argvs = [call[0] for call in self.runner.calls]
         self.assertEqual(
-            argvs,
+            argvs[:3],
             [
-                (str(self.uv), "venv", "--python", "3.12", str(self.layout.staging / "venv")),
                 (
-                    str(self.uv),
+                    str(private_inputs / "uv"),
+                    "venv",
+                    "--relocatable",
+                    "--python",
+                    str(internal_python),
+                    "--no-python-downloads",
+                    str(self.layout.staging / "venv"),
+                ),
+                (
+                    str(private_inputs / "uv"),
                     "pip",
                     "install",
                     "--python",
                     str(python),
                     "--require-hashes",
                     "-r",
-                    str(self.requirements),
+                    str(private_inputs / "requirements-all.lock"),
                 ),
                 (
-                    str(self.uv),
+                    str(private_inputs / "uv"),
                     "pip",
                     "install",
                     "--python",
                     str(python),
                     "--no-deps",
-                    str(self.wheel),
+                    str(private_inputs / self.wheel.name),
                 ),
-                (str(python), "-I", "-m", "miniclaw", "--version"),
-                (str(python), "-I", "-m", "miniclaw", "install-smoke", "--json"),
-                (str(node), str(tui), "--smoke"),
             ],
         )
+        self.assertIn((str(node), "--version"), argvs)
+        self.assertIn((str(node), str(tui), "--smoke"), argvs)
+        self.assertIn(
+            (str(self.layout.runtime / "node" / "bin" / "node"), "--version"),
+            argvs,
+        )
         expected_env = {
-            "HOME": str(self.layout.staging / ".home"),
             "LANG": "C",
             "LC_ALL": "C",
             "PATH": "/usr/bin:/bin",
@@ -288,20 +350,32 @@ class InstallRuntimeTests(unittest.TestCase):
             "PIP_DISABLE_PIP_VERSION_CHECK": "1",
             "PYTHONNOUSERSITE": "1",
             "PYTHONSAFEPATH": "1",
-            "TMPDIR": str(self.layout.staging / ".tmp"),
-            "UV_CACHE_DIR": str(self.layout.staging / ".uv-cache"),
             "UV_NO_CONFIG": "1",
             "UV_NO_ENV_FILE": "1",
             "UV_PYTHON_DOWNLOADS": "never",
         }
-        self.assertTrue(all(env == expected_env for _, env in self.runner.calls))
+        for argv, env in self.runner.calls:
+            environment_root = (
+                self.layout.runtime
+                if argv[0].startswith(str(self.layout.runtime))
+                else self.layout.staging
+            )
+            self.assertEqual(
+                env,
+                expected_env
+                | {
+                    "HOME": str(environment_root / ".home"),
+                    "TMPDIR": str(environment_root / ".tmp"),
+                    "UV_CACHE_DIR": str(environment_root / ".uv-cache"),
+                },
+            )
         self.assertEqual(
             receipt,
             RuntimeReceipt(
                 version="0.7.0",
                 git_commit=self.manifest.git_commit,
                 runtime_relative="runtimes/0.7.0",
-                python_version="3.12",
+                python_version="3.12.11",
                 node_version="24.18.0",
                 tui_version="0.7.0",
                 wheel_sha256=self.manifest.require_artifact("wheel", self.platform).sha256,
@@ -334,6 +408,90 @@ class InstallRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(manifest["version"], "0.7.0")
         self.assertEqual(manifest["git_commit"], self.manifest.git_commit)
+        self.assertEqual(
+            os.readlink(self.layout.runtime / "venv" / "bin" / "python"),
+            "../../python/bin/python3.12",
+        )
+        self.assertEqual(
+            os.readlink(self.layout.runtime / "python" / "bin" / "python3"),
+            "python3.12",
+        )
+        self.assertIn(
+            f"home = {self.layout.runtime / 'python' / 'bin'}",
+            (self.layout.runtime / "venv" / "pyvenv.cfg").read_text(encoding="utf-8"),
+        )
+
+    def test_real_uv_relocatable_venv_still_needs_final_internal_repair(self) -> None:
+        """真实 uv relocatable venv 仍会把 interpreter/base_prefix 指向构建时 Python。"""
+        uv = shutil.which("uv")
+        self.assertIsNotNone(uv)
+        assert uv is not None
+        root = self.root / "real-uv"
+        cache = self.root / "real-uv-cache"
+        completed = subprocess.run(
+            [
+                uv,
+                "venv",
+                "--relocatable",
+                "--python",
+                str(Path(sys.base_prefix) / "bin" / "python3.12"),
+                "--no-python-downloads",
+                str(root / "venv"),
+            ],
+            env={
+                "HOME": str(self.root / "real-uv-home"),
+                "PATH": "/usr/bin:/bin",
+                "UV_CACHE_DIR": str(cache),
+                "UV_NO_CONFIG": "1",
+                "UV_NO_ENV_FILE": "1",
+            },
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr.decode(errors="replace"))
+        self.assertEqual(
+            Path(os.readlink(root / "venv" / "bin" / "python")),
+            Path(sys.base_prefix) / "bin" / "python3.12",
+        )
+        self.assertIn(
+            f"home = {Path(sys.base_prefix) / 'bin'}",
+            (root / "venv" / "pyvenv.cfg").read_text(encoding="utf-8"),
+        )
+
+    def test_subprocess_deadline_kills_descendant_that_keeps_pipe_open(self) -> None:
+        """leader 退出后，持有 pipe 的 descendant 仍须受同一 deadline 约束。"""
+        script = (
+            "import os,time;"
+            "pid=os.fork();"
+            "time.sleep(2) if pid == 0 else None;"
+            "os._exit(0)"
+        )
+        started = time.monotonic()
+
+        result = runtime_module._SubprocessRunner().run(
+            (sys.executable, "-c", script),
+            env={"PATH": "/usr/bin:/bin"},
+            timeout=0.2,
+        )
+
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_subprocess_deadline_bounds_continuous_output(self) -> None:
+        """持续 ready 的 stdout 也不能绕过 deadline 或 64 KiB capture 上限。"""
+        script = "import os;exec(\"while True: os.write(1, b'x' * 8192)\")"
+        started = time.monotonic()
+
+        result = runtime_module._SubprocessRunner().run(
+            (sys.executable, "-c", script),
+            env={"PATH": "/usr/bin:/bin"},
+            timeout=0.2,
+        )
+
+        self.assertLess(time.monotonic() - started, 1.0)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(result.stdout), 64 * 1024)
 
     def test_default_runner_builds_with_offline_fake_uv(self) -> None:
         """production subprocess runner 必须能在 closed-world env 中完成离线 fake build。"""
@@ -346,16 +504,27 @@ class InstallRuntimeTests(unittest.TestCase):
             self.node / "bin" / "node",
             (
                 b"#!/bin/sh\n"
-                b"printf '%s\\n' "
+                b"if [ \"$1\" = \"--version\" ]; then\n"
+                b"  printf '%s\\n' 'v24.18.0'\n"
+                b"else\n"
+                b"  printf '%s\\n' "
                 b"'{\"component\":\"pi-tui\",\"status\":\"ok\","
                 b"\"version\":\"0.7.0\"}'\n"
+                b"fi\n"
             ),
             0o700,
         )
 
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            receipt = RuntimeBuilder().build(self.inputs)
+            managed_root = Path(sys.base_prefix).resolve(strict=True)
+            receipt = RuntimeBuilder().build(
+                replace(
+                    self.inputs,
+                    managed_python_root=managed_root,
+                    managed_python_executable=managed_root / "bin" / "python3.12",
+                )
+            )
 
         self.assertEqual(receipt.version, "0.7.0")
         self.assertTrue(self.layout.runtime.is_dir())
@@ -381,6 +550,49 @@ class InstallRuntimeTests(unittest.TestCase):
                 self.assertFalse(self.layout.staging.exists())
         self._write_wheel()
 
+    def test_wheel_rejects_high_ratio_zip_bomb_before_staging(self) -> None:
+        """wheel 任意 member 的异常压缩比必须在执行 uv 前拒绝。"""
+        with zipfile.ZipFile(self.wheel, "a", compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("miniclaw/padding.bin", b"x" * (2 * 1024 * 1024))
+        self.wheel.chmod(0o600)
+        inputs = replace(self.inputs, manifest=self._manifest())
+
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(self.runner).build(inputs)
+
+        self.assertEqual(self.runner.calls, [])
+        self.assertFalse(self.layout.staging.exists())
+
+    def test_wheel_rejects_duplicate_tree_conflict_special_and_encrypted(self) -> None:
+        """wheel 还须拒绝 casefold duplicate、tree conflict、special 与 encryption。"""
+        for case in ("duplicate", "tree-conflict", "special"):
+            with self.subTest(case=case):
+                self._write_wheel()
+                with zipfile.ZipFile(self.wheel, "a") as archive:
+                    if case == "duplicate":
+                        archive.writestr("miniclaw/Agent.py", b"one")
+                        archive.writestr("miniclaw/agent.py", b"two")
+                    elif case == "tree-conflict":
+                        archive.writestr("miniclaw/conflict", b"file")
+                        archive.writestr("miniclaw/conflict/child.py", b"child")
+                    else:
+                        link = zipfile.ZipInfo("miniclaw/link")
+                        link.create_system = 3
+                        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+                        archive.writestr(link, b"target")
+                self.wheel.chmod(0o600)
+                with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                    RuntimeBuilder(self.runner).build(
+                        replace(self.inputs, manifest=self._manifest())
+                    )
+                self.assertFalse(self.layout.staging.exists())
+
+        encrypted = zipfile.ZipInfo("miniclaw/encrypted.bin")
+        encrypted.flag_bits = 0x1
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            runtime_module._validate_wheel_infos([encrypted])
+        self.assertEqual(self.runner.calls, [])
+
     def test_failed_or_wrong_smoke_never_switches_current_and_redacts_output(self) -> None:
         """Channel/TUI/version smoke 任一失败都保留旧 current 且不泄漏 stderr。"""
         old = self.layout.runtimes_dir / "0.6.0"
@@ -395,6 +607,9 @@ class InstallRuntimeTests(unittest.TestCase):
                 b"miniclaw 0.7.0\n",
                 b'{"component":"pi-tui","status":"ok","version":"9.9.9"}\n',
             ),
+            (None, "wrong_node", b"", b""),
+            (None, "external_python", b"", b""),
+            (None, "wrong_python_minor", b"", b""),
         )
         for fail_token, name, version, tui in cases:
             with self.subTest(case=name):
@@ -404,6 +619,12 @@ class InstallRuntimeTests(unittest.TestCase):
                     runner.version = version
                 if tui:
                     runner.tui_smoke = tui
+                if name == "wrong_node":
+                    runner.node_version = b"v24.17.0\n"
+                if name == "external_python":
+                    runner.python_base_prefix = self.root / "external-python"
+                if name == "wrong_python_minor":
+                    runner.python_version = (3, 13, 0)
                 with self.assertRaisesRegex(InstallError, "runtime_install_failed") as caught:
                     RuntimeBuilder(runner).install_and_activate(self.inputs)
                 self.assertNotIn("secret-sentinel", str(caught.exception))
@@ -451,6 +672,28 @@ class InstallRuntimeTests(unittest.TestCase):
             RuntimeBuilder(self.runner).build(self.inputs)
         self.assertEqual(marker.read_text(encoding="utf-8"), "keep")
 
+    def test_artifact_copy_rejects_ancestor_replaced_by_symlink(self) -> None:
+        """verify 与 descriptor copy 间 ancestor 变 symlink 时必须 fail closed。"""
+        real_copy = runtime_module._copy_verified_file
+        moved_sources = self.root / "sources-moved"
+        raced = False
+
+        def swap_ancestor(token: object, destination: Path, mode: int) -> None:
+            """在首个 artifact copy 前保持 leaf inode、仅替换 ancestor。"""
+            nonlocal raced
+            if not raced and getattr(token, "path", None) == self.installer:
+                raced = True
+                self.sources.rename(moved_sources)
+                self.sources.symlink_to(moved_sources.name, target_is_directory=True)
+            real_copy(token, destination, mode)  # type: ignore[arg-type]
+
+        with mock.patch.object(runtime_module, "_copy_verified_file", swap_ancestor):
+            with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                RuntimeBuilder(self.runner).build(self.inputs)
+
+        self.assertEqual(self.runner.calls, [])
+        self.assertFalse(self.layout.runtime.exists())
+
     def test_copy_rejects_nested_link_and_cleanup_keeps_old_current(self) -> None:
         """safe-extracted Node/TUI tree 内的 link/special 不得被复制。"""
         old = self.layout.runtimes_dir / "0.6.0"
@@ -463,6 +706,33 @@ class InstallRuntimeTests(unittest.TestCase):
         self.assertEqual(os.readlink(self.layout.current), "runtimes/0.6.0")
         self.assertFalse(self.layout.staging.exists())
         link.unlink()
+
+    def test_source_trees_reject_escaping_python_alias_hardlink_and_special(self) -> None:
+        """Python alias 只能留在root内，所有regular hardlink/special均拒绝。"""
+        python_alias = self.managed_python / "bin" / "python3"
+        python_alias.unlink()
+        outside = self.root / "escape"
+        outside.write_bytes(b"outside")
+        python_alias.symlink_to("../../../escape")
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(self.runner).build(self.inputs)
+        python_alias.unlink()
+        python_alias.symlink_to("python3.12")
+
+        hardlink = self.managed_python / "lib" / "python-copy"
+        os.link(self.managed_python_executable, hardlink)
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(self.runner).build(self.inputs)
+        hardlink.unlink()
+
+        special = self.tui / "dist" / "pipe"
+        os.mkfifo(special, 0o600)
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(self.runner).build(self.inputs)
+        special.unlink()
+
+        self.assertEqual(self.runner.calls, [])
+        self.assertFalse(self.layout.staging.exists())
 
     def test_activate_uses_relative_atomic_link_and_rejects_foreign_targets(self) -> None:
         """激活只允许受管 runtime，并用 current.next + replace 发布相对 link。"""
@@ -488,6 +758,64 @@ class InstallRuntimeTests(unittest.TestCase):
             activate_runtime(self.layout, receipt)
         self.assertEqual(os.readlink(self.layout.current), "runtimes/0.6.0")
 
+    def test_activation_fsync_failure_restores_old_current(self) -> None:
+        """existing current 切换后的 parent fsync 失败必须原子恢复旧 link。"""
+        self._write_runtime_receipt("0.6.0")
+        self.layout.current.symlink_to("runtimes/0.6.0")
+        receipt = RuntimeBuilder(self.runner).build(self.inputs)
+        real_fsync = runtime_module._fsync_directory
+        calls = 0
+
+        def fail_post_switch(path: Path) -> None:
+            """仅在 activation 的 post-switch fsync 注入故障。"""
+            nonlocal calls
+            calls += 1
+            if calls == 2:
+                raise OSError("injected fsync failure")
+            real_fsync(path)
+
+        with mock.patch.object(runtime_module, "_fsync_directory", fail_post_switch):
+            with self.assertRaisesRegex(InstallError, "activation_failed"):
+                activate_runtime(self.layout, receipt)
+
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.6.0")
+        self.assertFalse(self.layout.current.with_name("current.next").exists())
+
+    def test_activation_never_overwrites_foreign_current_races(self) -> None:
+        """absent/existing current 的 concurrent foreign link 都不能被覆盖。"""
+        receipt = RuntimeBuilder(self.runner).build(self.inputs)
+        real_no_replace = runtime_module._rename_no_replace
+
+        def race_absent(source: Path, destination: Path) -> None:
+            """在 absent publish 前创建 foreign current。"""
+            destination.symlink_to("foreign")
+            real_no_replace(source, destination)
+
+        with mock.patch.object(runtime_module, "_rename_no_replace", race_absent):
+            with self.assertRaisesRegex(InstallError, "activation_failed"):
+                activate_runtime(self.layout, receipt)
+        self.assertEqual(os.readlink(self.layout.current), "foreign")
+
+        self.layout.current.unlink()
+        self._write_runtime_receipt("0.6.0")
+        self.layout.current.symlink_to("runtimes/0.6.0")
+        real_exchange = runtime_module._rename_exchange
+        raced = False
+
+        def race_existing(source: Path, destination: Path) -> None:
+            """在 existing swap 前用 foreign current 替换旧 inode。"""
+            nonlocal raced
+            if not raced:
+                raced = True
+                destination.unlink()
+                destination.symlink_to("competitor")
+            real_exchange(source, destination)
+
+        with mock.patch.object(runtime_module, "_rename_exchange", race_existing):
+            with self.assertRaisesRegex(InstallError, "activation_failed"):
+                activate_runtime(self.layout, receipt)
+        self.assertEqual(os.readlink(self.layout.current), "competitor")
+
     def _write_runtime_receipt(self, version: str) -> Path:
         """创建 retention 可验证的 immutable runtime fixture。"""
         if not self.layout.program_prefix.exists():
@@ -500,7 +828,7 @@ class InstallRuntimeTests(unittest.TestCase):
             version=version,
             git_commit=self.manifest.git_commit,
             runtime_relative=f"runtimes/{version}",
-            python_version="3.12",
+            python_version="3.12.11",
             node_version="24.18.0",
             tui_version=version,
             wheel_sha256="a" * 64,
