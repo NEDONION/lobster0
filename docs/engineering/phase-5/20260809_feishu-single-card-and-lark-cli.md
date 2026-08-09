@@ -22,7 +22,8 @@
 - 消息到达后立即创建一张蓝色 Loading 卡，执行步骤持续更新同一 `message_id`；
 - 正常回答能完整放入时，原卡片转为绿色并展示完整轨迹和答案；
 - Provider 或 Tool Loop 失败时，原卡片转为红色并展示固定安全提示，不另发灰色失败消息；
-- 卡片内最终回答统一渲染为 bullet points；Markdown 表格转换为键值条目，不依赖模型遵守排版提示；
+- 卡片内最终回答保留 CommonMark 的标题、段落、有序/无序/任务列表、引用、分隔线、链接、强调、行内代码和
+  fenced code block；只有 fence 外的真实 Markdown 表格会降级为可读 bullet 条目；
 - 回答超过 `message_max_chars` 时，卡片保存前缀，只有未展示后缀回复到机器人自己的卡片下方；
 - 卡片创建或最终更新失败时才把完整正文回复原用户消息；
 - completed Turn 重启恢复时复用稳定 progress UUID，不追加重复普通全文；
