@@ -496,8 +496,12 @@ def service_uninstall(
         return
     owner = _preflight_owned(spec.path, expected_sha256)
     assert owner is not None
-    first = spec.uninstall_argvs[0]
-    if _run(spec, selected, first).returncode != 0:
+    launchd_transition_started = False
+    if spec.platform is ServicePlatform.LAUNCHD:
+        launchd_transition_started = True
+        if not _launchd_confirm_inactive(spec, selected):
+            _service_failed()
+    elif _run(spec, selected, spec.uninstall_argvs[0]).returncode != 0:
         _service_failed()
     quarantined: _QuarantinedPath | None = None
     deletion_committed = False
@@ -515,9 +519,14 @@ def service_uninstall(
             if quarantined is not None:
                 _discard_quarantine(quarantined, committed_service_file=False)
         else:
+            restored = _path_matches_identity(spec.path, owner.identity)
             if quarantined is not None:
-                _restore_quarantine(quarantined)
-            _best_effort_register(spec, selected)
+                restored = _restore_quarantine(quarantined)
+            if launchd_transition_started:
+                if not restored or not _launchd_restore_old_manager(spec, selected):
+                    _recovery_required()
+            else:
+                _best_effort_register(spec, selected)
         if isinstance(error, InstallError):
             raise
         raise InstallError("service_install_failed", "service") from None

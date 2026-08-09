@@ -938,6 +938,133 @@ class InstallServiceTests(unittest.TestCase):
 
         self.assertEqual(runner.calls, [])
 
+    def test_launchd_uninstall_confirms_inactive_after_side_effecting_bootout_failure(
+        self,
+    ) -> None:
+        """bootout 已使 job inactive 时，nonzero/exception 不得阻塞受管删除。"""
+        for failure in (1, RuntimeError("sentinel-uninstall-bootout")):
+            with self.subTest(failure_type=type(failure).__name__):
+                home = self.home.parent / f"uninstall-side-effect-{type(failure).__name__}"
+                home.mkdir(mode=0o700)
+                spec = render_service_spec(
+                    InstallLayout.user(home, version="0.7.0"),
+                    ServicePlatform.LAUNCHD,
+                )
+                digest = service_install(spec, FakeLaunchctlRunner())
+                target = f"gui/{self.uid}/{spec.label}"
+                runner = FakeLaunchctlRunner(
+                    (failure,),
+                    active_target=target,
+                    enforce_manager_state=True,
+                    side_effecting_calls=frozenset({0}),
+                )
+
+                service_uninstall(spec, runner, expected_sha256=digest)
+
+                self.assertFalse(spec.path.exists())
+                self.assertIsNone(runner.active_target)
+                self.assertEqual(
+                    [call[0] for call in runner.calls],
+                    [
+                        ("/bin/launchctl", "bootout", target),
+                        ("/bin/launchctl", "print", target),
+                    ],
+                )
+                retry = FakeLaunchctlRunner()
+                service_uninstall(spec, retry, expected_sha256=digest)
+                self.assertEqual(retry.calls, [])
+
+    def test_launchd_uninstall_preserves_public_plist_when_inactive_is_unconfirmed(
+        self,
+    ) -> None:
+        """bootout 后 target 仍 active 或 print 未知时必须保留 public recovery evidence。"""
+        for status_outcome in (0, RuntimeError("sentinel-uninstall-status")):
+            with self.subTest(status_type=type(status_outcome).__name__):
+                home = self.home.parent / f"uninstall-unknown-{type(status_outcome).__name__}"
+                home.mkdir(mode=0o700)
+                spec = render_service_spec(
+                    InstallLayout.user(home, version="0.7.0"),
+                    ServicePlatform.LAUNCHD,
+                )
+                digest = service_install(spec, FakeLaunchctlRunner())
+                target = f"gui/{self.uid}/{spec.label}"
+                runner = FakeLaunchctlRunner(
+                    (1, status_outcome),
+                    active_target=target,
+                    enforce_manager_state=True,
+                )
+
+                with self.assertRaises(InstallError) as caught:
+                    service_uninstall(spec, runner, expected_sha256=digest)
+
+                self.assertEqual(caught.exception.code, "service_install_failed")
+                self.assertNotIn("sentinel", str(caught.exception))
+                self.assertEqual(spec.path.read_bytes(), spec.content)
+                self.assertEqual(runner.active_target, target)
+                self.assertEqual(
+                    [call[0] for call in runner.calls],
+                    [
+                        ("/bin/launchctl", "bootout", target),
+                        ("/bin/launchctl", "print", target),
+                    ],
+                )
+
+    def test_launchd_uninstall_precommit_restore_requires_checked_manager_health(
+        self,
+    ) -> None:
+        """public plist 恢复后 bootstrap 失败必须显式报 recovery，并允许后续收敛。"""
+        spec = self.launchd()
+        digest = service_install(spec, FakeLaunchctlRunner())
+        target = f"gui/{self.uid}/{spec.label}"
+        real_fsync = receipt_module._fsync_directory
+        fsync_calls = 0
+
+        def fail_first_quarantine_fsync(path: Path) -> None:
+            """仅让 launchd uninstall quarantine 的首个 parent fsync 失败。"""
+            nonlocal fsync_calls
+            fsync_calls += 1
+            if fsync_calls == 1:
+                raise OSError("sentinel-launchd-uninstall-fsync")
+            real_fsync(path)
+
+        runner = FakeLaunchctlRunner(
+            (0, 1),
+            active_target=target,
+            enforce_manager_state=True,
+        )
+        with (
+            mock.patch(
+                "miniclaw.install.receipt._fsync_directory",
+                side_effect=fail_first_quarantine_fsync,
+            ),
+            self.assertRaises(InstallError) as caught,
+        ):
+            service_uninstall(spec, runner, expected_sha256=digest)
+
+        self.assertEqual(caught.exception.code, "rollback_conflict")
+        self.assertNotIn("sentinel", str(caught.exception))
+        self.assertEqual(spec.path.read_bytes(), spec.content)
+        self.assertIsNone(runner.active_target)
+        self.assertEqual(
+            [call[0] for call in runner.calls],
+            [
+                ("/bin/launchctl", "bootout", target),
+                ("/bin/launchctl", "bootstrap", f"gui/{self.uid}", str(spec.path)),
+                ("/bin/launchctl", "print", target),
+            ],
+        )
+
+        retry = FakeLaunchctlRunner(active_target=None, enforce_manager_state=True)
+        service_uninstall(spec, retry, expected_sha256=digest)
+        self.assertFalse(spec.path.exists())
+        self.assertEqual(
+            [call[0] for call in retry.calls],
+            [
+                ("/bin/launchctl", "bootout", target),
+                ("/bin/launchctl", "print", target),
+            ],
+        )
+
     def test_uninstall_precommit_quarantine_fsync_failure_restores_file_and_job(self) -> None:
         """public delete durability 前失败时必须保留 owned file 并恢复 manager。"""
         spec = self.systemd()
