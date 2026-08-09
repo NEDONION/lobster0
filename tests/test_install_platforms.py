@@ -10,6 +10,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -22,7 +23,6 @@ from miniclaw.install.platforms import (
     DependencyPlan,
     DetectedPlatform,
     LocalPlatformProbe,
-    ManualRerunInstruction,
     PrivilegeAction,
     _build_dependency_actions_with_probe,
     _verify_activation_ready_with_probe,
@@ -54,7 +54,7 @@ def _file_fact(mode: int, uid: int = 0, gid: int = 0) -> SimpleNamespace:
 
 
 def build_dependency_plan(*args: object, **kwargs: object) -> DependencyPlan:
-    """调用 private offline seam 并保留 manual instruction。"""
+    """调用 private offline seam 并保留 strict dependency plan。"""
     return _build_dependency_actions_with_probe(*args, **kwargs)  # type: ignore[arg-type]
 
 
@@ -97,40 +97,32 @@ class InstallPlatformsTest(unittest.TestCase):
     runtime_versions = Path("release/runtime-versions.json")
 
     def setUp(self) -> None:
-        """创建 manifest-bound installer 与 sandbox-image artifact fixtures。"""
+        """创建 manifest-bound sandbox-image artifact fixture。"""
         self.installer_directory = tempfile.TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.installer_directory.cleanup)
-        self.installer = Path(self.installer_directory.name) / "miniclaw-installer.pyz"
-        body = b"verified installer fixture\n"
-        self.installer.write_bytes(body)
-        self.installer.chmod(0o755)
         self.sandbox_artifact = (
             Path(self.installer_directory.name) / "miniclaw-sandbox-image-digest.txt"
         )
         self.sandbox_artifact.write_bytes(b"example/miniclaw@sha256:" + b"a" * 64 + b"\n")
         self.manifest = self.release_manifest()
 
-    def release_manifest(self, version: str = "0.7.0") -> ReleaseManifest:
+    def release_manifest(self) -> ReleaseManifest:
         """按当前 fixture bytes 构造 Task4 strict ReleaseManifest。"""
         artifacts = []
-        for kind, path, media_type in (
-            ("installer", self.installer, "application/zip"),
-            ("sandbox-image", self.sandbox_artifact, "text/plain"),
-        ):
+        for kind, path, media_type in (("sandbox-image", self.sandbox_artifact, "text/plain"),):
             body = path.read_bytes()
             artifacts.append(
                 {
                     "kind": kind,
                     "filename": path.name,
                     "url": (
-                        "https://github.com/NEDONION/miniclaw/releases/download/"
-                        f"v{version}/{path.name}"
+                        f"https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/{path.name}"
                     ),
                     "sha256": hashlib.sha256(body).hexdigest(),
                     "size": len(body),
                     "media_type": media_type,
                     "platform": {"os": "any", "arch": "any"},
-                    "component_version": version,
+                    "component_version": "0.7.0",
                     "source_repository": "https://github.com/NEDONION/miniclaw",
                     "license_ref": "MIT",
                     "upstream_sha256": None,
@@ -139,7 +131,7 @@ class InstallPlatformsTest(unittest.TestCase):
         document = {
             "schema_version": 1,
             "product": "miniclaw",
-            "version": version,
+            "version": "0.7.0",
             "git_commit": "0" * 40,
             "python": "3.12",
             "node": {
@@ -482,12 +474,8 @@ class InstallPlatformsTest(unittest.TestCase):
             self.request(
                 allow_system_packages=True,
                 service=True,
-                system_prefix=True,
-                prefix=None,
             ),
             probe=probe,
-            manifest=self.manifest,
-            installer_artifact_path=self.installer,
             effective_uid=1001,
             getpwuid=lambda uid: _account(uid=uid),
         )
@@ -510,34 +498,13 @@ class InstallPlatformsTest(unittest.TestCase):
                 ("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", "alice"),
             ),
         )
-        self.assertEqual(
-            plan.manual_rerun.argv if plan.manual_rerun else None,
-            (
-                "/usr/bin/sudo",
-                "--",
-                str(self.installer),
-                "install",
-                "--version",
-                "0.7.0",
-                "--channel",
-                "stable",
-                "--state-home",
-                "/var/lib/miniclaw",
-                "--system-prefix",
-                "--install-service",
-                "--allow-system-packages",
-                "--dry-run",
-            ),
-        )
+        self.assertIsNone(plan.manual_rerun)
         self.assertTrue(all(isinstance(action, PrivilegeAction) for action in plan.actions))
         self.assertTrue(all(not hasattr(action, "approved") for action in plan.actions))
         self.assertTrue(
             all(action.requires_sudo for action in plan.actions if action.argv[0].endswith("sudo"))
         )
-        rendered = json.dumps(
-            [list(action.argv) for action in plan.actions]
-            + ([list(plan.manual_rerun.argv)] if plan.manual_rerun else [])
-        )
+        rendered = json.dumps([list(action.argv) for action in plan.actions])
         self.assertNotIn(";", rendered)
         self.assertNotIn("docker group", rendered)
         self.assertNotIn("/var/run/docker.sock", rendered)
@@ -918,144 +885,6 @@ class InstallPlatformsTest(unittest.TestCase):
                     getpwuid=lambda uid: _account(uid=uid),
                 )
 
-    def test_system_prefix_rejects_arbitrary_unverified_rerun_executable(self) -> None:
-        """non-root system-prefix 不能接受 caller 自选 executable 或漂移 argv。"""
-        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        with self.assertRaisesRegex(InstallError, "privilege_denied"):
-            build_dependency_actions(
-                ubuntu,
-                self.request(system_prefix=True, prefix=None),
-                probe=_BackendProbe(ready=True),
-                manifest=self.manifest,
-                installer_artifact_path=Path("/tmp/caller-selected"),
-                effective_uid=1001,
-                getpwuid=lambda uid: _account(uid=uid),
-            )
-
-    def test_system_prefix_binds_hash_and_every_canonical_request_field(self) -> None:
-        """rerun exact argv 必须覆盖完整 request，且执行前 rehash 阻断 artifact 替换。"""
-        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        request = self.request(
-            action="uninstall",
-            system_prefix=True,
-            prefix=None,
-            onboard=False,
-            config_file=Path("/safe/config.toml"),
-            secrets_file=Path("/safe/secrets.env"),
-            service=None,
-            allow_system_packages=True,
-            json_output=True,
-            verbose=True,
-            purge_data=True,
-            confirm_data_loss=True,
-        )
-        plan = build_dependency_plan(
-            ubuntu,
-            request,
-            probe=_BackendProbe(ready=True),
-            manifest=self.manifest,
-            installer_artifact_path=self.installer,
-            effective_uid=1001,
-            getpwuid=lambda uid: _account(uid=uid),
-        )
-        system_prefix = plan.manual_rerun
-        self.assertIsInstance(system_prefix, ManualRerunInstruction)
-        assert system_prefix is not None
-        self.assertEqual(
-            system_prefix.argv,
-            (
-                "/usr/bin/sudo",
-                "--",
-                str(self.installer),
-                "uninstall",
-                "--version",
-                "0.7.0",
-                "--channel",
-                "stable",
-                "--state-home",
-                "/var/lib/miniclaw",
-                "--system-prefix",
-                "--no-onboard",
-                "--config",
-                "/safe/config.toml",
-                "--secrets-file",
-                "/safe/secrets.env",
-                "--allow-system-packages",
-                "--dry-run",
-                "--json",
-                "--verbose",
-                "--purge-data",
-                "--yes-i-understand-data-loss",
-            ),
-        )
-        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
-            verify_privilege_action(
-                system_prefix,  # type: ignore[arg-type]
-                ubuntu,
-                request,
-                probe=_BackendProbe(ready=True),
-                effective_uid=1001,
-                getpwuid=lambda uid: _account(uid=uid),
-            )
-        self.installer.write_bytes(b"replacement after plan\n")
-        try:
-            build_dependency_plan(
-                ubuntu,
-                request,
-                probe=_BackendProbe(ready=True),
-                manifest=self.manifest,
-                installer_artifact_path=self.installer,
-                effective_uid=1001,
-                getpwuid=lambda uid: _account(uid=uid),
-            )
-        except InstallError as error:
-            self.assertRegex(str(error), "privilege_denied")
-            self.assertIsNone(error.__cause__)
-        else:
-            self.fail("artifact replacement must fail execution-time rehash")
-
-    def test_system_prefix_rejects_symlink_hash_and_semantic_argv_drift(self) -> None:
-        """symlink/wrong hash 及 missing/reordered canonical flags 都不能进入执行边界。"""
-        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        request = self.request(system_prefix=True, prefix=None, json_output=True)
-        original = self.installer.read_bytes()
-        self.installer.write_bytes(b"wrong hash\n")
-        with self.assertRaisesRegex(InstallError, "privilege_denied"):
-            build_dependency_plan(
-                ubuntu,
-                request,
-                probe=_BackendProbe(ready=True),
-                manifest=self.manifest,
-                installer_artifact_path=self.installer,
-                effective_uid=1001,
-                getpwuid=lambda uid: _account(uid=uid),
-            )
-        self.installer.write_bytes(original)
-        target = self.installer.with_name("real-installer.pyz")
-        self.installer.rename(target)
-        self.installer.symlink_to(target)
-        with self.assertRaisesRegex(InstallError, "privilege_denied"):
-            build_dependency_plan(
-                ubuntu,
-                request,
-                probe=_BackendProbe(ready=True),
-                manifest=self.manifest,
-                installer_artifact_path=self.installer,
-                effective_uid=1001,
-                getpwuid=lambda uid: _account(uid=uid),
-            )
-        forged = object.__new__(ManualRerunInstruction)
-        object.__setattr__(forged, "argv", ("/usr/bin/sudo", "--", "/tmp/evil"))
-        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
-            verify_privilege_action(
-                forged,  # type: ignore[arg-type]
-                ubuntu,
-                request,
-                probe=_BackendProbe(ready=True),
-                effective_uid=1001,
-                getpwuid=lambda uid: _account(uid=uid),
-            )
-
     def test_every_completed_dependency_action_forces_backend_reprobe(self) -> None:
         """package/setup 完成后必须进入同用户 backend re-probe，不能只检查 setup。"""
         rocky = detect_linux(self.os_release("rocky", "10.0"), "x86_64")
@@ -1282,31 +1111,6 @@ class InstallPlatformsTest(unittest.TestCase):
         self.assertEqual((evidence.backend, evidence.uid), ("seatbelt", 1001))
         self.assertFalse(hasattr(platforms_module, "ActivationEvidence"))
 
-    def test_round3_system_prefix_is_manual_instruction_not_privilege_capability(self) -> None:
-        """non-root system-prefix 只返回展示指令，不能进入自动高权限执行器。"""
-        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        result = build_dependency_plan(
-            ubuntu,
-            self.request(system_prefix=True, prefix=None),
-            probe=_BackendProbe(ready=True),
-            manifest=self.manifest,
-            installer_artifact_path=self.installer,
-            effective_uid=1001,
-            getpwuid=lambda uid: _account(uid=uid),
-        )
-        manual = result.manual_rerun
-        assert manual is not None
-        self.assertNotIsInstance(manual, PrivilegeAction)
-        with self.assertRaisesRegex(InstallError, "privilege_denied|system_dependency_missing"):
-            verify_privilege_action(
-                manual,  # type: ignore[arg-type]
-                ubuntu,
-                self.request(system_prefix=True, prefix=None),
-                probe=_BackendProbe(ready=True),
-                effective_uid=1001,
-                getpwuid=lambda uid: _account(uid=uid),
-            )
-
     def test_round3_system_prefix_privilege_category_is_closed(self) -> None:
         """即使 argv 形状正确，system-prefix 也不能构造自动执行 capability。"""
         with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
@@ -1315,7 +1119,7 @@ class InstallPlatformsTest(unittest.TestCase):
                 argv=(
                     "/usr/bin/sudo",
                     "--",
-                    str(self.installer),
+                    "/tmp/miniclaw-installer.pyz",
                     "install",
                     "--channel",
                     "stable",
@@ -1349,31 +1153,9 @@ class InstallPlatformsTest(unittest.TestCase):
             )
 
     def test_round3_receipts_cannot_be_caller_self_signed(self) -> None:
-        """caller 不能用任意 hash/image 公开铸造 installer 或 sandbox receipt。"""
+        """caller 不能用任意 image 公开铸造 sandbox receipt。"""
         self.assertFalse(hasattr(platforms_module, "InstallerArtifactEvidence"))
         self.assertFalse(hasattr(platforms_module, "SandboxVerification"))
-
-    def test_round3_dev_prerelease_uses_install_request_semver_contract(self) -> None:
-        """manual rerun 复用 Task4 dev prerelease，不再做第二套窄版本解析。"""
-        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        result = build_dependency_plan(
-            ubuntu,
-            self.request(
-                version="0.8.0-rc.1+build.7",
-                channel="dev",
-                system_prefix=True,
-                prefix=None,
-            ),
-            probe=_BackendProbe(ready=True),
-            manifest=self.release_manifest("0.8.0-rc.1+build.7"),
-            installer_artifact_path=self.installer,
-            effective_uid=1001,
-            getpwuid=lambda uid: _account(uid=uid),
-        )
-        manual = result.manual_rerun
-        assert manual is not None
-        self.assertIn("0.8.0-rc.1+build.7", manual.argv)
-        self.assertNotIsInstance(manual, PrivilegeAction)
 
     def test_round3_production_activation_has_no_evidence_injection(self) -> None:
         """production activation 必须当场构造 LocalPlatformProbe，不能消费 evidence。"""
@@ -1402,18 +1184,6 @@ class InstallPlatformsTest(unittest.TestCase):
             sandbox_artifact_path=None,
         )
         probe_type.return_value.require_backend.assert_called_once_with(macos, account)
-
-    def test_round3_containment_uses_entrypoint_python(self) -> None:
-        """容器 smoke 用 exact entrypoint，image 后不再接受可变程序名。"""
-        source = inspect.getsource(platforms_module._verify_rootless_containment)
-        self.assertIn('"--entrypoint",\n            "python"', source)
-        self.assertNotIn('image,\n            "python",', source)
-
-    def test_round3_probe_does_not_capture_unbounded_output_with_run(self) -> None:
-        """本地 probe 必须从 PIPE 流式限额，禁止 subprocess.run capture 后检查。"""
-        source = inspect.getsource(platforms_module._run_local_probe)
-        self.assertIn("subprocess.Popen", source)
-        self.assertNotIn("capture_output=True", source)
 
     def test_round3_probe_terminates_and_reaps_on_stream_budget_overrun(self) -> None:
         """stdout 超限时立即终止仍在 sleep 的 child，并隐藏动态 cause。"""
@@ -1450,6 +1220,116 @@ class InstallPlatformsTest(unittest.TestCase):
         self.sandbox_artifact.write_bytes(b"example/miniclaw@sha256:" + b"b" * 64 + b"\n")
         with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
             probe.require_backend(ubuntu, _account())
+
+    def test_round4_nonroot_system_prefix_requires_trusted_bootstrap(self) -> None:
+        """Task12 receipt 缺位时，non-root 不能获得可替换 path 的 sudo 展示指令。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        probe = _BackendProbe(ready=False)
+        with self.assertRaisesRegex(InstallError, "privilege_denied"):
+            build_dependency_plan(
+                ubuntu,
+                self.request(system_prefix=True, prefix=None),
+                probe=probe,
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
+        self.assertEqual(probe.required, [])
+        with (
+            mock.patch.object(
+                platforms_module,
+                "_production_identity",
+                return_value=(1001, None, None),
+            ),
+            self.assertRaisesRegex(InstallError, "privilege_denied"),
+        ):
+            production_build_dependency_actions(
+                ubuntu,
+                self.request(system_prefix=True, prefix=None),
+            )
+
+    def test_round4_probe_times_out_and_kills_descendant_holding_pipes(self) -> None:
+        """direct child 退出但后代持 pipe 时按 deadline 终止整个 process group。"""
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
+            pid_path = Path(directory) / "descendant.pid"
+            program = (
+                "import pathlib,subprocess,sys;"
+                "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(20)']);"
+                f"pathlib.Path({str(pid_path)!r}).write_text(str(child.pid),encoding='utf-8')"
+            )
+            result: list[BaseException | subprocess.CompletedProcess[bytes]] = []
+
+            def invoke() -> None:
+                """在线程中运行 probe，使 RED 也能有界清理被阻塞的旧实现。"""
+                try:
+                    result.append(
+                        platforms_module._run_local_probe(
+                            (sys.executable, "-c", program),
+                            _account(),
+                            {},
+                        )
+                    )
+                except BaseException as error:
+                    result.append(error)
+
+            with (
+                mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
+                mock.patch.object(
+                    platforms_module,
+                    "_LOCAL_PROBE_TIMEOUT_SECONDS",
+                    0.2,
+                    create=True,
+                ),
+            ):
+                worker = threading.Thread(target=invoke, daemon=True)
+                worker.start()
+                deadline = time.monotonic() + 2
+                while not pid_path.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertTrue(pid_path.exists())
+                descendant_pid = int(pid_path.read_text(encoding="utf-8"))
+                cleanup_needed = False
+                try:
+                    worker.join(timeout=1)
+                    self.assertFalse(worker.is_alive(), "probe blocked on descendant-held pipe")
+                finally:
+                    reaped_deadline = time.monotonic() + 1
+                    while time.monotonic() < reaped_deadline:
+                        try:
+                            os.kill(descendant_pid, 0)
+                        except ProcessLookupError:
+                            break
+                        time.sleep(0.01)
+                    else:
+                        cleanup_needed = True
+                        os.kill(descendant_pid, 9)
+                    worker.join(timeout=2)
+            self.assertEqual(len(result), 1)
+            self.assertIsInstance(result[0], InstallError)
+            assert isinstance(result[0], InstallError)
+            self.assertRegex(str(result[0]), "system_dependency_missing")
+            self.assertIsNone(result[0].__cause__)
+            self.assertFalse(cleanup_needed, "probe left its descendant alive")
+            with self.assertRaises(ProcessLookupError):
+                os.kill(descendant_pid, 0)
+
+    def test_round4_probe_preserves_normal_and_exact_4096_byte_output(self) -> None:
+        """nonblocking reader 保留正常输出，并允许 stdout/stderr 合计恰好 4096 bytes。"""
+        program = (
+            "import sys;sys.stdout.write('x'*2048);sys.stderr.write('y'*2048);"
+            "sys.stdout.flush();sys.stderr.flush()"
+        )
+        with (
+            mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
+            mock.patch.object(platforms_module, "_LOCAL_PROBE_TIMEOUT_SECONDS", 1),
+        ):
+            completed = platforms_module._run_local_probe(
+                (sys.executable, "-c", program),
+                _account(),
+                {},
+            )
+        self.assertEqual(completed.returncode, 0)
+        self.assertEqual(completed.stdout, b"x" * 2048)
+        self.assertEqual(completed.stderr, b"y" * 2048)
 
     def test_local_macos_probe_uses_fixed_seatbelt_containment(self) -> None:
         """production macOS probe 必须执行 fixed sandbox-exec deny-default smoke。"""

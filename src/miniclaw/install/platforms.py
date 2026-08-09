@@ -7,6 +7,7 @@ import pwd
 import re
 import selectors
 import shutil
+import signal
 import stat
 import subprocess
 import time
@@ -38,7 +39,9 @@ _RHEL_VERSION = re.compile(r"^(?:9|10)(?:\.(?:0|[1-9][0-9]*))?$")
 _USER_NAME = re.compile(r"^[a-z_][a-z0-9_-]{0,31}\$?$")
 _PINNED_IMAGE = re.compile(r"^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$")
 _SAFE_EXECUTABLE_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
-_MAX_INSTALLER_BYTES = 268_435_456
+_MAX_SANDBOX_RECEIPT_BYTES = 4096
+_LOCAL_PROBE_TIMEOUT_SECONDS = 45.0
+_PROCESS_GROUP_TERM_SECONDS = 0.25
 _ROOTLESS_TOOLS = {
     "/usr/bin/dockerd-rootless-setuptool.sh",
     "/usr/share/docker.io/contrib/dockerd-rootless-setuptool.sh",
@@ -101,39 +104,20 @@ class _SandboxArtifactReceipt:
     container_image: str
 
 
-@dataclass(frozen=True, slots=True, init=False)
-class ManualRerunInstruction:
-    """保存仅供展示的 canonical system-prefix 手工重跑指令。
-
-    Args:
-        argv: 从 verified installer Artifact 与 strict InstallRequest 派生的展示 argv。
-    """
-
-    argv: tuple[str, ...]
-
-    def __new__(cls) -> "ManualRerunInstruction":
-        """拒绝 caller 自行构造展示指令。
-
-        Raises:
-            TypeError: 所有公开构造尝试。
-        """
-        raise TypeError("ManualRerunInstruction cannot be constructed directly")
-
-
 @dataclass(frozen=True, slots=True)
 class DependencyPlan:
-    """分离可确认 privilege actions 与不可自动执行的手工重跑提示。
+    """保存可单独确认的 privilege actions；Task12 前不生成 sudo rerun。
 
     Args:
         actions: 允许交给独立确认/执行边界的 capability 集合。
-        manual_rerun: 只能显示给用户的可选 system-prefix 指令。
+        manual_rerun: Task12 trusted bootstrap 接管前固定为 ``None``。
 
     Raises:
         InstallError: capability 或 manual instruction 类型不严格。
     """
 
     actions: tuple["PrivilegeAction", ...]
-    manual_rerun: ManualRerunInstruction | None
+    manual_rerun: None = None
 
     def __post_init__(self) -> None:
         """拒绝把展示提示混入可执行 capability 集合。
@@ -145,7 +129,6 @@ class DependencyPlan:
             type(self.actions) is not tuple
             or any(type(action) is not PrivilegeAction for action in self.actions)
             or self.manual_rerun is not None
-            and type(self.manual_rerun) is not ManualRerunInstruction
         ):
             raise InstallError("system_dependency_missing", "system_argvs")
 
@@ -592,22 +575,22 @@ def build_dependency_actions(
     *,
     manifest: ReleaseManifest | None = None,
     sandbox_artifact_path: Path | None = None,
-    installer_artifact_path: Path | None = None,
 ) -> DependencyPlan:
     """使用不可注入的 install-local production probe 构造权限动作。
 
     Args:
         platform: 已验证 Tier 1 平台。
         request: canonical installer 请求。
-        manifest: Linux sandbox 与 manual rerun 使用的 strict ReleaseManifest。
+        manifest: Linux sandbox 使用的 strict ReleaseManifest。
         sandbox_artifact_path: Linux 已验证 sandbox-image artifact 路径。
-        installer_artifact_path: non-root system-prefix 的 installer artifact 路径。
     Returns:
-        privilege capabilities 与可选 manual rerun 分离的 immutable plan。
+        privilege capabilities；manual rerun 在 Task12 trusted bootstrap 前固定为空。
 
     Raises:
         InstallError: 本地 readiness、账号、artifact 或请求不安全。
     """
+    if type(request) is InstallRequest and request.system_prefix:
+        raise InstallError("privilege_denied", "system_argvs")
     effective_uid, original_user, original_uid = _production_identity()
     return _build_dependency_actions_with_probe(
         platform,
@@ -617,8 +600,6 @@ def build_dependency_actions(
             manifest=manifest,
             sandbox_artifact_path=sandbox_artifact_path,
         ),
-        manifest=manifest,
-        installer_artifact_path=installer_artifact_path,
         effective_uid=effective_uid,
         original_user=original_user,
         original_uid=original_uid,
@@ -630,8 +611,6 @@ def _build_dependency_actions_with_probe(
     request: InstallRequest,
     *,
     probe: _BackendProbe,
-    manifest: ReleaseManifest | None = None,
-    installer_artifact_path: Path | None = None,
     effective_uid: int | None = None,
     original_user: str | None = None,
     original_uid: int | None = None,
@@ -649,8 +628,6 @@ def _build_dependency_actions_with_probe(
         original_uid: root 调用的原始非 root UID。
         getpwuid: 测试可注入的 UID 账号解析器。
         getpwnam: 测试可注入的用户名账号解析器。
-        manifest: manual rerun 所属 strict ReleaseManifest。
-        installer_artifact_path: non-root system-prefix 的本地 installer artifact。
 
     Returns:
         可供 dry-run 精确展示的 capability/manual 分离计划。
@@ -673,8 +650,10 @@ def _build_dependency_actions_with_probe(
         getpwuid=getpwuid,
         getpwnam=getpwnam,
     )
+    if request.system_prefix:
+        # Task 12 bootstrap 尚未提供 trusted current-loaded installer receipt；一律 fail closed。
+        raise InstallError("privilege_denied", "system_argvs")
     actions: list[PrivilegeAction] = []
-    manual_rerun: ManualRerunInstruction | None = None
     try:
         probe.require_backend(platform, account)
     except InstallError:
@@ -723,24 +702,7 @@ def _build_dependency_actions_with_probe(
                 _LINGER_REASON,
             )
         )
-    if request.system_prefix and selected_uid == 0:
-        # Task 12 bootstrap 尚未提供 current-loaded installer receipt；root 进程先 fail closed。
-        raise InstallError("privilege_denied", "system_argvs")
-    if request.system_prefix and selected_uid != 0:
-        if type(manifest) is not ReleaseManifest or not isinstance(installer_artifact_path, Path):
-            raise InstallError("privilege_denied", "system_argvs")
-        _read_verified_artifact(
-            manifest,
-            "installer",
-            platform.artifact_platform,
-            installer_artifact_path,
-            account=account,
-            executable=True,
-        )
-        manual_rerun = _manual_rerun_instruction(
-            ("/usr/bin/sudo", "--", *_canonical_rerun_argv(installer_artifact_path, request))
-        )
-    return DependencyPlan(tuple(actions), manual_rerun)
+    return DependencyPlan(tuple(actions))
 
 
 def verify_privilege_action(
@@ -1527,26 +1489,28 @@ def _run_local_probe(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             env=child_environment,
+            start_new_session=True,
         )
         if process.stdout is None or process.stderr is None:
             raise OSError
+        for stream in (process.stdout, process.stderr):
+            os.set_blocking(stream.fileno(), False)
         output = {"stdout": bytearray(), "stderr": bytearray()}
         selector = selectors.DefaultSelector()
         try:
             selector.register(process.stdout, selectors.EVENT_READ, "stdout")
             selector.register(process.stderr, selectors.EVENT_READ, "stderr")
-            deadline = time.monotonic() + 45
+            deadline = time.monotonic() + _LOCAL_PROBE_TIMEOUT_SECONDS
             while selector.get_map():
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise TimeoutError
                 events = selector.select(min(remaining, 0.25))
-                if not events and process.poll() is not None:
-                    events = tuple(
-                        (key, selectors.EVENT_READ) for key in selector.get_map().values()
-                    )
                 for key, _mask in events:
-                    chunk = os.read(key.fd, 1024)
+                    try:
+                        chunk = os.read(key.fd, 1024)
+                    except BlockingIOError:
+                        continue
                     if not chunk:
                         selector.unregister(key.fileobj)
                         continue
@@ -1567,16 +1531,8 @@ def _run_local_probe(
         process.stderr.close()
         return completed
     except Exception:
-        if process is not None and process.poll() is None:
-            try:
-                process.terminate()
-                process.wait(timeout=1)
-            except Exception:
-                try:
-                    process.kill()
-                    process.wait(timeout=1)
-                except Exception:
-                    pass
+        if process is not None:
+            _terminate_probe_process_group(process)
         if process is not None:
             for stream in (process.stdout, process.stderr):
                 if stream is not None:
@@ -1585,6 +1541,54 @@ def _run_local_probe(
                     except Exception:
                         pass
         raise InstallError("system_dependency_missing", "platform") from None
+
+
+def _terminate_probe_process_group(process: subprocess.Popen[bytes]) -> None:
+    """用 TERM→bounded wait→KILL 终止独立 probe process group 并 reap direct child。
+
+    Args:
+        process: 以 ``start_new_session=True`` 启动的 probe direct child。
+    """
+    process_group = process.pid
+    try:
+        os.killpg(process_group, signal.SIGTERM)
+    except OSError:
+        pass
+    deadline = time.monotonic() + _PROCESS_GROUP_TERM_SECONDS
+    while _process_group_exists(process_group) and time.monotonic() < deadline:
+        process.poll()
+        time.sleep(0.01)
+    if _process_group_exists(process_group):
+        try:
+            os.killpg(process_group, signal.SIGKILL)
+        except OSError:
+            pass
+    try:
+        process.wait(timeout=_PROCESS_GROUP_TERM_SECONDS)
+    except Exception:
+        try:
+            process.kill()
+            process.wait(timeout=_PROCESS_GROUP_TERM_SECONDS)
+        except Exception:
+            pass
+
+
+def _process_group_exists(process_group: int) -> bool:
+    """判断 probe process group 是否仍包含存活或待 reap 的进程。
+
+    Args:
+        process_group: ``start_new_session`` 创建的 process group ID。
+
+    Returns:
+        group 仍存在时为 ``True``。
+    """
+    try:
+        os.killpg(process_group, 0)
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+    return True
 
 
 def _lexical_absolute(path: Path) -> bool:
@@ -1604,42 +1608,34 @@ def _lexical_absolute(path: Path) -> bool:
     )
 
 
-def _read_verified_artifact(
+def _read_verified_sandbox_artifact(
     manifest: ReleaseManifest,
-    kind: Literal["installer", "sandbox-image"],
     platform: PlatformKey,
     path: Path,
-    *,
-    account: pwd.struct_passwd | None = None,
-    executable: bool = False,
 ) -> bytes:
-    """从 strict manifest 选择 Artifact 并 no-follow 重验本地 bytes。
+    """从 strict manifest 选择 sandbox-image Artifact 并 no-follow 重验本地 bytes。
 
     Args:
         manifest: 已完成 Task4 schema 校验的 ReleaseManifest。
-        kind: 当前只允许 installer 或 sandbox-image。
         platform: 目标 Release 平台。
         path: 已下载 artifact 的 absolute lexical 路径。
-        account: executable artifact 的目标非 root 用户。
-        executable: 是否要求目标用户拥有执行权限。
 
     Returns:
         与 manifest size/hash 精确一致的有界 bytes。
 
     Raises:
-        InstallError: 选择、路径、文件类型、权限、size 或 hash 不一致。
+        InstallError: 选择、路径、文件类型、size 或 hash 不一致。
     """
     try:
         if (
             type(manifest) is not ReleaseManifest
-            or kind not in {"installer", "sandbox-image"}
             or type(platform) is not PlatformKey
             or not isinstance(path, Path)
             or not _lexical_absolute(path)
         ):
             raise OSError
-        artifact = manifest.require_artifact(kind, platform)
-        if path.name != artifact.filename or artifact.size > _MAX_INSTALLER_BYTES:
+        artifact = manifest.require_artifact("sandbox-image", platform)
+        if path.name != artifact.filename or artifact.size > _MAX_SANDBOX_RECEIPT_BYTES:
             raise OSError
         current = Path(path.anchor)
         for part in path.parts[1:]:
@@ -1650,12 +1646,7 @@ def _read_verified_artifact(
             if current != path and not stat.S_ISDIR(fact.st_mode):
                 raise OSError
         final = os.lstat(path)
-        if (
-            not stat.S_ISREG(final.st_mode)
-            or final.st_size != artifact.size
-            or executable
-            and (account is None or not _mode_executable_by(final, account))
-        ):
+        if not stat.S_ISREG(final.st_mode) or final.st_size != artifact.size:
             raise OSError
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         try:
@@ -1681,9 +1672,7 @@ def _read_verified_artifact(
             raise OSError
         return b"".join(chunks)
     except Exception:
-        code = "privilege_denied" if kind == "installer" else "system_dependency_missing"
-        field = "system_argvs" if kind == "installer" else "platform"
-        raise InstallError(code, field) from None
+        raise InstallError("system_dependency_missing", "platform") from None
 
 
 def _load_sandbox_receipt(
@@ -1710,9 +1699,8 @@ def _load_sandbox_receipt(
         return None
     if type(manifest) is not ReleaseManifest or not isinstance(path, Path):
         raise InstallError("system_dependency_missing", "platform")
-    data = _read_verified_artifact(
+    data = _read_verified_sandbox_artifact(
         manifest,
-        "sandbox-image",
         platform.artifact_platform,
         path,
     )
@@ -1743,9 +1731,8 @@ def _revalidate_sandbox_receipt(receipt: _SandboxArtifactReceipt) -> None:
     """
     if type(receipt) is not _SandboxArtifactReceipt:
         raise InstallError("system_dependency_missing", "platform")
-    data = _read_verified_artifact(
+    data = _read_verified_sandbox_artifact(
         receipt.manifest,
-        "sandbox-image",
         receipt.platform,
         receipt.path,
     )
@@ -1770,72 +1757,6 @@ def _mode_executable_by(fact: os.stat_result, account: pwd.struct_passwd) -> boo
     else:
         executable = stat.S_IXOTH
     return bool(fact.st_mode & executable)
-
-
-def _canonical_rerun_argv(
-    executable: Path,
-    request: InstallRequest,
-) -> tuple[str, ...]:
-    """把完整 InstallRequest 规范化成唯一 system-prefix rerun argv。
-
-    Args:
-        executable: 已验证 installer artifact lexical path。
-        request: strict immutable installer request。
-
-    Returns:
-        固定字段顺序、无默认语义漂移的 exact argv。
-
-    Raises:
-        InstallError: 请求不是 system-prefix 或 executable 不规范。
-    """
-    if (
-        type(request) is not InstallRequest
-        or not request.system_prefix
-        or not _lexical_absolute(executable)
-    ):
-        raise InstallError("privilege_denied", "system_argvs")
-    argv = [str(executable), request.action]
-    if request.version is not None:
-        argv.extend(("--version", request.version))
-    argv.extend(("--channel", request.channel, "--state-home", str(request.state_home)))
-    argv.append("--system-prefix")
-    if not request.onboard:
-        argv.append("--no-onboard")
-    if request.config_file is not None:
-        argv.extend(("--config", str(request.config_file)))
-    if request.secrets_file is not None:
-        argv.extend(("--secrets-file", str(request.secrets_file)))
-    if request.service is True:
-        argv.append("--install-service")
-    elif request.service is False:
-        argv.append("--no-service")
-    if request.allow_system_packages:
-        argv.append("--allow-system-packages")
-    if request.dry_run:
-        argv.append("--dry-run")
-    if request.json_output:
-        argv.append("--json")
-    if request.verbose:
-        argv.append("--verbose")
-    if request.purge_data:
-        argv.append("--purge-data")
-    if request.confirm_data_loss:
-        argv.append("--yes-i-understand-data-loss")
-    return tuple(argv)
-
-
-def _manual_rerun_instruction(argv: tuple[str, ...]) -> ManualRerunInstruction:
-    """从本模块 canonical renderer 生成不可自动执行的展示对象。
-
-    Args:
-        argv: 已由 strict InstallRequest 与 verified installer path 生成的 exact argv。
-
-    Returns:
-        public constructor 不可用的 manual instruction。
-    """
-    instruction = object.__new__(ManualRerunInstruction)
-    object.__setattr__(instruction, "argv", argv)
-    return instruction
 
 
 def _action(
