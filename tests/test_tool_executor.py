@@ -10,6 +10,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from miniclaw.bootstrap import initialize_state
+from miniclaw.checkpoints.store import CheckpointStore
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
 from miniclaw.policy.engine import PolicyEngine
@@ -253,6 +254,7 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         *,
         result_max_chars: int = 20_000,
         approvals: ApprovalRepository | None = None,
+        checkpoint_store: CheckpointStore | None = None,
     ) -> ToolExecutor:
         """使用真实 Registry、Policy 与 Repository 创建执行器。"""
         if approvals is None:
@@ -261,6 +263,7 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
                 PolicyEngine(),
                 ToolRunRepository(self.database),
                 result_max_chars=result_max_chars,
+                checkpoint_store=checkpoint_store,
             )
         return ToolExecutor(
             ToolRegistry((tool,)),
@@ -269,6 +272,7 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
             result_max_chars=result_max_chars,
             approvals=approvals,
             approval_ttl_seconds=600,
+            checkpoint_store=checkpoint_store,
         )
 
     async def test_low_risk_tool_executes_and_persists_succeeded_run(self) -> None:
@@ -376,6 +380,164 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         with self.database.connect_read_only() as connection:
             count = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
         self.assertEqual(count, 0)
+
+    async def test_checkpoint_failure_prevents_file_mutation(self) -> None:
+        """Checkpoint 配额失败必须在 write_file 副作用前终结 ToolRun。"""
+        target = self.context.workspace / "bounded.txt"
+        target.write_text("before-too-large", encoding="utf-8")
+        store = CheckpointStore(
+            self.database,
+            owner_id=self.context.user_id,
+            workspace=self.context.workspace,
+            state_home=self.context.state_home,
+            max_entries=10,
+            max_total_bytes=8,
+            max_file_bytes=8,
+            max_count=10,
+        )
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(mode="yolo"),
+            ToolRunRepository(self.database),
+            checkpoint_store=store,
+        )
+
+        execution = await executor.execute(
+            self.context,
+            ToolCall(
+                "checkpoint-fail",
+                "write_file",
+                {"path": str(target), "content": "after", "overwrite": True},
+            ),
+        )
+
+        self.assertFalse(execution.succeeded)
+        assert execution.result is not None
+        self.assertEqual(execution.result.error_code, "checkpoint_budget_exceeded")
+        self.assertEqual(target.read_text(encoding="utf-8"), "before-too-large")
+
+    async def test_write_checkpoint_binds_exact_target_to_tool_run(self) -> None:
+        """成功写入前必须保存同一 ToolRun 的 exact target tombstone。"""
+        target = self.context.workspace / "created-after-checkpoint.txt"
+        store = CheckpointStore(
+            self.database,
+            owner_id=self.context.user_id,
+            workspace=self.context.workspace,
+            state_home=self.context.state_home,
+            max_entries=10,
+            max_total_bytes=1024,
+            max_file_bytes=1024,
+            max_count=10,
+        )
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(mode="yolo"),
+            ToolRunRepository(self.database),
+            checkpoint_store=store,
+        )
+
+        execution = await executor.execute(
+            self.context,
+            ToolCall(
+                "checkpoint-success",
+                "write_file",
+                {"path": str(target), "content": "created"},
+            ),
+        )
+
+        self.assertTrue(execution.succeeded)
+        with self.database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT c.manifest_json FROM checkpoints c "
+                "JOIN tool_runs tr ON tr.id = c.tool_run_id "
+                "WHERE tr.tool_call_id = 'checkpoint-success'"
+            ).fetchone()
+        entry = json.loads(row["manifest_json"])["entries"][0]
+        self.assertEqual(entry["path"], target.name)
+        self.assertFalse(entry["existed"])
+
+    async def test_automation_estop_is_rechecked_after_checkpoint(self) -> None:
+        """capture 后 E-stop 关闭时必须留下恢复点但不能执行副作用。"""
+        target = self.context.workspace / "halted-after-checkpoint.txt"
+        checks = iter((True, False))
+        context = ToolContext(
+            user_id=self.context.user_id,
+            session_id=self.context.session_id,
+            turn_id=self.context.turn_id,
+            state_home=self.context.state_home,
+            workspace=self.context.workspace,
+            read_only_roots=(),
+            source="automation",
+            automation_gate=lambda: next(checks),
+        )
+        store = CheckpointStore(
+            self.database,
+            owner_id=context.user_id,
+            workspace=context.workspace,
+            state_home=context.state_home,
+            max_entries=10,
+            max_total_bytes=1024,
+            max_file_bytes=1024,
+            max_count=10,
+        )
+        executor = ToolExecutor(
+            ToolRegistry((WriteFileTool(),)),
+            PolicyEngine(mode="yolo"),
+            ToolRunRepository(self.database),
+            checkpoint_store=store,
+        )
+
+        execution = await executor.execute(
+            context,
+            ToolCall(
+                "halt-after-checkpoint",
+                "write_file",
+                {"path": str(target), "content": "must not be written"},
+            ),
+        )
+
+        self.assertFalse(execution.succeeded)
+        assert execution.result is not None
+        self.assertEqual(execution.result.error_code, "automation_halted")
+        self.assertFalse(target.exists())
+        with self.database.connect_read_only() as connection:
+            self.assertEqual(
+                connection.execute("SELECT COUNT(*) FROM checkpoints").fetchone()[0],
+                1,
+            )
+
+    async def test_command_timeout_persists_bound_execution_receipt(self) -> None:
+        """backend timeout 仍须把 receipt 写入原 plan row，再终结 ToolRun。"""
+        helper = self.context.workspace / "timeout-receipt.py"
+        helper.write_text("import time\ntime.sleep(30)\n", encoding="utf-8")
+        executor = ToolExecutor(
+            ToolRegistry((RunCommandTool(timeout_seconds=1, max_timeout_seconds=2),)),
+            PolicyEngine(mode="yolo"),
+            ToolRunRepository(self.database),
+        )
+
+        execution = await executor.execute(
+            self.context,
+            ToolCall(
+                "timeout-receipt",
+                "run_command",
+                {"program": sys.executable, "args": [str(helper)], "timeout_seconds": 1},
+            ),
+        )
+
+        self.assertFalse(execution.succeeded)
+        assert execution.result is not None
+        self.assertEqual(execution.result.error_code, "tool_timeout")
+        with self.database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT ep.plan_hash, ep.receipt_json, tr.status FROM execution_plans ep "
+                "JOIN tool_runs tr ON tr.id = ep.tool_run_id "
+                "WHERE tr.tool_call_id = 'timeout-receipt'"
+            ).fetchone()
+        receipt = json.loads(row["receipt_json"])
+        self.assertEqual(receipt["plan_hash"], row["plan_hash"])
+        self.assertTrue(receipt["timed_out"])
+        self.assertEqual(row["status"], "failed")
 
     async def test_invalid_tool_result_is_redacted_and_marks_run_failed(self) -> None:
         """ToolResult 编码失败也必须收口，不能留下 running ToolRun。"""

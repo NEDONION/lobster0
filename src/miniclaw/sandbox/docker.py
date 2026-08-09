@@ -14,7 +14,7 @@ from miniclaw.sandbox.base import (
 )
 from miniclaw.sandbox.host import EnvironmentResolver, HostSandbox
 
-_PINNED_IMAGE = re.compile(r"[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}\Z")
+_PINNED_IMAGE = re.compile(r"[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}\Z")
 
 
 class DockerSandbox:
@@ -59,8 +59,9 @@ class DockerSandbox:
         read_index = 0
         for root in plan.read_roots:
             read_index += 1
+            destination = "/workspace" if root == plan.cwd else f"/mnt/readonly-{read_index}"
             mounts.extend(
-                ("--mount", f"type=bind,src={root},dst=/mnt/readonly-{read_index},ro")
+                ("--mount", f"type=bind,src={root},dst={destination},ro")
             )
         write_index = 0
         for root in plan.write_roots:

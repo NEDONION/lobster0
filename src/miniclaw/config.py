@@ -832,6 +832,15 @@ def load_config(
     sandbox_image = _sandbox_image(
         sandbox_raw.get("image", "miniclaw-sandbox:phase6"), "sandbox.image"
     )
+    if (
+        automation_enabled
+        and sandbox_backend == "docker"
+        and re.fullmatch(r"[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}", sandbox_image)
+        is None
+    ):
+        raise ConfigError(
+            "sandbox.image must use a sha256 digest when Docker automation is enabled"
+        )
     sandbox_network = _enum_string(
         sandbox_raw.get("network", "none"),
         "sandbox.network",

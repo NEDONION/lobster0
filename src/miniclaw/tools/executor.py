@@ -3,10 +3,12 @@
 import asyncio
 import time
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from miniclaw.agent.events import RunEvent, RunEventHandler, emit
+from miniclaw.checkpoints.store import CheckpointError, CheckpointStore
 from miniclaw.policy.approvals import (
     ApprovalDecision,
     ApprovalError,
@@ -51,6 +53,7 @@ class ToolExecutor:
         approvals: ApprovalRepository | None = None,
         policy_rules: PolicyRuleRepository | None = None,
         execution_plans: ExecutionPlanRepository | None = None,
+        checkpoint_store: CheckpointStore | None = None,
         approval_ttl_seconds: int = 600,
     ) -> None:
         if type(result_max_chars) is not int or result_max_chars <= 0:
@@ -64,6 +67,7 @@ class ToolExecutor:
         self._approvals = approvals
         self._policy_rules = policy_rules
         self._execution_plans = execution_plans or runs.execution_plans
+        self._checkpoint_store = checkpoint_store
         self._approval_ttl_seconds = approval_ttl_seconds
 
     @property
@@ -454,28 +458,54 @@ class ToolExecutor:
                     {"call_id": call_id, "tool_name": tool.definition.name},
                 ),
             )
-            receipt: ExecutionReceipt | None = None
-            execute_plan = getattr(tool, "execute_plan", None)
-            if execution_plan is not None and execute_plan is not None:
-                planned = await execute_plan(context, execution_plan)
-                if (
-                    not isinstance(planned, tuple)
-                    or len(planned) != 2
-                    or not isinstance(planned[0], ToolResult)
-                    or not isinstance(planned[1], ExecutionReceipt)
-                ):
-                    raise TypeError("tool returned an invalid planned result")
-                result, receipt = planned
-                self._execution_plans.complete(run_id, receipt)
+            if self._checkpoint_store is not None:
+                paths = _checkpoint_paths(tool, context, arguments, execution_plan)
+                paths = tuple(
+                    path for path in paths if self._checkpoint_store.contains(path)
+                )
+                if paths:
+                    await asyncio.to_thread(
+                        self._checkpoint_store.capture,
+                        paths,
+                        reason=tool.definition.name,
+                        now=datetime.now(UTC),
+                        turn_id=context.turn_id,
+                        task_run_id=context.task_run_id,
+                        tool_run_id=run_id,
+                    )
+            if (
+                context.source == "automation"
+                and context.automation_gate is not None
+                and not context.automation_gate()
+            ):
+                result = ToolResult.failure("automation_halted", "automation is halted")
+                model_text = result.to_model_text(tool.definition.name)
             else:
-                result = await tool.execute(context, arguments)
-            if not isinstance(result, ToolResult):
-                raise TypeError("tool returned an invalid result")
-            model_text = result.to_model_text(tool.definition.name)
+                receipt: ExecutionReceipt | None = None
+                execute_plan = getattr(tool, "execute_plan", None)
+                if execution_plan is not None and execute_plan is not None:
+                    planned = await execute_plan(context, execution_plan)
+                    if (
+                        not isinstance(planned, tuple)
+                        or len(planned) != 2
+                        or not isinstance(planned[0], ToolResult)
+                        or not isinstance(planned[1], ExecutionReceipt)
+                    ):
+                        raise TypeError("tool returned an invalid planned result")
+                    result, receipt = planned
+                    self._execution_plans.complete(run_id, receipt)
+                else:
+                    result = await tool.execute(context, arguments)
+                if not isinstance(result, ToolResult):
+                    raise TypeError("tool returned an invalid result")
+                model_text = result.to_model_text(tool.definition.name)
         except asyncio.CancelledError:
             self._runs.interrupt(run_id, _elapsed_ms(started))
             raise
         except SandboxPlanError as error:
+            result = ToolResult.failure(error.code, error.code)
+            model_text = result.to_model_text(tool.definition.name)
+        except CheckpointError as error:
             result = ToolResult.failure(error.code, error.code)
             model_text = result.to_model_text(tool.definition.name)
         except Exception:  # noqa: BLE001 - 内部异常必须在 Tool 边界脱敏
@@ -507,6 +537,24 @@ class ToolExecutor:
             ),
         )
         return ToolExecution(model_text, succeeded=result.ok, result=result)
+
+
+def _checkpoint_paths(
+    tool: Tool,
+    context: ToolContext,
+    arguments: dict[str, JsonValue],
+    execution_plan: ExecutionPlan | None,
+) -> tuple[Path, ...]:
+    """收集 Tool exact targets；automation command 只捕获声明的 writable roots。"""
+    declared = getattr(tool, "checkpoint_paths", None)
+    if declared is not None:
+        paths = declared(context, arguments)
+        if not isinstance(paths, tuple) or any(not isinstance(path, Path) for path in paths):
+            raise CheckpointError("checkpoint_path_denied")
+        return paths
+    if context.source == "automation" and execution_plan is not None:
+        return execution_plan.write_roots
+    return ()
 
 
 async def _finish_unstarted(

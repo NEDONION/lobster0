@@ -19,6 +19,7 @@ from miniclaw.automation.runner import TaskRunner
 from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
+from miniclaw.checkpoints.store import CheckpointStore
 from miniclaw.config import AppConfig, resolve_permission_roots
 from miniclaw.memory.buffer import MemoryBufferRepository
 from miniclaw.memory.console import MemoryConsole
@@ -186,6 +187,20 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     network_rules = tuple(
         dict.fromkeys((*configured_network_rules, *rules.network_rules(owner.id)))
     )
+    checkpoint_store = (
+        CheckpointStore(
+            database,
+            owner_id=owner.id,
+            workspace=effective_workspace.path,
+            state_home=paths.home,
+            max_entries=config.checkpoint.max_entries,
+            max_total_bytes=config.checkpoint.max_total_bytes,
+            max_file_bytes=config.checkpoint.max_file_bytes,
+            max_count=config.checkpoint.max_count,
+        )
+        if config.checkpoint.enabled
+        else None
+    )
     memory = MemoryStore(paths)
     memory_retrieval = MemoryRetrieval(database)
     memory_scheduler = MemoryFlushScheduler()
@@ -278,6 +293,11 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             max_timeout_seconds=config.tools.run_command.max_timeout_seconds,
             executable_path=executable_environment.path_value,
             owner_home=permission_roots.owner_home,
+            automation_backend=config.sandbox.backend,
+            sandbox_image=config.sandbox.image,
+            sandbox_memory_mib=config.sandbox.memory_mib,
+            sandbox_cpu_seconds=config.sandbox.cpu_seconds,
+            sandbox_pids_limit=config.sandbox.pids_limit,
         ),
         ReadMemoryTool(memory),
         ProposeMemoryTool(memory),
@@ -309,6 +329,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         approvals=approvals,
         policy_rules=rules,
         approval_ttl_seconds=config.tools.approval_ttl_seconds,
+        checkpoint_store=checkpoint_store,
     )
     automation_control = AutomationControlRepository(database)
     service = TurnService(

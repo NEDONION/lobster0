@@ -169,6 +169,14 @@ class CheckpointStore:
         """返回 canonical Workspace root。"""
         return self._workspace
 
+    def contains(self, path: Path) -> bool:
+        """判断路径是否可由当前 Workspace-relative manifest 表达。"""
+        try:
+            Path(os.path.abspath(path)).relative_to(self._workspace)
+        except (OSError, ValueError):
+            return False
+        return True
+
     def capture(
         self,
         paths: tuple[Path, ...],

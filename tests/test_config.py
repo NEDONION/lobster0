@@ -487,6 +487,10 @@ class ConfigTest(unittest.TestCase):
             ('[sandbox]\nbackend = "process"\n', "sandbox.backend"),
             ('[sandbox]\nnetwork = "host"\n', "sandbox.network"),
             ('[sandbox]\nimage = "bad image"\n', "sandbox.image"),
+            (
+                '[automation]\nenabled = true\n\n[sandbox]\nimage = "miniclaw-sandbox:phase6"\n',
+                "sha256 digest",
+            ),
             ("[sandbox]\nmemory_mib = 0\n", "sandbox.memory_mib"),
             ("[checkpoint]\nmax_entries = 10001\n", "checkpoint.max_entries"),
             ("[checkpoint]\nmax_file_bytes = 2097152\nmax_total_bytes = 1048576\n",

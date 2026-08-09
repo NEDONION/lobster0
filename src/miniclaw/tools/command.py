@@ -1,7 +1,9 @@
 """不经过 Shell、通过 immutable ExecutionPlan 执行的命令 Tool。"""
 
 import os
+import shutil
 from pathlib import Path
+from typing import cast
 
 from miniclaw.policy.command import (
     SAFE_EXECUTABLE_PATH,
@@ -9,8 +11,15 @@ from miniclaw.policy.command import (
     normalize_command,
 )
 from miniclaw.providers.base import JsonValue
-from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
+from miniclaw.sandbox.base import (
+    ExecutionPlan,
+    ExecutionReceipt,
+    SandboxBackendName,
+    SandboxPlanError,
+)
+from miniclaw.sandbox.docker import DockerSandbox
 from miniclaw.sandbox.host import HostSandbox
+from miniclaw.sandbox.seatbelt import SeatbeltSandbox
 from miniclaw.tools.base import (
     ToolContext,
     ToolDefinition,
@@ -63,6 +72,11 @@ class RunCommandTool:
         max_timeout_seconds: int = 120,
         executable_path: str = SAFE_EXECUTABLE_PATH,
         owner_home: Path | None = None,
+        automation_backend: str = "host",
+        sandbox_image: str = "miniclaw-sandbox:phase6",
+        sandbox_memory_mib: int = 512,
+        sandbox_cpu_seconds: int = 60,
+        sandbox_pids_limit: int = 128,
     ) -> None:
         if (
             type(timeout_seconds) is not int
@@ -77,10 +91,24 @@ class RunCommandTool:
             raise ValueError("executable_path must be a non-empty string")
         if owner_home is not None and not owner_home.is_absolute():
             raise ValueError("owner_home must be absolute")
+        if automation_backend not in {"host", "docker", "seatbelt"}:
+            raise ValueError("automation_backend is invalid")
+        for value, name, maximum in (
+            (sandbox_memory_mib, "sandbox_memory_mib", 32_768),
+            (sandbox_cpu_seconds, "sandbox_cpu_seconds", 3600),
+            (sandbox_pids_limit, "sandbox_pids_limit", 4096),
+        ):
+            if type(value) is not int or not 1 <= value <= maximum:
+                raise ValueError(f"{name} is invalid")
         self._timeout_seconds = timeout_seconds
         self._max_timeout_seconds = max_timeout_seconds
         self._executable_path = executable_path
         self._owner_home = owner_home
+        self._automation_backend = cast(SandboxBackendName, automation_backend)
+        self._sandbox_image = sandbox_image
+        self._sandbox_memory_mib = sandbox_memory_mib
+        self._sandbox_cpu_seconds = sandbox_cpu_seconds
+        self._sandbox_pids_limit = sandbox_pids_limit
 
     def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         """校验 program、字符串 argv 和不可放大的 timeout。"""
@@ -148,18 +176,27 @@ class RunCommandTool:
         except CommandPolicyError as error:
             raise SandboxPlanError(error.code, str(error)) from None
         environment = _safe_environment(self._executable_path, self._owner_home)
+        automation = context.source == "automation"
+        if automation:
+            environment.pop("HOME", None)
+        backend = self._automation_backend if automation else "host"
+        planned_program = (
+            Path(normalized.resolved_program).name
+            if backend == "docker"
+            else normalized.resolved_program
+        )
         return ExecutionPlan(
-            argv=(normalized.resolved_program, *normalized.args),
+            argv=(planned_program, *normalized.args),
             cwd=context.workspace,
             environment_names=tuple(environment),
-            read_roots=(),
-            write_roots=(context.workspace,),
+            read_roots=(context.workspace,) if automation else (),
+            write_roots=() if automation else (context.workspace,),
             timeout_seconds=timeout,
-            memory_mib=512,
-            cpu_seconds=timeout,
-            pids_limit=64,
+            memory_mib=self._sandbox_memory_mib if automation else 512,
+            cpu_seconds=self._sandbox_cpu_seconds if automation else timeout,
+            pids_limit=self._sandbox_pids_limit if automation else 64,
             network_mode="none",
-            backend="host",
+            backend=backend,
         )
 
     async def execute_plan(
@@ -170,7 +207,17 @@ class RunCommandTool:
         """只执行传入 plan，不从 arguments 重新生成或替换批准内容。"""
         del context
         environment = _safe_environment(self._executable_path, self._owner_home)
-        backend = HostSandbox(environment.get)
+        if plan.backend == "host":
+            backend = HostSandbox(environment.get)
+        elif plan.backend == "docker":
+            docker_executable = shutil.which("docker") or "/usr/bin/docker"
+            backend = DockerSandbox(
+                image=self._sandbox_image,
+                docker_executable=str(Path(docker_executable).resolve()),
+                environment_resolver=environment.get,
+            )
+        else:
+            backend = SeatbeltSandbox(environment_resolver=environment.get)
         receipt = await backend.execute(plan)
         if receipt.timed_out:
             return (

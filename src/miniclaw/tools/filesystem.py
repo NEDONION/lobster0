@@ -157,6 +157,17 @@ class WriteFileTool:
             raise ToolValidationError("overwrite must be a boolean")
         return {"path": path, "content": content, "overwrite": overwrite}
 
+    def checkpoint_paths(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> tuple[Path, ...]:
+        """返回 Policy 已规范化的唯一写目标，供副作用前 capture。"""
+        del context
+        path = arguments["path"]
+        assert isinstance(path, str)
+        return (Path(path),)
+
     async def execute(
         self,
         context: ToolContext,
@@ -218,6 +229,17 @@ class EditFileTool:
         except UnicodeEncodeError:
             raise ToolValidationError("edit text must be valid UTF-8") from None
         return {"path": path, "old_text": old_text, "new_text": new_text}
+
+    def checkpoint_paths(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> tuple[Path, ...]:
+        """返回 Policy 已规范化的唯一编辑目标，供副作用前 capture。"""
+        del context
+        path = arguments["path"]
+        assert isinstance(path, str)
+        return (Path(path),)
 
     async def execute(
         self,

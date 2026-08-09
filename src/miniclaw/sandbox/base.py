@@ -89,9 +89,9 @@ class ExecutionPlan:
                         "execution_plan_invalid", "read and write roots overlap"
                     )
         _bounded_integer("timeout_seconds", self.timeout_seconds, 1, 120)
-        _bounded_integer("memory_mib", self.memory_mib, 16, 4096)
-        _bounded_integer("cpu_seconds", self.cpu_seconds, 1, 120)
-        _bounded_integer("pids_limit", self.pids_limit, 1, 512)
+        _bounded_integer("memory_mib", self.memory_mib, 16, 32_768)
+        _bounded_integer("cpu_seconds", self.cpu_seconds, 1, 3600)
+        _bounded_integer("pids_limit", self.pids_limit, 1, 4096)
         if self.network_mode not in _NETWORK_MODES:
             raise SandboxPlanError("execution_plan_invalid", "network mode is invalid")
         if self.backend not in _BACKENDS:
