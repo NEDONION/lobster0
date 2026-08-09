@@ -303,6 +303,10 @@ Agent Case 与 Skill 进化仍留在 Phase 7。
 - 可选 STT/TTS；
 - Channel capability 降级。
 
+Phase 9 的 depth-1 Sub-agent 是临时 child task，不等同于 v2 持久化 Multi-agent persona。Desktop 如何先交付单 Agent
+parity、再消费 Phase 9、最后进入 v2 Named Agent，见
+[桌面多 Agent 产品与架构演进设计](20260809_桌面多Agent产品与架构演进设计.md)。
+
 ## 7. 横向工程原则
 
 所有 Phase 都必须遵守：
