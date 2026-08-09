@@ -20,8 +20,8 @@ class ConfigTest(unittest.TestCase):
         self.paths = build_state_paths(self.home)
         self.workspace = self.home / "custom-workspace"
 
-    def test_missing_file_uses_predictable_defaults(self) -> None:
-        """尚未生成配置文件时应返回可预测且不含密钥值的默认配置。"""
+    def test_missing_file_uses_adaptive_agent_defaults(self) -> None:
+        """尚未生成配置文件时应使用自适应 Agent loop 默认预算。"""
         config = load_config(
             self.paths,
             {"MINICLAW_MODEL_API_KEY": "secret-must-stay-outside-config"},
@@ -29,7 +29,9 @@ class ConfigTest(unittest.TestCase):
         )
 
         self.assertEqual(config.agent.model, "provider/model")
-        self.assertEqual(config.agent.max_tool_iterations, 8)
+        self.assertEqual(config.agent.max_tool_iterations, 32)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 64)
+        self.assertEqual(config.agent.max_no_progress_iterations, 3)
         self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
@@ -82,6 +84,28 @@ class ConfigTest(unittest.TestCase):
             "MINICLAW_FEISHU_APP_SECRET",
         )
         self.assertNotIn("secret-must-stay-outside-config", repr(config))
+
+    def test_agent_budget_rejects_hard_limit_below_soft_limit(self) -> None:
+        """hard tool loop 上限不能低于常规 soft 上限。"""
+        self.paths.config.write_text(
+            "[agent]\nmax_tool_iterations = 40\nmax_tool_iterations_hard = 32\n",
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ConfigError, "max_tool_iterations_hard"):
+            load_config(self.paths, {}, {})
+
+    def test_agent_budget_rejects_hard_limit_below_environment_soft_limit(self) -> None:
+        """环境变量覆盖后 hard tool loop 上限仍不能低于 soft 上限。"""
+        with self.assertRaisesRegex(ConfigError, "max_tool_iterations_hard"):
+            load_config(
+                self.paths,
+                {
+                    "MINICLAW_MAX_TOOL_ITERATIONS": "40",
+                    "MINICLAW_MAX_TOOL_ITERATIONS_HARD": "32",
+                },
+                {},
+            )
 
     def test_explicit_safe_tool_mode_overrides_autopilot_default(self) -> None:
         """用户显式选择 safe 时必须保留审批模式。"""
@@ -277,12 +301,16 @@ class ConfigTest(unittest.TestCase):
             {
                 "MINICLAW_MODEL_NAME": "env-model",
                 "MINICLAW_MAX_TOOL_ITERATIONS": "6",
+                "MINICLAW_MAX_TOOL_ITERATIONS_HARD": "12",
+                "MINICLAW_MAX_NO_PROGRESS_ITERATIONS": "4",
             },
             {"model": "cli-model"},
         )
 
         self.assertEqual(config.agent.model, "cli-model")
         self.assertEqual(config.agent.max_tool_iterations, 6)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 12)
+        self.assertEqual(config.agent.max_no_progress_iterations, 4)
         self.assertEqual(config.provider.base_url, "https://file.example/v1")
         self.assertEqual(config.workspace.path, self.workspace)
 

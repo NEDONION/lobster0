@@ -53,7 +53,14 @@ _TOP_LEVEL_KEYS = frozenset(
     }
 )
 _AGENT_KEYS = frozenset(
-    {"model", "max_tool_iterations", "context_budget_tokens", "tool_result_max_chars"}
+    {
+        "model",
+        "max_tool_iterations",
+        "max_tool_iterations_hard",
+        "max_no_progress_iterations",
+        "context_budget_tokens",
+        "tool_result_max_chars",
+    }
 )
 _PROVIDER_KEYS = frozenset({"base_url", "api_key_env", "timeout_seconds"})
 _WORKSPACE_KEYS = frozenset({"path", "read_only_roots"})
@@ -172,7 +179,9 @@ class AgentConfig:
     """保存 Agent 运行预算与模型名称。"""
 
     model: str = "provider/model"
-    max_tool_iterations: int = 8
+    max_tool_iterations: int = 32
+    max_tool_iterations_hard: int = 64
+    max_no_progress_iterations: int = 3
     context_budget_tokens: int = 32_000
     tool_result_max_chars: int = 20_000
 
@@ -455,7 +464,15 @@ def load_config(
 
     model = _non_empty_string(agent_raw.get("model", "provider/model"), "agent.model")
     max_tool_iterations = _positive_integer(
-        agent_raw.get("max_tool_iterations", 8), "agent.max_tool_iterations"
+        agent_raw.get("max_tool_iterations", 32), "agent.max_tool_iterations"
+    )
+    max_tool_iterations_hard = _positive_integer(
+        agent_raw.get("max_tool_iterations_hard", 64),
+        "agent.max_tool_iterations_hard",
+    )
+    max_no_progress_iterations = _positive_integer(
+        agent_raw.get("max_no_progress_iterations", 3),
+        "agent.max_no_progress_iterations",
     )
     context_budget_tokens = _positive_integer(
         agent_raw.get("context_budget_tokens", 32_000), "agent.context_budget_tokens"
@@ -890,6 +907,16 @@ def load_config(
     max_tool_iterations = _environment_integer(
         source, "MINICLAW_MAX_TOOL_ITERATIONS", max_tool_iterations
     )
+    max_tool_iterations_hard = _environment_integer(
+        source,
+        "MINICLAW_MAX_TOOL_ITERATIONS_HARD",
+        max_tool_iterations_hard,
+    )
+    max_no_progress_iterations = _environment_integer(
+        source,
+        "MINICLAW_MAX_NO_PROGRESS_ITERATIONS",
+        max_no_progress_iterations,
+    )
     context_budget_tokens = _environment_integer(
         source, "MINICLAW_CONTEXT_BUDGET_TOKENS", context_budget_tokens
     )
@@ -916,10 +943,18 @@ def load_config(
     if "workspace" in explicit:
         workspace_path = _absolute_path(explicit["workspace"], "override.workspace")
 
+    if max_tool_iterations_hard < max_tool_iterations:
+        raise ConfigError(
+            "agent.max_tool_iterations_hard must be greater than or equal to "
+            "agent.max_tool_iterations"
+        )
+
     return AppConfig(
         agent=AgentConfig(
             model=model,
             max_tool_iterations=max_tool_iterations,
+            max_tool_iterations_hard=max_tool_iterations_hard,
+            max_no_progress_iterations=max_no_progress_iterations,
             context_budget_tokens=context_budget_tokens,
             tool_result_max_chars=tool_result_max_chars,
         ),

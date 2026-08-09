@@ -73,6 +73,8 @@ class AgentRunner:
         executor: ToolExecutor | None = None,
         *,
         max_iterations: int = 8,
+        hard_max_iterations: int = 64,
+        max_no_progress_iterations: int = 3,
     ) -> None:
         """绑定 Provider、当前可用工具和严格正数循环上限。
 
@@ -80,15 +82,25 @@ class AgentRunner:
             provider: 实际或 Fake 模型边界。
             executor: 可选的唯一安全 Tool 执行入口。
             max_iterations: 包含最终响应在内的最多模型调用次数。
+            hard_max_iterations: 任何自适应策略都不能超过的循环硬上限。
+            max_no_progress_iterations: 允许连续无进展 Tool 循环的次数上限。
 
         Raises:
-            ValueError: 循环上限不是正整数。
+            ValueError: 任一循环预算不是正整数，或 hard 上限低于常规上限。
         """
         if type(max_iterations) is not int or max_iterations <= 0:
             raise ValueError("max_iterations must be a positive integer")
+        if type(hard_max_iterations) is not int or hard_max_iterations <= 0:
+            raise ValueError("hard_max_iterations must be a positive integer")
+        if type(max_no_progress_iterations) is not int or max_no_progress_iterations <= 0:
+            raise ValueError("max_no_progress_iterations must be a positive integer")
+        if hard_max_iterations < max_iterations:
+            raise ValueError("hard_max_iterations must be greater than or equal to max_iterations")
         self._provider = provider
         self._executor = executor
         self._max_iterations = max_iterations
+        self._hard_max_iterations = hard_max_iterations
+        self._max_no_progress_iterations = max_no_progress_iterations
 
     @property
     def tool_schemas(self) -> tuple[dict[str, JsonValue], ...]:
