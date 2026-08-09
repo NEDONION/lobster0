@@ -207,17 +207,24 @@ def _render_answer_markdown(answer: str) -> str:
 
         cells = _table_cells(line)
         separator = _table_cells(source[index + 1]) if index + 1 < len(source) else None
-        if cells is not None and separator is not None and _is_table_separator(separator):
-            index += 2
+        if (
+            cells is not None
+            and separator is not None
+            and len(cells) == len(separator)
+            and _is_table_separator(separator)
+        ):
+            next_index = index + 2
             rows: list[list[str]] = []
-            while index < len(source):
-                row = _table_cells(source[index])
-                if row is None:
+            while next_index < len(source):
+                row = _table_cells(source[next_index])
+                if row is None or len(row) != len(cells) or not any(row):
                     break
                 rows.append(row)
-                index += 1
-            rendered.extend(_table_bullets(cells, rows))
-            continue
+                next_index += 1
+            if rows:
+                rendered.extend(_table_bullets(cells, rows))
+                index = next_index
+                continue
 
         rendered.append(_escape_raw_html(line))
         index += 1
@@ -266,16 +273,92 @@ def _escape_raw_html(line: str) -> str:
         """转义单个已识别的 HTML 标签。"""
         return match.group(0).replace("<", "&lt;").replace(">", "&gt;")
 
-    return _HTML_TAG.sub(escape_tag, line)
+    return "".join(
+        segment if is_code else _HTML_TAG.sub(escape_tag, segment)
+        for segment, is_code in _inline_code_segments(line)
+    )
 
 
 def _table_cells(line: str) -> list[str] | None:
     """解析一行原始文本；表格行返回单元格列表，普通文本返回 None。"""
     stripped = line.strip()
-    if not stripped.startswith("|") or not stripped.endswith("|"):
+    if (
+        not stripped.startswith("|")
+        or not stripped.endswith("|")
+        or _is_escaped(stripped, len(stripped) - 1)
+    ):
         return None
-    cells = [cell.strip() for cell in stripped[1:-1].split("|")]
+    cells: list[str] = []
+    current: list[str] = []
+    body = stripped[1:-1]
+    index = 0
+    while index < len(body):
+        char = body[index]
+        if char == "`" and not _is_escaped(body, index):
+            code_end = _inline_code_span_end(body, index)
+            if code_end is not None:
+                current.append(body[index:code_end])
+                index = code_end
+                continue
+        if char == "|" and not _is_escaped(body, index):
+            cells.append("".join(current).strip())
+            current = []
+        else:
+            current.append(char)
+        index += 1
+    cells.append("".join(current).strip())
     return cells if cells else None
+
+
+def _inline_code_segments(text: str) -> list[tuple[str, bool]]:
+    """把文本分为普通段和匹配的行内 code span，返回段内容及其代码标记。"""
+    segments: list[tuple[str, bool]] = []
+    plain_start = 0
+    index = 0
+    while index < len(text):
+        if text[index] == "`" and not _is_escaped(text, index):
+            code_end = _inline_code_span_end(text, index)
+            if code_end is not None:
+                if plain_start < index:
+                    segments.append((text[plain_start:index], False))
+                segments.append((text[index:code_end], True))
+                index = code_end
+                plain_start = index
+                continue
+        index += 1
+    if plain_start < len(text):
+        segments.append((text[plain_start:], False))
+    return segments
+
+
+def _inline_code_span_end(text: str, start: int) -> int | None:
+    """返回从未转义反引号开始的同长度行内 code span 结束偏移。"""
+    marker_end = start
+    while marker_end < len(text) and text[marker_end] == "`":
+        marker_end += 1
+    marker_length = marker_end - start
+    index = marker_end
+    while index < len(text):
+        if text[index] != "`" or _is_escaped(text, index):
+            index += 1
+            continue
+        candidate_end = index
+        while candidate_end < len(text) and text[candidate_end] == "`":
+            candidate_end += 1
+        if candidate_end - index == marker_length:
+            return candidate_end
+        index = candidate_end
+    return None
+
+
+def _is_escaped(text: str, index: int) -> bool:
+    """判断指定位置是否被奇数个连续反斜线转义。"""
+    backslashes = 0
+    cursor = index - 1
+    while cursor >= 0 and text[cursor] == "\\":
+        backslashes += 1
+        cursor -= 1
+    return backslashes % 2 == 1
 
 
 def _is_table_separator(cells: list[str]) -> bool:

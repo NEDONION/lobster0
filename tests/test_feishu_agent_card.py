@@ -126,6 +126,42 @@ class FeishuAgentCardTest(unittest.TestCase):
         self.assertNotIn("| 项目 | 内容 |", final_content)
         self.assertIn("&lt;at id=all&gt;&lt;/at&gt;", final_content)
 
+    def test_table_tokenizer_preserves_escaped_and_inline_code_pipes(self) -> None:
+        """表格单元格中的转义管道和不同长度的行内 code span 不得被拆坏。"""
+        answer = (
+            "| 项目 | 内容 |\n"
+            "| --- | --- |\n"
+            "| 路径\\|别名 | ``<at id=all></at> | `inner|pipe` `` <at id=all></at> |"
+        )
+
+        final_content = self._final_content(answer)
+
+        self.assertIn("- **路径\\|别名**：``<at id=all></at> | `inner|pipe` ``", final_content)
+        self.assertIn("&lt;at id=all&gt;&lt;/at&gt;", final_content)
+        self.assertNotIn("| --- |", final_content)
+
+    def test_incomplete_or_mismatched_table_rows_are_not_silently_lost(self) -> None:
+        """无数据行的伪表格保留原文，真实表格只消费列宽匹配的数据行。"""
+        incomplete = "| 项目 | 内容 |\n| --- | --- |\n| | |\n普通段落"
+        mixed = "| 字段 | 值 |\n| --- | --- |\n| 正常 | 数据 |\n| 多余 | 一 | 二 |"
+
+        incomplete_content = self._final_content(incomplete)
+        mixed_content = self._final_content(mixed)
+
+        self.assertIn("| 项目 | 内容 |\n| --- | --- |\n| | |\n普通段落", incomplete_content)
+        self.assertIn("- **正常**：数据", mixed_content)
+        self.assertIn("| 多余 | 一 | 二 |", mixed_content)
+
+    def test_raw_html_escapes_only_outside_inline_code_spans(self) -> None:
+        """不同长度的有效行内 code span 保留原文，代码外 mention 必须转义。"""
+        answer = "`<at id=all></at>` 和 ``<at id=all></at> `keep` ``，外部 <at id=all></at>"
+
+        final_content = self._final_content(answer)
+
+        self.assertIn("`<at id=all></at>`", final_content)
+        self.assertIn("``<at id=all></at> `keep` ``", final_content)
+        self.assertIn("外部 &lt;at id=all&gt;&lt;/at&gt;", final_content)
+
     def test_long_fenced_answer_closes_visible_fence_and_keeps_exact_tail(self) -> None:
         """截断后的卡补齐代码 fence，但续发偏移始终对应原始字符串前缀。"""
         answer = "# 日志\n\n```python\n" + ("print('🙂')\n" * 4_000) + "```\n\n尾部结论"
