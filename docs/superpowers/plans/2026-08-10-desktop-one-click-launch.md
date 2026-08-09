@@ -11,6 +11,9 @@
 > 2026-08-10 修正：Electron 43 不再由 pnpm install 自动生成 `path.txt`；launcher 通过
 > `require("electron")` 调用官方 resolver，缺失或残缺时由包内懒安装补齐，再启动 electron-vite。
 > 对应回归测试覆盖“包和 path 存在、executable 缺失”。
+>
+> 同日兼容修正：pnpm `--dir desktop` 会改变 Bridge 的 cwd；旧状态没有 `secrets.env` 时，launcher
+> 必须把仓库根 owner-only `.env` 的绝对路径写入 `MINICLAW_ENV_FILE`，不能依赖 cwd 隐式发现。
 
 ## Global Constraints
 

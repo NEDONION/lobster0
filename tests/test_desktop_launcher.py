@@ -26,6 +26,8 @@ class LauncherSandbox:
         electron_installed: bool = True,
         include_uv: bool = True,
         platform: str = "Darwin",
+        repository_dotenv: bool = False,
+        state_secret: bool = True,
     ) -> None:
         """保存初始化和依赖状态，实际目录在进入上下文时创建。
 
@@ -35,12 +37,16 @@ class LauncherSandbox:
             electron_installed: 是否创建 electron-vite 启动所需的 Electron path 文件。
             include_uv: 是否提供 fake uv executable。
             platform: fake uname 返回的系统名。
+            repository_dotenv: 是否创建仓库根 owner-only `.env`。
+            state_secret: 已初始化状态是否包含 owner-only `secrets.env`。
         """
         self._initialized = initialized
         self._dependencies = dependencies
         self._electron_installed = electron_installed
         self._include_uv = include_uv
         self._platform = platform
+        self._repository_dotenv = repository_dotenv
+        self._state_secret = state_secret
         self._temporary = tempfile.TemporaryDirectory()
         self.root = Path(self._temporary.name).resolve()
         self.state_home = self.root / "state"
@@ -79,9 +85,14 @@ class LauncherSandbox:
                 electron_binary.touch()
         if self._initialized:
             (self.state_home / "config.toml").write_text("[provider]\n", encoding="utf-8")
+        if self._initialized and self._state_secret:
             secret = self.state_home / "secrets.env"
             secret.write_text("MINICLAW_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
             secret.chmod(0o600)
+        if self._repository_dotenv:
+            dotenv = self.root / ".env"
+            dotenv.write_text("MINICLAW_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
+            dotenv.chmod(0o600)
         self._write_executable("uname", f"print -r -- {self._platform}\n")
         self._write_executable(
             "node",
@@ -399,6 +410,30 @@ class DesktopLauncherTest(unittest.TestCase):
                     ),
                 ],
             )
+
+    def test_repository_dotenv_is_selected_when_existing_state_has_no_secret_file(self) -> None:
+        """旧状态没有 secrets.env 时必须显式传递仓库根私密 dotenv。"""
+        with LauncherSandbox(
+            initialized=True,
+            dependencies=True,
+            repository_dotenv=True,
+            state_secret=False,
+        ) as sandbox:
+            result = sandbox.run()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                sandbox.log_lines(),
+                [
+                    "corepack pnpm --dir tui build",
+                    f"miniclaw init --home {sandbox.state_home}",
+                    (
+                        "corepack pnpm --dir desktop dev "
+                        f"home={sandbox.state_home} env={sandbox.root / '.env'}"
+                    ),
+                ],
+            )
+            self.assertNotIn("SECRET_SENTINEL", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

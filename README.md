@@ -154,6 +154,7 @@ macOS 已安装 `uv`、Node.js `>=22.19.0` 和 Corepack 后，首选直接在 Fi
 脚本会按需安装锁定的 Python/TUI/Desktop 项目依赖、构建共享 TUI Bridge client、补齐 Electron 二进制，
 并在首次启动时调用安全的 `miniclaw setup` 收集模型 Key；后续启动只运行幂等 `init`。默认状态目录是 `~/.miniclaw`，也可提前设置绝对
 路径 `MINICLAW_HOME`。Secret 继续由 Core 写入 owner-only `secrets.env`，脚本不读取或打印其内容。
+旧状态没有 `secrets.env` 时，开发入口会显式选择仓库根目录现有的 owner-only `.env`。
 
 如果一键入口报告依赖或配置错误，可按下面步骤手工排障：
 

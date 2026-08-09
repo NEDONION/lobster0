@@ -60,5 +60,7 @@ else
 fi
 if [[ -z "${MINICLAW_ENV_FILE:-}" && -f "$STATE_HOME/secrets.env" ]]; then
   export MINICLAW_ENV_FILE="$STATE_HOME/secrets.env"
+elif [[ -z "${MINICLAW_ENV_FILE:-}" && -f "$REPOSITORY_ROOT/.env" ]]; then
+  export MINICLAW_ENV_FILE="$REPOSITORY_ROOT/.env"
 fi
 corepack pnpm --dir desktop dev
