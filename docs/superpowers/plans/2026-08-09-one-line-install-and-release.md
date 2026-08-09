@@ -994,9 +994,12 @@ git commit -m "feat(runtime): 构建 hash-locked atomic Runtime"
 - Modify: `tui/src/main.ts`
 - Create: `tui/test/smoke.test.ts`
 - Modify: `src/miniclaw/tui_launcher.py`
+- Modify: `src/miniclaw/doctor.py`
 - Modify: `tests/test_tui_launcher.py`
 - Modify: `tests/test_doctor.py`
 - Modify: `tests/test_cli.py`
+- Modify: `README.md`
+- Modify: `docs/getting-started/20260807_本地运行指南.md`
 - Create: `scripts/build_node_bundle.py`
 - Create: `scripts/build_tui_bundle.py`
 - Create: `tests/test_release_bundles.py`
@@ -1059,7 +1062,7 @@ CI repeats TypeScript test/bundle smoke with Node 22.22.3 and 24.18.0. Expected:
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tui/pnpm-workspace.yaml tui/package.json tui/src/main.ts tui/test/smoke.test.ts src/miniclaw/tui_launcher.py tests/test_tui_launcher.py tests/test_doctor.py tests/test_cli.py scripts/build_node_bundle.py scripts/build_tui_bundle.py tests/test_release_bundles.py
+git add tui/pnpm-workspace.yaml tui/package.json tui/src/main.ts tui/test/smoke.test.ts src/miniclaw/tui_launcher.py src/miniclaw/doctor.py tests/test_tui_launcher.py tests/test_doctor.py tests/test_cli.py README.md docs/getting-started/20260807_本地运行指南.md scripts/build_node_bundle.py scripts/build_tui_bundle.py tests/test_release_bundles.py
 git commit -m "build(tui): 生成 symlink-free managed Node/TUI bundles"
 ```
 
