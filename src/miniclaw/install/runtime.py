@@ -25,7 +25,13 @@ from pathlib import Path, PurePosixPath
 from typing import Never, Protocol
 
 from miniclaw.install.layout import InstallLayout, _program_mode
-from miniclaw.install.models import Artifact, InstallError, PlatformKey, ReleaseManifest
+from miniclaw.install.models import (
+    Artifact,
+    InstallError,
+    PlatformKey,
+    ReleaseManifest,
+    _python_filename_version,
+)
 from miniclaw.install.receipt import InstallReceipt, _rename_no_replace
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -661,12 +667,14 @@ def activate_runtime(layout: InstallLayout, receipt: RuntimeReceipt) -> None:
             or receipt.runtime_relative != f"runtimes/{layout.runtime.name}"
         ):
             _activation_failed()
-        _verify_runtime_directory(layout.runtime, receipt)
-        assert next_link is not None
-        if _lexists(next_link):
-            _activation_failed()
-        current_token = _validated_current(layout)
         target = receipt.runtime_relative
+        if _verified_runtime_target(layout, target) != receipt:
+            _activation_failed()
+        assert next_link is not None
+        current_token = _validated_current(layout)
+        if _lexists(next_link):
+            _recover_current_next(layout, next_link, target, current_token)
+            current_token = _validated_current(layout)
         os.symlink(target, next_link)
         metadata = next_link.lstat()
         next_identity = (metadata.st_dev, metadata.st_ino)
@@ -696,12 +704,8 @@ def activate_runtime(layout: InstallLayout, receipt: RuntimeReceipt) -> None:
             _activation_failed()
         _fsync_directory(layout.program_prefix)
         committed = True
-        if swapped and old_identity is not None:
-            _unlink_same_inode(next_link, old_identity)
-            try:
-                _fsync_directory(layout.program_prefix)
-            except OSError:
-                pass
+        if swapped and old_identity is not None and old_target is not None:
+            _retire_current_next(next_link, old_identity, old_target)
     except InstallError as error:
         if not committed:
             _rollback_activation(
@@ -1224,13 +1228,17 @@ def _inspect_wheel(path: Path, version: str) -> None:
     descriptor = -1
     parent = -1
     try:
+        python_version = _python_filename_version(version)
+    except InstallError:
+        _runtime_failed()
+    try:
         descriptor, parent, name, before = _open_regular_nofollow(path)
         stream = os.fdopen(descriptor, "rb")
         descriptor = -1
         with stream, zipfile.ZipFile(stream) as archive:
             infos = archive.infolist()
             _validate_wheel_infos(infos)
-            expected_dist_info = f"miniclaw_agent-{version}.dist-info"
+            expected_dist_info = f"miniclaw_agent-{python_version}.dist-info"
             metadata_names = [
                 info.filename
                 for info in infos
@@ -1256,7 +1264,7 @@ def _inspect_wheel(path: Path, version: str) -> None:
             parser.read_string(archive.read(entry_info).decode("utf-8"))
             if (
                 metadata.get("Name") != "miniclaw-agent"
-                or metadata.get("Version") != version
+                or metadata.get("Version") != python_version
                 or not parser.has_section("console_scripts")
                 or parser.get("console_scripts", "miniclaw", fallback="")
                 != "miniclaw.cli:main"
@@ -1653,6 +1661,65 @@ def _verify_runtime_directory(path: Path, receipt: RuntimeReceipt) -> None:
         _runtime_failed()
 
 
+def _verified_runtime_target(layout: InstallLayout, target: str) -> RuntimeReceipt:
+    """验证relative Runtime target的目录、receipt、manifest及artifact绑定。"""
+    try:
+        pure = PurePosixPath(target)
+        if (
+            pure.is_absolute()
+            or len(pure.parts) != 2
+            or pure.parts[0] != "runtimes"
+            or _SEMVER.fullmatch(pure.parts[1]) is None
+            or str(pure) != target
+        ):
+            _activation_failed()
+        runtime = layout.program_prefix.joinpath(*pure.parts)
+        receipt = RuntimeReceipt.load(runtime / "install-receipt.json")
+        _verify_runtime_directory(runtime, receipt)
+        manifest = ReleaseManifest.from_bytes(
+            _read_private_regular(
+                runtime / "release-manifest.json",
+                os.geteuid(),
+                _MAX_METADATA_BYTES,
+            )
+        )
+        bindings = {
+            "wheel": receipt.wheel_sha256,
+            "requirements": receipt.requirements_sha256,
+            "node": receipt.node_sha256,
+            "tui": receipt.tui_sha256,
+            "installer": receipt.installer_sha256,
+        }
+        if (
+            manifest.version != receipt.version
+            or manifest.git_commit != receipt.git_commit
+            or any(
+                not any(
+                    artifact.kind == kind and artifact.sha256 == digest
+                    for artifact in manifest.artifacts
+                )
+                for kind, digest in bindings.items()
+            )
+            or not any(
+                artifact.kind == "node"
+                and artifact.component_version == receipt.node_version
+                for artifact in manifest.artifacts
+            )
+            or not any(
+                artifact.kind == "tui" and artifact.component_version == receipt.tui_version
+                for artifact in manifest.artifacts
+            )
+        ):
+            _activation_failed()
+        return receipt
+    except InstallError as error:
+        if error.code == "activation_failed":
+            raise
+        _activation_failed()
+    except (OSError, ValueError, TypeError):
+        _activation_failed()
+
+
 def _validated_current(layout: InstallLayout) -> str | None:
     """返回 validated relative current target；不存在时返回 None。"""
     if not _lexists(layout.current):
@@ -1666,18 +1733,7 @@ def _validated_current(layout: InstallLayout) -> str | None:
         ):
             _activation_failed()
         target = os.readlink(layout.current)
-        pure = PurePosixPath(target)
-        if (
-            pure.is_absolute()
-            or len(pure.parts) != 2
-            or pure.parts[0] != "runtimes"
-            or _SEMVER.fullmatch(pure.parts[1]) is None
-            or str(pure) != target
-        ):
-            _activation_failed()
-        runtime = layout.program_prefix.joinpath(*pure.parts)
-        receipt = RuntimeReceipt.load(runtime / "install-receipt.json")
-        _verify_runtime_directory(runtime, receipt)
+        _verified_runtime_target(layout, target)
         after = layout.current.lstat()
         if _metadata_snapshot(after) != _metadata_snapshot(metadata):
             _activation_failed()
@@ -1751,6 +1807,66 @@ def _rename_exchange(source: Path, destination: Path) -> None:
     if result != 0:
         error_number = ctypes.get_errno()
         raise OSError(error_number, os.strerror(error_number))
+
+
+def _recover_current_next(
+    layout: InstallLayout,
+    next_link: Path,
+    desired_target: str,
+    current_target: str | None,
+) -> None:
+    """验证并quarantine可恢复current.next；foreign residue继续fail closed。"""
+    state = _owned_symlink_state(next_link)
+    if state is None:
+        _activation_failed()
+    identity, residue_target = state
+    _verified_runtime_target(layout, residue_target)
+    if (
+        current_target is None
+        and residue_target != desired_target
+        or current_target is not None
+        and current_target != desired_target
+        and residue_target != desired_target
+    ):
+        _activation_failed()
+    if not _retire_current_next(next_link, identity, residue_target):
+        _activation_failed()
+
+
+def _retire_current_next(
+    next_link: Path,
+    identity: tuple[int, int],
+    target: str,
+) -> bool:
+    """先原子移走verified reserved link并fsync，再best-effort清理private residue。"""
+    if not _same_symlink(next_link, identity, target):
+        return False
+    private: Path | None = None
+    for attempt in range(16):
+        candidate = next_link.with_name(
+            f".current.next.retired-{os.getpid()}-{time.monotonic_ns()}-{attempt}"
+        )
+        try:
+            _rename_no_replace(next_link, candidate)
+        except OSError as error:
+            if error.errno == errno.EEXIST:
+                continue
+            return False
+        private = candidate
+        break
+    if private is None or not _same_symlink(private, identity, target):
+        return False
+    try:
+        _fsync_directory(next_link.parent)
+    except OSError:
+        return False
+    _unlink_same_inode(private, identity)
+    if not _lexists(private):
+        try:
+            _fsync_directory(next_link.parent)
+        except OSError:
+            pass
+    return True
 
 
 def _rollback_activation(

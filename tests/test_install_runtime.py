@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -184,19 +185,60 @@ class InstallRuntimeTests(unittest.TestCase):
         name: str = "miniclaw-agent",
         version: str = "0.7.0",
         entry: str | None = "miniclaw = miniclaw.cli:main",
+        path: Path | None = None,
     ) -> None:
         """写入只含 metadata/entry point 的最小 wheel fixture。"""
-        with zipfile.ZipFile(self.wheel, "w") as archive:
+        wheel = self.wheel if path is None else path
+        dist_version = wheel.name.removeprefix("miniclaw_agent-").removesuffix(
+            "-py3-none-any.whl"
+        )
+        with zipfile.ZipFile(wheel, "w") as archive:
             archive.writestr(
-                "miniclaw_agent-0.7.0.dist-info/METADATA",
+                f"miniclaw_agent-{dist_version}.dist-info/METADATA",
                 f"Metadata-Version: 2.4\nName: {name}\nVersion: {version}\n",
             )
             if entry is not None:
                 archive.writestr(
-                    "miniclaw_agent-0.7.0.dist-info/entry_points.txt",
+                    f"miniclaw_agent-{dist_version}.dist-info/entry_points.txt",
                     f"[console_scripts]\n{entry}\n",
                 )
-        self.wheel.chmod(0o600)
+        wheel.chmod(0o600)
+
+    def _manifest_for_version(self, version: str, wheel: Path | None = None) -> ReleaseManifest:
+        """把基础 fixture 绑定到另一 Release SemVer 与 wheel。"""
+        artifacts: list[Artifact] = []
+        for artifact in self.manifest.artifacts:
+            filename = artifact.filename
+            component_version = artifact.component_version
+            sha256 = artifact.sha256
+            size = artifact.size
+            if artifact.kind == "wheel":
+                filename = (
+                    wheel.name
+                    if wheel is not None
+                    else f"miniclaw_agent-{version}-py3-none-any.whl"
+                )
+                if wheel is not None:
+                    sha256 = hashlib.sha256(wheel.read_bytes()).hexdigest()
+                    size = wheel.stat().st_size
+            elif artifact.kind == "tui":
+                filename = f"miniclaw-tui-{version}-linux-x86_64.tar.gz"
+            if artifact.kind != "node":
+                component_version = version
+            artifacts.append(
+                replace(
+                    artifact,
+                    filename=filename,
+                    url=(
+                        "https://github.com/NEDONION/miniclaw/releases/"
+                        f"download/v{version}/{filename}"
+                    ),
+                    sha256=sha256,
+                    size=size,
+                    component_version=component_version,
+                )
+            )
+        return replace(self.manifest, version=version, artifacts=tuple(artifacts))
 
     def _artifact(
         self,
@@ -420,6 +462,39 @@ class InstallRuntimeTests(unittest.TestCase):
             f"home = {self.layout.runtime / 'python' / 'bin'}",
             (self.layout.runtime / "venv" / "pyvenv.cfg").read_text(encoding="utf-8"),
         )
+
+    def test_prerelease_runtime_uses_pep440_only_inside_wheel(self) -> None:
+        """Runtime保留SemVer，wheel路径与METADATA只使用唯一PEP440映射。"""
+        version = "0.8.0-rc.1"
+        wheel = self.sources / "miniclaw_agent-0.8.0rc1-py3-none-any.whl"
+        self._write_wheel(path=wheel, version="0.8.0rc1")
+        manifest = self._manifest_for_version(version, wheel)
+        layout = InstallLayout._build(
+            self.layout.program_prefix,
+            self.layout.state_home,
+            self.layout.command_link,
+            version,
+        )
+        runner = FakeRunner()
+        runner.version = f"miniclaw {version}\n".encode()
+        runner.install_smoke = json.dumps(
+            {"status": "ok", "version": version}, separators=(",", ":")
+        ).encode() + b"\n"
+        runner.tui_smoke = json.dumps(
+            {"component": "pi-tui", "status": "ok", "version": version},
+            separators=(",", ":"),
+        ).encode() + b"\n"
+
+        receipt = RuntimeBuilder(runner).build(
+            replace(self.inputs, layout=layout, manifest=manifest, wheel=wheel)
+        )
+
+        self.assertEqual(receipt.version, version)
+        self.assertEqual(receipt.runtime_relative, f"runtimes/{version}")
+        self.assertTrue(layout.runtime.is_dir())
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed") as caught:
+            runtime_module._inspect_wheel(wheel, "0.8.0-preview.1")
+        self.assertNotIn("preview", str(caught.exception))
 
     def test_real_uv_relocatable_venv_still_needs_final_internal_repair(self) -> None:
         """真实 uv relocatable venv 仍会把 interpreter/base_prefix 指向构建时 Python。"""
@@ -781,6 +856,75 @@ class InstallRuntimeTests(unittest.TestCase):
         self.assertEqual(os.readlink(self.layout.current), "runtimes/0.6.0")
         self.assertFalse(self.layout.current.with_name("current.next").exists())
 
+    def test_activation_cleanup_failure_never_leaves_reserved_current_next(self) -> None:
+        """old-link unlink失败不得让reserved current.next阻断幂等重试。"""
+        self._write_runtime_receipt("0.6.0")
+        self.layout.current.symlink_to("runtimes/0.6.0")
+        receipt = RuntimeBuilder(self.runner).build(self.inputs)
+
+        with mock.patch.object(runtime_module, "_unlink_same_inode", return_value=None):
+            activate_runtime(self.layout, receipt)
+
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+        self.assertFalse(self.layout.current.with_name("current.next").exists())
+        activate_runtime(self.layout, receipt)
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+
+    def test_activation_recovers_verified_residue_after_quarantine_interruption(self) -> None:
+        """首次quarantine失败可留证据，下一入口必须验证并恢复。"""
+        self._write_runtime_receipt("0.6.0")
+        self.layout.current.symlink_to("runtimes/0.6.0")
+        receipt = RuntimeBuilder(self.runner).build(self.inputs)
+        next_link = self.layout.current.with_name("current.next")
+        real_no_replace = runtime_module._rename_no_replace
+        interrupted = False
+
+        def fail_first_retire(source: Path, destination: Path) -> None:
+            """只中断首次post-commit current.next quarantine。"""
+            nonlocal interrupted
+            if source == next_link and not interrupted:
+                interrupted = True
+                raise OSError(errno.EIO, "injected quarantine interruption")
+            real_no_replace(source, destination)
+
+        with mock.patch.object(runtime_module, "_rename_no_replace", fail_first_retire):
+            activate_runtime(self.layout, receipt)
+
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+        self.assertEqual(os.readlink(next_link), "runtimes/0.6.0")
+        activate_runtime(self.layout, receipt)
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+        self.assertFalse(next_link.exists())
+
+    def test_activation_rejects_foreign_current_next_residue(self) -> None:
+        """regular、absolute、escape、missing与invalid managed residue均fail closed。"""
+        receipt = RuntimeBuilder(self.runner).build(self.inputs)
+        next_link = self.layout.current.with_name("current.next")
+        cases = (
+            ("regular", "regular"),
+            ("absolute", str(self.layout.runtime)),
+            ("escape", "../outside"),
+            ("missing", "runtimes/9.9.9"),
+        )
+        for name, target in cases:
+            with self.subTest(case=name):
+                if name == "regular":
+                    next_link.write_text("foreign", encoding="utf-8")
+                    next_link.chmod(0o600)
+                else:
+                    next_link.symlink_to(target)
+                with self.assertRaisesRegex(InstallError, "activation_failed"):
+                    activate_runtime(self.layout, receipt)
+                self.assertTrue(next_link.exists() or next_link.is_symlink())
+                next_link.unlink()
+
+        invalid = self._write_runtime_receipt("0.6.0")
+        (invalid / "release-manifest.json").chmod(0o644)
+        next_link.symlink_to("runtimes/0.6.0")
+        with self.assertRaisesRegex(InstallError, "activation_failed"):
+            activate_runtime(self.layout, receipt)
+        self.assertEqual(os.readlink(next_link), "runtimes/0.6.0")
+
     def test_activation_never_overwrites_foreign_current_races(self) -> None:
         """absent/existing current 的 concurrent foreign link 都不能被覆盖。"""
         receipt = RuntimeBuilder(self.runner).build(self.inputs)
@@ -824,21 +968,25 @@ class InstallRuntimeTests(unittest.TestCase):
             self.layout.runtimes_dir.mkdir(mode=0o700)
         runtime = self.layout.runtimes_dir / version
         runtime.mkdir(mode=0o700)
+        manifest = self._manifest_for_version(version)
+        artifacts = {artifact.kind: artifact for artifact in manifest.artifacts}
         receipt = RuntimeReceipt(
             version=version,
-            git_commit=self.manifest.git_commit,
+            git_commit=manifest.git_commit,
             runtime_relative=f"runtimes/{version}",
             python_version="3.12.11",
             node_version="24.18.0",
             tui_version=version,
-            wheel_sha256="a" * 64,
-            requirements_sha256="b" * 64,
-            node_sha256="c" * 64,
-            tui_sha256="d" * 64,
-            installer_sha256="e" * 64,
+            wheel_sha256=artifacts["wheel"].sha256,
+            requirements_sha256=artifacts["requirements"].sha256,
+            node_sha256=artifacts["node"].sha256,
+            tui_sha256=artifacts["tui"].sha256,
+            installer_sha256=artifacts["installer"].sha256,
         )
         (runtime / "install-receipt.json").write_bytes(receipt.to_bytes())
         (runtime / "install-receipt.json").chmod(0o600)
+        (runtime / "release-manifest.json").write_bytes(runtime_module._manifest_bytes(manifest))
+        (runtime / "release-manifest.json").chmod(0o600)
         return runtime
 
     def test_retention_deletes_only_owned_unreferenced_runtime(self) -> None:
