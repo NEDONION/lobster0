@@ -58,7 +58,7 @@ def run_local_checks(
         environ: 配置覆盖使用的环境变量；默认使用当前进程环境。
 
     Returns:
-        固定二十二项、按依赖顺序排列的安全诊断结果。
+        固定二十七项、按依赖顺序排列的安全诊断结果。
     """
     state_result = _check_state_home(paths)
     config_result, config = _check_config(paths, environ)
@@ -73,6 +73,10 @@ def run_local_checks(
         _check_personal_permissions(config),
         _check_executables(config),
         _check_database(paths),
+        _check_automation_config(paths, config),
+        _check_automation_ledger(paths),
+        _check_automation_leases(paths),
+        _check_sandbox_checkpoint(paths, config),
         _check_memory(paths),
         _check_approvals(paths),
         _check_permissions(paths),
@@ -204,6 +208,127 @@ def _check_database(paths: StatePaths) -> CheckResult:
             f"database schema is {version}; expected {LATEST_SCHEMA_VERSION}",
         )
     return CheckResult("database", CheckStatus.PASS, f"database schema {version} is healthy")
+
+
+def _check_automation_config(
+    paths: StatePaths,
+    config: AppConfig | None,
+) -> CheckResult:
+    """报告 Automation 开关和 durable E-stop，不显示停止原因正文。"""
+    name = "automation"
+    if config is None or not paths.database.is_file() or paths.database.is_symlink():
+        return CheckResult(name, CheckStatus.FAIL, "automation state is unavailable")
+    try:
+        with Database(paths.database).connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT halted, revision FROM automation_control WHERE singleton = 1"
+            ).fetchone()
+    except (DatabaseError, sqlite3.Error, OSError):
+        return CheckResult(name, CheckStatus.FAIL, "automation control cannot be read")
+    if row is None:
+        return CheckResult(name, CheckStatus.FAIL, "automation control is missing")
+    enabled = "enabled" if config.automation.enabled else "disabled"
+    if bool(row["halted"]):
+        return CheckResult(
+            name,
+            CheckStatus.WARN,
+            f"automation is {enabled} and halted at revision {int(row['revision'])}",
+        )
+    return CheckResult(
+        name,
+        CheckStatus.PASS,
+        f"automation is {enabled}; E-stop is clear at revision {int(row['revision'])}",
+    )
+
+
+def _check_automation_ledger(paths: StatePaths) -> CheckResult:
+    """确认 v5 Task/Sandbox/Checkpoint 表与关键唯一索引齐全。"""
+    name = "automation_ledger"
+    required_tables = {
+        "scheduled_tasks",
+        "task_runs",
+        "automation_control",
+        "checkpoints",
+        "execution_plans",
+    }
+    required_indexes = {
+        "scheduled_tasks_due_idx",
+        "task_runs_state_idx",
+        "deliveries_task_run_part_idx",
+    }
+    try:
+        with Database(paths.database).connect_read_only() as connection:
+            rows = connection.execute(
+                "SELECT type, name FROM sqlite_master WHERE type IN ('table', 'index')"
+            ).fetchall()
+    except (DatabaseError, sqlite3.Error, OSError):
+        return CheckResult(name, CheckStatus.FAIL, "automation ledger cannot be inspected")
+    tables = {str(row["name"]) for row in rows if row["type"] == "table"}
+    indexes = {str(row["name"]) for row in rows if row["type"] == "index"}
+    missing = sorted((required_tables - tables) | (required_indexes - indexes))
+    if missing:
+        return CheckResult(
+            name,
+            CheckStatus.FAIL,
+            f"automation schema objects are missing: {', '.join(missing)}",
+        )
+    return CheckResult(name, CheckStatus.PASS, "Task ledger schema v5 objects are ready")
+
+
+def _check_automation_leases(paths: StatePaths) -> CheckResult:
+    """只读统计已经过期的 claimed/running lease。"""
+    name = "automation_leases"
+    now = datetime.now(UTC).isoformat()
+    try:
+        with Database(paths.database).connect_read_only() as connection:
+            stale = int(
+                connection.execute(
+                    """
+                    SELECT COUNT(*) FROM task_runs
+                    WHERE status IN ('claimed', 'running')
+                      AND lease_expires_at IS NOT NULL AND lease_expires_at <= ?
+                    """,
+                    (now,),
+                ).fetchone()[0]
+            )
+    except (DatabaseError, sqlite3.Error, OSError):
+        return CheckResult(name, CheckStatus.FAIL, "automation leases cannot be inspected")
+    if stale:
+        return CheckResult(name, CheckStatus.WARN, f"{stale} stale TaskRun lease(s) need recovery")
+    return CheckResult(name, CheckStatus.PASS, "no stale TaskRun leases")
+
+
+def _check_sandbox_checkpoint(
+    paths: StatePaths,
+    config: AppConfig | None,
+) -> CheckResult:
+    """报告 Sandbox backend 可用性和 Checkpoint 本地配额。"""
+    name = "sandbox_checkpoint"
+    if config is None:
+        return CheckResult(name, CheckStatus.FAIL, "sandbox configuration is unavailable")
+    backend = config.sandbox.backend
+    available = (
+        backend == "host"
+        or backend == "docker" and shutil.which("docker") is not None
+        or backend == "seatbelt" and Path("/usr/bin/sandbox-exec").is_file()
+    )
+    quota_mib = config.checkpoint.max_total_bytes // (1024 * 1024)
+    checkpoint_path = paths.home / "checkpoints"
+    path_ready = checkpoint_path.is_dir() or os.access(paths.home, os.W_OK)
+    if not path_ready:
+        return CheckResult(name, CheckStatus.FAIL, "checkpoint path is not writable")
+    if config.automation.enabled and not available:
+        return CheckResult(
+            name,
+            CheckStatus.FAIL,
+            f"required {backend} sandbox backend is unavailable",
+        )
+    state = "available" if available else "not required while automation is disabled"
+    return CheckResult(
+        name,
+        CheckStatus.PASS,
+        f"{backend} backend {state}; checkpoint quota={quota_mib}MiB",
+    )
 
 
 def _check_tools(config: AppConfig | None) -> CheckResult:

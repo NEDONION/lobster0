@@ -67,6 +67,10 @@ class DoctorTest(unittest.TestCase):
                 "config",
                 "workspace",
                 "database",
+                "automation",
+                "automation_ledger",
+                "automation_leases",
+                "sandbox_checkpoint",
                 "permissions",
                 "tools",
                 "personal_permissions",
@@ -93,6 +97,26 @@ class DoctorTest(unittest.TestCase):
         self.assertIn("profile personal", by_name["personal_permissions"].message)
         self.assertIn("lark-cli available", by_name["executables"].message)
         self.assertNotIn(str(owner_home), by_name["executables"].message)
+        self.assertIn("schema v5", by_name["automation_ledger"].message)
+        self.assertIn("checkpoint quota=64MiB", by_name["sandbox_checkpoint"].message)
+
+    def test_required_missing_sandbox_backend_fails_only_when_automation_enabled(
+        self,
+    ) -> None:
+        """启用 Automation 后缺失 Docker 必须 FAIL；默认关闭时不阻塞 Doctor。"""
+        initialize_state(self.paths)
+        config_text = self.paths.config.read_text(encoding="utf-8")
+        self.paths.config.write_text(
+            config_text.replace("[automation]\nenabled = false", "[automation]\nenabled = true"),
+            encoding="utf-8",
+        )
+
+        with mock.patch("miniclaw.doctor.shutil.which", return_value=None):
+            results = run_local_checks(self.paths, self.tui_environ)
+
+        sandbox = next(result for result in results if result.name == "sandbox_checkpoint")
+        self.assertIs(sandbox.status, CheckStatus.FAIL)
+        self.assertIn("required docker", sandbox.message)
 
     def test_old_node_reports_actionable_pi_tui_failure(self) -> None:
         """默认 pi-tui 遇到旧 Node 时必须给出最低版本，而不是启动后崩溃。"""

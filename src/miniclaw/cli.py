@@ -9,9 +9,19 @@ import sqlite3
 import subprocess
 import sys
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from miniclaw import __version__
+from miniclaw.automation.models import ScheduledTask
+from miniclaw.automation.repository import (
+    AutomationControlRepository,
+    AutomationDataError,
+    AutomationStateError,
+    ScheduledTaskRepository,
+    TaskRunRepository,
+)
 from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError
 from miniclaw.doctor import CheckStatus, run_local_checks
@@ -25,9 +35,10 @@ from miniclaw.gateway import (
     prepare_gateway_sdk_runtime,
     run_gateway,
 )
-from miniclaw.paths import PathConfigurationError, build_state_paths, resolve_home
-from miniclaw.storage.database import DatabaseError
-from miniclaw.storage.migrations import MigrationError
+from miniclaw.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
+from miniclaw.storage.database import Database, DatabaseError
+from miniclaw.storage.migrations import MigrationError, apply_migrations
+from miniclaw.storage.repositories import OwnerRepository
 from miniclaw.tui_launcher import TuiLaunchError, run_default_tui
 
 
@@ -61,6 +72,25 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command_home",
         help="absolute MiniClaw state directory",
     )
+    task_parser = subparsers.add_parser(
+        "task",
+        help="inspect and control the local durable Task ledger",
+    )
+    task_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute MiniClaw state directory",
+    )
+    task_subparsers = task_parser.add_subparsers(dest="task_command", required=True)
+    task_subparsers.add_parser("list", help="list scheduled tasks")
+    task_show = task_subparsers.add_parser("show", help="show one redacted task")
+    task_show.add_argument("task_id", type=_positive_cli_id)
+    for name in ("pause", "resume", "run", "cancel", "runs"):
+        child = task_subparsers.add_parser(name, help=f"{name} a durable task")
+        child.add_argument("task_id", type=_positive_cli_id)
+    task_halt = task_subparsers.add_parser("halt", help="activate durable automation E-stop")
+    task_halt.add_argument("--reason", required=True)
+    task_subparsers.add_parser("unhalt", help="clear durable automation E-stop")
     eval_parser = subparsers.add_parser("eval", help="run deterministic agent regressions")
     eval_subparsers = eval_parser.add_subparsers(dest="eval_command", required=True)
     eval_list = eval_subparsers.add_parser("list", help="list versioned eval cases")
@@ -104,6 +134,17 @@ def _bounded_eval_repeat(raw: str) -> int:
     return value
 
 
+def _positive_cli_id(raw: str) -> int:
+    """把 Task CLI ID 收窄为非 bool 正整数。"""
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("must be a positive integer") from error
+    if value <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return value
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """运行裸 TUI，或执行不与聊天竞争的本地维护命令。"""
     parser = build_parser()
@@ -132,6 +173,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.command == "init":
         return _run_init(paths)
+
+    if arguments.command == "task":
+        return _run_task(paths, arguments)
 
     if arguments.command == "gateway":
         try:
@@ -164,7 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 130
 
 
-def _run_init(paths) -> int:
+def _run_init(paths: StatePaths) -> int:
     """初始化状态并保留既有稳定退出码。"""
     try:
         result = initialize_state(paths)
@@ -179,6 +223,106 @@ def _run_init(paths) -> int:
     else:
         print(f"MiniClaw is already initialized at {paths.home} (owner {result.owner.id}).")
     return 0
+
+
+def _run_task(paths: StatePaths, arguments: argparse.Namespace) -> int:
+    """执行 repository-only Task 运维命令，不加载 Provider 或 Channel SDK。"""
+    if not paths.database.is_file() or paths.database.is_symlink():
+        print("error: MiniClaw state is not initialized", file=sys.stderr)
+        return 2
+    try:
+        database = Database(paths.database)
+        apply_migrations(database)
+        owner = OwnerRepository(database).get_or_create()
+        tasks = ScheduledTaskRepository(database)
+        runs = TaskRunRepository(database)
+        control = AutomationControlRepository(database)
+        command = arguments.task_command
+        if command == "list":
+            selected = tasks.list(owner_id=owner.id, limit=1000)
+            for task in selected:
+                print(_task_line(task))
+            if not selected:
+                print("No tasks.")
+            return 0
+        if command == "show":
+            task = tasks.get(arguments.task_id, owner_id=owner.id)
+            print(_task_line(task))
+            print(
+                f"schedule={task.schedule.kind.value}:{task.schedule.expression} "
+                f"timezone={task.schedule.timezone} "
+                f"prompt_bytes={len(task.prompt.encode('utf-8'))} "
+                f"delivery={task.delivery.route}/{task.delivery.channel}"
+            )
+            return 0
+        if command == "runs":
+            task = tasks.get(arguments.task_id, owner_id=owner.id)
+            selected_runs = runs.list(task_id=task.id, limit=1000)
+            for run in selected_runs:
+                print(
+                    f"run={run.id} task={run.task_id} status={run.status.value} "
+                    f"scheduled_for={run.scheduled_for.isoformat()} "
+                    f"error={run.error_code or '-'}"
+                )
+            if not selected_runs:
+                print("No task runs.")
+            return 0
+        if command == "halt":
+            state = control.halt(arguments.reason)
+            print(f"automation halted revision={state.revision}")
+            return 0
+        if command == "unhalt":
+            state = control.unhalt()
+            print(f"automation active revision={state.revision}")
+            return 0
+
+        task = tasks.get(arguments.task_id, owner_id=owner.id)
+        if command == "pause":
+            task = tasks.pause(
+                task.id,
+                owner_id=owner.id,
+                expected_version=task.version,
+            )
+        elif command == "resume":
+            task = tasks.resume(
+                task.id,
+                owner_id=owner.id,
+                expected_version=task.version,
+            )
+        elif command == "cancel":
+            task = tasks.cancel(
+                task.id,
+                owner_id=owner.id,
+                expected_version=task.version,
+            )
+        elif command == "run":
+            run = runs.enqueue(
+                task,
+                scheduled_for=datetime.now(UTC),
+                idempotency_key=f"manual:{uuid4().hex}",
+            )
+            print(f"run={run.id} task={run.task_id} status={run.status.value}")
+            return 0
+        else:
+            raise ValueError("unsupported task command")
+        print(_task_line(task))
+        return 0
+    except (AutomationStateError, AutomationDataError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 4
+    except (DatabaseError, MigrationError, OSError, sqlite3.Error) as error:
+        print(f"error: {type(error).__name__}", file=sys.stderr)
+        return 5
+
+
+def _task_line(task: ScheduledTask) -> str:
+    """渲染不含 Prompt、平台标识和 Secret 的单行 Task 摘要。"""
+    next_run = "-" if task.schedule.next_run_at is None else task.schedule.next_run_at.isoformat()
+    system = " system" if task.system_key is not None else ""
+    return (
+        f"task={task.id} name={task.name!r} status={task.status.value}{system} "
+        f"schedule={task.schedule.kind.value} next={next_run} version={task.version}"
+    )
 
 
 def _is_tui_terminal() -> bool:
