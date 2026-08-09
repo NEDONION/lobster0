@@ -131,6 +131,93 @@ class ScheduledTaskRepository:
             raise AutomationStateError("task_not_found")
         return _task_from_row(row)
 
+    def get_by_system_key(
+        self,
+        owner_id: int,
+        system_key: str,
+    ) -> ScheduledTask | None:
+        """按 Owner 与稳定 system key 读取系统 Task。"""
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM scheduled_tasks
+                WHERE owner_id = ? AND system_key = ?
+                """,
+                (owner_id, system_key),
+            ).fetchone()
+        return None if row is None else _task_from_row(row)
+
+    def count_system_owned(self, kind: str) -> int:
+        """统计指定 system key 前缀的 Task，供 Doctor 与 reconcile 验证。"""
+        if not isinstance(kind, str) or not kind.strip():
+            raise ValueError("system task kind must be non-empty")
+        with self._database.connect_read_only() as connection:
+            value = connection.execute(
+                """
+                SELECT COUNT(*) FROM scheduled_tasks
+                WHERE system_key LIKE ?
+                """,
+                (f"system:{kind.strip()}:%",),
+            ).fetchone()[0]
+        return int(value)
+
+    def reconcile_system(
+        self,
+        task_id: int,
+        *,
+        owner_id: int,
+        schedule: ScheduleSpec,
+        prompt: str,
+        delivery: DeliveryTarget,
+        budget: TaskBudget,
+        status: TaskStatus = TaskStatus.ACTIVE,
+    ) -> ScheduledTask:
+        """仅供受管配置更新 system Task，并保持 identity/history 不变。"""
+        if status not in {TaskStatus.ACTIVE, TaskStatus.PAUSED}:
+            raise ValueError("system task reconcile status is invalid")
+        now = _as_utc(self._clock(), "system task reconcile time")
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                """
+                SELECT * FROM scheduled_tasks
+                WHERE id = ? AND owner_id = ? AND system_key IS NOT NULL
+                """,
+                (task_id, owner_id),
+            ).fetchone()
+            if row is None:
+                raise AutomationStateError("system_task_not_found")
+            updated = connection.execute(
+                """
+                UPDATE scheduled_tasks
+                SET schedule_kind = ?, schedule_expression = ?, timezone = ?,
+                    prompt = ?, delivery_json = ?, budget_json = ?, status = ?,
+                    next_run_at = ?, version = version + 1, updated_at = ?
+                WHERE id = ? AND owner_id = ? AND version = ?
+                  AND system_key IS NOT NULL
+                """,
+                (
+                    schedule.kind.value,
+                    schedule.expression,
+                    schedule.timezone,
+                    prompt,
+                    _delivery_json(delivery),
+                    _budget_json(budget),
+                    status.value,
+                    _datetime_text(schedule.next_run_at),
+                    now.isoformat(),
+                    task_id,
+                    owner_id,
+                    row["version"],
+                ),
+            )
+            if updated.rowcount != 1:
+                raise AutomationStateError("task_version_conflict")
+            result = connection.execute(
+                "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+        return _task_from_row(result)
+
     def list(
         self,
         *,
@@ -234,6 +321,8 @@ class ScheduledTaskRepository:
                 raise AutomationStateError("task_not_found")
             _check_task_row(row, expected_version)
             current = _task_from_row(row)
+            if current.system_key is not None:
+                raise AutomationStateError("system_task_immutable")
             if current.status in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}:
                 raise AutomationStateError("task_terminal")
             selected_name = current.name if name is None else name
@@ -305,10 +394,15 @@ class ScheduledTaskRepository:
         with self._database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT status, version FROM scheduled_tasks WHERE id = ? AND owner_id = ?",
+                """
+                SELECT status, version, system_key FROM scheduled_tasks
+                WHERE id = ? AND owner_id = ?
+                """,
                 (task_id, owner_id),
             ).fetchone()
             _check_task_row(row, expected_version)
+            if row["system_key"] is not None:
+                raise AutomationStateError("system_task_immutable")
             if row["status"] in {TaskStatus.COMPLETED.value, TaskStatus.CANCELLED.value}:
                 raise AutomationStateError("task_terminal")
             updated = connection.execute(
@@ -381,10 +475,15 @@ class ScheduledTaskRepository:
         with self._database.connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
-                "SELECT status, version FROM scheduled_tasks WHERE id = ? AND owner_id = ?",
+                """
+                SELECT status, version, system_key FROM scheduled_tasks
+                WHERE id = ? AND owner_id = ?
+                """,
                 (task_id, owner_id),
             ).fetchone()
             _check_task_row(row, expected_version)
+            if row["system_key"] is not None:
+                raise AutomationStateError("system_task_immutable")
             if row["status"] in {TaskStatus.COMPLETED.value, TaskStatus.CANCELLED.value}:
                 raise AutomationStateError("task_terminal")
             updated = connection.execute(
@@ -578,6 +677,32 @@ class TaskRunRepository:
                 """
             ).fetchall()
         return tuple(_run_from_row(row) for row in rows)
+
+    def count_active(self) -> int:
+        """统计实际占用 Worker 并发的 claimed/running Run。"""
+        with self._database.connect_read_only() as connection:
+            value = connection.execute(
+                """
+                SELECT COUNT(*) FROM task_runs
+                WHERE status IN ('claimed', 'running')
+                """
+            ).fetchone()[0]
+        return int(value)
+
+    def cancel_queued_for_task(self, task_id: int, *, now: datetime) -> int:
+        """配置关闭时取消尚未 claim 的指定 system Task Run。"""
+        current = _as_utc(now, "task queue cancel time")
+        with self._database.connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE task_runs
+                SET status = 'cancelled', completed_at = ?,
+                    error_code = 'task_disabled'
+                WHERE task_id = ? AND status = 'queued'
+                """,
+                (current.isoformat(), task_id),
+            )
+        return int(updated.rowcount)
 
     def list(
         self,
