@@ -144,16 +144,29 @@ Channel 的 allowlist、Owner 身份与平台凭据配置见[本地运行指南]
 Desktop 当前是开发构建，不是已签名安装包。它复用同一 Python Core、Policy、SQLite 与 Automation，不在
 Renderer 中复制 Agent 逻辑或直接访问本机能力。
 
+macOS 已安装 `uv`、Node.js `>=22.19.0` 和 Corepack 后，首选直接在 Finder 双击根目录的
+`start-desktop.command`，或从终端执行：
+
+```bash
+./start-desktop.command
+```
+
+脚本会按需安装锁定的 Python/TUI/Desktop 项目依赖、构建共享 TUI Bridge client，并在首次启动时调用安全的
+`miniclaw setup` 收集模型 Key；后续启动只运行幂等 `init`。默认状态目录是 `~/.miniclaw`，也可提前设置绝对
+路径 `MINICLAW_HOME`。Secret 继续由 Core 写入 owner-only `secrets.env`，脚本不读取或打印其内容。
+
+如果一键入口报告依赖或配置错误，可按下面步骤手工排障：
+
 ```bash
 uv sync --extra dev
 pnpm --dir tui install
 pnpm --dir tui build
 pnpm --dir desktop install
-uv run miniclaw --home /absolute/path/to/miniclaw-home init
+uv run miniclaw setup --home /absolute/path/to/miniclaw-home
 
-# 先在当前 shell 安全设置 MINICLAW_MODEL_API_KEY
 MINICLAW_PYTHON="$(pwd)/.venv/bin/python" \
 MINICLAW_HOME=/absolute/path/to/miniclaw-home \
+MINICLAW_ENV_FILE=/absolute/path/to/miniclaw-home/secrets.env \
 pnpm --dir desktop dev
 ```
 

@@ -1,6 +1,8 @@
 # MiniClaw Desktop 一键启动设计
 
-> 状态：`DESIGN APPROVED / IMPLEMENTATION PENDING`
+> 状态：`IMPLEMENTATION PASS / ELECTRON MANUAL PENDING`
+
+实现证据：6/6 launcher 行为测试、941/941 Python、41/41 TUI TypeScript、28/28 Desktop tests，以及 Desktop typecheck/build、Ruff 和文档校验均通过。真实模型 LIVE smoke、Electron 鼠标/键盘视觉验收和 installer/signing 仍待完成。
 
 ## 1. 目标
 
