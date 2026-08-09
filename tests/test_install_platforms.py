@@ -1,18 +1,64 @@
 """验证 Tier 1 平台检测、Runtime pin 与显式权限计划。"""
 
 import json
+import os
+import pwd
+import stat
+import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 from miniclaw.install.models import InstallError, InstallRequest, PlatformKey
 from miniclaw.install.platforms import (
+    DetectedPlatform,
     PrivilegeAction,
     build_dependency_actions,
     detect_linux,
     detect_macos,
     detect_platform,
     node_version_supported,
+    verify_privilege_action,
 )
+
+
+def _account(name: str = "alice", uid: int = 1001) -> pwd.struct_passwd:
+    """返回完整的 passwd fake 记录。"""
+    return pwd.struct_passwd((name, "x", uid, uid, "Fixture", f"/home/{name}", "/bin/sh"))
+
+
+def _file_fact(mode: int, uid: int = 0, gid: int = 0) -> SimpleNamespace:
+    """返回 no-follow lstat 所需的最小文件事实。"""
+    return SimpleNamespace(st_mode=mode, st_uid=uid, st_gid=gid)
+
+
+class _BackendProbe:
+    """显式离线 backend probe；成功返回 None，失败抛稳定错误。"""
+
+    def __init__(
+        self,
+        *,
+        ready: bool,
+        files: dict[Path, SimpleNamespace] | None = None,
+    ) -> None:
+        """保存 backend 结论和只允许固定 path 的 lstat facts。"""
+        self.ready = ready
+        self.files = {} if files is None else files
+        self.required: list[tuple[str, str, int]] = []
+
+    def require_backend(self, platform: DetectedPlatform, account: pwd.struct_passwd) -> None:
+        """记录完整 identity；没有 containment 证据时抛稳定错误。"""
+        self.required.append((platform.sandbox_backend, account.pw_name, account.pw_uid))
+        if not self.ready:
+            raise InstallError("system_dependency_missing", "platform")
+
+    def lstat(self, path: Path) -> SimpleNamespace:
+        """只返回测试显式提供的 no-follow 文件事实。"""
+        try:
+            return self.files[path]
+        except KeyError:
+            raise FileNotFoundError(path) from None
 
 
 class InstallPlatformsTest(unittest.TestCase):
@@ -100,6 +146,129 @@ class InstallPlatformsTest(unittest.TestCase):
             with self.subTest(malformed=malformed):
                 self.assertFalse(node_version_supported(malformed))  # type: ignore[arg-type]
 
+    def test_public_models_reject_cross_field_and_privilege_forgery(self) -> None:
+        """公开 dataclass 不能构造错配 backend、shell argv 或预批准动作。"""
+        with self.assertRaisesRegex(InstallError, "unsupported_platform"):
+            DetectedPlatform(
+                os="linux",
+                distro_id="ubuntu",
+                distro_version="24.04",
+                arch="x86_64",
+                service_manager="systemd-user",
+                artifact_platform=PlatformKey("linux", "x86_64"),
+                sandbox_backend="seatbelt",  # type: ignore[arg-type]
+            )
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
+            PrivilegeAction(
+                category="system-package",
+                argv=("/bin/sh", "-c", "touch /tmp/owned"),
+                requires_sudo=False,
+                reason="injected",
+            )
+        with self.assertRaises((TypeError, InstallError)):
+            PrivilegeAction(
+                category="linger",
+                argv=("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", "alice"),
+                requires_sudo=True,
+                reason="preapproved",
+                approved=True,
+            )
+        invalid_models = (
+            lambda: DetectedPlatform(
+                os="linux",
+                distro_id=[],  # type: ignore[arg-type]
+                distro_version="24.04",
+                arch="x86_64",
+                service_manager="systemd-user",
+                artifact_platform=PlatformKey("linux", "x86_64"),
+                sandbox_backend="docker-rootless",
+            ),
+            lambda: PrivilegeAction(
+                category="system-prefix",
+                argv=(
+                    "/usr/bin/sudo",
+                    "/usr/bin/install",
+                    "-d",
+                    "-m",
+                    "0755",
+                    "/usr/local/lib/miniclaw",
+                ),
+                requires_sudo=True,
+                reason="old direct write",
+            ),
+            lambda: PrivilegeAction(
+                category="system-prefix",
+                argv=(
+                    "/usr/bin/sudo",
+                    "--",
+                    "/bin/sh",
+                    "install",
+                    "--system-prefix",
+                ),
+                requires_sudo=True,
+                reason="shell rerun",
+            ),
+        )
+        for create in invalid_models:
+            with self.subTest(create=create), self.assertRaisesRegex(
+                InstallError, "system_dependency_missing|unsupported_platform"
+            ):
+                create()
+
+    def test_public_detectors_require_a_real_nonroot_account(self) -> None:
+        """public Linux/macOS detector 不得接受不存在的非 root UID。"""
+        missing_uid = 424_242
+        missing_lookup = mock.Mock(side_effect=KeyError(missing_uid))
+        for detect in (
+            lambda: detect_linux(
+                self.os_release("ubuntu", "24.04"),
+                "x86_64",
+                effective_uid=missing_uid,
+                getpwuid=missing_lookup,
+            ),
+            lambda: detect_macos(
+                "15.0",
+                "arm64",
+                effective_uid=missing_uid,
+                getpwuid=missing_lookup,
+            ),
+        ):
+            with self.subTest(detect=detect), self.assertRaisesRegex(
+                InstallError, "privilege_denied"
+            ):
+                detect()
+
+    def test_parser_and_sudo_uid_normalize_hostile_scalar_errors(self) -> None:
+        """surrogate 与超长 SUDO_UID 只返回稳定 InstallError。"""
+        with self.assertRaisesRegex(InstallError, "unsupported_platform"):
+            detect_linux("ID=ubuntu\nVERSION_ID=24.04\n#\ud800", "x86_64")
+
+        current = pwd.getpwuid(os.geteuid())
+        with mock.patch.dict(
+            os.environ,
+            {"SUDO_USER": current.pw_name, "SUDO_UID": "9" * 5_000},
+            clear=True,
+        ), self.assertRaisesRegex(InstallError, "privilege_denied"):
+            detect_platform(
+                self.request(),
+                system="Darwin",
+                machine="arm64",
+                macos_version="15.0",
+                effective_uid=0,
+            )
+
+    def test_root_identity_requires_lookup_name_and_uid_to_match(self) -> None:
+        """getpwnam 返回另一用户名时不能绑定 root handoff。"""
+        with self.assertRaisesRegex(InstallError, "privilege_denied"):
+            detect_linux(
+                self.os_release("ubuntu", "24.04"),
+                "x86_64",
+                effective_uid=0,
+                original_user="alice",
+                original_uid=1001,
+                getpwnam=lambda name: _account(name="mallory"),
+            )
+
     def test_unsupported_linux_matrix_fails_closed(self) -> None:
         """旧版、未来未验证版、未知发行版、musl、WSL 与 32 位一律拒绝。"""
         cases = (
@@ -173,6 +342,7 @@ class InstallPlatformsTest(unittest.TestCase):
             wsl=False,
             service_manager="systemd-user",
             effective_uid=1000,
+            getpwuid=lambda uid: _account(uid=uid),
         )
         self.assertEqual(detected.artifact_platform, PlatformKey("linux", "arm64"))
         with self.assertRaisesRegex(InstallError, "unsupported_platform"):
@@ -183,22 +353,36 @@ class InstallPlatformsTest(unittest.TestCase):
                 os_release_text=self.os_release("debian", "13"),
                 service_manager="openrc",
                 effective_uid=1000,
+                getpwuid=lambda uid: _account(uid=uid),
             )
 
     def test_dependency_dry_run_is_closed_world_exact_argv(self) -> None:
         """系统依赖只产生固定 argv，sudo 动作必须等待单独批准。"""
         ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        probe = _BackendProbe(
+            ready=False,
+            files={
+                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(
+                    stat.S_IFREG | 0o755
+                )
+            },
+        )
         actions = build_dependency_actions(
             ubuntu,
-            {
-                "system_packages_missing": True,
-                "rootless_setup_tool": "/usr/bin/dockerd-rootless-setuptool.sh",
-                "rootless_setup_tool_regular": True,
-                "rootless_setup_tool_executable": True,
-                "target_user": "alice",
-                "linger_user": "alice",
-                "system_prefix": True,
-            },
+            self.request(
+                allow_system_packages=True,
+                service=True,
+                system_prefix=True,
+                prefix=None,
+            ),
+            probe=probe,
+            effective_uid=1001,
+            getpwuid=lambda uid: _account(uid=uid),
+            rerun_argv=(
+                "/verified/miniclaw-installer.pyz",
+                "install",
+                "--system-prefix",
+            ),
         )
         self.assertEqual(
             tuple(action.argv for action in actions),
@@ -216,27 +400,19 @@ class InstallPlatformsTest(unittest.TestCase):
                     "slirp4netns",
                     "fuse-overlayfs",
                 ),
-                (
-                    "/usr/bin/sudo",
-                    "-u",
-                    "alice",
-                    "--",
-                    "/usr/bin/dockerd-rootless-setuptool.sh",
-                    "install",
-                ),
+                ("/usr/bin/dockerd-rootless-setuptool.sh", "install"),
                 ("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", "alice"),
                 (
                     "/usr/bin/sudo",
-                    "/usr/bin/install",
-                    "-d",
-                    "-m",
-                    "0755",
-                    "/usr/local/lib/miniclaw",
+                    "--",
+                    "/verified/miniclaw-installer.pyz",
+                    "install",
+                    "--system-prefix",
                 ),
             ),
         )
         self.assertTrue(all(isinstance(action, PrivilegeAction) for action in actions))
-        self.assertTrue(all(not action.approved for action in actions))
+        self.assertTrue(all(not hasattr(action, "approved") for action in actions))
         self.assertTrue(
             all(action.requires_sudo for action in actions if action.argv[0].endswith("sudo"))
         )
@@ -244,11 +420,69 @@ class InstallPlatformsTest(unittest.TestCase):
         self.assertNotIn(";", rendered)
         self.assertNotIn("docker group", rendered)
         self.assertNotIn("/var/run/docker.sock", rendered)
+        self.assertEqual(probe.required, [("docker-rootless", "alice", 1001)])
+
+    def test_root_setup_and_linger_bind_one_validated_original_user(self) -> None:
+        """root 的 setup、linger 与 backend probe 必须共享真实 SUDO identity。"""
+        ubuntu = detect_linux(
+            self.os_release("ubuntu", "24.04"),
+            "x86_64",
+            effective_uid=0,
+            original_user="alice",
+            original_uid=1001,
+            getpwnam=lambda name: _account(name=name),
+        )
+        probe = _BackendProbe(
+            ready=False,
+            files={
+                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(
+                    stat.S_IFREG | 0o755
+                )
+            },
+        )
+        actions = build_dependency_actions(
+            ubuntu,
+            self.request(
+                allow_system_packages=True,
+                service=True,
+                system_prefix=True,
+                prefix=None,
+            ),
+            probe=probe,
+            effective_uid=0,
+            original_user="alice",
+            original_uid=1001,
+            getpwnam=lambda name: _account(name=name),
+        )
+        self.assertIn(
+            (
+                "/usr/bin/sudo",
+                "-u",
+                "alice",
+                "--",
+                "/usr/bin/dockerd-rootless-setuptool.sh",
+                "install",
+            ),
+            tuple(action.argv for action in actions),
+        )
+        self.assertIn(
+            ("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", "alice"),
+            tuple(action.argv for action in actions),
+        )
+        self.assertFalse(any(action.category == "system-prefix" for action in actions))
+        self.assertEqual(probe.required, [("docker-rootless", "alice", 1001)])
 
     def test_rhel_dependency_plan_uses_only_rootless_podman_compatibility(self) -> None:
         """RHEL family 只计划固定 podman-docker 包集，绝不启动 root Docker。"""
         rhel = detect_linux(self.os_release("rocky", "10.0"), "arm64")
-        actions = build_dependency_actions(rhel, {"system_packages_missing": True})
+        probe = _BackendProbe(ready=False)
+        actions = build_dependency_actions(
+            rhel,
+            self.request(allow_system_packages=True),
+            probe=probe,
+            effective_uid=1001,
+            getpwuid=lambda uid: _account(uid=uid),
+        )
         self.assertEqual(
             tuple(action.argv for action in actions),
             ((
@@ -265,43 +499,356 @@ class InstallPlatformsTest(unittest.TestCase):
         )
         self.assertEqual(rhel.sandbox_backend, "podman-rootless")
         with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
-            build_dependency_actions(rhel, {})
+            build_dependency_actions(
+                rhel,
+                self.request(allow_system_packages=False),
+                probe=probe,
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
         self.assertEqual(
             build_dependency_actions(
                 rhel,
-                {"backend_ready": True, "podman_docker_compatible": True},
+                self.request(),
+                probe=_BackendProbe(ready=True),
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
             ),
             (),
         )
 
-    def test_linux_backend_readiness_is_never_assumed(self) -> None:
-        """没有 rootless readiness 事实时不得把稳定完整安装伪装成可继续。"""
+    def test_plain_mapping_and_unapproved_packages_cannot_forge_readiness(self) -> None:
+        """普通 Mapping bool 和未授权 system packages 都不能生成 sudo 动作。"""
         ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
-            build_dependency_actions(ubuntu, {})
-        self.assertEqual(build_dependency_actions(ubuntu, {"backend_ready": True}), ())
-
-    def test_dependency_facts_reject_bool_and_injected_package_or_tool(self) -> None:
-        """fact 类型错误、额外 package 和非候选 setup tool 都不得进入 argv。"""
-        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
-        for facts in (
-            {"system_packages_missing": 1},
-            {"system_packages_missing": True, "package": "curl;touch /tmp/owned"},
-            {"rootless_setup_tool": "/tmp/tool"},
-            {"linger_user": "alice;id"},
-            {"system_prefix": "yes"},
+        for request, probe in (
+            (self.request(), {"backend_ready": True}),
+            (self.request(allow_system_packages=False), _BackendProbe(ready=False)),
         ):
-            with self.subTest(facts=facts), self.assertRaisesRegex(
+            with self.subTest(request=request, probe=probe), self.assertRaisesRegex(
                 InstallError, "system_dependency_missing"
             ):
-                build_dependency_actions(ubuntu, facts)
+                build_dependency_actions(
+                    ubuntu,
+                    request,
+                    probe=probe,
+                    effective_uid=1001,
+                    getpwuid=lambda uid: _account(uid=uid),
+                )
+
+        class ExplodingProbe(_BackendProbe):
+            """模拟本地 adapter 泄漏动态异常。"""
+
+            def require_backend(
+                self,
+                platform: DetectedPlatform,
+                account: pwd.struct_passwd,
+            ) -> None:
+                """抛出不应越过 installer boundary 的异常。"""
+                raise ValueError("SECRET_DYNAMIC_DETAIL")
+
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
+            build_dependency_actions(
+                ubuntu,
+                self.request(),
+                probe=ExplodingProbe(ready=False),
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
+
+    def test_setup_tool_is_derived_from_no_follow_fixed_path_facts(self) -> None:
+        """symlink/非执行文件被跳过，只选择第二个真实 executable regular candidate。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        probe = _BackendProbe(
+            ready=False,
+            files={
+                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(
+                    stat.S_IFLNK | 0o777
+                ),
+                Path("/usr/share/docker.io/contrib/dockerd-rootless-setuptool.sh"): (
+                    _file_fact(stat.S_IFREG | 0o755)
+                ),
+            },
+        )
+        actions = build_dependency_actions(
+            ubuntu,
+            self.request(allow_system_packages=True),
+            probe=probe,
+            effective_uid=1001,
+            getpwuid=lambda uid: _account(uid=uid),
+        )
+        self.assertIn(
+            (
+                "/usr/share/docker.io/contrib/dockerd-rootless-setuptool.sh",
+                "install",
+            ),
+            tuple(action.argv for action in actions),
+        )
+        root_only = _BackendProbe(
+            ready=False,
+            files={
+                Path("/usr/bin/dockerd-rootless-setuptool.sh"): _file_fact(
+                    stat.S_IFREG | 0o700
+                )
+            },
+        )
+        restricted = build_dependency_actions(
+            ubuntu,
+            self.request(allow_system_packages=True),
+            probe=root_only,
+            effective_uid=1001,
+            getpwuid=lambda uid: _account(uid=uid),
+        )
+        self.assertFalse(
+            any(
+                "/usr/bin/dockerd-rootless-setuptool.sh" in action.argv
+                for action in restricted
+            )
+        )
+
+    def test_setup_tool_is_revalidated_before_and_after_execution(self) -> None:
+        """plan 后换成 symlink 必须阻断执行，setup 后还需 backend containment 证据。"""
+        path = Path("/usr/bin/dockerd-rootless-setuptool.sh")
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        probe = _BackendProbe(
+            ready=False,
+            files={path: _file_fact(stat.S_IFREG | 0o755)},
+        )
+        request = self.request(allow_system_packages=True)
+        actions = build_dependency_actions(
+            ubuntu,
+            request,
+            probe=probe,
+            effective_uid=1001,
+            getpwuid=lambda uid: _account(uid=uid),
+        )
+        setup = next(action for action in actions if path.as_posix() in action.argv)
+        probe.files[path] = _file_fact(stat.S_IFLNK | 0o777)
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
+            verify_privilege_action(
+                setup,
+                ubuntu,
+                request,
+                probe=probe,
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
+        probe.files[path] = _file_fact(stat.S_IFREG | 0o755)
+        probe.ready = True
+        verify_privilege_action(
+            setup,
+            ubuntu,
+            request,
+            probe=probe,
+            effective_uid=1001,
+            getpwuid=lambda uid: _account(uid=uid),
+            after_execution=True,
+        )
+
+    def test_verifier_rebinds_every_action_to_platform_and_request(self) -> None:
+        """执行边界不得把包、linger 或 rerun 动作移植到另一平台/请求。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        rocky = detect_linux(self.os_release("rocky", "10.0"), "x86_64")
+        probe = _BackendProbe(ready=True)
+        cases = (
+            (
+                PrivilegeAction(
+                    category="system-package",
+                    argv=("/usr/bin/sudo", "/usr/bin/apt-get", "update"),
+                    requires_sudo=True,
+                    reason="install fixed Debian rootless dependencies",
+                ),
+                rocky,
+                self.request(allow_system_packages=True),
+            ),
+            (
+                PrivilegeAction(
+                    category="linger",
+                    argv=(
+                        "/usr/bin/sudo",
+                        "/usr/bin/loginctl",
+                        "enable-linger",
+                        "alice",
+                    ),
+                    requires_sudo=True,
+                    reason="enable confirmed headless user service",
+                ),
+                ubuntu,
+                self.request(service=False),
+            ),
+            (
+                PrivilegeAction(
+                    category="system-prefix",
+                    argv=(
+                        "/usr/bin/sudo",
+                        "--",
+                        "/verified/miniclaw-installer.pyz",
+                        "update",
+                        "--system-prefix",
+                    ),
+                    requires_sudo=True,
+                    reason="rerun verified installer for explicit system prefix",
+                ),
+                ubuntu,
+                self.request(action="install", system_prefix=True, prefix=None),
+            ),
+        )
+        for action, platform, request in cases:
+            with self.subTest(action=action), self.assertRaisesRegex(
+                InstallError, "privilege_denied|system_dependency_missing"
+            ):
+                verify_privilege_action(
+                    action,
+                    platform,
+                    request,
+                    probe=probe,
+                    effective_uid=1001,
+                    getpwuid=lambda uid: _account(uid=uid),
+                )
+
+    def test_post_execution_probe_and_malformed_passwd_fail_stably(self) -> None:
+        """动态 probe 与 passwd adapter 错误不得越过稳定 installer boundary。"""
+
+        class ExplodingProbe(_BackendProbe):
+            """模拟 setup 完成后的动态 adapter 失败。"""
+
+            def require_backend(
+                self,
+                platform: DetectedPlatform,
+                account: pwd.struct_passwd,
+            ) -> None:
+                """抛出不可信动态异常。"""
+                raise TypeError("SECRET_DYNAMIC_DETAIL")
+
+        path = Path("/usr/bin/dockerd-rootless-setuptool.sh")
+        setup = PrivilegeAction(
+            category="system-package",
+            argv=(path.as_posix(), "install"),
+            requires_sudo=False,
+            reason="configure rootless Docker for target user",
+        )
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
+            verify_privilege_action(
+                setup,
+                ubuntu,
+                self.request(allow_system_packages=True),
+                probe=ExplodingProbe(
+                    ready=True,
+                    files={path: _file_fact(stat.S_IFREG | 0o755)},
+                ),
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+                after_execution=True,
+            )
+        with self.assertRaisesRegex(InstallError, "privilege_denied"):
+            detect_macos(
+                "15.0",
+                "arm64",
+                effective_uid=1001,
+                getpwuid=lambda uid: SimpleNamespace(pw_uid="1001"),
+            )
 
     def test_macos_never_plans_homebrew_install(self) -> None:
-        """Seatbelt 不需要系统包，任何注入的 Homebrew 事实都必须拒绝。"""
+        """Seatbelt 必须有显式 probe 证据且永不计划 Homebrew。"""
         macos = detect_macos("15.0", "arm64")
-        self.assertEqual(build_dependency_actions(macos, {}), ())
+        self.assertEqual(
+            build_dependency_actions(
+                macos,
+                self.request(),
+                probe=_BackendProbe(ready=True),
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            ),
+            (),
+        )
         with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
-            build_dependency_actions(macos, {"homebrew_install": True})
+            build_dependency_actions(
+                macos,
+                self.request(allow_system_packages=True),
+                probe=_BackendProbe(ready=False),
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
+
+    def test_local_probe_reuses_phase6_transport_and_requires_containment(self) -> None:
+        """production Linux probe 必须组合 Phase 6 transport 与非 bool containment 证据。"""
+        from miniclaw.install.platforms import LocalBackendProbe
+        from miniclaw.sandbox.docker import RootlessClientTransport
+
+        transport = RootlessClientTransport(
+            engine="docker-rootless",
+            executable=Path("/usr/bin/docker"),
+            environment=(("XDG_RUNTIME_DIR", "/run/user/1001"),),
+        )
+
+        def discover(
+            engine: str,
+            executable_path: str,
+            owner_home: Path,
+            **facts: object,
+        ) -> RootlessClientTransport:
+            """拒绝任何未绑定 alice UID/Home 或错误 engine 的 discovery 调用。"""
+            if (
+                engine != "docker-rootless"
+                or owner_home != Path("/home/alice")
+                or facts.get("effective_uid") != 1001
+                or facts.get("platform_name") != "linux"
+            ):
+                raise AssertionError("discovery identity mismatch")
+            return transport
+
+        platform = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        probe = LocalBackendProbe(
+            containment_check=lambda backend, discovered: None,
+            discover_rootless=discover,
+        )
+        self.assertEqual(
+            build_dependency_actions(
+                platform,
+                self.request(),
+                probe=probe,
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            ),
+            (),
+        )
+        forged = LocalBackendProbe(
+            containment_check=lambda backend, discovered: True,
+            discover_rootless=discover,
+        )
+        with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
+            build_dependency_actions(
+                platform,
+                self.request(),
+                probe=forged,
+                effective_uid=1001,
+                getpwuid=lambda uid: _account(uid=uid),
+            )
+
+    def test_local_macos_probe_uses_real_seatbelt_availability(self) -> None:
+        """production macOS probe 必须检查 exact sandbox-exec executable。"""
+        from miniclaw.install.platforms import LocalBackendProbe
+        from miniclaw.sandbox.seatbelt import SeatbeltSandbox
+
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "sandbox-exec"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o700)
+            probe = LocalBackendProbe(
+                containment_check=lambda backend, discovered: None,
+                seatbelt=SeatbeltSandbox(executable=str(executable), platform="darwin"),
+            )
+            macos = detect_macos("15.0", "arm64")
+            self.assertEqual(
+                build_dependency_actions(
+                    macos,
+                    self.request(),
+                    probe=probe,
+                    effective_uid=1001,
+                    getpwuid=lambda uid: _account(uid=uid),
+                ),
+                (),
+            )
 
     def test_runtime_versions_are_exact_and_hash_bound(self) -> None:
         """bootstrap Runtime 版本、官方 URL 与四平台 hash 必须是唯一固定事实。"""
