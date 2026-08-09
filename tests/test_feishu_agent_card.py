@@ -165,6 +165,19 @@ class FeishuAgentCardTest(unittest.TestCase):
         self.assertIn("- **名称**：文档 B", final_content)
         self.assertNotIn("| --- |", final_content)
 
+    def test_table_tokenizer_accepts_one_column_table_with_one_outer_pipe(self) -> None:
+        """仅左或仅右外框的一列表格也应降级，不得残留原始 table。"""
+        variants = (
+            "| 名称\n| ---\n| 文档 A",
+            "名称 |\n--- |\n文档 A |",
+        )
+
+        for answer in variants:
+            with self.subTest(answer=answer):
+                final_content = self._final_content(answer)
+                self.assertIn("- **名称**：文档 A", final_content)
+                self.assertNotIn("---", final_content)
+
     def test_plain_pipe_text_without_table_contract_is_preserved(self) -> None:
         """只有普通管道文本但缺少 separator 或有效数据行时不得误判为表格。"""
         answers = (

@@ -308,7 +308,7 @@ def _table_cells(line: str) -> list[str] | None:
             current.append(char)
         index += 1
     cells.append("".join(current).strip())
-    if len(cells) >= 2 or (leading and trailing and len(cells) == 1):
+    if len(cells) >= 2 or ((leading or trailing) and len(cells) == 1):
         return cells
     return None
 
