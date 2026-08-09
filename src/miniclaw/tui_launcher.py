@@ -13,8 +13,9 @@ from typing import TextIO
 from miniclaw.paths import StatePaths
 from miniclaw.tui import run_tui
 
-MINIMUM_NODE_VERSION = (22, 19, 0)
+_SUPPORTED_NODE_MESSAGE = "Node.js 22.22.3～<23 或 24.15.0～<25"
 _NODE_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
+_NODE_INJECTION_VARIABLES = ("NODE_OPTIONS", "NODE_PATH")
 
 
 class TuiLaunchError(RuntimeError):
@@ -36,6 +37,24 @@ class PiTuiInspection:
         return self.node is not None and self.entry is not None and self.problem is None
 
 
+def is_supported_node_version(version: tuple[int, int, int]) -> bool:
+    """判断 Node 三段版本是否落入已验证的 22/24 LTS 区间。
+
+    Args:
+        version: Node 的 major、minor、patch 三段非负整数。
+
+    Returns:
+        仅当版本属于 22.22.3～22.x 或 24.15.0～24.x 时返回 True。
+    """
+    if (
+        type(version) is not tuple
+        or len(version) != 3
+        or any(type(part) is not int or part < 0 for part in version)
+    ):
+        return False
+    return (22, 22, 3) <= version < (23, 0, 0) or (24, 15, 0) <= version < (25, 0, 0)
+
+
 def inspect_pi_tui(environ: Mapping[str, str] | None = None) -> PiTuiInspection:
     """只读检查 pi-tui 所需 Node 版本和编译入口。
 
@@ -46,21 +65,27 @@ def inspect_pi_tui(environ: Mapping[str, str] | None = None) -> PiTuiInspection:
         包含已解析路径、版本和第一条可操作问题的检查结果。
     """
     source = os.environ if environ is None else environ
+    node_environment = _sanitized_node_environment(source)
     configured_node = source.get("MINICLAW_NODE", "").strip()
     resolved_node = configured_node or shutil.which("node", path=source.get("PATH"))
     if not resolved_node:
-        return PiTuiInspection(None, None, None, "没有找到 Node.js；pi-tui 需要 Node.js >= 22.19.0")
+        return PiTuiInspection(
+            None,
+            None,
+            None,
+            f"没有找到 Node.js；pi-tui 需要 {_SUPPORTED_NODE_MESSAGE}",
+        )
     node = Path(resolved_node).expanduser().resolve(strict=False)
-    version = _read_node_version(node)
+    version = _read_node_version(node, node_environment)
     if version is None:
         return PiTuiInspection(node, None, None, "无法读取 Node.js 版本")
-    if version < MINIMUM_NODE_VERSION:
+    if not is_supported_node_version(version):
         current = ".".join(str(part) for part in version)
         return PiTuiInspection(
             node,
             version,
             None,
-            f"pi-tui 需要 Node.js >= 22.19.0；当前为 {current}",
+            f"pi-tui 需要 {_SUPPORTED_NODE_MESSAGE}；当前为 {current}",
         )
 
     configured_entry = source.get("MINICLAW_TUI_ENTRY", "").strip()
@@ -120,11 +145,13 @@ def run_default_tui(
         return run_tui(paths)
 
     assert inspection.node is not None and inspection.entry is not None
-    child_env = dict(source)
+    child_env = _sanitized_node_environment(source)
     child_env.update(
         {
             "MINICLAW_HOME": str(paths.home),
+            "MINICLAW_NODE": str(inspection.node),
             "MINICLAW_PYTHON": sys.executable,
+            "MINICLAW_TUI_ENTRY": str(inspection.entry),
         }
     )
     try:
@@ -142,11 +169,38 @@ def run_default_tui(
     return int(completed.returncode)
 
 
-def _read_node_version(node: Path) -> tuple[int, int, int] | None:
-    """在两秒预算内读取并解析 Node 的三段语义版本。"""
+def _sanitized_node_environment(source: Mapping[str, str]) -> dict[str, str]:
+    """复制调用方环境并移除可向 Node 注入代码或全局模块的变量。
+
+    Args:
+        source: 调用方明确提供的环境；不会隐式合并进程环境。
+
+    Returns:
+        不含 Node 注入变量的独立环境字典。
+    """
+    environment = dict(source)
+    for name in _NODE_INJECTION_VARIABLES:
+        environment.pop(name, None)
+    return environment
+
+
+def _read_node_version(
+    node: Path,
+    environment: Mapping[str, str],
+) -> tuple[int, int, int] | None:
+    """在两秒预算内用调用方封闭环境读取 Node 的三段语义版本。
+
+    Args:
+        node: 要探测的显式 Node executable。
+        environment: 已由调用方清洗且不会隐式扩展的环境。
+
+    Returns:
+        有效的三段版本；启动、超时、退出或格式异常时返回 None。
+    """
     try:
         completed = subprocess.run(
             [str(node), "--version"],
+            env=dict(environment),
             capture_output=True,
             text=True,
             timeout=2,

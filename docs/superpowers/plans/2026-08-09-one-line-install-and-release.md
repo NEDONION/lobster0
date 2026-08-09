@@ -896,7 +896,7 @@ git commit -m "feat(installer): 增加 managed layout lock 与 receipt"
 - Create: `tests/install/fake_uv.py`
 
 **Interfaces:**
-- Consumes: `InstallLayout`, verified wheel/requirements/Node/TUI/installer-pyz paths, managed uv executable and `ReleaseManifest`.
+- Consumes: `InstallLayout`, verified wheel/requirements/Node/TUI/installer-pyz paths, managed uv executable, bootstrap-verified managed Python root/executable and `ReleaseManifest`.
 - Produces: `RuntimeBuilder.build(...) -> RuntimeReceipt`, `RuntimeBuilder.smoke(...)`, `activate_runtime(layout, receipt)`, `retain_current_and_previous(layout)`.
 
 - [ ] **Step 1: Write command/order/crash RED tests**
@@ -956,7 +956,7 @@ After export, a test parses every non-comment logical requirement and requires a
 Runtime argv sequence is:
 
 ```text
-uv venv --python 3.12 <staging>/venv
+uv venv --relocatable --python <staging>/python/bin/python3.12 --no-python-downloads <staging>/venv
 uv pip install --python <staging>/venv/bin/python --require-hashes -r requirements-all.lock
 uv pip install --python <staging>/venv/bin/python --no-deps <verified-wheel>
 <staging>/venv/bin/python -I -m miniclaw --version
@@ -964,7 +964,7 @@ uv pip install --python <staging>/venv/bin/python --no-deps <verified-wheel>
 <staging>/node/bin/node <staging>/tui/dist/main.js --smoke
 ```
 
-Copy only verified Node/TUI directories from safe extraction plus verified `miniclaw-installer.pyz`, chmod dirs 0700 and files 0600/required executables 0700, write runtime receipt/manifest 0600, fsync tree boundary, then rename staging to immutable `runtimes/0.7.0`. Activation creates a relative `current.next` symlink and `os.replace`s it over `current`; no in-place venv update exists.
+Copy the bootstrap-verified managed Python tree into `staging/python` through descriptor-bound no-follow reads, then build the venv from that explicit internal interpreter with downloads disabled. Copy only verified Node/TUI directories from safe extraction plus verified `miniclaw-installer.pyz`, chmod dirs 0700 and files 0600/required executables 0700, write runtime receipt/manifest 0600 and fsync the tree boundary. Before activation, publish staging as immutable `runtimes/0.7.0`, repair only the venv's interpreter link/config to the known final-internal Python path, and rerun an exact final-path smoke which requires both the resolved executable and `sys.base_prefix` to remain under that Runtime. A bootstrap/system/user Python outside the Runtime is never accepted. Activation creates a relative `current.next` symlink and atomically switches it over `current`; no in-place venv update exists.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -989,12 +989,19 @@ git commit -m "feat(runtime): 构建 hash-locked atomic Runtime"
 ### Task 9: Reproducible managed Node and pi-tui bundles
 
 **Files:**
-- Create: `pnpm-workspace.yaml`
+- Create: `tui/pnpm-workspace.yaml`
 - Modify: `tui/package.json`
 - Modify: `tui/src/main.ts`
 - Create: `tui/test/smoke.test.ts`
 - Modify: `src/miniclaw/tui_launcher.py`
+- Modify: `src/miniclaw/doctor.py`
 - Modify: `tests/test_tui_launcher.py`
+- Modify: `tests/test_doctor.py`
+- Modify: `tests/test_cli.py`
+- Modify: `README.md`
+- Modify: `README_EN.md`
+- Modify: `docs/getting-started/20260807_本地运行指南.md`
+- Modify: `tests/test_pi_tui_integration.py`
 - Create: `scripts/build_node_bundle.py`
 - Create: `scripts/build_tui_bundle.py`
 - Create: `tests/test_release_bundles.py`
@@ -1037,7 +1044,7 @@ Expected: FAIL because ranges still use `>=22.19`, smoke flag and bundle builder
 
 - [ ] **Step 3: Implement exact LTS contract and bundle builders**
 
-Set package engine to `>=22.22.3 <23 || >=24.15.0 <25`, keep pnpm 10.14.0, add root workspace with package `tui`, and add `release:deploy` script using pnpm 10 `deploy --prod`. `main.ts` handles `--smoke` before TTY checks and imports `@earendil-works/pi-tui` without spawning Bridge.
+Set package engine to `>=22.22.3 <23 || >=24.15.0 <25`, keep pnpm 10.14.0, add a TUI-local workspace at `tui/pnpm-workspace.yaml` with package `.`, and add `release:deploy` using `pnpm --filter @miniclaw/pi-tui deploy --legacy --prod`. The repository root intentionally remains outside a pnpm workspace so Desktop and Browser keep consuming their own frozen lockfiles. `main.ts` handles `--smoke` before TTY checks and imports `@earendil-works/pi-tui` without spawning Bridge.
 
 `build_node_bundle.py` validates official archive hash from runtime pins, extracts only regular `bin/node` and `LICENSE`, verifies `node --version`, and writes a deterministic gzip tar with uid/gid/mtime zero. `build_tui_bundle.py` runs build/test/deploy, captures `pnpm licenses list --prod --json`, resolves every internal staging symlink only when its final target remains inside staging, replaces it with regular content, rejects cycles/escapes, strips dev files/cache, and writes deterministic tar metadata.
 
@@ -1047,7 +1054,7 @@ Run:
 
 ```bash
 corepack prepare pnpm@10.14.0 --activate
-corepack pnpm install --frozen-lockfile
+corepack pnpm --dir tui install --frozen-lockfile
 corepack pnpm --dir tui test
 uv run python -m unittest tests.test_tui_launcher tests.test_release_bundles -v
 ```
@@ -1057,7 +1064,7 @@ CI repeats TypeScript test/bundle smoke with Node 22.22.3 and 24.18.0. Expected:
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pnpm-workspace.yaml tui/package.json tui/src/main.ts tui/test/smoke.test.ts src/miniclaw/tui_launcher.py tests/test_tui_launcher.py scripts/build_node_bundle.py scripts/build_tui_bundle.py tests/test_release_bundles.py
+git add tui/pnpm-workspace.yaml tui/package.json tui/src/main.ts tui/test/smoke.test.ts src/miniclaw/tui_launcher.py src/miniclaw/doctor.py tests/test_tui_launcher.py tests/test_doctor.py tests/test_cli.py tests/test_pi_tui_integration.py README.md README_EN.md docs/getting-started/20260807_本地运行指南.md scripts/build_node_bundle.py scripts/build_tui_bundle.py tests/test_release_bundles.py
 git commit -m "build(tui): 生成 symlink-free managed Node/TUI bundles"
 ```
 
@@ -1274,7 +1281,7 @@ Expected: FAIL because template and renderer are absent.
 
 - [ ] **Step 3: Implement the nine bootstrap operations only**
 
-The rendered shell uses `set -eu`, `umask 077`, `trap` cleanup, `mktemp -d`, `uname -s/-m`, exact case mapping, `curl -fL --proto '=https' --tlsv1.2 --retry 3`, `sha256sum` or `shasum -a 256`, and `tar -xzf`. It downloads the fixed uv 0.12.0 archive, verifies its embedded platform hash, extracts the uv executable, downloads exact `v0.7.0/release-manifest.json` and `miniclaw-installer.pyz`, verifies embedded size/hash, sets private `UV_PYTHON_INSTALL_DIR`, runs `uv python install 3.12`, resolves the managed interpreter with `uv python find --managed-python 3.12`, then `exec`s the pyz with internal `--manifest-file`, `--manifest-sha256` and original public flags. It never parses manifest JSON, edits config, invokes sudo, writes service files or touches `current`.
+The rendered shell uses `set -eu`, `umask 077`, `trap` cleanup, `mktemp -d`, `uname -s/-m`, exact case mapping, `curl -fL --proto '=https' --tlsv1.2 --retry 3`, `sha256sum` or `shasum -a 256`, and `tar -xzf`. It downloads the fixed uv 0.12.0 archive, verifies its embedded platform hash, extracts the uv executable, downloads exact `v0.7.0/release-manifest.json` and `miniclaw-installer.pyz`, verifies embedded size/hash, sets private `UV_PYTHON_INSTALL_DIR`, runs `uv python install 3.12`, resolves the managed interpreter with `uv python find --managed-python 3.12`, then `exec`s the pyz with internal `--manifest-file`, `--manifest-sha256`, `--managed-python-root`, `--managed-python-executable` and original public flags. The pyz binds both Python paths to the private bootstrap tree before Task 8 copies them into the versioned Runtime; it never resolves or downloads Python again. The shell never parses manifest JSON, edits config, invokes sudo, writes service files or touches `current`.
 
 - [ ] **Step 4: Run GREEN and shell syntax gates**
 

@@ -39,7 +39,7 @@ class DoctorTest(unittest.TestCase):
         self.paths = build_state_paths(self.root)
         self.node = self.paths.home / "test-node"
         self.node.parent.mkdir(parents=True, exist_ok=True)
-        self.node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+        self.node.write_text("#!/bin/sh\nprintf 'v22.22.3\\n'\n", encoding="utf-8")
         self.node.chmod(0o700)
         self.tui_entry = self.paths.home / "main.js"
         self.tui_entry.write_text("// test entry\n", encoding="utf-8")
@@ -237,8 +237,30 @@ class DoctorTest(unittest.TestCase):
         node = next(result for result in results if result.name == "node")
         build = next(result for result in results if result.name == "pi_tui")
         self.assertIs(node.status, CheckStatus.FAIL)
-        self.assertIn("22.19.0", node.message)
+        self.assertIn("22.22.3", node.message)
+        self.assertIn("24.15.0", node.message)
         self.assertIs(build.status, CheckStatus.FAIL)
+
+    def test_node_check_uses_exact_supported_lts_ranges(self) -> None:
+        """Doctor 必须接受两个 floor，并拒绝未验证的 23/25 major。"""
+        initialize_state(self.paths)
+        cases = (
+            ("22.22.3", CheckStatus.PASS),
+            ("24.15.0", CheckStatus.PASS),
+            ("23.0.0", CheckStatus.FAIL),
+            ("25.0.0", CheckStatus.FAIL),
+        )
+
+        for version, expected in cases:
+            with self.subTest(version=version):
+                self.node.write_text(
+                    f"#!/bin/sh\nprintf 'v{version}\\n'\n",
+                    encoding="utf-8",
+                )
+                results = run_local_checks(self.paths, self.tui_environ)
+                by_name = {result.name: result for result in results}
+                self.assertIs(by_name["node"].status, expected)
+                self.assertIs(by_name["pi_tui"].status, expected)
 
     def test_corrupt_config_fails_without_exposing_file_contents(self) -> None:
         """损坏配置必须失败，诊断消息不能回显其中的密钥样例。"""
