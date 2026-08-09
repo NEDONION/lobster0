@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -60,6 +61,8 @@ class ToolContext:
     task_run_id: int | None = None
     account_id: str | None = None
     external_conversation_id: str | None = None
+    allowed_tool_names: frozenset[str] | None = None
+    automation_gate: Callable[[], bool] | None = None
 
     def __post_init__(self) -> None:
         """拒绝未知执行来源和 bool/非正 TaskRun ID。"""
@@ -77,6 +80,11 @@ class ToolContext:
                 not isinstance(value, str) or not value.strip() or "\x00" in value
             ):
                 raise ValueError(f"tool context {name} must be safe non-empty text")
+        if self.allowed_tool_names is not None and (
+            not isinstance(self.allowed_tool_names, frozenset)
+            or any(not isinstance(name, str) or not name for name in self.allowed_tool_names)
+        ):
+            raise ValueError("tool context allowed_tool_names is invalid")
 
 
 class ToolValidationError(ValueError):

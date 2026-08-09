@@ -126,8 +126,28 @@ class AgentRunner:
 
     @property
     def tool_schemas(self) -> tuple[dict[str, JsonValue], ...]:
-        """返回当前执行器公开给模型的 Tool Schema。"""
-        return () if self._executor is None else self._executor.schemas
+        """返回交互式模型可见 Schema，并隐藏 automation-only terminal Tool。"""
+        return self.tool_schemas_for(None)
+
+    def tool_schemas_for(
+        self,
+        allowed_tool_names: frozenset[str] | None,
+    ) -> tuple[dict[str, JsonValue], ...]:
+        """按 execution profile 过滤 Schema；交互式默认隐藏 complete_task。"""
+        if self._executor is None:
+            return ()
+        schemas = self._executor.schemas
+        if allowed_tool_names is None:
+            return tuple(
+                schema
+                for schema in schemas
+                if schema["function"]["name"] != "complete_task"
+            )
+        return tuple(
+            schema
+            for schema in schemas
+            if schema["function"]["name"] in allowed_tool_names
+        )
 
     async def execute_approved(
         self,
@@ -421,6 +441,24 @@ class AgentRunner:
                     on_event,
                 )
                 executed_tool_calls += 1
+                if (
+                    executed_result is not None
+                    and not executed_result.ok
+                    and executed_result.error_code == "automation_halted"
+                    and tool_context is not None
+                    and tool_context.source == "automation"
+                ):
+                    messages.append(tool_message)
+                    intermediate_messages.append(tool_message)
+                    if on_intermediate is not None:
+                        on_intermediate(tuple(intermediate_messages[batch_start:]))
+                    return build_result(
+                        content="",
+                        iterations=iteration,
+                        finish_reason="automation_halted",
+                        context_tokens=response.input_tokens,
+                        error_code="automation_halted",
+                    )
                 if approval_id is not None:
                     if on_intermediate is not None:
                         on_intermediate(tuple(intermediate_messages[batch_start:]))

@@ -75,6 +75,39 @@ class ToolExecutor:
         on_event: RunEventHandler | None = None,
     ) -> ToolExecution:
         """按 get → validate → policy → start → execute → finish 执行。"""
+        if (
+            context.allowed_tool_names is not None
+            and call.name not in context.allowed_tool_names
+        ):
+            result = ToolResult.failure(
+                "tool_not_allowed",
+                "tool is not allowed in this execution profile",
+            )
+            return await _finish_unstarted(
+                context,
+                call,
+                result.to_model_text(call.name),
+                "denied",
+                on_event,
+                result=result,
+            )
+        if (
+            context.source == "automation"
+            and context.automation_gate is not None
+            and not context.automation_gate()
+        ):
+            result = ToolResult.failure(
+                "automation_halted",
+                "automation is halted",
+            )
+            return await _finish_unstarted(
+                context,
+                call,
+                result.to_model_text(call.name),
+                "denied",
+                on_event,
+                result=result,
+            )
         tool = self._registry.get(call.name)
         if tool is None:
             return await _finish_unstarted(
@@ -219,6 +252,29 @@ class ToolExecutor:
             raise ValueError("approved ToolRun must be running")
         if decision not in available_approval_decisions(run.tool_name, run.arguments):
             raise ApprovalError("scope_forbidden", "approval scope is not allowed")
+        if (
+            context.allowed_tool_names is not None
+            and run.tool_name not in context.allowed_tool_names
+        ):
+            return await self._reject_approved_profile(
+                context,
+                run,
+                "tool_not_allowed",
+                "tool is not allowed in this execution profile",
+                on_event,
+            )
+        if (
+            context.source == "automation"
+            and context.automation_gate is not None
+            and not context.automation_gate()
+        ):
+            return await self._reject_approved_profile(
+                context,
+                run,
+                "automation_halted",
+                "automation is halted",
+                on_event,
+            )
         tool = self._registry.get(run.tool_name)
         if tool is None:
             result = ToolResult.failure("tool_not_found", "approved tool is not available")
@@ -261,6 +317,27 @@ class ToolExecutor:
         }:
             self._apply_grant(context, approval_id, run, decision)
         return execution
+
+    async def _reject_approved_profile(
+        self,
+        context: ToolContext,
+        run: StoredToolRun,
+        error_code: str,
+        message: str,
+        on_event: RunEventHandler | None,
+    ) -> ToolExecution:
+        """结算已 consume 但被 automation profile 拒绝的 ToolRun。"""
+        result = ToolResult.failure(error_code, message)
+        model_text = result.to_model_text(run.tool_name)
+        self._runs.fail(run.id, model_text, 0, error_code)
+        return await _finish_unstarted(
+            context,
+            ToolCall(run.tool_call_id, run.tool_name, run.arguments),
+            model_text,
+            "denied",
+            on_event,
+            result=result,
+        )
 
     def _apply_grant(
         self,
@@ -359,6 +436,8 @@ async def _finish_unstarted(
     model_text: str,
     status: str,
     on_event: RunEventHandler | None,
+    *,
+    result: ToolResult | None = None,
 ) -> ToolExecution:
     """终结未进入 running 的 Tool 请求并更新可见卡片。"""
     await emit(
@@ -374,7 +453,7 @@ async def _finish_unstarted(
             },
         ),
     )
-    return ToolExecution(model_text)
+    return ToolExecution(model_text, result=result)
 
 
 def _elapsed_ms(started: float) -> int:

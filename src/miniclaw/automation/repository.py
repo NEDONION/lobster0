@@ -17,6 +17,7 @@ from miniclaw.automation.models import (
     TaskBudget,
     TaskResponse,
     TaskRun,
+    TaskRunSnapshot,
     TaskStatus,
 )
 from miniclaw.storage.database import Database
@@ -721,6 +722,8 @@ class TaskRunRepository:
         result_preview: str | None = None,
         error_code: str | None = None,
         usage: dict[str, int | None] | None = None,
+        session_id: int | None = None,
+        turn_id: int | None = None,
     ) -> TaskRun:
         """把 running/waiting Run 原子结算为一个不可回退终态。"""
         if status not in {
@@ -732,6 +735,9 @@ class TaskRunRepository:
         }:
             raise ValueError("finish requires a terminal run status")
         current = _as_utc(now, "run completion time")
+        for value, name in ((session_id, "session_id"), (turn_id, "turn_id")):
+            if value is not None and (type(value) is not int or value <= 0):
+                raise ValueError(f"{name} must be a positive integer")
         response_json = None if response is None else _response_json(response)
         usage_json = _json_dumps({} if usage is None else usage)
         with self._database.connect() as connection:
@@ -748,7 +754,9 @@ class TaskRunRepository:
                 UPDATE task_runs
                 SET status = ?, worker_id = NULL, lease_expires_at = NULL,
                     completed_at = ?, response_json = ?, result_preview = ?,
-                    error_code = ?, usage_json = ?
+                    error_code = ?, usage_json = ?,
+                    session_id = COALESCE(?, session_id),
+                    turn_id = COALESCE(?, turn_id)
                 WHERE id = ?
                 """,
                 (
@@ -758,6 +766,8 @@ class TaskRunRepository:
                     result_preview,
                     error_code,
                     usage_json,
+                    session_id,
+                    turn_id,
                     run_id,
                 ),
             )
@@ -989,9 +999,41 @@ def _run_from_row(row: sqlite3.Row | None) -> TaskRun:
             response=response,
             result_preview=row["result_preview"],
             error_code=row["error_code"],
+            snapshot=_snapshot_from_mapping(snapshot),
         )
     except (KeyError, TypeError, ValueError) as error:
         raise AutomationDataError("task_run_data_invalid") from error
+
+
+def _snapshot_from_mapping(value: object) -> TaskRunSnapshot:
+    """把已解析 canonical snapshot JSON 还原为执行期不可变模型。"""
+    if not isinstance(value, dict):
+        raise ValueError("task snapshot must be an object")
+    skills = value.get("skill_names")
+    delivery = value.get("delivery")
+    budget = value.get("budget")
+    if (
+        value.get("schema_version") != 1
+        or not isinstance(skills, list)
+        or any(not isinstance(name, str) for name in skills)
+        or not isinstance(delivery, dict)
+        or not isinstance(budget, dict)
+    ):
+        raise ValueError("task snapshot shape is invalid")
+    return TaskRunSnapshot(
+        owner_id=value["owner_id"],
+        name=value["name"],
+        prompt=value["prompt"],
+        skill_names=tuple(skills),
+        delivery=DeliveryTarget(
+            route=delivery["route"],
+            channel=delivery["channel"],
+            account_id=delivery.get("account_id"),
+            conversation_id=delivery.get("conversation_id"),
+        ),
+        policy_profile=value["policy_profile"],
+        budget=TaskBudget(**budget),
+    )
 
 
 def _control_from_row(row: sqlite3.Row | None) -> AutomationControl:

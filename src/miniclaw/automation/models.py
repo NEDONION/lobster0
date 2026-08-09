@@ -144,6 +144,38 @@ class TaskResponse:
 
 
 @dataclass(frozen=True, slots=True)
+class TaskRunSnapshot:
+    """保存 Run 入队时冻结、执行所需且不含 Schedule 的 Task 事实。"""
+
+    owner_id: int
+    name: str
+    prompt: str
+    skill_names: tuple[str, ...]
+    delivery: DeliveryTarget
+    policy_profile: str
+    budget: TaskBudget
+
+    def __post_init__(self) -> None:
+        """校验 Owner、文本、Skill、Delivery 与 Budget。"""
+        _require_positive_int(self.owner_id, "task snapshot owner_id")
+        for value, name in (
+            (self.name, "task snapshot name"),
+            (self.prompt, "task snapshot prompt"),
+            (self.policy_profile, "task snapshot policy_profile"),
+        ):
+            if not _is_non_empty_text(value):
+                raise ValueError(f"{name} must be non-empty")
+        if not isinstance(self.skill_names, tuple) or any(
+            not _is_non_empty_text(skill) for skill in self.skill_names
+        ):
+            raise ValueError("task snapshot skill_names are invalid")
+        if not isinstance(self.delivery, DeliveryTarget):
+            raise ValueError("task snapshot delivery is invalid")
+        if not isinstance(self.budget, TaskBudget):
+            raise ValueError("task snapshot budget is invalid")
+
+
+@dataclass(frozen=True, slots=True)
 class ScheduledTask:
     """保存一条 owner-scoped、可乐观并发更新的 ScheduledTask。"""
 
@@ -216,6 +248,7 @@ class TaskRun:
     response: TaskResponse | None = None
     result_preview: str | None = None
     error_code: str | None = None
+    snapshot: TaskRunSnapshot | None = None
 
     def __post_init__(self) -> None:
         """校验状态、lease、引用 ID、幂等键和全部 UTC 时间。"""
@@ -257,6 +290,8 @@ class TaskRun:
             raise ValueError("active task run requires worker and lease")
         if self.response is not None and not isinstance(self.response, TaskResponse):
             raise ValueError("task run response is invalid")
+        if self.snapshot is not None and not isinstance(self.snapshot, TaskRunSnapshot):
+            raise ValueError("task run snapshot is invalid")
 
 
 def _require_positive_int(value: object, name: str) -> None:

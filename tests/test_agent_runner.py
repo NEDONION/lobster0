@@ -191,6 +191,39 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool.executions, 1)
         self.assertEqual(len(provider.requests), 1)
 
+    async def test_e_stop_between_tool_calls_prevents_the_next_side_effect(self) -> None:
+        """同批 Tool 之间也必须重查 durable E-stop，不能只在 Run 开始时检查。"""
+        calls = (
+            ToolCall("call_before_halt", "echo", {"text": "first"}),
+            ToolCall("call_after_halt", "echo", {"text": "second"}),
+        )
+        provider = FakeProvider((response("", tool_calls=calls),))
+        tool = _EchoTool()
+        executor = self.executor(tool)
+        checks = 0
+
+        def gate() -> bool:
+            """只允许首个 Tool 通过，随后模拟全局 E-stop。"""
+            nonlocal checks
+            checks += 1
+            return checks == 1
+
+        outcome = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=replace(
+                self.tool_context,
+                source="automation",
+                task_run_id=10,
+                allowed_tool_names=frozenset({"echo"}),
+                automation_gate=gate,
+            ),
+            budget=AgentRunBudget(max_turns=3, max_tool_calls=2),
+        )
+
+        self.assertEqual(outcome.error_code, "automation_halted")
+        self.assertEqual(tool.executions, 1)
+        self.assertEqual(checks, 2)
+
     async def test_reported_usage_budget_stops_before_any_tool(self) -> None:
         """Provider 回报已超 Token 预算时，本轮 Tool 一次也不能执行。"""
         call = ToolCall("call_over", "echo", {"text": "must-not-run"})

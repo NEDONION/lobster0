@@ -9,7 +9,12 @@ from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
 from miniclaw.automation.guard import AutomationPromptGuard
-from miniclaw.automation.repository import ScheduledTaskRepository, TaskRunRepository
+from miniclaw.automation.repository import (
+    AutomationControlRepository,
+    ScheduledTaskRepository,
+    TaskRunRepository,
+)
+from miniclaw.automation.runner import TaskRunner
 from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
@@ -81,6 +86,7 @@ from miniclaw.tools.memory_v2 import (
 from miniclaw.tools.registry import ToolRegistry
 from miniclaw.tools.search import GlobTool, GrepTool
 from miniclaw.tools.system import SystemInfoTool
+from miniclaw.tools.task_completion import CompleteTaskTool
 from miniclaw.tools.web import HttpGetTool
 
 
@@ -98,6 +104,7 @@ class AgentRuntime:
     memory_console: MemoryConsole
     memory_worker: MemoryWorker = field(repr=False)
     memory_scheduler: MemoryFlushScheduler = field(repr=False)
+    task_runner: TaskRunner = field(repr=False)
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
 
@@ -106,13 +113,16 @@ class AgentRuntime:
         await self.memory_worker.start()
 
     async def aclose(self) -> None:
-        """有界 flush/停止 Memory Worker，再关闭唯一 Provider 客户端。"""
+        """停止后台 Task/Memory Worker，再关闭唯一 Provider 客户端。"""
         self.memory_scheduler.schedule()
         try:
             await self.memory_worker.flush_once(timeout=3.0)
         finally:
-            await self.memory_worker.stop(timeout=3.0)
-            await self.provider.aclose()
+            try:
+                await self.task_runner.stop()
+            finally:
+                await self.memory_worker.stop(timeout=3.0)
+                await self.provider.aclose()
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
@@ -282,8 +292,9 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
     )
+    execution_tools = (*tools, CompleteTaskTool())
     executor = ToolExecutor(
-        ToolRegistry(tools),
+        ToolRegistry(execution_tools),
         PolicyEngine(
             security=config.tools.security,
             ask=config.tools.ask,
@@ -298,6 +309,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         policy_rules=rules,
         approval_ttl_seconds=config.tools.approval_ttl_seconds,
     )
+    automation_control = AutomationControlRepository(database)
     service = TurnService(
         owner_id=owner.id,
         model=config.agent.model,
@@ -327,8 +339,19 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             wake=memory_scheduler.schedule,
             wake_threshold=5,
         ),
+        automation_gate=lambda: not automation_control.status().halted,
         state_home=paths.home,
         workspace=effective_workspace,
+    )
+    task_runner = TaskRunner(
+        TaskRunRepository(database),
+        automation_control,
+        service,
+        allowed_tool_names=frozenset(
+            tool.definition.name for tool in execution_tools
+        ),
+        lease_seconds=config.automation.lease_seconds,
+        max_concurrent_runs=config.automation.max_concurrent_runs,
     )
     return AgentRuntime(
         owner_id=owner.id,
@@ -348,6 +371,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         ),
         memory_worker=memory_worker,
         memory_scheduler=memory_scheduler,
+        task_runner=task_runner,
         tool_definitions=tuple(
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)
         ),
