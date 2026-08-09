@@ -1,10 +1,10 @@
-import { siteFacts, type CapabilityCopy } from '@/content/site';
+import { siteFacts, type CapabilityCopy, type Locale } from '@/content/site';
 
-export function RuntimePanel({ copy }: { copy: CapabilityCopy }) {
+export function RuntimePanel({ copy, locale }: { copy: CapabilityCopy; locale: Locale }) {
   return (
     <article className="capability-panel capability-panel--runtime">
       <div className="capability-panel__copy">
-        <span>01 / CORE LOOP</span>
+        <span>{copy.eyebrow}</span>
         <h3>{copy.title}</h3>
         <p>{copy.summary}</p>
         <ul className="capability-facts">
@@ -13,7 +13,7 @@ export function RuntimePanel({ copy }: { copy: CapabilityCopy }) {
           ))}
         </ul>
       </div>
-      <div className="runtime-map" aria-label="MiniClaw runtime path">
+      <div className="runtime-map" aria-label={locale === 'zh-CN' ? 'MiniClaw 运行路径' : 'MiniClaw runtime path'}>
         {siteFacts.traceEvents.map((event, index) => (
           <div key={event}>
             <span>{String(index + 1).padStart(2, '0')}</span>

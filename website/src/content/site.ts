@@ -4,6 +4,7 @@ export type WorkflowId = 'approval' | 'external-cli' | 'multi-channel';
 
 export interface CapabilityCopy {
   id: CapabilityId;
+  eyebrow: string;
   label: string;
   title: string;
   summary: string;
@@ -181,7 +182,7 @@ export const marketingCopy = {
     },
     trace: {
       ariaLabel: 'MiniClaw 运行轨迹',
-      eyebrow: 'CLAW TRACE / 01',
+      eyebrow: '运行轨迹 / 01',
       title: '行动不是黑盒。',
       description: '一次请求穿过真实运行时的六个状态，每一步都有边界、结果与归属。',
       steps: [
@@ -205,56 +206,61 @@ export const marketingCopy = {
       },
     },
     product: {
-      eyebrow: 'CAPABILITY EXPLORER / 02',
+      eyebrow: '能力视图 / 02',
       title: '一个 Core，五个可检查的系统面。',
       lead: '像产品一样易读，像开源工程一样具体。切换能力，直接查看结构、边界与验证证据。',
     },
     capabilities: [
       {
         id: 'runtime',
-        label: 'Runtime',
+        eyebrow: '01 / 核心循环',
+        label: '运行时',
         title: '从消息到结果，是一条受控执行链。',
         summary: '模型理解意图；Policy 决定边界；Approval 绑定参数；Tool 才真正执行。',
         facts: ['六步 Trace 顺序', 'OpenAI-compatible Provider', '结果返回原对话', '结构化执行记录'],
       },
       {
         id: 'channels',
-        label: 'Channels',
+        eyebrow: '02 / 隔离入口',
+        label: '多入口',
         title: '四个入口，共享一个 AgentRuntime。',
         summary: 'TUI、飞书、Telegram 与 Discord 共用能力，故障域与交付状态彼此隔离。',
         facts: ['4 个使用入口', '33 条 versioned cases', 'Transport 隔离', 'Delivery 与 queue 隔离'],
       },
       {
         id: 'safety',
-        label: 'Safety',
+        eyebrow: '03 / 动作前检查',
+        label: '安全边界',
         title: '限制发生在动作之前。',
         summary: 'Workspace、exact argv、网络与 Secret 都经过统一 Policy，而不是依赖提示词自觉。',
         facts: ['4 档权限模式', '参数绑定审批', 'Workspace 边界', 'SSRF 与 Secret 防护'],
       },
       {
         id: 'memory',
-        label: 'Memory',
+        eyebrow: '04 / 所有者边界',
+        label: '记忆',
         title: 'Markdown 是 Truth，SQLite 是 Projection。',
         summary: '长期事实可读、可审查、由 Owner 掌控；结构化索引可以随时重建。',
         facts: ['Owner 边界', 'Markdown Truth', 'SQLite control plane', '同 Owner 才跨渠道共享'],
       },
       {
         id: 'automation',
-        label: 'Automation',
+        eyebrow: '05 / 显式门禁',
+        label: '自动化',
         title: '默认关闭，授权之后才自动化。',
         summary: '自动执行先经过明确启用与安全门，再用 versioned cases 验证实现语义。',
         facts: ['默认 disabled', '15 条 versioned cases', '显式授权 gate', 'Implementation ≠ Live'],
       },
     ],
     workbench: {
-      eyebrow: 'REAL WORKBENCH / 03',
+      eyebrow: '真实实证 / 03',
       title: '看真实执行，不看概念渲染。',
       lead: '两张仓库内 TUI 截图，加上一张多入口结构图，展示 MiniClaw 今天已经验证的工作方式。',
     },
     workflows: [
       {
         id: 'approval',
-        label: 'SAFE Approval',
+        label: 'SAFE 审批',
         title: '高风险动作先展示影响与 exact argv。',
         summary: 'Owner 看到目标与参数后再决定，授权不会转移给另一组参数。',
         image: {
@@ -266,7 +272,7 @@ export const marketingCopy = {
       },
       {
         id: 'external-cli',
-        label: 'External CLI',
+        label: '外部 CLI',
         title: '程序与参数结构化传递。',
         summary: '外部 CLI 执行结果回到原会话，执行顺序和失败位置保持可观察。',
         image: {
@@ -284,14 +290,14 @@ export const marketingCopy = {
       },
     ],
     quickStart: {
-      eyebrow: 'RUN IT YOURSELF',
+      eyebrow: '本地启动',
       title: '从本地开始，看见第一条 Trace。',
       lead: 'Python 3.12+；默认 TUI 需要 Node.js 22.19+。服务凭据始终由你保管。',
       docsCta: '阅读安装文档',
       githubCta: '参与贡献',
     },
     footer: {
-      statement: 'Small core. Explicit boundaries. Your machine.',
+      statement: '小核心，明确边界，运行在你的机器上。',
       docs: '文档',
       issues: 'Issues',
       source: '源代码',
@@ -360,6 +366,7 @@ export const marketingCopy = {
     capabilities: [
       {
         id: 'runtime',
+        eyebrow: '01 / CORE LOOP',
         label: 'Runtime',
         title: 'Message to result is a controlled execution path.',
         summary: 'The model reads intent. Policy sets limits. Approval binds arguments. Only then can a Tool act.',
@@ -367,6 +374,7 @@ export const marketingCopy = {
       },
       {
         id: 'channels',
+        eyebrow: '02 / ISOLATED EDGES',
         label: 'Channels',
         title: 'Four surfaces share one AgentRuntime.',
         summary: 'TUI, Feishu, Telegram, and Discord share capability while delivery and failure state stay isolated.',
@@ -374,6 +382,7 @@ export const marketingCopy = {
       },
       {
         id: 'safety',
+        eyebrow: '03 / POLICY BEFORE ACTION',
         label: 'Safety',
         title: 'Limits happen before action.',
         summary: 'Workspace, exact argv, network, and secrets pass through one Policy—not a promise in a prompt.',
@@ -381,6 +390,7 @@ export const marketingCopy = {
       },
       {
         id: 'memory',
+        eyebrow: '04 / OWNER BOUNDARY',
         label: 'Memory',
         title: 'Markdown is Truth. SQLite is Projection.',
         summary: 'Durable facts stay readable, reviewable, and owner-controlled; structured indexes can be rebuilt.',
@@ -388,6 +398,7 @@ export const marketingCopy = {
       },
       {
         id: 'automation',
+        eyebrow: '05 / EXPLICIT GATE',
         label: 'Automation',
         title: 'Disabled by default. Automated after consent.',
         summary: 'Automation passes an explicit enablement and safety gate before versioned cases validate behavior.',

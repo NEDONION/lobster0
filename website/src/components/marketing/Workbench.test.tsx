@@ -14,8 +14,10 @@ describe('Workbench', () => {
       'src',
       expect.stringContaining('approval'),
     );
-    expect(screen.getByRole('tab', { name: /External CLI/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /CLI/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /多入口/ })).toBeInTheDocument();
+    expect(screen.getByText('仓库真实图片')).toBeInTheDocument();
+    expect(screen.getByText('可观察步骤')).toBeInTheDocument();
   });
 
   it('keeps the close inside the third section with real install actions', () => {

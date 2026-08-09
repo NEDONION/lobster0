@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import { MarketingHome } from './MarketingHome';
@@ -24,5 +25,14 @@ describe('MarketingHome', () => {
     expect(screen.getByText('工作入口')).toBeInTheDocument();
     expect(screen.getByText('移动入口')).toBeInTheDocument();
     expect(screen.getByText('社区入口')).toBeInTheDocument();
+  });
+
+  it('keeps Chinese structural labels around technical identifiers', async () => {
+    const user = userEvent.setup();
+    render(<MarketingHome locale="zh-CN" />);
+
+    expect(screen.getByText('01 / 核心循环')).toBeInTheDocument();
+    await user.click(screen.getByRole('tab', { name: /自动化/ }));
+    expect(screen.getByText('默认状态')).toBeInTheDocument();
   });
 });

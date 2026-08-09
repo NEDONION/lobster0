@@ -7,18 +7,18 @@ import { RuntimePanel } from './capabilities/RuntimePanel';
 import { SafetyPanel } from './capabilities/SafetyPanel';
 import { HashTabs, type HashTabItem } from './HashTabs';
 
-function renderCapabilityPanel(capability: CapabilityCopy) {
+function renderCapabilityPanel(capability: CapabilityCopy, locale: Locale) {
   switch (capability.id) {
     case 'runtime':
-      return <RuntimePanel copy={capability} />;
+      return <RuntimePanel copy={capability} locale={locale} />;
     case 'channels':
-      return <ChannelsPanel copy={capability} />;
+      return <ChannelsPanel copy={capability} locale={locale} />;
     case 'safety':
-      return <SafetyPanel copy={capability} />;
+      return <SafetyPanel copy={capability} locale={locale} />;
     case 'memory':
-      return <MemoryPanel copy={capability} />;
+      return <MemoryPanel copy={capability} locale={locale} />;
     case 'automation':
-      return <AutomationPanel copy={capability} />;
+      return <AutomationPanel copy={capability} locale={locale} />;
   }
 }
 
@@ -27,7 +27,7 @@ export function CapabilityExplorer({ locale }: { locale: Locale }) {
   const items: HashTabItem[] = copy.capabilities.map((capability) => ({
     id: capability.id,
     label: capability.label,
-    panel: renderCapabilityPanel(capability),
+    panel: renderCapabilityPanel(capability, locale),
   }));
 
   return (

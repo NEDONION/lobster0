@@ -11,19 +11,20 @@ interface WorkbenchProps {
   workflows: readonly WorkflowCopy[];
 }
 
-function ScreenshotWorkflow({ workflow, index }: { workflow: WorkflowCopy; index: number }) {
+function ScreenshotWorkflow({ locale, workflow, index }: { locale: Locale; workflow: WorkflowCopy; index: number }) {
   if (!workflow.image) return null;
+  const zh = locale === 'zh-CN';
 
   return (
     <article className="workflow-panel workflow-panel--screenshot">
       <div className="workflow-panel__copy">
-        <span>0{index + 1} / REAL TUI EVIDENCE</span>
+        <span>0{index + 1} / {zh ? '仓库真实图片' : 'REAL TUI EVIDENCE'}</span>
         <h3>{workflow.title}</h3>
         <p>{workflow.summary}</p>
         <dl>
-          <div><dt>SOURCE</dt><dd>repository asset</dd></div>
-          <div><dt>PIXELS</dt><dd>{workflow.image.width} × {workflow.image.height}</dd></div>
-          <div><dt>STATE</dt><dd>implementation evidence</dd></div>
+          <div><dt>{zh ? '来源' : 'SOURCE'}</dt><dd>{zh ? '仓库真实图片' : 'repository asset'}</dd></div>
+          <div><dt>{zh ? '分辨率' : 'PIXELS'}</dt><dd>{workflow.image.width} × {workflow.image.height}</dd></div>
+          <div><dt>{zh ? '状态' : 'STATE'}</dt><dd>{zh ? '实现证据' : 'implementation evidence'}</dd></div>
         </dl>
       </div>
       <figure className="workflow-shot">
@@ -36,8 +37,10 @@ function ScreenshotWorkflow({ workflow, index }: { workflow: WorkflowCopy; index
           width={workflow.image.width}
         />
         <figcaption>
-          <span>OBSERVABLE</span>
-          <strong>{workflow.id === 'approval' ? 'impact → exact argv → owner decision' : 'program → argv[] → result'}</strong>
+          <span>{zh ? '可观察步骤' : 'OBSERVABLE'}</span>
+          <strong>{workflow.id === 'approval'
+            ? (zh ? '影响 → exact argv → 所有者决定' : 'impact → exact argv → owner decision')
+            : (zh ? '程序 → argv[] → 结果' : 'program → argv[] → result')}</strong>
         </figcaption>
       </figure>
     </article>
@@ -51,9 +54,9 @@ export function Workbench({ locale, workflows }: WorkbenchProps) {
     label: workflow.label,
     panel:
       workflow.id === 'multi-channel' ? (
-        <MultiChannelDiagram workflow={workflow} />
+        <MultiChannelDiagram locale={locale} workflow={workflow} />
       ) : (
-        <ScreenshotWorkflow index={index} workflow={workflow} />
+        <ScreenshotWorkflow index={index} locale={locale} workflow={workflow} />
       ),
   }));
 
