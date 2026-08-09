@@ -31,6 +31,34 @@ const { command, label, copyLabel, copiedLabel } = Astro.props;
 <script>
   const copyBlocks = document.querySelectorAll<HTMLElement>('[data-command-block]');
 
+  const fallbackCopy = (text: string): boolean => {
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.inset = '-9999px auto auto -9999px';
+    document.body.append(textarea);
+    textarea.select();
+    try {
+      const legacyExecCommand = Reflect.get(document, 'execCommand') as
+        | ((commandId: string) => boolean)
+        | undefined;
+      return legacyExecCommand?.call(document, 'copy') ?? false;
+    } finally {
+      textarea.remove();
+    }
+  };
+
+  const copyText = async (text: string): Promise<boolean> => {
+    try {
+      if (!navigator.clipboard?.writeText) return fallbackCopy(text);
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      return fallbackCopy(text);
+    }
+  };
+
   for (const block of copyBlocks) {
     const button = block.querySelector<HTMLButtonElement>('[data-copy-command]');
     const command = block.querySelector<HTMLElement>('[data-command]');
@@ -39,20 +67,21 @@ const { command, label, copyLabel, copiedLabel } = Astro.props;
 
     button?.addEventListener('click', async () => {
       if (!command || !label || !status) return;
-      try {
-        await navigator.clipboard.writeText(command.textContent ?? '');
-        const copiedLabel = button.dataset.copiedLabel ?? 'Copied';
-        label.textContent = copiedLabel;
-        status.textContent = copiedLabel;
-        button.dataset.copied = 'true';
-        window.setTimeout(() => {
-          label.textContent = button.dataset.copyLabel ?? 'Copy';
-          status.textContent = '';
-          delete button.dataset.copied;
-        }, 2000);
-      } catch {
+      const copied = await copyText(command.textContent ?? '');
+      if (!copied) {
         status.textContent = button.dataset.copyLabel ?? 'Copy';
+        return;
       }
+
+      const copiedLabel = button.dataset.copiedLabel ?? 'Copied';
+      label.textContent = copiedLabel;
+      status.textContent = copiedLabel;
+      button.dataset.copied = 'true';
+      window.setTimeout(() => {
+        label.textContent = button.dataset.copyLabel ?? 'Copy';
+        status.textContent = '';
+        delete button.dataset.copied;
+      }, 2000);
     });
   }
 </script>

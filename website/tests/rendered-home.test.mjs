@@ -26,6 +26,7 @@ test('renders the real Claw Trace states and install command', async () => {
   }
   assert.match(zh, /git clone https:\/\/github\.com\/NEDONION\/miniclaw\.git/);
   assert.match(zh, /aria-live="polite"/);
+  assert.match(zh, /Reflect\.get\(document,[`"']execCommand[`"']\)/);
 });
 
 test('shows evidence without overstating live acceptance', async () => {
@@ -35,4 +36,11 @@ test('shows evidence without overstating live acceptance', async () => {
   assert.match(en, /Implementation PASS is not Live PASS/);
   assert.match(zh, /miniclaw-tui-approval-warp\.png/);
   assert.match(zh, /miniclaw-tui-external-cli-warp\.png/);
+});
+
+test('documents the isolated Vercel project settings', async () => {
+  const readme = await readFile(new URL('README.md', root), 'utf8');
+  assert.match(readme, /Root Directory.*`website`/i);
+  assert.match(readme, /Build Command.*`npm run build`/i);
+  assert.match(readme, /Output Directory.*`dist`/i);
 });
