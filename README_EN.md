@@ -239,7 +239,7 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 | Gate | Current evidence |
 | --- | --- |
 | Python | 1005/1005 `unittest` PASS |
-| TUI | 36/36 TypeScript tests and build PASS |
+| TUI | 41/41 TypeScript tests and build PASS |
 | Browser Worker | 14/14 TypeScript + real headless Chrome tests PASS |
 | Agent | 39/39 active offline cases PASS, including `MEM-AUTO-001..010` |
 | Channel | 33/33 versioned cases PASS |

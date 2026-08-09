@@ -355,7 +355,7 @@
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Phase 6.5 implementation pass</span>
         <strong>PRODUCTION SOAK PENDING</strong>
-        <p>1005 Python · 36/36 TUI · 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18</p>
+        <p>1005 Python · 41/41 TUI · 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18</p>
       </aside>
     </section>
 
@@ -583,7 +583,7 @@
           <li class="complete">bounded accessibility snapshot、opaque ref/generation 与 stale-ref fail closed</li>
           <li class="complete">八个 Browser Tool 复用 Core Policy/Approval；password/OTP 与 SSRF 硬拒绝</li>
           <li class="complete">Screenshot/Download 私有 Artifact CAS、MIME/magic/hash/TTL 与 path redaction</li>
-          <li class="complete">1005 Python + 36/36 TUI + 14/14 Browser Worker + 39/39 Agent + 33/33 Channel + 15/15 Automation + 18/18 Browser</li>
+          <li class="complete">1005 Python + 41/41 TUI + 14/14 Browser Worker + 39/39 Agent + 33/33 Channel + 15/15 Automation + 18/18 Browser</li>
           <li class="complete">Phase 6 invariant monitor、exact 24h checkpoint、production preflight/recovery/finalize tooling</li>
           <li class="pending">同一 clean commit 的 Seatbelt 2/2、飞书 15/15、Automation 10/10 与连续 24h soak</li>
           <li class="complete">20 轮：660/660 Channel、300/300 Automation、360/360 Browser soak</li>
@@ -597,7 +597,7 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace/Personal 多根 Guard、敏感凭据硬拒绝、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 1005 Python、36/36 TUI、14/14 Browser Worker、39/39 Agent、33/33 Channel、15/15 Automation 与 18/18 Browser；20 轮 soak 为 660/660、300/300、360/360。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 1005 Python、41/41 TUI、14/14 Browser Worker、39/39 Agent、33/33 Channel、15/15 Automation 与 18/18 Browser；20 轮 soak 为 660/660、300/300、360/360。</p></div>
         <div class="decision"><code>memory</code><p>Markdown 是已接受语义真相；SQLite 保存 buffer、lease、来源、Review、审计与可重建 FTS5。Memory 不能扩大 Policy 权限。</p></div>
         <div class="decision"><code>permissions</code><p>Autopilot 只给本地与 Owner 私聊；群聊/其他成员降级。任何模式都不能绕过敏感路径、exact argv、SSRF 和资源硬边界。</p></div>
         <div class="decision"><code>approval</code><p>审批框固定头尾、只滚动参数；Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
@@ -611,7 +611,7 @@
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-10 · 1005 Python + 36/36 TUI + 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18 · Phase 6 production tooling pass · soak pending</span>
+      <span>Last updated · 2026-08-10 · 1005 Python + 41/41 TUI + 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18 · Phase 6 production tooling pass · soak pending</span>
       <span>Historical Phase 5 implementation pass baseline · 562 Python · 30 TypeScript · Agent 29/29 · Channel 32/32 · local soak 640/640.</span>
       <span><a href="../engineering/phase-6/20260810_macos-feishu-production-acceptance.md">Production Runbook</a> · <a href="../engineering/phase-6/browser-agent.md">Browser Agent</a> · <a href="../evals/releases/v0.6.5.md">v0.6.5</a> · <a href="../engineering/phase-6/20260809_autonomy-runtime.md">Autonomy Runtime</a> · <a href="../engineering/phase-6/20260809_sandbox-and-checkpoint.md">Sandbox + Checkpoint</a> · <a href="../engineering/phase-5/20260809_memory-autopilot.md">Memory Autopilot</a></span>
     </footer>

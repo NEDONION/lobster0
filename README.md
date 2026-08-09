@@ -297,7 +297,7 @@ Policy；截图和下载只返回私有 Artifact ID。当前状态为 **IMPLEMEN
 | 项目 | 当前证据 |
 | --- | --- |
 | Python | 1005/1005 `unittest` PASS |
-| TUI | 36/36 TypeScript tests + build PASS |
+| TUI | 41/41 TypeScript tests + build PASS |
 | Browser Worker | 14/14 TypeScript + 真实 headless Chrome tests PASS |
 | Agent | 39/39 active offline cases PASS（含 `MEM-AUTO-001..010`） |
 | Channel | 33/33 versioned cases PASS |

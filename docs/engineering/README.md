@@ -33,7 +33,7 @@
 | Phase 6.5 | Isolated Browser Agent | v0.6.5 capability record | `IMPLEMENTATION PASS / CONTROLLED LIVE SMOKE PENDING` | [Browser Agent](phase-6/browser-agent.md) |
 | Phase 7 | Controlled Evolution | 未发布 | `ENGINEERING PLAN / NOT IMPLEMENTED` | [Controlled Evolution 工程落地方案](phase-7/20260810_controlled-evolution.md) |
 
-当前全仓本地基线是 1005/1005 Python、36/36 TUI TypeScript、14/14 Browser Worker、39/39 Agent、
+当前全仓本地基线是 1005/1005 Python、41/41 TUI TypeScript、14/14 Browser Worker、39/39 Agent、
 33/33 Channel、20 轮 660/660 local Channel soak、15/15 Automation，以及 18/18 Browser 和 20 轮
 360/360 Browser soak。状态为 **IMPLEMENTATION PASS**；Feishu 为
 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**，Telegram、Discord 均为 **LIVE PENDING**，

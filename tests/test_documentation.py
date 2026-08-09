@@ -30,7 +30,7 @@ class Phase6DocumentationTest(unittest.TestCase):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
                 self.assertIn("1005", content)
-                self.assertIn("36/36", content)
+                self.assertIn("41/41", content)
                 self.assertIn("14/14", content)
                 self.assertIn("39/39", content)
                 self.assertIn("33/33", content)
@@ -146,7 +146,7 @@ class Phase6DocumentationTest(unittest.TestCase):
         for needle in (
             "Phase 6.5 implementation pass",
             "1005 Python",
-            "36/36 TUI",
+            "41/41 TUI",
             "14/14 Worker",
             "39/39",
             "IMPLEMENTATION PASS",

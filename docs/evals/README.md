@@ -17,7 +17,7 @@
 
 ```mermaid
 flowchart LR
-    CHANGE["代码或 Prompt 变更"] --> UNIT["1005 Python + 36/36 TUI + 14/14 Worker"]
+    CHANGE["代码或 Prompt 变更"] --> UNIT["1005 Python + 41/41 TUI + 14/14 Worker"]
     UNIT --> VALIDATE["eval validate"]
     VALIDATE --> OFFLINE["39 active offline cases"]
     OFFLINE --> CHANNEL["33 active Channel cases"]
@@ -29,7 +29,7 @@ flowchart LR
     LIVE --> RECORD["release record"]
 ```
 
-当前全仓门禁是 **IMPLEMENTATION PASS**：1005/1005 Python、36/36 TUI TypeScript、14/14 Browser Worker、
+当前全仓门禁是 **IMPLEMENTATION PASS**：1005/1005 Python、41/41 TUI TypeScript、14/14 Browser Worker、
 39/39 active offline Agent、33/33 Channel、660/660 local Channel soak、15/15 Automation、300/300 Automation
 soak、18/18 Browser 与 360/360 Browser soak。Feishu 是
 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram 与 Discord 的真实验收均为
