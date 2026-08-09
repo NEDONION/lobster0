@@ -168,6 +168,20 @@ class ScheduledTaskRepository:
             ).fetchall()
         return tuple(_task_from_row(row) for row in rows)
 
+    def next_due_at(self) -> datetime | None:
+        """返回所有 active Task 中最早的持久化 next_run_at。"""
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT next_run_at FROM scheduled_tasks
+                WHERE status = 'active' AND next_run_at IS NOT NULL
+                ORDER BY next_run_at, id LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            return None
+        return _parse_required_datetime(row["next_run_at"])
+
     def pause(
         self, task_id: int, *, owner_id: int, expected_version: int
     ) -> ScheduledTask:
@@ -391,6 +405,56 @@ class TaskRunRepository:
                     task.id,
                     task.version,
                 ),
+            )
+            if updated.rowcount != 1:
+                raise AutomationStateError("task_version_conflict")
+            run_row = connection.execute(
+                "SELECT * FROM task_runs WHERE idempotency_key = ?", (key,)
+            ).fetchone()
+            task_row = connection.execute(
+                "SELECT * FROM scheduled_tasks WHERE id = ?", (task.id,)
+            ).fetchone()
+        return _run_from_row(run_row), _task_from_row(task_row)
+
+    def record_misfire_and_complete(
+        self,
+        task: ScheduledTask,
+        *,
+        scheduled_for: datetime,
+        now: datetime,
+    ) -> tuple[TaskRun, ScheduledTask]:
+        """原子记录过期 once 的 failed Run，并把 Task 置为 completed。"""
+        slot = _as_utc(scheduled_for, "scheduled_for")
+        current = _as_utc(now, "misfire completion time")
+        key = task_run_idempotency_key(task.id, slot)
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            _raise_if_halted(connection)
+            connection.execute(
+                """
+                INSERT INTO task_runs (
+                    task_id, scheduled_for, idempotency_key, snapshot_json,
+                    status, attempt, completed_at, error_code, usage_json, created_at
+                ) VALUES (?, ?, ?, ?, 'failed', 0, ?, 'schedule_misfire', '{}', ?)
+                ON CONFLICT(idempotency_key) DO NOTHING
+                """,
+                (
+                    task.id,
+                    slot.isoformat(),
+                    key,
+                    _task_snapshot_json(task),
+                    current.isoformat(),
+                    current.isoformat(),
+                ),
+            )
+            updated = connection.execute(
+                """
+                UPDATE scheduled_tasks
+                SET status = 'completed', next_run_at = NULL, last_run_at = ?,
+                    version = version + 1, updated_at = ?
+                WHERE id = ? AND version = ? AND status = 'active'
+                """,
+                (slot.isoformat(), current.isoformat(), task.id, task.version),
             )
             if updated.rowcount != 1:
                 raise AutomationStateError("task_version_conflict")
