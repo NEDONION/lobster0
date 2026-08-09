@@ -1,6 +1,7 @@
 /** Child-process client for the Python Core NDJSON Bridge. */
 
 import { spawn } from "node:child_process";
+import { isAbsolute } from "node:path";
 import type { Readable, Writable } from "node:stream";
 
 import {
@@ -42,6 +43,29 @@ interface PendingRequest {
 export type BridgeEventHandler = (frame: ServerFrame) => void;
 export type BridgeFatalHandler = (error: BridgeRequestError) => void;
 
+export interface BridgeSpawnSpec {
+  program: string;
+  args: string[];
+  environment: NodeJS.ProcessEnv;
+}
+
+export function buildBridgeSpawnSpec(environment: NodeJS.ProcessEnv): BridgeSpawnSpec {
+  const python = environment.MINICLAW_PYTHON?.trim();
+  const home = environment.MINICLAW_HOME?.trim();
+  if (!python || !home) {
+    throw new BridgeRequestError("bridge_configuration", "缺少 Python Bridge 启动配置");
+  }
+  const args = ["-m", "miniclaw.bridge", "--home", home];
+  const workspace = environment.MINICLAW_WORKSPACE?.trim();
+  if (workspace) {
+    if (!isAbsolute(workspace)) {
+      throw new BridgeRequestError("bridge_configuration", "Workspace 必须是绝对路径");
+    }
+    args.push("--workspace", workspace);
+  }
+  return { program: python, args, environment };
+}
+
 export class BridgeClient {
   private readonly process: BridgeProcess;
   private readonly decoder = new NdjsonDecoder();
@@ -73,13 +97,9 @@ export class BridgeClient {
   }
 
   public static spawnFromEnvironment(environment: NodeJS.ProcessEnv = process.env): BridgeClient {
-    const python = environment.MINICLAW_PYTHON?.trim();
-    const home = environment.MINICLAW_HOME?.trim();
-    if (!python || !home) {
-      throw new BridgeRequestError("bridge_configuration", "缺少 Python Bridge 启动配置");
-    }
-    const child = spawn(python, ["-m", "miniclaw.bridge", "--home", home], {
-      env: environment,
+    const spec = buildBridgeSpawnSpec(environment);
+    const child = spawn(spec.program, spec.args, {
+      env: spec.environment,
       shell: false,
       stdio: ["pipe", "pipe", "pipe"],
     });
@@ -130,10 +150,13 @@ export class BridgeClient {
     });
   }
 
-  public async hello(): Promise<Record<string, JsonValue>> {
+  public async hello(
+    clientName = "miniclaw-pi-tui",
+    clientVersion = "0.1.0",
+  ): Promise<Record<string, JsonValue>> {
     return this.request("client.hello", {
-      client_name: "miniclaw-pi-tui",
-      client_version: "0.1.0",
+      client_name: clientName,
+      client_version: clientVersion,
       protocols: [1],
     });
   }

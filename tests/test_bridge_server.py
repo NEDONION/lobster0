@@ -11,6 +11,7 @@ from types import SimpleNamespace
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.bootstrap import initialize_state
+from miniclaw.bridge.__main__ import build_parser
 from miniclaw.bridge.server import BridgeServer
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision
@@ -179,6 +180,14 @@ def _runtime(service) -> SimpleNamespace:
 class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
     """验证客户端请求只能通过 Core 发布受控事件。"""
 
+    def test_parser_accepts_absolute_workspace_override(self) -> None:
+        """Desktop 可用独立参数绑定绝对 Workspace。"""
+        arguments = build_parser().parse_args(
+            ["--home", "/state/miniclaw", "--workspace", "/work/report"]
+        )
+
+        self.assertEqual(arguments.workspace, Path("/work/report"))
+
     async def test_handshake_turn_events_and_approval_share_one_protocol_stream(self) -> None:
         """握手、Turn、审批与续跑必须按请求和 RunEvent 顺序输出。"""
         reader = QueueReader()
@@ -339,6 +348,8 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         """真实 Bridge 子进程的 stdout 必须只有可独立解析的 NDJSON。"""
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory).resolve()
+            workspace = home / "selected-workspace"
+            workspace.mkdir()
             initialize_state(build_state_paths(home))
             project = Path(__file__).resolve().parent.parent
             process = await asyncio.create_subprocess_exec(
@@ -347,6 +358,8 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
                 "miniclaw.bridge",
                 "--home",
                 str(home),
+                "--workspace",
+                str(workspace),
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -380,6 +393,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         frames = [json.loads(line) for line in stdout.splitlines()]
         self.assertEqual([frame["id"] for frame in frames], ["hello-1", "stop-1"])
         self.assertEqual([frame["type"] for frame in frames], ["response.ok", "response.ok"])
+        self.assertEqual(frames[0]["payload"]["workspace"], workspace.name)
         self.assertEqual(stderr, b"")
 
 
