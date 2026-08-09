@@ -130,7 +130,8 @@ sequenceDiagram
 - edit 明确失败时，`ExperienceOutcome.final_delivery_required=True`，现有 Outbox 发送完整答案。
 - edit 成功且完整回答可见时，不再创建第二条普通 Delivery。
 - 超时或平台返回未知结果时宁可触发 durable fallback；Discord API 不提供本项目可绑定的发送幂等键，因此极端
-  网络未知窗口仍可能出现重复，这是现有 Discord Delivery 的已知上限，不能虚假承诺 exactly-once。
+  网络未知窗口，以及 Discord 已接受 create/edit、但进程还没写完本地终态时发生的崩溃窗口，仍可能出现重复。
+  这是现有 Discord Delivery 的已知上限，不能虚假承诺 exactly-once。
 - 重启恢复继续使用已持久化的 Assistant Message 和脱敏 `experience_trace`；不得把平台消息 ID、Guild 名称、
   用户正文或 Token 写入规格、日志和公开 evidence。
 
