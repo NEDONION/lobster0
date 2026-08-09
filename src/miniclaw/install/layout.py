@@ -31,7 +31,7 @@ _SYSTEM_COMMAND = Path("/usr/local/bin/miniclaw")
 ProcessState = Literal["alive", "dead", "unknown"]
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(frozen=True, slots=True, init=False)
 class InstallLayout:
     """描述受管程序、共享状态与一个 staging Runtime 的路径。
 
@@ -84,6 +84,11 @@ class InstallLayout:
             or _SEMVER.fullmatch(self.runtime.name) is None
             or not _safe_absolute_path(self.command_link)
         ):
+            _request_invalid()
+        if self.program_prefix == _SYSTEM_PREFIX:
+            if self.command_link != _SYSTEM_COMMAND:
+                _request_invalid()
+        elif self.command_link.parts[-3:] != (".local", "bin", "miniclaw"):
             _request_invalid()
 
     @classmethod
@@ -214,32 +219,44 @@ class InstallLayout:
             _request_invalid()
         bin_dir = program_prefix / "bin"
         runtimes = program_prefix / "runtimes"
-        return cls(
-            program_prefix=program_prefix,
-            state_home=state_home,
-            bin_dir=bin_dir,
-            runtimes_dir=runtimes,
-            current=program_prefix / "current",
-            staging=runtimes / f".{version}.staging",
-            runtime=runtimes / version,
-            launcher=bin_dir / "miniclaw",
-            command_link=command_link,
-            receipt=program_prefix / "install-receipt.json",
-            lock=program_prefix / ".install.lock",
-            secrets_file=state_home / "secrets.env",
-        )
+        values = {
+            "program_prefix": program_prefix,
+            "state_home": state_home,
+            "bin_dir": bin_dir,
+            "runtimes_dir": runtimes,
+            "current": program_prefix / "current",
+            "staging": runtimes / f".{version}.staging",
+            "runtime": runtimes / version,
+            "launcher": bin_dir / "miniclaw",
+            "command_link": command_link,
+            "receipt": program_prefix / "install-receipt.json",
+            "lock": program_prefix / ".install.lock",
+            "secrets_file": state_home / "secrets.env",
+        }
+        instance = object.__new__(cls)
+        for name, value in values.items():
+            object.__setattr__(instance, name, value)
+        instance.__post_init__()
+        return instance
 
 
 class InstallLock:
     """持有一个绑定创建 inode 与进程 identity 的 install lock。"""
 
-    __slots__ = ("_closed", "_identity", "_path", "_payload")
+    __slots__ = ("_closed", "_descriptor", "_identity", "_path", "_payload")
 
-    def __init__(self, path: Path, payload: bytes, identity: tuple[int, int]) -> None:
+    def __init__(
+        self,
+        path: Path,
+        payload: bytes,
+        identity: tuple[int, int],
+        descriptor: int,
+    ) -> None:
         """保存仅供 `acquire` 构造的 lock ownership 证据。"""
         self._path = path
         self._payload = payload
         self._identity = identity
+        self._descriptor = descriptor
         self._closed = False
 
     @classmethod
@@ -257,8 +274,7 @@ class InstallLock:
         """
         if type(layout) is not InstallLayout:
             raise InstallError("install_locked", "manifest")
-        system = layout.program_prefix == _SYSTEM_PREFIX
-        _ensure_directory(layout.program_prefix, 0o755 if system else 0o700, os.geteuid())
+        _ensure_directory(layout.program_prefix, _program_mode(layout), os.geteuid())
         for attempt in range(2):
             try:
                 return cls._create(layout.lock)
@@ -275,21 +291,29 @@ class InstallLock:
     def _create(cls, path: Path) -> InstallLock:
         """创建、fsync 并返回一个新的 exact JSON lock。"""
         uid = os.geteuid()
-        state, process_start = _probe_process(os.getpid())
-        start = process_start if state == "alive" and process_start is not None else _utc_now()
-        document = {"pid": os.getpid(), "uid": uid, "start": start}
-        payload = (
-            json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
-        ).encode("utf-8")
         descriptor = os.open(
             path,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
             0o600,
         )
         identity: tuple[int, int] | None = None
+        payload = b""
         try:
             metadata = os.fstat(descriptor)
             identity = (metadata.st_dev, metadata.st_ino)
+            state, process_start = _probe_process(os.getpid())
+            if state != "alive" or process_start is None or not _valid_utc(process_start):
+                raise InstallError("install_locked", "manifest")
+            document = {"pid": os.getpid(), "uid": uid, "start": process_start}
+            payload = (
+                json.dumps(
+                    document,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=True,
+                )
+                + "\n"
+            ).encode()
             os.fchmod(descriptor, 0o600)
             _write_all(descriptor, payload)
             os.fsync(descriptor)
@@ -298,14 +322,14 @@ class InstallLock:
             if identity is not None:
                 _unlink_same_inode(path, identity)
             raise
-        os.close(descriptor)
         try:
             _fsync_directory(path.parent)
         except BaseException:
+            os.close(descriptor)
             if identity is not None:
                 _unlink_same_inode(path, identity)
             raise
-        return cls(path, payload, cast(tuple[int, int], identity))
+        return cls(path, payload, cast(tuple[int, int], identity), descriptor)
 
     def close(self) -> None:
         """仅删除仍匹配创建 inode 和 exact payload 的 lock。"""
@@ -313,15 +337,22 @@ class InstallLock:
             return
         self._closed = True
         try:
-            metadata = self._path.lstat()
-            if (metadata.st_dev, metadata.st_ino) != self._identity:
-                return
-            if _read_lock_bytes(self._path, os.geteuid()) != self._payload:
-                return
-            self._path.unlink()
-            _fsync_directory(self._path.parent)
+            if _lock_path_owned(
+                self._path,
+                self._descriptor,
+                self._identity,
+                self._payload,
+                os.geteuid(),
+            ):
+                self._path.unlink()
+                _fsync_directory(self._path.parent)
         except (InstallError, OSError):
-            return
+            pass
+        finally:
+            try:
+                os.close(self._descriptor)
+            except OSError:
+                pass
 
     def __enter__(self) -> InstallLock:
         """返回当前已持有 lock。"""
@@ -386,53 +417,81 @@ def install_launcher(
     """
     if type(layout) is not InstallLayout:
         _ownership_invalid()
-    _preflight_managed(layout.launcher, launcher_sha256, require_symlink=False)
+    mode = _program_mode(layout)
+    _preflight_managed(
+        layout.launcher,
+        launcher_sha256,
+        require_symlink=False,
+        expected_mode=mode,
+    )
     _preflight_managed(layout.command_link, command_link_sha256, require_symlink=True)
-    created_launcher = False
+    launcher_identity: tuple[int, int] | None = None
+    link_identity: tuple[int, int] | None = None
     try:
-        _ensure_directory(layout.bin_dir, 0o700, os.geteuid())
-        _ensure_directory(layout.command_link.parent, 0o700, os.geteuid())
+        _ensure_directory(layout.program_prefix, mode, os.geteuid())
+        _ensure_directory(layout.bin_dir, mode, os.geteuid())
+        _ensure_directory(layout.command_link.parent, mode, os.geteuid())
         payload = render_launcher(layout)
         if not _lexists(layout.launcher):
-            _create_regular(layout.launcher, payload, 0o700)
-            created_launcher = True
+            launcher_identity = _create_regular(layout.launcher, payload, mode)
         else:
-            _preflight_managed(layout.launcher, launcher_sha256, require_symlink=False)
-            if managed_file_sha256(layout.launcher) != hashlib.sha256(payload).hexdigest():
-                _replace_regular(layout.launcher, payload, 0o700)
+            _preflight_managed(
+                layout.launcher,
+                launcher_sha256,
+                require_symlink=False,
+                expected_mode=mode,
+            )
+            if managed_file_sha256(
+                layout.launcher,
+                expected_uid=os.geteuid(),
+                expected_mode=mode,
+            ) != hashlib.sha256(payload).hexdigest():
+                _replace_regular(layout.launcher, payload, mode)
         relative_target = os.path.relpath(layout.launcher, start=layout.command_link.parent)
         if not _lexists(layout.command_link):
-            os.symlink(relative_target, layout.command_link)
-            _fsync_directory(layout.command_link.parent)
+            link_identity = _create_symlink(layout.command_link, relative_target)
         else:
             _preflight_managed(
                 layout.command_link,
                 command_link_sha256,
                 require_symlink=True,
+                expected_mode=None,
             )
             if os.readlink(layout.command_link) != relative_target:
                 _replace_symlink(layout.command_link, relative_target)
         return (
-            managed_file_sha256(layout.launcher),
-            managed_file_sha256(layout.command_link),
+            managed_file_sha256(
+                layout.launcher,
+                expected_uid=os.geteuid(),
+                expected_mode=mode,
+            ),
+            managed_file_sha256(
+                layout.command_link,
+                expected_uid=os.geteuid(),
+                require_symlink=True,
+            ),
         )
     except InstallError:
-        if created_launcher:
-            try:
-                layout.launcher.unlink()
-            except OSError:
-                pass
+        if link_identity is not None:
+            _unlink_same_inode(layout.command_link, link_identity)
+        if launcher_identity is not None:
+            _unlink_same_inode(layout.launcher, launcher_identity)
         raise
     except OSError as error:
-        if created_launcher:
-            try:
-                layout.launcher.unlink()
-            except OSError:
-                pass
+        if link_identity is not None:
+            _unlink_same_inode(layout.command_link, link_identity)
+        if launcher_identity is not None:
+            _unlink_same_inode(layout.launcher, launcher_identity)
         raise InstallError("uninstall_ownership_mismatch", "manifest") from error
 
 
-def _preflight_managed(path: Path, expected: str | None, *, require_symlink: bool) -> None:
+def _preflight_managed(
+    path: Path,
+    expected: str | None,
+    *,
+    require_symlink: bool,
+    expected_mode: int | None = None,
+) -> None:
     """在任何写入前验证 existing path 由 prior receipt 持有且类型正确。"""
     exists = _lexists(path)
     if not exists:
@@ -449,15 +508,26 @@ def _preflight_managed(path: Path, expected: str | None, *, require_symlink: boo
         _ownership_invalid()
     if expected is None:
         _ownership_invalid()
-    verify_managed_file(path, expected)
+    verify_managed_file(
+        path,
+        expected,
+        expected_uid=os.geteuid(),
+        expected_mode=expected_mode,
+        require_symlink=require_symlink,
+    )
+
+
+def _program_mode(layout: InstallLayout) -> int:
+    """返回 user 0700 或 system-prefix 0755 的程序目录/launcher mode。"""
+    return 0o755 if layout.program_prefix == _SYSTEM_PREFIX else 0o700
 
 
 def _remove_stale_lock(path: Path) -> bool:
     """仅删除同 UID 且进程 confirmed dead 或 PID start 已变化的 lock。"""
     uid = os.geteuid()
+    descriptor = -1
     try:
-        before = path.lstat()
-        payload = _read_lock_bytes(path, uid)
+        descriptor, payload, identity = _open_lock(path, uid)
         document = json.loads(payload.decode("utf-8"), object_pairs_hook=_strict_object)
         if type(document) is not dict or set(document) != _LOCK_KEYS:
             return False
@@ -479,20 +549,38 @@ def _remove_stale_lock(path: Path) -> bool:
         )
         if not stale:
             return False
-        after = path.lstat()
-        if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
-            return False
-        if _read_lock_bytes(path, uid) != payload:
+        if not _lock_path_owned(path, descriptor, identity, payload, uid):
             return False
         path.unlink()
         _fsync_directory(path.parent)
         return True
     except (InstallError, OSError, UnicodeError, json.JSONDecodeError, ValueError, TypeError):
         return False
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
 
 
 def _read_lock_bytes(path: Path, expected_uid: int) -> bytes:
     """no-follow 读取 expected owner 的 exact 0600 bounded lock。"""
+    descriptor = -1
+    try:
+        descriptor, payload, _identity = _open_lock(path, expected_uid)
+        return payload
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+
+def _open_lock(path: Path, expected_uid: int) -> tuple[int, bytes, tuple[int, int]]:
+    """打开并保持一个 no-follow private lock fd/inode token。"""
+    descriptor = -1
     try:
         before = path.lstat()
         if (
@@ -502,31 +590,68 @@ def _read_lock_bytes(path: Path, expected_uid: int) -> bytes:
         ):
             raise InstallError("install_locked", "manifest")
         descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
-        try:
-            opened = os.fstat(descriptor)
-            if (
-                not stat.S_ISREG(opened.st_mode)
-                or opened.st_uid != expected_uid
-                or stat.S_IMODE(opened.st_mode) != 0o600
-                or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
-                or opened.st_size > _MAX_LOCK_BYTES
-            ):
-                raise InstallError("install_locked", "manifest")
-            chunks: list[bytes] = []
-            remaining = _MAX_LOCK_BYTES + 1
-            while remaining and (chunk := os.read(descriptor, min(remaining, 4096))):
-                chunks.append(chunk)
-                remaining -= len(chunk)
-            payload = b"".join(chunks)
-            if len(payload) > _MAX_LOCK_BYTES:
-                raise InstallError("install_locked", "manifest")
-            return payload
-        finally:
-            os.close(descriptor)
+        opened = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(opened.st_mode)
+            or opened.st_uid != expected_uid
+            or stat.S_IMODE(opened.st_mode) != 0o600
+            or opened.st_nlink != 1
+            or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
+            or opened.st_size > _MAX_LOCK_BYTES
+        ):
+            raise InstallError("install_locked", "manifest")
+        chunks: list[bytes] = []
+        remaining = _MAX_LOCK_BYTES + 1
+        while remaining and (chunk := os.read(descriptor, min(remaining, 4096))):
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        payload = b"".join(chunks)
+        if len(payload) > _MAX_LOCK_BYTES:
+            raise InstallError("install_locked", "manifest")
+        return descriptor, payload, (opened.st_dev, opened.st_ino)
     except InstallError:
+        if descriptor >= 0:
+            os.close(descriptor)
         raise
     except OSError as error:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
         raise InstallError("install_locked", "manifest") from error
+
+
+def _lock_path_owned(
+    path: Path,
+    descriptor: int,
+    identity: tuple[int, int],
+    payload: bytes,
+    expected_uid: int,
+) -> bool:
+    """用持有 fd、两次 no-follow pathname 事实和 exact payload 绑定 lock。"""
+    try:
+        held_before = os.fstat(descriptor)
+        path_before = path.lstat()
+        if (
+            (held_before.st_dev, held_before.st_ino) != identity
+            or (path_before.st_dev, path_before.st_ino) != identity
+            or held_before.st_uid != expected_uid
+            or held_before.st_nlink != 1
+            or not stat.S_ISREG(path_before.st_mode)
+        ):
+            return False
+        if _read_lock_bytes(path, expected_uid) != payload:
+            return False
+        held_after = os.fstat(descriptor)
+        path_after = path.lstat()
+        return (
+            (held_after.st_dev, held_after.st_ino) == identity
+            and (path_after.st_dev, path_after.st_ino) == identity
+            and held_after.st_nlink == 1
+        )
+    except (InstallError, OSError):
+        return False
 
 
 def _probe_process(pid: int) -> tuple[ProcessState, str | None]:
@@ -591,11 +716,6 @@ def _format_utc(value: datetime) -> str:
     return value.astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _utc_now() -> str:
-    """返回当前秒级 UTC RFC3339 timestamp。"""
-    return _format_utc(datetime.now(UTC))
-
-
 def _valid_utc(value: str) -> bool:
     """判断 timestamp 是否为真实 UTC RFC3339。"""
     if _UTC.fullmatch(value) is None:
@@ -614,6 +734,10 @@ def _validate_install_root(path: Path, home: Path, expected_uid: int) -> None:
         _request_invalid()
     anchor = home if path.is_relative_to(home) else _nearest_existing(path)
     _validate_existing_chain(path, anchor, expected_uid)
+    if _lexists(path):
+        metadata = path.lstat()
+        if metadata.st_uid != expected_uid or stat.S_IMODE(metadata.st_mode) != 0o700:
+            _request_invalid()
 
 
 def _validate_system_prefix(path: Path) -> None:
@@ -621,6 +745,10 @@ def _validate_system_prefix(path: Path) -> None:
     if path != _SYSTEM_PREFIX:
         _request_invalid()
     _validate_existing_chain(path, Path("/"), 0, allow_root=True)
+    if _lexists(path):
+        metadata = path.lstat()
+        if metadata.st_uid != 0 or stat.S_IMODE(metadata.st_mode) != 0o755:
+            _request_invalid()
 
 
 def _validate_existing_chain(
@@ -658,7 +786,7 @@ def _validate_existing_chain(
 
 
 def _ensure_directory(path: Path, mode: int, expected_uid: int) -> None:
-    """创建或校验 owner、no-follow 且不可被 group/world 写的目录链。"""
+    """创建或校验 owner、no-follow 且 mode 精确的最终目录。"""
     if _lexists(path):
         try:
             metadata = path.lstat()
@@ -667,13 +795,11 @@ def _ensure_directory(path: Path, mode: int, expected_uid: int) -> None:
         if (
             not stat.S_ISDIR(metadata.st_mode)
             or metadata.st_uid != expected_uid
-            or stat.S_IMODE(metadata.st_mode) & 0o022
+            or stat.S_IMODE(metadata.st_mode) != mode
         ):
             _ownership_invalid()
         return
-    parent = path.parent
-    if parent != path:
-        _ensure_directory(parent, mode, expected_uid)
+    _validate_writable_parent(path.parent, expected_uid)
     try:
         path.mkdir(mode=mode)
         path.chmod(mode)
@@ -681,20 +807,73 @@ def _ensure_directory(path: Path, mode: int, expected_uid: int) -> None:
         raise InstallError("uninstall_ownership_mismatch", "manifest") from error
 
 
-def _create_regular(path: Path, payload: bytes, mode: int) -> None:
-    """用 O_EXCL 创建、fsync 一个 regular managed file。"""
-    descriptor = os.open(
-        path,
-        os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
-        mode,
-    )
+def _validate_writable_parent(path: Path, expected_uid: int) -> None:
+    """递归创建 owner-only 缺失父目录并拒绝可替换的 existing parent。"""
+    if not _lexists(path):
+        _validate_writable_parent(path.parent, expected_uid)
+        try:
+            path.mkdir(mode=0o700)
+            path.chmod(0o700)
+        except OSError as error:
+            raise InstallError("uninstall_ownership_mismatch", "manifest") from error
+        return
     try:
+        metadata = path.lstat()
+    except OSError as error:
+        raise InstallError("uninstall_ownership_mismatch", "manifest") from error
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or metadata.st_uid != expected_uid
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        _ownership_invalid()
+
+
+def _create_regular(path: Path, payload: bytes, mode: int) -> tuple[int, int]:
+    """用 O_EXCL 创建并持久化 regular managed file，失败仅清理同 inode。"""
+    descriptor = -1
+    identity: tuple[int, int] | None = None
+    try:
+        descriptor = os.open(
+            path,
+            os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0),
+            mode,
+        )
+        metadata = os.fstat(descriptor)
+        identity = (metadata.st_dev, metadata.st_ino)
         os.fchmod(descriptor, mode)
         _write_all(descriptor, payload)
         os.fsync(descriptor)
-    finally:
         os.close(descriptor)
-    _fsync_directory(path.parent)
+        descriptor = -1
+        _fsync_directory(path.parent)
+        return identity
+    except BaseException:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if identity is not None:
+            _unlink_same_inode(path, identity)
+        raise
+
+
+def _create_symlink(path: Path, target: str) -> tuple[int, int]:
+    """创建并持久化 relative symlink，失败仅清理同 inode。"""
+    identity: tuple[int, int] | None = None
+    try:
+        os.symlink(target, path)
+        metadata = path.lstat()
+        identity = (metadata.st_dev, metadata.st_ino)
+        if not stat.S_ISLNK(metadata.st_mode):
+            _ownership_invalid()
+        _fsync_directory(path.parent)
+        return identity
+    except BaseException:
+        if identity is not None:
+            _unlink_same_inode(path, identity)
+        raise
 
 
 def _replace_regular(path: Path, payload: bytes, mode: int) -> None:

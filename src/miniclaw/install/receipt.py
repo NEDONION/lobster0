@@ -8,6 +8,7 @@ import json
 import os
 import re
 import stat
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path, PurePosixPath
@@ -17,6 +18,8 @@ from miniclaw.install.models import InstallError, PlatformKey
 
 _MAX_RECEIPT_BYTES = 1_048_576
 _MAX_MANAGED_FILES = 512
+_MAX_MANAGED_PATH_BYTES = 1024
+_MAX_PATH_COMPONENT_BYTES = 255
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SEMVER = re.compile(
@@ -105,15 +108,15 @@ class InstallReceipt:
             or not 1 <= len(self.managed_files) <= _MAX_MANAGED_FILES
         ):
             _invalid()
-        paths: list[str] = []
+        path_keys: list[str] = []
         for item in self.managed_files:
             if type(item) is not tuple or len(item) != 2:
                 _invalid()
             path, digest = item
             _validate_relative_path(path)
             _validate_hash(digest)
-            paths.append(path)
-        if len(paths) != len(set(paths)):
+            path_keys.append(path.casefold())
+        if len(path_keys) != len(set(path_keys)):
             _invalid()
         _validate_runtime_path(self.current_runtime, self.version)
         if self.previous_runtime is not None:
@@ -121,19 +124,20 @@ class InstallReceipt:
             if self.previous_runtime == self.current_runtime:
                 _invalid()
         service_values = (self.service_label, self.service_file, self.service_file_sha256)
-        if all(value is None for value in service_values):
-            return
-        if any(value is None for value in service_values):
+        if not all(value is None for value in service_values):
+            if any(value is None for value in service_values):
+                _invalid()
+            if (
+                type(self.service_label) is not str
+                or _SERVICE_LABEL.fullmatch(self.service_label) is None
+                or type(self.service_file) is not str
+                or type(self.service_file_sha256) is not str
+            ):
+                _invalid()
+            _validate_relative_path(self.service_file)
+            _validate_hash(self.service_file_sha256)
+        if len(_serialize_receipt(self)) > _MAX_RECEIPT_BYTES:
             _invalid()
-        if (
-            type(self.service_label) is not str
-            or _SERVICE_LABEL.fullmatch(self.service_label) is None
-            or type(self.service_file) is not str
-            or type(self.service_file_sha256) is not str
-        ):
-            _invalid()
-        _validate_relative_path(self.service_file)
-        _validate_hash(self.service_file_sha256)
 
     @property
     def launcher_sha256(self) -> str:
@@ -156,22 +160,7 @@ class InstallReceipt:
         Returns:
             带单个结尾换行的 UTF-8 receipt 字节。
         """
-        document = {
-            "schema_version": self.schema_version,
-            "version": self.version,
-            "git_commit": self.git_commit,
-            "platform": {"os": self.platform.os, "arch": self.platform.arch},
-            "installed_at": self.installed_at,
-            "managed_files": [list(item) for item in self.managed_files],
-            "current_runtime": self.current_runtime,
-            "previous_runtime": self.previous_runtime,
-            "service_label": self.service_label,
-            "service_file": self.service_file,
-            "service_file_sha256": self.service_file_sha256,
-        }
-        return (
-            json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
-        ).encode("utf-8")
+        return _serialize_receipt(self)
 
     @classmethod
     def load(
@@ -294,11 +283,20 @@ class InstallReceipt:
             raise InstallError("uninstall_ownership_mismatch", "manifest") from error
 
 
-def managed_file_sha256(path: Path) -> str:
+def managed_file_sha256(
+    path: Path,
+    *,
+    expected_uid: int | None = None,
+    expected_mode: int | None = None,
+    require_symlink: bool | None = None,
+) -> str:
     """不跟随 symlink 计算受管 regular file 或 link identity 的 SHA-256。
 
     Args:
         path: 受管文件的绝对路径。
+        expected_uid: 期望 owner；省略时使用当前 euid。
+        expected_mode: regular file 的期望 permission bits。
+        require_symlink: 显式要求 symlink 或 regular file；省略时两者都允许。
 
     Returns:
         regular file bytes，或 `symlink\\0 + raw target` 的 lowercase SHA-256。
@@ -306,33 +304,64 @@ def managed_file_sha256(path: Path) -> str:
     Raises:
         InstallError: 路径敏感、带控制字符、缺失、特殊文件或发生竞态。
     """
-    if not _safe_absolute_path(path) or _path_is_sensitive(path):
+    uid = os.geteuid() if expected_uid is None else expected_uid
+    if (
+        not _safe_absolute_path(path)
+        or _path_is_sensitive(path)
+        or type(uid) is not int
+        or uid < 0
+        or expected_mode is not None
+        and (type(expected_mode) is not int or not 0 <= expected_mode <= 0o777)
+        or require_symlink is not None
+        and type(require_symlink) is not bool
+    ):
         _invalid()
     try:
         metadata = path.lstat()
         if stat.S_ISLNK(metadata.st_mode):
+            if (
+                require_symlink is False
+                or expected_mode is not None
+                or metadata.st_uid != uid
+                or metadata.st_nlink != 1
+            ):
+                _invalid()
             target = os.readlink(path)
             if not target or any(
                 ord(character) < 32 or ord(character) == 127 for character in target
             ):
                 _invalid()
+            after = path.lstat()
+            if _metadata_identity(after) != _metadata_identity(metadata):
+                _invalid()
             payload = b"symlink\0" + os.fsencode(target)
             return hashlib.sha256(payload).hexdigest()
-        if not stat.S_ISREG(metadata.st_mode):
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or require_symlink is True
+            or metadata.st_uid != uid
+            or metadata.st_nlink != 1
+            or expected_mode is not None
+            and stat.S_IMODE(metadata.st_mode) != expected_mode
+        ):
             _invalid()
         descriptor = os.open(path, os.O_RDONLY | _no_follow_flag())
         try:
             opened = os.fstat(descriptor)
             if (
                 not stat.S_ISREG(opened.st_mode)
-                or (opened.st_dev, opened.st_ino) != (metadata.st_dev, metadata.st_ino)
+                or _metadata_snapshot(opened) != _metadata_snapshot(metadata)
             ):
                 _invalid()
             digest = hashlib.sha256()
             while chunk := os.read(descriptor, 1024 * 1024):
                 digest.update(chunk)
+            opened_after = os.fstat(descriptor)
             after = path.lstat()
-            if (after.st_dev, after.st_ino) != (metadata.st_dev, metadata.st_ino):
+            if (
+                _metadata_snapshot(opened_after) != _metadata_snapshot(opened)
+                or _metadata_snapshot(after) != _metadata_snapshot(metadata)
+            ):
                 _invalid()
             return digest.hexdigest()
         finally:
@@ -343,18 +372,33 @@ def managed_file_sha256(path: Path) -> str:
         raise InstallError("uninstall_ownership_mismatch", "manifest") from error
 
 
-def verify_managed_file(path: Path, expected_sha256: str) -> None:
+def verify_managed_file(
+    path: Path,
+    expected_sha256: str,
+    *,
+    expected_uid: int | None = None,
+    expected_mode: int | None = None,
+    require_symlink: bool | None = None,
+) -> None:
     """验证文件 no-follow ownership hash 与 receipt 完全一致。
 
     Args:
         path: 待重写或删除的受管文件。
         expected_sha256: receipt 记录的 lowercase SHA-256。
+        expected_uid: 期望 owner；省略时使用当前 euid。
+        expected_mode: regular file 的期望 permission bits。
+        require_symlink: 显式要求 symlink 或 regular file。
 
     Raises:
         InstallError: hash 无效、文件不安全或 identity 不匹配。
     """
     _validate_hash(expected_sha256)
-    actual = managed_file_sha256(path)
+    actual = managed_file_sha256(
+        path,
+        expected_uid=expected_uid,
+        expected_mode=expected_mode,
+        require_symlink=require_symlink,
+    )
     if not hmac.compare_digest(actual, expected_sha256):
         _invalid()
 
@@ -369,6 +413,7 @@ def _read_private_regular(path: Path, expected_uid: int) -> bytes:
             not stat.S_ISREG(before.st_mode)
             or before.st_uid != expected_uid
             or stat.S_IMODE(before.st_mode) != 0o600
+            or before.st_nlink != 1
         ):
             _invalid()
         descriptor = os.open(path, os.O_RDONLY | _no_follow_flag())
@@ -378,6 +423,7 @@ def _read_private_regular(path: Path, expected_uid: int) -> bytes:
                 not stat.S_ISREG(opened.st_mode)
                 or opened.st_uid != expected_uid
                 or stat.S_IMODE(opened.st_mode) != 0o600
+                or opened.st_nlink != 1
                 or (opened.st_dev, opened.st_ino) != (before.st_dev, before.st_ino)
             ):
                 _invalid()
@@ -482,9 +528,15 @@ def _unlink_same_inode(path: Path, identity: tuple[int, int]) -> None:
 
 def _validate_relative_path(value: object) -> None:
     """验证无控制字符、无逃逸且不指向用户数据的 POSIX 相对路径。"""
-    if type(value) is not str or not value or "\\" in value:
+    if (
+        type(value) is not str
+        or not value
+        or "\\" in value
+        or unicodedata.normalize("NFC", value) != value
+        or len(value.encode("utf-8")) > _MAX_MANAGED_PATH_BYTES
+    ):
         _invalid()
-    if any(ord(character) < 32 or ord(character) == 127 for character in value):
+    if any(not character.isprintable() for character in value):
         _invalid()
     candidate = PurePosixPath(value)
     if (
@@ -492,6 +544,8 @@ def _validate_relative_path(value: object) -> None:
         or str(candidate) != value
         or any(part in {"", ".", ".."} for part in candidate.parts)
     ):
+        _invalid()
+    if any(len(part.encode("utf-8")) > _MAX_PATH_COMPONENT_BYTES for part in candidate.parts):
         _invalid()
     if _parts_are_sensitive(candidate.parts):
         _invalid()
@@ -562,8 +616,47 @@ def _path_is_sensitive(path: Path) -> bool:
 
 def _parts_are_sensitive(parts: tuple[str, ...]) -> bool:
     """判断路径组件是否命中禁止写入 receipt 的用户数据名。"""
-    lowered = tuple(part.lower() for part in parts)
+    lowered = tuple(part.casefold() for part in parts)
     return any(part in _SENSITIVE_NAMES or part.endswith(".db") for part in lowered)
+
+
+def _serialize_receipt(receipt: InstallReceipt) -> bytes:
+    """把已校验 receipt 序列化为 deterministic compact UTF-8 JSON。"""
+    document = {
+        "schema_version": receipt.schema_version,
+        "version": receipt.version,
+        "git_commit": receipt.git_commit,
+        "platform": {"os": receipt.platform.os, "arch": receipt.platform.arch},
+        "installed_at": receipt.installed_at,
+        "managed_files": [list(item) for item in receipt.managed_files],
+        "current_runtime": receipt.current_runtime,
+        "previous_runtime": receipt.previous_runtime,
+        "service_label": receipt.service_label,
+        "service_file": receipt.service_file,
+        "service_file_sha256": receipt.service_file_sha256,
+    }
+    return (
+        json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=True) + "\n"
+    ).encode()
+
+
+def _metadata_identity(metadata: os.stat_result) -> tuple[int, int, int, int]:
+    """返回 symlink identity/owner/link-count 快照。"""
+    return metadata.st_dev, metadata.st_ino, metadata.st_uid, metadata.st_nlink
+
+
+def _metadata_snapshot(metadata: os.stat_result) -> tuple[int, ...]:
+    """返回 regular file hash 前后必须稳定的完整 metadata 快照。"""
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_uid,
+        metadata.st_mode,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
 
 
 def _lexists(path: Path) -> bool:

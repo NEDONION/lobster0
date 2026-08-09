@@ -217,6 +217,35 @@ class InstallLayoutTests(unittest.TestCase):
         first.close()
         self.assertTrue(layout.lock.exists())
 
+    def test_lock_requires_real_process_start_before_creating_path(self) -> None:
+        """把 wall clock 冒充 process start 会把活锁误判成 PID reuse stale。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        with (
+            mock.patch.object(layout_module, "_probe_process", return_value=("alive", None)),
+            self.assertRaisesRegex(InstallError, "install_locked"),
+        ):
+            InstallLock.acquire(layout)
+        self.assertFalse(layout.lock.exists())
+
+    def test_lock_close_does_not_unlink_path_replaced_after_payload_read(self) -> None:
+        """close 的 pathname check/unlink 窗口不得删除另一个 installer 的 replacement。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        lock = InstallLock.acquire(layout)
+        replacement = b'{"pid":999,"uid":501,"start":"2026-01-01T00:00:00Z"}\n'
+        real_read = layout_module._read_lock_bytes
+
+        def replace_after_read(path: Path, uid: int) -> bytes:
+            """读完原 lock 后在 unlink 前替换 pathname。"""
+            payload = real_read(path, uid)
+            path.unlink()
+            path.write_bytes(replacement)
+            path.chmod(0o600)
+            return payload
+
+        with mock.patch.object(layout_module, "_read_lock_bytes", side_effect=replace_after_read):
+            lock.close()
+        self.assertEqual(layout.lock.read_bytes(), replacement)
+
     def test_lock_removes_only_same_uid_confirmed_dead_or_reused_pid(self) -> None:
         """stale 判定漏掉 UID/PID start 会删除 foreign/live installer 的锁。"""
         layout = InstallLayout.user(self.home, version="0.7.0")
@@ -228,7 +257,14 @@ class InstallLayoutTests(unittest.TestCase):
         }
         layout.lock.write_text(json.dumps(stale) + "\n", encoding="utf-8")
         layout.lock.chmod(0o600)
-        with mock.patch.object(layout_module, "_probe_process", return_value=("dead", None)):
+        with mock.patch.object(
+            layout_module,
+            "_probe_process",
+            side_effect=(
+                ("dead", None),
+                ("alive", "2026-03-01T00:00:00Z"),
+            ),
+        ):
             acquired = InstallLock.acquire(layout)
         acquired.close()
 
@@ -237,7 +273,10 @@ class InstallLayoutTests(unittest.TestCase):
         with mock.patch.object(
             layout_module,
             "_probe_process",
-            return_value=("alive", "2026-02-01T00:00:00Z"),
+            side_effect=(
+                ("alive", "2026-02-01T00:00:00Z"),
+                ("alive", "2026-03-01T00:00:00Z"),
+            ),
         ):
             acquired = InstallLock.acquire(layout)
         acquired.close()
@@ -257,6 +296,31 @@ class InstallLayoutTests(unittest.TestCase):
                 InstallLock.acquire(layout)
             layout.lock.unlink()
 
+        layout.lock.write_text(json.dumps(stale) + "\n", encoding="utf-8")
+        layout.lock.chmod(0o600)
+        replacement = b'{"pid":999,"uid":501,"start":"2026-04-01T00:00:00Z"}\n'
+        real_read = layout_module._read_lock_bytes
+
+        def replace_stale_after_read(path: Path, uid: int) -> bytes:
+            """在 stale takeover unlink 前用新 lock 替换 pathname。"""
+            payload = real_read(path, uid)
+            path.unlink()
+            path.write_bytes(replacement)
+            path.chmod(0o600)
+            return payload
+
+        with (
+            mock.patch.object(layout_module, "_probe_process", return_value=("dead", None)),
+            mock.patch.object(
+                layout_module,
+                "_read_lock_bytes",
+                side_effect=replace_stale_after_read,
+            ),
+            self.assertRaisesRegex(InstallError, "install_locked"),
+        ):
+            InstallLock.acquire(layout)
+        self.assertEqual(layout.lock.read_bytes(), replacement)
+
     def test_malformed_lock_fails_closed(self) -> None:
         """损坏、unknown-key 或 symlink lock 不能被当作 stale 静默移除。"""
         layout = InstallLayout.user(self.home, version="0.7.0")
@@ -275,6 +339,96 @@ class InstallLayoutTests(unittest.TestCase):
         layout.lock.symlink_to(target)
         with self.assertRaisesRegex(InstallError, "install_locked"):
             InstallLock.acquire(layout)
+
+    def test_user_and_system_launcher_modes_are_traversable_but_not_writable(self) -> None:
+        """system launcher 0700 会让目标用户无法执行，user 文件则不得扩大到 0755。"""
+        user_layout = InstallLayout.user(self.home, version="0.7.0")
+        install_launcher(user_layout)
+        self.assertEqual(stat.S_IMODE(user_layout.program_prefix.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(user_layout.bin_dir.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(user_layout.launcher.stat().st_mode), 0o700)
+
+        system_prefix = self.root / "usr-local-lib" / "miniclaw"
+        system_command = self.root / "usr-local-bin" / "miniclaw"
+        state_home = self.home / ".miniclaw-system"
+        state_home.mkdir(mode=0o700)
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            system_layout = InstallLayout.for_request(
+                self.request(system_prefix=True, state_home=state_home),
+                self.account,
+            )
+            install_launcher(system_layout)
+        self.assertEqual(stat.S_IMODE(system_layout.program_prefix.stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(system_layout.bin_dir.stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(system_layout.launcher.stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(state_home.stat().st_mode), 0o700)
+
+    def test_launcher_create_failures_clean_only_owned_inode_and_retry(self) -> None:
+        """file/link fsync 失败必须清理本次项，同时不能删除竞态 replacement。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        real_fsync = layout_module._fsync_directory
+        failed = False
+
+        def fail_launcher_once(path: Path) -> None:
+            """首次 launcher parent fsync 失败。"""
+            nonlocal failed
+            if path == layout.launcher.parent and not failed:
+                failed = True
+                raise OSError("launcher fsync crash")
+            real_fsync(path)
+
+        with mock.patch.object(layout_module, "_fsync_directory", side_effect=fail_launcher_once):
+            with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
+                install_launcher(layout)
+        self.assertFalse(layout.launcher.exists())
+        self.assertFalse(layout.command_link.exists())
+        install_launcher(layout)
+
+        other = InstallLayout.user(self.home / "retry", version="0.7.0")
+
+        def replace_then_fail(path: Path) -> None:
+            """模拟 fsync 前 pathname 被换成 foreign regular file。"""
+            if path == other.launcher.parent:
+                other.launcher.unlink()
+                other.launcher.write_bytes(b"replacement")
+                other.launcher.chmod(0o700)
+                raise OSError("replacement race")
+            real_fsync(path)
+
+        with mock.patch.object(layout_module, "_fsync_directory", side_effect=replace_then_fail):
+            with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
+                install_launcher(other)
+        self.assertEqual(other.launcher.read_bytes(), b"replacement")
+
+    def test_command_link_fsync_failure_cleans_link_and_launcher_for_retry(self) -> None:
+        """command link parent fsync 失败不能遗留半安装 link 或阻塞重试。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        real_fsync = layout_module._fsync_directory
+
+        def fail_link(path: Path) -> None:
+            """只让 command link parent durability 失败。"""
+            if path == layout.command_link.parent:
+                raise OSError("link fsync crash")
+            real_fsync(path)
+
+        with mock.patch.object(layout_module, "_fsync_directory", side_effect=fail_link):
+            with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
+                install_launcher(layout)
+        self.assertFalse(layout.launcher.exists())
+        self.assertFalse(layout.command_link.exists())
+        install_launcher(layout)
+
+    def test_layout_cannot_be_directly_forged_outside_validated_factories(self) -> None:
+        """公开 dataclass init 会绕过 symlink/owner/mode 和 command-link cross-field。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        values = {name: getattr(layout, name) for name in layout.__dataclass_fields__}
+        values["command_link"] = self.root / "foreign-command"
+        with self.assertRaises(TypeError):
+            InstallLayout(**values)
 
 
 if __name__ == "__main__":

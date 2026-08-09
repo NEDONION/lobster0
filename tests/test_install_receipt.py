@@ -6,6 +6,7 @@ import json
 import os
 import stat
 import tempfile
+import unicodedata
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -189,6 +190,63 @@ class InstallReceiptTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
             managed_file_sha256(secrets)
 
+    def test_managed_hash_binds_owner_mode_nlink_and_stable_metadata(self) -> None:
+        """宽松 metadata 会把 0777、foreign、hardlink 或 torn launcher 当成受管文件。"""
+        launcher = self.root / "launcher"
+        launcher.write_bytes(b"trusted")
+        launcher.chmod(0o700)
+        digest = managed_file_sha256(
+            launcher,
+            expected_uid=os.geteuid(),
+            expected_mode=0o700,
+        )
+        verify_managed_file(
+            launcher,
+            digest,
+            expected_uid=os.geteuid(),
+            expected_mode=0o700,
+            require_symlink=False,
+        )
+        launcher.chmod(0o777)
+        with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
+            verify_managed_file(
+                launcher,
+                digest,
+                expected_uid=os.geteuid(),
+                expected_mode=0o700,
+                require_symlink=False,
+            )
+        launcher.chmod(0o700)
+        hardlink = self.root / "launcher-hardlink"
+        os.link(launcher, hardlink)
+        with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
+            managed_file_sha256(launcher, expected_uid=os.geteuid(), expected_mode=0o700)
+        hardlink.unlink()
+        with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
+            managed_file_sha256(
+                launcher,
+                expected_uid=os.geteuid() + 1,
+                expected_mode=0o700,
+            )
+
+        real_read = receipt_module.os.read
+        changed = False
+
+        def mutate_during_read(descriptor: int, size: int) -> bytes:
+            """首次 read 后原位改写同长度内容，模拟 torn write。"""
+            nonlocal changed
+            chunk = real_read(descriptor, size)
+            if chunk and not changed:
+                changed = True
+                launcher.write_bytes(b"changed")
+            return chunk
+
+        with (
+            mock.patch.object(receipt_module.os, "read", side_effect=mutate_during_read),
+            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
+        ):
+            managed_file_sha256(launcher, expected_uid=os.geteuid(), expected_mode=0o700)
+
     def test_atomic_write_failure_cleans_temp_and_preserves_original(self) -> None:
         """replace 前异常不得泄漏 temp，replace 后 durability 异常必须恢复旧 receipt。"""
         original = self.receipt()
@@ -218,6 +276,29 @@ class InstallReceiptTests(unittest.TestCase):
                 updated.write(self.path)
         self.assertEqual(self.path.read_bytes(), original_bytes)
         self.assertFalse(any(path.name.endswith(".tmp") for path in self.root.iterdir()))
+
+    def test_receipt_constructor_enforces_bounded_normalized_casefold_unique_paths(self) -> None:
+        """构造态若允许 load 会拒绝的 path/payload，write 就无法保证 closed-world receipt。"""
+        unsafe_sets = (
+            (("bin/" + "x" * 1025, "b" * 64),),
+            (("bin/Launcher", "b" * 64), ("bin/launcher", "c" * 64)),
+            (("bin/caf\u00e9", "b" * 64), ("bin/cafe\u0301", "c" * 64)),
+            (("bin/" + unicodedata.normalize("NFD", "é"), "b" * 64),),
+        )
+        for managed in unsafe_sets:
+            with self.subTest(managed=managed), self.assertRaisesRegex(
+                InstallError, "uninstall_ownership_mismatch"
+            ):
+                self.receipt(managed_files=managed)
+
+        largest_valid = tuple(
+            (f"runtimes/0.7.0/file-{index:03d}", f"{index:064x}")
+            for index in range(512)
+        )
+        bounded = self.receipt(managed_files=largest_valid)
+        self.assertLessEqual(len(bounded.to_bytes()), 1_048_576)
+        bounded.write(self.path)
+        self.assertEqual(InstallReceipt.load(self.path), bounded)
 
 
 if __name__ == "__main__":
