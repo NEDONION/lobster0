@@ -20,6 +20,9 @@ from miniclaw.sandbox.base import (
 from miniclaw.sandbox.host import EnvironmentResolver, HostSandbox
 
 _PINNED_IMAGE = re.compile(r"[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}\Z")
+_CLIENT_ONLY_ENVIRONMENT_NAMES = frozenset(
+    {"HOME", "XDG_RUNTIME_DIR", "DOCKER_HOST", "CONTAINER_HOST"}
+)
 ContainerEngine = Literal["docker-rootless", "podman-rootless"]
 
 
@@ -180,6 +183,8 @@ class DockerSandbox:
         """从 canonical plan 构造不可注入的 hardened Docker exact argv。"""
         if plan.backend != "docker":
             raise SandboxPlanError("sandbox_backend_mismatch")
+        if _CLIENT_ONLY_ENVIRONMENT_NAMES.intersection(plan.environment_names):
+            raise SandboxPlanError("sandbox_environment_forbidden")
         if plan.network_mode != "none":
             raise ValueError("sandbox_network_unsupported")
         if any("," in str(root) for root in (*plan.read_roots, *plan.write_roots)):

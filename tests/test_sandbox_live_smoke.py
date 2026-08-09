@@ -2,6 +2,7 @@
 
 import argparse
 import io
+import stat
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -27,6 +28,40 @@ class _SuccessfulDockerBackend:
             plan_hash=plan.sha256,
             backend="docker",
             exit_code=0,
+            signal=None,
+            timed_out=False,
+            stdout="outside-secret-denied\nnetwork-denied\n",
+            stderr="",
+            stdout_truncated=False,
+            stderr_truncated=False,
+            duration_ms=1,
+            changed_paths=(),
+        )
+
+
+class _PermissionAwareDockerBackend(_SuccessfulDockerBackend):
+    """按映射后非 owner UID 的目录权限模拟 rootless workspace write。"""
+
+    def __init__(self) -> None:
+        """初始化 workspace 与私有父目录的 mode 观察值。"""
+        super().__init__()
+        self.parent_mode: int | None = None
+        self.workspace_mode: int | None = None
+
+    async def execute(self, plan: ExecutionPlan) -> ExecutionReceipt:
+        """仅在 other write/execute 允许固定非 root UID 创建文件时成功。"""
+        self.plan = plan
+        self.parent_mode = stat.S_IMODE(plan.cwd.parent.stat().st_mode)
+        self.workspace_mode = stat.S_IMODE(plan.cwd.stat().st_mode)
+        can_create = self.workspace_mode & 0o003 == 0o003
+        if can_create:
+            (plan.cwd / "result.txt").write_text(
+                "workspace-write-ok", encoding="utf-8"
+            )
+        return ExecutionReceipt(
+            plan_hash=plan.sha256,
+            backend="docker",
+            exit_code=0 if can_create else 1,
             signal=None,
             timed_out=False,
             stdout="outside-secret-denied\nnetwork-denied\n",
@@ -89,6 +124,35 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             output.getvalue(),
             "engine=podman-rootless containment=PASS\n",
+        )
+
+    async def test_rootless_run_prepares_nonroot_workspace_under_private_parent(self) -> None:
+        """私有临时根下只给映射后非 owner UID 最小 create/traverse 权限。"""
+        arguments = argparse.Namespace(
+            backend="docker",
+            engine="docker-rootless",
+            confirm_live=True,
+            image="example/miniclaw@sha256:" + "a" * 64,
+            executable=None,
+        )
+        backend = _PermissionAwareDockerBackend()
+        output = io.StringIO()
+
+        with (
+            mock.patch(
+                "scripts.sandbox_live_smoke._rootless_backend",
+                return_value=(backend, "docker-rootless"),
+            ),
+            redirect_stdout(output),
+        ):
+            result = await sandbox_live_smoke._run(arguments)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(backend.parent_mode, 0o700)
+        self.assertEqual(backend.workspace_mode, 0o703)
+        self.assertEqual(
+            output.getvalue(),
+            "engine=docker-rootless containment=PASS\n",
         )
 
     def test_rootless_backend_uses_production_discovery_and_stable_identity(self) -> None:

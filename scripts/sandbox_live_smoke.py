@@ -39,6 +39,8 @@ async def _run(args: argparse.Namespace) -> int:
         root = Path(directory).resolve()
         workspace = root / "workspace"
         workspace.mkdir()
+        if args.backend == "docker":
+            workspace.chmod(0o703)
         secret = root / "outside-secret"
         secret.write_text("MINICLAW_SMOKE_SECRET", encoding="utf-8")
         probe = workspace / "probe.py"

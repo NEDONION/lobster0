@@ -8,7 +8,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from miniclaw.sandbox import docker as docker_module
-from miniclaw.sandbox.base import ExecutionPlan, SandboxUnavailableError
+from miniclaw.sandbox.base import (
+    ExecutionPlan,
+    SandboxPlanError,
+    SandboxUnavailableError,
+)
 from miniclaw.sandbox.docker import DockerSandbox
 
 
@@ -105,6 +109,33 @@ class DockerSandboxTest(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(ValueError, "sandbox_network_unsupported"):
             DockerSandbox(image=self.image).build_argv(changed)
+
+    def test_client_only_environment_names_fail_closed_at_backend_boundary(self) -> None:
+        """host client 专用环境名即使合法也不能进入 container argv。"""
+        for client_only_name in (
+            "HOME",
+            "XDG_RUNTIME_DIR",
+            "DOCKER_HOST",
+            "CONTAINER_HOST",
+        ):
+            collision = ExecutionPlan(
+                argv=self.plan.argv,
+                cwd=self.plan.cwd,
+                environment_names=("LANG", client_only_name),
+                read_roots=self.plan.read_roots,
+                write_roots=self.plan.write_roots,
+                timeout_seconds=self.plan.timeout_seconds,
+                memory_mib=self.plan.memory_mib,
+                cpu_seconds=self.plan.cpu_seconds,
+                pids_limit=self.plan.pids_limit,
+                network_mode="none",
+                backend="docker",
+            )
+
+            with self.subTest(name=client_only_name), self.assertRaisesRegex(
+                SandboxPlanError, "sandbox_environment_forbidden"
+            ):
+                DockerSandbox(image=self.image).build_argv(collision)
 
     async def test_missing_docker_never_falls_back_to_host(self) -> None:
         """Docker executable 不存在时返回稳定 unavailable，不执行原 argv。"""
