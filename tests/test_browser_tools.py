@@ -221,6 +221,14 @@ class BrowserToolsTest(unittest.IsolatedAsyncioTestCase):
             )
             self.assertIsNone(disabled.browser_client)
             self.assertIsNotNone(enabled.browser_client)
+            assert enabled.browser_client is not None
+            command = enabled.browser_client._command
+            self.assertIn(f"--profile-root={self.paths.browser}", command)
+            self.assertTrue(any(part.startswith("--executable-path=") for part in command))
+            self.assertIn("--max-tabs=8", command)
+            self.assertIn("--inactivity-timeout-ms=120000", command)
+            self.assertIn("--headed=true", command)
+            self.assertIn("--max-snapshot-chars=20000", command)
         finally:
             await disabled.aclose()
             await enabled.aclose()

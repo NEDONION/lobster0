@@ -97,14 +97,11 @@ class PolicyEngine:
             definition = replace(definition, risk=classification.risk)
             if definition.name == "browser_open":
                 url = cast(str, arguments["url"])
-                allowed_ports = tuple(
-                    sorted({443, *(rule.port for rule in self._network_rules)})
-                )
                 try:
                     target = validate_https_target(
                         url,
                         self._network_resolver,
-                        allowed_ports=allowed_ports,
+                        allowed_ports=(443,),
                     )
                 except NetworkPolicyError as error:
                     return PolicyDecision(PolicyAction.DENY, str(error), error.code)

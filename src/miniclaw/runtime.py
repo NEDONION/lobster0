@@ -24,6 +24,7 @@ from miniclaw.automation.repository import (
 from miniclaw.automation.runner import TaskRunner
 from miniclaw.automation.scheduler import Scheduler
 from miniclaw.browser.client import BrowserClient
+from miniclaw.browser.discovery import browser_worker_root, find_chromium
 from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
@@ -398,12 +399,14 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         BrowserClient(
             (
                 "node",
-                str(
-                    Path(__file__).resolve().parents[2]
-                    / "browser-worker"
-                    / "dist"
-                    / "server.js"
-                ),
+                str(browser_worker_root() / "dist" / "server.js"),
+                f"--profile-root={paths.browser}",
+                f"--executable-path={find_chromium() or 'chromium'}",
+                f"--max-tabs={config.browser.max_tabs}",
+                "--inactivity-timeout-ms="
+                f"{config.browser.inactivity_timeout_seconds * 1000}",
+                f"--headed={str(config.browser.headed).lower()}",
+                f"--max-snapshot-chars={config.browser.max_snapshot_chars}",
             )
         )
         if config.browser.enabled

@@ -41,14 +41,16 @@ test("always launches the exact dedicated profile root", async (t) => {
   t.after(() => rm(root, { recursive: true, force: true }));
   const context = new FakeContext();
   let launchedRoot = "";
+  let launchOptions: Record<string, unknown> = {};
   const manager = new SessionManager({
     profileRoot: root,
     executablePath: "/test/chromium",
     maxTabs: 2,
     inactivityTimeoutMs: 120_000,
     headed: true,
-    launch: async (profileRoot) => {
+    launch: async (profileRoot, options) => {
       launchedRoot = profileRoot;
+      launchOptions = options;
       return context as unknown as BrowserContext;
     },
   });
@@ -58,6 +60,8 @@ test("always launches the exact dedicated profile root", async (t) => {
 
   assert.equal(launchedRoot, root);
   assert.notEqual(launchedRoot, join(tmpdir(), "personal-browser-profile"));
+  assert.equal(launchOptions.serviceWorkers, "block");
+  assert.equal(launchOptions.acceptDownloads, false);
 });
 
 test("closes idle sessions and their browser context", async (t) => {

@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from pathlib import Path
 
+from miniclaw.browser.discovery import browser_worker_root, find_chromium
 from miniclaw.config import (
     AppConfig,
     ConfigError,
@@ -195,21 +196,12 @@ def _check_browser(paths: StatePaths, config: AppConfig | None) -> CheckResult:
 
 def _browser_worker_root() -> Path:
     """返回 source checkout 中 Browser Worker 的固定根目录。"""
-    return Path(__file__).resolve().parents[2] / "browser-worker"
+    return browser_worker_root()
 
 
 def _find_chromium() -> Path | None:
     """只从常见系统位置发现本机 Chromium，不启动浏览器。"""
-    for command in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable"):
-        if found := shutil.which(command):
-            return Path(found).resolve()
-    for candidate in (
-        Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
-        Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
-    ):
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate
-    return None
+    return find_chromium()
 
 
 def _browser_lock_state(path: Path) -> str:

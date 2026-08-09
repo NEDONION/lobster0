@@ -28,7 +28,7 @@ export interface SnapshotOptions {
   cursor?: number;
 }
 
-interface ElementMetadata {
+export interface ElementMetadata {
   role: string;
   name: string;
   state: Record<string, string | boolean>;
@@ -167,7 +167,7 @@ async function scanPage(page: Page, includeHandles: boolean): Promise<ScanResult
   for (let index = 0; index < Math.min(total, MAX_ELEMENTS); index += 1) {
     const item = locator.nth(index);
     if (!(await item.isVisible())) continue;
-    const metadata = await item.evaluate(readMetadata);
+    const metadata = await item.evaluate(readElementMetadata);
     const handle = includeHandles ? ((await item.elementHandle()) ?? undefined) : undefined;
     elements.push(handle === undefined ? { metadata } : { metadata, handle });
   }
@@ -182,7 +182,7 @@ async function scanPage(page: Page, includeHandles: boolean): Promise<ScanResult
   };
 }
 
-function readMetadata(element: Element): ElementMetadata {
+export function readElementMetadata(element: Element): ElementMetadata {
   const tag = element.tagName.toLowerCase();
   const input = element instanceof HTMLInputElement ? element : undefined;
   const explicitRole = element.getAttribute("role");
@@ -223,7 +223,13 @@ function readMetadata(element: Element): ElementMetadata {
   const state: Record<string, string | boolean> = {};
   if ("disabled" in element) state.disabled = Boolean((element as HTMLButtonElement).disabled);
   if (input?.type === "checkbox" || input?.type === "radio") state.checked = input.checked;
-  if (input !== undefined) state.input_kind = input.type || "text";
+  if (input !== undefined) {
+    state.input_kind = ["current-password", "new-password", "one-time-code"].includes(
+      input.autocomplete,
+    )
+      ? input.autocomplete
+      : input.type || "text";
+  }
   const expanded = element.getAttribute("aria-expanded");
   if (expanded !== null) state.expanded = expanded === "true";
   return { role: explicitRole || roles[tag] || "generic", name, state };

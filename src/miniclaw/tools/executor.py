@@ -806,7 +806,7 @@ def _approval_summary(tool_name: str, arguments: dict[str, JsonValue]) -> str:
             if hostname is not None:
                 host_text = f"[{hostname}]" if ":" in hostname else hostname
                 return f"http_get https://{host_text}:{port}"
-    if tool_name in {"browser_click", "browser_type"}:
+    if tool_name in {"browser_click", "browser_type", "browser_press"}:
         origin = arguments.get("origin")
         role = arguments.get("role")
         if isinstance(origin, str) and isinstance(role, str):

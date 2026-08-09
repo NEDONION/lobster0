@@ -95,11 +95,17 @@ _DEFINITIONS = {
     ),
     "browser_press": ToolDefinition(
         "browser_press",
-        "Press one bounded navigation or editing key in the current browser tab.",
+        "Press one bounded key on a stable ref from the latest browser snapshot.",
         {
             "type": "object",
-            "properties": {"key": {"type": "string", "enum": sorted(_PRESS_KEYS)}},
-            "required": ["key"],
+            "properties": {
+                "origin": {"type": "string", "maxLength": 255},
+                "generation": {"type": "string", "maxLength": 128},
+                "ref": {"type": "string", "maxLength": 16},
+                "role": {"type": "string", "maxLength": 64},
+                "key": {"type": "string", "enum": sorted(_PRESS_KEYS)},
+            },
+            "required": ["origin", "generation", "ref", "role", "key"],
             "additionalProperties": False,
         },
         ToolRisk.HIGH,
@@ -168,7 +174,7 @@ class BrowserTool:
             if type(cursor) is not int or cursor < 0:
                 raise ToolValidationError("cursor must be a non-negative integer")
             return {"cursor": cursor}
-        if name in {"browser_click", "browser_type"}:
+        if name in {"browser_click", "browser_type", "browser_press"}:
             normalized = {
                 "origin": _origin(arguments.get("origin")),
                 "generation": _matching_text(
@@ -184,12 +190,12 @@ class BrowserTool:
                 normalized["text"] = _bounded_text(
                     arguments.get("text"), "text", 20_000, allow_empty=True
                 )
+            if name == "browser_press":
+                key = arguments.get("key")
+                if not isinstance(key, str) or key not in _PRESS_KEYS:
+                    raise ToolValidationError("key is not allowed")
+                normalized["key"] = key
             return normalized
-        if name == "browser_press":
-            key = arguments.get("key")
-            if not isinstance(key, str) or key not in _PRESS_KEYS:
-                raise ToolValidationError("key is not allowed")
-            return {"key": key}
         if name == "browser_scroll":
             delta = arguments.get("delta_y")
             if type(delta) is not int or delta == 0 or not -10_000 <= delta <= 10_000:
