@@ -8,7 +8,6 @@ import os
 import signal
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any, Protocol
 
 from miniclaw import gateway_lease
@@ -30,7 +29,7 @@ from miniclaw.channels.supervisor import (
 )
 from miniclaw.channels.telegram import TelegramTransport
 from miniclaw.config import AppConfig, ConfigError, load_config
-from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from miniclaw.paths import StatePaths
 from miniclaw.runtime import (
     AgentRuntime,
@@ -148,7 +147,7 @@ async def run_gateway(
     """加载安全环境、安装信号并运行 production Gateway。"""
     target = os.environ if environ is None else environ
     try:
-        load_dotenv(Path.cwd() / ".env", target)
+        load_dotenv(resolve_dotenv_path(paths, target), target)
         config = load_config(paths, target)
         secrets = validate_gateway_environment(config, target)
     except (ConfigError, DotEnvError, GatewayConfigError):

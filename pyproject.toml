@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "miniclaw"
-version = "0.1.0"
+name = "miniclaw-agent"
+dynamic = ["version"]
 description = "A tiny self-hosted personal agent built with Python."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -34,12 +34,20 @@ channels = [
   "python-telegram-bot>=21,<23",
   "discord.py>=2.4,<3",
 ]
+all = [
+  "lark-channel-sdk>=1.2,<2",
+  "python-telegram-bot>=21,<23",
+  "discord.py>=2.4,<3",
+]
 
 [project.scripts]
 miniclaw = "miniclaw.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.dynamic]
+version = {attr = "miniclaw._version.__version__"}
 
 [tool.setuptools.package-data]
 "miniclaw.storage" = ["schema.sql", "migrations/*.sql"]

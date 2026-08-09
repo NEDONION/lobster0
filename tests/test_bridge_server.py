@@ -176,6 +176,50 @@ def _runtime(service) -> SimpleNamespace:
     )
 
 
+async def _run_bridge_process(
+    home: Path,
+    cwd: Path,
+    environ: dict[str, str],
+) -> tuple[int, bytes, bytes]:
+    """在隔离环境中启动真实 Bridge 并完成握手与关闭。"""
+    project = Path(__file__).resolve().parent.parent
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"MINICLAW_ENV_FILE", "MINICLAW_MODEL_API_KEY"}
+    }
+    environment.update({"PYTHONPATH": str(project / "src"), **environ})
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "miniclaw.bridge",
+        "--home",
+        str(home),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        env=environment,
+    )
+    stdin = b"".join(
+        (
+            _request(
+                "hello-1",
+                "client.hello",
+                {
+                    "client_name": "test-client",
+                    "client_version": "0.1.0",
+                    "protocols": [1],
+                },
+            ),
+            _request("stop-1", "bridge.shutdown", {}),
+        )
+    )
+    stdout, stderr = await asyncio.wait_for(process.communicate(stdin), timeout=3)
+    assert process.returncode is not None
+    return process.returncode, stdout, stderr
+
+
 class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
     """验证客户端请求只能通过 Core 发布受控事件。"""
 
@@ -340,47 +384,95 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory).resolve()
             initialize_state(build_state_paths(home))
-            project = Path(__file__).resolve().parent.parent
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-m",
-                "miniclaw.bridge",
-                "--home",
-                str(home),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=project,
-                env={
-                    **os.environ,
-                    "PYTHONPATH": str(project / "src"),
-                    "MINICLAW_MODEL_API_KEY": "offline-test-key",
-                },
-            )
-            stdin = b"".join(
-                (
-                    _request(
-                        "hello-1",
-                        "client.hello",
-                        {
-                            "client_name": "test-client",
-                            "client_version": "0.1.0",
-                            "protocols": [1],
-                        },
-                    ),
-                    _request("stop-1", "bridge.shutdown", {}),
-                )
-            )
-            stdout, stderr = await asyncio.wait_for(
-                process.communicate(stdin),
-                timeout=3,
+            returncode, stdout, stderr = await _run_bridge_process(
+                home,
+                Path(__file__).resolve().parent.parent,
+                {"MINICLAW_MODEL_API_KEY": "offline-test-key"},
             )
 
-        self.assertEqual(process.returncode, 0, stderr.decode("utf-8", errors="replace"))
+        self.assertEqual(returncode, 0, stderr.decode("utf-8", errors="replace"))
         frames = [json.loads(line) for line in stdout.splitlines()]
         self.assertEqual([frame["id"] for frame in frames], ["hello-1", "stop-1"])
         self.assertEqual([frame["type"] for frame in frames], ["response.ok", "response.ok"])
         self.assertEqual(stderr, b"")
+
+    async def test_module_process_prefers_absolute_installed_env_file(self) -> None:
+        """显式安装态 Secret 文件必须优先于 cwd/.env，且两者内容都不能输出。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            home = root / "state"
+            cwd = root / "cwd"
+            cwd.mkdir()
+            paths = build_state_paths(home)
+            initialize_state(paths)
+            installed_secret = "BRIDGE_INSTALLED_SECRET_SENTINEL"
+            cwd_secret = "BRIDGE_CWD_SECRET_SENTINEL"
+            paths.secrets_file.write_text(
+                f"MINICLAW_MODEL_API_KEY={installed_secret}\n",
+                encoding="utf-8",
+            )
+            paths.secrets_file.chmod(0o600)
+            (cwd / ".env").write_text(
+                f"export MINICLAW_MODEL_API_KEY={cwd_secret}\n",
+                encoding="utf-8",
+            )
+            (cwd / ".env").chmod(0o600)
+
+            returncode, stdout, stderr = await _run_bridge_process(
+                home,
+                cwd,
+                {"MINICLAW_ENV_FILE": str(paths.secrets_file)},
+            )
+
+        output = stdout + stderr
+        self.assertEqual(returncode, 0, stderr.decode("utf-8", errors="replace"))
+        self.assertNotIn(installed_secret.encode(), output)
+        self.assertNotIn(cwd_secret.encode(), output)
+
+    async def test_module_process_rejects_relative_installed_env_file(self) -> None:
+        """相对安装态路径必须在读取可用 cwd/.env 前失败关闭，且不能输出凭据。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            home = root / "state"
+            cwd = root / "cwd"
+            cwd.mkdir()
+            initialize_state(build_state_paths(home))
+            cwd_secret = "BRIDGE_RELATIVE_PATH_SECRET_SENTINEL"
+            (cwd / ".env").write_text(
+                f"MINICLAW_MODEL_API_KEY={cwd_secret}\n",
+                encoding="utf-8",
+            )
+            (cwd / ".env").chmod(0o600)
+
+            returncode, stdout, stderr = await _run_bridge_process(
+                home,
+                cwd,
+                {"MINICLAW_ENV_FILE": "relative.env"},
+            )
+
+        output = stdout + stderr
+        self.assertEqual(returncode, 2)
+        self.assertEqual(stdout, b"")
+        self.assertEqual(stderr, b"error: MiniClaw Bridge startup failed\n")
+        self.assertNotIn(cwd_secret.encode(), output)
+
+    async def test_module_process_keeps_development_cwd_dotenv(self) -> None:
+        """未选择安装态文件时，Bridge 仍应从固定 cwd/.env 启动。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            home = root / "state"
+            cwd = root / "cwd"
+            cwd.mkdir()
+            initialize_state(build_state_paths(home))
+            (cwd / ".env").write_text(
+                "MINICLAW_MODEL_API_KEY=offline-development-key\n",
+                encoding="utf-8",
+            )
+            (cwd / ".env").chmod(0o600)
+
+            returncode, _stdout, stderr = await _run_bridge_process(home, cwd, {})
+
+        self.assertEqual(returncode, 0, stderr.decode("utf-8", errors="replace"))
 
 
 if __name__ == "__main__":

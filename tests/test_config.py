@@ -575,6 +575,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.heartbeat.active_hours_start, "08:00")
         self.assertEqual(config.heartbeat.active_hours_end, "23:00")
         self.assertEqual(config.sandbox.backend, "docker")
+        self.assertEqual(config.sandbox.container_engine, "docker-rootless")
         self.assertEqual(config.sandbox.network, "none")
         self.assertEqual(config.sandbox.memory_mib, 512)
         self.assertTrue(config.checkpoint.enabled)
@@ -591,7 +592,8 @@ class ConfigTest(unittest.TestCase):
             'enabled = true\ninterval_seconds = 3600\ntimezone = "America/New_York"\n'
             'active_hours_start = "09:15"\nactive_hours_end = "18:45"\n\n'
             "[sandbox]\n"
-            'backend = "seatbelt"\nimage = "miniclaw-sandbox@sha256:'
+            'backend = "seatbelt"\ncontainer_engine = "podman-rootless"\n'
+            'image = "miniclaw-sandbox@sha256:'
             + "a" * 64
             + '"\nnetwork = "none"\nmemory_mib = 1024\ncpu_seconds = 120\n'
             "pids_limit = 256\n\n"
@@ -607,6 +609,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.automation.max_active_tasks, 75)
         self.assertEqual(config.heartbeat.timezone, "America/New_York")
         self.assertEqual(config.sandbox.backend, "seatbelt")
+        self.assertEqual(config.sandbox.container_engine, "podman-rootless")
         self.assertEqual(config.sandbox.pids_limit, 256)
         self.assertFalse(config.checkpoint.enabled)
         self.assertEqual(config.checkpoint.max_count, 25)
@@ -625,6 +628,7 @@ class ConfigTest(unittest.TestCase):
              "active hours"),
             ("[heartbeat]\nenabled = true\n", "requires automation.enabled"),
             ('[sandbox]\nbackend = "process"\n', "sandbox.backend"),
+            ('[sandbox]\ncontainer_engine = "docker"\n', "sandbox.container_engine"),
             ('[sandbox]\nnetwork = "host"\n', "sandbox.network"),
             ('[sandbox]\nimage = "bad image"\n', "sandbox.image"),
             (

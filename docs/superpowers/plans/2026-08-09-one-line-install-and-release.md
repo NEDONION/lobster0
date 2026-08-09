@@ -82,7 +82,7 @@ git log -1 --oneline
 rg -n "Phase 6.*COMPLETE|v0.7.0" docs/evals/releases docs/engineering/phase-6
 ```
 
-Expected: 工作区无修改；Phase 6 Task 1～18 已完成；release record 不把 PENDING live gate 伪装为 PASS。
+Expected: 工作区无修改；Phase 6 Task 1～11 与设计完成定义已闭合；release record 不把 PENDING live gate 伪装为 PASS。
 
 - [ ] **Step 2: 重新盘点交叉边界**
 
@@ -110,6 +110,50 @@ git diff --check
 ```
 
 Expected: 全部 PASS。任一基线失败先按 `superpowers:systematic-debugging` 归因，不把已有失败带进 Task 1。
+
+---
+
+### Task 0: Phase 6 rootless container-engine handoff
+
+**Files:**
+- Modify: `src/miniclaw/config.py`
+- Modify: `src/miniclaw/bootstrap.py`
+- Modify: `src/miniclaw/runtime.py`
+- Modify: `src/miniclaw/tools/command.py`
+- Modify: `src/miniclaw/sandbox/docker.py`
+- Modify: `src/miniclaw/doctor.py`
+- Modify: `scripts/sandbox_live_smoke.py`
+- Modify: `tests/test_config.py`
+- Modify: `tests/test_run_command.py`
+- Modify: `tests/test_docker_sandbox.py`
+- Modify: `tests/test_doctor.py`
+- Create: `tests/test_sandbox_live_smoke.py`
+
+**Interfaces:**
+- Consumes: Phase 6 `ExecutionPlan`, `DockerSandbox`, `RunCommandTool` and Doctor contracts.
+- Produces: strict `sandbox.container_engine = "docker-rootless" | "podman-rootless"`, defaulting to `docker-rootless` for backward-compatible config loading; an explicit rootless client transport that never becomes container `--env`; rootless-aware Doctor/live-smoke evidence.
+
+- [ ] **Step 1: Write rootless transport RED tests**
+
+Cover both engines on Linux with an injected non-zero UID and controlled filesystem facts. Docker must select only `unix:///run/user/<uid>/docker.sock`; Podman must select only `unix:///run/user/<uid>/podman/podman.sock`. Reject UID 0, `/var/run/docker.sock`, symlink/non-socket/foreign-owner sockets, an engine/executable mismatch and an unsafe runtime directory. Verify client-only `HOME`, `XDG_RUNTIME_DIR` and `DOCKER_HOST`/`CONTAINER_HOST` values are not emitted as container `--env` entries and do not enter `ExecutionPlan.canonical_json` or receipts.
+
+Run the focused tests and observe failures caused by the missing config/client-transport behavior, not import errors.
+
+- [ ] **Step 2: Implement a separate rootless client boundary**
+
+Add the strict config field and pass it through Runtime to `RunCommandTool`. Keep the immutable model-owned `ExecutionPlan` unchanged: container environment remains the plan's allowlisted names, while Docker/Podman client connection values are Core-derived immediately before launching the trusted absolute executable. Linux derives `/run/user/<effective uid>` and the engine-specific socket; no config, environment or model input may choose an arbitrary socket. Resolve the trusted executable and require `docker-rootless` to use Docker and `podman-rootless` to resolve to Podman. Both modes reject effective UID 0 and never fall back to `/var/run/docker.sock`, docker-group access, sudo or Host execution.
+
+The host-side client environment may include the already resolved Owner home and rootless runtime directory, but none of those values may be forwarded through Docker `--env` or persisted. Keep module import side-effect free and preserve Seatbelt/interactive Host behavior.
+
+- [ ] **Step 3: Make Doctor and live smoke verify the same boundary**
+
+Doctor remains offline/no-Secret and reports engine-specific rootless readiness without printing UID, Home or socket paths. `scripts/sandbox_live_smoke.py` requires an explicit engine for Docker, uses the production discovery/validation path and reports only stable engine/containment status. Unit tests fake filesystem/process facts; they do not connect to a real daemon.
+
+- [ ] **Step 4: Verify and commit Phase 6 handoff**
+
+Run focused config/Sandbox/command/Doctor/smoke tests, the 15-case Automation suite, full unittest and Ruff. Real Debian Docker and RHEL Podman containment remain explicit Tier 1 release gates; local contract tests must not label them live PASS.
+
+Commit: `fix(sandbox): 闭合 rootless Docker 与 Podman handoff`
 
 ---
 

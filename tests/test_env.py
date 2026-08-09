@@ -4,7 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
+from miniclaw.paths import build_state_paths
 
 
 class DotEnvTest(unittest.TestCase):
@@ -15,6 +16,31 @@ class DotEnvTest(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.root = Path(self.temporary_directory.name)
+        self.paths = build_state_paths(self.root)
+        self.other = self.root / "other"
+
+    def test_installed_env_file_must_be_absolute_and_wins_over_cwd(self) -> None:
+        """安装态只接受绝对 Secret 文件，且不回退到当前工作目录。"""
+        private = self.root / "secrets.env"
+
+        self.assertEqual(
+            resolve_dotenv_path(
+                self.paths,
+                {"MINICLAW_ENV_FILE": str(private)},
+                cwd=self.other,
+            ),
+            private.resolve(),
+        )
+        with self.assertRaisesRegex(DotEnvError, "must be absolute"):
+            resolve_dotenv_path(
+                self.paths,
+                {"MINICLAW_ENV_FILE": "relative.env"},
+                cwd=self.other,
+            )
+
+    def test_development_keeps_fixed_cwd_dotenv(self) -> None:
+        """未指定安装态 Secret 文件时保持仅加载 cwd/.env 的开发语义。"""
+        self.assertEqual(resolve_dotenv_path(self.paths, {}, cwd=self.other), self.other / ".env")
 
     def test_missing_file_loads_nothing(self) -> None:
         """尚未创建 ``.env`` 时应保持环境不变，方便纯 Shell 配置。"""

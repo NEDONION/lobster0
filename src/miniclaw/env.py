@@ -3,14 +3,45 @@
 import os
 import re
 import stat
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
 from pathlib import Path
+
+from miniclaw.paths import StatePaths
 
 _KEY_PATTERN = re.compile(r"[A-Z_][A-Z0-9_]*\Z")
 
 
 class DotEnvError(ValueError):
     """表示本地 ``.env`` 文件格式、权限或读取状态不安全。"""
+
+
+def resolve_dotenv_path(
+    paths: StatePaths,
+    environ: Mapping[str, str],
+    *,
+    cwd: Path | None = None,
+) -> Path:
+    """解析显式安装态 Secret 文件，否则保持 cwd/.env 开发语义。
+
+    Args:
+        paths: 当前 MiniClaw 状态路径；用于保持所有运行时入口的统一调用契约。
+        environ: 用于读取 ``MINICLAW_ENV_FILE`` 的环境变量。
+        cwd: 开发态 ``.env`` 所在目录；默认使用当前工作目录。
+
+    Returns:
+        需要按 owner-only 规则加载的 dotenv 文件路径。
+
+    Raises:
+        DotEnvError: 显式安装态路径不是绝对路径。
+    """
+    del paths
+    selected = environ.get("MINICLAW_ENV_FILE", "").strip()
+    if not selected:
+        return (Path.cwd() if cwd is None else cwd) / ".env"
+    candidate = Path(selected).expanduser()
+    if not candidate.is_absolute():
+        raise DotEnvError("MINICLAW_ENV_FILE must be absolute path")
+    return candidate.resolve(strict=False)
 
 
 def load_dotenv(

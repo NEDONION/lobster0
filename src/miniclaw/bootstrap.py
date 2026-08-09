@@ -2,10 +2,11 @@
 
 import json
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from miniclaw.config import load_config
+from miniclaw.config import ConfigError, load_config
 from miniclaw.memory.markdown_store import MemoryMarkdownStore
 from miniclaw.memory.migration import LegacyMemoryImporter
 from miniclaw.memory.reconcile import MemoryReconciler
@@ -31,11 +32,16 @@ class InitResult:
     created_files: tuple[Path, ...]
 
 
-def initialize_state(paths: StatePaths) -> InitResult:
+def initialize_state(
+    paths: StatePaths,
+    *,
+    sandbox_image: str | None = None,
+) -> InitResult:
     """幂等创建一个可加载、可迁移的单 Owner MiniClaw 状态目录。
 
     Args:
         paths: 已解析并限制在同一状态根下的路径集合。
+        sandbox_image: 首次创建配置时使用的 digest-pinned Sandbox image；省略则使用开发默认值。
 
     Returns:
         本次新建文件、迁移版本和持久化 Owner。
@@ -56,7 +62,7 @@ def initialize_state(paths: StatePaths) -> InitResult:
     _ensure_directory(github_skill_directory)
 
     templates = (
-        (paths.config, _render_default_config(paths)),
+        (paths.config, render_default_config(paths, sandbox_image=sandbox_image)),
         (paths.soul, "# MiniClaw\n"),
         (paths.user, "# User\n"),
         (paths.memory_file, "# Long-term Memory\n"),
@@ -202,9 +208,30 @@ def _create_private_file(path: Path, content: str) -> bool:
     return True
 
 
-def _render_default_config(paths: StatePaths) -> str:
-    """生成包含 DeepSeek V4 Pro 默认 Provider 的稳定 TOML 配置。"""
+def render_default_config(
+    paths: StatePaths,
+    *,
+    sandbox_image: str | None = None,
+) -> str:
+    """生成包含 DeepSeek V4 Pro 默认 Provider 的稳定 TOML 配置。
+
+    Args:
+        paths: 用于写入固定 Workspace 路径的状态路径。
+        sandbox_image: 安装器提供的 MiniClaw GHCR sha256 digest；省略则保留开发默认值。
+
+    Returns:
+        可由 strict config loader 读取的 UTF-8 TOML 文本。
+
+    Raises:
+        ConfigError: 安装器提供的 image 不是指定仓库的 lowercase sha256 digest。
+    """
+    image = "miniclaw-sandbox:phase6" if sandbox_image is None else sandbox_image
+    if sandbox_image is not None and re.fullmatch(
+        r"ghcr\.io/nedonion/miniclaw-sandbox@sha256:[0-9a-f]{64}", image
+    ) is None:
+        raise ConfigError("sandbox image must be a digest-pinned MiniClaw GHCR image")
     workspace = json.dumps(str(paths.workspace), ensure_ascii=False)
+    rendered_image = json.dumps(image)
     return (
         '[agent]\nmodel = "deepseek-v4-pro"\nmax_tool_iterations = 32\n'
         "max_tool_iterations_hard = 64\nmax_no_progress_iterations = 3\n"
@@ -221,7 +248,8 @@ def _render_default_config(paths: StatePaths) -> str:
         "[heartbeat]\nenabled = false\ninterval_seconds = 1800\n"
         'timezone = "Asia/Shanghai"\nactive_hours_start = "08:00"\n'
         'active_hours_end = "23:00"\n\n'
-        '[sandbox]\nbackend = "docker"\nimage = "miniclaw-sandbox:phase6"\n'
+        '[sandbox]\nbackend = "docker"\ncontainer_engine = "docker-rootless"\n'
+        f"image = {rendered_image}\n"
         'network = "none"\nmemory_mib = 512\ncpu_seconds = 60\npids_limit = 128\n\n'
         "[checkpoint]\nenabled = true\nmax_entries = 2000\n"
         "max_total_bytes = 67108864\nmax_file_bytes = 8388608\nmax_count = 100\n\n"
