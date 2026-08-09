@@ -6,14 +6,16 @@ import unittest
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, Mock, patch
 
 from miniclaw.bootstrap import initialize_state
+from miniclaw.channels.supervisor import GatewaySecrets
 from miniclaw.config import load_config
 from miniclaw.gateway import (
     GatewayComponents,
     GatewayConfigError,
     GatewayRuntimeError,
+    _build_discord_channel,
     run_gateway,
     run_gateway_components,
     validate_gateway_environment,
@@ -143,6 +145,42 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(GatewayConfigError) as raised:
             validate_gateway_environment(disabled, {}, sdk_available=True)
         self.assertIn("disabled", str(raised.exception))
+
+    def test_discord_experience_uses_progress_as_final_reply(self) -> None:
+        """Discord 短回答必须由同一 progress 消息承载。"""
+        selected = replace(
+            self.config.channels.discord,
+            enabled=True,
+            owner_user_id=300,
+            allowed_user_ids=(300,),
+        )
+        config = replace(
+            self.config,
+            channels=replace(self.config.channels, discord=selected),
+        )
+        manager = SimpleNamespace(receive=AsyncMock(), attach_experience=Mock())
+        experience = object()
+        with (
+            patch(
+                "miniclaw.gateway._channel_common",
+                return_value=(object(), object(), manager, object(), object()),
+            ),
+            patch("miniclaw.gateway.DiscordTransport", return_value=object()),
+            patch("miniclaw.gateway.DeliveryWorker", return_value=object()),
+            patch(
+                "miniclaw.gateway.ChannelExperience",
+                return_value=experience,
+            ) as factory,
+        ):
+            _build_discord_channel(
+                config,
+                self.paths,
+                SimpleNamespace(),
+                GatewaySecrets("model", {"discord": "configured"}),
+            )
+
+        self.assertTrue(factory.call_args.kwargs["progress_is_final"])
+        manager.attach_experience.assert_called_once_with(experience)
 
     async def test_startup_ready_and_shutdown_use_safe_order(self) -> None:
         """连接就绪后才启动 Worker；停止时先关入口再 drain，最后关 Provider。"""
