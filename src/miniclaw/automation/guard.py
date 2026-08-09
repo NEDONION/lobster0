@@ -48,6 +48,11 @@ _RECURSIVE_MARKERS = (
 class AutomationGuardError(ValueError):
     """表示可安全返回且不包含 Prompt、Secret 或平台 ID 的 Guard 错误。"""
 
+    def __init__(self, code: str) -> None:
+        """保存稳定错误码，并把异常文本限制为同一个码。"""
+        super().__init__(code)
+        self.code = code
+
 
 @dataclass(frozen=True, slots=True)
 class GuardedTaskInput:
@@ -118,6 +123,10 @@ class AutomationPromptGuard:
             raise AutomationGuardError("recursive_automation_denied")
         validated_skills = self._validate_skills(skill_names)
         return GuardedTaskInput(prompt=normalized, skill_names=validated_skills)
+
+    def validate_skills(self, skill_names: tuple[str, ...]) -> tuple[str, ...]:
+        """只验证显式 Skill 名称，供不修改 Prompt 的 Task update 使用。"""
+        return self._validate_skills(skill_names)
 
     def _validate_skills(self, skill_names: tuple[str, ...]) -> tuple[str, ...]:
         """把名称限制为最多三个、无重复且存在于 metadata catalog。"""

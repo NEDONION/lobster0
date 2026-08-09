@@ -8,6 +8,8 @@ from miniclaw.agent.compaction import ContextCompactor
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.runner import AgentRunner
 from miniclaw.agent.turn import TurnService
+from miniclaw.automation.guard import AutomationPromptGuard
+from miniclaw.automation.repository import ScheduledTaskRepository, TaskRunRepository
 from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
@@ -44,6 +46,7 @@ from miniclaw.policy.executables import discover_executables
 from miniclaw.policy.modes import PermissionState
 from miniclaw.policy.network import normalize_network_rule
 from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
+from miniclaw.skills.loader import SkillLoader
 from miniclaw.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
@@ -59,6 +62,7 @@ from miniclaw.storage.tooling import (
     PolicyRuleRepository,
     ToolRunRepository,
 )
+from miniclaw.tools.automation import ManageTaskTool
 from miniclaw.tools.base import ToolDefinition
 from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
@@ -245,6 +249,14 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         EditFileTool(),
         GlobTool(),
         GrepTool(),
+        ManageTaskTool(
+            ScheduledTaskRepository(database),
+            TaskRunRepository(database),
+            AutomationPromptGuard(SkillLoader(paths.skills)),
+            config.channels,
+            enabled=config.automation.enabled,
+            misfire_grace_seconds=config.automation.misfire_grace_seconds,
+        ),
         HttpGetTool(
             timeout_seconds=config.tools.http_get.timeout_seconds,
             max_response_bytes=config.tools.http_get.max_response_bytes,

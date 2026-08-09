@@ -64,6 +64,7 @@ class ConfigTest(unittest.TestCase):
                 "memory_forget",
                 "memory_correct",
                 "memory_review_list",
+                "manage_task",
             ),
         )
         self.assertEqual(config.tools.run_command.timeout_seconds, 30)

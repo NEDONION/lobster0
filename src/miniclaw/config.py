@@ -34,6 +34,7 @@ BUILTIN_TOOL_NAMES = (
     "memory_forget",
     "memory_correct",
     "memory_review_list",
+    "manage_task",
 )
 DEFAULT_TOOL_MODE = "autopilot"
 

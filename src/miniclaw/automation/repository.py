@@ -194,6 +194,96 @@ class ScheduledTaskRepository:
             target=TaskStatus.PAUSED,
         )
 
+    def update(
+        self,
+        task_id: int,
+        *,
+        owner_id: int,
+        expected_version: int,
+        name: str | None = None,
+        schedule: ScheduleSpec | None = None,
+        prompt: str | None = None,
+        skill_names: tuple[str, ...] | None = None,
+        delivery: DeliveryTarget | None = None,
+        policy_profile: str | None = None,
+        budget: TaskBudget | None = None,
+    ) -> ScheduledTask:
+        """用 optimistic version 原子更新 active/paused Task 的显式字段。"""
+        if all(
+            value is None
+            for value in (
+                name,
+                schedule,
+                prompt,
+                skill_names,
+                delivery,
+                policy_profile,
+                budget,
+            )
+        ):
+            raise ValueError("task update requires at least one field")
+        now = _as_utc(self._clock(), "task update time")
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM scheduled_tasks WHERE id = ? AND owner_id = ?",
+                (task_id, owner_id),
+            ).fetchone()
+            if row is None:
+                raise AutomationStateError("task_not_found")
+            _check_task_row(row, expected_version)
+            current = _task_from_row(row)
+            if current.status in {TaskStatus.COMPLETED, TaskStatus.CANCELLED}:
+                raise AutomationStateError("task_terminal")
+            selected_name = current.name if name is None else name
+            selected_schedule = current.schedule if schedule is None else schedule
+            selected_prompt = current.prompt if prompt is None else prompt
+            selected_skills = current.skill_names if skill_names is None else skill_names
+            selected_delivery = current.delivery if delivery is None else delivery
+            selected_profile = (
+                current.policy_profile if policy_profile is None else policy_profile
+            )
+            selected_budget = current.budget if budget is None else budget
+            _validate_task_input(
+                owner_id,
+                selected_name,
+                selected_prompt,
+                selected_profile,
+            )
+            updated = connection.execute(
+                """
+                UPDATE scheduled_tasks
+                SET name = ?, schedule_kind = ?, schedule_expression = ?, timezone = ?,
+                    prompt = ?, skill_names_json = ?, delivery_json = ?,
+                    policy_profile = ?, budget_json = ?, next_run_at = ?,
+                    version = version + 1, updated_at = ?
+                WHERE id = ? AND owner_id = ? AND version = ?
+                  AND status IN ('active', 'paused')
+                """,
+                (
+                    selected_name.strip(),
+                    selected_schedule.kind.value,
+                    selected_schedule.expression,
+                    selected_schedule.timezone,
+                    selected_prompt,
+                    _json_dumps(list(selected_skills)),
+                    _delivery_json(selected_delivery),
+                    selected_profile.strip(),
+                    _budget_json(selected_budget),
+                    _datetime_text(selected_schedule.next_run_at),
+                    now.isoformat(),
+                    task_id,
+                    owner_id,
+                    expected_version,
+                ),
+            )
+            if updated.rowcount != 1:
+                raise AutomationStateError("task_version_conflict")
+            result = connection.execute(
+                "SELECT * FROM scheduled_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+        return _task_from_row(result)
+
     def resume(
         self, task_id: int, *, owner_id: int, expected_version: int
     ) -> ScheduledTask:

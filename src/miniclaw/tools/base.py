@@ -58,6 +58,8 @@ class ToolContext:
     disclosure: DisclosureContext | None = None
     source: Literal["interactive", "automation"] = "interactive"
     task_run_id: int | None = None
+    account_id: str | None = None
+    external_conversation_id: str | None = None
 
     def __post_init__(self) -> None:
         """拒绝未知执行来源和 bool/非正 TaskRun ID。"""
@@ -67,6 +69,14 @@ class ToolContext:
             type(self.task_run_id) is not int or self.task_run_id <= 0
         ):
             raise ValueError("tool context task_run_id must be positive")
+        for value, name in (
+            (self.account_id, "account_id"),
+            (self.external_conversation_id, "external_conversation_id"),
+        ):
+            if value is not None and (
+                not isinstance(value, str) or not value.strip() or "\x00" in value
+            ):
+                raise ValueError(f"tool context {name} must be safe non-empty text")
 
 
 class ToolValidationError(ValueError):
@@ -132,6 +142,19 @@ class Tool(Protocol):
     def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
         """校验并返回供 Policy 与执行共用的规范参数。"""
         ...
+
+    def prepare(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]:
+        """可选地用可信 Context 规范参数；默认保持原值。"""
+        return arguments
+
+    def effective_risk(self, arguments: dict[str, JsonValue]) -> ToolRisk:
+        """返回规范参数对应的风险；默认使用静态定义。"""
+        del arguments
+        return self.definition.risk
 
     async def execute(
         self,

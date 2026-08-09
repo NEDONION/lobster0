@@ -240,6 +240,8 @@ class TurnService:
                 owner_home=self._workspace.owner_home if trusted_owner else None,
                 trusted_owner=trusted_owner,
                 disclosure=disclosure,
+                account_id=account_id,
+                external_conversation_id=external_conversation_id,
             )
             result = await self._runner.run(
                 request,

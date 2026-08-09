@@ -1000,6 +1000,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 "glob",
                 "grep",
                 "http_get",
+                "manage_task",
                 "memory_correct",
                 "memory_flush",
                 "memory_forget",

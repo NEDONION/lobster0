@@ -124,6 +124,42 @@ class _ApprovalTool(_BrokenTool):
     )
 
 
+class _DynamicRiskTool(_EchoTool):
+    """静态 LOW、但根据 action 提升为 HIGH 的测试 Tool。"""
+
+    definition = ToolDefinition(
+        name="dynamic_risk",
+        description="Test action-bound risk.",
+        parameters={
+            "type": "object",
+            "properties": {"action": {"type": "string"}},
+            "required": ["action"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """只接受 cancel action。"""
+        if arguments != {"action": "cancel"}:
+            raise ToolValidationError("action must be cancel")
+        return arguments
+
+    def effective_risk(self, arguments: dict[str, JsonValue]) -> ToolRisk:
+        """把已验证 cancel 绑定为 HIGH。"""
+        del arguments
+        return ToolRisk.HIGH
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """若 Policy 错误按静态 LOW 放行则返回可观察成功。"""
+        del context, arguments
+        return ToolResult.success({"executed": True})
+
+
 class _InvalidResultTool(_BrokenTool):
     """返回 JSON 不允许的非有限浮点数。"""
 
@@ -255,6 +291,25 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run["policy_action"], "allow")
         self.assertEqual(run["tool_name"], "echo")
         self.assertEqual([row[0] for row in events], ["tool.started", "tool.succeeded"])
+
+    async def test_dynamic_effective_risk_is_applied_before_policy_persistence(self) -> None:
+        """action 绑定的 HIGH 风险必须创建 Approval，不能按静态 LOW 执行。"""
+        execution = await self.executor(
+            _DynamicRiskTool(),
+            approvals=ApprovalRepository(self.database),
+        ).execute(
+            self.context,
+            ToolCall("call_dynamic", "dynamic_risk", {"action": "cancel"}),
+        )
+
+        self.assertIsNotNone(execution.approval_id)
+        self.assertIsNone(execution.result)
+        with self.database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT policy_action, status FROM tool_runs WHERE tool_call_id = ?",
+                ("call_dynamic",),
+            ).fetchone()
+        self.assertEqual(tuple(row), ("require_approval", "waiting_approval"))
 
     async def test_unexpected_tool_error_is_redacted_and_persisted(self) -> None:
         """内部异常只能变成稳定错误码，原始文本不得泄露。"""

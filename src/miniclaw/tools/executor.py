@@ -2,7 +2,7 @@
 
 import asyncio
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -22,7 +22,7 @@ from miniclaw.storage.tooling import (
     StoredToolRun,
     ToolRunRepository,
 )
-from miniclaw.tools.base import Tool, ToolContext, ToolResult, ToolValidationError
+from miniclaw.tools.base import Tool, ToolContext, ToolResult, ToolRisk, ToolValidationError
 from miniclaw.tools.registry import ToolRegistry
 
 
@@ -101,7 +101,49 @@ class ToolExecutor:
                 on_event,
             )
 
-        decision = self._policy.authorize(tool.definition, context, arguments)
+        prepare = getattr(tool, "prepare", None)
+        if prepare is not None:
+            try:
+                arguments = prepare(context, arguments)
+            except ValueError as error:
+                code = _safe_prepare_error_code(error)
+                return await _finish_unstarted(
+                    context,
+                    call,
+                    ToolResult.failure(code, code).to_model_text(call.name),
+                    "rejected",
+                    on_event,
+                )
+            if not isinstance(arguments, dict):
+                return await _finish_unstarted(
+                    context,
+                    call,
+                    ToolResult.failure(
+                        "invalid_arguments",
+                        "tool preparation returned invalid arguments",
+                    ).to_model_text(call.name),
+                    "rejected",
+                    on_event,
+                )
+
+        definition = tool.definition
+        effective_risk = getattr(tool, "effective_risk", None)
+        if effective_risk is not None:
+            risk = effective_risk(arguments)
+            if not isinstance(risk, ToolRisk):
+                return await _finish_unstarted(
+                    context,
+                    call,
+                    ToolResult.failure(
+                        "invalid_tool_risk",
+                        "tool returned invalid effective risk",
+                    ).to_model_text(call.name),
+                    "rejected",
+                    on_event,
+                )
+            definition = replace(definition, risk=risk)
+
+        decision = self._policy.authorize(definition, context, arguments)
         arguments = decision.normalized_arguments or arguments
         if decision.action is not PolicyAction.ALLOW:
             if decision.action is PolicyAction.DENY:
@@ -338,6 +380,22 @@ async def _finish_unstarted(
 def _elapsed_ms(started: float) -> int:
     """把 monotonic 秒安全转成非负毫秒。"""
     return max(0, round((time.monotonic() - started) * 1000))
+
+
+def _safe_prepare_error_code(error: ValueError) -> str:
+    """只接受有限 snake_case code，避免把 prepare 异常正文返回模型。"""
+    candidate = getattr(error, "code", str(error))
+    if (
+        isinstance(candidate, str)
+        and 3 <= len(candidate) <= 64
+        and candidate[0].islower()
+        and all(
+            character.islower() or character.isdigit() or character == "_"
+            for character in candidate
+        )
+    ):
+        return candidate
+    return "invalid_arguments"
 
 
 def _approval_summary(tool_name: str, arguments: dict[str, JsonValue]) -> str:
