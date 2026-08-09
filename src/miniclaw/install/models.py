@@ -23,10 +23,7 @@ _FILENAME = re.compile(r"^(?!.*\.\.)[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$")
 _MEDIA_TYPE = re.compile(r"^[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,127}$")
 _LICENSE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+-]{0,127}$")
 _STABLE_NAME = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
-_SAFE_PLAN_DETAIL = re.compile(
-    r"^version=[0-9A-Za-z.+-]{1,64} platform=(?:linux|macos)/(?:x86_64|arm64) "
-    r"service=(?:True|False) onboarding=(?:True|False)$"
-)
+_PYTHON_PRERELEASE = re.compile(r"^(a|alpha|b|beta|rc)\.(0|[1-9][0-9]*)$")
 
 _ARTIFACT_KINDS = {
     "wheel",
@@ -185,7 +182,7 @@ class InstallError(RuntimeError):
 
     Args:
         code: 供调用方分支处理的稳定错误代码。
-        detail: 不可信诊断文本；构造时会移除常见凭据、URL 和私人路径。
+        detail: 不可信诊断文本；仅固定消息、字段名和结构化公开摘要可保留。
     """
 
     def __init__(self, code: str, detail: str) -> None:
@@ -725,10 +722,42 @@ def _safe_detail(detail: str) -> str:
     if (
         detail in _SAFE_DETAIL_MESSAGES
         or detail in _SAFE_DETAIL_FIELDS
-        or _SAFE_PLAN_DETAIL.fullmatch(detail) is not None
+        or _is_safe_plan_detail(detail)
     ):
         return detail
     return "redacted"
+
+
+def _is_safe_plan_detail(detail: str) -> bool:
+    """判断文本是否为字段和值均受限的公开计划摘要。
+
+    Args:
+        detail: 长度已由调用方限制的诊断文本。
+
+    Returns:
+        仅精确结构、合法 SemVer、受支持平台和布尔值返回 True。
+    """
+    parts = detail.split(" ")
+    if len(parts) != 4:
+        return False
+    version, platform, service, onboarding = parts
+    if not version.startswith("version="):
+        return False
+    version_match = _SEMVER.fullmatch(version[8:])
+    if version_match is None or version_match[5] is not None:
+        return False
+    prerelease = version_match[4]
+    if prerelease is not None and _PYTHON_PRERELEASE.fullmatch(prerelease) is None:
+        return False
+    if not platform.startswith("platform="):
+        return False
+    platform_parts = platform[9:].split("/")
+    if len(platform_parts) != 2 or tuple(platform_parts) not in _SUPPORTED_PLATFORMS:
+        return False
+    return service in {"service=True", "service=False"} and onboarding in {
+        "onboarding=True",
+        "onboarding=False",
+    }
 
 
 def _absolute_path_is_safe(value: object) -> bool:
@@ -1058,10 +1087,13 @@ def _artifact_filename_matches(artifact: Artifact) -> bool:
         文件名与 kind、component version 和平台一致时返回 True。
     """
     version = artifact.component_version
+    python_version = (
+        _python_filename_version(version) if artifact.kind in {"wheel", "sdist"} else version
+    )
     platform = f"{artifact.platform.os}-{artifact.platform.arch}"
     expected = {
-        "wheel": f"miniclaw_agent-{version}-py3-none-any.whl",
-        "sdist": f"miniclaw_agent-{version}.tar.gz",
+        "wheel": f"miniclaw_agent-{python_version}-py3-none-any.whl",
+        "sdist": f"miniclaw_agent-{python_version}.tar.gz",
         "requirements": "requirements-all.lock",
         "node": f"miniclaw-node-{version}-{platform}.tar.gz",
         "tui": f"miniclaw-tui-{version}-{platform}.tar.gz",
@@ -1072,6 +1104,31 @@ def _artifact_filename_matches(artifact: Artifact) -> bool:
     if artifact.kind == "sbom":
         return artifact.filename.endswith(".json")
     return artifact.filename.endswith(".txt")
+
+
+def _python_filename_version(version: str) -> str:
+    """将受支持的 Release SemVer 转为 Python artifact 文件名版本。
+
+    Args:
+        version: 已通过 manifest SemVer 检查的组件版本。
+
+    Returns:
+        stable core version，或 alpha、beta、rc 的受限 PEP 440 prerelease 形式。
+
+    Raises:
+        InstallError: 版本含 build metadata 或无法安全映射的 prerelease。
+    """
+    major, minor, patch, prerelease, build = _parse_semver(version, "artifacts.component_version")
+    if build is not None:
+        _invalid("artifacts.component_version")
+    normalized = f"{major}.{minor}.{patch}"
+    if prerelease is None:
+        return normalized
+    match = _PYTHON_PRERELEASE.fullmatch(prerelease)
+    if match is None:
+        _invalid("artifacts.component_version")
+    label = {"a": "a", "alpha": "a", "b": "b", "beta": "b", "rc": "rc"}[match[1]]
+    return f"{normalized}{label}{match[2]}"
 
 
 def _validate_artifact_url(value: object) -> None:

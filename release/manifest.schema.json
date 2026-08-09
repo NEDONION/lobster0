@@ -138,8 +138,8 @@
         {
           "if": {"properties": {"kind": {"const": "wheel"}}},
           "then": {"properties": {
-            "filename": {"pattern": "^miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?-py3-none-any\\.whl$"},
-            "url": {"pattern": "/miniclaw_agent-[0-9A-Za-z.+-]+-py3-none-any\\.whl$"},
+            "filename": {"pattern": "^miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?-py3-none-any\\.whl$"},
+            "url": {"pattern": "/miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?-py3-none-any\\.whl$"},
             "media_type": {"const": "application/zip"},
             "platform": {"const": {"os": "any", "arch": "any"}},
             "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},
@@ -149,8 +149,8 @@
         {
           "if": {"properties": {"kind": {"const": "sdist"}}},
           "then": {"properties": {
-            "filename": {"pattern": "^miniclaw_agent-[0-9A-Za-z.+-]+\\.tar\\.gz$"},
-            "url": {"pattern": "/miniclaw_agent-[0-9A-Za-z.+-]+\\.tar\\.gz$"},
+            "filename": {"pattern": "^miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?\\.tar\\.gz$"},
+            "url": {"pattern": "/miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?\\.tar\\.gz$"},
             "media_type": {"const": "application/gzip"},
             "platform": {"const": {"os": "any", "arch": "any"}},
             "source_repository": {"const": "https://github.com/NEDONION/miniclaw"},

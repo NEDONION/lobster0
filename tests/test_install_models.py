@@ -42,6 +42,17 @@ class InstallModelsTest(unittest.TestCase):
         self.document["artifacts"][0] = artifact
         return self.manifest_bytes()
 
+    def release_bytes(self, version: str, artifacts: list[dict[str, object]]) -> bytes:
+        """返回指定版本和 artifact 的完整 manifest JSON。"""
+        document = dict(self.document)
+        document["version"] = version
+        document["artifacts"] = artifacts
+        return json.dumps(document, separators=(",", ":")).encode()
+
+    def release_url(self, version: str, filename: str) -> str:
+        """返回 fixture 使用的 immutable MiniClaw Release asset URL。"""
+        return f"https://github.com/NEDONION/miniclaw/releases/download/v{version}/{filename}"
+
     def request(self, **changes: object) -> InstallRequest:
         """构造一个不含 Secret 值的有效安装请求。"""
         values: dict[str, object] = {
@@ -239,6 +250,97 @@ class InstallModelsTest(unittest.TestCase):
                     self.manifest_bytes({"artifacts": [artifact]})
                 )
 
+    def test_all_nine_stable_artifact_kinds_remain_valid(self) -> None:
+        """Task 15 九种 stable artifact kind 都应满足 closed-world matrix。"""
+        wheel, node, tui = (dict(item) for item in self.document["artifacts"])
+
+        def universal(
+            kind: str,
+            filename: str,
+            media_type: str,
+        ) -> dict[str, object]:
+            """从有效 wheel 派生一个 MiniClaw universal artifact。"""
+            return {
+                **wheel,
+                "kind": kind,
+                "filename": filename,
+                "url": self.release_url("0.7.0", filename),
+                "media_type": media_type,
+            }
+
+        artifacts = [
+            wheel,
+            universal("sdist", "miniclaw_agent-0.7.0.tar.gz", "application/gzip"),
+            universal("requirements", "requirements-all.lock", "text/plain"),
+            node,
+            tui,
+            universal("sandbox-image", "miniclaw-sandbox-image-digest.txt", "text/plain"),
+            universal("runtime-image", "miniclaw-runtime-image-digest.txt", "text/plain"),
+            universal("installer", "miniclaw-installer.pyz", "application/zip"),
+            universal("sbom", "miniclaw-0.7.0.cdx.json", "application/vnd.cyclonedx+json"),
+        ]
+
+        manifest = ReleaseManifest.from_bytes(self.release_bytes("0.7.0", artifacts))
+
+        self.assertEqual({artifact.kind for artifact in manifest.artifacts}, {
+            "wheel", "sdist", "requirements", "node", "tui", "sandbox-image",
+            "runtime-image", "installer", "sbom",
+        })
+
+    def test_prerelease_python_filenames_match_pep440_in_parser_and_schema(self) -> None:
+        """rc SemVer 的 wheel/sdist 文件名必须使用受限 PEP 440 normalization。"""
+        version = "0.8.0-rc.1"
+        wheel = dict(self.document["artifacts"][0])
+        schema = json.loads(self.schema.read_text(encoding="utf-8"))
+        rules = schema["$defs"]["artifact"]["allOf"]
+
+        def schema_patterns(kind: str) -> tuple[str, str]:
+            """读取指定 kind 的 schema filename 与 URL patterns。"""
+            for rule in rules:
+                condition = rule["if"]["properties"]["kind"]
+                if condition.get("const") == kind:
+                    properties = rule["then"]["properties"]
+                    return properties["filename"]["pattern"], properties["url"]["pattern"]
+            self.fail(f"missing schema rule for {kind}")
+
+        correct = (
+            ("wheel", "miniclaw_agent-0.8.0rc1-py3-none-any.whl", "application/zip"),
+            ("sdist", "miniclaw_agent-0.8.0rc1.tar.gz", "application/gzip"),
+        )
+        wrong = (
+            ("wheel", "miniclaw_agent-0.8.0-rc.1-py3-none-any.whl", "application/zip"),
+            ("sdist", "miniclaw_agent-0.8.0-rc.1.tar.gz", "application/gzip"),
+        )
+        for kind, filename, media_type in correct:
+            artifact = {
+                **wheel,
+                "kind": kind,
+                "filename": filename,
+                "url": self.release_url(version, filename),
+                "component_version": version,
+                "media_type": media_type,
+            }
+            with self.subTest(kind=kind, valid=True):
+                filename_pattern, url_pattern = schema_patterns(kind)
+                self.assertIsNotNone(re.fullmatch(filename_pattern, filename))
+                self.assertIsNotNone(re.search(url_pattern, artifact["url"]))
+                ReleaseManifest.from_bytes(self.release_bytes(version, [artifact]))
+        for kind, filename, media_type in wrong:
+            artifact = {
+                **wheel,
+                "kind": kind,
+                "filename": filename,
+                "url": self.release_url(version, filename),
+                "component_version": version,
+                "media_type": media_type,
+            }
+            with self.subTest(kind=kind, valid=False):
+                filename_pattern, url_pattern = schema_patterns(kind)
+                self.assertIsNone(re.fullmatch(filename_pattern, filename))
+                self.assertIsNone(re.search(url_pattern, artifact["url"]))
+                with self.assertRaisesRegex(InstallError, "manifest_invalid"):
+                    ReleaseManifest.from_bytes(self.release_bytes(version, [artifact]))
+
     def test_manifest_rejects_unknown_features_and_unsupported_platforms(self) -> None:
         """feature 与 Release platform 必须来自封闭集合且覆盖完整 Tier 1。"""
         with self.assertRaisesRegex(InstallError, "manifest_invalid"):
@@ -407,6 +509,10 @@ class InstallModelsTest(unittest.TestCase):
             "Authorization: Bearer TOP_SECRET",
             "token=TOP_SECRET https://user:pass@example.com/x /Users/alice/private",
             "x" * 900,
+            "version=TOPSECRET platform=linux/x86_64 service=True onboarding=True",
+            "version=1.2.3-TOPSECRET platform=linux/x86_64 service=True onboarding=True",
+            "version=1.2.3-Bearer platform=linux/x86_64 service=True onboarding=True",
+            f"version=1.2.3-{'a' * 40} platform=linux/x86_64 service=True onboarding=True",
         )
         for unsafe in unsafe_values:
             error = InstallError("manifest_invalid", unsafe)
@@ -415,9 +521,25 @@ class InstallModelsTest(unittest.TestCase):
                 self.assertEqual(error.detail, "redacted")
                 self.assertEqual(event.detail, "redacted")
                 self.assertLessEqual(len(str(error)), 500)
+                self.assertNotIn(unsafe, str(error))
                 self.assertNotIn("TOP_SECRET", str(error))
+                self.assertNotIn("TOPSECRET", str(error))
+                self.assertNotIn("Bearer", str(error))
+                self.assertNotIn('"manifest"', str(error))
                 self.assertNotIn("a" * 40, str(error))
         self.assertEqual(InstallError("manifest_invalid", "artifacts.url").detail, "artifacts.url")
+        safe_summary = self.plan().safe_summary()
+        self.assertEqual(
+            InstallEvent("install.preflight", "ok", None, safe_summary).detail,
+            safe_summary,
+        )
+        safe_prerelease = (
+            "version=1.2.3-rc.1 platform=linux/x86_64 service=False onboarding=False"
+        )
+        self.assertEqual(
+            InstallEvent("install.preflight", "ok", None, safe_prerelease).detail,
+            safe_prerelease,
+        )
         with self.assertRaisesRegex(InstallError, "event_invalid"):
             InstallEvent("install.failed", [], None, "detail")  # type: ignore[arg-type]
         fallback = InstallError([], "detail")  # type: ignore[arg-type]
