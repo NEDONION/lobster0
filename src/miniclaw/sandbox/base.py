@@ -63,9 +63,15 @@ class ExecutionPlan:
         """规范顺序和 Path，并拒绝歧义、控制字符与越界资源。"""
         if self.schema_version != 1:
             raise SandboxPlanError("execution_plan_invalid", "unsupported schema version")
-        if not self.argv or any(
-            not isinstance(value, str) or not value or _has_control(value)
-            for value in self.argv
+        if (
+            not self.argv
+            or not isinstance(self.argv[0], str)
+            or not self.argv[0]
+            or _has_control(self.argv[0])
+            or any(
+                not isinstance(value, str) or _has_control(value)
+                for value in self.argv[1:]
+            )
         ):
             raise SandboxPlanError("execution_plan_invalid", "argv is invalid")
         cwd = _absolute_path(self.cwd)

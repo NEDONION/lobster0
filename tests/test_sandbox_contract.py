@@ -51,6 +51,15 @@ class ExecutionPlanContractTest(unittest.TestCase):
         self.assertEqual(first.canonical_json, second.canonical_json)
         self.assertNotIn("secret-value", first.canonical_json)
 
+    def test_empty_non_program_argument_is_preserved_in_exact_argv(self) -> None:
+        """lark-cli --query 空字符串合法，但 executable 本身仍必须非空。"""
+        plan = self.plan(argv=(sys.executable, "--query", ""))
+
+        self.assertEqual(plan.argv, (sys.executable, "--query", ""))
+        self.assertIn('"--query",""', plan.canonical_json)
+        with self.assertRaises(SandboxPlanError):
+            self.plan(argv=("", "--query"))
+
     def test_invalid_or_ambiguous_plan_is_unrepresentable(self) -> None:
         """控制字符、相对路径、重复/重叠 mount 与越界资源必须拒绝。"""
         cases = (

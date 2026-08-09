@@ -285,6 +285,7 @@ class _ApprovalRepository:
                 1,
                 "write_file",
                 "hash",
+                None,
                 "write_file note.txt",
                 "pending",
                 now + timedelta(minutes=5),

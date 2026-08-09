@@ -26,7 +26,8 @@ from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError
 from miniclaw.doctor import CheckStatus, run_local_checks
 from miniclaw.env import DotEnvError, load_dotenv
-from miniclaw.evals.cases import EvalCaseError, load_cases
+from miniclaw.evals.automation import run_automation_suite
+from miniclaw.evals.cases import EvalCaseError, load_automation_cases, load_cases
 from miniclaw.evals.channel import run_channel_suite
 from miniclaw.evals.runner import run_offline_suite
 from miniclaw.gateway import (
@@ -105,7 +106,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
     eval_run.add_argument(
         "--suite",
-        choices=("offline", "channel", "all"),
+        choices=("offline", "channel", "automation", "all"),
         required=True,
     )
     eval_run.add_argument(
@@ -355,12 +356,21 @@ def _run_eval(arguments: argparse.Namespace) -> int:
     channel = tuple(
         case for case in cases if case.status == "active" and "channel" in case.layers
     )
+    automation = tuple(
+        case for case in cases if case.status == "active" and "automation" in case.layers
+    )
     if arguments.suite in {"offline", "all"} and not offline:
         print("error: no active offline eval cases", file=sys.stderr)
         return 2
     if arguments.suite in {"channel", "all"} and not channel:
         print("error: no active channel eval cases", file=sys.stderr)
         return 2
+    if arguments.suite in {"automation", "all"}:
+        try:
+            automation = load_automation_cases(arguments.root)
+        except EvalCaseError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
 
     json_output = bool(arguments.json_output)
     failed = 0
@@ -445,13 +455,56 @@ def _run_eval(arguments: argparse.Namespace) -> int:
                 f"Channel local soak: {channel_passed}/{channel_total} checks passed "
                 f"across {channel_runs}/{arguments.repeat} runs ({channel_duration}ms)."
             )
+    if arguments.suite in {"automation", "all"}:
+        automation_passed = 0
+        automation_total = 0
+        automation_duration = 0
+        automation_runs = 0
+        automation_failed = 0
+        for iteration in range(1, arguments.repeat + 1):
+            automation_suite = asyncio.run(run_automation_suite(automation))
+            automation_passed += automation_suite.passed
+            automation_total += automation_suite.total
+            automation_duration += automation_suite.duration_ms
+            passed += automation_suite.passed
+            checks += automation_suite.total
+            duration_ms += automation_suite.duration_ms
+            automation_runs = iteration
+            if not json_output and (arguments.repeat == 1 or automation_suite.failed):
+                for result in automation_suite.cases:
+                    if result.passed:
+                        print(f"PASS {result.case_id} {result.duration_ms}ms")
+                    else:
+                        print(
+                            f"FAIL {result.case_id} {','.join(result.failures)} "
+                            f"run={iteration}"
+                        )
+            automation_failed += automation_suite.failed
+            failed += automation_suite.failed
+            if automation_suite.failed:
+                break
+        if json_output:
+            pass
+        elif arguments.repeat == 1:
+            print(
+                f"Automation eval: {automation_passed}/{automation_total} passed, "
+                f"{automation_failed} failed ({automation_duration}ms)."
+            )
+        else:
+            print(
+                f"Automation local soak: {automation_passed}/{automation_total} checks passed "
+                f"across {automation_runs}/{arguments.repeat} runs "
+                f"({automation_duration}ms)."
+            )
     if json_output:
         selected = (
             offline
             if arguments.suite == "offline"
             else channel
             if arguments.suite == "channel"
-            else (*offline, *channel)
+            else automation
+            if arguments.suite == "automation"
+            else (*offline, *channel, *automation)
         )
         print(
             json.dumps(
