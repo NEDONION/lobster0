@@ -474,23 +474,6 @@ class AgentRunner:
             intermediate_messages.append(assistant_message)
             batch_progressed = False
             for call in response.tool_calls:
-                if budget is not None and executed_tool_calls >= budget.max_tool_calls:
-                    budget_message = ModelMessage(
-                        role="tool",
-                        content=_budget_tool_result(call.name),
-                        tool_call_id=call.call_id,
-                    )
-                    messages.append(budget_message)
-                    intermediate_messages.append(budget_message)
-                    if on_intermediate is not None:
-                        on_intermediate(tuple(intermediate_messages[batch_start:]))
-                    return build_result(
-                        content="",
-                        iterations=iteration,
-                        finish_reason="task_budget_tool_calls",
-                        context_tokens=response.input_tokens,
-                        error_code="task_budget_tool_calls",
-                    )
                 if tool_context is not None:
                     await emit(
                         on_event,
@@ -512,7 +495,13 @@ class AgentRunner:
                     prepared = self._executor.prepare(tool_context, call)
                     fingerprint_call = prepared.call
                 fingerprint = _tool_fingerprint(fingerprint_call)
-                if fingerprint in attempted_tool_fingerprints:
+                prepared_result = None if prepared is None else prepared.unstarted_result
+                control_stop = (
+                    prepared_result is not None
+                    and not prepared_result.ok
+                    and prepared_result.error_code == "automation_halted"
+                )
+                if fingerprint in attempted_tool_fingerprints and not control_stop:
                     tool_message = ModelMessage(
                         role="tool",
                         content=json.dumps(
@@ -544,6 +533,27 @@ class AgentRunner:
                             ),
                         )
                 else:
+                    if (
+                        not control_stop
+                        and budget is not None
+                        and executed_tool_calls >= budget.max_tool_calls
+                    ):
+                        budget_message = ModelMessage(
+                            role="tool",
+                            content=_budget_tool_result(call.name),
+                            tool_call_id=call.call_id,
+                        )
+                        messages.append(budget_message)
+                        intermediate_messages.append(budget_message)
+                        if on_intermediate is not None:
+                            on_intermediate(tuple(intermediate_messages[batch_start:]))
+                        return build_result(
+                            content="",
+                            iterations=iteration,
+                            finish_reason="task_budget_tool_calls",
+                            context_tokens=response.input_tokens,
+                            error_code="task_budget_tool_calls",
+                        )
                     attempted_tool_fingerprints.add(fingerprint)
                     tool_message, approval_id, executed_result = await self._execute_tool(
                         call,

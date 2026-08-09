@@ -89,6 +89,11 @@ class PreparedToolCall:
             raise RuntimeError("prepared Tool arguments snapshot is invalid")
         return ToolCall(self._call_id, self._tool_name, arguments)
 
+    @property
+    def unstarted_result(self) -> ToolResult | None:
+        """返回预检已确定的无副作用结果，供 Runner 优先处理控制面终止。"""
+        return self._unstarted_result
+
 
 class ToolExecutor:
     """确保任何 Tool 都不能绕过验证、Policy 与 ToolRun。"""

@@ -266,6 +266,82 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(outcome.error_code, "automation_halted")
         self.assertEqual(tool.executions, 1)
 
+    async def test_e_stop_preempts_semantic_duplicate_filter(self) -> None:
+        """E-stop 必须先于语义去重收口，不能继续请求 Provider。"""
+        calls = (
+            ToolCall("call_before_halt", "echo", {"text": "same"}),
+            ToolCall("call_after_halt", "echo", {"text": "same"}),
+        )
+        provider = FakeProvider(
+            (
+                response("", tool_calls=calls),
+                response("must not continue"),
+            )
+        )
+        halted = False
+
+        class HaltingEchoTool(_EchoTool):
+            """首次执行后拉起 E-stop，第二次请求与其语义相同。"""
+
+            async def execute(
+                self,
+                context: ToolContext,
+                arguments: dict[str, JsonValue],
+            ) -> ToolResult:
+                """执行一次后立即关闭后续 Automation。"""
+                nonlocal halted
+                result = await super().execute(context, arguments)
+                halted = True
+                return result
+
+        tool = HaltingEchoTool()
+        executor = self.executor(tool)
+
+        outcome = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=replace(
+                self.tool_context,
+                source="automation",
+                task_run_id=11,
+                allowed_tool_names=frozenset({"echo"}),
+                automation_gate=lambda: not halted,
+            ),
+            budget=AgentRunBudget(max_turns=3, max_tool_calls=2),
+        )
+
+        self.assertEqual(outcome.error_code, "automation_halted")
+        self.assertEqual(tool.executions, 1)
+        self.assertEqual(len(provider.requests), 1)
+
+    async def test_semantic_duplicate_does_not_consume_real_tool_budget(self) -> None:
+        """不会真实执行的 duplicate 不能被误报为 Tool budget 超限。"""
+        calls = (
+            ToolCall("call_first", "echo", {"text": "same"}),
+            ToolCall("call_duplicate", "echo", {"text": "same"}),
+        )
+        provider = FakeProvider(
+            (
+                response("", tool_calls=calls),
+                response("done"),
+            )
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        outcome = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=replace(
+                self.tool_context,
+                source="automation",
+                task_run_id=12,
+            ),
+            budget=AgentRunBudget(max_turns=3, max_tool_calls=1),
+        )
+
+        self.assertIsNone(outcome.error_code)
+        self.assertEqual(outcome.content, "done")
+        self.assertEqual(tool.executions, 1)
+
     async def test_reported_usage_budget_stops_before_any_tool(self) -> None:
         """Provider 回报已超 Token 预算时，本轮 Tool 一次也不能执行。"""
         call = ToolCall("call_over", "echo", {"text": "must-not-run"})
