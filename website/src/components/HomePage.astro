@@ -2,6 +2,13 @@
 import BaseLayout from '../layouts/BaseLayout.astro';
 import ClawTrace from './ClawTrace.astro';
 import CommandBlock from './CommandBlock.astro';
+import EvidenceRail from './EvidenceRail.astro';
+import MemorySection from './MemorySection.astro';
+import QuickStart from './QuickStart.astro';
+import RuntimeFlow from './RuntimeFlow.astro';
+import SafetySection from './SafetySection.astro';
+import SurfaceSection from './SurfaceSection.astro';
+import WorkflowGallery from './WorkflowGallery.astro';
 import contentByLocale from '../content-data/site-content.json';
 import facts from '../content-data/project-facts.json';
 import type { Locale } from '../types/site';
@@ -50,4 +57,11 @@ const docs = isChinese ? '/docs/getting-started/' : '/en/docs/getting-started/';
       <span>OPENAI-COMPATIBLE</span>
     </div>
   </section>
+  <EvidenceRail evidence={content.evidence} {facts} />
+  <RuntimeFlow flow={content.flow} />
+  <SurfaceSection surfaces={content.surfaces} />
+  <SafetySection safety={content.safety} {facts} />
+  <MemorySection memory={content.memory} />
+  <WorkflowGallery workflows={content.workflows} />
+  <QuickStart {locale} quickStart={content.quickStart} {facts} />
 </BaseLayout>

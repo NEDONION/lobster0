@@ -1,0 +1,37 @@
+---
+import type { SiteContent } from '../types/site';
+
+interface Props {
+  surfaces: SiteContent['surfaces'];
+}
+
+const { surfaces } = Astro.props;
+---
+
+<section class="surface-section section-pad" id="channels" aria-labelledby="surfaces-heading">
+  <div class="shell section-heading">
+    <p class="eyebrow"><span aria-hidden="true"></span>{surfaces.eyebrow}</p>
+    <h2 id="surfaces-heading">{surfaces.title}</h2>
+    <p>{surfaces.lead}</p>
+  </div>
+  <div class="shell surface-section__body">
+    <div class="surface-core" aria-hidden="true">
+      <span class="surface-core__orbit surface-core__orbit--one"></span>
+      <span class="surface-core__orbit surface-core__orbit--two"></span>
+      <span class="surface-core__label">AGENT<br />RUNTIME</span>
+      <span class="surface-core__status">shared core / isolated edges</span>
+    </div>
+    <div class="surface-list">
+      {surfaces.items.map((surface) => (
+        <article>
+          <div>
+            <h3>{surface.name}</h3>
+            <span>{surface.role}</span>
+          </div>
+          <p>{surface.note}</p>
+          <span class="surface-list__signal" aria-hidden="true"></span>
+        </article>
+      ))}
+    </div>
+  </div>
+</section>

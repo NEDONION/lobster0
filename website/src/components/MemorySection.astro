@@ -1,0 +1,35 @@
+---
+import type { SiteContent } from '../types/site';
+
+interface Props {
+  memory: SiteContent['memory'];
+}
+
+const { memory } = Astro.props;
+---
+
+<section class="memory-section section-pad" aria-labelledby="memory-heading">
+  <div class="shell memory-section__grid">
+    <div class="memory-section__copy">
+      <p class="eyebrow"><span aria-hidden="true"></span>{memory.eyebrow}</p>
+      <h2 id="memory-heading">{memory.title}</h2>
+      <p>{memory.lead}</p>
+      <blockquote>“Owner is the boundary.”</blockquote>
+    </div>
+    <div class="memory-map" aria-label="MiniClaw memory model">
+      <article class="memory-map__truth">
+        <span>01 / SOURCE OF TRUTH</span>
+        <h3>{memory.truthLabel}</h3>
+        <p>{memory.truthBody}</p>
+        <code>memory/*.md</code>
+      </article>
+      <div class="memory-map__connector" aria-hidden="true"><span>PROJECT</span></div>
+      <article class="memory-map__projection">
+        <span>02 / CONTROL PLANE</span>
+        <h3>{memory.projectionLabel}</h3>
+        <p>{memory.projectionBody}</p>
+        <code>miniclaw.db</code>
+      </article>
+    </div>
+  </div>
+</section>

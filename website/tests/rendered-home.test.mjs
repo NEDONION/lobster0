@@ -27,3 +27,12 @@ test('renders the real Claw Trace states and install command', async () => {
   assert.match(zh, /git clone https:\/\/github\.com\/NEDONION\/miniclaw\.git/);
   assert.match(zh, /aria-live="polite"/);
 });
+
+test('shows evidence without overstating live acceptance', async () => {
+  const [zh, en] = await Promise.all([html('index.html'), html('en/index.html')]);
+  assert.match(zh, /33 条 versioned Channel cases/);
+  assert.match(zh, /Implementation PASS 不等于 Live PASS/);
+  assert.match(en, /Implementation PASS is not Live PASS/);
+  assert.match(zh, /miniclaw-tui-approval-warp\.png/);
+  assert.match(zh, /miniclaw-tui-external-cli-warp\.png/);
+});

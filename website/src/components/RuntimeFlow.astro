@@ -1,0 +1,29 @@
+---
+import type { SiteContent } from '../types/site';
+
+interface Props {
+  flow: SiteContent['flow'];
+}
+
+const { flow } = Astro.props;
+---
+
+<section class="runtime-flow light-section section-pad" id="product" aria-labelledby="flow-heading">
+  <div class="shell section-heading section-heading--light">
+    <p class="eyebrow eyebrow--light"><span aria-hidden="true"></span>{flow.eyebrow}</p>
+    <h2 id="flow-heading">{flow.title}</h2>
+    <p>{flow.lead}</p>
+  </div>
+  <ol class="shell runtime-flow__steps">
+    {flow.steps.map((step, index) => (
+      <li>
+        <span class="runtime-flow__number">{String(index + 1).padStart(2, '0')}</span>
+        <h3>{step.title}</h3>
+        <p>{step.body}</p>
+      </li>
+    ))}
+  </ol>
+  <div class="shell runtime-flow__trace" aria-hidden="true">
+    <span>MESSAGE</span><i></i><span>AGENT</span><i></i><span>POLICY</span><i></i><span>APPROVAL</span><i></i><span>TOOL</span><i></i><span>RESULT</span>
+  </div>
+</section>

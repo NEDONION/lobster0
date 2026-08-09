@@ -1,0 +1,34 @@
+---
+import type { SiteContent } from '../types/site';
+
+interface Props {
+  workflows: SiteContent['workflows'];
+}
+
+const { workflows } = Astro.props;
+const images = [
+  '/images/miniclaw-tui-approval-warp.png',
+  '/images/miniclaw-tui-external-cli-warp.png',
+];
+---
+
+<section class="workflow-gallery light-section section-pad" aria-labelledby="workflows-heading">
+  <div class="shell section-heading section-heading--light">
+    <p class="eyebrow eyebrow--light"><span aria-hidden="true"></span>{workflows.eyebrow}</p>
+    <h2 id="workflows-heading">{workflows.title}</h2>
+  </div>
+  <div class="shell workflow-gallery__grid">
+    {workflows.items.map((item, index) => (
+      <figure>
+        <div class="workflow-gallery__image">
+          <img src={images[index]} alt={item.alt} loading="lazy" decoding="async" />
+          <span aria-hidden="true">0{index + 1}</span>
+        </div>
+        <figcaption>
+          <h3>{item.title}</h3>
+          <p>{item.body}</p>
+        </figcaption>
+      </figure>
+    ))}
+  </div>
+</section>
