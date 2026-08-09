@@ -8,8 +8,10 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { getMDXComponents } from '@/components/docs/mdx-components';
-import { getLocale } from '@/lib/i18n';
+import { getLocale, localizedPath } from '@/lib/i18n';
 import { source } from '@/lib/source';
+
+const siteUrl = 'https://miniclaw.vercel.app';
 
 interface PageProps {
   params: Promise<{ lang: string; slug?: string[] }>;
@@ -25,10 +27,20 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   if (!locale) return {};
   const page = source.getPage(slug, locale);
   if (!page) return {};
+  const path = slug?.length ? `/docs/${slug.join('/')}` : '/docs';
+  const canonicalPath = localizedPath(locale, path as `/${string}`);
 
   return {
+    alternates: {
+      canonical: `${siteUrl}${canonicalPath}`,
+      languages: {
+        'zh-CN': `${siteUrl}${path}`,
+        en: `${siteUrl}/en${path}`,
+      },
+    },
     description: page.data.description,
-    title: `${page.data.title} — MiniClaw`,
+    openGraph: { url: `${siteUrl}${canonicalPath}` },
+    title: page.data.title,
   };
 }
 

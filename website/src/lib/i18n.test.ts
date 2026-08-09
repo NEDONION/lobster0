@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatLocalePath, getLocale, localizedPath } from './i18n';
+import { formatLocalePath, getLocale, isI18nBypassPath, localizedPath } from './i18n';
 
 describe('marketing locale helpers', () => {
   it('rejects unknown route locales', () => {
@@ -19,5 +19,13 @@ describe('marketing locale helpers', () => {
   it('rewrites the root without a trailing slash redirect', () => {
     expect(formatLocalePath('zh-CN', '/')).toBe('/zh-CN');
     expect(formatLocalePath('en', '/docs')).toBe('/en/docs');
+  });
+
+  it('leaves framework metadata and static assets outside locale routing', () => {
+    expect(isI18nBypassPath('/sitemap.xml')).toBe(true);
+    expect(isI18nBypassPath('/robots.txt')).toBe(true);
+    expect(isI18nBypassPath('/opengraph-image')).toBe(true);
+    expect(isI18nBypassPath('/favicon.svg')).toBe(true);
+    expect(isI18nBypassPath('/docs')).toBe(false);
   });
 });

@@ -4,14 +4,57 @@ import 'fumadocs-ui/style.css';
 import '@/styles/globals.css';
 
 import { RootProvider } from 'fumadocs-ui/provider/next';
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 
+import { marketingCopy } from '@/content/site';
 import { getLocale, locales } from '@/lib/i18n';
 import { i18nUI } from '@/lib/layout.shared';
 
 export function generateStaticParams() {
   return locales.map((lang) => ({ lang }));
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ lang: string }>;
+}): Promise<Metadata> {
+  const locale = getLocale((await params).lang);
+  if (!locale) return {};
+  const copy = marketingCopy[locale];
+
+  return {
+    description: copy.meta.description,
+    icons: { icon: '/favicon.svg' },
+    metadataBase: new URL('https://miniclaw.vercel.app'),
+    openGraph: {
+      description: copy.meta.description,
+      images: [
+        {
+          alt: copy.meta.title,
+          height: 630,
+          url: 'https://miniclaw.vercel.app/opengraph-image',
+          width: 1200,
+        },
+      ],
+      locale: locale === 'zh-CN' ? 'zh_CN' : 'en_US',
+      siteName: 'MiniClaw',
+      title: copy.meta.title,
+      type: 'website',
+    },
+    title: {
+      default: copy.meta.title,
+      template: '%s — MiniClaw',
+    },
+    twitter: {
+      card: 'summary_large_image',
+      description: copy.meta.description,
+      images: ['https://miniclaw.vercel.app/opengraph-image'],
+      title: copy.meta.title,
+    },
+  };
 }
 
 export default async function LocaleLayout({

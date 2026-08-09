@@ -4,6 +4,15 @@ import type { Locale } from '@/content/site';
 
 export const locales = ['zh-CN', 'en'] as const satisfies readonly Locale[];
 
+const i18nBypassPaths = new Set([
+  '/favicon.svg',
+  '/opengraph-image',
+  '/robots.txt',
+  '/sitemap.xml',
+]);
+
+const i18nBypassPrefixes = ['/api', '/_next', '/images'];
+
 export const i18n = defineI18n({
   languages: [...locales],
   defaultLanguage: 'zh-CN',
@@ -13,6 +22,13 @@ export const i18n = defineI18n({
 
 export function getLocale(value: string): Locale | null {
   return locales.find((locale) => locale === value) ?? null;
+}
+
+export function isI18nBypassPath(pathname: string): boolean {
+  if (i18nBypassPaths.has(pathname)) return true;
+  return i18nBypassPrefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
 }
 
 export function localizedPath(locale: Locale, path: `/${string}`): string {
