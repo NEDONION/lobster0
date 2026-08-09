@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.agent.runner import AgentNoProgressError
@@ -31,6 +32,7 @@ from miniclaw.storage.channels import (
     InboundEventRepository,
 )
 from miniclaw.storage.conversations import (
+    ConversationStateError,
     MessageRepository,
     SessionRepository,
     TurnRepository,
@@ -635,7 +637,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("工具参数格式错误", final)
         self.assertIn("已安全停止", final)
         self.assertIn("Turn #", final)
-        self.assertIn("0 个 Tool", final)
+        self.assertIn("0 个真实 ToolRun", final)
         self.assertNotIn("private malformed tool detail", final)
 
     async def test_no_progress_failure_has_actionable_tool_loop_diagnostics(self) -> None:
@@ -644,7 +646,10 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             self.sessions,
             self.messages,
             self.turns,
-            failure=AgentNoProgressError("private repeated call detail"),
+            failure=AgentNoProgressError(
+                no_progress_iterations=3,
+                model_iteration=4,
+            ),
         )
         transport = ManagerCapabilityTransport()
         capabilities = ChannelCapabilities(
@@ -674,8 +679,48 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Claw Trail 与 ToolRun", final)
         self.assertIn("Turn #", final)
         self.assertIn("Event #", final)
-        self.assertIn("0 个 Tool", final)
-        self.assertNotIn("private repeated call detail", final)
+        self.assertIn("0 个真实 ToolRun", final)
+        self.assertIn("当前模型轮次：4", final)
+        self.assertIn("连续无进展轮次：3", final)
+
+    async def test_no_progress_fallback_code_survives_unreadable_turn(self) -> None:
+        """Turn 不可读时仍须用异常类型回退到 loop_no_progress 和安全整数诊断。"""
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            failure=AgentNoProgressError(
+                no_progress_iterations=2,
+                model_iteration=7,
+            ),
+        )
+        transport = ManagerCapabilityTransport()
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
+        manager = self._manager(service, queue_size=2, worker_count=1)
+        manager.attach_experience(capabilities)
+
+        with mock.patch.object(
+            self.turns,
+            "get_by_inbound",
+            side_effect=ConversationStateError("private unreadable Turn"),
+        ):
+            await manager.start()
+            try:
+                await manager.receive(self._message("om_unreadable_turn", "repeat tool"))
+                await manager.wait_idle(timeout=2)
+            finally:
+                await manager.stop()
+
+        final = repr(transport.cards[-1])
+        self.assertIn("loop_no_progress", final)
+        self.assertIn("当前模型轮次：7", final)
+        self.assertIn("连续无进展轮次：2", final)
+        self.assertNotIn("channel_turn_failed", final)
+        self.assertNotIn("private unreadable Turn", final)
 
     async def test_cancelled_turn_finishes_same_card_with_debug_diagnostics(self) -> None:
         """Gateway 停止取消活动 Turn 时，原卡必须展示稳定中断诊断而不是空红卡。"""
@@ -714,7 +759,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("channel_turn_interrupted", final)
         self.assertIn("Gateway 已停止或重启", final)
         self.assertIn("Turn #", final)
-        self.assertIn("0 个 Tool", final)
+        self.assertIn("0 个真实 ToolRun", final)
         self.assertIn("未发生 Tool 副作用", final)
         self.assertIn("重新发送", final)
 

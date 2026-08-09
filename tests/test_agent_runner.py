@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -17,20 +18,23 @@ from miniclaw.agent.runner import (
 )
 from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
+from miniclaw.policy.command import SAFE_EXECUTABLE_PATH
 from miniclaw.policy.engine import PolicyEngine
 from miniclaw.providers.base import JsonValue, ModelMessage, ModelRequest, ModelResponse, ToolCall
 from miniclaw.storage.conversations import SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
 from miniclaw.tools.base import (
+    Tool,
     ToolContext,
     ToolDefinition,
     ToolResult,
     ToolRisk,
     ToolValidationError,
 )
+from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.filesystem import WriteFileTool
+from miniclaw.tools.filesystem import ReadFileTool, WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
 from tests.fakes.fake_provider import FakeProvider
 
@@ -130,7 +134,7 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
             (),
         )
 
-    def executor(self, tool: _EchoTool) -> ToolExecutor:
+    def executor(self, tool: Tool) -> ToolExecutor:
         """创建真实安全执行入口。"""
         return ToolExecutor(
             ToolRegistry((tool,)),
@@ -491,23 +495,161 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         )
         tool = _EchoTool()
         executor = self.executor(tool)
+        events: list[RunEvent] = []
 
-        with self.assertRaises(AgentNoProgressError):
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
+
+        with self.assertRaises(AgentNoProgressError) as stopped:
             await AgentRunner(
                 provider,
                 executor,
                 max_iterations=8,
                 hard_max_iterations=12,
                 max_no_progress_iterations=3,
-            ).run(request(*executor.schemas), tool_context=self.tool_context)
+            ).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+                on_event=capture,
+            )
 
         self.assertEqual(tool.executions, 1)
         self.assertEqual(len(provider.requests), 4)
+        self.assertEqual(
+            (
+                stopped.exception.no_progress_iterations,
+                stopped.exception.model_iteration,
+            ),
+            (3, 4),
+        )
         duplicate_result = json.loads(provider.requests[2].messages[-1].content)
         self.assertEqual(
             duplicate_result,
             {"ok": False, "error": "duplicate_tool_call", "tool": "echo"},
         )
+        requested = [event for event in events if event.kind == "tool_requested"]
+        finished = [event for event in events if event.kind == "tool_finished"]
+        self.assertEqual(len(requested), 4)
+        self.assertEqual(len(finished), 4)
+        self.assertEqual(
+            [event.data["status"] for event in finished],
+            ["succeeded", "failed", "failed", "failed"],
+        )
+        self.assertEqual(
+            [event.data.get("error_code") for event in finished[1:]],
+            ["duplicate_tool_call"] * 3,
+        )
+
+    async def test_omitted_and_explicit_defaults_share_prepared_fingerprint(self) -> None:
+        """省略与显式默认参数必须只执行一次同一 prepared Tool 语义。"""
+        target = self.paths.workspace / "defaults.txt"
+        target.write_text("hello\n", encoding="utf-8")
+        calls = (
+            ToolCall("call_omitted", "read_file", {"path": "defaults.txt"}),
+            ToolCall(
+                "call_explicit",
+                "read_file",
+                {"path": "defaults.txt", "offset": 1, "limit": 200},
+            ),
+        )
+        provider = FakeProvider(
+            tuple(response("", tool_calls=(call,)) for call in calls)
+        )
+        executor = self.executor(ReadFileTool())
+
+        with self.assertRaises(AgentNoProgressError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=4,
+                hard_max_iterations=6,
+                max_no_progress_iterations=1,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        with self.database.connect_read_only() as connection:
+            tool_runs = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool_runs, 1)
+
+    async def test_equivalent_workspace_paths_share_prepared_fingerprint(self) -> None:
+        """相对路径别名规范到同一 Workspace 目标后必须只执行一次。"""
+        target = self.paths.workspace / "same-path.txt"
+        target.write_text("hello\n", encoding="utf-8")
+        calls = (
+            ToolCall(
+                "call_plain",
+                "read_file",
+                {"path": "same-path.txt", "offset": 1, "limit": 200},
+            ),
+            ToolCall(
+                "call_alias",
+                "read_file",
+                {"path": "./same-path.txt", "offset": 1, "limit": 200},
+            ),
+        )
+        provider = FakeProvider(
+            tuple(response("", tool_calls=(call,)) for call in calls)
+        )
+        executor = self.executor(ReadFileTool())
+
+        with self.assertRaises(AgentNoProgressError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=4,
+                hard_max_iterations=6,
+                max_no_progress_iterations=1,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        with self.database.connect_read_only() as connection:
+            tool_runs = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool_runs, 1)
+
+    async def test_equivalent_command_programs_share_policy_normalized_fingerprint(
+        self,
+    ) -> None:
+        """命令名与同一 resolved executable 必须只执行一次规范命令。"""
+        resolved_program = shutil.which("pwd", path=SAFE_EXECUTABLE_PATH)
+        if resolved_program is None:
+            self.skipTest("pwd is unavailable in the fixed executable path")
+        executor = ToolExecutor(
+            ToolRegistry(
+                (RunCommandTool(executable_path=SAFE_EXECUTABLE_PATH),)
+            ),
+            PolicyEngine(
+                security="full",
+                ask="off",
+                executable_path=SAFE_EXECUTABLE_PATH,
+            ),
+            ToolRunRepository(self.database),
+        )
+        calls = (
+            ToolCall("call_name", "run_command", {"program": "pwd", "args": []}),
+            ToolCall(
+                "call_resolved",
+                "run_command",
+                {
+                    "program": resolved_program,
+                    "args": [],
+                    "timeout_seconds": 30,
+                },
+            ),
+        )
+        provider = FakeProvider(
+            tuple(response("", tool_calls=(call,)) for call in calls)
+        )
+
+        with self.assertRaises(AgentNoProgressError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=4,
+                hard_max_iterations=6,
+                max_no_progress_iterations=1,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        with self.database.connect_read_only() as connection:
+            tool_runs = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool_runs, 1)
 
     async def test_eighth_tool_response_stops_before_executing_more_side_effects(self) -> None:
         """hard 收口轮即使仍返回 Tool Call，也不能执行无法继续回传的动作。"""

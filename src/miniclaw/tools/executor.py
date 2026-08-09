@@ -2,7 +2,8 @@
 
 import asyncio
 import time
-from dataclasses import dataclass
+from copy import deepcopy
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -13,7 +14,7 @@ from miniclaw.policy.approvals import (
     available_approval_decisions,
 )
 from miniclaw.policy.command import NormalizedCommand
-from miniclaw.policy.engine import PolicyAction, PolicyEngine
+from miniclaw.policy.engine import PolicyAction, PolicyDecision, PolicyEngine
 from miniclaw.policy.network import NetworkRule, normalize_network_rule
 from miniclaw.providers.base import JsonValue, ToolCall
 from miniclaw.storage.tooling import (
@@ -33,6 +34,19 @@ class ToolExecution:
     model_text: str
     approval_id: int | None = None
     succeeded: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedToolCall:
+    """保存一次完成 Tool 校验与 Policy 规范化后的不可重解析执行计划。"""
+
+    call: ToolCall
+    _context: ToolContext = field(repr=False)
+    _tool: Tool | None = field(repr=False)
+    _decision: PolicyDecision | None = field(repr=False)
+    _model_text: str | None = field(repr=False)
+    _unstarted_status: str | None = field(repr=False)
+    _executor_token: object = field(repr=False)
 
 
 class ToolExecutor:
@@ -60,6 +74,7 @@ class ToolExecutor:
         self._approvals = approvals
         self._policy_rules = policy_rules
         self._approval_ttl_seconds = approval_ttl_seconds
+        self._prepare_token = object()
 
     @property
     def schemas(self) -> tuple[dict[str, JsonValue], ...]:
@@ -74,34 +89,106 @@ class ToolExecutor:
         on_event: RunEventHandler | None = None,
     ) -> ToolExecution:
         """按 get → validate → policy → start → execute → finish 执行。"""
+        prepared = self.prepare(context, call)
+        return await self.execute_prepared(context, prepared, on_event=on_event)
+
+    def prepare(self, context: ToolContext, call: ToolCall) -> PreparedToolCall:
+        """一次完成 Tool 参数校验与 Policy 规范化，返回绑定当前执行器的计划。
+
+        Args:
+            context: 不可由模型伪造的当前 Tool 运行边界。
+            call: Provider 返回的原始 Tool Call。
+
+        Returns:
+            携带规范参数、Policy 决策或稳定预检失败的执行计划。
+        """
         tool = self._registry.get(call.name)
         if tool is None:
-            return await _finish_unstarted(
-                context,
-                call,
-                ToolResult.failure(
+            return PreparedToolCall(
+                call=ToolCall(call.call_id, call.name, deepcopy(call.arguments)),
+                _context=context,
+                _tool=None,
+                _decision=None,
+                _model_text=ToolResult.failure(
                     "tool_not_found",
                     f"tool is not available: {call.name}",
                 ).to_model_text(call.name),
-                "rejected",
-                on_event,
+                _unstarted_status="rejected",
+                _executor_token=self._prepare_token,
             )
         try:
             arguments = tool.validate(call.arguments)
         except ToolValidationError as error:
-            return await _finish_unstarted(
-                context,
-                call,
-                ToolResult.failure(
+            return PreparedToolCall(
+                call=ToolCall(call.call_id, call.name, deepcopy(call.arguments)),
+                _context=context,
+                _tool=None,
+                _decision=None,
+                _model_text=ToolResult.failure(
                     "invalid_arguments",
                     str(error),
                 ).to_model_text(call.name),
-                "rejected",
-                on_event,
+                _unstarted_status="rejected",
+                _executor_token=self._prepare_token,
             )
 
         decision = self._policy.authorize(tool.definition, context, arguments)
-        arguments = decision.normalized_arguments or arguments
+        normalized_source = (
+            arguments
+            if decision.normalized_arguments is None
+            else decision.normalized_arguments
+        )
+        normalized_arguments = deepcopy(normalized_source)
+        return PreparedToolCall(
+            call=ToolCall(call.call_id, call.name, normalized_arguments),
+            _context=context,
+            _tool=tool,
+            _decision=decision,
+            _model_text=None,
+            _unstarted_status=None,
+            _executor_token=self._prepare_token,
+        )
+
+    async def execute_prepared(
+        self,
+        context: ToolContext,
+        prepared: PreparedToolCall,
+        *,
+        on_event: RunEventHandler | None = None,
+    ) -> ToolExecution:
+        """执行同一执行器和 ToolContext 生成的 prepared call，不再解析参数。
+
+        Args:
+            context: prepare 时绑定的同一个 Tool 运行边界。
+            prepared: 已完成参数与 Policy 规范化的执行计划。
+            on_event: 可选的结构化运行事件回调。
+
+        Returns:
+            模型可见结果、可选审批 ID 与成功标记。
+
+        Raises:
+            ValueError: prepared call 来自其他执行器或不同 ToolContext。
+            asyncio.CancelledError: Tool 执行被调用方取消。
+        """
+        if (
+            prepared._executor_token is not self._prepare_token
+            or prepared._context != context
+        ):
+            raise ValueError("prepared Tool call does not belong to this execution context")
+        call = prepared.call
+        if prepared._model_text is not None:
+            assert prepared._unstarted_status is not None
+            return await _finish_unstarted(
+                context,
+                call,
+                prepared._model_text,
+                prepared._unstarted_status,
+                on_event,
+            )
+        tool = prepared._tool
+        decision = prepared._decision
+        assert tool is not None and decision is not None
+        arguments = call.arguments
         if decision.action is not PolicyAction.ALLOW:
             if decision.action is PolicyAction.DENY:
                 self._runs.deny(context, call, arguments, decision.error_code)

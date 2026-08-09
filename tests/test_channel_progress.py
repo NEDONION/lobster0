@@ -116,6 +116,50 @@ class ProgressProjectorTest(unittest.TestCase):
                 self.assertIn(expected, progress.steps[-1].detail)
                 self.assertNotIn("secret", progress.steps[-1].detail)
 
+    def test_duplicate_tool_terminal_event_is_failed_and_safely_described(self) -> None:
+        """重复 Tool 的终态事件必须清除 pending，且只展示固定安全说明。"""
+        projector = ProgressProjector(clock=lambda: 1.0)
+        projector.apply(
+            RunEvent(
+                "model_usage",
+                1,
+                {"iteration": 2, "tool_calls": 2},
+            )
+        )
+        projector.apply(
+            RunEvent(
+                "tool_requested",
+                1,
+                {
+                    "call_id": "call_duplicate",
+                    "tool_name": "read_file",
+                    "arguments": {"path": "private-alias.txt"},
+                },
+            )
+        )
+        projector.apply(
+            RunEvent(
+                "tool_finished",
+                1,
+                {
+                    "call_id": "call_duplicate",
+                    "tool_name": "read_file",
+                    "status": "failed",
+                    "error_code": "duplicate_tool_call",
+                    "preview": "private duplicate payload",
+                },
+            )
+        )
+
+        progress = projector.finish(None, failed=True)
+
+        self.assertEqual(progress.steps[-1].status, "failed")
+        self.assertEqual(progress.steps[-1].detail, "重复 Tool 请求，已跳过执行")
+        self.assertEqual(progress.tool_calls, 2)
+        public = json.dumps(progress_to_metadata(progress), ensure_ascii=False)
+        self.assertNotIn("private duplicate payload", public)
+        self.assertNotIn("private-alias.txt", public)
+
     def test_steps_and_fields_are_bounded_and_control_characters_removed(self) -> None:
         """恶意长字段与大量调用不能放大卡片或注入控制字符。"""
         projector = ProgressProjector(clock=lambda: 1.0)

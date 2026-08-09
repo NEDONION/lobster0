@@ -112,7 +112,12 @@ class ProgressProjector:
         if event.kind == "tool_finished":
             raw_status = event.data.get("status")
             status: StepStatus = "succeeded" if raw_status == "succeeded" else "failed"
-            return self._set_tool_status(event.data, status)
+            detail = (
+                "重复 Tool 请求，已跳过执行"
+                if event.data.get("error_code") == "duplicate_tool_call"
+                else None
+            )
+            return self._set_tool_status(event.data, status, detail=detail)
         if event.kind == "approval_required":
             return self._set_latest_waiting()
         return event.kind in {"turn_started", "turn_finished", "turn_failed", "turn_cancelled"}
@@ -169,7 +174,13 @@ class ProgressProjector:
         self._bound_steps()
         return True
 
-    def _set_tool_status(self, data: dict[str, JsonValue], status: StepStatus) -> bool:
+    def _set_tool_status(
+        self,
+        data: dict[str, JsonValue],
+        status: StepStatus,
+        *,
+        detail: str | None = None,
+    ) -> bool:
         """按 call_id 更新步骤状态，忽略 preview 等原始 Tool 输出。"""
         call_id = data.get("call_id")
         if not isinstance(call_id, str):
@@ -179,7 +190,12 @@ class ProgressProjector:
             return False
         current = self._steps[position]
         duration = _optional_non_negative_int(data.get("duration_ms"))
-        self._steps[position] = replace(current, status=status, duration_ms=duration)
+        self._steps[position] = replace(
+            current,
+            status=status,
+            detail=current.detail if detail is None else detail,
+            duration_ms=duration,
+        )
         return True
 
     def _set_latest_waiting(self) -> bool:

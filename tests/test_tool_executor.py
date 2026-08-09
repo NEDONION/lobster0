@@ -144,6 +144,52 @@ class _InvalidResultTool(_BrokenTool):
         return ToolResult.success({"value": float("nan")})
 
 
+class _DefaultingTool(_EchoTool):
+    """补齐可选参数并记录 prepare/execute 次数的测试 Tool。"""
+
+    definition = ToolDefinition(
+        name="defaulting",
+        description="Default a limit.",
+        parameters={
+            "type": "object",
+            "properties": {
+                "text": {"type": "string"},
+                "limit": {"type": "integer"},
+            },
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self) -> None:
+        """初始化验证与执行计数。"""
+        self.validations = 0
+        self.executions = 0
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """校验文本并把省略的 limit 规范为 10。"""
+        self.validations += 1
+        if set(arguments) - {"text", "limit"} or not isinstance(
+            arguments.get("text"), str
+        ):
+            raise ToolValidationError("text must be a string")
+        limit = arguments.get("limit", 10)
+        if type(limit) is not int:
+            raise ToolValidationError("limit must be an integer")
+        return {"text": arguments["text"], "limit": limit}
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """记录执行并回显规范参数。"""
+        del context
+        self.executions += 1
+        return ToolResult.success(arguments)
+
+
 class _WorkspaceReadTool:
     """模拟只读文件 Tool 的路径参数与成功执行。"""
 
@@ -253,6 +299,29 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run["policy_action"], "allow")
         self.assertEqual(run["tool_name"], "echo")
         self.assertEqual([row[0] for row in events], ["tool.started", "tool.succeeded"])
+
+    async def test_prepared_call_is_normalized_once_and_executed_without_revalidation(
+        self,
+    ) -> None:
+        """prepare 的规范参数必须原样进入执行，不能二次 validate 产生 TOCTOU。"""
+        tool = _DefaultingTool()
+        executor = self.executor(tool)
+
+        prepared = executor.prepare(
+            self.context,
+            ToolCall("call_default", "defaulting", {"text": "hello"}),
+        )
+        outcome = await executor.execute_prepared(
+            self.context,
+            prepared,
+        )
+
+        self.assertEqual(
+            prepared.call.arguments,
+            {"text": "hello", "limit": 10},
+        )
+        self.assertEqual(json.loads(outcome.model_text)["data"]["limit"], 10)
+        self.assertEqual((tool.validations, tool.executions), (1, 1))
 
     async def test_unexpected_tool_error_is_redacted_and_persisted(self) -> None:
         """内部异常只能变成稳定错误码，原始文本不得泄露。"""

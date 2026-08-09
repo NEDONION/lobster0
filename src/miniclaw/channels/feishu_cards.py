@@ -249,7 +249,7 @@ def _metrics(progress: AgentProgress) -> str:
     """生成不含供应商标识或请求 ID 的公开运行指标。"""
     parts = [
         f"{len(progress.steps)} 步",
-        f"{progress.tool_calls} 个工具",
+        f"{progress.tool_calls} 次工具请求",
         f"{progress.iterations} 轮模型",
     ]
     if progress.duration_ms is not None:

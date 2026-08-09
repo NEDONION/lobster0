@@ -53,7 +53,7 @@ class FeishuAgentCardTest(unittest.TestCase):
         self.assertIn("Claw Trail", rendered)
         self.assertIn("查询飞书云空间", rendered)
         self.assertIn("你有 327 个飞书文档", rendered)
-        self.assertIn("2 步 · 1 个工具 · 2 轮模型", rendered)
+        self.assertIn("2 步 · 1 次工具请求 · 2 轮模型", rendered)
         self.assertLessEqual(len(rendered.encode("utf-8")), 20 * 1024)
         self.assertEqual(rendered_card.visible_answer_chars, len(progress.final_answer))
 

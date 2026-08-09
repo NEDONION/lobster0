@@ -23,7 +23,7 @@ from miniclaw.storage.tooling import StoredToolRun
 from miniclaw.tools.base import ToolContext
 
 if TYPE_CHECKING:
-    from miniclaw.tools.executor import ToolExecutor
+    from miniclaw.tools.executor import PreparedToolCall, ToolExecutor
 
 
 class AgentError(RuntimeError):
@@ -40,6 +40,28 @@ class AgentLoopLimitError(AgentError):
 
 class AgentNoProgressError(AgentError):
     """表示模型连续多轮没有产生新的成功 Tool 结果。"""
+
+    def __init__(self, *, no_progress_iterations: int, model_iteration: int) -> None:
+        """保存停止时连续无进展轮数和当前模型轮次。
+
+        Args:
+            no_progress_iterations: 已达到的连续无进展模型轮数。
+            model_iteration: 本次 Agent Run 的当前模型调用轮次。
+
+        Raises:
+            ValueError: 任一诊断轮次不是正整数。
+        """
+        if type(no_progress_iterations) is not int or no_progress_iterations <= 0:
+            raise ValueError("no_progress_iterations must be a positive integer")
+        if type(model_iteration) is not int or model_iteration <= 0:
+            raise ValueError("model_iteration must be a positive integer")
+        self.no_progress_iterations = no_progress_iterations
+        self.model_iteration = model_iteration
+        super().__init__(
+            "agent stopped after "
+            f"{no_progress_iterations} model rounds without a new successful tool result "
+            f"at model iteration {model_iteration}"
+        )
 
 
 class AgentRunStatus(StrEnum):
@@ -314,7 +336,13 @@ class AgentRunner:
                             },
                         ),
                     )
-                fingerprint = _tool_fingerprint(call)
+                prepared: PreparedToolCall | None = None
+                fingerprint_call = call
+                if self._executor is not None:
+                    assert tool_context is not None
+                    prepared = self._executor.prepare(tool_context, call)
+                    fingerprint_call = prepared.call
+                fingerprint = _tool_fingerprint(fingerprint_call)
                 if fingerprint in attempted_tool_fingerprints:
                     tool_message = ModelMessage(
                         role="tool",
@@ -330,12 +358,28 @@ class AgentRunner:
                         tool_call_id=call.call_id,
                     )
                     approval_id = None
+                    if tool_context is not None:
+                        await emit(
+                            on_event,
+                            RunEvent(
+                                "tool_finished",
+                                tool_context.turn_id,
+                                {
+                                    "call_id": call.call_id,
+                                    "tool_name": call.name,
+                                    "status": "failed",
+                                    "error_code": "duplicate_tool_call",
+                                    "preview": tool_message.content,
+                                },
+                            ),
+                        )
                 else:
                     attempted_tool_fingerprints.add(fingerprint)
                     tool_message, approval_id = await self._execute_tool(
                         call,
                         tool_context,
                         on_event,
+                        prepared,
                     )
                     batch_progressed = batch_progressed or _tool_succeeded(tool_message)
                 if approval_id is not None:
@@ -371,8 +415,8 @@ class AgentRunner:
                 consecutive_no_progress += 1
                 if consecutive_no_progress >= self._max_no_progress_iterations:
                     raise AgentNoProgressError(
-                        "agent stopped after consecutive model rounds without "
-                        "a new successful tool result"
+                        no_progress_iterations=consecutive_no_progress,
+                        model_iteration=iteration,
                     )
 
         raise AgentLoopLimitError("agent reached an unexpected loop state")
@@ -382,6 +426,7 @@ class AgentRunner:
         call: ToolCall,
         context: ToolContext | None,
         on_event: RunEventHandler | None,
+        prepared: PreparedToolCall | None = None,
     ) -> tuple[ModelMessage, int | None]:
         """执行已注册工具，或构造确定性未注册 Tool Result。"""
         if self._executor is None:
@@ -392,7 +437,12 @@ class AgentRunner:
             )
         else:
             assert context is not None
-            outcome = await self._executor.execute(context, call, on_event=on_event)
+            assert prepared is not None
+            outcome = await self._executor.execute_prepared(
+                context,
+                prepared,
+                on_event=on_event,
+            )
             result = outcome.model_text
             if outcome.approval_id is not None:
                 return (
