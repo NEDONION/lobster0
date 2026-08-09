@@ -1,10 +1,11 @@
 """Tool 参数校验、Policy、执行和持久化的唯一入口。"""
 
 import asyncio
+import json
 import time
-from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import Lock
 from urllib.parse import urlsplit
 
 from miniclaw.agent.events import RunEvent, RunEventHandler, emit
@@ -12,6 +13,7 @@ from miniclaw.policy.approvals import (
     ApprovalDecision,
     ApprovalError,
     available_approval_decisions,
+    canonical_arguments_json,
 )
 from miniclaw.policy.command import NormalizedCommand
 from miniclaw.policy.engine import PolicyAction, PolicyDecision, PolicyEngine
@@ -36,17 +38,49 @@ class ToolExecution:
     succeeded: bool = False
 
 
+class _PreparedConsumption:
+    """以线程锁原子记录 prepared plan 是否已经被消费。"""
+
+    def __init__(self) -> None:
+        """初始化尚未消费的单次执行状态。"""
+        self._lock = Lock()
+        self._consumed = False
+
+    def consume(self) -> bool:
+        """首次调用原子标记为已消费并返回 True，之后返回 False。"""
+        with self._lock:
+            if self._consumed:
+                return False
+            self._consumed = True
+            return True
+
+
 @dataclass(frozen=True, slots=True)
 class PreparedToolCall:
-    """保存一次完成 Tool 校验与 Policy 规范化后的不可重解析执行计划。"""
+    """保存参数快照不可变、只能消费一次的 Tool 执行计划。"""
 
-    call: ToolCall
+    _call_id: str
+    _tool_name: str
+    _arguments_json: str = field(repr=False)
     _context: ToolContext = field(repr=False)
     _tool: Tool | None = field(repr=False)
     _decision: PolicyDecision | None = field(repr=False)
     _model_text: str | None = field(repr=False)
     _unstarted_status: str | None = field(repr=False)
     _executor_token: object = field(repr=False)
+    _consumption: _PreparedConsumption = field(
+        default_factory=_PreparedConsumption,
+        repr=False,
+        compare=False,
+    )
+
+    @property
+    def call(self) -> ToolCall:
+        """从不可变 JSON 快照恢复一个外部可安全修改的独立 ToolCall 副本。"""
+        arguments = json.loads(self._arguments_json)
+        if not isinstance(arguments, dict):
+            raise RuntimeError("prepared Tool arguments snapshot is invalid")
+        return ToolCall(self._call_id, self._tool_name, arguments)
 
 
 class ToolExecutor:
@@ -105,7 +139,9 @@ class ToolExecutor:
         tool = self._registry.get(call.name)
         if tool is None:
             return PreparedToolCall(
-                call=ToolCall(call.call_id, call.name, deepcopy(call.arguments)),
+                _call_id=call.call_id,
+                _tool_name=call.name,
+                _arguments_json=canonical_arguments_json(call.arguments),
                 _context=context,
                 _tool=None,
                 _decision=None,
@@ -120,7 +156,9 @@ class ToolExecutor:
             arguments = tool.validate(call.arguments)
         except ToolValidationError as error:
             return PreparedToolCall(
-                call=ToolCall(call.call_id, call.name, deepcopy(call.arguments)),
+                _call_id=call.call_id,
+                _tool_name=call.name,
+                _arguments_json=canonical_arguments_json(call.arguments),
                 _context=context,
                 _tool=None,
                 _decision=None,
@@ -138,9 +176,10 @@ class ToolExecutor:
             if decision.normalized_arguments is None
             else decision.normalized_arguments
         )
-        normalized_arguments = deepcopy(normalized_source)
         return PreparedToolCall(
-            call=ToolCall(call.call_id, call.name, normalized_arguments),
+            _call_id=call.call_id,
+            _tool_name=call.name,
+            _arguments_json=canonical_arguments_json(normalized_source),
             _context=context,
             _tool=tool,
             _decision=decision,
@@ -172,9 +211,11 @@ class ToolExecutor:
         """
         if (
             prepared._executor_token is not self._prepare_token
-            or prepared._context != context
+            or prepared._context is not context
         ):
             raise ValueError("prepared Tool call does not belong to this execution context")
+        if not prepared._consumption.consume():
+            raise ValueError("prepared Tool call has already been consumed")
         call = prepared.call
         if prepared._model_text is not None:
             assert prepared._unstarted_status is not None
