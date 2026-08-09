@@ -5,7 +5,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.sandbox.base import ExecutionPlan, SandboxUnavailableError
+from miniclaw.sandbox.base import (
+    ExecutionPlan,
+    SandboxPlanError,
+    SandboxUnavailableError,
+)
+from miniclaw.sandbox.executables import capture_executable_chain
 from miniclaw.sandbox.seatbelt import SeatbeltSandbox
 from scripts import sandbox_live_smoke
 
@@ -94,6 +99,73 @@ class SeatbeltSandboxTest(unittest.IsolatedAsyncioTestCase):
             SandboxUnavailableError, "sandbox_backend_unavailable"
         ):
             await backend.execute(self.plan)
+
+    def test_v2_profile_allows_only_bound_literal_chain(self) -> None:
+        """v2 profile 必须逐项 literal 放行，不能扩大成 executable subpath。"""
+        interpreter = self.workspace / "interpreter"
+        interpreter.write_bytes(b"native-interpreter")
+        interpreter.chmod(0o700)
+        script = self.workspace / "script"
+        script.write_text(f"#!{interpreter}\n", encoding="utf-8")
+        script.chmod(0o700)
+        chain = capture_executable_chain(
+            script,
+            executable_path=str(self.workspace),
+        )
+        plan = ExecutionPlan(
+            argv=(str(script),),
+            cwd=self.workspace,
+            environment_names=("LANG",),
+            read_roots=(self.read_root,),
+            write_roots=(self.workspace,),
+            timeout_seconds=30,
+            memory_mib=256,
+            cpu_seconds=15,
+            pids_limit=64,
+            network_mode="none",
+            backend="seatbelt",
+            executables=chain,
+            schema_version=2,
+        )
+
+        profile = SeatbeltSandbox().build_profile(plan)
+
+        for ref in chain:
+            self.assertIn(f'(allow process-exec (literal "{ref.path}"))', profile)
+        self.assertNotIn("process-exec (subpath", profile)
+
+    async def test_changed_v2_ref_fails_before_sandbox_exec(self) -> None:
+        """执行前 hash 不一致必须稳定拒绝，不能启动 sandbox wrapper。"""
+        program = self.workspace / "program"
+        program.write_bytes(b"before")
+        program.chmod(0o700)
+        chain = capture_executable_chain(
+            program,
+            executable_path=str(self.workspace),
+        )
+        plan = ExecutionPlan(
+            argv=(str(program),),
+            cwd=self.workspace,
+            environment_names=("LANG",),
+            read_roots=(self.read_root,),
+            write_roots=(self.workspace,),
+            timeout_seconds=30,
+            memory_mib=256,
+            cpu_seconds=15,
+            pids_limit=64,
+            network_mode="none",
+            backend="seatbelt",
+            executables=chain,
+            schema_version=2,
+        )
+        program.write_bytes(b"after")
+        backend = SeatbeltSandbox(executable=str(program), platform="darwin")
+
+        with self.assertRaises(SandboxPlanError) as raised:
+            await backend.execute(plan)
+
+        self.assertEqual(raised.exception.code, "execution_plan_executable_changed")
+        self.assertNotIn(str(self.workspace), str(raised.exception))
 
 
 if __name__ == "__main__":

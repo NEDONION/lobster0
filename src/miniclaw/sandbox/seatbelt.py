@@ -13,6 +13,7 @@ from miniclaw.sandbox.base import (
     SandboxUnavailableError,
 )
 from miniclaw.sandbox.docker import _rebind_receipt
+from miniclaw.sandbox.executables import verify_executable_chain
 from miniclaw.sandbox.host import EnvironmentResolver, HostSandbox
 
 
@@ -52,17 +53,23 @@ class SeatbeltSandbox:
             raise SandboxPlanError("sandbox_backend_mismatch")
         if plan.network_mode != "none":
             raise ValueError("sandbox_network_unsupported")
+        if plan.schema_version == 2:
+            verify_executable_chain(plan.executables)
+            executable_paths = tuple(ref.path for ref in plan.executables)
+        else:
+            executable_paths = (Path(plan.argv[0]),)
         lines = [
             "(version 1)",
             "(deny default)",
             '(import "system.sb")',
             "(deny network*)",
             "(allow process-fork)",
-            f'(allow process-exec (literal "{_escape(plan.argv[0])}"))',
             '(allow file-read-metadata (literal "/"))',
             '(allow file-read* (subpath "/usr/lib"))',
             '(allow file-read* (subpath "/System/Library"))',
         ]
+        for path in executable_paths:
+            lines.append(f'(allow process-exec (literal "{_escape(str(path))}"))')
         for root in plan.read_roots:
             escaped = _escape(str(root))
             lines.append(
