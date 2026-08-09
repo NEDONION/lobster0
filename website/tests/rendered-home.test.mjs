@@ -13,6 +13,18 @@ test('renders the localized home routes with reciprocal language links', async (
   assert.match(en, /hreflang="zh-CN"/);
 });
 
+test('publishes production canonicals and a sitemap', async () => {
+  const [zh, en, sitemap] = await Promise.all([
+    html('index.html'),
+    html('en/index.html'),
+    html('sitemap-0.xml'),
+  ]);
+  assert.match(zh, /rel="canonical" href="https:\/\/miniclaw\.vercel\.app\/"/);
+  assert.match(en, /rel="canonical" href="https:\/\/miniclaw\.vercel\.app\/en\/"/);
+  assert.match(sitemap, /https:\/\/miniclaw\.vercel\.app\/docs\//);
+  assert.match(sitemap, /https:\/\/miniclaw\.vercel\.app\/en\/docs\//);
+});
+
 test('renders the real Claw Trace states and install command', async () => {
   const zh = await html('index.html');
   for (const step of [
@@ -34,8 +46,8 @@ test('shows evidence without overstating live acceptance', async () => {
   assert.match(zh, /33 条 versioned Channel cases/);
   assert.match(zh, /Implementation PASS 不等于 Live PASS/);
   assert.match(en, /Implementation PASS is not Live PASS/);
-  assert.match(zh, /miniclaw-tui-approval-warp\.png/);
-  assert.match(zh, /miniclaw-tui-external-cli-warp\.png/);
+  assert.match(zh, /miniclaw-tui-approval-warp\.webp/);
+  assert.match(zh, /miniclaw-tui-external-cli-warp\.webp/);
 });
 
 test('documents the isolated Vercel project settings', async () => {

@@ -17,9 +17,10 @@ const isChinese = locale === 'zh';
 const home = isChinese ? '/' : '/en/';
 const docs = isChinese ? '/docs/' : '/en/docs/';
 const alternateHome = isChinese ? '/en/' : '/';
-const canonicalBase = import.meta.env.PUBLIC_SITE_URL;
-const canonical = canonicalBase ? new URL(home, canonicalBase).toString() : undefined;
-const alternate = canonicalBase ? new URL(alternateHome, canonicalBase).toString() : alternateHome;
+const canonicalBase = import.meta.env.PUBLIC_SITE_URL ?? 'https://miniclaw.vercel.app';
+const canonical = new URL(home, canonicalBase).toString();
+const alternate = new URL(alternateHome, canonicalBase).toString();
+const defaultHome = new URL('/', canonicalBase).toString();
 ---
 
 <!doctype html>
@@ -36,9 +37,9 @@ const alternate = canonicalBase ? new URL(alternateHome, canonicalBase).toString
     <meta property="og:title" content={content.meta.title} />
     <meta property="og:description" content={content.meta.description} />
     <meta property="og:locale" content={isChinese ? 'zh_CN' : 'en_US'} />
-    {canonical && <link rel="canonical" href={canonical} />}
+    <link rel="canonical" href={canonical} />
     <link rel="alternate" hreflang={isChinese ? 'en' : 'zh-CN'} href={alternate} />
-    <link rel="alternate" hreflang="x-default" href={isChinese ? home : alternateHome} />
+    <link rel="alternate" hreflang="x-default" href={defaultHome} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
   <body>

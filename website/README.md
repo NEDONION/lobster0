@@ -37,4 +37,5 @@ npm test
 - Install Command: `npm ci`
 
 Astro 使用默认静态输出，不需要 Vercel adapter、Serverless Function、数据库或环境变量。绑定正式
-域名后，可以设置 `PUBLIC_SITE_URL` 生成 canonical URL；Preview 未设置时不会写入错误的 canonical。
+域名为 `https://miniclaw.vercel.app`，构建会生成 canonical URL 与 sitemap。若以后迁移到自定义
+域名，可设置 `PUBLIC_SITE_URL` 覆盖默认地址。
