@@ -29,21 +29,25 @@
 | 11 | v0.5.2 Stabilization | Feishu 单卡、恢复、direct lark-cli Skill | Implementation PASS；完整 Live Pending | [Release v0.5.2](../evals/releases/v0.5.2.md) |
 | 12 | mainline increment | Owner Autopilot 默认值与 Claw Trail Agent Card | Implementation PASS；Owner 范围受限 | [Autopilot 工程文档](phase-2/20260808_autopilot-permissions-and-approval-ui.md) |
 | 13 | v0.5.3 Core | SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner、异常 Tool 历史恢复 | 562 tests；Feishu/Discord 15/15 Pending | [Release v0.5.3](../evals/releases/v0.5.3.md) |
+| 14 | v0.6.0～v0.6.1 | Memory Autopilot A～E 与回调/续跑加固 | 671 tests；39/39 Agent；平台 Live 结论不变 | [Release v0.6.0](../evals/releases/v0.6.0.md) |
+| 15 | v0.7.0 | Phase 6 Task/Scheduler/Runner、Sandbox、Checkpoint/Rollback | 798 tests；15/15 Automation；Docker live verified | [Release v0.7.0](../evals/releases/v0.7.0.md) |
 
 ## 3. 当前主线
 
 ```mermaid
 flowchart LR
-    P53["v0.5.3 Live Evidence 收口"] --> MA["Memory A～E"]
-    MA --> P6["Phase 6 Automation + Sandbox"]
+    P53["v0.5.3 Live Evidence 收口"] --> MA["Memory A～E IMPLEMENTED"]
+    MA --> P6["Phase 6 IMPLEMENTED"]
     P6 --> P65["Phase 6.5 Browser Agent"]
     P65 --> P7["Phase 7 Controlled Evolution"]
     P7 --> P8["Phase 8 Skills + MCP + Provider"]
     P8 --> P9["Phase 9 Sub-agent + Multimodal"]
 ```
 
-v0.5.3 的本地 Core 已进入 `main`，但 Feishu/Discord 严格 15/15 Live Evidence 仍需单独收口。下一条功能
-实现主线是 Memory Autopilot A～E；完成后才进入 Phase 6 自治任务。
+Memory Autopilot A～E 与 Phase 6 已进入 `main`，当前本地状态为 **IMPLEMENTATION PASS**：798/798 Python、
+35/35 TypeScript、39/39 Agent、33/33 Channel、660/660 local Channel soak 与 15/15 Automation。Feishu 为
+**TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Docker 为 **LIVE VERIFIED**，Telegram/Discord/Seatbelt
+仍需独立收口。下一条功能主线是 **Phase 6.5 Browser Agent**。
 
 ## 4. 更新规则
 
