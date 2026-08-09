@@ -19,7 +19,7 @@
 1. 首屏同时回答 MiniClaw 是什么、为什么可信、下一步如何开始。
 2. 中文首页位于 `/`，完整英文首页位于 `/en/`。
 3. 中文文档位于 `/docs/`，英文文档位于 `/en/docs/`，对应页面可以互相切换。
-4. 安装命令来自一个共享事实文件，首页和文档不得各自维护不同版本。
+4. 安装命令来自 `website/src/content-data/` 中的共享事实文件，首页和文档不得各自维护不同版本。
 5. 首页使用真实产品截图和真实事件名称，不绘制不存在的 Web 控制台。
 6. 静态构建可由 Vercel 零后端部署；Preview 经过浏览器验证后才能作为交付结果。
 
@@ -66,7 +66,7 @@
 - Automation 默认关闭；本地 Implementation PASS 不等同于真实平台 Live PASS。
 - Secret 不进入 Prompt、普通日志或 Memory。
 
-易变化的数字集中保存在 `website/src/data/project-facts.json`，中文和英文展示从同一值生成。
+易变化的数字集中保存在 `website/src/content-data/project-facts.json`，中文和英文展示从同一值生成。
 
 ## 6. 视觉方向
 

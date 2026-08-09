@@ -1,0 +1,224 @@
+{
+  "zh": {
+    "meta": {
+      "lang": "zh-CN",
+      "title": "MiniClaw — 小而完整，真正能行动的个人 Agent",
+      "description": "一个可自托管、边界可控的个人 AI Agent：同一个本地 Core，通过 TUI、飞书、Telegram 和 Discord 安全行动。"
+    },
+    "nav": {
+      "product": "工作方式",
+      "safety": "安全边界",
+      "channels": "多入口",
+      "docs": "文档",
+      "github": "GitHub",
+      "language": "English"
+    },
+    "hero": {
+      "eyebrow": "PRIVATE AGENT / OPEN SOURCE",
+      "title": "小而完整，真正能行动。",
+      "lead": "MiniClaw 把 Agent、Policy、Approval、Tool 和 Memory 收进一个本地 Core。你可以从熟悉的入口发出请求，也始终知道它为什么行动、获准做了什么。",
+      "primaryCta": "5 分钟开始",
+      "secondaryCta": "查看 GitHub",
+      "installLabel": "从源码启动"
+    },
+    "trace": {
+      "eyebrow": "LIVE CLAW TRACE",
+      "title": "每一步，都留下边界。",
+      "description": "一次真实请求穿过运行时的顺序，而不是一张虚构的控制台。",
+      "steps": [
+        { "event": "MESSAGE_RECEIVED", "state": "accepted", "detail": "owner / tui" },
+        { "event": "AGENT_PLANNING", "state": "running", "detail": "intent → tool" },
+        { "event": "POLICY_CHECK", "state": "allowed", "detail": "workspace / argv" },
+        { "event": "APPROVAL", "state": "waiting", "detail": "exact arguments" },
+        { "event": "TOOL_EXECUTION", "state": "running", "detail": "isolated action" },
+        { "event": "RESULT_DELIVERED", "state": "succeeded", "detail": "same conversation" }
+      ]
+    },
+    "evidence": {
+      "eyebrow": "EVIDENCE, NOT PROMISES",
+      "title": "用仓库里的事实说话。",
+      "disclosure": "33 条 versioned Channel cases；15 条 versioned Automation cases。Implementation PASS 不等于 Live PASS。",
+      "labels": {
+        "runtime": "一个 Python Core",
+        "surfaces": "个使用入口",
+        "tools": "个内置 Tool",
+        "channels": "条 Channel cases",
+        "automations": "条 Automation cases"
+      }
+    },
+    "flow": {
+      "eyebrow": "FROM MESSAGE TO ACTION",
+      "title": "不是聊天框套壳，而是一条受控执行链。",
+      "lead": "模型负责理解意图，Policy 决定边界，Approval 绑定具体参数，Tool 才能真正执行。",
+      "steps": [
+        { "title": "理解", "body": "Agent 将自然语言转成清晰的工具意图。" },
+        { "title": "约束", "body": "Policy 同时检查 Workspace、命令和网络边界。" },
+        { "title": "确认", "body": "高风险动作展示 exact argv，审批不复用到别的参数。" },
+        { "title": "交付", "body": "结果回到原对话，并保留结构化执行记录。" }
+      ]
+    },
+    "surfaces": {
+      "eyebrow": "ONE RUNTIME, EVERY SURFACE",
+      "title": "四个入口，一个心智模型。",
+      "lead": "TUI、飞书、Telegram、Discord 共享 AgentRuntime；每个平台的 Transport、Delivery、队列与故障状态彼此隔离。",
+      "items": [
+        { "name": "TUI", "role": "本地主界面", "note": "完整控制、审批与可观察性" },
+        { "name": "Feishu", "role": "工作入口", "note": "会话身份与交付边界独立" },
+        { "name": "Telegram", "role": "移动入口", "note": "独立 Transport 与故障域" },
+        { "name": "Discord", "role": "社区入口", "note": "独立队列与运行期状态" }
+      ]
+    },
+    "safety": {
+      "eyebrow": "POWERFUL, WITH BOUNDARIES",
+      "title": "能力越强，边界越具体。",
+      "lead": "MiniClaw 不把“安全”写成一句口号。它把限制放在动作发生前。",
+      "items": [
+        { "title": "Workspace 边界", "body": "文件动作只在明确配置的 Workspace 中发生。" },
+        { "title": "Exact argv 审批", "body": "审批绑定程序与参数数组，不接受拼接命令字符串。" },
+        { "title": "网络与 Secret", "body": "HTTP 经过 SSRF 防护；Secret 不进入 Prompt、普通日志或 Memory。" },
+        { "title": "四档模式", "body": "SAFE、SMART、AUTOPILOT、YOLO 让授权强度显式可见。" }
+      ]
+    },
+    "memory": {
+      "eyebrow": "MEMORY THAT STAYS YOURS",
+      "title": "记住你，但不越过你。",
+      "lead": "Owner Memory 以 Markdown Truth 为长期事实源，以 SQLite 作为可重建的 control plane。跨渠道共享的前提始终是同一个 Owner。",
+      "truthLabel": "MARKDOWN TRUTH",
+      "truthBody": "可读、可审查、由所有者掌控。",
+      "projectionLabel": "SQLITE PROJECTION",
+      "projectionBody": "结构化索引可以重建，不反客为主。"
+    },
+    "workflows": {
+      "eyebrow": "REAL WORKFLOWS",
+      "title": "展示真实终端，不画不存在的产品。",
+      "items": [
+        { "title": "SAFE 模式审批", "body": "危险动作先展示影响与参数，再由 Owner 决定。", "alt": "MiniClaw TUI 中的 SAFE 模式工具审批界面" },
+        { "title": "Exact-argv 外部 CLI", "body": "程序与参数结构化传递，执行结果回到同一条会话。", "alt": "MiniClaw TUI 中执行 exact-argv 外部 CLI 的界面" }
+      ]
+    },
+    "quickStart": {
+      "eyebrow": "RUN IT YOURSELF",
+      "title": "从本地开始，五分钟看见第一条 Trace。",
+      "lead": "Python 3.12+；默认 pi-tui 需要 Node.js 22.19+。所有服务凭据由你自己保管。",
+      "docsCta": "阅读安装文档",
+      "contributeCta": "参与贡献"
+    },
+    "footer": {
+      "statement": "Small core. Explicit boundaries. Your machine.",
+      "source": "源代码",
+      "issues": "Issues",
+      "docs": "文档"
+    }
+  },
+  "en": {
+    "meta": {
+      "lang": "en",
+      "title": "MiniClaw — Small by design. Ready to act.",
+      "description": "A private, self-hosted personal AI agent: one local core acting safely through TUI, Feishu, Telegram, and Discord."
+    },
+    "nav": {
+      "product": "How it works",
+      "safety": "Boundaries",
+      "channels": "Surfaces",
+      "docs": "Docs",
+      "github": "GitHub",
+      "language": "简体中文"
+    },
+    "hero": {
+      "eyebrow": "PRIVATE AGENT / OPEN SOURCE",
+      "title": "Small by design. Ready to act.",
+      "lead": "MiniClaw brings Agent, Policy, Approval, Tools, and Memory into one local core. Ask from the surface you already use—and always see why it acts and what it was allowed to do.",
+      "primaryCta": "Start in 5 minutes",
+      "secondaryCta": "View on GitHub",
+      "installLabel": "Run from source"
+    },
+    "trace": {
+      "eyebrow": "LIVE CLAW TRACE",
+      "title": "Every action leaves a boundary.",
+      "description": "The real order a request crosses the runtime—not an invented dashboard.",
+      "steps": [
+        { "event": "MESSAGE_RECEIVED", "state": "accepted", "detail": "owner / tui" },
+        { "event": "AGENT_PLANNING", "state": "running", "detail": "intent → tool" },
+        { "event": "POLICY_CHECK", "state": "allowed", "detail": "workspace / argv" },
+        { "event": "APPROVAL", "state": "waiting", "detail": "exact arguments" },
+        { "event": "TOOL_EXECUTION", "state": "running", "detail": "isolated action" },
+        { "event": "RESULT_DELIVERED", "state": "succeeded", "detail": "same conversation" }
+      ]
+    },
+    "evidence": {
+      "eyebrow": "EVIDENCE, NOT PROMISES",
+      "title": "Let the repository do the talking.",
+      "disclosure": "33 versioned Channel cases; 15 versioned Automation cases. Implementation PASS is not Live PASS.",
+      "labels": {
+        "runtime": "one Python core",
+        "surfaces": "user surfaces",
+        "tools": "built-in tools",
+        "channels": "Channel cases",
+        "automations": "Automation cases"
+      }
+    },
+    "flow": {
+      "eyebrow": "FROM MESSAGE TO ACTION",
+      "title": "Not a chat wrapper. A controlled execution path.",
+      "lead": "The model understands intent. Policy sets the boundary. Approval binds exact arguments. Only then can a Tool act.",
+      "steps": [
+        { "title": "Understand", "body": "The Agent turns natural language into a clear tool intent." },
+        { "title": "Constrain", "body": "Policy checks workspace, command, and network boundaries together." },
+        { "title": "Confirm", "body": "Risky actions show exact argv; approval never transfers to different parameters." },
+        { "title": "Deliver", "body": "Results return to the original conversation with a structured execution record." }
+      ]
+    },
+    "surfaces": {
+      "eyebrow": "ONE RUNTIME, EVERY SURFACE",
+      "title": "Four surfaces. One mental model.",
+      "lead": "TUI, Feishu, Telegram, and Discord share one AgentRuntime. Each platform keeps its own transport, delivery, queue, and failure state.",
+      "items": [
+        { "name": "TUI", "role": "local primary", "note": "full control, approval, and observability" },
+        { "name": "Feishu", "role": "work surface", "note": "isolated conversation identity and delivery" },
+        { "name": "Telegram", "role": "mobile surface", "note": "independent transport and failure domain" },
+        { "name": "Discord", "role": "community surface", "note": "independent queue and runtime state" }
+      ]
+    },
+    "safety": {
+      "eyebrow": "POWERFUL, WITH BOUNDARIES",
+      "title": "More capability calls for sharper limits.",
+      "lead": "MiniClaw does not reduce safety to a slogan. It puts constraints before the action happens.",
+      "items": [
+        { "title": "Workspace boundary", "body": "File actions stay inside the explicitly configured workspace." },
+        { "title": "Exact argv approval", "body": "Approval binds a program and argument array, never a concatenated command string." },
+        { "title": "Network and secrets", "body": "HTTP is SSRF-guarded; secrets stay out of prompts, ordinary logs, and memory." },
+        { "title": "Four modes", "body": "SAFE, SMART, AUTOPILOT, and YOLO make authorization strength explicit." }
+      ]
+    },
+    "memory": {
+      "eyebrow": "MEMORY THAT STAYS YOURS",
+      "title": "It remembers you without crossing you.",
+      "lead": "Owner Memory keeps Markdown Truth as the long-term source of fact and SQLite as a rebuildable control plane. Cross-channel sharing only happens for the same Owner.",
+      "truthLabel": "MARKDOWN TRUTH",
+      "truthBody": "Readable, reviewable, and owner-controlled.",
+      "projectionLabel": "SQLITE PROJECTION",
+      "projectionBody": "A structured index that can be rebuilt, never the source of truth."
+    },
+    "workflows": {
+      "eyebrow": "REAL WORKFLOWS",
+      "title": "Real terminals, not a product that does not exist.",
+      "items": [
+        { "title": "SAFE mode approval", "body": "A risky action shows its impact and arguments before the Owner decides.", "alt": "Tool approval in the MiniClaw TUI SAFE mode" },
+        { "title": "Exact-argv external CLI", "body": "Program and arguments stay structured, and the result returns to the same conversation.", "alt": "Exact-argv external CLI execution in the MiniClaw TUI" }
+      ]
+    },
+    "quickStart": {
+      "eyebrow": "RUN IT YOURSELF",
+      "title": "Start local. See your first trace in five minutes.",
+      "lead": "Python 3.12+; the default pi-tui requires Node.js 22.19+. You keep every service credential.",
+      "docsCta": "Read the install guide",
+      "contributeCta": "Contribute"
+    },
+    "footer": {
+      "statement": "Small core. Explicit boundaries. Your machine.",
+      "source": "Source",
+      "issues": "Issues",
+      "docs": "Docs"
+    }
+  }
+}
