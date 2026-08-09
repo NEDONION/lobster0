@@ -36,6 +36,12 @@ export function localizedPath(locale: Locale, path: `/${string}`): string {
   return path === '/' ? '/en' : `/en${path}`;
 }
 
+export function normalizeFrameworkPathname(pathname: string): string {
+  if (pathname === '/zh-CN') return '/';
+  if (pathname.startsWith('/zh-CN/')) return pathname.slice('/zh-CN'.length);
+  return pathname;
+}
+
 export function formatLocalePath(locale: string, pathname: string): string {
   return pathname === '/' ? `/${locale}` : `/${locale}${pathname}`;
 }

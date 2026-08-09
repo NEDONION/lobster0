@@ -152,15 +152,15 @@ pre {
 .marketing-section {
   position: relative;
   display: grid;
-  min-height: 90svh;
+  min-height: 82svh;
   align-items: center;
   border-bottom: 1px solid var(--line);
-  padding-block: 88px;
+  padding-block: 56px;
 }
 
 .hero-shell {
   min-height: calc(100svh - 72px);
-  padding-block: 56px 40px;
+  padding-block: 40px 28px;
   background-image:
     radial-gradient(circle at 74% 20%, color-mix(in srgb, var(--signal) 9%, transparent), transparent 30%),
     linear-gradient(color-mix(in srgb, var(--line) 30%, transparent) 1px, transparent 1px),
@@ -195,7 +195,7 @@ pre {
   max-width: 880px;
   margin: 0;
   color: var(--ink);
-  font-size: clamp(3.2rem, 5.8vw, 5.7rem);
+  font-size: clamp(3.2rem, 5.2vw, 5.2rem);
   font-weight: 710;
   letter-spacing: -0.065em;
   line-height: 0.95;
@@ -321,12 +321,18 @@ pre {
   white-space: pre-wrap;
 }
 
+.hero-runtime__copy .command-copy pre {
+  max-height: 175px;
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+
 .command-copy code::first-line {
   color: var(--safe);
 }
 
 .claw-trace {
-  min-height: 566px;
+  min-height: 520px;
   grid-column: 7 / -1;
   border: 1px solid rgb(255 255 255 / 9%);
   border-radius: 26px;
@@ -405,7 +411,7 @@ pre {
 .claw-trace li {
   position: relative;
   display: grid;
-  min-height: 57px;
+  min-height: 52px;
   grid-template-columns: 20px 28px minmax(150px, 1.25fr) minmax(105px, 0.85fr) auto;
   align-items: center;
   border-top: 1px solid rgb(255 255 255 / 8%);
@@ -552,7 +558,7 @@ pre {
 }
 
 .section-frame h2 {
-  font-size: clamp(2.6rem, 5vw, 4.8rem);
+  font-size: clamp(2.6rem, 4.5vw, 4.25rem);
 }
 
 .capability-explorer {
@@ -573,7 +579,7 @@ pre {
 }
 
 .hash-tabs {
-  margin-top: 42px;
+  margin-top: 32px;
 }
 
 .hash-tabs__list {
@@ -587,7 +593,7 @@ pre {
 .hash-tabs__list button {
   position: relative;
   display: flex;
-  min-height: 58px;
+  min-height: 54px;
   align-items: center;
   justify-content: center;
   gap: 10px;
@@ -630,12 +636,12 @@ pre {
 }
 
 .hash-tabs > [role='tabpanel'] {
-  min-height: 460px;
+  min-height: 390px;
 }
 
 .capability-panel {
   display: grid;
-  min-height: 460px;
+  min-height: 390px;
   grid-template-columns: minmax(310px, 4fr) minmax(0, 8fr);
   border: 1px solid var(--line);
   border-top: 0;
@@ -648,7 +654,7 @@ pre {
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--line);
-  padding: 34px;
+  padding: 28px;
 }
 
 .capability-panel__copy > span,
@@ -997,6 +1003,7 @@ pre {
 
 .workbench {
   align-items: start;
+  padding-block: 40px;
   background:
     radial-gradient(circle at 86% 18%, color-mix(in srgb, var(--signal) 8%, transparent), transparent 24%),
     var(--surface);
@@ -1007,12 +1014,12 @@ pre {
 }
 
 .workbench .hash-tabs > [role='tabpanel'] {
-  min-height: 470px;
+  min-height: 420px;
 }
 
 .workflow-panel {
   display: grid;
-  min-height: 470px;
+  min-height: 420px;
   grid-template-columns: minmax(290px, 4fr) minmax(0, 8fr);
   border: 1px solid var(--line);
   border-top: 0;
@@ -1026,7 +1033,7 @@ pre {
   min-width: 0;
   flex-direction: column;
   border-right: 1px solid var(--line);
-  padding: 32px;
+  padding: 26px;
   background: var(--surface);
 }
 
@@ -1039,18 +1046,18 @@ pre {
 }
 
 .workflow-panel__copy h3 {
-  margin: 18px 0 0;
-  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  margin: 14px 0 0;
+  font-size: clamp(1.8rem, 2.7vw, 2.5rem);
   font-weight: 670;
   letter-spacing: -0.052em;
   line-height: 1.06;
 }
 
 .workflow-panel__copy > p {
-  margin: 18px 0 0;
+  margin: 14px 0 0;
   color: var(--muted);
   font-size: 0.92rem;
-  line-height: 1.62;
+  line-height: 1.5;
 }
 
 .workflow-panel__copy > dl {
@@ -1063,7 +1070,7 @@ pre {
   align-items: center;
   justify-content: space-between;
   border-top: 1px solid var(--line);
-  padding-block: 11px;
+  padding-block: 8px;
   gap: 16px;
 }
 
@@ -1251,7 +1258,7 @@ pre {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
   align-items: stretch;
-  margin-top: 24px;
+  margin-top: 18px;
   border: 1px solid var(--line);
   border-radius: 24px;
   background:
@@ -1261,7 +1268,7 @@ pre {
 }
 
 .quick-start-close__copy {
-  padding: 28px 30px;
+  padding: 22px 26px;
 }
 
 .quick-start-close__copy .section-kicker {
@@ -1270,7 +1277,7 @@ pre {
 
 .quick-start-close__copy h3 {
   margin: 0;
-  font-size: clamp(1.7rem, 3vw, 2.7rem);
+  font-size: clamp(1.7rem, 2.5vw, 2.2rem);
   letter-spacing: -0.05em;
   line-height: 1.04;
 }
@@ -1287,7 +1294,7 @@ pre {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-top: 16px;
+  margin-top: 12px;
 }
 
 .quick-start-close__requirements span {
@@ -1308,11 +1315,22 @@ pre {
 
 .quick-start-close > .command-copy {
   align-self: center;
-  margin: 18px;
+  margin: 14px;
 }
 
 .quick-start-close > .command-copy pre {
-  max-height: 132px;
+  max-height: 110px;
+}
+
+@media (min-width: 821px) {
+  .workflow-shot {
+    height: 370px;
+  }
+
+  .workflow-shot img {
+    height: 100%;
+    object-fit: contain;
+  }
 }
 
 .marketing-footer {
@@ -1321,7 +1339,7 @@ pre {
 
 .marketing-footer__inner {
   display: flex;
-  min-height: 112px;
+  min-height: 96px;
   align-items: center;
   justify-content: space-between;
   gap: 24px;

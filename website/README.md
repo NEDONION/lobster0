@@ -1,41 +1,59 @@
 # MiniClaw Website
 
-MiniClaw 的双语营销官网与用户文档。网站是独立的静态 Astro 项目，源码全部位于仓库根目录的
-`website/`，不会把 Node 依赖引入 Python Core。
+MiniClaw 的双语官网和用户文档，使用 Next.js 16 App Router、React 19 与 Fumadocs 构建。
+网站代码、内容、测试和部署配置全部位于仓库根目录的 `website/`，与 Python Core 保持依赖隔离。
+
+## Code map
+
+- `src/app/[lang]/`：中文和英文官网、Fumadocs 文档路由。
+- `src/components/marketing/`：三屏官网、Claw Trace、Capability Explorer 和 Workbench。
+- `content/docs/`：中英文 MDX 文档；英文文件使用 `.en.mdx` 后缀。
+- `src/content/site.ts`：双语营销文案与经过核实的项目事实。
+- `src/styles/globals.css`：官网与文档共享的浅色视觉系统。
+- `tests/e2e/`：桌面与移动端 Playwright journeys、搜索和链接门禁。
 
 ## Local development
 
+需要 Node.js 22.19 或更高版本。
+
 ```bash
 cd website
-npm install
+npm ci
 npm run dev
 ```
 
-交付前运行完整网站门禁：
+本地地址为 `http://localhost:3000`。交付前运行：
 
 ```bash
-npm run check
-npm run build
+npm run typecheck
+npm run lint
 npm test
+npm run build
+npm run test:e2e
 ```
 
-## Content and routes
+Playwright 在本地优先使用已安装的 Chrome；CI 需要先安装 Playwright Chromium。
 
-- 中文首页：`/`
-- 英文首页：`/en/`
-- 中文文档：`/docs/`
-- 英文文档：`/en/docs/`
-- 双语首页内容：`src/content-data/site-content.json`
-- 共享数字、链接与安装命令：`src/content-data/project-facts.json`
+## Routes
+
+- 中文官网：`/`
+- 英文官网：`/en`
+- 中文文档：`/docs`
+- 英文文档：`/en/docs`
+
+搜索接口位于 `/api/search`；`sitemap.xml`、`robots.txt` 和 Open Graph 图片由 Next.js Metadata
+文件约定生成。
 
 ## Vercel
 
-- Root Directory: `website`
-- Framework Preset: `Astro`
-- Build Command: `npm run build`
-- Output Directory: `dist`
-- Install Command: `npm ci`
+Vercel 项目使用以下配置：
 
-Astro 使用默认静态输出，不需要 Vercel adapter、Serverless Function、数据库或环境变量。绑定正式
-域名为 `https://miniclaw.vercel.app`，构建会生成 canonical URL 与 sitemap。若以后迁移到自定义
-域名，可设置 `PUBLIC_SITE_URL` 覆盖默认地址。
+- Root Directory：`website`
+- Framework Preset：`Next.js`
+- Install Command：`npm ci`
+- Build Command：`npm run build`
+- Output Directory：留空，由 Next.js 管理 `.next`
+- Production URL：`https://miniclaw.vercel.app`
+
+每次发布先创建 Vercel Preview，完成双语官网、文档、搜索、链接和移动端验证后，才能将同一个
+候选提交部署到 Production。Production 部署必须得到明确授权，不从本地未验证文件树直接覆盖。

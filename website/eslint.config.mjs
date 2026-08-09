@@ -6,10 +6,8 @@ export default defineConfig([
   ...nextVitals,
   ...nextTypeScript,
   globalIgnores([
-    '.astro/**',
     '.next/**',
     '.source/**',
-    'dist/**',
     'playwright-report/**',
     'test-results/**',
   ]),

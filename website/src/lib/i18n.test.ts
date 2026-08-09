@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { formatLocalePath, getLocale, isI18nBypassPath, localizedPath } from './i18n';
+import {
+  formatLocalePath,
+  getLocale,
+  isI18nBypassPath,
+  localizedPath,
+  normalizeFrameworkPathname,
+} from './i18n';
 
 describe('marketing locale helpers', () => {
   it('rejects unknown route locales', () => {
@@ -27,5 +33,11 @@ describe('marketing locale helpers', () => {
     expect(isI18nBypassPath('/opengraph-image')).toBe(true);
     expect(isI18nBypassPath('/favicon.svg')).toBe(true);
     expect(isI18nBypassPath('/docs')).toBe(false);
+  });
+
+  it('normalizes the hidden default locale for server and client hydration', () => {
+    expect(normalizeFrameworkPathname('/zh-CN')).toBe('/');
+    expect(normalizeFrameworkPathname('/zh-CN/docs/runtime')).toBe('/docs/runtime');
+    expect(normalizeFrameworkPathname('/en/docs/runtime')).toBe('/en/docs/runtime');
   });
 });
