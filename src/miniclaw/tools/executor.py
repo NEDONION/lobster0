@@ -387,7 +387,6 @@ class ToolExecutor:
                 prepared._model_text,
                 prepared._unstarted_status,
                 on_event,
-                result=prepared._unstarted_result,
             )
         tool = prepared._tool
         decision = prepared._decision

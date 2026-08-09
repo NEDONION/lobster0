@@ -561,6 +561,8 @@ class AgentRunner:
                         on_event,
                         prepared,
                     )
+                    if control_stop and executed_result is None:
+                        executed_result = prepared_result
                     executed_tool_calls += 1
                     batch_progressed = batch_progressed or _tool_succeeded(tool_message)
                 if (
