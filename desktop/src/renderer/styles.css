@@ -1,0 +1,324 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #1d2433;
+  background: #f7f8fa;
+  font-synthesis: none;
+  --canvas: #f7f8fa;
+  --surface: #ffffff;
+  --border: #e5e7eb;
+  --text-primary: #1d2433;
+  --text-secondary: #667085;
+  --accent: #2563eb;
+  --accent-soft: #eff6ff;
+  --success: #15803d;
+  --warning: #b45309;
+  --danger: #b42318;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  background: var(--canvas);
+}
+
+button {
+  font: inherit;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+.sidebar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+  padding: 54px 16px 18px;
+  border-right: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.brand-mark {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  color: white;
+  background: var(--text-primary);
+  font-size: 13px;
+}
+
+.navigation {
+  display: grid;
+  gap: 5px;
+}
+
+.nav-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 10px 11px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.nav-item::before {
+  position: absolute;
+  left: -16px;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: transparent;
+  content: "";
+}
+
+.nav-item:hover {
+  color: var(--text-primary);
+  background: #f2f4f7;
+}
+
+.nav-item[data-active="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 650;
+}
+
+.nav-item[data-active="true"]::before {
+  background: var(--accent);
+}
+
+.nav-mark {
+  width: 18px;
+  color: currentColor;
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  text-align: center;
+}
+
+.sidebar-status {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.sidebar-status strong {
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  color: var(--text-primary);
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.workspace {
+  min-width: 0;
+  padding: 56px clamp(28px, 6vw, 88px) 48px;
+}
+
+.workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+}
+
+.eyebrow,
+.local-badge {
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 0.11em;
+}
+
+.eyebrow {
+  color: var(--text-secondary);
+}
+
+.local-badge {
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: #1d4ed8;
+  background: var(--accent-soft);
+  letter-spacing: 0;
+}
+
+.intro {
+  max-width: 800px;
+  padding: clamp(48px, 9vh, 96px) 0 38px;
+}
+
+.intro h1 {
+  max-width: 720px;
+  margin: 0;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: clamp(36px, 5.2vw, 66px);
+  font-weight: 650;
+  letter-spacing: -0.055em;
+  line-height: 1.04;
+}
+
+.intro p {
+  max-width: 620px;
+  margin: 24px 0 0;
+  color: var(--text-secondary);
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.draft-card,
+.empty-panel,
+.workbench-preview {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface);
+  box-shadow: 0 12px 38px rgba(29, 36, 51, 0.05);
+}
+
+.draft-card {
+  max-width: 820px;
+  padding: 24px;
+}
+
+.draft-card > span,
+.workbench-preview span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.draft-card p {
+  margin: 12px 0 26px;
+  font-size: 18px;
+}
+
+.draft-line {
+  height: 42px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background: #fafbfc;
+}
+
+.workbench-preview {
+  display: grid;
+  grid-template-columns: 0.8fr 2fr 1fr;
+  min-height: 210px;
+  overflow: hidden;
+}
+
+.workbench-preview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px;
+  border-right: 1px solid var(--border);
+}
+
+.workbench-preview > div:last-child {
+  border-right: 0;
+}
+
+.workbench-preview strong {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.empty-panel {
+  display: flex;
+  min-height: 230px;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  color: var(--text-secondary);
+}
+
+.empty-index {
+  font-family: "Avenir Next", sans-serif;
+  font-size: 76px;
+  font-weight: 600;
+  color: #e9edf3;
+}
+
+@media (max-width: 920px) {
+  .app-shell {
+    grid-template-columns: 76px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    align-items: center;
+    padding-inline: 10px;
+  }
+
+  .brand > span:last-child,
+  .nav-item > span:last-child,
+  .sidebar-status > span:not(.pulse-dot),
+  .sidebar-status > strong {
+    display: none;
+  }
+
+  .nav-item {
+    justify-content: center;
+  }
+
+  .nav-item::before {
+    left: -10px;
+  }
+
+  .workbench-preview {
+    grid-template-columns: 1fr;
+  }
+
+  .workbench-preview > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .nav-item {
+    transition: color 120ms ease, background 120ms ease;
+  }
+}
