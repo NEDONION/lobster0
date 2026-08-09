@@ -456,8 +456,8 @@
         </article>
         <article class="phase done">
           <div class="phase-no">Phase 6</div>
-          <div><h3>自治运行与 Sandbox</h3><p>Task/Run Ledger、Scheduler、Heartbeat、Budget、E-stop、主动投递、Docker/Seatbelt、Checkpoint/rollback 与 15-case gate 已实现；Docker live verified，Seatbelt pending。</p></div>
-          <span class="pill">CODE PASS · DOCKER LIVE</span>
+          <div><h3>自治运行与 Sandbox</h3><p>Task/Run Ledger、Scheduler、Heartbeat、Budget、E-stop、主动投递、Docker/Seatbelt、Checkpoint/rollback 与 15-case gate 已实现；PROD-A/B 验收工具已实现，严格飞书 25-case 和精确 24 小时 soak 尚未完成。</p></div>
+          <span class="pill">CODE PASS · PROD LIVE PENDING</span>
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 6.5</div>
@@ -466,8 +466,8 @@
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 7</div>
-          <div><h3>受控进化与高级 Reflection</h3><p>Feedback、Memory Reflection、Agent Case/Skill Proposal、全量评测、人工应用和回滚。</p></div>
-          <span class="pill">PLANNED</span>
+          <div><h3>Controlled Evolution</h3><p>详细工程落地方案已发布：Feedback、受限 Prompt/Skill/Memory Proposal、全量评测、Owner 审批、原子应用和回滚；代码尚未实现。</p></div>
+          <span class="pill">ENGINEERING PLAN · NOT IMPLEMENTED</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 8</div>
@@ -601,6 +601,7 @@
         <div class="decision"><code>approval</code><p>审批框固定头尾、只滚动参数；Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
         <div class="decision"><code>scope</code><p>pi-tui、Personal Machine、Memory、Skills、Approval、三平台 Channel、Phase 6 Autonomy/Sandbox 与 Phase 6.5 Browser 已完成；下一主线是 Phase 7。</p></div>
+        <div class="decision"><code>phase 7</code><p><a href="../engineering/phase-7/20260810_controlled-evolution.md">Controlled Evolution 工程落地方案</a>已发布；当前仅是 ENGINEERING PLAN / NOT IMPLEMENTED，不代表自我进化代码已经存在。</p></div>
         <div class="decision"><code>live truth</code><p>Browser CONTROLLED LIVE SMOKE PENDING · Feishu TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING · Telegram live pending · Discord live pending · 本地 Chrome、fixture 和 soak 不冒充 Live Gate。</p></div>
         <div class="decision"><code>lark-cli</code><p>Channel 负责收发消息；业务查询由 Skill 生成 lark-cli argv 并经过 run_command / Policy / Approval。私有标题和 URL 进入模型前必须得到 Owner 授权。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/c5f5e5b">c5f5e5b Worker + provenance</a> · <a href="https://github.com/NEDONION/mini-claw/commit/cc31b74">cc31b74 Artifact CAS</a> · <a href="https://github.com/NEDONION/mini-claw/commit/3cf3fe7">3cf3fe7 Browser gate</a></p></div>

@@ -169,6 +169,31 @@ class Phase6DocumentationTest(unittest.TestCase):
         self.assertIn("--suite browser --repeat 20", content)
         self.assertIn("scripts/validate_docs.py", content)
 
+    def test_phase7_landing_is_detailed_and_explicitly_not_implemented(self) -> None:
+        """Phase 7 入口必须可达、可施工，并且不能冒充当前功能。"""
+        relative = "phase-7/20260810_controlled-evolution.md"
+        path = PROJECT_ROOT / "docs/engineering" / relative
+        self.assertTrue(path.is_file())
+        content = path.read_text(encoding="utf-8")
+        self.assertIn("ENGINEERING PLAN / NOT IMPLEMENTED", content)
+        self.assertGreaterEqual(content.count("```mermaid"), 5)
+        for heading in (
+            "SQLite v7 设计",
+            "Proposal 状态机",
+            "Eval Gate",
+            "Atomic Apply、Crash Recovery 与 Rollback",
+            "分 Task 实施顺序",
+            "Definition of Done",
+        ):
+            self.assertIn(heading, content)
+        engineering = (PROJECT_ROOT / "docs/engineering/README.md").read_text(
+            encoding="utf-8"
+        )
+        progress = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
+        self.assertIn(relative, engineering)
+        self.assertIn("../engineering/phase-7/20260810_controlled-evolution.md", progress)
+        self.assertIn("ENGINEERING PLAN · NOT IMPLEMENTED", progress)
+
     def test_documentation_validator_passes_repository(self) -> None:
         """内部链接、Mermaid fence、HTML 与事实扫描由一个可复现脚本校验。"""
         result = subprocess.run(
