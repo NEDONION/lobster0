@@ -66,7 +66,7 @@ class CliTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "0"):
                 main(["--version"])
 
-        self.assertIn("miniclaw 0.1.0", output.getvalue())
+        self.assertIn("miniclaw 0.7.0", output.getvalue())
 
     def test_help_lists_tui_gateway_and_maintenance_commands(self) -> None:
         """帮助包含唯一 TUI、gateway 和维护命令，不恢复 chat/approval 分叉。"""
