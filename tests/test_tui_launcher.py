@@ -8,7 +8,12 @@ from pathlib import Path
 from unittest import mock
 
 from miniclaw.paths import build_state_paths
-from miniclaw.tui_launcher import PiTuiInspection, TuiLaunchError, run_default_tui
+from miniclaw.tui_launcher import (
+    PiTuiInspection,
+    TuiLaunchError,
+    is_supported_node_version,
+    run_default_tui,
+)
 
 
 class TuiLauncherTest(unittest.TestCase):
@@ -24,6 +29,22 @@ class TuiLauncherTest(unittest.TestCase):
         """为只测试 launcher 分支的用例创建最小状态标记。"""
         self.paths.config.write_text("[agent]\n", encoding="utf-8")
 
+    def test_launcher_accepts_only_validated_lts_ranges(self) -> None:
+        """Node 22/24 仅接受已完成门禁的精确 LTS 区间。"""
+        for version in ((22, 22, 3), (22, 99, 0), (24, 15, 0), (24, 18, 0)):
+            with self.subTest(version=version):
+                self.assertTrue(is_supported_node_version(version))
+        for version in (
+            (20, 99, 0),
+            (22, 22, 2),
+            (23, 0, 0),
+            (24, 14, 99),
+            (25, 0, 0),
+            (26, 0, 0),
+        ):
+            with self.subTest(version=version):
+                self.assertFalse(is_supported_node_version(version))
+
     @mock.patch("miniclaw.tui_launcher.subprocess.run")
     @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
     def test_auto_launches_compatible_built_pi_tui_with_argv(
@@ -36,14 +57,18 @@ class TuiLauncherTest(unittest.TestCase):
         self._mark_initialized()
         inspect_pi_tui.return_value = PiTuiInspection(
             node=Path("/opt/node/bin/node"),
-            node_version=(22, 19, 0),
+            node_version=(22, 22, 3),
             entry=entry,
             problem=None,
         )
         run.return_value = mock.Mock(returncode=0)
         stderr = io.StringIO()
 
-        result = run_default_tui(self.paths, environ={}, stderr=stderr)
+        result = run_default_tui(
+            self.paths,
+            environ={"NODE_OPTIONS": "--require=/tmp/inject.js", "NODE_PATH": "/tmp/global"},
+            stderr=stderr,
+        )
 
         self.assertEqual(result, 0)
         self.assertEqual(stderr.getvalue(), "")
@@ -53,6 +78,10 @@ class TuiLauncherTest(unittest.TestCase):
         child_env = run.call_args.kwargs["env"]
         self.assertEqual(child_env["MINICLAW_HOME"], str(self.paths.home))
         self.assertEqual(child_env["MINICLAW_PYTHON"], sys.executable)
+        self.assertEqual(child_env["MINICLAW_NODE"], "/opt/node/bin/node")
+        self.assertEqual(child_env["MINICLAW_TUI_ENTRY"], str(entry))
+        self.assertNotIn("NODE_OPTIONS", child_env)
+        self.assertNotIn("NODE_PATH", child_env)
 
     @mock.patch("miniclaw.tui_launcher.run_tui", return_value=7)
     @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
@@ -107,12 +136,12 @@ class TuiLauncherTest(unittest.TestCase):
         inspect_pi_tui,
         run_tui,
     ) -> None:
-        """Auto 缺少 Node 22 时应给出一次行动提示并保持现有 TUI 可用。"""
+        """Auto 缺少受支持 Node 时应给出一次行动提示并保持现有 TUI 可用。"""
         inspect_pi_tui.return_value = PiTuiInspection(
             node=Path("/usr/local/bin/node"),
             node_version=(20, 19, 0),
             entry=None,
-            problem="pi-tui 需要 Node.js >= 22.19.0；当前为 20.19.0",
+            problem="pi-tui 需要 Node.js 22.22.3+ 或 24.15.0+；当前为 20.19.0",
         )
         stderr = io.StringIO()
         self._mark_initialized()
@@ -121,7 +150,7 @@ class TuiLauncherTest(unittest.TestCase):
 
         self.assertEqual(result, 0)
         self.assertIn("回退 Textual", stderr.getvalue())
-        self.assertIn("22.19.0", stderr.getvalue())
+        self.assertIn("22.22.3", stderr.getvalue())
         run_tui.assert_called_once_with(self.paths)
 
     @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")

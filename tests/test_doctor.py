@@ -39,7 +39,7 @@ class DoctorTest(unittest.TestCase):
         self.paths = build_state_paths(self.root)
         self.node = self.paths.home / "test-node"
         self.node.parent.mkdir(parents=True, exist_ok=True)
-        self.node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+        self.node.write_text("#!/bin/sh\nprintf 'v22.22.3\\n'\n", encoding="utf-8")
         self.node.chmod(0o700)
         self.tui_entry = self.paths.home / "main.js"
         self.tui_entry.write_text("// test entry\n", encoding="utf-8")
@@ -237,7 +237,8 @@ class DoctorTest(unittest.TestCase):
         node = next(result for result in results if result.name == "node")
         build = next(result for result in results if result.name == "pi_tui")
         self.assertIs(node.status, CheckStatus.FAIL)
-        self.assertIn("22.19.0", node.message)
+        self.assertIn("22.22.3", node.message)
+        self.assertIn("24.15.0", node.message)
         self.assertIs(build.status, CheckStatus.FAIL)
 
     def test_corrupt_config_fails_without_exposing_file_contents(self) -> None:

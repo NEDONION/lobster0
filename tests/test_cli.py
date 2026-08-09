@@ -313,7 +313,7 @@ class CliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run_cli(["init", "--home", directory])
             node = Path(directory) / "test-node"
-            node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+            node.write_text("#!/bin/sh\nprintf 'v22.22.3\\n'\n", encoding="utf-8")
             node.chmod(0o700)
             entry = Path(directory) / "main.js"
             entry.write_text("// test entry\n", encoding="utf-8")
@@ -366,7 +366,7 @@ class CliTest(unittest.TestCase):
             )
             dotenv.chmod(0o600)
             node = root / "test-node"
-            node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+            node.write_text("#!/bin/sh\nprintf 'v22.22.3\\n'\n", encoding="utf-8")
             node.chmod(0o700)
             entry = root / "main.js"
             entry.write_text("// test entry\n", encoding="utf-8")
@@ -413,7 +413,7 @@ class CliTest(unittest.TestCase):
             )
             dotenv.chmod(0o600)
             node = root / "test-node"
-            node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+            node.write_text("#!/bin/sh\nprintf 'v22.22.3\\n'\n", encoding="utf-8")
             node.chmod(0o700)
             entry = root / "main.js"
             entry.write_text("// test entry\n", encoding="utf-8")
