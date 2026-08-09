@@ -29,11 +29,13 @@
 | Phase 3 | Memory、Skills、Compaction | v0.3.0、v0.6.0 | Memory Autopilot `IMPLEMENTATION PASS` | [Memory Autopilot 工程实现](phase-5/20260809_memory-autopilot.md) |
 | Phase 4 | Feishu Channel | v0.4.0；后续由 v0.5.1～v0.5.3 加固 | `IMPLEMENTATION PASS`；Owner DM verified；15-case pending | [飞书 Channel Core](phase-4/20260808_feishu-channel-core.md) |
 | Phase 5 | Telegram / Discord Channel | v0.5.0 | `IMPLEMENTATION PASS / LIVE PENDING` | [Telegram 与 Discord](phase-5/20260808_telegram-discord-channels.md) |
+| Phase 6 | Autonomy、Sandbox、Checkpoint | v0.7.0 | `IMPLEMENTATION PASS / DOCKER LIVE VERIFIED / SEATBELT LIVE PENDING` | [Autonomy Runtime](phase-6/20260809_autonomy-runtime.md) |
 
-当前全仓本地基线是 671/671 Python、35/35 TypeScript、39/39 Agent、32/32 Channel 和 20 轮
-640/640 local soak。Feishu 为 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram、Discord
-均为 **LIVE PENDING**。v0.5.3 的 SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner 与异常
-Tool 历史恢复以及 Memory Autopilot A～E 已经合并；真实 Feishu/Discord 15/15 仍未完成。
+当前全仓本地基线是 798/798 Python、35/35 TypeScript、39/39 Agent、33/33 Channel、20 轮
+660/660 local Channel soak 和 15/15 Automation。状态为 **IMPLEMENTATION PASS**；Feishu 为
+**TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**，Telegram、Discord 均为 **LIVE PENDING**，
+Docker 为 **LIVE VERIFIED**，Seatbelt 为 **LIVE PENDING**。v0.5.3 Core、Memory Autopilot A～E 与 Phase 6
+已经合并；真实 Feishu/Discord 15/15 和 Seatbelt live probe 仍未完成。
 Memory 上线前的 v0.5.3 历史基线为 562 Python、30 TypeScript 和 29/29 Agent，不代表当前门禁数字。
 
 > Phase 3 的 legacy Memory/Skills/Compaction 继续兼容；分级自动记忆、跨 Session 检索与周期 Flush 已由
@@ -122,6 +124,19 @@ WebSocket ready 与 Owner 私聊 Delivery 已验证；完整 15-case、长期 so
 架构 Phase 5 与 Memory Autopilot A～E 已达到 **IMPLEMENTATION PASS**；Telegram/Discord 真实账号
 验收仍为 **LIVE PENDING**。
 
+## Phase 6：Autonomy、Sandbox 与 Checkpoint
+
+| 文档 | 内容 | 当前状态 |
+| --- | --- | --- |
+| [Autonomy Runtime](phase-6/20260809_autonomy-runtime.md) | Task/Run Ledger、Scheduler、Runner、Heartbeat、Budget、E-stop、Approval continuation 与主动 Delivery。 | **IMPLEMENTATION PASS** |
+| [Sandbox 与 Checkpoint](phase-6/20260809_sandbox-and-checkpoint.md) | immutable Plan、Approval hash、Docker/Seatbelt、Checkpoint CAS 与 Rollback。 | **IMPLEMENTATION PASS / DOCKER LIVE VERIFIED / SEATBELT LIVE PENDING** |
+| [v0.7.0 Release Record](../evals/releases/v0.7.0.md) | 798/798、35/35、39/39、33/33、660/660 与 Automation 15/15 的复现边界。 | CURRENT |
+| [已确认设计](../superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md) | 产品语义、安全边界与非目标。 | APPROVED DESIGN / IMPLEMENTED |
+| [TDD 实施计划](../superpowers/plans/2026-08-09-phase-6-autonomy-sandbox.md) | 逐项 RED→GREEN 文件、接口与门禁。 | IMPLEMENTED；保留施工记录 |
+
+Automation 与 Heartbeat 默认关闭；Heartbeat 当前没有 Owner IM route，Checkpoint 只覆盖主 Workspace，Rollback
+没有 CLI/TUI。Phase 6.5 Browser Agent 仍为 **PLANNED / NOT IMPLEMENTED**。
+
 ## v0.5.x Stabilization：真实运行与证据收口
 
 这些工作发生在架构 Phase 5 之后，主要加固 Feishu 和 Live Gate，不是新的架构 Phase。
@@ -132,6 +147,7 @@ WebSocket ready 与 Owner 私聊 Delivery 已验证；完整 15-case、长期 so
 | v0.5.2 | [飞书 Gateway 与 macOS 常驻](phase-5/20260808_feishu-gateway-runtime-and-macos-service.md)、[单卡片与 lark-cli](phase-5/20260809_feishu-single-card-and-lark-cli.md) | Core hardening implemented；严格 live evidence pending。 |
 | v0.5.3 Core | [Live Gate 设计](../superpowers/specs/2026-08-09-phase-5-3-feishu-discord-live-gate-design.md)、[实施计划](../superpowers/plans/2026-08-09-phase-5-3-feishu-discord-live-gate.md)、[Release Record](../evals/releases/v0.5.3.md) | SDK 脱敏、lease/provenance、受管 runner 已实现；Feishu/Discord 15/15 pending。 |
 | v0.6.0 | [Memory 工程实现](phase-5/20260809_memory-autopilot.md)、[Release Record](../evals/releases/v0.6.0.md) | Memory Autopilot A～E 已实现；真实 IM 结论沿用各平台 gate。 |
+| v0.7.0 | [Autonomy Runtime](phase-6/20260809_autonomy-runtime.md)、[Sandbox 与 Checkpoint](phase-6/20260809_sandbox-and-checkpoint.md)、[Release Record](../evals/releases/v0.7.0.md) | Phase 6 本地门禁完成；Live containment pending。 |
 
 ## 后续路线（规划）
 
@@ -139,8 +155,6 @@ WebSocket ready 与 Owner 私聊 Delivery 已验证；完整 15-case、长期 so
 | --- | --- | --- |
 | [OpenClaw / Hermes Gap](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | Phase 5.3 收口后到 Phase 9 的优先级和非目标。 | 路线已确认；未交付部分不能写成当前能力。 |
 | [能力对齐工程总方案](20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Service、Automation、Sandbox、Browser、Evolution、Memory、Skills、MCP、Provider、Sub-agent、Media。 | `APPROVED ROADMAP`。 |
-| [Phase 6 已确认设计](../superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md) | Durable Task Ledger、Scheduler、Heartbeat、Budget、Docker/Seatbelt、Checkpoint。 | `APPROVED DESIGN / IMPLEMENTATION PENDING`；Phase 6.5 Browser 不在本轮。 |
-| [Phase 6 当前实施计划](../superpowers/plans/2026-08-09-phase-6-autonomy-sandbox.md) | Phase 5.3 Evidence 收口；Scheduler、Task Ledger、Heartbeat、Budget、Sandbox、Checkpoint 的逐项 TDD 落地。 | `APPROVED PLAN / IMPLEMENTATION PENDING`；发布目标 v0.7.0。 |
 | [Phase 6.5 计划](../superpowers/plans/2026-08-08-phase-6-5-browser-agent.md) | Browser Profile、snapshot/ref、Policy、Artifact。 | 依赖 Phase 6 Sandbox。 |
 | [Phase 7 计划](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md) | Feedback、Proposal、Eval、Apply/Rollback。 | 依赖 Memory A～E 与 Phase 6。 |
 | [Phase 8 计划](../superpowers/plans/2026-08-08-phase-8-skills-mcp-provider-resilience.md) | Skill trust、MCP、Provider fallback、预算。 | 依赖 Phase 7。 |

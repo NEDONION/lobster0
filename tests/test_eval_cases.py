@@ -461,7 +461,7 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
         memory = [case for case in active if case.memory_fixture is not None]
         self.assertEqual(len(memory), 10)
         self.assertTrue(all(case.expected.memory_evidence for case in memory))
-        self.assertEqual(len(channel), 32)
+        self.assertEqual(len(channel), 33)
         self.assertTrue(all(case.channel_fixture for case in channel))
         self.assertEqual(len({case.id for case in cases}), len(cases))
 

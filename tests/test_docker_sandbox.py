@@ -51,8 +51,34 @@ class DockerSandboxTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(argv[boundary + 1], self.image)
         self.assertEqual(argv[-len(self.plan.argv) :], self.plan.argv)
         self.assertIn(
+            f"type=bind,src={self.workspace},dst=/workspace",
+            argv,
+        )
+        self.assertNotIn(
             f"type=bind,src={self.workspace},dst=/workspace,rw",
             argv,
+        )
+
+        read_only = ExecutionPlan(
+            argv=self.plan.argv,
+            cwd=self.plan.cwd,
+            environment_names=self.plan.environment_names,
+            read_roots=(self.workspace,),
+            write_roots=(),
+            timeout_seconds=self.plan.timeout_seconds,
+            memory_mib=self.plan.memory_mib,
+            cpu_seconds=self.plan.cpu_seconds,
+            pids_limit=self.plan.pids_limit,
+            network_mode="none",
+            backend="docker",
+        )
+        read_argv = DockerSandbox(
+            image=self.image,
+            docker_executable="/usr/bin/docker",
+        ).build_argv(read_only)
+        self.assertIn(
+            f"type=bind,src={self.workspace},dst=/workspace,readonly",
+            read_argv,
         )
 
     def test_image_and_plan_constraints_fail_closed(self) -> None:

@@ -9,7 +9,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Node.js 22.19+](https://img.shields.io/badge/Node.js-22.19%2B-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
 [![Version](https://img.shields.io/badge/package-v0.1.0-8B5CF6)](pyproject.toml)
-[![Phase 5](https://img.shields.io/badge/Phase%205-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
+[![Phase 6](https://img.shields.io/badge/Phase%206-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
 [为什么是 MiniClaw](#为什么是-miniclaw) · [当前能力](#当前能力) · [快速开始](#快速开始) · [产品预览](#产品预览) · [架构](#工作原理) · [路线图](#路线图) · [文档](#文档)
@@ -31,6 +31,9 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 > 缺少 `tools.mode` 的配置默认使用 `autopilot`，但只对本地入口和经过验证的 Owner 私聊生效；硬安全边界不变。
 > Memory Autopilot A～E 已完成本地实现：四入口共享一个 Owner Memory Space，Markdown 保存语义真相，SQLite
 > 保存 durable buffer、来源、治理和可重建 FTS5 Projection；真实 IM 平台能力仍只按各自 Live evidence 标记。
+> Phase 6 自治运行与安全链路已完成本地实现：durable Task/Scheduler/Runner、E-stop、预算、Approval continuation、
+> 主动 Delivery、Docker/Seatbelt ExecutionPlan、Checkpoint/Rollback 和 15 条 Automation gate 已接通；Automation
+> 默认关闭；Docker 真实 containment 已验证，Seatbelt 因 Python Framework launcher 尚未进入 Plan 而保持 Live Pending。
 
 ## 为什么是 MiniClaw
 
@@ -55,7 +58,9 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 | 安全 | Workspace Guard、敏感路径硬拒绝、exact argv、最小子进程环境、HTTPS/DNS/SSRF 校验、参数绑定 Approval。 |
 | Channel | Feishu 用单张 `Claw Trail` Agent Card 展示脱敏步骤和最终回答；审批点击在原卡先显示处理中，再以成功、拒绝或失败终态收口；三平台各自独立 Transport/Delivery/Manager/queue/recovery，共享 Agent Runtime。 |
 | 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel/Memory control plane；owner-only Markdown Truth 与 Skills。 |
-| 运维 | `init`、23 项 `doctor`、`gateway`、Memory rebuild、结构化脱敏日志、幂等恢复与版本化 Eval。 |
+| Automation | one-shot/interval/cron、durable TaskRun、E-stop、预算、Heartbeat、Approval continuation 与幂等主动投递。 |
+| Sandbox | immutable ExecutionPlan、Docker/Seatbelt fail-closed backend、Checkpoint CAS 与冲突感知 Rollback。 |
+| 运维 | `init`、`doctor`、`gateway`、`task` 控制面、Memory rebuild、结构化脱敏日志、幂等恢复与版本化 Eval。 |
 
 `init` 会幂等安装 `feishu-lark-cli` 与 `github-cli` Skill：飞书业务请求走官方 `lark-cli`，GitHub 远端请求走本机 `gh`，本地仓库请求走 `git`；凭据不进入 Tool 参数或模型上下文。
 
@@ -118,9 +123,11 @@ MINICLAW_TUI=textual uv run miniclaw
 | `uv run miniclaw init` | 幂等初始化 owner-only 状态、配置、Memory、Skills 和 SQLite。 |
 | `uv run miniclaw doctor` | 检查配置、目录权限、Provider、TUI 和数据库状态。 |
 | `uv run miniclaw gateway` | 启动已配置的 Feishu/Telegram/Discord Gateway。 |
+| `uv run miniclaw task list` | 查看 durable ScheduledTask；`show/runs/pause/resume/run/cancel/halt/unhalt` 提供完整控制面。 |
 | `uv run miniclaw eval validate --root evals/scenarios` | 校验版本化 JSONL 场景。 |
 | `uv run miniclaw eval run --suite offline --root evals/scenarios` | 跑真实 Core/Policy/Tool/SQLite 离线回归。 |
 | `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios` | 跑三平台 Channel gate 与 20 轮本地 soak。 |
+| `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios` | 跑 Phase 6 的 15 条 Automation gate 与 20 轮 soak。 |
 
 Channel 的 allowlist、Owner 身份与平台凭据配置见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
 
@@ -160,6 +167,9 @@ flowchart LR
     EXEC --> POLICY["Policy + Permission Mode"]
     POLICY --> APPROVAL["bound Approval"]
     POLICY --> TOOLS["Files / HTTPS / CLI / Memory"]
+    CORE --> SCHED["Scheduler + TaskRunner"]
+    SCHED --> LEDGER["Task Ledger + E-stop"]
+    SCHED --> EXEC
     CORE --> DB["SQLite ledgers"]
     CORE --> MD["Markdown Memory + Skills"]
 ```
@@ -194,6 +204,23 @@ flowchart LR
 - [Memory Autopilot 工程实现](docs/engineering/phase-5/20260809_memory-autopilot.md)
 - [v0.6.0 发布证据](docs/evals/releases/v0.6.0.md)
 
+## Phase 6：自治运行与安全
+
+Phase 6 让 MiniClaw 在 Gateway 常驻时执行受控后台任务，但不把控制权交给模型：
+
+- SQLite Task Ledger 冻结 Task/Run snapshot，Scheduler 幂等生成 due Run；
+- 每个 Run 使用独立 Automation Session、固定 Tool profile 和 wall-clock/turn/tool/token/cost 预算；
+- `manage_task` 只存在于普通 Agent，Automation Agent 不能递归创建 Task；
+- `complete_task` 是唯一成功出口，危险 Tool 继续走参数与 ExecutionPlan 绑定的人工 Approval；
+- durable E-stop、lease recovery、幂等 Channel Delivery 和 Heartbeat 复用现有 Runtime；
+- Docker/Seatbelt 缺失时 fail closed，不回退 Host；文件副作用前创建有界 Checkpoint，Rollback 需要 preview hash。
+
+默认 `automation.enabled = false`、`heartbeat.enabled = false`。当前 Heartbeat 没有 Owner IM route；Checkpoint
+只覆盖主 Workspace；Rollback 还没有 CLI/TUI。详细边界见
+[Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md)、
+[Sandbox 与 Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md)和
+[v0.7.0 发布证据](docs/evals/releases/v0.7.0.md)。
+
 ## 安全边界
 
 - Secret 永不进入仓库、普通日志或 Memory；常见 Token、密码、OTP、Authorization 和私钥在边界拒绝。
@@ -210,18 +237,20 @@ flowchart LR
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Python | 671/671 `unittest` PASS |
+| Python | 798/798 `unittest` PASS |
 | TUI | 35/35 TypeScript tests + build PASS |
 | Agent | 39/39 active offline cases PASS（含 `MEM-AUTO-001..010`） |
-| Channel | 32/32 versioned cases PASS |
-| 稳定性 | 20 轮 local Channel soak，640/640 PASS |
+| Channel | 33/33 versioned cases PASS |
+| 稳定性 | 20 轮 local Channel soak，660/660 PASS |
+| Automation | 15/15 versioned cases；20 轮 300/300 PASS |
 | Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS；真实平台 Live Gate 仍 pending |
 | Memory Autopilot | A～E IMPLEMENTATION PASS；真实 IM Live 结论沿用各平台 gate |
+| Phase 6 | **IMPLEMENTATION PASS**；Docker LIVE VERIFIED / Seatbelt LIVE PENDING |
 
-本地 fake SDK、离线场景和 640/640 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
+本地 fake SDK、离线场景和 660/660 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
 Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；Memory v0.6.0 的历史基线为
-666 Python、35 TypeScript、39/39 Agent；当前发布数字以上表和 v0.6.1 为准。
+666 Python、35 TypeScript、39/39 Agent；当前发布数字以上表和 v0.7.0 为准。
 
 ### 验证命令
 
@@ -231,6 +260,7 @@ pnpm --dir tui test
 pnpm --dir tui build
 uv run ruff check .
 uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 ```
@@ -240,26 +270,29 @@ git diff --check
 ```mermaid
 flowchart LR
     P53["v0.5.3\nLive Evidence 收口"] --> MA["Memory A-E\nIMPLEMENTED"]
-    MA --> P6["Phase 6\nAutomation + Sandbox"]
+    MA --> P6["Phase 6\nIMPLEMENTED"]
     P6 --> P65["Phase 6.5\nBrowser Agent"]
     P65 --> P7["Phase 7\nControlled Evolution"]
     P7 --> P8["Phase 8\nSkills + MCP + Provider"]
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-Owner `AUTOPILOT` 默认值、飞书 `Claw Trail` Agent Card、v0.5.3 Core hardening 与 Memory A～E 已实现。
-下一步继续收口 Feishu/Discord 严格 Live Evidence，再进入 Phase 6 自治任务。路线图中后续节点不代表
-相应代码已经存在。
+Owner `AUTOPILOT` 默认值、飞书 `Claw Trail` Agent Card、v0.5.3 Core hardening、Memory A～E 与 Phase 6
+Autonomy/Sandbox 已实现。下一条功能主线是 **Phase 6.5 Browser Agent**；Feishu/Discord 严格 Live Evidence
+仍作为独立验收并行收口。路线图中 Phase 6.5 之后节点不代表相应代码已经存在。
 
 ## 仓库结构
 
 ```text
 src/miniclaw/
 ├── agent/       # Context、Runner、Turn、Compaction
+├── automation/  # Task Ledger、Scheduler、Runner、Heartbeat、Delivery
+├── checkpoints/ # bounded CAS 与 conflict-aware Rollback
 ├── channels/    # Feishu / Telegram / Discord adapters and pipelines
 ├── memory/      # Markdown Truth、buffer/flush、FTS5、治理、对账与迁移
 ├── policy/      # Workspace、Command、Network、Permission、Approval
 ├── providers/   # OpenAI-compatible Provider
+├── sandbox/     # immutable Plan 与 Host/Docker/Seatbelt backend
 ├── storage/     # SQLite schema, repositories and migrations
 ├── tools/       # 18 个内置 Tool
 └── tui/         # Textual fallback；默认 pi-tui 在仓库 tui/
@@ -285,6 +318,8 @@ tests/           # Python unittest
 | [能力对齐工程落地总方案](docs/engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | 后续交付的模块、数据和测试边界 |
 | [Memory A～E 实施计划](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | 可直接执行的 RED→GREEN 施工计划 |
 | [Memory Autopilot 工程实现](docs/engineering/phase-5/20260809_memory-autopilot.md) | 当前数据流、安全边界、恢复和运维入口 |
+| [Phase 6 Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md) | Task/Scheduler/Runner/Heartbeat、预算、恢复与运维入口 |
+| [Phase 6 Sandbox 与 Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md) | Plan/Approval 绑定、隔离后端、Checkpoint 与 Rollback |
 
 ## 参与开发
 
