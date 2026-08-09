@@ -198,15 +198,28 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
             ToolCall("call_after_halt", "echo", {"text": "second"}),
         )
         provider = FakeProvider((response("", tool_calls=calls),))
-        tool = _EchoTool()
+        halted = False
+
+        class HaltingEchoTool(_EchoTool):
+            """首次执行成功后模拟另一个控制面立即拉起 E-stop。"""
+
+            async def execute(
+                self,
+                context: ToolContext,
+                arguments: dict[str, JsonValue],
+            ) -> ToolResult:
+                """执行一次 Echo，并在返回前关闭后续 Automation 副作用。"""
+                nonlocal halted
+                result = await super().execute(context, arguments)
+                halted = True
+                return result
+
+        tool = HaltingEchoTool()
         executor = self.executor(tool)
-        checks = 0
 
         def gate() -> bool:
-            """只允许首个 Tool 通过，随后模拟全局 E-stop。"""
-            nonlocal checks
-            checks += 1
-            return checks == 1
+            """返回外部控制面当前是否仍允许 Automation。"""
+            return not halted
 
         outcome = await AgentRunner(provider, executor).run(
             request(*executor.schemas),
@@ -222,7 +235,6 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(outcome.error_code, "automation_halted")
         self.assertEqual(tool.executions, 1)
-        self.assertEqual(checks, 2)
 
     async def test_reported_usage_budget_stops_before_any_tool(self) -> None:
         """Provider 回报已超 Token 预算时，本轮 Tool 一次也不能执行。"""

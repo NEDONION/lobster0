@@ -106,8 +106,10 @@ class DoctorTest(unittest.TestCase):
         """启用 Automation 后缺失 Docker 必须 FAIL；默认关闭时不阻塞 Doctor。"""
         initialize_state(self.paths)
         config_text = self.paths.config.read_text(encoding="utf-8")
+        pinned_image = "example/miniclaw@sha256:" + "a" * 64
         self.paths.config.write_text(
-            config_text.replace("[automation]\nenabled = false", "[automation]\nenabled = true"),
+            config_text.replace("[automation]\nenabled = false", "[automation]\nenabled = true")
+            .replace('image = "miniclaw-sandbox:phase6"', f'image = "{pinned_image}"'),
             encoding="utf-8",
         )
 
