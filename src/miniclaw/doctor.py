@@ -29,7 +29,7 @@ from miniclaw.sandbox.base import SandboxUnavailableError
 from miniclaw.sandbox.docker import discover_rootless_client_transport
 from miniclaw.storage.database import Database, DatabaseError
 from miniclaw.storage.migrations import LATEST_SCHEMA_VERSION
-from miniclaw.tui_launcher import MINIMUM_NODE_VERSION, inspect_pi_tui
+from miniclaw.tui_launcher import inspect_pi_tui, is_supported_node_version
 
 
 class CheckStatus(StrEnum):
@@ -106,18 +106,21 @@ def _check_pi_tui(
 ) -> tuple[CheckResult, CheckResult]:
     """检查默认 TypeScript TUI 的 Node 版本和编译入口。"""
     inspection = inspect_pi_tui(environ)
-    minimum = ".".join(str(part) for part in MINIMUM_NODE_VERSION)
     if inspection.node is None:
-        return (
-            CheckResult("node", CheckStatus.FAIL, f"Node.js >= {minimum} is required"),
-            CheckResult("pi_tui", CheckStatus.FAIL, "pi-tui cannot be checked without Node.js"),
-        )
-    if inspection.node_version is None or inspection.node_version < MINIMUM_NODE_VERSION:
         return (
             CheckResult(
                 "node",
                 CheckStatus.FAIL,
-                inspection.problem or f"Node.js >= {minimum} is required",
+                inspection.problem or "Node.js is required for pi-tui",
+            ),
+            CheckResult("pi_tui", CheckStatus.FAIL, "pi-tui cannot be checked without Node.js"),
+        )
+    if inspection.node_version is None or not is_supported_node_version(inspection.node_version):
+        return (
+            CheckResult(
+                "node",
+                CheckStatus.FAIL,
+                inspection.problem or "Node.js version is not supported by pi-tui",
             ),
             CheckResult(
                 "pi_tui",

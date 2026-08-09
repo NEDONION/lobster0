@@ -3,6 +3,8 @@
 import hashlib
 import io
 import json
+import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -10,6 +12,7 @@ import tarfile
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.build_node_bundle import NodeBundleError, build_node_bundle
 from scripts.build_tui_bundle import TuiBundleError, build_tui_bundle, materialize_tree
@@ -143,8 +146,32 @@ class TuiBundleTest(unittest.TestCase):
         """用真实 pnpm production deploy 构建两份可复现 bundle。"""
         cls.temporary_directory = tempfile.TemporaryDirectory()
         cls.root = Path(cls.temporary_directory.name)
-        cls.first = build_tui_bundle(ROOT / "tui", cls.root / "a", PLATFORM, "0.7.0")
-        cls.second = build_tui_bundle(ROOT / "tui", cls.root / "b", PLATFORM, "0.7.0")
+        system_node = shutil.which("node")
+        if system_node is None:
+            raise unittest.SkipTest("Node is required for the real bundle smoke")
+        cls.managed_node = cls.root / "managed-node"
+        cls.managed_node.write_text(
+            "#!/bin/sh\n"
+            "if [ \"${LEAK_FROM_REAL_ENV+x}\" = x ]; then exit 9; fi\n"
+            "if [ \"${1-}\" = --version ]; then printf 'v24.18.0\\n'; exit 0; fi\n"
+            f"exec {shlex.quote(str(Path(system_node).resolve()))} \"$@\"\n",
+            encoding="utf-8",
+        )
+        cls.managed_node.chmod(0o700)
+        with mock.patch.dict(
+            os.environ,
+            {
+                "LEAK_FROM_REAL_ENV": "must-not-propagate",
+                "NODE_OPTIONS": "--require=/tmp/inject.js",
+                "NODE_PATH": "/tmp/global",
+            },
+        ):
+            cls.first = build_tui_bundle(
+                ROOT / "tui", cls.root / "a", PLATFORM, "0.7.0", cls.managed_node
+            )
+            cls.second = build_tui_bundle(
+                ROOT / "tui", cls.root / "b", PLATFORM, "0.7.0", cls.managed_node
+            )
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -216,6 +243,17 @@ class TuiBundleTest(unittest.TestCase):
         self.assertNotIn("@types/node", licenses)
         self.assertNotIn(str(ROOT), licenses)
         json.loads(licenses)
+
+    def test_builder_rejects_materialized_smoke_version_mismatch(self) -> None:
+        """Archive 前 smoke 必须把 CLI version 与真实入口版本精确绑定。"""
+        with self.assertRaisesRegex(TuiBundleError, "smoke"):
+            build_tui_bundle(
+                ROOT / "tui",
+                self.root / "wrong-version",
+                PLATFORM,
+                "9.9.9",
+                self.managed_node,
+            )
 
 
 class SymlinkMaterializationTest(unittest.TestCase):

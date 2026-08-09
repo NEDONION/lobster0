@@ -11,6 +11,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from miniclaw.tui_launcher import is_supported_node_version
+
 if __package__:
     from scripts.build_node_bundle import NodeBundleError, write_deterministic_tar
 else:
@@ -18,8 +20,10 @@ else:
 
 _PLATFORMS = {"linux-x86_64", "linux-arm64", "macos-x86_64", "macos-arm64"}
 _VERSION = re.compile(r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
+_NODE_VERSION = re.compile(rb"^v(\d+)\.(\d+)\.(\d+)\n$")
 _PNPM = ("corepack", "pnpm")
 _STRIP_NAMES = {".bin", ".cache", ".modules.yaml", ".pnpm", ".pnpm-store"}
+_NODE_OUTPUT_LIMIT = 1024
 
 
 class TuiBundleError(RuntimeError):
@@ -31,6 +35,7 @@ def build_tui_bundle(
     output_directory: Path,
     platform: str,
     version: str,
+    managed_node: Path,
 ) -> Path:
     """运行 pnpm test/build/prod deploy 并生成 deterministic TUI bundle。
 
@@ -39,6 +44,7 @@ def build_tui_bundle(
         output_directory: 新 artifact 的父目录。
         platform: Tier 1 `os-arch` key。
         version: 与 MiniClaw Release 相同的三段版本。
+        managed_node: 已验证且位于受支持 LTS 区间的显式 Node executable。
 
     Returns:
         已生成的 `miniclaw-tui-<version>-<platform>.tar.gz`。
@@ -59,6 +65,7 @@ def build_tui_bundle(
         candidate = root / required
         if not candidate.is_file() or candidate.is_symlink():
             raise TuiBundleError("TUI project is missing a regular release input")
+    node = _resolve_managed_node(managed_node)
 
     _run((*_PNPM, "--dir", str(root), "test"))
     _run((*_PNPM, "--dir", str(root), "build"))
@@ -84,6 +91,7 @@ def build_tui_bundle(
         _promote_transitive_dependencies(materialized)
         _strip_deploy_metadata(materialized)
         _validate_materialized_tui(materialized)
+        _smoke_materialized_tui(materialized, node, version)
         destination = Path(output_directory) / f"miniclaw-tui-{version}-{platform}.tar.gz"
         try:
             return write_deterministic_tar(materialized.parent, destination)
@@ -180,6 +188,108 @@ def _run(argv: tuple[str, ...]) -> subprocess.CompletedProcess[bytes]:
     if completed.returncode != 0:
         raise TuiBundleError("pnpm release command failed")
     return completed
+
+
+def _resolve_managed_node(candidate: Path) -> Path:
+    """验证调用方显式提供的 regular Node 路径及其支持区间。
+
+    Args:
+        candidate: 不经 PATH 搜索的绝对 Node executable 路径。
+
+    Returns:
+        已验证的 canonical executable 路径。
+
+    Raises:
+        TuiBundleError: 路径、文件类型、权限、探测输出或版本区间不满足契约。
+    """
+    node = Path(candidate)
+    if (
+        not node.is_absolute()
+        or not node.is_file()
+        or node.is_symlink()
+        or not os.access(node, os.X_OK)
+    ):
+        raise TuiBundleError("managed Node must be an explicit regular executable")
+    resolved = node.resolve(strict=True)
+    completed = _run_managed_node((str(resolved), "--version"), cwd=resolved.parent, environment={})
+    matched = _NODE_VERSION.fullmatch(completed.stdout)
+    if matched is None:
+        raise TuiBundleError("managed Node version is invalid")
+    parsed = tuple(int(part) for part in matched.groups())
+    if not is_supported_node_version(parsed):
+        raise TuiBundleError("managed Node version is not supported")
+    return resolved
+
+
+def _run_managed_node(
+    argv: tuple[str, ...],
+    *,
+    cwd: Path,
+    environment: dict[str, str],
+) -> subprocess.CompletedProcess[bytes]:
+    """在封闭环境和有界输出契约下运行 managed Node。
+
+    Args:
+        argv: 以已验证 Node executable 开头的显式参数数组。
+        cwd: 不依赖 checkout 的工作目录。
+        environment: 完整 child 环境；不会合并当前进程环境。
+
+    Returns:
+        输出大小、退出码和 stderr 均通过校验的进程结果。
+
+    Raises:
+        TuiBundleError: 启动、超时、非零退出或输出边界不满足契约。
+    """
+    try:
+        completed = subprocess.run(
+            argv,
+            cwd=cwd,
+            env=dict(environment),
+            capture_output=True,
+            timeout=10,
+            check=False,
+            shell=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise TuiBundleError("managed Node command failed") from error
+    if (
+        completed.returncode != 0
+        or completed.stderr
+        or len(completed.stdout) > _NODE_OUTPUT_LIMIT
+    ):
+        raise TuiBundleError("managed Node command failed")
+    return completed
+
+
+def _smoke_materialized_tui(root: Path, node: Path, version: str) -> None:
+    """用封闭 managed Node 环境验证 materialized 入口的精确 smoke JSON。
+
+    Args:
+        root: 已完成校验、去 link 和去 cache 的 TUI production tree。
+        node: 已验证的显式 managed Node executable。
+        version: artifact 预期的精确 TUI 版本。
+
+    Raises:
+        TuiBundleError: smoke 失败、输出非 compact 单 JSON 或字段/版本不匹配。
+    """
+    entry = root / "dist/main.js"
+    completed = _run_managed_node(
+        (str(node), str(entry), "--smoke"),
+        cwd=root.parent,
+        environment={
+            "MINICLAW_NODE": str(node),
+            "MINICLAW_TUI_ENTRY": str(entry),
+        },
+    )
+    expected = {"component": "pi-tui", "version": version, "status": "ok"}
+    canonical = f"{json.dumps(expected, separators=(',', ':'))}\n"
+    try:
+        text = completed.stdout.decode("utf-8")
+        document = json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise TuiBundleError("materialized TUI smoke returned invalid JSON") from error
+    if type(document) is not dict or document != expected or text != canonical:
+        raise TuiBundleError("materialized TUI smoke contract mismatch")
 
 
 def _production_licenses(project: Path) -> bytes:
@@ -303,6 +413,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--platform", choices=tuple(sorted(_PLATFORMS)), required=True)
     parser.add_argument("--version", default="0.7.0")
+    parser.add_argument("--node", type=Path, required=True)
     arguments = parser.parse_args()
     try:
         output = build_tui_bundle(
@@ -310,6 +421,7 @@ def main() -> int:
             arguments.output_dir,
             arguments.platform,
             arguments.version,
+            arguments.node,
         )
     except TuiBundleError as error:
         parser.error(str(error))

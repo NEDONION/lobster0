@@ -1,6 +1,7 @@
 """裸 miniclaw 在 pi-tui 与 Textual fallback 之间选择的测试。"""
 
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -11,6 +12,7 @@ from miniclaw.paths import build_state_paths
 from miniclaw.tui_launcher import (
     PiTuiInspection,
     TuiLaunchError,
+    inspect_pi_tui,
     is_supported_node_version,
     run_default_tui,
 )
@@ -44,6 +46,32 @@ class TuiLauncherTest(unittest.TestCase):
         ):
             with self.subTest(version=version):
                 self.assertFalse(is_supported_node_version(version))
+
+    @mock.patch("miniclaw.tui_launcher.subprocess.run")
+    def test_node_probe_uses_only_sanitized_caller_environment(self, run) -> None:
+        """显式 clean env 必须隔离真实进程中的 Node 注入变量。"""
+        entry = self.paths.home / "dist/main.js"
+        entry.parent.mkdir(parents=True)
+        entry.write_text("// test entry\n", encoding="utf-8")
+        clean_environment = {
+            "MINICLAW_NODE": "/opt/miniclaw/node/bin/node",
+            "MINICLAW_TUI_ENTRY": str(entry),
+            "SAFE_VALUE": "owned",
+        }
+        run.return_value = mock.Mock(returncode=0, stdout="v24.15.0\n")
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "NODE_OPTIONS": "--require=/tmp/inject.js",
+                "NODE_PATH": "/tmp/global",
+                "LEAK_FROM_REAL_ENV": "must-not-propagate",
+            },
+        ):
+            inspection = inspect_pi_tui(clean_environment)
+
+        self.assertTrue(inspection.ready)
+        self.assertEqual(run.call_args.kwargs["env"], clean_environment)
 
     @mock.patch("miniclaw.tui_launcher.subprocess.run")
     @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")

@@ -7,7 +7,7 @@
 [简体中文](README.md) · [English](README_EN.md)
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Node.js 22.19+](https://img.shields.io/badge/Node.js-22.19%2B-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
+[![Node.js 22.22.3–<23 or 24.15.0–<25](https://img.shields.io/badge/Node.js-22.22.3--%3C23%20%7C%2024.15.0--%3C25-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
 [![Version](https://img.shields.io/badge/package-v0.1.0-8B5CF6)](pyproject.toml)
 [![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
@@ -85,7 +85,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 22.19+ 与 pnpm（默认 pi-tui）
+- Node.js 22.22.3–<23 或 24.15.0–<25 与 pnpm（默认 pi-tui；managed 默认 24.18.0）
 - Chrome/Chromium 与 Playwright（仅在启用 Browser Agent 时需要）
 - 一个 OpenAI-compatible 模型端点；默认配置为 `deepseek-v4-pro`
 
