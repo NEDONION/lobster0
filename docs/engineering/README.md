@@ -154,7 +154,7 @@ Automation 与 Heartbeat 默认关闭；Heartbeat 当前没有 Owner IM route，
 | 文档 | 规划范围 | 当前事实 |
 | --- | --- | --- |
 | [OpenClaw / Hermes Gap](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | Phase 5.3 收口后到 Phase 9 的优先级和非目标。 | 路线已确认；未交付部分不能写成当前能力。 |
-| [桌面多 Agent 产品与架构演进设计](../architecture/20260809_桌面多Agent产品与架构演进设计.md) | Electron Desktop、Bridge 复用、D1 单 Agent、D2 Sub-agent Console、D3 v2 Named Agent。 | `DRAFT FOR REVIEW / PLANNED`；没有 Desktop 实现。 |
+| [通用桌面 Agent 工作台设计](../architecture/20260809_通用桌面Agent工作台设计.md) | 浅色四界面、通用单 Agent 闭环、Artifact、Automation 与后续受限 Sub-agent。 | `APPROVED DESIGN / IMPLEMENTATION PENDING`；没有 Desktop 实现。 |
 | [能力对齐工程总方案](20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Service、Automation、Sandbox、Browser、Evolution、Memory、Skills、MCP、Provider、Sub-agent、Media。 | `APPROVED ROADMAP`。 |
 | [Phase 6.5 计划](../superpowers/plans/2026-08-08-phase-6-5-browser-agent.md) | Browser Profile、snapshot/ref、Policy、Artifact。 | 依赖 Phase 6 Sandbox。 |
 | [Phase 7 计划](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md) | Feedback、Proposal、Eval、Apply/Rollback。 | 依赖 Memory A～E 与 Phase 6。 |
