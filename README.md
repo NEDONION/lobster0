@@ -33,7 +33,8 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 > 保存 durable buffer、来源、治理和可重建 FTS5 Projection；真实 IM 平台能力仍只按各自 Live evidence 标记。
 > Phase 6 自治运行与安全链路已完成本地实现：durable Task/Scheduler/Runner、E-stop、预算、Approval continuation、
 > 主动 Delivery、Docker/Seatbelt ExecutionPlan、Checkpoint/Rollback 和 15 条 Automation gate 已接通；Automation
-> 默认关闭；Docker 真实 containment 已验证，Seatbelt 因 Python Framework launcher 尚未进入 Plan 而保持 Live Pending。
+> 默认关闭；Docker 与当前 Mac 的 Seatbelt 真实 containment 已验证。Seatbelt 使用 v2 immutable Plan 绑定 exact
+> executable chain；更换机器、解释器或系统版本后必须重新运行 live probe。
 > Phase 6.5 Browser Agent 已完成本地实现：专用 Chromium Profile、snapshot/ref、八个受 Policy 管理的 Browser Tool、
 > Screenshot/Download Artifact 和 18 条版本化门禁已经接通；Browser 默认关闭，受控公网 Live smoke 尚未执行。
 
@@ -64,7 +65,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 | Desktop | W0/W1 development build：浅色四界面、真实单 Agent 任务流、审批/取消、最近任务、只读 Automation、权限和 Workspace 切换。 |
 | Sandbox | immutable ExecutionPlan、Docker/Seatbelt fail-closed backend、Checkpoint CAS 与冲突感知 Rollback。 |
 | Browser | 专用 Chromium Profile、bounded snapshot/opaque ref、网页动作审批、私有 Screenshot/Download Artifact。 |
-| 运维 | `init`、`doctor`、`gateway`、`task` 控制面、Memory rebuild、结构化脱敏日志、幂等恢复与版本化 Eval。 |
+| 运维 | `init`、`doctor`、`gateway`、受管 macOS `service`、`task` 控制面、Memory rebuild、结构化脱敏日志、幂等恢复与版本化 Eval。 |
 
 `init` 会幂等安装 `feishu-lark-cli` 与 `github-cli` Skill：飞书业务请求走官方 `lark-cli`，GitHub 远端请求走本机 `gh`，本地仓库请求走 `git`；凭据不进入 Tool 参数或模型上下文。
 
@@ -130,6 +131,7 @@ MINICLAW_TUI=textual uv run miniclaw
 | `uv run miniclaw init` | 幂等初始化 owner-only 状态、配置、Memory、Skills 和 SQLite。 |
 | `uv run miniclaw doctor` | 检查配置、目录权限、Provider、TUI 和数据库状态。 |
 | `uv run miniclaw gateway` | 启动已配置的 Feishu/Telegram/Discord Gateway。 |
+| `miniclaw service install/status/restart/uninstall` | 管理 Feishu-only macOS LaunchAgent；生产 runtime 使用独立 managed Python 3.12。 |
 | `uv run miniclaw task list` | 查看 durable ScheduledTask；`show/runs/pause/resume/run/cancel/halt/unhalt` 提供完整控制面。 |
 | `uv run miniclaw eval validate --root evals/scenarios` | 校验版本化 JSONL 场景。 |
 | `uv run miniclaw eval run --suite offline --root evals/scenarios` | 跑真实 Core/Policy/Tool/SQLite 离线回归。 |
@@ -243,7 +245,8 @@ Phase 6 让 MiniClaw 在 Gateway 常驻时执行受控后台任务，但不把�
 - `manage_task` 只存在于普通 Agent，Automation Agent 不能递归创建 Task；
 - `complete_task` 是唯一成功出口，危险 Tool 继续走参数与 ExecutionPlan 绑定的人工 Approval；
 - durable E-stop、lease recovery、幂等 Channel Delivery 和 Heartbeat 复用现有 Runtime；
-- Docker/Seatbelt 缺失时 fail closed，不回退 Host；文件副作用前创建有界 Checkpoint，Rollback 需要 preview hash。
+- Docker/Seatbelt 缺失时 fail closed，不回退 Host；Seatbelt v2 Plan 绑定 exact executable path/hash；文件副作用前创建
+  有界 Checkpoint，Rollback 需要 preview hash。
 
 默认 `automation.enabled = false`、`heartbeat.enabled = false`。当前 Heartbeat 没有 Owner IM route；Checkpoint
 只覆盖主 Workspace；Rollback 还没有 CLI/TUI。详细边界见
@@ -301,7 +304,7 @@ Policy；截图和下载只返回私有 Artifact ID。当前状态为 **IMPLEMEN
 | Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS；真实平台 Live Gate 仍 pending |
 | Memory Autopilot | A～E IMPLEMENTATION PASS；真实 IM Live 结论沿用各平台 gate |
-| Phase 6 | **IMPLEMENTATION PASS**；Docker LIVE VERIFIED / Seatbelt LIVE PENDING |
+| Phase 6 | **IMPLEMENTATION PASS**；Docker LIVE VERIFIED / 当前 Mac Seatbelt LIVE VERIFIED；Feishu production gate 进行中 |
 
 本地 fake SDK、离线场景和 660/660 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
 Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；Memory v0.6.0 的历史基线为
