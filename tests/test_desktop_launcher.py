@@ -58,7 +58,6 @@ class LauncherSandbox:
             secret.write_text("MINICLAW_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
             secret.chmod(0o600)
         self._write_executable("uname", "print -r -- Darwin\n")
-        self._write_executable("uv", "exit 0\n")
         self._write_executable("node", "exit 0\n")
         self._write_executable(
             "corepack",
@@ -73,15 +72,37 @@ fi
 """,
         )
         self._write_executable(
-            ".venv/bin/python",
+            "fake-assets/python",
             'print -r -- "${MINICLAW_HOME:-$HOME/.miniclaw}"\n',
             root_relative=True,
         )
         self._write_executable(
-            ".venv/bin/miniclaw",
-            'print -r -- "miniclaw $*" >> "$MINICLAW_TEST_LOG"\n',
+            "fake-assets/miniclaw",
+            """
+print -r -- "miniclaw $*" >> "$MINICLAW_TEST_LOG"
+if [[ "${1:-}" == "setup" ]]; then
+  print -r -- "[provider]" > "$MINICLAW_HOME/config.toml"
+  print -r -- "MINICLAW_MODEL_API_KEY=SECRET_SENTINEL" > "$MINICLAW_HOME/secrets.env"
+  chmod 600 "$MINICLAW_HOME/secrets.env"
+fi
+""",
             root_relative=True,
         )
+        self._write_executable(
+            "uv",
+            """
+print -r -- "uv $*" >> "$MINICLAW_TEST_LOG"
+cp "$MINICLAW_TEST_PYTHON" .venv/bin/python
+cp "$MINICLAW_TEST_MINICLAW" .venv/bin/miniclaw
+chmod 755 .venv/bin/python .venv/bin/miniclaw
+""",
+        )
+        if self._dependencies:
+            shutil.copy2(self.root / "fake-assets/python", self.root / ".venv/bin/python")
+            shutil.copy2(
+                self.root / "fake-assets/miniclaw",
+                self.root / ".venv/bin/miniclaw",
+            )
         return self
 
     def __exit__(
@@ -114,6 +135,8 @@ fi
                 "HOME": str(self.root / "home"),
                 "MINICLAW_HOME": str(self.state_home),
                 "MINICLAW_TEST_LOG": str(self.log),
+                "MINICLAW_TEST_MINICLAW": str(self.root / "fake-assets/miniclaw"),
+                "MINICLAW_TEST_PYTHON": str(self.root / "fake-assets/python"),
                 "PATH": f"{self.root / 'fake-bin'}:/usr/bin:/bin",
             }
         )
@@ -170,6 +193,27 @@ class DesktopLauncherTest(unittest.TestCase):
                 sandbox.log_lines(),
                 [
                     f"miniclaw init --home {sandbox.state_home}",
+                    "corepack pnpm --dir tui build",
+                    (
+                        "corepack pnpm --dir desktop dev "
+                        f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
+                    ),
+                ],
+            )
+
+    def test_first_run_prepares_missing_dependencies_then_uses_setup(self) -> None:
+        """首次启动应补齐依赖并由现有 setup 安全收集 Secret。"""
+        with LauncherSandbox(initialized=False, dependencies=False) as sandbox:
+            result = sandbox.run()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                sandbox.log_lines(),
+                [
+                    "uv sync --extra dev",
+                    "corepack pnpm --dir tui install --frozen-lockfile",
+                    "corepack pnpm --dir desktop install --frozen-lockfile",
+                    f"miniclaw setup --home {sandbox.state_home}",
                     "corepack pnpm --dir tui build",
                     (
                         "corepack pnpm --dir desktop dev "
