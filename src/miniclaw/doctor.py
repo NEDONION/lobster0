@@ -2,6 +2,7 @@
 
 import hashlib
 import importlib.util
+import json
 import os
 import shutil
 import sqlite3
@@ -60,7 +61,7 @@ def run_local_checks(
         environ: 配置覆盖使用的环境变量；默认使用当前进程环境。
 
     Returns:
-        固定二十七项、按依赖顺序排列的安全诊断结果。
+        固定二十八项、按依赖顺序排列的安全诊断结果。
     """
     state_result = _check_state_home(paths)
     config_result, config = _check_config(paths, environ)
@@ -84,6 +85,7 @@ def run_local_checks(
         _check_permissions(paths),
         node_result,
         pi_tui_result,
+        _check_browser(paths, config),
         _check_feishu_config(config),
         _check_channel_sdk(config, "feishu", "lark_channel", module_spec),
         _check_channel_runtime(config, "feishu", source),
@@ -157,6 +159,76 @@ def _check_state_home(paths: StatePaths) -> CheckResult:
             f"missing state directories: {', '.join(missing)}",
         )
     return CheckResult("state_home", CheckStatus.PASS, f"state directory is ready: {paths.home}")
+
+
+def _check_browser(paths: StatePaths, config: AppConfig | None) -> CheckResult:
+    """离线检查专用 Profile、Worker build、Playwright、Chromium 与 lock。"""
+    name = "browser"
+    profile = paths.browser
+    if (
+        not profile.is_dir()
+        or profile.is_symlink()
+        or profile.stat().st_mode & 0o077
+        or not os.access(profile, os.W_OK)
+    ):
+        return CheckResult(name, CheckStatus.FAIL, "Browser profile is missing or unsafe")
+    if config is None:
+        return CheckResult(name, CheckStatus.FAIL, "Browser configuration is unavailable")
+    if not config.browser.enabled:
+        return CheckResult(
+            name,
+            CheckStatus.PASS,
+            "Browser is disabled; dedicated profile is ready",
+        )
+    worker = _browser_worker_root()
+    if not (worker / "dist/server.js").is_file():
+        return CheckResult(name, CheckStatus.FAIL, "Browser Worker build is missing")
+    if not (worker / "node_modules/playwright-core/package.json").is_file():
+        return CheckResult(name, CheckStatus.FAIL, "playwright-core is missing")
+    if _find_chromium() is None:
+        return CheckResult(name, CheckStatus.FAIL, "Chromium executable is unavailable")
+    lock = profile / ".miniclaw-browser.lock"
+    if lock.exists() or lock.is_symlink():
+        state = _browser_lock_state(lock)
+        if state != "active":
+            return CheckResult(name, CheckStatus.WARN, f"Browser profile lock is {state}")
+    return CheckResult(name, CheckStatus.PASS, "Browser Worker and dedicated profile are ready")
+
+
+def _browser_worker_root() -> Path:
+    """返回 source checkout 中 Browser Worker 的固定根目录。"""
+    return Path(__file__).resolve().parents[2] / "browser-worker"
+
+
+def _find_chromium() -> Path | None:
+    """只从常见系统位置发现本机 Chromium，不启动浏览器。"""
+    for command in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable"):
+        if found := shutil.which(command):
+            return Path(found).resolve()
+    for candidate in (
+        Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
+        Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return candidate
+    return None
+
+
+def _browser_lock_state(path: Path) -> str:
+    """把 Profile lock 分类为 active、stale 或 invalid，且不修改文件。"""
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 1024:
+            return "invalid"
+        value = json.loads(path.read_text(encoding="utf-8"))
+        pid = value.get("pid") if isinstance(value, dict) else None
+        if type(pid) is not int or pid <= 0:
+            return "invalid"
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return "stale"
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "invalid"
+    return "active"
 
 
 def _check_config(

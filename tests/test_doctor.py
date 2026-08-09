@@ -80,6 +80,7 @@ class DoctorTest(unittest.TestCase):
                 "approvals",
                 "node",
                 "pi_tui",
+                "browser",
                 "feishu_config",
                 "feishu_sdk",
                 "feishu_runtime",
@@ -101,6 +102,63 @@ class DoctorTest(unittest.TestCase):
         self.assertNotIn(str(owner_home), by_name["executables"].message)
         self.assertIn("schema v5", by_name["automation_ledger"].message)
         self.assertIn("checkpoint quota=64MiB", by_name["sandbox_checkpoint"].message)
+        self.assertIn("disabled", by_name["browser"].message)
+
+    def test_enabled_browser_requires_worker_playwright_and_chromium(self) -> None:
+        """启用 Browser 后缺少 Worker、Playwright 或 Chromium 必须失败关闭。"""
+        initialize_state(self.paths)
+        config = self.paths.config.read_text(encoding="utf-8").replace(
+            "[browser]\nenabled = false", "[browser]\nenabled = true"
+        )
+        self.paths.config.write_text(config, encoding="utf-8")
+
+        with (
+            mock.patch(
+                "miniclaw.doctor._browser_worker_root",
+                return_value=self.root / "missing-worker",
+            ),
+            mock.patch("miniclaw.doctor.shutil.which", return_value=None),
+        ):
+            results = run_local_checks(self.paths, self.tui_environ)
+
+        browser = next(result for result in results if result.name == "browser")
+        self.assertIs(browser.status, CheckStatus.FAIL)
+        self.assertIn("Worker build", browser.message)
+
+    def test_stale_browser_profile_lock_warns_without_deleting_it(self) -> None:
+        """Doctor 只报告 stale Profile lock，不能擅自删除恢复证据。"""
+        initialize_state(self.paths)
+        config = self.paths.config.read_text(encoding="utf-8").replace(
+            "[browser]\nenabled = false", "[browser]\nenabled = true"
+        )
+        self.paths.config.write_text(config, encoding="utf-8")
+        worker = self.root / "browser-worker"
+        (worker / "dist").mkdir(parents=True)
+        (worker / "dist/server.js").write_text("// ready\n", encoding="utf-8")
+        (worker / "node_modules/playwright-core").mkdir(parents=True)
+        (worker / "node_modules/playwright-core/package.json").write_text(
+            '{"name":"playwright-core"}\n', encoding="utf-8"
+        )
+        chromium = self.root / "chromium"
+        chromium.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        chromium.chmod(0o700)
+        lock = self.paths.browser / ".miniclaw-browser.lock"
+        lock.write_text('{"pid":999999,"token":"stale"}\n', encoding="utf-8")
+
+        def discovered(command: str, *, path: str | None = None) -> str | None:
+            del path
+            return str(chromium) if command == "chromium" else None
+
+        with (
+            mock.patch("miniclaw.doctor._browser_worker_root", return_value=worker),
+            mock.patch("miniclaw.doctor.shutil.which", side_effect=discovered),
+        ):
+            results = run_local_checks(self.paths, self.tui_environ)
+
+        browser = next(result for result in results if result.name == "browser")
+        self.assertIs(browser.status, CheckStatus.WARN)
+        self.assertIn("stale", browser.message)
+        self.assertTrue(lock.exists())
 
     def test_required_missing_sandbox_backend_fails_only_when_automation_enabled(
         self,

@@ -29,6 +29,9 @@ class StatePaths:
     evals: Path
     eval_baseline: Path
     eval_failures: Path
+    browser: Path
+    artifacts: Path
+    downloads: Path
     workspace: Path
     logs: Path
     run: Path
@@ -46,6 +49,9 @@ class StatePaths:
             self.evals,
             self.eval_baseline,
             self.eval_failures,
+            self.browser,
+            self.artifacts,
+            self.downloads,
             self.workspace,
             self.logs,
             self.run,
@@ -113,6 +119,9 @@ def build_state_paths(home: Path) -> StatePaths:
         evals=evals,
         eval_baseline=evals / "baseline",
         eval_failures=evals / "failures",
+        browser=resolved_home / "browser",
+        artifacts=resolved_home / "artifacts",
+        downloads=resolved_home / "downloads",
         workspace=resolved_home / "workspace",
         logs=resolved_home / "logs",
         run=resolved_home / "run",

@@ -23,6 +23,7 @@ from miniclaw.automation.repository import (
 )
 from miniclaw.automation.runner import TaskRunner
 from miniclaw.automation.scheduler import Scheduler
+from miniclaw.browser.client import BrowserClient
 from miniclaw.channels.base import ChannelLimits
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.observability import ChannelObserver
@@ -78,6 +79,7 @@ from miniclaw.storage.tooling import (
 )
 from miniclaw.tools.automation import ManageTaskTool
 from miniclaw.tools.base import ToolDefinition
+from miniclaw.tools.browser import browser_tools
 from miniclaw.tools.command import RunCommandTool
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
@@ -121,6 +123,7 @@ class AgentRuntime:
     database: Database = field(repr=False)
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
+    browser_client: BrowserClient | None = field(default=None, repr=False)
     _started: bool = field(default=False, init=False, repr=False)
     _background_started: bool = field(default=False, init=False, repr=False)
     _closed: bool = field(default=False, init=False, repr=False)
@@ -183,7 +186,7 @@ class AgentRuntime:
         )
 
     async def aclose(self) -> None:
-        """停止后台 Task/Memory Worker，再关闭唯一 Provider 客户端。"""
+        """停止后台 Worker，再关闭 Browser 子进程和唯一 Provider 客户端。"""
         if self._closed:
             return
         await self.astop_background()
@@ -194,8 +197,12 @@ class AgentRuntime:
             try:
                 await self.memory_worker.stop(timeout=3.0)
             finally:
-                await self.provider.aclose()
-                self._closed = True
+                try:
+                    if self.browser_client is not None:
+                        await self.browser_client.close()
+                finally:
+                    await self.provider.aclose()
+                    self._closed = True
 
 
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
@@ -385,9 +392,33 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         MemoryCorrectTool(memory_governance, messages),
         MemoryReviewListTool(memory_governance),
     )
-    tools = tuple(
+    configured_tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
     )
+    browser_client = (
+        BrowserClient(
+            (
+                "node",
+                str(
+                    Path(__file__).resolve().parents[2]
+                    / "browser-worker"
+                    / "dist"
+                    / "server.js"
+                ),
+            )
+        )
+        if config.browser.enabled
+        else None
+    )
+    browser_toolset = (
+        browser_tools(
+            browser_client,
+            max_snapshot_chars=config.browser.max_snapshot_chars,
+        )
+        if browser_client is not None
+        else ()
+    )
+    tools = (*configured_tools, *browser_toolset)
     execution_tools = (*tools, CompleteTaskTool())
     executor = ToolExecutor(
         ToolRegistry(execution_tools),
@@ -511,6 +542,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)
         ),
         provider=provider,
+        browser_client=browser_client,
     )
 
 
