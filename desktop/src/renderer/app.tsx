@@ -1,6 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import type { DesktopBootstrap } from "../common/api";
 import { NAV_ITEMS, type ViewId } from "./navigation";
+import { TaskWorkbench } from "./task-workbench";
 
 const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }> = {
   home: {
@@ -27,7 +29,26 @@ const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }
 
 export function App(): React.JSX.Element {
   const [view, setView] = useState<ViewId>("home");
+  const [bootstrap, setBootstrap] = useState<DesktopBootstrap | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const copy = VIEW_COPY[view];
+
+  useEffect(() => {
+    let active = true;
+    void window.miniclaw.bootstrap().then((value) => {
+      if (active) {
+        setBootstrap(value);
+        setBootstrapError(null);
+      }
+    }).catch(() => {
+      if (active) {
+        setBootstrapError("无法连接 MiniClaw Core，请检查本地启动配置。");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="app-shell min-h-screen">
@@ -51,28 +72,45 @@ export function App(): React.JSX.Element {
           ))}
         </nav>
         <div className="sidebar-status">
-          <span className="pulse-dot" aria-hidden="true" />
-          <span>Desktop shell</span>
-          <strong>W0</strong>
+          <span className="pulse-dot" data-ready={bootstrap !== null} aria-hidden="true" />
+          <span>{bootstrap ? "Core ready" : "Core offline"}</span>
+          <strong>W1</strong>
         </div>
       </aside>
 
-      <main className="workspace" data-view={view}>
+      <main className={`workspace ${view === "task" ? "workspace-task" : ""}`} data-view={view}>
         <header className="workspace-header">
           <span className="eyebrow">{copy.eyebrow}</span>
-          <span className="local-badge">本地优先</span>
+          <span className="local-badge">{bootstrap ? "Core 已连接" : "本地优先"}</span>
         </header>
-        <section className="intro" aria-labelledby={`${view}-title`}>
-          <h1 id={`${view}-title`}>{copy.title}</h1>
-          <p>{copy.body}</p>
-        </section>
-        <ViewPreview view={view} />
+        {view === "task" ? (
+          <TaskWorkbench
+            bootstrap={bootstrap}
+            bootstrapError={bootstrapError}
+            key="desktop-default"
+            sessionKey="desktop-default"
+          />
+        ) : (
+          <>
+            <section className="intro" aria-labelledby={`${view}-title`}>
+              <h1 id={`${view}-title`}>{copy.title}</h1>
+              <p>{copy.body}</p>
+            </section>
+            <ViewPreview view={view} bootstrap={bootstrap} />
+          </>
+        )}
       </main>
     </div>
   );
 }
 
-function ViewPreview({ view }: { view: ViewId }): React.JSX.Element {
+function ViewPreview({
+  view,
+  bootstrap,
+}: {
+  view: Exclude<ViewId, "task">;
+  bootstrap: DesktopBootstrap | null;
+}): React.JSX.Element {
   if (view === "home") {
     return (
       <section className="draft-card" aria-label="新任务入口预览">
@@ -82,19 +120,14 @@ function ViewPreview({ view }: { view: ViewId }): React.JSX.Element {
       </section>
     );
   }
-  if (view === "task") {
-    return (
-      <section className="workbench-preview" aria-label="任务工作台布局预览">
-        <div><span>任务</span><strong>当前任务</strong></div>
-        <div><span>过程</span><strong>等待开始</strong></div>
-        <div><span>结果</span><strong>尚无产物</strong></div>
-      </section>
-    );
-  }
   return (
     <section className="empty-panel">
       <span className="empty-index">{view === "automation" ? "A" : "S"}</span>
-      <p>{view === "automation" ? "Core 接通后读取已有自动化" : "Core 接通后显示本地运行设置"}</p>
+      <p>{view === "automation"
+        ? "W1 下一步读取已有自动化"
+        : bootstrap
+          ? `${bootstrap.model} · ${bootstrap.workspace}`
+          : "Core 接通后显示本地运行设置"}</p>
     </section>
   );
 }
