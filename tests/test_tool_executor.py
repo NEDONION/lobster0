@@ -239,9 +239,11 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         """low-risk Tool 必须记录 running/succeeded 审计轨迹。"""
         call = ToolCall("call_1", "echo", {"text": "hello"})
 
-        model_text = (await self.executor(_EchoTool()).execute(self.context, call)).model_text
+        execution = await self.executor(_EchoTool()).execute(self.context, call)
+        model_text = execution.model_text
 
         self.assertEqual(json.loads(model_text)["data"], {"text": "hello"})
+        self.assertEqual(execution.result, ToolResult.success({"text": "hello"}))
         with self.database.connect_read_only() as connection:
             run = connection.execute("SELECT * FROM tool_runs").fetchone()
             events = connection.execute(

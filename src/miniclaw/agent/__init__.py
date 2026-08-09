@@ -4,6 +4,7 @@ from miniclaw.agent.context import ContextBuilder, ContextError
 from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
+    AgentRunBudget,
     AgentRunner,
     AgentRunResult,
     EmptyModelResponseError,
@@ -13,6 +14,7 @@ from miniclaw.agent.turn import TurnResult, TurnService
 __all__ = [
     "AgentError",
     "AgentLoopLimitError",
+    "AgentRunBudget",
     "AgentRunResult",
     "AgentRunner",
     "ContextBuilder",

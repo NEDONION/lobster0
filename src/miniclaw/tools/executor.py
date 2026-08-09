@@ -33,6 +33,7 @@ class ToolExecution:
     model_text: str
     approval_id: int | None = None
     succeeded: bool = False
+    result: ToolResult | None = None
 
 
 class ToolExecutor:
@@ -307,7 +308,7 @@ class ToolExecutor:
                 },
             ),
         )
-        return ToolExecution(model_text, succeeded=result.ok)
+        return ToolExecution(model_text, succeeded=result.ok, result=result)
 
 
 async def _finish_unstarted(

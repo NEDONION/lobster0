@@ -4,12 +4,14 @@ import asyncio
 import json
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
+    AgentRunBudget,
     AgentRunner,
     AgentRunStatus,
     EmptyModelResponseError,
@@ -22,6 +24,7 @@ from miniclaw.storage.conversations import SessionRepository, TurnRepository
 from miniclaw.storage.database import Database
 from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
 from miniclaw.tools.base import (
+    Tool,
     ToolContext,
     ToolDefinition,
     ToolResult,
@@ -31,6 +34,7 @@ from miniclaw.tools.base import (
 from miniclaw.tools.executor import ToolExecutor
 from miniclaw.tools.filesystem import WriteFileTool
 from miniclaw.tools.registry import ToolRegistry
+from miniclaw.tools.task_completion import CompleteTaskTool
 from tests.fakes.fake_provider import FakeProvider
 
 
@@ -129,13 +133,114 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
             (),
         )
 
-    def executor(self, tool: _EchoTool) -> ToolExecutor:
+    def executor(self, tool: Tool) -> ToolExecutor:
         """创建真实安全执行入口。"""
         return ToolExecutor(
             ToolRegistry((tool,)),
             PolicyEngine(),
             ToolRunRepository(self.database),
         )
+
+    async def test_complete_task_ends_automation_without_extra_provider_turn(self) -> None:
+        """terminal Tool 成功后必须直接返回结构化结果，不再询问 Provider。"""
+        call = ToolCall(
+            "call_complete",
+            "complete_task",
+            {"notify": True, "text": "完成"},
+        )
+        provider = FakeProvider((response("", tool_calls=(call,)),))
+        executor = self.executor(CompleteTaskTool())
+        context = replace(
+            self.tool_context,
+            source="automation",
+            task_run_id=7,
+        )
+
+        outcome = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=context,
+            budget=AgentRunBudget(max_turns=2, max_tool_calls=2),
+        )
+
+        self.assertEqual(outcome.terminal_response.notify, True)
+        self.assertEqual(outcome.terminal_response.text, "完成")
+        self.assertEqual(outcome.content, "完成")
+        self.assertEqual(len(provider.requests), 1)
+
+    async def test_automation_budget_stops_before_next_tool_side_effect(self) -> None:
+        """Tool 上限在下一次 executor 调用前检查，不能多执行一次副作用。"""
+        calls = (
+            ToolCall("call_1", "echo", {"text": "first"}),
+            ToolCall("call_2", "echo", {"text": "second"}),
+        )
+        provider = FakeProvider((response("", tool_calls=calls),))
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        outcome = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=replace(
+                self.tool_context,
+                source="automation",
+                task_run_id=8,
+            ),
+            budget=AgentRunBudget(max_turns=3, max_tool_calls=1),
+        )
+
+        self.assertEqual(outcome.error_code, "task_budget_tool_calls")
+        self.assertEqual(tool.executions, 1)
+        self.assertEqual(len(provider.requests), 1)
+
+    async def test_reported_usage_budget_stops_before_any_tool(self) -> None:
+        """Provider 回报已超 Token 预算时，本轮 Tool 一次也不能执行。"""
+        call = ToolCall("call_over", "echo", {"text": "must-not-run"})
+        provider = FakeProvider(
+            (response("", tool_calls=(call,), input_tokens=11, output_tokens=2),)
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        outcome = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=replace(
+                self.tool_context,
+                source="automation",
+                task_run_id=9,
+            ),
+            budget=AgentRunBudget(
+                max_turns=3,
+                max_tool_calls=2,
+                max_input_tokens=10,
+                max_output_tokens=10,
+            ),
+        )
+
+        self.assertEqual(outcome.error_code, "task_budget_input_tokens")
+        self.assertEqual(tool.executions, 0)
+
+    async def test_cost_and_utf8_output_budget_fail_with_stable_codes(self) -> None:
+        """已回报费用与未知 Token 时的正文 byte 上限都必须生效。"""
+        costly = FakeProvider(
+            (replace(response("done"), cost_microusd=101),)
+        )
+        cost_outcome = await AgentRunner(costly).run(
+            request(),
+            budget=AgentRunBudget(
+                max_turns=1,
+                max_tool_calls=1,
+                max_cost_microusd=100,
+            ),
+        )
+        oversized = FakeProvider(
+            (response("x" * (256 * 1024 + 1), input_tokens=None, output_tokens=None),)
+        )
+        output_outcome = await AgentRunner(oversized).run(
+            request(),
+            budget=AgentRunBudget(max_turns=1, max_tool_calls=1),
+        )
+
+        self.assertEqual(cost_outcome.error_code, "task_budget_cost")
+        self.assertEqual(output_outcome.error_code, "task_budget_output_tokens")
 
     async def test_final_text_returns_usage_and_single_iteration(self) -> None:
         """无 Tool Call 的正常响应应一次结束并保留可观察用量。"""

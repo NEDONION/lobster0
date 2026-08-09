@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
 
 from miniclaw.memory.models import DisclosureContext
 from miniclaw.providers.base import JsonValue
@@ -56,6 +56,17 @@ class ToolContext:
     owner_home: Path | None = None
     trusted_owner: bool = True
     disclosure: DisclosureContext | None = None
+    source: Literal["interactive", "automation"] = "interactive"
+    task_run_id: int | None = None
+
+    def __post_init__(self) -> None:
+        """拒绝未知执行来源和 bool/非正 TaskRun ID。"""
+        if self.source not in {"interactive", "automation"}:
+            raise ValueError("tool context source is invalid")
+        if self.task_run_id is not None and (
+            type(self.task_run_id) is not int or self.task_run_id <= 0
+        ):
+            raise ValueError("tool context task_run_id must be positive")
 
 
 class ToolValidationError(ValueError):
