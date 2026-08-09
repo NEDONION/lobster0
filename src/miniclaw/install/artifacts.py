@@ -176,15 +176,17 @@ def download_artifact(
         OSError,
         http.client.HTTPException,
         ValueError,
-    ) as error:
-        raise InstallError("artifact_download_failed", "artifacts") from error
+    ):
+        raise InstallError("artifact_download_failed", "artifacts") from None
     finally:
         if response is not None:
             _close_response(response)
         if replaced and not succeeded:
             cleanup = _quarantine_failed_download(destination)
             if cleanup is not None:
+                _fsync_directory_best_effort(destination.parent)
                 _remove_owned_path(cleanup)
+                _fsync_directory_best_effort(destination.parent)
         if created_part:
             _remove_owned_path(part)
 
@@ -267,8 +269,8 @@ def extract_tar_gz(
         return tuple(destination.joinpath(*PurePosixPath(member.name).parts) for member in members)
     except InstallError:
         raise
-    except (OSError, EOFError, tarfile.TarError, ValueError) as error:
-        raise InstallError("manifest_invalid", "manifest") from error
+    except (OSError, EOFError, tarfile.TarError, ValueError):
+        raise InstallError("manifest_invalid", "manifest") from None
     finally:
         if not succeeded:
             if replaced:
@@ -278,7 +280,9 @@ def extract_tar_gz(
                     pass
             if destination_existed:
                 _restore_empty_destination(destination, previous, original_moved)
+            _fsync_directory_best_effort(destination.parent)
             _remove_owned_path(work)
+            _fsync_directory_best_effort(destination.parent)
 
 
 def _safe_member_path(root: Path, name: str) -> Path:
@@ -817,3 +821,11 @@ def _fsync_directory(directory: Path) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def _fsync_directory_best_effort(directory: Path) -> None:
+    """尽力持久化 cleanup namespace，且不掩盖原始稳定错误。"""
+    try:
+        _fsync_directory(directory)
+    except OSError:
+        pass

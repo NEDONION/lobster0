@@ -270,6 +270,73 @@ class InstallArtifactTests(unittest.TestCase):
         self.assertLessEqual(len(residues), 1)
         self.assertLessEqual(sum(path.stat().st_size for path in residues), len(body))
 
+    def test_download_fsyncs_parent_after_quarantine_and_private_cleanup(self) -> None:
+        """commit fsync 失败后须持久化 quarantine rename 与后续 cleanup。"""
+        body = b"trusted"
+        target = self.root / "durable-rollback.tar.gz"
+        real_fsync_directory = artifact_transport._fsync_directory
+        parent_states: list[tuple[bool, int]] = []
+
+        def fail_commit_fsync_once(directory: Path) -> None:
+            """记录 parent namespace，并只让第一次 commit fsync 失败。"""
+            if directory == target.parent:
+                residues = tuple(target.parent.glob(f".{target.name}.cleanup-*"))
+                parent_states.append((target.exists(), len(residues)))
+                if len(parent_states) == 1:
+                    raise OSError("SECRET_COMMIT_FSYNC")
+            real_fsync_directory(directory)
+
+        with mock.patch.object(
+            artifact_transport,
+            "_fsync_directory",
+            side_effect=fail_commit_fsync_once,
+        ):
+            with self.assertRaises(InstallError) as caught:
+                download_artifact(
+                    self.artifact(body),
+                    target,
+                    opener=FakeOpener(FakeResponse(body)),
+                )
+
+        self.assertEqual(caught.exception.code, "artifact_download_failed")
+        self.assertNotIn("SECRET", str(caught.exception))
+        self.assertEqual(parent_states, [(True, 0), (False, 1), (False, 0)])
+        self.assertFalse(target.exists())
+
+    def test_download_rollback_fsync_failure_keeps_original_stable_error(self) -> None:
+        """补偿 fsync 再失败也不得泄漏原因或替换原稳定 InstallError。"""
+        body = b"trusted"
+        target = self.root / "rollback-fsync-failed.tar.gz"
+        real_fsync_directory = artifact_transport._fsync_directory
+        parent_fsyncs = 0
+
+        def fail_commit_and_rollback_fsync(directory: Path) -> None:
+            """让 commit 和首次 rollback parent fsync 均瞬时失败。"""
+            nonlocal parent_fsyncs
+            if directory == target.parent:
+                parent_fsyncs += 1
+                if parent_fsyncs <= 2:
+                    raise OSError(f"SECRET_PARENT_FSYNC_{parent_fsyncs}")
+            real_fsync_directory(directory)
+
+        with mock.patch.object(
+            artifact_transport,
+            "_fsync_directory",
+            side_effect=fail_commit_and_rollback_fsync,
+        ):
+            with self.assertRaises(InstallError) as caught:
+                download_artifact(
+                    self.artifact(body),
+                    target,
+                    opener=FakeOpener(FakeResponse(body)),
+                )
+
+        self.assertEqual(caught.exception.code, "artifact_download_failed")
+        self.assertNotIn("SECRET", str(caught.exception))
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertGreaterEqual(parent_fsyncs, 2)
+        self.assertFalse(target.exists())
+
     def test_download_rejects_duplicate_case_insensitive_security_headers(self) -> None:
         """真实 HTTPMessage 中重复 CL/Location/Encoding 不能靠首值绕过校验。"""
         body = b"trusted"
@@ -402,6 +469,104 @@ class InstallArtifactTests(unittest.TestCase):
             if path.is_file()
         )
         self.assertLessEqual(residue_bytes, limits.max_bytes)
+
+    def test_tar_fsyncs_parent_after_rollback_and_private_cleanup(self) -> None:
+        """原空目录与原不存在两路 rollback 都须持久化补偿和 cleanup。"""
+        archive = make_archive(self.root / "durable-tar-rollback.tar.gz", "valid")
+        real_fsync_directory = artifact_transport._fsync_directory
+
+        for existed in (True, False):
+            destination = self.root / f"durable-tar-rollback-{existed}"
+            if existed:
+                destination.mkdir(mode=0o700)
+            parent_states: list[tuple[bool, bool, int, int]] = []
+
+            def fail_commit_fsync_once(
+                directory: Path,
+                watched: Path = destination,
+                states: list[tuple[bool, bool, int, int]] = parent_states,
+            ) -> None:
+                """记录 final、previous 与 work，并只拒绝第一次 commit fsync。"""
+                if directory == watched.parent:
+                    works = tuple(
+                        path
+                        for path in watched.parent.glob(
+                            f".{watched.name}.extract-*"
+                        )
+                        if not path.name.endswith(".previous")
+                    )
+                    previous = tuple(
+                        watched.parent.glob(f".{watched.name}.extract-*.previous")
+                    )
+                    states.append(
+                        (
+                            watched.exists(),
+                            (watched / "README").exists(),
+                            len(works),
+                            len(previous),
+                        )
+                    )
+                    if len(states) == 1:
+                        raise OSError("SECRET_COMMIT_FSYNC")
+                real_fsync_directory(directory)
+
+            with self.subTest(existed=existed), mock.patch.object(
+                artifact_transport,
+                "_fsync_directory",
+                side_effect=fail_commit_fsync_once,
+            ):
+                with self.assertRaises(InstallError) as caught:
+                    extract_tar_gz(archive, destination, ExtractionLimits(32, 4096))
+
+            self.assertEqual(caught.exception.code, "manifest_invalid")
+            self.assertNotIn("SECRET", str(caught.exception))
+            self.assertEqual(
+                parent_states,
+                [
+                    (True, True, 0, 1 if existed else 0),
+                    (existed, False, 1, 0),
+                    (existed, False, 0, 0),
+                ],
+            )
+            if existed:
+                self.assertTrue(destination.is_dir())
+                self.assertEqual(list(destination.iterdir()), [])
+                self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o700)
+            else:
+                self.assertFalse(destination.exists())
+
+    def test_tar_rollback_fsync_failure_keeps_original_stable_error(self) -> None:
+        """tar 补偿 fsync 再失败仍返回原稳定错误并保留 rollback namespace。"""
+        archive = make_archive(self.root / "tar-rollback-fsync-failed.tar.gz", "valid")
+        destination = self.root / "tar-rollback-fsync-failed"
+        destination.mkdir(mode=0o700)
+        real_fsync_directory = artifact_transport._fsync_directory
+        parent_fsyncs = 0
+
+        def fail_commit_and_rollback_fsync(directory: Path) -> None:
+            """让 commit 和首次 rollback parent fsync 均瞬时失败。"""
+            nonlocal parent_fsyncs
+            if directory == destination.parent:
+                parent_fsyncs += 1
+                if parent_fsyncs <= 2:
+                    raise OSError(f"SECRET_PARENT_FSYNC_{parent_fsyncs}")
+            real_fsync_directory(directory)
+
+        with mock.patch.object(
+            artifact_transport,
+            "_fsync_directory",
+            side_effect=fail_commit_and_rollback_fsync,
+        ):
+            with self.assertRaises(InstallError) as caught:
+                extract_tar_gz(archive, destination, ExtractionLimits(32, 4096))
+
+        self.assertEqual(caught.exception.code, "manifest_invalid")
+        self.assertNotIn("SECRET", str(caught.exception))
+        self.assertIsNone(caught.exception.__cause__)
+        self.assertGreaterEqual(parent_fsyncs, 2)
+        self.assertTrue(destination.is_dir())
+        self.assertEqual(list(destination.iterdir()), [])
+        self.assertEqual(stat.S_IMODE(destination.stat().st_mode), 0o700)
 
     def test_tar_durable_commit_survives_previous_cleanup_and_second_fsync_failures(self) -> None:
         """第一次 parent fsync 后 cleanup 失败只能留下 private residue，不能回退 final。"""
