@@ -8,6 +8,10 @@
 
 **Tech Stack:** zsh、Python 3.12+ 标准库 `unittest`、uv、Node.js `>=22.19.0`、Corepack/pnpm、Electron Vite。
 
+> 2026-08-10 修正：Electron 43 不再由 pnpm install 自动生成 `path.txt`；launcher 通过
+> `require("electron")` 调用官方 resolver，缺失或残缺时由包内懒安装补齐，再启动 electron-vite。
+> 对应回归测试覆盖“包和 path 存在、executable 缺失”。
+
 ## Global Constraints
 
 - 设计规格以 `docs/superpowers/specs/2026-08-10-desktop-one-click-launch-design.md` 为准。

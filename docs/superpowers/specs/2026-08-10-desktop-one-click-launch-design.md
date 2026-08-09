@@ -2,7 +2,7 @@
 
 > 状态：`IMPLEMENTATION PASS / ELECTRON MANUAL PENDING`
 
-实现证据：7/7 launcher 行为测试、942/942 Python、41/41 TUI TypeScript、28/28 Desktop tests，以及 Desktop typecheck/build、Ruff 和文档校验均通过。真实模型 LIVE smoke、Electron 鼠标/键盘视觉验收和 installer/signing 仍待完成。
+实现证据：8/8 launcher 行为测试、943/943 Python、41/41 TUI TypeScript、28/28 Desktop tests，以及 Desktop typecheck/build、Ruff 和文档校验均通过。真实模型 LIVE smoke、Electron 鼠标/键盘视觉验收和 installer/signing 仍待完成。
 
 ## 1. 目标
 
@@ -20,10 +20,11 @@
 4. 缺少 TUI 的 `node_modules` 时按锁文件安装依赖；
 5. 构建共享的 `@miniclaw/pi-tui`，确保 Desktop 安装能包含真实 `dist`；
 6. 缺少 Desktop 的 `node_modules` 时按锁文件安装依赖；若本地 TUI 快照残缺，则强制刷新一次；
-7. 首次使用默认状态目录时运行现有 `miniclaw setup`；
-8. 已有状态目录时运行幂等 `miniclaw init`；
-9. 选择现有 owner-only Secret 文件并启动 Electron development build；
-10. 任一步失败时停止，显示可操作的短错误并保留终端窗口供用户查看。
+7. 调用 Electron 43 的官方 resolver；二进制缺失或残缺时由包内懒安装自动补齐；
+8. 首次使用默认状态目录时运行现有 `miniclaw setup`；
+9. 已有状态目录时运行幂等 `miniclaw init`；
+10. 选择现有 owner-only Secret 文件并启动 Electron development build；
+11. 任一步失败时停止，显示可操作的短错误并保留终端窗口供用户查看。
 
 脚本不负责：
 
@@ -49,10 +50,11 @@
 1. 用户双击 `start-desktop.command`；
 2. 脚本检查系统运行时，安装缺失的 TUI 依赖并构建共享 Client；
 3. 共享 Client 构建完成后，脚本才安装缺失的 Desktop 依赖；
-4. 脚本调用 `miniclaw setup --home "$MINICLAW_HOME"`；
-5. 现有 setup 从 `/dev/tty` 收集模型 API Key，并允许用户选择是否启用三个 Channel；
-6. setup 以 `0700` 状态目录和 `0600` Secret 文件保存配置；
-7. 脚本设置 Desktop 需要的进程环境并执行 `corepack pnpm --dir desktop dev`。
+4. 脚本调用 Electron 包的官方 resolver，确保 electron-vite 可读取并启动真实 executable；
+5. 脚本调用 `miniclaw setup --home "$MINICLAW_HOME"`；
+6. 现有 setup 从 `/dev/tty` 收集模型 API Key，并允许用户选择是否启用三个 Channel；
+7. setup 以 `0700` 状态目录和 `0600` Secret 文件保存配置；
+8. 脚本设置 Desktop 需要的进程环境并执行 `corepack pnpm --dir desktop dev`。
 
 ### 4.2 后续启动
 
@@ -79,6 +81,7 @@
 | 缺少 `uv` | 退出并给出 `uv` 安装文档提示 |
 | Node 版本过低或缺少 Corepack | 退出并要求 Node.js `>=22.19.0` |
 | 依赖安装或 TUI 构建失败 | 保留原始工具退出码，不继续启动 Electron |
+| Electron 二进制下载失败 | 保留 Electron 安装器错误和退出码，不进入 electron-vite |
 | setup 被取消 | 使用退出码 `130` 结束，不创建伪成功状态 |
 | 配置、State Home 或 Secret 权限无效 | 显示 Core 的稳定错误，不尝试绕过 |
 | Electron 退出 | 脚本返回 Electron 的退出码 |
@@ -92,6 +95,7 @@
 - 从任意当前目录启动仍能定位仓库；
 - 缺少系统运行时会在任何项目写入前失败；
 - 缺失依赖时按 Python、TUI、Desktop 的稳定顺序准备；
+- Electron 包存在但 executable 缺失时，在 Desktop dev 前触发官方懒安装；
 - 首次状态调用 `setup`，已有配置调用 `init`；
 - 已有 `secrets.env` 时只传递路径，不读取或打印其中内容；
 - 任一步失败后 Electron 不启动并保留退出码；

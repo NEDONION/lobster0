@@ -44,6 +44,7 @@ if [[ ! -d "$REPOSITORY_ROOT/desktop/node_modules" ]]; then
 elif [[ ! -f "$REPOSITORY_ROOT/desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js" ]]; then
   corepack pnpm --dir desktop install --force --frozen-lockfile
 fi
+node -e 'require("./desktop/node_modules/electron")'
 
 readonly STATE_HOME="$(
   "$REPOSITORY_ROOT/.venv/bin/python" \

@@ -23,6 +23,7 @@ class LauncherSandbox:
         *,
         initialized: bool,
         dependencies: bool,
+        electron_installed: bool = True,
         include_uv: bool = True,
         platform: str = "Darwin",
     ) -> None:
@@ -31,11 +32,13 @@ class LauncherSandbox:
         Args:
             initialized: 是否创建已有配置与私密 Secret 文件。
             dependencies: 是否创建 Python 和 Node 依赖占位目录。
+            electron_installed: 是否创建 electron-vite 启动所需的 Electron path 文件。
             include_uv: 是否提供 fake uv executable。
             platform: fake uname 返回的系统名。
         """
         self._initialized = initialized
         self._dependencies = dependencies
+        self._electron_installed = electron_installed
         self._include_uv = include_uv
         self._platform = platform
         self._temporary = tempfile.TemporaryDirectory()
@@ -67,6 +70,13 @@ class LauncherSandbox:
             shared_dist = self.root / "desktop/node_modules/@miniclaw/pi-tui/dist"
             shared_dist.mkdir(parents=True)
             (shared_dist / "bridge-client.js").touch()
+            electron_package = self.root / "desktop/node_modules/electron"
+            electron_package.mkdir()
+            if self._electron_installed:
+                (electron_package / "path.txt").touch()
+                electron_binary = electron_package / "dist/Electron"
+                electron_binary.parent.mkdir()
+                electron_binary.touch()
         if self._initialized:
             (self.state_home / "config.toml").write_text("[provider]\n", encoding="utf-8")
             secret = self.state_home / "secrets.env"
@@ -75,7 +85,17 @@ class LauncherSandbox:
         self._write_executable("uname", f"print -r -- {self._platform}\n")
         self._write_executable(
             "node",
-            '[[ "${MINICLAW_TEST_NODE_OK:-1}" == "1" ]]\n',
+            """
+if [[ "$*" == '-e require("./desktop/node_modules/electron")' ]]; then
+  if [[ ! -f desktop/node_modules/electron/dist/Electron ]]; then
+    print -r -- "node $*" >> "$MINICLAW_TEST_LOG"
+    mkdir -p desktop/node_modules/electron/dist
+    touch desktop/node_modules/electron/path.txt desktop/node_modules/electron/dist/Electron
+  fi
+else
+  [[ "${MINICLAW_TEST_NODE_OK:-1}" == "1" ]]
+fi
+""",
         )
         self._write_executable(
             "corepack",
@@ -95,7 +115,7 @@ if [[ "$*" == "pnpm --dir tui build" ]]; then
   touch tui/dist/bridge-client.js
 elif [[ "$*" == "pnpm --dir desktop install --frozen-lockfile" \
   || "$*" == "pnpm --dir desktop install --force --frozen-lockfile" ]]; then
-  mkdir -p desktop/node_modules/@miniclaw/pi-tui
+  mkdir -p desktop/node_modules/@miniclaw/pi-tui desktop/node_modules/electron
   if [[ -f tui/dist/bridge-client.js ]]; then
     mkdir -p desktop/node_modules/@miniclaw/pi-tui/dist
     touch desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js
@@ -103,6 +123,9 @@ elif [[ "$*" == "pnpm --dir desktop install --frozen-lockfile" \
 elif [[ "$*" == "pnpm --dir desktop dev" \
   && ! -f desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js ]]; then
   exit 19
+elif [[ "$*" == "pnpm --dir desktop dev" \
+  && ! -f desktop/node_modules/electron/dist/Electron ]]; then
+  exit 23
 fi
 """,
         )
@@ -273,6 +296,7 @@ class DesktopLauncherTest(unittest.TestCase):
                     "corepack pnpm --dir tui install --frozen-lockfile",
                     "corepack pnpm --dir tui build",
                     "corepack pnpm --dir desktop install --frozen-lockfile",
+                    'node -e require("./desktop/node_modules/electron")',
                     f"miniclaw setup --home {sandbox.state_home}",
                     (
                         "corepack pnpm --dir desktop dev "
@@ -344,6 +368,30 @@ class DesktopLauncherTest(unittest.TestCase):
                 [
                     "corepack pnpm --dir tui build",
                     "corepack pnpm --dir desktop install --force --frozen-lockfile",
+                    f"miniclaw init --home {sandbox.state_home}",
+                    (
+                        "corepack pnpm --dir desktop dev "
+                        f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
+                    ),
+                ],
+            )
+
+    def test_missing_electron_binary_is_installed_before_desktop_starts(self) -> None:
+        """Electron 包存在但 binary 未下载时必须先触发官方懒安装。"""
+        with LauncherSandbox(
+            initialized=True,
+            dependencies=True,
+            electron_installed=False,
+        ) as sandbox:
+            (sandbox.root / "desktop/node_modules/electron/path.txt").touch()
+            result = sandbox.run()
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                sandbox.log_lines(),
+                [
+                    "corepack pnpm --dir tui build",
+                    'node -e require("./desktop/node_modules/electron")',
                     f"miniclaw init --home {sandbox.state_home}",
                     (
                         "corepack pnpm --dir desktop dev "
