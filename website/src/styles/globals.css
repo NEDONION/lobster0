@@ -995,29 +995,324 @@ pre {
   text-align: center;
 }
 
-.shell-preview {
-  display: flex;
-  min-height: 320px;
-  align-items: flex-start;
-  gap: 10px;
-  margin-top: 44px;
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  padding: 22px;
-  background: var(--surface);
-  box-shadow: 0 24px 64px rgb(16 19 26 / 8%);
+.workbench {
+  align-items: start;
+  background:
+    radial-gradient(circle at 86% 18%, color-mix(in srgb, var(--signal) 8%, transparent), transparent 24%),
+    var(--surface);
 }
 
-.shell-preview span {
-  display: inline-flex;
-  min-height: 42px;
-  align-items: center;
+.workbench .hash-tabs__list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.workbench .hash-tabs > [role='tabpanel'] {
+  min-height: 470px;
+}
+
+.workflow-panel {
+  display: grid;
+  min-height: 470px;
+  grid-template-columns: minmax(290px, 4fr) minmax(0, 8fr);
   border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 0 16px;
+  border-top: 0;
+  border-radius: 0 0 28px 28px;
+  background: var(--canvas);
+  box-shadow: 0 28px 70px rgb(16 19 26 / 9%);
+}
+
+.workflow-panel__copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  padding: 32px;
+  background: var(--surface);
+}
+
+.workflow-panel__copy > span {
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.07em;
+}
+
+.workflow-panel__copy h3 {
+  margin: 18px 0 0;
+  font-size: clamp(1.8rem, 3vw, 2.8rem);
+  font-weight: 670;
+  letter-spacing: -0.052em;
+  line-height: 1.06;
+}
+
+.workflow-panel__copy > p {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.62;
+}
+
+.workflow-panel__copy > dl {
+  display: grid;
+  margin: auto 0 0;
+}
+
+.workflow-panel__copy > dl div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding-block: 11px;
+  gap: 16px;
+}
+
+.workflow-panel__copy dt,
+.workflow-panel__copy dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.63rem;
+}
+
+.workflow-panel__copy dt {
+  color: var(--muted);
+}
+
+.workflow-panel__copy dd {
+  color: var(--ink);
+  text-align: right;
+}
+
+.workflow-shot {
+  position: relative;
+  align-self: center;
+  min-width: 0;
+  margin: 22px;
+  border-radius: 18px;
+  background: #050609;
+  box-shadow: 0 20px 50px rgb(16 19 26 / 18%);
+}
+
+.workflow-shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 18px;
+}
+
+.workflow-shot figcaption {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  max-width: calc(100% - 32px);
+  flex-direction: column;
+  border: 1px solid rgb(255 255 255 / 12%);
+  border-radius: 12px;
+  padding: 10px 13px;
+  background: rgb(13 16 23 / 88%);
+  color: white;
+  box-shadow: 0 12px 30px rgb(0 0 0 / 24%);
+  backdrop-filter: blur(12px);
+}
+
+.workflow-shot figcaption span,
+.workflow-shot figcaption strong {
+  font-family: var(--font-mono);
+}
+
+.workflow-shot figcaption span {
+  color: var(--safe);
+  font-size: 0.52rem;
+  letter-spacing: 0.08em;
+}
+
+.workflow-shot figcaption strong {
+  margin-top: 5px;
+  font-size: 0.58rem;
+  font-weight: 500;
+}
+
+.multi-channel-map {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(180px, 0.85fr) minmax(0, 1.65fr);
+  align-items: center;
+  gap: 28px;
+  margin: 22px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 30px;
+  background:
+    linear-gradient(color-mix(in srgb, var(--line) 34%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 34%, transparent) 1px, transparent 1px),
+    #f8f9fc;
+  background-size: 28px 28px;
+}
+
+.multi-channel-map__runtime {
+  display: flex;
+  min-height: 210px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--signal) 32%, var(--line));
+  border-radius: 50%;
+  padding: 26px;
+  background: color-mix(in srgb, var(--signal) 8%, white);
+  text-align: center;
+  box-shadow: 0 18px 42px rgb(91 108 255 / 12%);
+}
+
+.multi-channel-map__runtime span,
+.multi-channel-map__surfaces header span {
+  color: var(--signal);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+}
+
+.multi-channel-map__runtime strong,
+.multi-channel-map__surfaces strong {
+  font-family: var(--font-mono);
+}
+
+.multi-channel-map__runtime strong {
+  margin-top: 10px;
+  font-size: 0.9rem;
+}
+
+.multi-channel-map__runtime small {
+  margin-top: 10px;
   color: var(--muted);
   font-family: var(--font-mono);
-  font-size: 0.76rem;
+  font-size: 0.57rem;
+  line-height: 1.45;
+}
+
+.multi-channel-map__surfaces {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.multi-channel-map__surfaces > div {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 14px;
+  background: var(--surface);
+  box-shadow: 0 12px 28px rgb(16 19 26 / 6%);
+}
+
+.multi-channel-map__surfaces header {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.multi-channel-map__surfaces header strong {
+  font-size: 0.7rem;
+}
+
+.multi-channel-map__surfaces header i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--safe);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--safe) 18%, transparent);
+}
+
+.multi-channel-map__surfaces dl {
+  display: grid;
+  margin: 12px 0 0;
+}
+
+.multi-channel-map__surfaces dl div {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
+.multi-channel-map__surfaces dt,
+.multi-channel-map__surfaces dd {
+  margin: 0;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+}
+
+.multi-channel-map__surfaces dd {
+  color: #27785f;
+}
+
+.quick-start-close {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  align-items: stretch;
+  margin-top: 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 88% 20%, color-mix(in srgb, var(--signal) 16%, transparent), transparent 32%),
+    var(--canvas);
+  box-shadow: 0 22px 60px rgb(16 19 26 / 8%);
+}
+
+.quick-start-close__copy {
+  padding: 28px 30px;
+}
+
+.quick-start-close__copy .section-kicker {
+  margin-bottom: 12px;
+}
+
+.quick-start-close__copy h3 {
+  margin: 0;
+  font-size: clamp(1.7rem, 3vw, 2.7rem);
+  letter-spacing: -0.05em;
+  line-height: 1.04;
+}
+
+.quick-start-close__copy > p:not(.section-kicker) {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.quick-start-close__requirements,
+.quick-start-close__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.quick-start-close__requirements span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: var(--surface);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.61rem;
+}
+
+.quick-start-close__actions .button {
+  min-height: 42px;
+  padding-inline: 16px;
+  font-size: 0.8rem;
+}
+
+.quick-start-close > .command-copy {
+  align-self: center;
+  margin: 18px;
+}
+
+.quick-start-close > .command-copy pre {
+  max-height: 132px;
 }
 
 .marketing-footer {
@@ -1082,6 +1377,25 @@ pre {
 
   .channels-map__core {
     min-height: 104px;
+    border-radius: 18px;
+  }
+
+  .workflow-panel {
+    grid-template-columns: minmax(280px, 5fr) minmax(0, 7fr);
+  }
+
+  .workflow-shot,
+  .multi-channel-map {
+    margin: 18px;
+  }
+
+  .multi-channel-map {
+    grid-template-columns: 1fr;
+    padding: 24px;
+  }
+
+  .multi-channel-map__runtime {
+    min-height: 110px;
     border-radius: 18px;
   }
 }
@@ -1264,10 +1578,62 @@ pre {
     transform: rotate(90deg);
   }
 
-  .shell-preview {
-    min-height: 280px;
-    flex-wrap: wrap;
+  .workbench .hash-tabs__list {
+    display: flex;
+  }
+
+  .workbench .hash-tabs > [role='tabpanel'] {
+    min-height: auto;
+  }
+
+  .workflow-panel {
+    min-height: auto;
+    grid-template-columns: 1fr;
+    border-radius: 0 0 22px 22px;
+  }
+
+  .workflow-panel__copy {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding: 26px 22px;
+  }
+
+  .workflow-panel__copy > dl {
+    margin-top: 24px;
+  }
+
+  .workflow-shot,
+  .multi-channel-map {
+    margin: 14px;
+  }
+
+  .workflow-shot figcaption {
+    position: static;
+    max-width: none;
+    margin: 10px;
+    background: rgb(23 27 36 / 96%);
+  }
+
+  .multi-channel-map {
+    grid-template-columns: 1fr;
+    padding: 20px;
+  }
+
+  .multi-channel-map__surfaces {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .quick-start-close {
+    grid-template-columns: 1fr;
     border-radius: 22px;
+  }
+
+  .quick-start-close__copy {
+    padding: 26px 22px;
+  }
+
+  .quick-start-close > .command-copy {
+    margin: 0 14px 14px;
   }
 
   .marketing-footer__inner {
