@@ -226,6 +226,7 @@ _AUTOMATION_EVIDENCE = frozenset(
         "stale_run_interrupted",
         "lease_released",
         "approval_id_bound",
+        "approval_delivery_once",
         "continuation_terminal",
         "original_budget_preserved",
         "delivery_once",

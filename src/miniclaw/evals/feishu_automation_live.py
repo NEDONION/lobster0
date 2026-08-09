@@ -1,22 +1,73 @@
-"""Phase 6 飞书 Automation Live 的只读 durable evaluator。"""
+"""Phase 6 飞书 Automation Live 的 durable evaluator 与确认式 runner。"""
 
+from __future__ import annotations
+
+import argparse
+import asyncio
 import hashlib
 import json
+import os
 import re
 import sqlite3
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime
+import stat
+import subprocess
+import sys
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.evals.cases import EvalCase
-from miniclaw.evals.production_evidence import ProductionEvidenceError, validate_commit
+from miniclaw.automation.delivery import TaskDeliveryService
+from miniclaw.automation.models import (
+    DeliveryTarget,
+    RunStatus,
+    ScheduledTask,
+    ScheduleKind,
+    ScheduleSpec,
+    TaskBudget,
+    TaskResponse,
+    TaskStatus,
+)
+from miniclaw.automation.repository import (
+    AutomationControlRepository,
+    ScheduledTaskRepository,
+    TaskRunRepository,
+)
+from miniclaw.channels.supervisor import GatewaySecrets
+from miniclaw.config import AppConfig, ConfigError, load_config
+from miniclaw.doctor import CheckResult, CheckStatus, run_local_checks
+from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.evals.cases import (
+    EvalCase,
+    EvalCaseError,
+    load_feishu_automation_live_cases,
+)
+from miniclaw.evals.feishu_live import _pending_approval_count, _repository_state
+from miniclaw.evals.gateway_process import ManagedGateway, ManagedGatewayError
+from miniclaw.evals.production_evidence import (
+    ProductionEvidenceError,
+    scan_secret_matches,
+    utc_timestamp,
+    validate_commit,
+    write_private_json,
+)
+from miniclaw.gateway import GatewayConfigError, validate_gateway_environment
+from miniclaw.gateway_lease import GatewayLease, GatewayLeaseError
+from miniclaw.paths import (
+    PathConfigurationError,
+    StatePaths,
+    build_state_paths,
+    resolve_home,
+)
+from miniclaw.storage.channels import DeliveryRepository
 from miniclaw.storage.database import Database, DatabaseError
+from miniclaw.storage.tooling import ApprovalRepository
 
 _CASE_STATUSES = frozenset({"pass", "fail", "skip"})
 _EVIDENCE_KEYS = frozenset(
     {
         "approval_id_bound",
+        "approval_delivery_once",
         "budget_stopped",
         "continuation_terminal",
         "delivery_once",
@@ -48,6 +99,765 @@ _EXPECTED_FIXTURES = frozenset(
         "live_waiting_approval",
     }
 )
+
+
+class FeishuAutomationLiveError(RuntimeError):
+    """表示 Automation Live runner 只公开稳定错误码。"""
+
+    def __init__(self, code: str) -> None:
+        """保存不含路径、正文、平台 ID 或 Secret 的错误码。"""
+        self.code = code
+        super().__init__(code)
+
+
+@dataclass(frozen=True, slots=True)
+class AutomationLivePreflight:
+    """保存确认后通过静态门禁的运行输入；外部会话 ID 不参与 repr。"""
+
+    project_root: Path
+    paths: StatePaths
+    config: AppConfig
+    secrets: GatewaySecrets = field(repr=False)
+    cases: tuple[EvalCase, ...]
+    commit: str
+    owner_id: int
+    conversation_id: str = field(repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class AutomationLiveExecution:
+    """保存 10-case 结果与受管 Gateway 的封闭生命周期结论。"""
+
+    results: tuple[AutomationLiveCaseResult, ...]
+    gateway_ready: bool
+    gateway_graceful_exit: bool
+    gateway_secret_matches: int
+
+
+def _validate_automation_preflight_state(
+    *,
+    config: AppConfig,
+    checks: Sequence[CheckResult],
+    pending_approvals: int,
+    commit: str,
+    dirty: bool,
+    cases: Sequence[object],
+    detached: bool = False,
+) -> None:
+    """验证 Automation Live 所需的单飞书、Seatbelt 与 clean durable 起点。"""
+    channels = config.channels
+    if not channels.feishu.enabled:
+        raise FeishuAutomationLiveError("feishu_channel_disabled")
+    if channels.telegram.enabled or channels.discord.enabled:
+        raise FeishuAutomationLiveError("peer_channel_enabled")
+    if config.tools.mode != "safe":
+        raise FeishuAutomationLiveError("unsafe_permission_mode")
+    if not config.automation.enabled:
+        raise FeishuAutomationLiveError("automation_disabled")
+    if config.sandbox.backend != "seatbelt":
+        raise FeishuAutomationLiveError("seatbelt_required")
+    if config.sandbox.network != "none":
+        raise FeishuAutomationLiveError("sandbox_network_unsafe")
+    if "deepseek" not in config.agent.model.lower():
+        raise FeishuAutomationLiveError("deepseek_provider_required")
+    if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise FeishuAutomationLiveError("repository_commit_unavailable")
+    if dirty:
+        raise FeishuAutomationLiveError("repository_dirty")
+    if detached:
+        raise FeishuAutomationLiveError("repository_detached")
+    if any(check.status is CheckStatus.FAIL for check in checks):
+        raise FeishuAutomationLiveError("doctor_preflight_failed")
+    if type(pending_approvals) is not int or pending_approvals < 0:
+        raise FeishuAutomationLiveError("approval_state_unavailable")
+    if pending_approvals:
+        raise FeishuAutomationLiveError("pending_approval_exists")
+    if len(cases) != 10:
+        raise FeishuAutomationLiveError("automation_live_case_count_invalid")
+
+
+def _load_automation_preflight(
+    *,
+    project_root: Path,
+    home: str | None,
+    root: Path,
+) -> AutomationLivePreflight:
+    """加载配置并在建网前验证 clean commit、单飞书和 Owner DM 路由。"""
+    try:
+        environment = dict(os.environ)
+        load_dotenv(project_root / ".env", environment)
+        paths = build_state_paths(resolve_home(home, environment))
+        config = load_config(paths, environment)
+        cases = load_feishu_automation_live_cases(root)
+        checks = run_local_checks(paths, environment)
+        commit, dirty = _repository_state(project_root)
+        _validate_automation_preflight_state(
+            config=config,
+            checks=checks,
+            pending_approvals=_pending_approval_count(paths.database),
+            commit=commit,
+            dirty=dirty,
+            cases=cases,
+            detached=_repository_detached(project_root),
+        )
+        _assert_automation_state_clean(paths.database, now=datetime.now(UTC))
+        owner_id, conversation_id = _owner_dm_route(
+            paths.database,
+            account_id=config.channels.feishu.account_id,
+            owner_external_id=config.channels.feishu.owner_open_id,
+        )
+        lease = GatewayLease.acquire(paths.run / "gateway.lock", commit=commit)
+        lease.close()
+        secrets = validate_gateway_environment(config, environment)
+        return AutomationLivePreflight(
+            project_root,
+            paths,
+            config,
+            secrets,
+            cases,
+            commit,
+            owner_id,
+            conversation_id,
+        )
+    except FeishuAutomationLiveError:
+        raise
+    except GatewayLeaseError as error:
+        raise FeishuAutomationLiveError(error.code) from None
+    except (
+        ConfigError,
+        DatabaseError,
+        DotEnvError,
+        EvalCaseError,
+        GatewayConfigError,
+        OSError,
+        PathConfigurationError,
+        sqlite3.Error,
+        ValueError,
+    ):
+        raise FeishuAutomationLiveError("automation_live_preflight_failed") from None
+
+
+def _assert_automation_state_clean(database: Path, *, now: datetime) -> None:
+    """拒绝 active Run/Delivery 或 20 分钟内到期的既有 Task，避免干扰 Owner 工作。"""
+    if not isinstance(now, datetime) or now.tzinfo is None:
+        raise FeishuAutomationLiveError("automation_state_unavailable")
+    horizon = now.astimezone(UTC) + timedelta(minutes=20)
+    with Database(database).connect_read_only() as connection:
+        row = connection.execute(
+            """
+            SELECT
+              (SELECT COUNT(*) FROM task_runs
+               WHERE status IN ('queued', 'claimed', 'running', 'waiting_approval'))
+              +
+              (SELECT COUNT(*) FROM deliveries
+               WHERE status IN ('queued', 'sending', 'retry_wait', 'unknown'))
+              +
+              (SELECT COUNT(*) FROM scheduled_tasks
+               WHERE status = 'active' AND next_run_at IS NOT NULL AND next_run_at <= ?)
+            """,
+            (horizon.isoformat(),),
+        ).fetchone()
+    if row is None:
+        raise FeishuAutomationLiveError("automation_state_unavailable")
+    if int(row[0]) != 0:
+        raise FeishuAutomationLiveError("automation_state_not_clean")
+
+
+def _repository_detached(project_root: Path) -> bool:
+    """判断当前 clean worktree 是否处于 detached HEAD；命令失败按 detached 处理。"""
+    try:
+        result = subprocess.run(
+            ["git", "symbolic-ref", "--quiet", "--short", "HEAD"],
+            cwd=project_root,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return True
+    return result.returncode != 0 or not result.stdout.strip()
+
+
+def _owner_dm_route(
+    database: Path,
+    *,
+    account_id: str,
+    owner_external_id: str,
+) -> tuple[int, str]:
+    """从 durable Inbox 读取当前 Owner 最近一条飞书私聊路由，不返回正文。"""
+    with Database(database).connect_read_only() as connection:
+        owner = connection.execute("SELECT id FROM users ORDER BY id LIMIT 1").fetchone()
+        route = connection.execute(
+            """
+            SELECT external_conversation_id FROM processed_events
+            WHERE channel = 'feishu' AND account_id = ?
+              AND external_user_id = ? AND chat_type = 'p2p'
+              AND status = 'completed'
+            ORDER BY rowid DESC LIMIT 1
+            """,
+            (account_id, owner_external_id),
+        ).fetchone()
+    if owner is None or route is None or not str(route[0]).strip():
+        raise FeishuAutomationLiveError("owner_dm_route_unavailable")
+    return int(owner[0]), str(route[0])
+
+
+async def _start_automation_gateway(
+    preflight: AutomationLivePreflight,
+    timeout: float,
+) -> ManagedGateway:
+    """启动绑定当前 clean commit 的唯一飞书 Gateway，并等待精确 ready marker。"""
+    try:
+        return await ManagedGateway.start(
+            project_root=preflight.project_root,
+            home=preflight.paths.home,
+            ready_line=(
+                "MiniClaw gateway ready: "
+                f"feishu/{preflight.config.channels.feishu.account_id}"
+            ),
+            commit=preflight.commit,
+            ready_timeout=timeout,
+            secret_values=_automation_sensitive_values(preflight),
+        )
+    except ManagedGatewayError as error:
+        raise FeishuAutomationLiveError(error.code) from None
+
+
+async def _execute_automation_live_cases(
+    preflight: AutomationLivePreflight,
+    *,
+    gateway_timeout: float,
+    case_timeout: float,
+    input_fn: Callable[[str], str],
+    output_fn: Callable[[str], None],
+) -> AutomationLiveExecution:
+    """拥有唯一受管 Gateway，按版本顺序执行 case，并在所有路径有界停止。"""
+    gateway = await _start_automation_gateway(preflight, gateway_timeout)
+    results: list[AutomationLiveCaseResult] = []
+    all_graceful = True
+    secret_matches = 0
+    gateway_active = True
+
+    async def stop_gateway() -> None:
+        """停止当前 Gateway 并累计其流式 Secret 匿名计数。"""
+        nonlocal gateway_active, all_graceful, secret_matches
+        if not gateway_active:
+            return
+        try:
+            exit_code = await gateway.stop()
+        except ManagedGatewayError as error:
+            raise FeishuAutomationLiveError(error.code) from None
+        all_graceful = all_graceful and exit_code == 0
+        secret_matches += gateway.secret_match_count
+        gateway_active = False
+
+    async def restart_gateway() -> ManagedGateway:
+        """停止并从同一 commit/state 启动新的受管 Gateway。"""
+        nonlocal gateway, gateway_active
+        await stop_gateway()
+        gateway = await _start_automation_gateway(preflight, gateway_timeout)
+        gateway_active = True
+        return gateway
+
+    async def start_gateway() -> ManagedGateway:
+        """启动新 Gateway，并立刻把 finally 的所有权切换到该实例。"""
+        nonlocal gateway, gateway_active
+        gateway = await _start_automation_gateway(preflight, gateway_timeout)
+        gateway_active = True
+        return gateway
+
+    try:
+        output_fn("MiniClaw Feishu Automation Live")
+        for case in preflight.cases:
+            if case.id != "FEISHU-AUTO-006":
+                await stop_gateway()
+            result, gateway = await _run_automation_case(
+                preflight,
+                case,
+                gateway=(gateway if case.id == "FEISHU-AUTO-006" else None),
+                start_gateway=start_gateway,
+                restart_gateway=restart_gateway,
+                timeout=case_timeout,
+                input_fn=input_fn,
+                output_fn=output_fn,
+            )
+            results.append(result)
+    finally:
+        if gateway_active:
+            try:
+                await stop_gateway()
+            except FeishuAutomationLiveError:
+                raise
+    return AutomationLiveExecution(
+        tuple(results),
+        True,
+        all_graceful,
+        secret_matches,
+    )
+
+
+def _automation_sensitive_values(
+    preflight: AutomationLivePreflight,
+) -> tuple[str, ...]:
+    """只在内存汇总 Secret、外部路由、正文和本机路径供 exact scan。"""
+    feishu = preflight.config.channels.feishu
+    candidates: list[object] = [
+        preflight.secrets.model_api_key,
+        preflight.secrets.feishu_app_id,
+        *preflight.secrets.channel_tokens.values(),
+        feishu.owner_open_id,
+        *feishu.allowed_open_ids,
+        *feishu.allowed_chat_ids,
+        preflight.conversation_id,
+        str(preflight.paths.home),
+        str(Path.home()),
+    ]
+    for case in preflight.cases:
+        candidates.extend((case.query, *case.turns))
+    return tuple(
+        dict.fromkeys(
+            value
+            for value in candidates
+            if isinstance(value, str) and len(value.encode("utf-8")) >= 4
+        )
+    )
+
+
+async def _run_automation_case(
+    preflight: AutomationLivePreflight,
+    case: EvalCase,
+    *,
+    gateway: ManagedGateway | None,
+    start_gateway: Callable[[], Awaitable[ManagedGateway]],
+    restart_gateway: Callable[[], Awaitable[ManagedGateway]],
+    timeout: float,
+    input_fn: Callable[[str], str],
+    output_fn: Callable[[str], None],
+) -> tuple[AutomationLiveCaseResult, ManagedGateway]:
+    """编排一个固定 case，真实发送仅由 Gateway 的 durable Outbox 完成。"""
+    output_fn(f"\n{case.id}: {case.title}")
+    fixture = case.automation_fixture or ""
+    if fixture == "live_approval_continuation":
+        if gateway is None:
+            raise FeishuAutomationLiveError("approval_gateway_unavailable")
+        task_id = _single_waiting_task(preflight.paths.database)
+        checkpoint = capture_automation_checkpoint(
+            preflight.paths.database,
+            task_ids=(task_id,),
+        )
+        output_fn("在刚收到的飞书审批卡中选择“仅本次”，完成后按 Enter。")
+        if await asyncio.to_thread(_read_live_action, input_fn) == "skip":
+            return _skipped_case(case), gateway
+        result = await _wait_for_automation_case(
+            preflight.paths.database,
+            checkpoint,
+            case,
+            timeout=timeout,
+        )
+        return await _with_human_status(result, input_fn), gateway
+
+    now = datetime.now(UTC)
+    task = _create_automation_live_task(preflight, case, now=now)
+    checkpoint = capture_automation_checkpoint(
+        preflight.paths.database,
+        task_ids=(task.id,),
+    )
+    control = AutomationControlRepository(Database(preflight.paths.database))
+    try:
+        if fixture == "live_interrupted_recovery":
+            _inject_running_lease(preflight.paths.database, task)
+            await asyncio.sleep(10.1)
+            gateway = await start_gateway()
+        elif fixture == "live_durable_estop":
+            control.halt("phase6-production-live", now=datetime.now(UTC))
+            gateway = await start_gateway()
+            await asyncio.sleep(min(3.0, timeout))
+        elif fixture == "live_delivery_unknown_recovery":
+            _inject_unknown_delivery(preflight, task)
+            gateway = await start_gateway()
+        else:
+            gateway = await start_gateway()
+            if fixture == "live_gateway_restart":
+                gateway = await restart_gateway()
+
+        result = await _wait_for_automation_case(
+            preflight.paths.database,
+            checkpoint,
+            case,
+            timeout=timeout,
+        )
+    finally:
+        if fixture == "live_durable_estop":
+            _cancel_task_if_active(preflight.paths.database, task, preflight.owner_id)
+            control.unhalt(now=datetime.now(UTC))
+        elif fixture in {
+            "live_interval_two_slots",
+            "live_interrupted_recovery",
+            "live_delivery_unknown_recovery",
+        }:
+            _cancel_task_if_active(preflight.paths.database, task, preflight.owner_id)
+    assert gateway is not None
+    return await _with_human_status(result, input_fn), gateway
+
+
+def _create_automation_live_task(
+    preflight: AutomationLivePreflight,
+    case: EvalCase,
+    *,
+    now: datetime,
+) -> ScheduledTask:
+    """为固定 fixture 创建一条冻结飞书路由、Prompt 和预算的真实 Task。"""
+    fixture = case.automation_fixture or ""
+    interval = fixture == "live_interval_two_slots"
+    delayed = fixture == "live_gateway_restart"
+    injected = fixture in {"live_interrupted_recovery", "live_delivery_unknown_recovery"}
+    next_run = (
+        now + timedelta(hours=1)
+        if injected
+        else now + timedelta(seconds=10 if delayed else 0)
+    )
+    budget = TaskBudget(
+        timeout_seconds=180,
+        max_turns=8,
+        max_tool_calls=1 if fixture == "live_budget_stop" else 6,
+        max_input_tokens=64_000,
+        max_output_tokens=4_000,
+    )
+    return ScheduledTaskRepository(Database(preflight.paths.database)).create(
+        owner_id=preflight.owner_id,
+        name=f"phase6-live-{case.id}",
+        schedule=ScheduleSpec(
+            ScheduleKind.INTERVAL if interval else ScheduleKind.ONCE,
+            "60" if interval else next_run.isoformat(),
+            "UTC",
+            next_run,
+        ),
+        prompt=_automation_prompt(fixture, now),
+        skill_names=(),
+        delivery=DeliveryTarget(
+            "owner",
+            "feishu",
+            preflight.config.channels.feishu.account_id,
+            preflight.conversation_id,
+        ),
+        policy_profile="automation-default",
+        budget=budget,
+    )
+
+
+def _automation_prompt(fixture: str, now: datetime) -> str:
+    """返回只允许固定 Tool 路径的短 Prompt；未知 fixture 失败关闭。"""
+    prompts = {
+        "live_one_shot_delivery": (
+            "Call complete_task exactly once with notify=true and text "
+            "'Phase 6 one-shot delivery verified'."
+        ),
+        "live_interval_two_slots": (
+            "Call system_info once, then call complete_task with notify=true and text "
+            "'Phase 6 interval slot verified'."
+        ),
+        "live_gateway_restart": (
+            "Call complete_task exactly once with notify=true and text "
+            "'Phase 6 restart recovery verified'."
+        ),
+        "live_interrupted_recovery": "Do not execute; recovery fixture.",
+        "live_waiting_approval": (
+            "Call write_file with path 'phase6-live/approval-"
+            f"{now.strftime('%Y%m%d%H%M%S')}.txt' and content 'approved'. "
+            "After it succeeds, call complete_task with notify=true and text "
+            "'Phase 6 approval continuation verified'."
+        ),
+        "live_structured_silence": (
+            "Call complete_task exactly once with notify=false and empty text."
+        ),
+        "live_durable_estop": "Call complete_task with notify=true and text 'must not run'.",
+        "live_budget_stop": (
+            "Call system_info twice in two distinct tool calls. Do not call complete_task "
+            "until both calls succeeded."
+        ),
+        "live_delivery_unknown_recovery": "Do not execute; delivery recovery fixture.",
+    }
+    try:
+        return prompts[fixture]
+    except KeyError:
+        raise FeishuAutomationLiveError("automation_fixture_unsupported") from None
+
+
+def _inject_running_lease(database: Path, task: ScheduledTask) -> None:
+    """经 TaskRun Repository 构造真实 running lease，供启动恢复结算。"""
+    now = datetime.now(UTC)
+    runs = TaskRunRepository(Database(database))
+    runs.enqueue(task, scheduled_for=now)
+    claimed = runs.claim_next("phase6-live-interrupted", now=now, lease_seconds=10)
+    if claimed is None or claimed.task_id != task.id:
+        raise FeishuAutomationLiveError("interrupted_fixture_claim_failed")
+    runs.mark_running(claimed.id, "phase6-live-interrupted", now=now)
+
+
+def _inject_unknown_delivery(
+    preflight: AutomationLivePreflight,
+    task: ScheduledTask,
+) -> None:
+    """经真实 Run/Outbox transitions 构造 unknown，留给 Gateway recovery 重试。"""
+    now = datetime.now(UTC)
+    database = Database(preflight.paths.database)
+    runs = TaskRunRepository(database)
+    runs.enqueue(task, scheduled_for=now)
+    claimed = runs.claim_next("phase6-live-delivery", now=now, lease_seconds=30)
+    if claimed is None or claimed.task_id != task.id:
+        raise FeishuAutomationLiveError("delivery_fixture_claim_failed")
+    runs.mark_running(claimed.id, "phase6-live-delivery", now=now)
+    response = TaskResponse(True, "Phase 6 unknown delivery recovery verified")
+    completed = runs.finish(
+        claimed.id,
+        status=RunStatus.SUCCEEDED,
+        now=now,
+        worker_id="phase6-live-delivery",
+        response=response,
+    )
+    deliveries = DeliveryRepository(database)
+    projected = TaskDeliveryService(
+        deliveries,
+        runs,
+        approvals=ApprovalRepository(database),
+        channel_max_chars={
+            "feishu": preflight.config.channels.feishu.message_max_chars,
+            "telegram": preflight.config.channels.telegram.message_max_chars,
+            "discord": preflight.config.channels.discord.message_max_chars,
+        },
+    ).project(completed, response)
+    if len(projected) != 1:
+        raise FeishuAutomationLiveError("delivery_fixture_projection_failed")
+    sending = deliveries.claim_next(
+        "feishu",
+        preflight.config.channels.feishu.account_id,
+    )
+    if sending is None or sending.id != projected[0].id:
+        raise FeishuAutomationLiveError("delivery_fixture_claim_failed")
+    deliveries.mark_unknown(sending.id, "channel_delivery_unknown")
+
+
+def _single_waiting_task(database: Path) -> int:
+    """读取唯一 waiting Automation Task；零条或歧义都失败关闭。"""
+    with Database(database).connect_read_only() as connection:
+        rows = connection.execute(
+            """
+            SELECT task_id FROM task_runs
+            WHERE status = 'waiting_approval' AND approval_id IS NOT NULL
+            ORDER BY id
+            """
+        ).fetchall()
+    if len(rows) != 1:
+        raise FeishuAutomationLiveError("waiting_approval_run_ambiguous")
+    return int(rows[0][0])
+
+
+async def _wait_for_automation_case(
+    database: Path,
+    checkpoint: AutomationLiveCheckpoint,
+    case: EvalCase,
+    *,
+    timeout: float,
+) -> AutomationLiveCaseResult:
+    """有界轮询 durable evaluator，成功即返回，超时返回最后一个稳定失败。"""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    latest = evaluate_automation_case(database, checkpoint, case)
+    while latest.status != "pass" and loop.time() < deadline:
+        await asyncio.sleep(min(0.5, max(0.0, deadline - loop.time())))
+        latest = evaluate_automation_case(database, checkpoint, case)
+    return latest
+
+
+async def _with_human_status(
+    result: AutomationLiveCaseResult,
+    input_fn: Callable[[str], str],
+) -> AutomationLiveCaseResult:
+    """只在 durable evidence 通过后收集一个有限人工可见性结论。"""
+    if result.status != "pass":
+        return result
+    status = await asyncio.to_thread(_read_live_human_status, input_fn)
+    if status == "pass":
+        return replace(result, human_status="pass")
+    return replace(
+        result,
+        status=status,
+        human_status=status,
+        error_code="operator_skipped" if status == "skip" else "human_evidence_failed",
+    )
+
+
+def _read_live_action(input_fn: Callable[[str], str]) -> str:
+    """审批动作只接受 Enter 继续或 s 跳过。"""
+    while True:
+        try:
+            value = input_fn("完成飞书动作后按 Enter，或输入 s 跳过：").strip().lower()
+        except (EOFError, StopIteration):
+            return "skip"
+        if value == "":
+            return "continue"
+        if value == "s":
+            return "skip"
+
+
+def _read_live_human_status(input_fn: Callable[[str], str]) -> str:
+    """人工可见性只接受 p/f/s，EOF 按 skip。"""
+    while True:
+        try:
+            value = input_fn("飞书可见结果符合本 case 吗？[p/f/s]：").strip().lower()
+        except (EOFError, StopIteration):
+            return "skip"
+        if value in {"p", "f", "s"}:
+            return {"p": "pass", "f": "fail", "s": "skip"}[value]
+
+
+def _skipped_case(case: EvalCase) -> AutomationLiveCaseResult:
+    """构造操作者明确跳过的封闭结果。"""
+    requirements = tuple(case.expected.automation_evidence)
+    return AutomationLiveCaseResult(
+        case.id,
+        "skip",
+        (),
+        requirements,
+        "skip",
+        "operator_skipped",
+    )
+
+
+def _cancel_task_if_active(database: Path, task: ScheduledTask, owner_id: int) -> None:
+    """清理只属于本 Gate 的 active/paused Task；终态 Task 保持证据。"""
+    tasks = ScheduledTaskRepository(Database(database))
+    current = tasks.get(task.id, owner_id=owner_id)
+    if current.status in {TaskStatus.ACTIVE, TaskStatus.PAUSED}:
+        tasks.cancel(task.id, owner_id=owner_id, expected_version=current.version)
+
+
+def run_feishu_automation_live_harness(argv: Sequence[str] | None = None) -> int:
+    """运行显式确认的飞书 Automation 生产验收；未确认时不触碰状态。"""
+    parser = argparse.ArgumentParser(description="Run confirmed Feishu Automation Live gate.")
+    parser.add_argument("--home")
+    parser.add_argument("--root")
+    parser.add_argument("--output-dir")
+    parser.add_argument("--confirm-live", action="store_true")
+    parser.add_argument("--gateway-timeout", type=float, default=30.0)
+    parser.add_argument("--case-timeout", type=float, default=180.0)
+    arguments = parser.parse_args(argv)
+    if not arguments.confirm_live:
+        print(
+            "error: --confirm-live is required; no config, secret, state, or network was read",
+            file=sys.stderr,
+        )
+        return 2
+    project_root = Path(__file__).resolve().parents[3]
+    scenario_root = _confirmed_path(
+        arguments.root,
+        project_root / "evals" / "scenarios",
+    )
+    output_dir = _confirmed_path(
+        arguments.output_dir,
+        project_root / ".local" / "eval-results" / "feishu-automation",
+    )
+    if not 5 <= arguments.gateway_timeout <= 120 or not 10 <= arguments.case_timeout <= 600:
+        print("error: automation_live_timeout_invalid", file=sys.stderr)
+        return 2
+    try:
+        preflight = _load_automation_preflight(
+            project_root=project_root,
+            home=arguments.home,
+            root=scenario_root,
+        )
+    except FeishuAutomationLiveError as error:
+        print(f"error: {error.code}", file=sys.stderr)
+        return 2
+    started_at = utc_timestamp()
+    try:
+        execution = asyncio.run(
+            _execute_automation_live_cases(
+                preflight,
+                gateway_timeout=arguments.gateway_timeout,
+                case_timeout=arguments.case_timeout,
+                input_fn=input,
+                output_fn=print,
+            )
+        )
+    except FeishuAutomationLiveError as error:
+        print(f"error: {error.code}", file=sys.stderr)
+        return 1
+
+    results = execution.results
+    current_commit, dirty = _repository_state(project_root)
+    if current_commit != preflight.commit or dirty:
+        results = _force_automation_failure(results, "repository_changed")
+    if not execution.gateway_ready or not execution.gateway_graceful_exit:
+        results = _force_automation_failure(results, "gateway_lifecycle_failed")
+    try:
+        secret_matches = scan_secret_matches(
+            (preflight.paths.logs, output_dir),
+            _automation_sensitive_values(preflight),
+        ) + execution.gateway_secret_matches
+        report = build_automation_evidence_report(
+            commit=preflight.commit,
+            started_at=started_at,
+            finished_at=utc_timestamp(),
+            results=results,
+            secret_matches=secret_matches,
+        )
+        _prepare_automation_output_directory(output_dir)
+        target = output_dir / f"{_evidence_filename(report['finished_at'])}.json"
+        write_private_json(target, report)
+    except (FeishuAutomationLiveError, ProductionEvidenceError, ValueError):
+        print("error: automation_evidence_write_failed", file=sys.stderr)
+        return 1
+    print(f"Saved redacted evidence: {target.name}")
+    return 0 if report["release_status"] == "FEISHU_AUTOMATION_VERIFIED" else 1
+
+
+def _confirmed_path(value: str | None, default: Path) -> Path:
+    """只在 confirm gate 后展开并规范化 CLI 路径。"""
+    candidate = default if value is None else Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = Path.cwd() / candidate
+    return candidate.resolve(strict=False)
+
+
+def _prepare_automation_output_directory(path: Path) -> None:
+    """创建 owner-only Evidence 目录，并拒绝 symlink、他人 owner 或宽权限。"""
+    try:
+        if path.is_symlink():
+            raise FeishuAutomationLiveError("evidence_directory_unsafe")
+        path.mkdir(mode=0o700, parents=True, exist_ok=True)
+        metadata = path.lstat()
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or path.is_symlink()
+            or metadata.st_uid != os.getuid()
+            or metadata.st_mode & 0o077
+        ):
+            raise FeishuAutomationLiveError("evidence_directory_unsafe")
+    except FeishuAutomationLiveError:
+        raise
+    except OSError:
+        raise FeishuAutomationLiveError("evidence_directory_unsafe") from None
+
+
+def _evidence_filename(value: object) -> str:
+    """把已验证 UTC 字符串变成安全且不含路径的 Evidence 文件名。"""
+    if not isinstance(value, str) or not value.endswith("Z"):
+        raise FeishuAutomationLiveError("evidence_timestamp_invalid")
+    return value.replace("-", "").replace(":", "").replace(".", "")
+
+
+def _force_automation_failure(
+    results: tuple[AutomationLiveCaseResult, ...],
+    error_code: str,
+) -> tuple[AutomationLiveCaseResult, ...]:
+    """把最后一个已有 case 降级为稳定失败，绝不加入正文或外部 ID。"""
+    if not results:
+        return ()
+    last = results[-1]
+    failed = replace(last, status="fail", human_status=None, error_code=error_code)
+    return (*results[:-1], failed)
 
 
 @dataclass(frozen=True, slots=True)
@@ -454,6 +1264,12 @@ def _evidence_checks(
             == bound.snapshot_hash
         )
     waiting_bound = _waiting_is_bound(facts)
+    approval_delivery_once = (
+        len(deliveries) == 1
+        and deliveries[0]["channel"] == "feishu"
+        and deliveries[0]["delivery_kind"] == "approval"
+        and deliveries[0]["status"] == "sent"
+    )
     structured_silence = len(runs) == 1 and _is_structured_silence(runs[0])
     budget_stopped = (
         len(runs) == 1
@@ -490,6 +1306,7 @@ def _evidence_checks(
         "lease_released": bool(runs)
         and all(row["worker_id"] is None and row["lease_expires_at"] is None for row in runs),
         "approval_id_bound": waiting_bound,
+        "approval_delivery_once": approval_delivery_once,
         "continuation_terminal": continuation,
         "original_budget_preserved": budget_preserved,
         "structured_silence": structured_silence and not deliveries,

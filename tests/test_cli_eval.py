@@ -36,7 +36,7 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((code, error), (0, ""))
         lines = output.splitlines()
-        self.assertEqual(len(lines), 120)
+        self.assertEqual(len(lines), 130)
         self.assertEqual(lines, sorted(lines))
         self.assertTrue(any(line.startswith("CORE-001 active core ") for line in lines))
         self.assertTrue(any(line.startswith("PROTO-001 active provider ") for line in lines))
@@ -45,6 +45,12 @@ class CliEvalTest(unittest.TestCase):
         )
         self.assertTrue(
             any(line.startswith("AUTO-001 active automation_runtime ") for line in lines)
+        )
+        self.assertTrue(
+            any(
+                line.startswith("FEISHU-AUTO-001 active feishu_automation_e2e ")
+                for line in lines
+            )
         )
         self.assertTrue(any(line.startswith("BROWSER-001 active browser_agent ") for line in lines))
 
@@ -56,7 +62,7 @@ class CliEvalTest(unittest.TestCase):
                 ["eval", "validate", "--root", str(SCENARIO_ROOT)]
             )
 
-        self.assertEqual((code, output, error), (0, "Validated 120 eval cases.\n", ""))
+        self.assertEqual((code, output, error), (0, "Validated 130 eval cases.\n", ""))
         self.assertFalse(missing_home.exists())
 
     def test_run_offline_prints_pass_rows_and_summary(self) -> None:
