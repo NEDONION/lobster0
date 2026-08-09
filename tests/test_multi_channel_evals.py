@@ -33,6 +33,7 @@ DISCORD_IDS = {
     "DISCORD-DELIVERY-001",
     "DISCORD-RESTART-001",
     "DISCORD-ISOLATION-001",
+    "DISCORD-UX-001",
 }
 
 
@@ -49,24 +50,24 @@ class MultiChannelEvalTest(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_repository_has_exact_versioned_platform_matrices(self) -> None:
-        """每个平台必须恰好十条，均进入 channel/live gate 并提供稳定证据。"""
+        """Telegram 十条、Discord 十一条均进入 channel/live gate 并提供稳定证据。"""
         cases = self._new_cases()
 
         telegram_ids = {case.id for case in cases if case.id.startswith("TELEGRAM-")}
         discord_ids = {case.id for case in cases if case.id.startswith("DISCORD-")}
         self.assertEqual(telegram_ids, TELEGRAM_IDS)
         self.assertEqual(discord_ids, DISCORD_IDS)
-        self.assertEqual(len(cases), 20)
+        self.assertEqual(len(cases), 21)
         self.assertTrue(all(case.layers == ("channel", "live") for case in cases))
         self.assertTrue(all(case.channel_fixture for case in cases))
         self.assertTrue(all(case.expected.channel_evidence for case in cases))
 
     async def test_all_new_channel_cases_pass_real_local_vertical_slices(self) -> None:
-        """20 条场景必须全部通过，失败只能返回稳定短码。"""
+        """21 条场景必须全部通过，失败只能返回稳定短码。"""
         suite = await run_channel_suite(self._new_cases())
 
-        self.assertEqual(suite.total, 20)
-        self.assertEqual(suite.passed, 20, suite.cases)
+        self.assertEqual(suite.total, 21)
+        self.assertEqual(suite.passed, 21, suite.cases)
         self.assertEqual(suite.failed, 0)
         self.assertTrue(all(result.failures == () for result in suite.cases))
 

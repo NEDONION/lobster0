@@ -100,6 +100,7 @@ _CHANNEL_FIXTURES = {
     "guild_no_mention",
     "thread",
     "isolation",
+    "compact_reply",
 }
 _MEMORY_FIXTURES = frozenset(
     {
