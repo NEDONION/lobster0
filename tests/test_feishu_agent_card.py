@@ -126,6 +126,28 @@ class FeishuAgentCardTest(unittest.TestCase):
         self.assertNotIn("| 项目 | 内容 |", final_content)
         self.assertIn("&lt;at id=all&gt;&lt;/at&gt;", final_content)
 
+    def test_bare_url_becomes_clickable_outside_code(self) -> None:
+        """裸 URL 应转为链接，但已有链接与代码中的 URL 必须保持原样。"""
+        answer = (
+            "> 📄 https://my.feishu.cn/docx/DocToken123\n\n"
+            "更多：https://example.org/path。\n\n"
+            "[已有链接](https://example.com)\n\n"
+            "`https://inline.example.com`\n\n"
+            "```text\nhttps://fenced.example.com\n```"
+        )
+
+        final_content = self._final_content(answer)
+
+        self.assertIn(
+            "> 📄 [https://my.feishu.cn/docx/DocToken123]"
+            "(https://my.feishu.cn/docx/DocToken123)",
+            final_content,
+        )
+        self.assertIn("更多：[https://example.org/path](https://example.org/path)。", final_content)
+        self.assertIn("[已有链接](https://example.com)", final_content)
+        self.assertIn("`https://inline.example.com`", final_content)
+        self.assertIn("```text\nhttps://fenced.example.com\n```", final_content)
+
     def test_table_tokenizer_preserves_escaped_and_inline_code_pipes(self) -> None:
         """表格单元格中的转义管道和不同长度的行内 code span 不得被拆坏。"""
         answer = (
