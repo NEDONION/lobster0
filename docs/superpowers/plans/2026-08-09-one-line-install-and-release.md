@@ -989,7 +989,7 @@ git commit -m "feat(runtime): 构建 hash-locked atomic Runtime"
 ### Task 9: Reproducible managed Node and pi-tui bundles
 
 **Files:**
-- Create: `pnpm-workspace.yaml`
+- Create: `tui/pnpm-workspace.yaml`
 - Modify: `tui/package.json`
 - Modify: `tui/src/main.ts`
 - Create: `tui/test/smoke.test.ts`
@@ -1037,7 +1037,7 @@ Expected: FAIL because ranges still use `>=22.19`, smoke flag and bundle builder
 
 - [ ] **Step 3: Implement exact LTS contract and bundle builders**
 
-Set package engine to `>=22.22.3 <23 || >=24.15.0 <25`, keep pnpm 10.14.0, add root workspace with package `tui`, and add `release:deploy` script using pnpm 10 `deploy --prod`. `main.ts` handles `--smoke` before TTY checks and imports `@earendil-works/pi-tui` without spawning Bridge.
+Set package engine to `>=22.22.3 <23 || >=24.15.0 <25`, keep pnpm 10.14.0, add a TUI-local workspace at `tui/pnpm-workspace.yaml` with package `.`, and add `release:deploy` using `pnpm --filter @miniclaw/pi-tui deploy --legacy --prod`. The repository root intentionally remains outside a pnpm workspace so Desktop and Browser keep consuming their own frozen lockfiles. `main.ts` handles `--smoke` before TTY checks and imports `@earendil-works/pi-tui` without spawning Bridge.
 
 `build_node_bundle.py` validates official archive hash from runtime pins, extracts only regular `bin/node` and `LICENSE`, verifies `node --version`, and writes a deterministic gzip tar with uid/gid/mtime zero. `build_tui_bundle.py` runs build/test/deploy, captures `pnpm licenses list --prod --json`, resolves every internal staging symlink only when its final target remains inside staging, replaces it with regular content, rejects cycles/escapes, strips dev files/cache, and writes deterministic tar metadata.
 
@@ -1047,7 +1047,7 @@ Run:
 
 ```bash
 corepack prepare pnpm@10.14.0 --activate
-corepack pnpm install --frozen-lockfile
+corepack pnpm --dir tui install --frozen-lockfile
 corepack pnpm --dir tui test
 uv run python -m unittest tests.test_tui_launcher tests.test_release_bundles -v
 ```
@@ -1057,7 +1057,7 @@ CI repeats TypeScript test/bundle smoke with Node 22.22.3 and 24.18.0. Expected:
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pnpm-workspace.yaml tui/package.json tui/src/main.ts tui/test/smoke.test.ts src/miniclaw/tui_launcher.py tests/test_tui_launcher.py scripts/build_node_bundle.py scripts/build_tui_bundle.py tests/test_release_bundles.py
+git add tui/pnpm-workspace.yaml tui/package.json tui/src/main.ts tui/test/smoke.test.ts src/miniclaw/tui_launcher.py tests/test_tui_launcher.py scripts/build_node_bundle.py scripts/build_tui_bundle.py tests/test_release_bundles.py
 git commit -m "build(tui): 生成 symlink-free managed Node/TUI bundles"
 ```
 
