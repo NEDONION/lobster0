@@ -108,7 +108,7 @@ git commit -m "feat(sandbox): 增加 v2 exact executable binding"
 - Create: `src/miniclaw/sandbox/executables.py`
 - Create: `tests/test_sandbox_executables.py`
 - Modify: `src/miniclaw/tools/command.py`
-- Modify: `tests/test_command_tool.py`
+- Modify: `tests/test_run_command.py`
 
 **Interfaces:**
 - Consumes: `ExecutableRef`、现有 `normalize_command()` 和 `ExecutableEnvironment.path_value`。
@@ -193,14 +193,14 @@ Docker 继续使用 container program name 和 v1；Host 继续 v1。模型 Tool
 
 - [ ] **Step 5: 运行 GREEN**
 
-Run: `uv run python -m unittest tests.test_sandbox_executables tests.test_command_tool tests.test_tool_executor -v`
+Run: `uv run python -m unittest tests.test_sandbox_executables tests.test_run_command tests.test_tool_executor -v`
 
 Expected: chain tests PASS；Host/Docker 既有 plan 行为不变；Seatbelt plan hash 包含 refs。
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/sandbox/executables.py src/miniclaw/tools/command.py tests/test_sandbox_executables.py tests/test_command_tool.py
+git add src/miniclaw/sandbox/executables.py src/miniclaw/tools/command.py tests/test_sandbox_executables.py tests/test_run_command.py
 git commit -m "feat(policy): 冻结 Seatbelt executable chain"
 ```
 
@@ -403,7 +403,7 @@ uv run python -m unittest \
   tests.test_sandbox_executables \
   tests.test_seatbelt_sandbox \
   tests.test_sandbox_live_smoke \
-  tests.test_command_tool \
+  tests.test_run_command \
   tests.test_tool_executor \
   tests.test_install_service \
   tests.test_cli_service -v
