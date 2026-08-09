@@ -480,6 +480,38 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(provider.requests[-1].tools, ())
         self.assertEqual(provider.requests[-1].messages[-1].role, "system")
 
+    async def test_soft_finalization_rejects_tool_call_without_executing_it(self) -> None:
+        """soft 收口轮仍请求 Tool 时必须停止，且最后请求不产生 Tool 副作用。"""
+        provider = FakeProvider(
+            (
+                response(
+                    "",
+                    tool_calls=(ToolCall("call_missing", "missing", {}),),
+                ),
+                response(
+                    "",
+                    tool_calls=(ToolCall("call_final", "echo", {"text": "never"}),),
+                ),
+            )
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        with self.assertRaises(AgentLoopLimitError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=2,
+                hard_max_iterations=4,
+            ).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+            )
+
+        self.assertEqual(len(provider.requests), 2)
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(tool.executions, 0)
+
     async def test_three_repeated_tool_fingerprints_stop_without_reexecution(self) -> None:
         """相同 Tool 语义只能真实执行一次，连续三个重复模型轮次稳定停止。"""
         provider = FakeProvider(

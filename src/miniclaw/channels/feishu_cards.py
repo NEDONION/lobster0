@@ -308,7 +308,9 @@ def _table_cells(line: str) -> list[str] | None:
             current.append(char)
         index += 1
     cells.append("".join(current).strip())
-    return cells if len(cells) >= 2 else None
+    if len(cells) >= 2 or (leading and trailing and len(cells) == 1):
+        return cells
+    return None
 
 
 def _table_delimiter_indexes(text: str) -> list[int]:

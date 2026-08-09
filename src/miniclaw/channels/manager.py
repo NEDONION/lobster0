@@ -1007,8 +1007,8 @@ def _failure_profile(error: Exception) -> tuple[str, str, str]:
     if isinstance(error, AgentLoopLimitError):
         return (
             "Agent Tool Loop",
-            "模型在硬预算收口轮仍请求 Tool；最后一次 Tool 请求未执行。",
-            "请检查 Claw Trail、Turn/Event 与 ToolRun；调整任务范围或硬预算后重试。",
+            "模型在无 Tool 的预算收口轮仍请求 Tool；最后一次 Tool 请求未执行。",
+            "请检查 Claw Trail 与 ToolRun；拆分任务或调整预算配置后重试。",
         )
     if isinstance(error, ProviderProtocolError):
         return (

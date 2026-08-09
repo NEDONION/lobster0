@@ -155,6 +155,27 @@ class FeishuAgentCardTest(unittest.TestCase):
                 self.assertIn("- **标题**：", final_content)
                 self.assertNotIn("--- | ---", final_content)
 
+    def test_table_tokenizer_accepts_one_column_table_with_double_outer_pipes(self) -> None:
+        """双外框的一列表格应降级为 bullet，并要求 separator 与有效数据行。"""
+        answer = "| 名称 |\n| --- |\n| 文档 A |\n| 文档 B |"
+
+        final_content = self._final_content(answer)
+
+        self.assertIn("- **名称**：文档 A", final_content)
+        self.assertIn("- **名称**：文档 B", final_content)
+        self.assertNotIn("| --- |", final_content)
+
+    def test_plain_pipe_text_without_table_contract_is_preserved(self) -> None:
+        """只有普通管道文本但缺少 separator 或有效数据行时不得误判为表格。"""
+        answers = (
+            "普通 | 管道文本\n下一段仍是正文",
+            "| 名称 |\n| --- |\n| |\n后续正文",
+        )
+
+        for answer in answers:
+            with self.subTest(answer=answer):
+                self.assertIn(answer, self._final_content(answer))
+
     def test_internal_card_fields_are_strict_plain_text_markdown(self) -> None:
         """内部摘要与轨迹字段必须实体化 mention 和预编码实体，不能变回标签。"""
         progress = AgentProgress(
