@@ -151,9 +151,17 @@ Rollback 没有 CLI/TUI。Browser Agent 已完成本地实现，受控公网 liv
 Desktop hello 和隔离 Electron 进程 smoke 已通过；安装包、签名、鼠标/键盘视觉验收、真实 Provider LIVE smoke、
 Artifact 和 Sub-agent 未完成。
 
+下一条 Desktop 主线已经确认：以 LobsterAI Cowork 为主体，首屏直接提供 Composer、附件、模型、Workspace 和
+Agent 选择；吸收 OpenAgents 的 Agent/Thread/Participant/Shared Artifact 信息架构，底层继续只使用 MiniClaw
+Core。当前为 `TARGET CONFIRMED / D1-D5 IMPLEMENTATION PENDING`。
+
 | 文档或代码 | 当前定位 |
 | --- | --- |
-| [通用桌面 Agent 工作台设计](../architecture/20260809_通用桌面Agent工作台设计.md) | W0/W1 已实现边界与 W2/W3 规划。 |
+| [通用桌面 Agent 工作台设计](../architecture/20260809_通用桌面Agent工作台设计.md) | W0/W1 已实现历史基线。 |
+| [桌面多 Agent 开发需求](../product/20260810_桌面多Agent工作台开发需求.md) | D1～D5 产品范围与完成标准。 |
+| [LobsterAI-first 桌面设计](../architecture/20260810_LobsterAI-first桌面多Agent设计.md) | 新信息架构、Core 边界与安全设计。 |
+| [D1～D5 分 Phase 落地](desktop/20260810_桌面多Agent分Phase落地.md) | 文档先行、TDD 顺序和退出条件。 |
+| [D1 打开即聊设计](../superpowers/specs/2026-08-10-desktop-d1-conversation-shell-design.md) | 首屏 Composer、合并左栏、浅色视觉和状态迁移。 |
 | [W0/W1 实施计划](../superpowers/plans/2026-08-09-desktop-workbench-w0-w1.md) | RED→GREEN 施工与最终门禁。 |
 | `desktop/` | Electron Main、固定 Preload、React 四界面和 Desktop 测试。 |
 
@@ -175,7 +183,7 @@ Artifact 和 Sub-agent 未完成。
 | 文档 | 规划范围 | 当前事实 |
 | --- | --- | --- |
 | [OpenClaw / Hermes Gap](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | Phase 5.3 收口后到 Phase 9 的优先级和非目标。 | 路线已确认；未交付部分不能写成当前能力。 |
-| [通用桌面 Agent 工作台设计](../architecture/20260809_通用桌面Agent工作台设计.md) | 浅色四界面、通用单 Agent 闭环、Artifact、Automation 与后续受限 Sub-agent。 | W0/W1 development build 自动化门禁通过；W2/W3 pending。 |
+| [LobsterAI-first 桌面多 Agent 设计](../architecture/20260810_LobsterAI-first桌面多Agent设计.md) | 打开即聊、Composer、Artifact 和 depth-1 Multi-Agent。 | 目标已确认；D1～D5 pending。 |
 | [能力对齐工程总方案](20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Service、Automation、Sandbox、Browser、Evolution、Memory、Skills、MCP、Provider、Sub-agent、Media。 | `APPROVED ROADMAP`。 |
 | [Phase 6.5 计划](../superpowers/plans/2026-08-08-phase-6-5-browser-agent.md) | Browser Profile、snapshot/ref、Policy、Artifact。 | IMPLEMENTED；保留施工记录。 |
 | [Phase 7 计划](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md) | Feedback、Proposal、Eval、Apply/Rollback。 | 依赖 Memory A～E 与 Phase 6。 |

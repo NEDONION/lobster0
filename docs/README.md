@@ -31,28 +31,31 @@
 10. 阅读 [Phase 2：Tool、权限与安全执行设计](superpowers/specs/2026-08-07-phase-2-tools-security-design.md)，
    了解本机 Tool、Workspace、审批、命令和 SSRF 的落地方案。
 11. 阅读 [系统架构](architecture/20260807_系统架构.md)，理解渠道、Agent、工具、安全和数据边界。
-12. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证唯一 TUI。
-13. 阅读 [Python Core + pi-tui Bridge](engineering/phase-2/20260808_python-core-pi-tui-bridge.md)，理解版本化协议、
+12. 阅读 [桌面多 Agent 工作台开发需求](product/20260810_桌面多Agent工作台开发需求.md)和
+   [LobsterAI-first 桌面多 Agent 设计](architecture/20260810_LobsterAI-first桌面多Agent设计.md)，了解 Desktop
+   D1～D5 的新目标、当前事实和 Core 边界。
+13. 按 [本地运行指南](getting-started/20260807_本地运行指南.md)安装项目并验证唯一 TUI。
+14. 阅读 [Python Core + pi-tui Bridge](engineering/phase-2/20260808_python-core-pi-tui-bridge.md)，理解版本化协议、
    进程边界、长文本、选择和审批；[单入口 TUI](engineering/phase-2/20260808_single-entry-tui.md)保留 fallback 历史。
-14. 阅读 [TUI 回归测试规范](engineering/phase-2/20260808_tui-regression-testing.md)，理解 Trace 可观测契约、
+15. 阅读 [TUI 回归测试规范](engineering/phase-2/20260808_tui-regression-testing.md)，理解 Trace 可观测契约、
    虚拟终端、跨进程、Textual fallback、PTY smoke 和每版本门禁。
-15. 阅读 [exact-argv 命令执行工程文档](engineering/phase-2/20260808_command-execution.md)，理解 `run_command`、硬禁止、
+16. 阅读 [exact-argv 命令执行工程文档](engineering/phase-2/20260808_command-execution.md)，理解 `run_command`、硬禁止、
    精确规则、最小环境、超时和 TUI 审批。
-16. 阅读 [Personal Machine 权限与 CLI 发现](engineering/phase-2/20260808_personal-machine-permissions.md)，理解
+17. 阅读 [Personal Machine 权限与 CLI 发现](engineering/phase-2/20260808_personal-machine-permissions.md)，理解
    Workspace/Personal Profile、多根读写、敏感路径、NVM/uv/pnpm CLI 发现和最小子进程环境。
-17. 阅读 [Autopilot 权限与紧凑审批 UI](engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md)，理解
+18. 阅读 [Autopilot 权限与紧凑审批 UI](engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md)，理解
    四档模式、Owner 私聊信任、动态切换、脱敏审计与可滚动审批框。
-18. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/20260808_https-get-and-ssrf.md)，理解 URL/DNS 校验、
+19. 阅读 [Pinned HTTPS 与 SSRF 工程文档](engineering/phase-2/20260808_https-get-and-ssrf.md)，理解 URL/DNS 校验、
    固定 IP/TLS hostname、重定向、响应预算和不可信内容边界。
-19. 阅读 [Agent 回归工程文档](engineering/phase-2/20260808_agent-regression-evals.md)，理解每个版本如何固定 query、
+20. 阅读 [Agent 回归工程文档](engineering/phase-2/20260808_agent-regression-evals.md)，理解每个版本如何固定 query、
    跑离线 gate 并记录 baseline。
-20. 阅读 [飞书 Channel Core](engineering/phase-4/20260808_feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
+21. 阅读 [飞书 Channel Core](engineering/phase-4/20260808_feishu-channel-core.md)，理解 durable Inbox/Outbox、官方
    WebSocket Transport、Delivery 恢复和卡片审批。
-21. 阅读 [真实飞书 Bot 与 Live E2E](engineering/phase-5/20260808_feishu-live-e2e.md)，按图完成 Scope、同应用 Owner
+22. 阅读 [真实飞书 Bot 与 Live E2E](engineering/phase-5/20260808_feishu-live-e2e.md)，按图完成 Scope、同应用 Owner
    discovery、15 条真实场景和脱敏 Evidence。
-22. 阅读 [飞书单卡片与 lark-cli Skill](engineering/phase-5/20260809_feishu-single-card-and-lark-cli.md)，理解为什么飞书
+23. 阅读 [飞书单卡片与 lark-cli Skill](engineering/phase-5/20260809_feishu-single-card-and-lark-cli.md)，理解为什么飞书
    只保留 completed card，以及业务 API 为什么直接复用 official `lark-cli`。
-23. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
+24. 开发完成后使用 [Codex 对话沉淀工作流](development/20260807_Codex对话沉淀工作流.md)同步决策。
 
 ## 产品与架构
 
@@ -61,7 +64,10 @@
 | [产品需求文档](product/20260807_产品需求文档.md) | 定位、用户流程、功能范围、图解、验收标准和里程碑 |
 | [系统架构](architecture/20260807_系统架构.md) | 运行边界、主链路、计划包结构和安全原则 |
 | [OpenClaw / Hermes 能力 Gap](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 当前能力、竞品方法映射、优先级、v0.5.3 Evidence→Memory A～E→Phase 6～9 路线与非目标 |
-| [通用桌面 Agent 工作台设计](architecture/20260809_通用桌面Agent工作台设计.md) | WorkBuddy 式四界面、Codex 式浅色视觉、Electron + React、W0～W3 最小交付路线 |
+| [通用桌面 Agent 工作台设计](architecture/20260809_通用桌面Agent工作台设计.md) | W0/W1 已实现的历史基线 |
+| [桌面多 Agent 工作台开发需求](product/20260810_桌面多Agent工作台开发需求.md) | LobsterAI-first 产品范围、功能和 D1～D5 完成标准 |
+| [LobsterAI-first 桌面多 Agent 设计](architecture/20260810_LobsterAI-first桌面多Agent设计.md) | 三栏工作台、Bridge/Core、Artifact、Sub-agent 和许可边界 |
+| [Desktop D1～D5 分 Phase 落地](engineering/desktop/20260810_桌面多Agent分Phase落地.md) | 文档先行、TDD 顺序、测试与退出条件 |
 | [开发与交付时间线](engineering/20260809_development-timeline.md) | Capability Phase 与真实 Git/Release 交付顺序的对应关系 |
 | [Memory Autopilot 能力 Gap](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 当前失忆根因、EverOS/Tencent/OpenClaw 映射、L0→L3、跨渠道与分级自动治理 |
 | [Memory Autopilot 正式设计](superpowers/specs/2026-08-08-memory-autopilot-design.md) | 已确认的产品语义、存储决策、安全边界、失败策略与验收门槛 |
