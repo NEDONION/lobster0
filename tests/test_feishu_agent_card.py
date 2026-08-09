@@ -126,11 +126,10 @@ class FeishuAgentCardTest(unittest.TestCase):
         self.assertNotIn("| 项目 | 内容 |", final_content)
         self.assertIn("&lt;at id=all&gt;&lt;/at&gt;", final_content)
 
-    def test_bare_url_becomes_clickable_outside_code(self) -> None:
-        """裸 URL 应转为链接，但已有链接与代码中的 URL 必须保持原样。"""
+    def test_feishu_document_url_becomes_clickable_outside_code(self) -> None:
+        """飞书文档裸 URL 应转为链接，但已有链接与代码必须保持原样。"""
         answer = (
             "> 📄 https://my.feishu.cn/docx/DocToken123\n\n"
-            "更多：https://example.org/path。\n\n"
             "[已有链接](https://example.com)\n\n"
             "`https://inline.example.com`\n\n"
             "```text\nhttps://fenced.example.com\n```"
@@ -143,10 +142,29 @@ class FeishuAgentCardTest(unittest.TestCase):
             "(https://my.feishu.cn/docx/DocToken123)",
             final_content,
         )
-        self.assertIn("更多：[https://example.org/path](https://example.org/path)。", final_content)
         self.assertIn("[已有链接](https://example.com)", final_content)
         self.assertIn("`https://inline.example.com`", final_content)
         self.assertIn("```text\nhttps://fenced.example.com\n```", final_content)
+
+    def test_other_url_markdown_is_not_rewritten_as_bare_link(self) -> None:
+        """自动链接、引用定义、链接标签与 HTML 属性不得被裸 URL 逻辑改坏。"""
+        answer = (
+            "<https://example.com>\n"
+            "[read https://example.com](https://destination.example.com)\n"
+            "[docs]: https://reference.example.com\n"
+            '<a href="https://attribute.example.com">text</a>'
+        )
+
+        final_content = self._final_content(answer)
+
+        self.assertIn("&lt;https://example.com&gt;", final_content)
+        self.assertIn(
+            "[read https://example.com](https://destination.example.com)", final_content
+        )
+        self.assertIn("[docs]: https://reference.example.com", final_content)
+        self.assertIn(
+            '&lt;a href="https://attribute.example.com"&gt;text&lt;/a&gt;', final_content
+        )
 
     def test_table_tokenizer_preserves_escaped_and_inline_code_pipes(self) -> None:
         """表格单元格中的转义管道和不同长度的行内 code span 不得被拆坏。"""
