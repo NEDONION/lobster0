@@ -246,12 +246,19 @@ class RuntimeReceipt:
         ).encode()
 
     @classmethod
-    def load(cls, path: Path, *, expected_uid: int | None = None) -> RuntimeReceipt:
-        """no-follow 读取 owner-only Runtime receipt。
+    def load(
+        cls,
+        path: Path,
+        *,
+        expected_uid: int | None = None,
+        expected_mode: int = 0o600,
+    ) -> RuntimeReceipt:
+        """no-follow 读取权限精确的 Runtime receipt。
 
         Args:
             path: runtime 内 `install-receipt.json` 的 absolute path。
             expected_uid: 期望 owner；默认当前 euid。
+            expected_mode: user-prefix 为 0600，system-prefix 为 0644。
 
         Returns:
             exact-key 且字段关系有效的 RuntimeReceipt。
@@ -260,7 +267,12 @@ class RuntimeReceipt:
             InstallError: 文件 type/owner/mode/size、JSON 或字段无效。
         """
         uid = os.geteuid() if expected_uid is None else expected_uid
-        payload = _read_private_regular(path, uid, _MAX_RECEIPT_BYTES)
+        payload = _read_private_regular(
+            path,
+            uid,
+            _MAX_RECEIPT_BYTES,
+            expected_mode=expected_mode,
+        )
         try:
             document = json.loads(payload.decode("utf-8"), object_pairs_hook=_strict_object)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, RecursionError):
@@ -392,11 +404,16 @@ class RuntimeBuilder:
         staging_identity: tuple[int, int] | None = None
         published = False
         try:
+            if type(inputs) is not RuntimeInputs:
+                _runtime_failed()
+            program_mode, data_mode = _runtime_modes(inputs.layout)
+            if program_mode == 0o755 and not _is_root_builder():
+                _runtime_failed()
             artifacts, tokens = _preflight(inputs)
             _prepare_runtime_parent(inputs.layout)
             if _lexists(inputs.layout.staging) or _lexists(inputs.layout.runtime):
                 _runtime_failed()
-            os.mkdir(inputs.layout.staging, 0o700)
+            os.mkdir(inputs.layout.staging, program_mode)
             staging_metadata = inputs.layout.staging.lstat()
             staging_identity = (staging_metadata.st_dev, staging_metadata.st_ino)
             env = _runtime_environment(inputs.layout)
@@ -410,13 +427,24 @@ class RuntimeBuilder:
                 {"bin/python3.12"},
                 allow_internal_symlinks=True,
                 allow_public_read=True,
+                program_mode=program_mode,
             )
-            _copy_verified_tree(inputs.node, inputs.layout.staging / "node", {"bin/node"})
-            _copy_verified_tree(inputs.tui, inputs.layout.staging / "tui", set())
+            _copy_verified_tree(
+                inputs.node,
+                inputs.layout.staging / "node",
+                {"bin/node"},
+                program_mode=program_mode,
+            )
+            _copy_verified_tree(
+                inputs.tui,
+                inputs.layout.staging / "tui",
+                set(),
+                program_mode=program_mode,
+            )
             _copy_verified_file(
                 tokens["installer"],
                 inputs.layout.staging / "miniclaw-installer.pyz",
-                0o700,
+                program_mode,
             )
             private_tokens: dict[str, _FileToken] = {}
             for name, mode in (("uv", 0o700), ("requirements", 0o600), ("wheel", 0o600)):
@@ -446,7 +474,7 @@ class RuntimeBuilder:
                 _COMMAND_TIMEOUT_SECONDS,
                 (private_tokens["uv"],),
             )
-            _harden_and_fsync_tree(inputs.layout.staging / "venv")
+            _harden_and_fsync_tree(inputs.layout.staging / "venv", program_mode)
             self._checked(
                 (
                     str(private_tokens["uv"].path),
@@ -476,19 +504,20 @@ class RuntimeBuilder:
                 _COMMAND_TIMEOUT_SECONDS,
                 (private_tokens["uv"], private_tokens["wheel"]),
             )
+            _harden_and_fsync_tree(inputs.layout.staging, program_mode)
             staging_python_version = self.smoke(inputs)
             receipt = _receipt_for(inputs, artifacts, staging_python_version)
             _write_exclusive(
                 inputs.layout.staging / "release-manifest.json",
                 _manifest_bytes(inputs.manifest),
-                0o600,
+                data_mode,
             )
             _write_exclusive(
                 inputs.layout.staging / "install-receipt.json",
                 receipt.to_bytes(),
-                0o600,
+                data_mode,
             )
-            _harden_and_fsync_tree(inputs.layout.staging)
+            _harden_and_fsync_tree(inputs.layout.staging, program_mode)
             _rename_no_replace(inputs.layout.staging, inputs.layout.runtime)
             published = True
             moved = inputs.layout.runtime.lstat()
@@ -506,7 +535,7 @@ class RuntimeBuilder:
                 inputs.layout.runtime / ".inputs",
             ):
                 _remove_owned_tree(private)
-            _harden_and_fsync_tree(inputs.layout.runtime)
+            _harden_and_fsync_tree(inputs.layout.runtime, program_mode)
             _fsync_directory(inputs.layout.runtimes_dir)
             return receipt
         except InstallError:
@@ -540,15 +569,19 @@ class RuntimeBuilder:
         node = root / "node" / "bin" / "node"
         tui = root / "tui" / "dist" / "main.js"
         canonical_python = root / "python" / "bin" / "python3.12"
+        program_mode, data_mode = _runtime_modes(inputs.layout)
         python_token, python_link = _verify_internal_python_link(
             python,
             root,
             canonical_python,
             require_relative=runtime is not None,
+            expected_mode=program_mode,
         )
-        config_token = _verify_private_file(root / "venv" / "pyvenv.cfg", expected_mode=0o600)
-        node_token = _verify_executable(node)
-        tui_token = _verify_private_file(tui, expected_mode=0o600)
+        config_token = _verify_private_file(
+            root / "venv" / "pyvenv.cfg", expected_mode=data_mode
+        )
+        node_token = _verify_executable(node, expected_mode=program_mode)
+        tui_token = _verify_private_file(tui, expected_mode=data_mode)
         env = _runtime_environment(inputs.layout, runtime=root)
         probe = self._checked(
             (str(python), "-I", "-c", _PYTHON_PROBE),
@@ -745,7 +778,8 @@ def retain_current_and_previous(layout: InstallLayout) -> tuple[Path, ...]:
     try:
         if type(layout) is not InstallLayout:
             _runtime_failed()
-        _verify_directory(layout.runtimes_dir, expected_mode=_program_mode(layout))
+        program_mode, data_mode = _runtime_modes(layout)
+        _verify_directory(layout.runtimes_dir, expected_mode=program_mode)
         current = _validated_current(layout)
         protected: set[str] = set()
         if current is not None:
@@ -764,10 +798,12 @@ def retain_current_and_previous(layout: InstallLayout) -> tuple[Path, ...]:
             if not stat.S_ISDIR(metadata.st_mode):
                 continue
             try:
-                receipt = RuntimeReceipt.load(path / "install-receipt.json")
+                receipt = RuntimeReceipt.load(
+                    path / "install-receipt.json", expected_mode=data_mode
+                )
                 if receipt.runtime_relative != f"runtimes/{entry.name}":
                     continue
-                _verify_runtime_directory(path, receipt)
+                _verify_runtime_directory(path, receipt, program_mode=program_mode)
             except InstallError:
                 continue
             managed[receipt.runtime_relative] = (path, receipt)
@@ -782,7 +818,10 @@ def retain_current_and_previous(layout: InstallLayout) -> tuple[Path, ...]:
             protected.update(remaining[: 2 - len(protected)])
         for relative, (path, _receipt) in managed.items():
             if relative not in protected:
-                _quarantine_and_remove(path, _directory_identity(path))
+                _quarantine_and_remove(
+                    path,
+                    _directory_identity(path, expected_mode=program_mode),
+                )
         ordered = sorted(protected, key=lambda value: _semver_key(Path(value).name))
         return tuple(Path(value) for value in ordered)
     except InstallError:
@@ -907,6 +946,7 @@ def _verify_internal_python_link(
     canonical: Path,
     *,
     require_relative: bool,
+    expected_mode: int,
 ) -> tuple[_FileToken, _SymlinkToken]:
     """绑定 venv interpreter link，并确保最终指向内部 canonical Python。"""
     parent = -1
@@ -935,13 +975,14 @@ def _verify_internal_python_link(
         and not Path(target).is_relative_to(runtime)
     ):
         _runtime_failed()
-    executable = _verify_executable(canonical)
+    executable = _verify_executable(canonical, expected_mode=expected_mode)
     return executable, _SymlinkToken(path, _metadata_snapshot(metadata), target)
 
 
 def _repair_final_venv(layout: InstallLayout) -> None:
     """把已发布 venv 的 interpreter link/config 改为 final Runtime 内部路径。"""
     runtime = layout.runtime
+    program_mode, data_mode = _runtime_modes(layout)
     python = runtime / "venv" / "bin" / "python"
     canonical = runtime / "python" / "bin" / "python3.12"
     config = runtime / "venv" / "pyvenv.cfg"
@@ -955,7 +996,12 @@ def _repair_final_venv(layout: InstallLayout) -> None:
         expected_old = str(layout.staging / "python" / "bin" / "python3.12")
         if old_target != expected_old:
             _runtime_failed()
-        original = _read_private_regular(config, os.geteuid(), _MAX_METADATA_BYTES).decode("utf-8")
+        original = _read_private_regular(
+            config,
+            os.geteuid(),
+            _MAX_METADATA_BYTES,
+            expected_mode=data_mode,
+        ).decode("utf-8")
         lines = original.splitlines()
         if sum(line.startswith("home = ") for line in lines) != 1:
             _runtime_failed()
@@ -963,7 +1009,7 @@ def _repair_final_venv(layout: InstallLayout) -> None:
             f"home = {runtime / 'python' / 'bin'}" if line.startswith("home = ") else line
             for line in lines
         ) + "\n"
-        _write_exclusive(temporary_config, updated.encode(), 0o600)
+        _write_exclusive(temporary_config, updated.encode(), data_mode)
         relative = os.path.relpath(canonical, start=python.parent)
         os.symlink(relative, temporary_link)
         os.replace(temporary_link, python)
@@ -975,8 +1021,14 @@ def _repair_final_venv(layout: InstallLayout) -> None:
             runtime,
             canonical,
             require_relative=True,
+            expected_mode=program_mode,
         )
-        persisted = _read_private_regular(config, os.geteuid(), _MAX_METADATA_BYTES)
+        persisted = _read_private_regular(
+            config,
+            os.geteuid(),
+            _MAX_METADATA_BYTES,
+            expected_mode=data_mode,
+        )
         if persisted != updated.encode():
             _runtime_failed()
     except InstallError:
@@ -998,6 +1050,17 @@ def _prepare_runtime_parent(layout: InstallLayout) -> None:
         if not _lexists(path):
             path.mkdir(mode=mode)
         _verify_directory(path, expected_mode=mode)
+
+
+def _runtime_modes(layout: InstallLayout) -> tuple[int, int]:
+    """返回 Runtime 目录/可执行文件 mode 与 regular data mode。"""
+    program_mode = _program_mode(layout)
+    return program_mode, 0o644 if program_mode == 0o755 else 0o600
+
+
+def _is_root_builder() -> bool:
+    """判断当前 Runtime builder 是否持有 system-prefix 所需 root 身份。"""
+    return os.geteuid() == 0
 
 
 def _open_parent_nofollow(path: Path) -> tuple[int, str]:
@@ -1190,9 +1253,9 @@ def _verify_private_file(
     return _FileToken(path, _metadata_snapshot(before), value, expected_mode)
 
 
-def _verify_executable(path: Path) -> _FileToken:
-    """验证 owner-only no-follow executable file。"""
-    return _verify_private_file(path, expected_mode=0o700)
+def _verify_executable(path: Path, *, expected_mode: int = 0o700) -> _FileToken:
+    """验证 no-follow executable file 的 owner 与精确程序 mode。"""
+    return _verify_private_file(path, expected_mode=expected_mode)
 
 
 def _revalidate_token(token: _FileToken) -> None:
@@ -1415,15 +1478,19 @@ def _copy_verified_tree(
     *,
     allow_internal_symlinks: bool = False,
     allow_public_read: bool = False,
+    program_mode: int = 0o700,
 ) -> None:
     """复制 verified tree；Python 仅重建 root 内部 relative alias links。"""
+    if program_mode not in {0o700, 0o755}:
+        _runtime_failed()
+    data_mode = 0o644 if program_mode == 0o755 else 0o600
     manifest = _validate_source_tree(
         source,
         required,
         allow_internal_symlinks=allow_internal_symlinks,
         allow_public_read=allow_public_read,
     )
-    os.mkdir(destination, 0o700)
+    os.mkdir(destination, program_mode)
     for directory, names, files in os.walk(source, topdown=True, followlinks=False):
         source_directory = Path(directory)
         relative_directory = source_directory.relative_to(source)
@@ -1461,7 +1528,7 @@ def _copy_verified_tree(
                 )
                 if manifest.get(relative) != (_metadata_snapshot(child_metadata), None):
                     _runtime_failed()
-                os.mkdir(target_directory / name, 0o700)
+                os.mkdir(target_directory / name, program_mode)
         names[:] = [name for name in names if name not in directory_links]
         for name in sorted(files):
             source_file = source_directory / name
@@ -1480,7 +1547,7 @@ def _copy_verified_tree(
             relative = source_file.relative_to(source).as_posix()
             if manifest.get(relative) != (token.snapshot, None):
                 _runtime_failed()
-            destination_mode = 0o700 if mode & 0o111 else 0o600
+            destination_mode = program_mode if mode & 0o111 else data_mode
             _copy_verified_file(token, target_directory / name, destination_mode)
     if manifest != _validate_source_tree(
         source,
@@ -1556,8 +1623,11 @@ def _copy_verified_file(token: _FileToken, destination: Path, mode: int) -> None
             os.close(destination_descriptor)
 
 
-def _harden_and_fsync_tree(root: Path) -> None:
-    """把 Runtime dirs/files 收敛到 0700/0600-or-0700 并 fsync tree boundary。"""
+def _harden_and_fsync_tree(root: Path, program_mode: int) -> None:
+    """按 user/system 程序 mode 收敛 Runtime 并 fsync tree boundary。"""
+    if program_mode not in {0o700, 0o755}:
+        _runtime_failed()
+    data_mode = 0o644 if program_mode == 0o755 else 0o600
     directories: list[Path] = []
     for directory, names, files in os.walk(root, topdown=True, followlinks=False):
         current = Path(directory)
@@ -1578,13 +1648,13 @@ def _harden_and_fsync_tree(root: Path) -> None:
                 _runtime_failed()
             descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
             try:
-                mode = 0o700 if stat.S_IMODE(metadata.st_mode) & 0o111 else 0o600
+                mode = program_mode if stat.S_IMODE(metadata.st_mode) & 0o111 else data_mode
                 os.fchmod(descriptor, mode)
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
     for directory in reversed(directories):
-        directory.chmod(0o700)
+        directory.chmod(program_mode)
         _fsync_directory(directory)
 
 
@@ -1653,10 +1723,18 @@ def _write_exclusive(path: Path, payload: bytes, mode: int) -> None:
             os.close(descriptor)
 
 
-def _verify_runtime_directory(path: Path, receipt: RuntimeReceipt) -> None:
+def _verify_runtime_directory(
+    path: Path,
+    receipt: RuntimeReceipt,
+    *,
+    program_mode: int = 0o700,
+) -> None:
     """校验 immutable Runtime root 和内部 receipt 完全绑定。"""
-    _verify_directory(path)
-    stored = RuntimeReceipt.load(path / "install-receipt.json")
+    data_mode = 0o644 if program_mode == 0o755 else 0o600
+    _verify_directory(path, expected_mode=program_mode)
+    stored = RuntimeReceipt.load(
+        path / "install-receipt.json", expected_mode=data_mode
+    )
     if path.name != receipt.version or stored != receipt:
         _runtime_failed()
 
@@ -1674,13 +1752,17 @@ def _verified_runtime_target(layout: InstallLayout, target: str) -> RuntimeRecei
         ):
             _activation_failed()
         runtime = layout.program_prefix.joinpath(*pure.parts)
-        receipt = RuntimeReceipt.load(runtime / "install-receipt.json")
-        _verify_runtime_directory(runtime, receipt)
+        program_mode, data_mode = _runtime_modes(layout)
+        receipt = RuntimeReceipt.load(
+            runtime / "install-receipt.json", expected_mode=data_mode
+        )
+        _verify_runtime_directory(runtime, receipt, program_mode=program_mode)
         manifest = ReleaseManifest.from_bytes(
             _read_private_regular(
                 runtime / "release-manifest.json",
                 os.geteuid(),
                 _MAX_METADATA_BYTES,
+                expected_mode=data_mode,
             )
         )
         bindings = {
@@ -1976,15 +2058,21 @@ def _remove_owned_tree(root: Path) -> None:
     root.rmdir()
 
 
-def _directory_identity(path: Path) -> tuple[int, int]:
-    """返回 owner-only directory 的 device/inode token。"""
-    metadata = _verify_directory(path)
+def _directory_identity(path: Path, *, expected_mode: int = 0o700) -> tuple[int, int]:
+    """返回 owner 且 mode 精确的 directory device/inode token。"""
+    metadata = _verify_directory(path, expected_mode=expected_mode)
     return metadata.st_dev, metadata.st_ino
 
 
-def _read_private_regular(path: Path, uid: int, limit: int) -> bytes:
-    """bounded no-follow 读取 mode 0600 regular file。"""
-    token = _verify_private_file(path, expected_mode=0o600)
+def _read_private_regular(
+    path: Path,
+    uid: int,
+    limit: int,
+    *,
+    expected_mode: int = 0o600,
+) -> bytes:
+    """bounded no-follow 读取 owner 与 mode 精确的 regular file。"""
+    token = _verify_private_file(path, expected_mode=expected_mode)
     if token.snapshot[6] > limit:
         _runtime_failed()
     try:

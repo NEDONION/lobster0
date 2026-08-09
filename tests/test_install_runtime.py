@@ -19,6 +19,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+from miniclaw.install import layout as layout_module
 from miniclaw.install import runtime as runtime_module
 from miniclaw.install.layout import InstallLayout
 from miniclaw.install.models import (
@@ -79,6 +80,8 @@ class FakeRunner:
                 encoding="utf-8",
             )
             (python.parents[1] / "pyvenv.cfg").chmod(0o600)
+            (python.parent / "miniclaw").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            (python.parent / "miniclaw").chmod(0o755)
         if argv[-1:] == ("--version",) and "/node/" in argv[0]:
             return CommandResult(0, self.node_version, b"")
         if len(argv) >= 3 and argv[-2] == "-c":
@@ -142,6 +145,7 @@ class InstallRuntimeTests(unittest.TestCase):
         self.node.mkdir(mode=0o700)
         (self.node / "bin").mkdir(mode=0o700)
         self._write_private(self.node / "bin" / "node", b"#!/bin/sh\nexit 0\n", 0o700)
+        self._write_private(self.node / "README.md", b"verified node data\n")
         self.tui = self.sources / "tui"
         self.tui.mkdir(mode=0o700)
         (self.tui / "dist").mkdir(mode=0o700)
@@ -156,6 +160,7 @@ class InstallRuntimeTests(unittest.TestCase):
         (self.managed_python / "bin" / "python3.12").chmod(0o700)
         (self.managed_python / "bin" / "python3").symlink_to("python3.12")
         (self.managed_python / "lib").mkdir(mode=0o700)
+        self._write_private(self.managed_python / "lib" / "python-data.txt", b"python data\n")
         self.managed_python_executable = self.managed_python / "bin" / "python3.12"
         self.platform = PlatformKey("linux", "x86_64")
         self.manifest = self._manifest()
@@ -462,6 +467,170 @@ class InstallRuntimeTests(unittest.TestCase):
             f"home = {self.layout.runtime / 'python' / 'bin'}",
             (self.layout.runtime / "venv" / "pyvenv.cfg").read_text(encoding="utf-8"),
         )
+
+    def test_system_runtime_is_root_owned_public_program_data_and_activates(self) -> None:
+        """system Runtime 的 0700/0600 发布树会让目标用户无法启动。"""
+        system_prefix = self.root / "usr-local-lib" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "usr-local-bin" / "miniclaw"
+        state_home = self.home / "system-state"
+        state_home.mkdir(mode=0o700)
+        secret = state_home / "secrets.env"
+        self._write_private(secret, b"MINICLAW_TEST_SECRET=preserved\n")
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            inputs = replace(self.inputs, layout=layout)
+            with mock.patch.object(
+                runtime_module, "_is_root_builder", return_value=True, create=True
+            ):
+                receipt = RuntimeBuilder(self.runner).build(inputs)
+                activate_runtime(layout, receipt)
+
+            executable_paths = {
+                layout.runtime / "miniclaw-installer.pyz",
+                layout.runtime / "node" / "bin" / "node",
+                layout.runtime / "python" / "bin" / "python3.12",
+                layout.runtime / "venv" / "bin" / "miniclaw",
+            }
+            for directory, names, files in os.walk(
+                layout.runtime, topdown=True, followlinks=False
+            ):
+                current = Path(directory)
+                metadata = current.lstat()
+                self.assertEqual(metadata.st_uid, os.geteuid(), current)
+                self.assertEqual(stat.S_IMODE(metadata.st_mode), 0o755, current)
+                self.assertEqual(stat.S_IMODE(metadata.st_mode) & 0o005, 0o005, current)
+                for name in (*names, *files):
+                    path = current / name
+                    item = path.lstat()
+                    self.assertEqual(item.st_uid, os.geteuid(), path)
+                    if stat.S_ISLNK(item.st_mode):
+                        self.assertFalse(Path(os.readlink(path)).is_absolute(), path)
+                        self.assertTrue(
+                            path.resolve(strict=True).is_relative_to(
+                                layout.runtime.resolve(strict=True)
+                            ),
+                            path,
+                        )
+                        continue
+                    if stat.S_ISREG(item.st_mode):
+                        expected = 0o755 if path in executable_paths else 0o644
+                        mode = stat.S_IMODE(item.st_mode)
+                        self.assertEqual(mode, expected, path)
+                        self.assertEqual(mode & 0o022, 0, path)
+                        self.assertEqual(mode & 0o004, 0o004, path)
+                        if path in executable_paths:
+                            self.assertEqual(mode & 0o001, 0o001, path)
+
+            self.assertEqual(os.readlink(layout.current), "runtimes/0.7.0")
+            self.assertEqual(
+                RuntimeReceipt.load(
+                    layout.runtime / "install-receipt.json", expected_mode=0o644
+                ),
+                receipt,
+            )
+            self.assertEqual(stat.S_IMODE(state_home.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(secret.stat().st_mode), 0o600)
+            self.assertEqual(secret.read_bytes(), b"MINICLAW_TEST_SECRET=preserved\n")
+
+    def test_user_runtime_keeps_exact_private_modes(self) -> None:
+        """system 权限分支不得把默认用户 Runtime 扩大成 public-readable。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        executable_paths = {
+            self.layout.runtime / "miniclaw-installer.pyz",
+            self.layout.runtime / "node" / "bin" / "node",
+            self.layout.runtime / "python" / "bin" / "python3.12",
+            self.layout.runtime / "venv" / "bin" / "miniclaw",
+        }
+        for directory, names, files in os.walk(
+            self.layout.runtime, topdown=True, followlinks=False
+        ):
+            current = Path(directory)
+            self.assertEqual(stat.S_IMODE(current.lstat().st_mode), 0o700, current)
+            for name in (*names, *files):
+                path = current / name
+                item = path.lstat()
+                if stat.S_ISREG(item.st_mode):
+                    expected = 0o700 if path in executable_paths else 0o600
+                    self.assertEqual(stat.S_IMODE(item.st_mode), expected, path)
+
+    def test_system_runtime_rejects_non_root_before_write(self) -> None:
+        """非 root builder 即使持有 system layout 也不能创建任何程序目录。"""
+        system_prefix = self.root / "system-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "system-bin" / "miniclaw"
+        state_home = self.home / "system-state"
+        state_home.mkdir(mode=0o700)
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            with (
+                mock.patch.object(
+                    runtime_module, "_is_root_builder", return_value=False, create=True
+                ),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                RuntimeBuilder(self.runner).build(replace(self.inputs, layout=layout))
+
+        self.assertEqual(self.runner.calls, [])
+        self.assertFalse(system_prefix.exists())
+
+    def test_system_runtime_failure_cleans_public_staging(self) -> None:
+        """system build 失败仍须清理本轮 0755 staging，不能留下半成品。"""
+        system_prefix = self.root / "failed-system-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "failed-system-bin" / "miniclaw"
+        state_home = self.home / "failed-system-state"
+        state_home.mkdir(mode=0o700)
+        runner = FakeRunner()
+        runner.fail_token = "install-smoke"
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            with (
+                mock.patch.object(
+                    runtime_module, "_is_root_builder", return_value=True, create=True
+                ),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                RuntimeBuilder(runner).build(replace(self.inputs, layout=layout))
+
+            self.assertFalse(layout.staging.exists())
+            self.assertFalse(layout.runtime.exists())
 
     def test_prerelease_runtime_uses_pep440_only_inside_wheel(self) -> None:
         """Runtime保留SemVer，wheel路径与METADATA只使用唯一PEP440映射。"""
