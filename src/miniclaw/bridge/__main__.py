@@ -5,10 +5,9 @@ import asyncio
 import os
 import sys
 from collections.abc import Sequence
-from pathlib import Path
 
 from miniclaw.config import ConfigError, load_config
-from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from miniclaw.paths import PathConfigurationError, build_state_paths, resolve_home
 from miniclaw.runtime import create_runtime
 
@@ -48,7 +47,7 @@ def build_parser() -> argparse.ArgumentParser:
 async def _run(home: str | None) -> int:
     """装配唯一 Runtime，运行 Bridge，并在退出时关闭 Provider。"""
     paths = build_state_paths(resolve_home(home))
-    load_dotenv(Path.cwd() / ".env")
+    load_dotenv(resolve_dotenv_path(paths, os.environ))
     config = load_config(paths)
     api_key = os.environ.get(config.provider.api_key_env, "").strip()
     if not api_key:
