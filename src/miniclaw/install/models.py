@@ -182,7 +182,7 @@ class InstallError(RuntimeError):
 
     Args:
         code: 供调用方分支处理的稳定错误代码。
-        detail: 不可信诊断文本；仅固定消息、字段名和结构化公开摘要可保留。
+        detail: 不可信诊断文本；仅固定消息和字段名可保留。
     """
 
     def __init__(self, code: str, detail: str) -> None:
@@ -709,55 +709,19 @@ class InstallPlan:
 
 
 def _safe_detail(detail: str) -> str:
-    """只保留 allowlisted 固定消息、字段名和结构化计划摘要。
+    """只保留 allowlisted 固定消息和字段名。
 
     Args:
         detail: 可能来自不可信边界的诊断文本。
 
     Returns:
-        结构合法且不超过 500 字符的文本，否则为 redacted。
+        精确命中安全集合且不超过 500 字符的文本，否则为 redacted。
     """
     if type(detail) is not str or len(detail) > 500:
         return "redacted"
-    if (
-        detail in _SAFE_DETAIL_MESSAGES
-        or detail in _SAFE_DETAIL_FIELDS
-        or _is_safe_plan_detail(detail)
-    ):
+    if detail in _SAFE_DETAIL_MESSAGES or detail in _SAFE_DETAIL_FIELDS:
         return detail
     return "redacted"
-
-
-def _is_safe_plan_detail(detail: str) -> bool:
-    """判断文本是否为字段和值均受限的公开计划摘要。
-
-    Args:
-        detail: 长度已由调用方限制的诊断文本。
-
-    Returns:
-        仅精确结构、合法 SemVer、受支持平台和布尔值返回 True。
-    """
-    parts = detail.split(" ")
-    if len(parts) != 4:
-        return False
-    version, platform, service, onboarding = parts
-    if not version.startswith("version="):
-        return False
-    version_match = _SEMVER.fullmatch(version[8:])
-    if version_match is None or version_match[5] is not None:
-        return False
-    prerelease = version_match[4]
-    if prerelease is not None and _PYTHON_PRERELEASE.fullmatch(prerelease) is None:
-        return False
-    if not platform.startswith("platform="):
-        return False
-    platform_parts = platform[9:].split("/")
-    if len(platform_parts) != 2 or tuple(platform_parts) not in _SUPPORTED_PLATFORMS:
-        return False
-    return service in {"service=True", "service=False"} and onboarding in {
-        "onboarding=True",
-        "onboarding=False",
-    }
 
 
 def _absolute_path_is_safe(value: object) -> bool:

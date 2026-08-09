@@ -513,6 +513,8 @@ class InstallModelsTest(unittest.TestCase):
             "version=1.2.3-TOPSECRET platform=linux/x86_64 service=True onboarding=True",
             "version=1.2.3-Bearer platform=linux/x86_64 service=True onboarding=True",
             f"version=1.2.3-{'a' * 40} platform=linux/x86_64 service=True onboarding=True",
+            f"version=1.2.3-rc.{'1' * 40} platform=linux/x86_64 service=True onboarding=True",
+            f"version={'1' * 40}.2.3 platform=linux/x86_64 service=True onboarding=True",
         )
         for unsafe in unsafe_values:
             error = InstallError("manifest_invalid", unsafe)
@@ -531,19 +533,32 @@ class InstallModelsTest(unittest.TestCase):
         safe_summary = self.plan().safe_summary()
         self.assertEqual(
             InstallEvent("install.preflight", "ok", None, safe_summary).detail,
-            safe_summary,
+            "redacted",
         )
         safe_prerelease = (
             "version=1.2.3-rc.1 platform=linux/x86_64 service=False onboarding=False"
         )
         self.assertEqual(
             InstallEvent("install.preflight", "ok", None, safe_prerelease).detail,
-            safe_prerelease,
+            "redacted",
         )
         with self.assertRaisesRegex(InstallError, "event_invalid"):
             InstallEvent("install.failed", [], None, "detail")  # type: ignore[arg-type]
         fallback = InstallError([], "detail")  # type: ignore[arg-type]
         self.assertEqual(fallback.code, "installer_error")
+
+    def test_parser_error_keeps_code_and_field_without_raw_value(self) -> None:
+        """parser 错误只输出稳定 code 与字段名，不回显恶意字段值。"""
+        raw_url = "https://user:TOPSECRET@github.com/NEDONION/miniclaw/releases/raw"
+
+        with self.assertRaises(InstallError) as caught:
+            ReleaseManifest.from_bytes(self.artifact_mutation(url=raw_url))
+
+        error = caught.exception
+        self.assertEqual(error.code, "manifest_invalid")
+        self.assertEqual(error.detail, "artifacts.url")
+        self.assertNotIn(raw_url, str(error))
+        self.assertNotIn("TOPSECRET", str(error))
 
     def test_node_tuple_segments_reject_bool_in_direct_constructors(self) -> None:
         """Node 三段版本每一段必须是 exact int，bool 不得利用 int 相等语义。"""
