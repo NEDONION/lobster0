@@ -17,7 +17,7 @@
 
 ```mermaid
 flowchart LR
-    CHANGE["代码或 Prompt 变更"] --> UNIT["925 Python + 36/36 TUI + 14/14 Worker"]
+    CHANGE["代码或 Prompt 变更"] --> UNIT["1005 Python + 36/36 TUI + 14/14 Worker"]
     UNIT --> VALIDATE["eval validate"]
     VALIDATE --> OFFLINE["39 active offline cases"]
     OFFLINE --> CHANNEL["33 active Channel cases"]
@@ -29,7 +29,7 @@ flowchart LR
     LIVE --> RECORD["release record"]
 ```
 
-当前全仓门禁是 **IMPLEMENTATION PASS**：925/925 Python、36/36 TUI TypeScript、14/14 Browser Worker、
+当前全仓门禁是 **IMPLEMENTATION PASS**：1005/1005 Python、36/36 TUI TypeScript、14/14 Browser Worker、
 39/39 active offline Agent、33/33 Channel、660/660 local Channel soak、15/15 Automation、300/300 Automation
 soak、18/18 Browser 与 360/360 Browser soak。Feishu 是
 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram 与 Discord 的真实验收均为
@@ -37,6 +37,8 @@ soak、18/18 Browser 与 360/360 Browser soak。Feishu 是
 Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已单独完成 3 次 planning probe。
 通用 live runner、费用趋势和 compare CLI 仍是后续能力。
 Browser 是 **CONTROLLED LIVE SMOKE PENDING**；本地 headless Chromium 与 fixture 不冒充公网 Live PASS。
+Phase 6 macOS + 飞书生产验收工具已完成，仍为 **PRODUCTION SOAK PENDING**；没有同一 clean commit 的严格
+25-case、受管 recovery 与连续 24h aggregate，就不能写 production verified。
 
 ## 版本规则
 

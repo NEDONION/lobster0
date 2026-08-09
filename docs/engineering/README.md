@@ -29,16 +29,16 @@
 | Phase 3 | Memory、Skills、Compaction | v0.3.0、v0.6.0 | Memory Autopilot `IMPLEMENTATION PASS` | [Memory Autopilot 工程实现](phase-5/20260809_memory-autopilot.md) |
 | Phase 4 | Feishu Channel | v0.4.0；后续由 v0.5.1～v0.5.3 加固 | `IMPLEMENTATION PASS`；Owner DM verified；15-case pending | [飞书 Channel Core](phase-4/20260808_feishu-channel-core.md) |
 | Phase 5 | Telegram / Discord Channel | v0.5.0 | `IMPLEMENTATION PASS / LIVE PENDING` | [Telegram 与 Discord](phase-5/20260808_telegram-discord-channels.md) |
-| Phase 6 | Autonomy、Sandbox、Checkpoint | v0.7.0 | `IMPLEMENTATION PASS / DOCKER LIVE VERIFIED / SEATBELT LIVE PENDING` | [Autonomy Runtime](phase-6/20260809_autonomy-runtime.md) |
+| Phase 6 | Autonomy、Sandbox、Checkpoint、production gate | v0.7.0+ | `IMPLEMENTATION PASS / PRODUCTION SOAK PENDING` | [macOS + 飞书生产验收](phase-6/20260810_macos-feishu-production-acceptance.md) |
 | Phase 6.5 | Isolated Browser Agent | v0.6.5 capability record | `IMPLEMENTATION PASS / CONTROLLED LIVE SMOKE PENDING` | [Browser Agent](phase-6/browser-agent.md) |
 | Phase 7 | Controlled Evolution | 未发布 | `ENGINEERING PLAN / NOT IMPLEMENTED` | [Controlled Evolution 工程落地方案](phase-7/20260810_controlled-evolution.md) |
 
-当前全仓本地基线是 925/925 Python、36/36 TUI TypeScript、14/14 Browser Worker、39/39 Agent、
+当前全仓本地基线是 1005/1005 Python、36/36 TUI TypeScript、14/14 Browser Worker、39/39 Agent、
 33/33 Channel、20 轮 660/660 local Channel soak、15/15 Automation，以及 18/18 Browser 和 20 轮
 360/360 Browser soak。状态为 **IMPLEMENTATION PASS**；Feishu 为
 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**，Telegram、Discord 均为 **LIVE PENDING**，
-Docker 为 **LIVE VERIFIED**，Seatbelt 为 **LIVE PENDING**。v0.5.3 Core、Memory Autopilot A～E 与 Phase 6
-已经合并；真实 Feishu/Discord 15/15 和 Seatbelt live probe 仍未完成。
+Docker 为 **LIVE VERIFIED**。Phase 6 production tooling 已实现，状态为 **PRODUCTION SOAK PENDING**；同一 clean
+commit 的 Seatbelt 2/2、Feishu 15/15、Automation 10/10、受管 recovery 和连续 24h 尚未共同完成。
 Memory 上线前的 v0.5.3 历史基线为 562 Python、30 TypeScript 和 29/29 Agent，不代表当前门禁数字。
 
 > Phase 3 的 legacy Memory/Skills/Compaction 继续兼容；分级自动记忆、跨 Session 检索与周期 Flush 已由
@@ -133,6 +133,7 @@ WebSocket ready 与 Owner 私聊 Delivery 已验证；完整 15-case、长期 so
 | --- | --- | --- |
 | [Autonomy Runtime](phase-6/20260809_autonomy-runtime.md) | Task/Run Ledger、Scheduler、Runner、Heartbeat、Budget、E-stop、Approval continuation 与主动 Delivery。 | **IMPLEMENTATION PASS** |
 | [Sandbox 与 Checkpoint](phase-6/20260809_sandbox-and-checkpoint.md) | immutable Plan、Approval hash、Docker/Seatbelt、Checkpoint CAS 与 Rollback。 | **IMPLEMENTATION PASS / DOCKER LIVE VERIFIED / SEATBELT LIVE PENDING** |
+| [macOS + 飞书生产级验收](phase-6/20260810_macos-feishu-production-acceptance.md) | managed Python/LaunchAgent、Seatbelt 2-case、飞书 25-case、recovery、exact 24h、Evidence 与故障处置。 | **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING** |
 | [v0.7.0 Release Record](../evals/releases/v0.7.0.md) | 798/798、35/35、39/39、33/33、660/660 与 Automation 15/15 的复现边界。 | CURRENT |
 | [已确认设计](../superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md) | 产品语义、安全边界与非目标。 | APPROVED DESIGN / IMPLEMENTED |
 | [TDD 实施计划](../superpowers/plans/2026-08-09-phase-6-autonomy-sandbox.md) | 逐项 RED→GREEN 文件、接口与门禁。 | IMPLEMENTED；保留施工记录 |
@@ -140,7 +141,8 @@ WebSocket ready 与 Owner 私聊 Delivery 已验证；完整 15-case、长期 so
 | [v0.6.5 Browser Record](../evals/releases/v0.6.5.md) | 925/925、14/14 Worker、18/18 与 360/360 Browser 的复现边界。 | CURRENT |
 
 Automation、Heartbeat 与 Browser 默认关闭；Heartbeat 当前没有 Owner IM route，Checkpoint 只覆盖主 Workspace，
-Rollback 没有 CLI/TUI。Browser Agent 已完成本地实现，受控公网 live smoke 仍为 pending。
+Rollback 没有 CLI/TUI。生产 Gate 的 monitor/orchestrator 已实现，但没有连续 24h verified aggregate；Browser Agent
+已完成本地实现，受控公网 live smoke 仍为 pending。
 
 ## Desktop W0/W1：通用 Agent 工作台开发版
 

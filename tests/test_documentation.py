@@ -29,7 +29,7 @@ class Phase6DocumentationTest(unittest.TestCase):
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("925", content)
+                self.assertIn("1005", content)
                 self.assertIn("36/36", content)
                 self.assertIn("14/14", content)
                 self.assertIn("39/39", content)
@@ -41,6 +41,8 @@ class Phase6DocumentationTest(unittest.TestCase):
                 self.assertIn("CONTROLLED LIVE SMOKE PENDING", content)
                 self.assertIn("TARGETED CALLBACK LIVE VERIFIED", content)
                 self.assertIn("15-CASE LIVE PENDING", content)
+                self.assertIn("PRODUCTION SOAK PENDING", content)
+                self.assertNotIn("MACOS+FEISHU PRODUCTION VERIFIED", content)
 
     def test_operational_documents_are_present_and_linked(self) -> None:
         """Phase 5 运维和 Phase 6 自治安全文档必须各有独立入口。"""
@@ -61,6 +63,7 @@ class Phase6DocumentationTest(unittest.TestCase):
         for name in (
             "20260809_autonomy-runtime.md",
             "20260809_sandbox-and-checkpoint.md",
+            "20260810_macos-feishu-production-acceptance.md",
             "browser-agent.md",
         ):
             self.assertTrue((PROJECT_ROOT / "docs/engineering/phase-6" / name).is_file())
@@ -142,7 +145,7 @@ class Phase6DocumentationTest(unittest.TestCase):
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
             "Phase 6.5 implementation pass",
-            "925 Python",
+            "1005 Python",
             "36/36 TUI",
             "14/14 Worker",
             "39/39",
@@ -157,8 +160,10 @@ class Phase6DocumentationTest(unittest.TestCase):
             "15-CASE LIVE PENDING",
             "Telegram live pending",
             "Discord live pending",
+            "PRODUCTION SOAK PENDING",
         ):
             self.assertIn(needle, content)
+        self.assertNotIn("MACOS+FEISHU PRODUCTION VERIFIED", content)
 
     def test_agents_file_contains_mixed_commit_and_phase5_gate(self) -> None:
         """后续 Agent 必须知道中英混合提交规范与发布命令。"""

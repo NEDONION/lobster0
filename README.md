@@ -37,6 +37,9 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 > executable chain；更换机器、解释器或系统版本后必须重新运行 live probe。
 > Phase 6.5 Browser Agent 已完成本地实现：专用 Chromium Profile、snapshot/ref、八个受 Policy 管理的 Browser Tool、
 > Screenshot/Download Artifact 和 18 条版本化门禁已经接通；Browser 默认关闭，受控公网 Live smoke 尚未执行。
+> Phase 6 macOS + 飞书 production gate、受管重启、exact-duration checkpoint 与脱敏 aggregate 已实现；当前为
+> **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING**。只有同一 clean commit 的 Seatbelt 2/2、飞书 15/15、
+> Automation 10/10 和连续 24 小时全绿后，才能升级生产状态。
 
 ## 为什么是 MiniClaw
 
@@ -293,7 +296,7 @@ Policy；截图和下载只返回私有 Artifact ID。当前状态为 **IMPLEMEN
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Python | 925/925 `unittest` PASS |
+| Python | 1005/1005 `unittest` PASS |
 | TUI | 36/36 TypeScript tests + build PASS |
 | Browser Worker | 14/14 TypeScript + 真实 headless Chrome tests PASS |
 | Agent | 39/39 active offline cases PASS（含 `MEM-AUTO-001..010`） |
@@ -304,7 +307,7 @@ Policy；截图和下载只返回私有 Artifact ID。当前状态为 **IMPLEMEN
 | Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS；真实平台 Live Gate 仍 pending |
 | Memory Autopilot | A～E IMPLEMENTATION PASS；真实 IM Live 结论沿用各平台 gate |
-| Phase 6 | **IMPLEMENTATION PASS**；Docker LIVE VERIFIED / 当前 Mac Seatbelt LIVE VERIFIED；Feishu production gate 进行中 |
+| Phase 6 | **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING**；生产 Gate tooling 完成，严格 25-case 与 24h 尚未完成 |
 
 本地 fake SDK、离线场景和 660/660 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
 Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；Memory v0.6.0 的历史基线为
@@ -386,6 +389,7 @@ tests/           # Python unittest
 | [Phase 6 Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md) | Task/Scheduler/Runner/Heartbeat、预算、恢复与运维入口 |
 | [Phase 6 Sandbox 与 Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md) | Plan/Approval 绑定、隔离后端、Checkpoint 与 Rollback |
 | [Phase 6.5 Browser Agent](docs/engineering/phase-6/browser-agent.md) | 专用 Profile、snapshot/ref、Policy、Artifact、恢复和 18-case gate |
+| [Phase 6 macOS + 飞书生产验收](docs/engineering/phase-6/20260810_macos-feishu-production-acceptance.md) | managed LaunchAgent、25-case、重启恢复、24h soak 与 Evidence Runbook |
 
 ## 参与开发
 

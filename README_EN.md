@@ -21,7 +21,7 @@
 MiniClaw brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
-> The repository has passed the Phase 6.5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is implemented locally. Phase 6 adds durable Tasks, Scheduler/Runner, E-stop, budgets, Approval continuation, proactive Delivery, immutable Docker/Seatbelt plans, Checkpoints, Rollback, and a 15-case Automation gate. Phase 6.5 adds a dedicated Chromium Profile, bounded snapshots/refs, eight policy-gated Browser Tools, and private screenshot/download Artifacts. Browser automation remains disabled by default and its controlled public live smoke is pending.
+> The repository has passed the Phase 6.5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is implemented locally. Phase 6 adds durable Tasks, Scheduler/Runner, E-stop, budgets, Approval continuation, proactive Delivery, immutable Docker/Seatbelt plans, Checkpoints, Rollback, and a 15-case Automation gate. The macOS + Feishu production orchestrator and exact-duration checkpoint are implemented, but the status remains **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING** until the same clean commit passes Seatbelt 2/2, Feishu 15/15, Automation 10/10, managed recovery, and 24 continuous hours. Phase 6.5 adds a dedicated Chromium Profile, bounded snapshots/refs, eight policy-gated Browser Tools, and private screenshot/download Artifacts. Browser automation remains disabled by default and its controlled public live smoke is pending.
 
 ## Why MiniClaw
 
@@ -238,7 +238,7 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 
 | Gate | Current evidence |
 | --- | --- |
-| Python | 925/925 `unittest` PASS |
+| Python | 1005/1005 `unittest` PASS |
 | TUI | 36/36 TypeScript tests and build PASS |
 | Browser Worker | 14/14 TypeScript + real headless Chrome tests PASS |
 | Agent | 39/39 active offline cases PASS, including `MEM-AUTO-001..010` |
@@ -249,7 +249,7 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 | Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS; real-platform Live Gates pending |
 | Memory Autopilot | A–E IMPLEMENTATION PASS; live conclusions remain platform-specific |
-| Phase 6 | **IMPLEMENTATION PASS**; Docker LIVE VERIFIED / Seatbelt LIVE PENDING |
+| Phase 6 | **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING**; production tooling is complete, strict 25-case and 24h evidence are pending |
 
 Fake SDKs, offline scenarios, and the 660/660 local soak only establish **IMPLEMENTATION PASS**. They never masquerade as a live-platform PASS. Historical evidence lives under [`docs/evals/releases/`](docs/evals/releases/).
 The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent. Memory v0.6.0 recorded 666 Python tests and Phase 6 recorded 798; current figures are in the table above and v0.6.5.
@@ -327,6 +327,7 @@ tests/           # Python unittest suite
 | [Phase 6 Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md) | Tasks, Scheduler/Runner, Heartbeat, budgets, recovery, and operations |
 | [Phase 6 Sandbox and Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md) | Plan/Approval binding, isolation backends, Checkpoints, and Rollback |
 | [Phase 6.5 Browser Agent](docs/engineering/phase-6/browser-agent.md) | Dedicated Profile, snapshot/ref, Policy, Artifacts, recovery, and 18-case gate |
+| [Phase 6 macOS + Feishu production acceptance](docs/engineering/phase-6/20260810_macos-feishu-production-acceptance.md) | Managed LaunchAgent, 25 live cases, recovery, exact 24h soak, and Evidence runbook |
 
 ## Contributing
 

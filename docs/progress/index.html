@@ -343,19 +343,19 @@
   <main class="shell">
     <header class="masthead">
       <div class="brand">MINI<span>CLAW</span> / BUILD SIGNAL</div>
-      <div class="branch">target: main · Phase 6.5 Browser IMPLEMENTATION PASS · controlled live smoke pending</div>
+      <div class="branch">target: main · Phase 6 production tooling IMPLEMENTATION PASS · PRODUCTION SOAK PENDING</div>
     </header>
 
     <section class="hero" aria-labelledby="page-title">
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 与四档权限已贯通 TUI 和三个 IM。飞书、Telegram 与 Discord 三条隔离 pipeline 共享一个 AgentRuntime、Policy、Approval、Skills 和 SQLite durable truth。Memory Autopilot A～E、Phase 6 Autonomy/Sandbox 与 Phase 6.5 Browser Agent 已落地。Browser 使用专用 Chromium Profile、版本化 Worker、bounded snapshot/ref、Core Approval 和私有 Artifact；默认关闭，受控公网 Live smoke 待验。</p>
+        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 与四档权限已贯通 TUI 和三个 IM。飞书、Telegram 与 Discord 三条隔离 pipeline 共享一个 AgentRuntime、Policy、Approval、Skills 和 SQLite durable truth。Memory Autopilot A～E、Phase 6 Autonomy/Sandbox 与 Phase 6.5 Browser Agent 已落地。Phase 6 的 managed recovery、exact 24h checkpoint 和 production aggregate 已实现，但严格飞书 25-case 与真实 24h 尚未完成。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Phase 6.5 implementation pass</span>
-        <strong>ISOLATED BROWSER</strong>
-        <p>925 Python · 36/36 TUI · 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18</p>
+        <strong>PRODUCTION SOAK PENDING</strong>
+        <p>1005 Python · 36/36 TUI · 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18</p>
       </aside>
     </section>
 
@@ -366,7 +366,7 @@
       </div>
       <div class="metric">
         <span class="metric-label">Deterministic tests</span>
-        <span class="metric-value">925+36+14 <small>passing</small></span>
+        <span class="metric-value">1005+36+14 <small>passing</small></span>
       </div>
       <div class="metric">
         <span class="metric-label">Base model</span>
@@ -456,8 +456,8 @@
         </article>
         <article class="phase done">
           <div class="phase-no">Phase 6</div>
-          <div><h3>自治运行与 Sandbox</h3><p>Task/Run Ledger、Scheduler、Heartbeat、Budget、E-stop、主动投递、Docker/Seatbelt、Checkpoint/rollback 与 15-case gate 已实现；PROD-A/B 验收工具已实现，严格飞书 25-case 和精确 24 小时 soak 尚未完成。</p></div>
-          <span class="pill">CODE PASS · PROD LIVE PENDING</span>
+          <div><h3>自治运行、Sandbox 与生产 Gate</h3><p>Task/Run Ledger、Docker/Seatbelt、Checkpoint、只读 invariant monitor、受管 recovery、exact-duration checkpoint 与 aggregate 已实现；严格飞书 25-case 和精确 24 小时 soak 尚未完成。<a href="../engineering/phase-6/20260810_macos-feishu-production-acceptance.md">查看验收 Runbook</a>。</p></div>
+          <span class="pill">IMPLEMENTATION PASS · PRODUCTION SOAK PENDING</span>
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 6.5</div>
@@ -484,7 +484,7 @@
 
     <section class="section work-grid" aria-label="当前工作与工程决策">
       <article class="work-card">
-        <p class="eyebrow">Phase 6.5 implementation pass · Browser live truth pending</p>
+        <p class="eyebrow">Phase 6 implementation pass · PRODUCTION SOAK PENDING</p>
         <h3>当前交付清单</h3>
         <ul class="checklist">
           <li class="complete">Tool Contract 与唯一 Registry</li>
@@ -583,7 +583,9 @@
           <li class="complete">bounded accessibility snapshot、opaque ref/generation 与 stale-ref fail closed</li>
           <li class="complete">八个 Browser Tool 复用 Core Policy/Approval；password/OTP 与 SSRF 硬拒绝</li>
           <li class="complete">Screenshot/Download 私有 Artifact CAS、MIME/magic/hash/TTL 与 path redaction</li>
-          <li class="complete">925 Python + 36/36 TUI + 14/14 Browser Worker + 39/39 Agent + 33/33 Channel + 15/15 Automation + 18/18 Browser</li>
+          <li class="complete">1005 Python + 36/36 TUI + 14/14 Browser Worker + 39/39 Agent + 33/33 Channel + 15/15 Automation + 18/18 Browser</li>
+          <li class="complete">Phase 6 invariant monitor、exact 24h checkpoint、production preflight/recovery/finalize tooling</li>
+          <li class="pending">同一 clean commit 的 Seatbelt 2/2、飞书 15/15、Automation 10/10 与连续 24h soak</li>
           <li class="complete">20 轮：660/660 Channel、300/300 Automation、360/360 Browser soak</li>
         </ul>
       </article>
@@ -595,23 +597,23 @@
         <div class="decision"><code>runtime</code><p>Python Core 权威执行；Node/pi-tui 只负责终端，stdio NDJSON v1 连接；一个 Provider + 一个 SQLite。</p></div>
         <div class="decision"><code>safety</code><p>Workspace/Personal 多根 Guard、敏感凭据硬拒绝、完整行分页、候选预算、异常脱敏与参数哈希审计。</p></div>
         <div class="decision"><code>boundary</code><p>TOCTOU 仅缓解；stdlib re 没有硬超时。</p></div>
-        <div class="decision"><code>eval gate</code><p>每次提交跑 925 Python、36/36 TUI、14/14 Browser Worker、39/39 Agent、33/33 Channel、15/15 Automation 与 18/18 Browser；20 轮 soak 为 660/660、300/300、360/360。</p></div>
+        <div class="decision"><code>eval gate</code><p>每次提交跑 1005 Python、36/36 TUI、14/14 Browser Worker、39/39 Agent、33/33 Channel、15/15 Automation 与 18/18 Browser；20 轮 soak 为 660/660、300/300、360/360。</p></div>
         <div class="decision"><code>memory</code><p>Markdown 是已接受语义真相；SQLite 保存 buffer、lease、来源、Review、审计与可重建 FTS5。Memory 不能扩大 Policy 权限。</p></div>
         <div class="decision"><code>permissions</code><p>Autopilot 只给本地与 Owner 私聊；群聊/其他成员降级。任何模式都不能绕过敏感路径、exact argv、SSRF 和资源硬边界。</p></div>
         <div class="decision"><code>approval</code><p>审批框固定头尾、只滚动参数；Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
         <div class="decision"><code>scope</code><p>pi-tui、Personal Machine、Memory、Skills、Approval、三平台 Channel、Phase 6 Autonomy/Sandbox 与 Phase 6.5 Browser 已完成；下一主线是 Phase 7。</p></div>
         <div class="decision"><code>phase 7</code><p><a href="../engineering/phase-7/20260810_controlled-evolution.md">Controlled Evolution 工程落地方案</a>已发布；当前仅是 ENGINEERING PLAN / NOT IMPLEMENTED，不代表自我进化代码已经存在。</p></div>
-        <div class="decision"><code>live truth</code><p>Browser CONTROLLED LIVE SMOKE PENDING · Feishu TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING · Telegram live pending · Discord live pending · 本地 Chrome、fixture 和 soak 不冒充 Live Gate。</p></div>
+        <div class="decision"><code>live truth</code><p>Phase 6 PRODUCTION SOAK PENDING · Browser CONTROLLED LIVE SMOKE PENDING · Feishu TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING · Telegram live pending · Discord live pending · 本地 Chrome、fixture 和 soak 不冒充 Live Gate。</p></div>
         <div class="decision"><code>lark-cli</code><p>Channel 负责收发消息；业务查询由 Skill 生成 lark-cli argv 并经过 run_command / Policy / Approval。私有标题和 URL 进入模型前必须得到 Owner 授权。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/c5f5e5b">c5f5e5b Worker + provenance</a> · <a href="https://github.com/NEDONION/mini-claw/commit/cc31b74">cc31b74 Artifact CAS</a> · <a href="https://github.com/NEDONION/mini-claw/commit/3cf3fe7">3cf3fe7 Browser gate</a></p></div>
       </article>
     </section>
 
     <footer class="footer">
-      <span>Last updated · 2026-08-09 · 925 Python + 36/36 TUI + 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18 · Phase 6.5 implementation pass</span>
+      <span>Last updated · 2026-08-10 · 1005 Python + 36/36 TUI + 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18 · Phase 6 production tooling pass · soak pending</span>
       <span>Historical Phase 5 implementation pass baseline · 562 Python · 30 TypeScript · Agent 29/29 · Channel 32/32 · local soak 640/640.</span>
-      <span><a href="../engineering/phase-6/browser-agent.md">Browser Agent</a> · <a href="../evals/releases/v0.6.5.md">v0.6.5</a> · <a href="../engineering/phase-6/20260809_autonomy-runtime.md">Autonomy Runtime</a> · <a href="../engineering/phase-6/20260809_sandbox-and-checkpoint.md">Sandbox + Checkpoint</a> · <a href="../engineering/phase-5/20260809_memory-autopilot.md">Memory Autopilot</a></span>
+      <span><a href="../engineering/phase-6/20260810_macos-feishu-production-acceptance.md">Production Runbook</a> · <a href="../engineering/phase-6/browser-agent.md">Browser Agent</a> · <a href="../evals/releases/v0.6.5.md">v0.6.5</a> · <a href="../engineering/phase-6/20260809_autonomy-runtime.md">Autonomy Runtime</a> · <a href="../engineering/phase-6/20260809_sandbox-and-checkpoint.md">Sandbox + Checkpoint</a> · <a href="../engineering/phase-5/20260809_memory-autopilot.md">Memory Autopilot</a></span>
     </footer>
   </main>
 </body>

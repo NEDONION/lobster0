@@ -6,6 +6,8 @@
 >
 > 边界：合约、argv、持久绑定、故障恢复和离线安全回归已通过；Docker 与当前 Mac 的 Seatbelt
 > 真实逃逸探针均已 PASS。Seatbelt 结论只覆盖本机已绑定的 executable chain，不代表其他 macOS/runtime 自动通过。
+> 当前 release candidate 的 commit-bound Seatbelt 2/2 与 24h aggregate 仍为 **PRODUCTION SOAK PENDING**；见
+> [macOS + 飞书生产级验收](20260810_macos-feishu-production-acceptance.md)。
 
 Phase 6 发布时门禁：**798/798 Python**、**35/35 TypeScript**、**39/39 offline Agent**、
 **33/33 Channel**、**660/660 local Channel soak**、**15/15 Automation**，状态为
