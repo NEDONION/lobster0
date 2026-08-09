@@ -790,11 +790,17 @@ def verify_privilege_action(
         InstallError: 任一绑定或本地证据不安全。
     """
     effective_uid, original_user, original_uid = _production_identity()
-    installer_receipt: _InstallerArtifactReceipt | None = None
-    if type(request) is InstallRequest and request.system_prefix:
-        if effective_uid != 0:
+    installer_receipt = _bound_installer_receipt(action)
+    if installer_receipt is None:
+        if type(request) is InstallRequest and request.system_prefix:
             raise InstallError("privilege_denied", "system_argvs")
-        installer_receipt = _bound_installer_receipt(action)
+    else:
+        if (
+            type(request) is not InstallRequest
+            or not request.system_prefix
+            or effective_uid != 0
+        ):
+            raise InstallError("privilege_denied", "system_argvs")
         _revalidate_installer_receipt(
             installer_receipt,
             manifest=manifest,
@@ -866,6 +872,18 @@ def _verify_privilege_action_with_probe(
     ):
         raise InstallError("system_dependency_missing", "system_argvs")
     selected_uid = os.geteuid() if effective_uid is None else effective_uid
+    bound_receipt = _bound_installer_receipt(action)
+    receipt: _InstallerArtifactReceipt | None = None
+    if bound_receipt is None:
+        if request.system_prefix or installer_receipt is not None:
+            raise InstallError("privilege_denied", "system_argvs")
+    else:
+        if not request.system_prefix or selected_uid != 0:
+            raise InstallError("privilege_denied", "system_argvs")
+        receipt = _require_installer_receipt(installer_receipt)
+        if bound_receipt is not receipt:
+            raise InstallError("privilege_denied", "system_argvs")
+        _revalidate_installer_receipt(receipt)
     account = _resolve_invoking_user(
         selected_uid,
         original_user,
@@ -873,16 +891,6 @@ def _verify_privilege_action_with_probe(
         getpwuid=getpwuid,
         getpwnam=getpwnam,
     )
-    receipt: _InstallerArtifactReceipt | None = None
-    if request.system_prefix:
-        if selected_uid != 0:
-            raise InstallError("privilege_denied", "system_argvs")
-        receipt = _require_installer_receipt(installer_receipt)
-        if _bound_installer_receipt(action) is not receipt:
-            raise InstallError("privilege_denied", "system_argvs")
-        _revalidate_installer_receipt(receipt)
-    elif installer_receipt is not None:
-        raise InstallError("privilege_denied", "system_argvs")
     tool = _setup_tool_from_action(action)
     if tool is not None:
         if platform.distro_id not in _DEBIAN_FAMILY:
@@ -1931,21 +1939,21 @@ def _bind_installer_actions(
     return actions
 
 
-def _bound_installer_receipt(action: object) -> _InstallerArtifactReceipt:
-    """按 action object identity 取回 build 时的 private receipt。
+def _bound_installer_receipt(action: object) -> _InstallerArtifactReceipt | None:
+    """按 action object identity 查询 build 时的 private receipt。
 
     Args:
         action: 待执行的 public capability object。
 
     Returns:
-        build 阶段绑定的内部 receipt。
+        build 阶段绑定的内部 receipt；普通 action 返回 ``None``。
 
     Raises:
-        InstallError: action 未由 system-prefix build 产生或已被替换。
+        InstallError: 已绑定的 receipt 被替换或篡改。
     """
     binding = _SYSTEM_PREFIX_ACTION_RECEIPTS.get(id(action))
     if binding is None or binding[0] is not action:
-        raise InstallError("privilege_denied", "system_argvs")
+        return None
     return _require_installer_receipt(binding[1])
 
 

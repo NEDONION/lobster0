@@ -1288,6 +1288,181 @@ class InstallPlatformsTest(unittest.TestCase):
         )
         self.assertEqual(probe.required, [("docker-rootless", "alice", 1001)])
 
+    def test_bound_system_prefix_action_rejects_false_request_before_probe(self) -> None:
+        """绑定 receipt 的 action 不得用 false request 降级成普通安装。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        system_request = self.request(system_prefix=True, prefix=None, service=True)
+        lstat, fstat = self.root_installer_stat_adapters()
+        with (
+            mock.patch.object(sys, "argv", [str(self.installer_artifact)]),
+            mock.patch.object(
+                platforms_module,
+                "_production_identity",
+                return_value=(0, "alice", 1001),
+            ),
+            mock.patch.object(
+                platforms_module,
+                "_resolve_invoking_user",
+                return_value=_account(),
+            ),
+            mock.patch.object(platforms_module.os, "geteuid", return_value=0),
+            mock.patch.object(platforms_module.os, "lstat", side_effect=lstat),
+            mock.patch.object(platforms_module.os, "fstat", side_effect=fstat),
+            mock.patch.object(
+                platforms_module,
+                "LocalPlatformProbe",
+                return_value=_BackendProbe(ready=True),
+            ),
+        ):
+            plan = production_build_dependency_actions(
+                ubuntu,
+                system_request,
+                manifest=self.manifest,
+                sandbox_artifact_path=self.sandbox_artifact,
+            )
+        with (
+            mock.patch.object(
+                platforms_module,
+                "_production_identity",
+                return_value=(0, "alice", 1001),
+            ),
+            mock.patch.object(platforms_module, "LocalPlatformProbe") as probe_type,
+            self.assertRaisesRegex(InstallError, "privilege_denied"),
+        ):
+            production_verify_privilege_action(
+                plan.actions[0],
+                ubuntu,
+                self.request(service=True),
+                manifest=self.manifest,
+                sandbox_artifact_path=self.sandbox_artifact,
+            )
+        probe_type.assert_not_called()
+
+    def test_changed_bound_system_prefix_action_rejects_false_request_before_probe(self) -> None:
+        """current pyz bytes 漂移后也不得靠 false request 绕过 receipt。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        system_request = self.request(system_prefix=True, prefix=None, service=True)
+        lstat, fstat = self.root_installer_stat_adapters()
+        with (
+            mock.patch.object(sys, "argv", [str(self.installer_artifact)]),
+            mock.patch.object(
+                platforms_module,
+                "_production_identity",
+                return_value=(0, "alice", 1001),
+            ),
+            mock.patch.object(
+                platforms_module,
+                "_resolve_invoking_user",
+                return_value=_account(),
+            ),
+            mock.patch.object(platforms_module.os, "geteuid", return_value=0),
+            mock.patch.object(platforms_module.os, "lstat", side_effect=lstat),
+            mock.patch.object(platforms_module.os, "fstat", side_effect=fstat),
+            mock.patch.object(
+                platforms_module,
+                "LocalPlatformProbe",
+                return_value=_BackendProbe(ready=True),
+            ),
+        ):
+            plan = production_build_dependency_actions(
+                ubuntu,
+                system_request,
+                manifest=self.manifest,
+                sandbox_artifact_path=self.sandbox_artifact,
+            )
+        original = self.installer_artifact.read_bytes()
+        try:
+            self.installer_artifact.write_bytes(b"x" + original[1:])
+            self.installer_artifact.chmod(0o600)
+            with (
+                mock.patch.object(
+                    platforms_module,
+                    "_production_identity",
+                    return_value=(0, "alice", 1001),
+                ),
+                mock.patch.object(platforms_module, "LocalPlatformProbe") as probe_type,
+                self.assertRaisesRegex(InstallError, "privilege_denied"),
+            ):
+                production_verify_privilege_action(
+                    plan.actions[0],
+                    ubuntu,
+                    self.request(service=True),
+                    manifest=self.manifest,
+                    sandbox_artifact_path=self.sandbox_artifact,
+                )
+            probe_type.assert_not_called()
+        finally:
+            self.installer_artifact.write_bytes(original)
+            self.installer_artifact.chmod(0o600)
+
+    def test_unbound_action_rejects_true_system_prefix_request_before_probe(self) -> None:
+        """普通 action 不得在 verify 时升级为 system-prefix action。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        action = PrivilegeAction(
+            category="linger",
+            argv=("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", "alice"),
+            requires_sudo=True,
+            reason="enable confirmed headless user service",
+        )
+        with (
+            mock.patch.object(
+                platforms_module,
+                "_production_identity",
+                return_value=(0, "alice", 1001),
+            ),
+            mock.patch.object(platforms_module, "LocalPlatformProbe") as probe_type,
+            self.assertRaisesRegex(InstallError, "privilege_denied"),
+        ):
+            production_verify_privilege_action(
+                action,
+                ubuntu,
+                self.request(system_prefix=True, prefix=None, service=True),
+                manifest=self.manifest,
+                sandbox_artifact_path=self.sandbox_artifact,
+            )
+        probe_type.assert_not_called()
+
+    def test_unbound_action_accepts_false_system_prefix_request(self) -> None:
+        """普通 action 与普通 request 仍沿用既有 verifier 路径。"""
+        ubuntu = detect_linux(self.os_release("ubuntu", "24.04"), "x86_64")
+        action = PrivilegeAction(
+            category="linger",
+            argv=("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", "alice"),
+            requires_sudo=True,
+            reason="enable confirmed headless user service",
+        )
+        with (
+            mock.patch.object(
+                platforms_module,
+                "_production_identity",
+                return_value=(1001, None, None),
+            ),
+            mock.patch.object(
+                platforms_module,
+                "_resolve_invoking_user",
+                return_value=_account(),
+            ),
+            mock.patch.object(
+                platforms_module,
+                "LocalPlatformProbe",
+                return_value=_BackendProbe(ready=True),
+            ) as probe_type,
+        ):
+            self.assertIsNone(
+                production_verify_privilege_action(
+                    action,
+                    ubuntu,
+                    self.request(service=True),
+                    manifest=self.manifest,
+                    sandbox_artifact_path=self.sandbox_artifact,
+                )
+            )
+        probe_type.assert_called_once_with(
+            ubuntu,
+            manifest=self.manifest,
+            sandbox_artifact_path=self.sandbox_artifact,
+        )
+
     def test_macos_system_prefix_uses_manifest_only_for_current_installer(self) -> None:
         """macOS receipt 消费 manifest，但 Seatbelt probe 不接收 Linux artifact。"""
         macos = detect_macos("15.0", "arm64")
