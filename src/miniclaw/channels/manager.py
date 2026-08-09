@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from miniclaw.agent.events import RunEventHandler
+from miniclaw.agent.runner import AgentNoProgressError
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
     ApprovalCommandOutcome,
@@ -985,6 +986,12 @@ class ChannelManager:
 
 def _failure_profile(error: Exception) -> tuple[str, str, str]:
     """把异常类型映射为安全失败阶段、原因和行动建议。"""
+    if isinstance(error, AgentNoProgressError):
+        return (
+            "Agent Tool Loop",
+            "连续多轮没有新的成功 Tool 结果，已停止重复执行。",
+            "请检查 Claw Trail 与 ToolRun；调整请求后重试。",
+        )
     if isinstance(error, ProviderProtocolError):
         return (
             "模型响应校验",

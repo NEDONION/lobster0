@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from miniclaw.agent.events import RunEvent
+from miniclaw.agent.runner import AgentNoProgressError
 from miniclaw.agent.turn import TurnResult
 from miniclaw.channels.approvals import (
     ApprovalCommandOutcome,
@@ -116,7 +117,11 @@ class TrackingTurnService:
                 error_code = (
                     "provider_protocol"
                     if isinstance(error, ProviderProtocolError)
-                    else "provider_server_error"
+                    else (
+                        "loop_no_progress"
+                        if isinstance(error, AgentNoProgressError)
+                        else "provider_server_error"
+                    )
                 )
                 self.turns.fail(turn.id, error_code, "safe failure")
                 raise error
@@ -632,6 +637,45 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Turn #", final)
         self.assertIn("0 个 Tool", final)
         self.assertNotIn("private malformed tool detail", final)
+
+    async def test_no_progress_failure_has_actionable_tool_loop_diagnostics(self) -> None:
+        """连续无进展应展示专用阶段、稳定码、调试编号和 Tool 状态。"""
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            failure=AgentNoProgressError("private repeated call detail"),
+        )
+        transport = ManagerCapabilityTransport()
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
+        manager = self._manager(
+            service,
+            queue_size=2,
+            worker_count=1,
+            observer=ChannelObserver(self.database),
+        )
+        manager.attach_experience(capabilities)
+
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_no_progress", "repeat tool"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        final = repr(transport.cards[-1])
+        self.assertIn("Agent Tool Loop", final)
+        self.assertIn("loop_no_progress", final)
+        self.assertIn("连续多轮没有新的成功 Tool 结果", final)
+        self.assertIn("Claw Trail 与 ToolRun", final)
+        self.assertIn("Turn #", final)
+        self.assertIn("Event #", final)
+        self.assertIn("0 个 Tool", final)
+        self.assertNotIn("private repeated call detail", final)
 
     async def test_cancelled_turn_finishes_same_card_with_debug_diagnostics(self) -> None:
         """Gateway 停止取消活动 Turn 时，原卡必须展示稳定中断诊断而不是空红卡。"""

@@ -10,7 +10,7 @@ from unittest import mock
 
 from miniclaw.agent.context import ContextBuilder
 from miniclaw.agent.events import RunEvent
-from miniclaw.agent.runner import AgentRunner
+from miniclaw.agent.runner import AgentNoProgressError, AgentRunner
 from miniclaw.agent.turn import TurnService, _model_message
 from miniclaw.bootstrap import initialize_state
 from miniclaw.config import WorkspaceConfig, load_config
@@ -450,6 +450,60 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-1].data["error_code"], "provider_authentication")
         self.assertIs(type(events[-1].data["duration_ms"]), int)
         self.assertNotIn("authentication failed", str(events[-1].data))
+
+    async def test_no_progress_failure_persists_stable_code_and_trace(self) -> None:
+        """连续无进展必须保存专用错误码，并保留停止前的 Tool 轨迹。"""
+        provider = FakeProvider(
+            tuple(
+                ModelResponse(
+                    content="",
+                    tool_calls=(ToolCall(f"call_repeat_{index}", "system_info", {}),),
+                    reasoning_content="repeat",
+                    finish_reason="tool_calls",
+                    input_tokens=1,
+                    output_tokens=1,
+                    provider_request_id=f"req-repeat-{index}",
+                )
+                for index in range(4)
+            )
+        )
+        executor = ToolExecutor(
+            ToolRegistry((SystemInfoTool(),)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+        )
+        runner = AgentRunner(
+            provider,
+            executor,
+            max_iterations=8,
+            hard_max_iterations=12,
+            max_no_progress_iterations=3,
+        )
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
+
+        with mock.patch(
+            "miniclaw.tools.system._collect_system_info",
+            return_value={"cpu": {"model": "Test CPU"}, "unavailable_sections": []},
+        ):
+            with self.assertRaises(AgentNoProgressError):
+                await self.service(provider, runner).handle(
+                    self.owner.id,
+                    "重复查看配置",
+                    "no-progress",
+                    on_event=capture,
+                )
+
+        session = self.sessions.get_or_create_cli(self.owner.id, "no-progress")
+        saved = self.turns.list_recent(session.id, limit=1)[0]
+        history = self.messages.list_recent(session.id)
+        self.assertEqual(saved.status, "failed")
+        self.assertEqual(saved.error_code, "loop_no_progress")
+        self.assertEqual([message.role for message in history].count("tool"), 4)
+        self.assertEqual(events[-1].kind, "turn_failed")
+        self.assertEqual(events[-1].data["error_code"], "loop_no_progress")
 
     async def test_cancellation_marks_turn_cancelled_and_propagates(self) -> None:
         """取消必须持久化 cancelled，并继续抛出以便 CLI 返回 130。"""

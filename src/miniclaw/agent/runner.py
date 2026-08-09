@@ -38,6 +38,10 @@ class AgentLoopLimitError(AgentError):
     """表示模型在允许的最后一轮仍继续请求工具。"""
 
 
+class AgentNoProgressError(AgentError):
+    """表示模型连续多轮没有产生新的成功 Tool 结果。"""
+
+
 class AgentRunStatus(StrEnum):
     """区分最终回答与等待人工确认的正常业务结果。"""
 
@@ -144,6 +148,7 @@ class AgentRunner:
             on_text: 可选的最终可见文本流回调，由 Provider 施加背压。
             tool_context: 当前 Tool 不可由模型伪造的运行边界。
             on_intermediate: 每批 Tool Call/Result 完成后的同步持久化回调。
+            on_event: 可选的结构化运行事件回调。
 
         Returns:
             最终回答、实际模型调用轮数与累计 Token 用量。
@@ -151,6 +156,7 @@ class AgentRunner:
         Raises:
             EmptyModelResponseError: 最终响应没有文本也没有工具调用。
             AgentLoopLimitError: 最后一轮仍请求工具。
+            AgentNoProgressError: 连续多轮没有新的成功 Tool 结果。
             ProviderError: Provider 调用失败，保持原具体类型。
             asyncio.CancelledError: 调用方取消，Runner 不拦截。
         """
@@ -162,6 +168,10 @@ class AgentRunner:
         output_usage_complete = True
         provider_request_id: str | None = None
         seen_tool_call_ids: set[str] = set()
+        attempted_tool_fingerprints: set[str] = set()
+        consecutive_no_progress = 0
+        previous_batch_progressed = False
+        soft_budget_extended = False
         round_chunks: list[str] = []
 
         async def capture_text(chunk: str) -> None:
@@ -176,8 +186,30 @@ class AgentRunner:
                     ),
                 )
 
-        for iteration in range(1, self._max_iterations + 1):
-            current = replace(request, messages=tuple(messages))
+        for iteration in range(1, self._hard_max_iterations + 1):
+            hard_boundary = iteration == self._hard_max_iterations
+            soft_boundary = iteration == self._max_iterations
+            if soft_boundary and previous_batch_progressed and not hard_boundary:
+                soft_budget_extended = True
+            finalization_request = hard_boundary or (
+                soft_boundary and not soft_budget_extended
+            )
+            current_messages = tuple(messages)
+            if finalization_request:
+                current_messages += (
+                    ModelMessage(
+                        role="system",
+                        content=(
+                            "Provide the best evidence-based final answer now using only "
+                            "the tool results already available. Do not call tools."
+                        ),
+                    ),
+                )
+            current = replace(
+                request,
+                messages=current_messages,
+                tools=() if finalization_request else request.tools,
+            )
             round_chunks.clear()
 
             response = await self._provider.complete(
@@ -254,9 +286,9 @@ class AgentRunner:
                     tool_calls_count=len(seen_tool_call_ids),
                     intermediate_messages=tuple(intermediate_messages),
                 )
-            if iteration == self._max_iterations:
+            if finalization_request:
                 raise AgentLoopLimitError(
-                    f"agent reached the model iteration limit ({self._max_iterations})"
+                    f"agent reached the model iteration limit ({iteration})"
                 )
 
             if self._executor is not None and tool_context is None:
@@ -266,6 +298,7 @@ class AgentRunner:
             batch_start = len(intermediate_messages)
             messages.append(assistant_message)
             intermediate_messages.append(assistant_message)
+            batch_progressed = False
             for call in response.tool_calls:
                 if tool_context is not None:
                     await emit(
@@ -281,11 +314,30 @@ class AgentRunner:
                             },
                         ),
                     )
-                tool_message, approval_id = await self._execute_tool(
-                    call,
-                    tool_context,
-                    on_event,
-                )
+                fingerprint = _tool_fingerprint(call)
+                if fingerprint in attempted_tool_fingerprints:
+                    tool_message = ModelMessage(
+                        role="tool",
+                        content=json.dumps(
+                            {
+                                "ok": False,
+                                "error": "duplicate_tool_call",
+                                "tool": call.name,
+                            },
+                            ensure_ascii=False,
+                            separators=(",", ":"),
+                        ),
+                        tool_call_id=call.call_id,
+                    )
+                    approval_id = None
+                else:
+                    attempted_tool_fingerprints.add(fingerprint)
+                    tool_message, approval_id = await self._execute_tool(
+                        call,
+                        tool_context,
+                        on_event,
+                    )
+                    batch_progressed = batch_progressed or _tool_succeeded(tool_message)
                 if approval_id is not None:
                     if on_intermediate is not None:
                         on_intermediate(tuple(intermediate_messages[batch_start:]))
@@ -312,6 +364,16 @@ class AgentRunner:
                 intermediate_messages.append(tool_message)
             if on_intermediate is not None:
                 on_intermediate(tuple(intermediate_messages[batch_start:]))
+            previous_batch_progressed = batch_progressed
+            if batch_progressed:
+                consecutive_no_progress = 0
+            else:
+                consecutive_no_progress += 1
+                if consecutive_no_progress >= self._max_no_progress_iterations:
+                    raise AgentNoProgressError(
+                        "agent stopped after consecutive model rounds without "
+                        "a new successful tool result"
+                    )
 
         raise AgentLoopLimitError("agent reached an unexpected loop state")
 
@@ -348,3 +410,22 @@ def _assistant_tool_message(response: ModelResponse) -> ModelMessage:
         tool_calls=response.tool_calls,
         reasoning_content=response.reasoning_content,
     )
+
+
+def _tool_fingerprint(call: ToolCall) -> str:
+    """按 Tool 名称和规范化参数生成跨 call ID 的稳定调用指纹。"""
+    return json.dumps(
+        {"name": call.name, "arguments": call.arguments},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _tool_succeeded(message: ModelMessage) -> bool:
+    """判断 Tool Message 是否携带结构化成功结果。"""
+    try:
+        payload = json.loads(message.content)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(payload, dict) and payload.get("ok") is True

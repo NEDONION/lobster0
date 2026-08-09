@@ -15,6 +15,7 @@ from miniclaw.agent.events import RunEvent, RunEventHandler, emit
 from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
+    AgentNoProgressError,
     AgentRunner,
     AgentRunResult,
     AgentRunStatus,
@@ -730,6 +731,7 @@ def _error_code(
         (ProviderProtocolError, "provider_protocol"),
         (ProviderServerError, "provider_server"),
         (EmptyModelResponseError, "empty_response"),
+        (AgentNoProgressError, "loop_no_progress"),
         (AgentLoopLimitError, "loop_limit"),
         (ConversationDataError, "conversation_data"),
         (ContextError, "context"),

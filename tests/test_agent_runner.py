@@ -10,6 +10,7 @@ from miniclaw.agent.events import RunEvent
 from miniclaw.agent.runner import (
     AgentError,
     AgentLoopLimitError,
+    AgentNoProgressError,
     AgentRunner,
     AgentRunStatus,
     EmptyModelResponseError,
@@ -423,13 +424,100 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(EmptyModelResponseError):
             await AgentRunner(provider).run(request())
 
-    async def test_eighth_tool_response_stops_before_executing_more_side_effects(self) -> None:
-        """第八次仍请求工具时必须停止，且不能执行已经无法继续回传的最后动作。"""
+    async def test_successful_progress_extends_soft_budget_and_hard_round_has_no_tools(
+        self,
+    ) -> None:
+        """新颖成功 Tool 可越过 soft budget，但 hard 轮必须强制无工具收口。"""
+        calls = tuple(
+            response(
+                "",
+                tool_calls=(ToolCall(f"call_{index}", "echo", {"text": str(index)}),),
+            )
+            for index in range(4)
+        )
+        provider = FakeProvider((*calls, response("wrapped")))
+        executor = self.executor(_EchoTool())
+
+        result = await AgentRunner(
+            provider,
+            executor,
+            max_iterations=3,
+            hard_max_iterations=5,
+            max_no_progress_iterations=3,
+        ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        self.assertEqual(result.content, "wrapped")
+        self.assertEqual(result.iterations, 5)
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(provider.requests[-1].messages[-1].role, "system")
+        self.assertIn("evidence", provider.requests[-1].messages[-1].content.lower())
+        self.assertNotIn(
+            provider.requests[-1].messages[-1],
+            result.intermediate_messages,
+        )
+
+    async def test_failed_tool_does_not_extend_soft_budget(self) -> None:
+        """没有新颖成功结果的上一批不能把带工具请求延长到 soft 边界。"""
+        missing = ToolCall("call_missing", "missing", {})
+        provider = FakeProvider(
+            (
+                response("", tool_calls=(missing,)),
+                response("fallback without more tools"),
+            )
+        )
+
+        result = await AgentRunner(
+            provider,
+            max_iterations=2,
+            hard_max_iterations=4,
+        ).run(request())
+
+        self.assertEqual(result.content, "fallback without more tools")
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(provider.requests[-1].messages[-1].role, "system")
+
+    async def test_three_repeated_tool_fingerprints_stop_without_reexecution(self) -> None:
+        """相同 Tool 语义只能真实执行一次，连续三个重复模型轮次稳定停止。"""
         provider = FakeProvider(
             tuple(
                 response(
                     "",
-                    tool_calls=(ToolCall(f"call_loop_{index}", "echo", {"text": "x"}),),
+                    tool_calls=(
+                        ToolCall(f"call_{index}", "echo", {"text": "same"}),
+                    ),
+                )
+                for index in range(4)
+            )
+        )
+        tool = _EchoTool()
+        executor = self.executor(tool)
+
+        with self.assertRaises(AgentNoProgressError):
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=8,
+                hard_max_iterations=12,
+                max_no_progress_iterations=3,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        self.assertEqual(tool.executions, 1)
+        self.assertEqual(len(provider.requests), 4)
+        duplicate_result = json.loads(provider.requests[2].messages[-1].content)
+        self.assertEqual(
+            duplicate_result,
+            {"ok": False, "error": "duplicate_tool_call", "tool": "echo"},
+        )
+
+    async def test_eighth_tool_response_stops_before_executing_more_side_effects(self) -> None:
+        """hard 收口轮即使仍返回 Tool Call，也不能执行无法继续回传的动作。"""
+        provider = FakeProvider(
+            tuple(
+                response(
+                    "",
+                    tool_calls=(
+                        ToolCall(f"call_loop_{index}", "echo", {"text": str(index)}),
+                    ),
                 )
                 for index in range(8)
             )
@@ -438,13 +526,20 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         executor = self.executor(tool)
 
         with self.assertRaises(AgentLoopLimitError):
-            await AgentRunner(provider, executor, max_iterations=8).run(
+            await AgentRunner(
+                provider,
+                executor,
+                max_iterations=3,
+                hard_max_iterations=8,
+            ).run(
                 request(*executor.schemas),
                 tool_context=self.tool_context,
             )
 
         self.assertEqual(len(provider.requests), 8)
         self.assertEqual(tool.executions, 7)
+        self.assertEqual(provider.requests[-1].tools, ())
+        self.assertEqual(provider.requests[-1].messages[-1].role, "system")
 
     async def test_cancellation_propagates_without_becoming_agent_failure(self) -> None:
         """Runner 不得吞掉 CancelledError，TurnService 需要据此保存 cancelled。"""
