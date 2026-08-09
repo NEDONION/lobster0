@@ -9,7 +9,7 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import urlsplit
 
-from miniclaw.agent.events import RunEvent, RunEventHandler, emit
+from miniclaw.agent.events import RunEvent, RunEventHandler, display_tool_arguments, emit
 from miniclaw.checkpoints.store import CheckpointError, CheckpointStore
 from miniclaw.policy.approvals import (
     ApprovalDecision,
@@ -416,7 +416,7 @@ class ToolExecutor:
                             "call_id": call.call_id,
                             "tool_name": call.name,
                             "summary": approval.summary,
-                            "arguments": arguments,
+                            "arguments": display_tool_arguments(call.name, arguments),
                             "expires_at": approval.expires_at.isoformat(),
                             "grant_modes": [
                                 mode.value for mode in decision.approval_modes

@@ -3,7 +3,7 @@
 import asyncio
 import unittest
 
-from miniclaw.agent.events import RunEvent, emit
+from miniclaw.agent.events import RunEvent, display_tool_arguments, emit
 
 
 class RunEventTest(unittest.IsolatedAsyncioTestCase):
@@ -47,6 +47,37 @@ class RunEventTest(unittest.IsolatedAsyncioTestCase):
     async def test_missing_handler_is_a_noop(self) -> None:
         """没有 TUI/Channel 订阅时 Core 仍可运行。"""
         await emit(None, RunEvent("turn_finished", 42, {"status": "completed"}))
+
+    def test_browser_display_arguments_hide_typed_text_refs_and_url_query(self) -> None:
+        """Browser 活动只展示 action target，不把 typed text、refs 或 URL query 交给 UI。"""
+        typed = display_tool_arguments(
+            "browser_type",
+            {
+                "origin": "https://example.com",
+                "generation": "private-generation",
+                "ref": "@e7",
+                "role": "textbox",
+                "input_kind": "text",
+                "text": "private typed value",
+            },
+        )
+        opened = display_tool_arguments(
+            "browser_open",
+            {"url": "https://example.com/private?token=must-not-display"},
+        )
+
+        self.assertEqual(
+            typed,
+            {
+                "origin": "https://example.com",
+                "role": "textbox",
+                "input_kind": "text",
+                "text": "<redacted>",
+            },
+        )
+        self.assertEqual(opened, {"origin": "https://example.com"})
+        self.assertNotIn("private-generation", str(typed))
+        self.assertNotIn("must-not-display", str(opened))
 
 
 if __name__ == "__main__":

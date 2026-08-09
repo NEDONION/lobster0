@@ -278,6 +278,40 @@ class BrowserToolsTest(unittest.IsolatedAsyncioTestCase):
             await disabled.aclose()
             await enabled.aclose()
 
+    async def test_enabled_runtime_removes_expired_browser_artifacts_on_startup(self) -> None:
+        """Runtime 启用 Browser 时应清理已过 TTL 的私有文件，不让下载永久堆积。"""
+        store = ArtifactStore(
+            self.database,
+            owner_id=self.context.user_id,
+            root=self.paths.artifacts,
+            staging_root=self.paths.downloads,
+            max_bytes=1024,
+        )
+        staged = self.paths.downloads / "expired.png"
+        staged.write_bytes(_png(1, 1))
+        staged.chmod(0o600)
+        artifact = store.put(
+            staged,
+            declared_media_type="image/png",
+            source="browser_screenshot",
+        )
+        with self.database.connect() as connection:
+            connection.execute(
+                "UPDATE artifacts SET expires_at = ? WHERE artifact_id = ?",
+                ("2000-01-01T00:00:00+00:00", artifact.artifact_id),
+            )
+        base = load_config(self.paths, {}, {})
+
+        runtime = create_runtime(
+            replace(base, browser=replace(base.browser, enabled=True)),
+            self.paths,
+            "test-key",
+        )
+        try:
+            self.assertFalse(artifact.path.exists())
+        finally:
+            await runtime.aclose()
+
 
 def _png(width: int, height: int) -> bytes:
     """返回只用于 MIME/IHDR 校验的最小 PNG 字节。"""

@@ -415,17 +415,24 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         if config.browser.enabled
         else None
     )
+    artifact_store = (
+        ArtifactStore(
+            database,
+            owner_id=owner.id,
+            root=paths.artifacts,
+            staging_root=paths.downloads,
+            max_bytes=config.browser.download_max_bytes,
+        )
+        if browser_client is not None
+        else None
+    )
+    if artifact_store is not None:
+        artifact_store.delete_expired()
     browser_toolset = (
         browser_tools(
             browser_client,
             max_snapshot_chars=config.browser.max_snapshot_chars,
-            artifact_store=ArtifactStore(
-                database,
-                owner_id=owner.id,
-                root=paths.artifacts,
-                staging_root=paths.downloads,
-                max_bytes=config.browser.download_max_bytes,
-            ),
+            artifact_store=artifact_store,
         )
         if browser_client is not None
         else ()

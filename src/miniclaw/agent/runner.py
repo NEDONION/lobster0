@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from miniclaw.agent.events import RunEvent, RunEventHandler, emit
+from miniclaw.agent.events import RunEvent, RunEventHandler, display_tool_arguments, emit
 from miniclaw.automation.models import TaskResponse
 from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.providers.base import (
@@ -484,7 +484,7 @@ class AgentRunner:
                                 "call_id": call.call_id,
                                 "tool_name": call.name,
                                 "summary": call.name,
-                                "arguments": call.arguments,
+                                "arguments": display_tool_arguments(call.name, call.arguments),
                             },
                         ),
                     )
