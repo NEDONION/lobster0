@@ -3,13 +3,17 @@
 from miniclaw.sandbox.base import (
     ExecutionPlan,
     ExecutionReceipt,
+    SandboxAvailability,
     SandboxBackend,
     SandboxPlanError,
+    SandboxUnavailableError,
 )
 
 __all__ = [
     "ExecutionPlan",
     "ExecutionReceipt",
     "SandboxBackend",
+    "SandboxAvailability",
     "SandboxPlanError",
+    "SandboxUnavailableError",
 ]

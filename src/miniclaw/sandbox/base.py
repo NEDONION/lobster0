@@ -26,6 +26,22 @@ class SandboxPlanError(ValueError):
         self.code = code
 
 
+class SandboxUnavailableError(SandboxPlanError):
+    """表示显式选择的 sandbox backend 当前不可用且不会自动降级。"""
+
+    def __init__(self, message: str = "sandbox_backend_unavailable") -> None:
+        """固定外部错误码，同时允许内部提供不敏感说明。"""
+        super().__init__("sandbox_backend_unavailable", message)
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxAvailability:
+    """描述 backend 探测结果，不触发安装或降级。"""
+
+    available: bool
+    detail: str
+
+
 @dataclass(frozen=True, slots=True)
 class ExecutionPlan:
     """描述一次不经 Shell、可 canonicalize 且可绑定审批的命令执行。"""
