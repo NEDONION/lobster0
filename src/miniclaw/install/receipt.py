@@ -8,6 +8,7 @@ import json
 import os
 import re
 import stat
+import tempfile
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime
@@ -53,6 +54,39 @@ _SENSITIVE_NAMES = {
     "workspace",
     "logs",
 }
+
+
+@dataclass(slots=True)
+class _QuarantinedPath:
+    """保存已从公开 pathname 原子移入私有目录的目录项。"""
+
+    original: Path
+    private: Path
+    directory: Path
+    identity: tuple[int, int]
+
+    def restore(self) -> bool:
+        """仅在公开 pathname 仍缺失时以 O_EXCL 语义恢复目录项。"""
+        try:
+            os.link(self.private, self.original, follow_symlinks=False)
+        except (FileExistsError, OSError):
+            return False
+        try:
+            self.private.unlink()
+            self.directory.rmdir()
+            _fsync_directory(self.original.parent)
+        except OSError:
+            pass
+        return True
+
+    def discard(self) -> None:
+        """删除已经验证且位于 owner-only 私有目录内的目录项。"""
+        try:
+            self.private.unlink()
+            self.directory.rmdir()
+            _fsync_directory(self.original.parent)
+        except OSError:
+            pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -254,6 +288,7 @@ class InstallReceipt:
         payload = self.to_bytes()
         temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
         temporary_identity: tuple[int, int] | None = None
+        replaced_identity: tuple[int, int] | None = None
         replaced = False
         try:
             descriptor = os.open(
@@ -273,13 +308,14 @@ class InstallReceipt:
                 os.close(descriptor)
             os.replace(temporary, path)
             replaced = True
+            replaced_identity = temporary_identity
             temporary_identity = None
             _fsync_directory(path.parent)
         except BaseException as error:
             if temporary_identity is not None:
                 _unlink_same_inode(temporary, temporary_identity)
-            if replaced:
-                _restore_receipt(path, original, uid)
+            if replaced and replaced_identity is not None:
+                _restore_receipt(path, original, uid, replaced_identity)
             raise InstallError("uninstall_ownership_mismatch", "manifest") from error
 
 
@@ -457,18 +493,24 @@ def _validate_private_parent(path: Path, expected_uid: int) -> None:
         _invalid()
 
 
-def _restore_receipt(path: Path, original: bytes | None, owner_uid: int) -> None:
+def _restore_receipt(
+    path: Path,
+    original: bytes | None,
+    owner_uid: int,
+    replaced_identity: tuple[int, int],
+) -> None:
     """在 replace 后异常时尽力恢复原 receipt 或移除新文件。"""
     if original is None:
-        try:
-            path.unlink()
-            _fsync_directory(path.parent)
-        except OSError:
-            pass
+        _unlink_same_inode(path, replaced_identity)
         return
     recovery = path.with_name(f".{path.name}.{os.getpid()}.restore.tmp")
     identity: tuple[int, int] | None = None
+    quarantined: _QuarantinedPath | None = None
+    published = False
     try:
+        quarantined = _quarantine_expected(path, replaced_identity, require_symlink=False)
+        if quarantined is None:
+            return
         descriptor = os.open(
             recovery,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL | _no_follow_flag(),
@@ -484,14 +526,19 @@ def _restore_receipt(path: Path, original: bytes | None, owner_uid: int) -> None
             os.fsync(descriptor)
         finally:
             os.close(descriptor)
-        os.replace(recovery, path)
-        identity = None
+        os.link(recovery, path, follow_symlinks=False)
+        published = True
+        _unlink_same_inode(recovery, identity)
         try:
             _fsync_directory(path.parent)
         except OSError:
             pass
+        quarantined.discard()
     except OSError:
-        pass
+        if published and identity is not None:
+            _unlink_same_inode(path, identity)
+        if quarantined is not None:
+            quarantined.restore()
     finally:
         if identity is not None:
             _unlink_same_inode(recovery, identity)
@@ -517,13 +564,46 @@ def _write_all(descriptor: int, payload: bytes) -> None:
 
 
 def _unlink_same_inode(path: Path, identity: tuple[int, int]) -> None:
-    """仅在 path 仍指向调用方创建的 inode 时清理 temp。"""
+    """把公开 pathname 隔离后，仅清理匹配调用方 token 的目录项。"""
+    quarantined = _quarantine_expected(path, identity)
+    if quarantined is not None:
+        quarantined.discard()
+
+
+def _quarantine_expected(
+    path: Path,
+    identity: tuple[int, int],
+    *,
+    require_symlink: bool | None = None,
+) -> _QuarantinedPath | None:
+    """原子隔离公开目录项并验证 inode/type token，失配时安全恢复。"""
+    directory: Path | None = None
     try:
-        metadata = path.lstat()
-        if (metadata.st_dev, metadata.st_ino) == identity:
-            path.unlink()
+        directory = Path(tempfile.mkdtemp(prefix=f".{path.name}.quarantine-", dir=path.parent))
+        directory.chmod(0o700)
+        private = directory / "entry"
+        _quarantine_race_hook(path)
+        os.rename(path, private)
+        metadata = private.lstat()
+        quarantined = _QuarantinedPath(path, private, directory, identity)
+        matches_type = require_symlink is None or stat.S_ISLNK(metadata.st_mode) == require_symlink
+        if (metadata.st_dev, metadata.st_ino) != identity or not matches_type:
+            quarantined.restore()
+            return None
+        _fsync_directory(path.parent)
+        return quarantined
     except OSError:
-        pass
+        if directory is not None:
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+        return None
+
+
+def _quarantine_race_hook(path: Path) -> None:
+    """为 deterministic race regression 提供无副作用切入点。"""
+    del path
 
 
 def _validate_relative_path(value: object) -> None:

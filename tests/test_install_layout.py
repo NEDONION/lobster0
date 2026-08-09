@@ -20,7 +20,13 @@ from miniclaw.install.layout import (
     install_launcher,
     render_launcher,
 )
-from miniclaw.install.models import InstallError, InstallRequest
+from miniclaw.install.models import (
+    InstallError,
+    InstallPlan,
+    InstallRequest,
+    PlatformKey,
+    ReleaseManifest,
+)
 
 
 def _account(home: Path, *, uid: int | None = None) -> pwd.struct_passwd:
@@ -69,6 +75,26 @@ class InstallLayoutTests(unittest.TestCase):
         }
         values.update(changes)
         return InstallRequest(**values)  # type: ignore[arg-type]
+
+    def plan(self, request: InstallRequest, program_prefix: Path) -> InstallPlan:
+        """构造绑定临时 layout 的 strict InstallPlan。"""
+        manifest = ReleaseManifest.from_bytes(
+            (Path(__file__).parent / "install" / "manifest_v1.json").read_bytes()
+        )
+        return InstallPlan(
+            request=request,
+            manifest=manifest,
+            platform=PlatformKey("linux", "x86_64"),
+            distro_id="ubuntu",
+            distro_version="24.04",
+            service_manager="systemd-user",
+            program_prefix=program_prefix,
+            state_home=request.state_home,
+            artifact_filenames=("miniclaw-tui-0.7.0-linux-x86_64.tar.gz",),
+            system_argvs=(),
+            install_service=False,
+            run_onboarding=True,
+        )
 
     def test_default_layout_separates_runtime_from_user_state(self) -> None:
         """错误的默认根或把 runtime 混进状态树会破坏升级和数据保留。"""
@@ -246,6 +272,50 @@ class InstallLayoutTests(unittest.TestCase):
             lock.close()
         self.assertEqual(layout.lock.read_bytes(), replacement)
 
+    def test_lock_close_and_stale_takeover_quarantine_postcheck_replacement(self) -> None:
+        """最终 token check 后的 replacement 仍不得被 close/stale unlink。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        replacement = b'{"pid":999,"uid":501,"start":"2026-05-01T00:00:00Z"}\n'
+        lock = InstallLock.acquire(layout)
+        real_owned = layout_module._lock_path_owned
+
+        def replace_after_owned(*args: object, **kwargs: object) -> bool:
+            """在最终 ownership check 返回后替换公开 pathname。"""
+            owned = real_owned(*args, **kwargs)  # type: ignore[arg-type]
+            if owned:
+                layout.lock.unlink()
+                layout.lock.write_bytes(replacement)
+                layout.lock.chmod(0o600)
+            return owned
+
+        with mock.patch.object(
+            layout_module,
+            "_lock_path_owned",
+            side_effect=replace_after_owned,
+        ):
+            lock.close()
+        self.assertEqual(layout.lock.read_bytes(), replacement)
+
+        layout.lock.unlink()
+        stale = {
+            "pid": 424242,
+            "uid": os.geteuid(),
+            "start": "2026-01-01T00:00:00Z",
+        }
+        layout.lock.write_text(json.dumps(stale) + "\n", encoding="utf-8")
+        layout.lock.chmod(0o600)
+        with (
+            mock.patch.object(layout_module, "_probe_process", return_value=("dead", None)),
+            mock.patch.object(
+                layout_module,
+                "_lock_path_owned",
+                side_effect=replace_after_owned,
+            ),
+            self.assertRaisesRegex(InstallError, "install_locked"),
+        ):
+            InstallLock.acquire(layout)
+        self.assertEqual(layout.lock.read_bytes(), replacement)
+
     def test_lock_removes_only_same_uid_confirmed_dead_or_reused_pid(self) -> None:
         """stale 判定漏掉 UID/PID start 会删除 foreign/live installer 的锁。"""
         layout = InstallLayout.user(self.home, version="0.7.0")
@@ -366,6 +436,19 @@ class InstallLayoutTests(unittest.TestCase):
         self.assertEqual(stat.S_IMODE(system_layout.bin_dir.stat().st_mode), 0o755)
         self.assertEqual(stat.S_IMODE(system_layout.launcher.stat().st_mode), 0o755)
         self.assertEqual(stat.S_IMODE(state_home.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE(system_layout.program_prefix.parent.stat().st_mode), 0o755)
+
+    def test_safe_existing_local_bin_0755_is_accepted(self) -> None:
+        """owner 持有且不可组/全局写的 conventional ~/.local/bin 0755 应可复用。"""
+        local_bin = self.home / ".local" / "bin"
+        local_bin.mkdir(mode=0o755, parents=True)
+        local_bin.chmod(0o755)
+        layout = InstallLayout.user(self.home, version="0.7.0")
+
+        install_launcher(layout)
+
+        self.assertEqual(stat.S_IMODE(local_bin.stat().st_mode), 0o755)
+        self.assertTrue(layout.command_link.is_symlink())
 
     def test_launcher_create_failures_clean_only_owned_inode_and_retry(self) -> None:
         """file/link fsync 失败必须清理本次项，同时不能删除竞态 replacement。"""
@@ -429,6 +512,120 @@ class InstallLayoutTests(unittest.TestCase):
         values["command_link"] = self.root / "foreign-command"
         with self.assertRaises(TypeError):
             InstallLayout(**values)
+
+    def test_private_build_still_enforces_no_follow_owner_and_cross_fields(self) -> None:
+        """可从 runtime 调用的 `_build` 不能成为绕过 public factories 的后门。"""
+        target = self.home / "target"
+        target.mkdir(mode=0o700)
+        linked = self.home / "linked"
+        linked.symlink_to(target, target_is_directory=True)
+        with self.assertRaisesRegex(InstallError, "request_invalid"):
+            InstallLayout._build(
+                linked,
+                self.home / ".miniclaw",
+                self.home / ".local" / "bin" / "miniclaw",
+                "0.7.0",
+            )
+
+    def test_for_plan_update_uses_user_home_not_existing_install_root(self) -> None:
+        """已有 ~/.miniclaw 0700 是 update 目标，不得被误当成 forbidden Home root。"""
+        prefix = self.home / ".miniclaw"
+        prefix.mkdir(mode=0o700)
+        request = self.request(prefix=prefix, state_home=prefix, onboard=True)
+
+        layout = InstallLayout.for_plan(self.plan(request, prefix))
+
+        self.assertEqual(layout.program_prefix, prefix)
+        self.assertEqual(layout.command_link, self.home / ".local" / "bin" / "miniclaw")
+
+    def test_for_plan_system_state_binds_real_target_passwd_home(self) -> None:
+        """system plan 的 state UID 还必须绑定 passwd Home，不能只信最近 ancestor。"""
+        system_prefix = self.root / "system" / "miniclaw"
+        state_home = self.home / ".miniclaw-system"
+        state_home.mkdir(mode=0o700)
+        request = self.request(
+            prefix=None,
+            state_home=state_home,
+            system_prefix=True,
+            onboard=True,
+        )
+        plan = self.plan(request, system_prefix)
+        wrong = pwd.struct_passwd(
+            ("alice", "x", os.geteuid(), os.getegid(), "Fixture", "/other/home", "/bin/sh")
+        )
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", self.root / "bin" / "miniclaw"),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+            mock.patch.object(layout_module.pwd, "getpwuid", return_value=wrong),
+            self.assertRaisesRegex(InstallError, "privilege_denied"),
+        ):
+            InstallLayout.for_plan(plan)
+
+    def test_launcher_replace_races_preserve_foreign_regular_and_symlink(self) -> None:
+        """preflight token 后的 foreign replacement 不能被 regular/link commit 覆盖。"""
+        prefix = self.home / "program"
+        command = self.home / ".local" / "bin" / "miniclaw"
+        first = InstallLayout._build(prefix, self.home / "state-a", command, "0.7.0")
+        launcher_hash, link_hash = install_launcher(first)
+        second = InstallLayout._build(prefix, self.home / "state-b", command, "0.7.0")
+        real_regular = layout_module._replace_regular
+
+        def replace_regular_race(*args: object, **kwargs: object) -> None:
+            """在 commit helper 入口替换 launcher。"""
+            first.launcher.unlink()
+            first.launcher.write_bytes(b"foreign-regular")
+            first.launcher.chmod(0o700)
+            real_regular(*args, **kwargs)  # type: ignore[arg-type]
+
+        with (
+            mock.patch.object(
+                layout_module,
+                "_replace_regular",
+                side_effect=replace_regular_race,
+            ),
+            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
+        ):
+            install_launcher(
+                second,
+                launcher_sha256=launcher_hash,
+                command_link_sha256=link_hash,
+            )
+        self.assertEqual(first.launcher.read_bytes(), b"foreign-regular")
+
+        # 重新建立受管 launcher，只单独触发 command-link target update。
+        first.launcher.unlink()
+        first.launcher.write_bytes(render_launcher(first))
+        first.launcher.chmod(0o700)
+        launcher_hash = layout_module.managed_file_sha256(first.launcher)
+        other_prefix = self.home / "other-program"
+        link_update = InstallLayout._build(
+            other_prefix,
+            self.home / "state-b",
+            command,
+            "0.7.0",
+        )
+        real_symlink = layout_module._replace_symlink
+
+        def replace_symlink_race(*args: object, **kwargs: object) -> None:
+            """在 link commit helper 入口替换 command symlink。"""
+            command.unlink()
+            command.symlink_to("foreign-target")
+            real_symlink(*args, **kwargs)  # type: ignore[arg-type]
+
+        with (
+            mock.patch.object(
+                layout_module,
+                "_replace_symlink",
+                side_effect=replace_symlink_race,
+            ),
+            self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"),
+        ):
+            install_launcher(
+                link_update,
+                command_link_sha256=link_hash,
+            )
+        self.assertEqual(os.readlink(command), "foreign-target")
 
 
 if __name__ == "__main__":

@@ -277,6 +277,26 @@ class InstallReceiptTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), original_bytes)
         self.assertFalse(any(path.name.endswith(".tmp") for path in self.root.iterdir()))
 
+    def test_general_cleanup_quarantines_instead_of_unlinking_postcheck_replacement(self) -> None:
+        """通用 temp cleanup 的最终 lstat 后 replacement 也不能被 pathname unlink。"""
+        target = self.root / "owned.tmp"
+        target.write_bytes(b"owned")
+        metadata = target.lstat()
+        identity = (metadata.st_dev, metadata.st_ino)
+        replacement = b"replacement"
+        def replace_before_quarantine(path: Path) -> None:
+            """在原子 quarantine 前替换公开 pathname。"""
+            path.unlink()
+            path.write_bytes(replacement)
+
+        with mock.patch.object(
+            receipt_module,
+            "_quarantine_race_hook",
+            side_effect=replace_before_quarantine,
+        ):
+            receipt_module._unlink_same_inode(target, identity)
+        self.assertEqual(target.read_bytes(), replacement)
+
     def test_receipt_constructor_enforces_bounded_normalized_casefold_unique_paths(self) -> None:
         """构造态若允许 load 会拒绝的 path/payload，write 就无法保证 closed-world receipt。"""
         unsafe_sets = (
