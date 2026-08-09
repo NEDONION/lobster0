@@ -36,7 +36,7 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((code, error), (0, ""))
         lines = output.splitlines()
-        self.assertEqual(len(lines), 102)
+        self.assertEqual(len(lines), 120)
         self.assertEqual(lines, sorted(lines))
         self.assertTrue(any(line.startswith("CORE-001 active core ") for line in lines))
         self.assertTrue(any(line.startswith("PROTO-001 active provider ") for line in lines))
@@ -46,6 +46,7 @@ class CliEvalTest(unittest.TestCase):
         self.assertTrue(
             any(line.startswith("AUTO-001 active automation_runtime ") for line in lines)
         )
+        self.assertTrue(any(line.startswith("BROWSER-001 active browser_agent ") for line in lines))
 
     def test_validate_reports_case_count_without_initializing_state(self) -> None:
         """validate 只读场景目录，不创建或要求 MiniClaw home。"""
@@ -55,7 +56,7 @@ class CliEvalTest(unittest.TestCase):
                 ["eval", "validate", "--root", str(SCENARIO_ROOT)]
             )
 
-        self.assertEqual((code, output, error), (0, "Validated 102 eval cases.\n", ""))
+        self.assertEqual((code, output, error), (0, "Validated 120 eval cases.\n", ""))
         self.assertFalse(missing_home.exists())
 
     def test_run_offline_prints_pass_rows_and_summary(self) -> None:
@@ -107,6 +108,18 @@ class CliEvalTest(unittest.TestCase):
         self.assertIn("Offline eval: 39/39 passed, 0 failed", all_output)
         self.assertIn("Channel eval: 33/33 passed, 0 failed", all_output)
         self.assertIn("Automation eval: 15/15 passed, 0 failed", all_output)
+        self.assertIn("Browser eval: 18/18 passed, 0 failed", all_output)
+
+    def test_run_browser_prints_versioned_cases_and_summary(self) -> None:
+        """Browser suite 必须精确执行 18 条真实组件 fixture。"""
+        code, output, error = run_cli(
+            ["eval", "run", "--suite", "browser", "--root", str(SCENARIO_ROOT)]
+        )
+
+        self.assertEqual((code, error), (0, ""))
+        self.assertIn("PASS BROWSER-001", output)
+        self.assertIn("PASS BROWSER-018", output)
+        self.assertIn("Browser eval: 18/18 passed, 0 failed", output)
 
     def test_run_automation_prints_versioned_cases_and_summary(self) -> None:
         """Automation suite 必须精确执行 15 条真实组件 fixture。"""
