@@ -5,11 +5,15 @@ import argparse
 import json
 import os
 import re
+import selectors
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
+import time
 from pathlib import Path
+from typing import BinaryIO
 
 from miniclaw.tui_launcher import is_supported_node_version
 
@@ -23,11 +27,22 @@ _VERSION = re.compile(r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
 _NODE_VERSION = re.compile(rb"^v(\d+)\.(\d+)\.(\d+)\n$")
 _PNPM = ("corepack", "pnpm")
 _STRIP_NAMES = {".bin", ".cache", ".modules.yaml", ".pnpm", ".pnpm-store"}
+_COMMAND_TIMEOUT_SECONDS = 180.0
+_COMMAND_STREAM_OUTPUT_LIMIT = 64 * 1024
+_COMMAND_COMBINED_OUTPUT_LIMIT = 64 * 1024
+_LICENSE_OUTPUT_LIMIT = 1024 * 1024
+_NODE_TIMEOUT_SECONDS = 10.0
 _NODE_OUTPUT_LIMIT = 1024
+_PROCESS_GROUP_TERM_SECONDS = 0.1
+_PROCESS_GROUP_CLEANUP_SECONDS = 0.5
 
 
 class TuiBundleError(RuntimeError):
     """表示 TUI build、deploy、materialization 或 archive 失败。"""
+
+
+class _BoundedProcessFailure(RuntimeError):
+    """表示 child 超时、输出超限或进程组无法有界回收。"""
 
 
 def build_tui_bundle(
@@ -168,26 +183,234 @@ def _copy_materialized(
     destination.chmod(0o755 if metadata.st_mode & 0o111 else 0o644)
 
 
-def _run(argv: tuple[str, ...]) -> subprocess.CompletedProcess[bytes]:
+def _run(
+    argv: tuple[str, ...],
+    *,
+    stdout_limit: int | None = None,
+    combined_limit: int | None = None,
+) -> subprocess.CompletedProcess[bytes]:
     """用无 shell、无 Node 注入变量的环境运行一个 bounded pnpm 命令。"""
     environment = dict(os.environ)
     environment.pop("NODE_OPTIONS", None)
     environment.pop("NODE_PATH", None)
     environment.update({"CI": "1", "NO_COLOR": "1"})
     try:
-        completed = subprocess.run(
+        completed = _run_bounded_process(
             argv,
-            env=environment,
-            capture_output=True,
-            timeout=180,
-            check=False,
-            shell=False,
+            cwd=None,
+            environment=environment,
+            timeout=_COMMAND_TIMEOUT_SECONDS,
+            stdout_limit=(
+                _COMMAND_STREAM_OUTPUT_LIMIT if stdout_limit is None else stdout_limit
+            ),
+            stderr_limit=_COMMAND_STREAM_OUTPUT_LIMIT,
+            combined_limit=(
+                _COMMAND_COMBINED_OUTPUT_LIMIT if combined_limit is None else combined_limit
+            ),
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise TuiBundleError("pnpm release command failed") from error
+    except _BoundedProcessFailure:
+        raise TuiBundleError("pnpm release command failed") from None
     if completed.returncode != 0:
         raise TuiBundleError("pnpm release command failed")
     return completed
+
+
+def _run_bounded_process(
+    argv: tuple[str, ...],
+    *,
+    cwd: Path | None,
+    environment: dict[str, str],
+    timeout: float,
+    stdout_limit: int,
+    stderr_limit: int,
+    combined_limit: int,
+) -> subprocess.CompletedProcess[bytes]:
+    """用单一 deadline、nonblocking 双流和独立进程组执行 child。
+
+    Args:
+        argv: 不经过 shell 的显式参数数组。
+        cwd: 显式工作目录；None 表示继承当前目录。
+        environment: 完整 child 环境，不会隐式合并进程环境。
+        timeout: 包含启动、双流读取和 direct child 等待的总秒数。
+        stdout_limit: stdout 最大保留字节数。
+        stderr_limit: stderr 最大保留字节数。
+        combined_limit: stdout 与 stderr 合计最大字节数。
+
+    Returns:
+        已 bounded reap 的 direct child 结果。
+
+    Raises:
+        _BoundedProcessFailure: 输入边界、启动、超时、输出超限或回收失败。
+    """
+    if (
+        not argv
+        or timeout <= 0
+        or stdout_limit <= 0
+        or stderr_limit <= 0
+        or combined_limit <= 0
+    ):
+        raise _BoundedProcessFailure
+    deadline = time.monotonic() + timeout
+    process: subprocess.Popen[bytes] | None = None
+    selector = selectors.DefaultSelector()
+    streams: tuple[BinaryIO, ...] = ()
+    stdout = bytearray()
+    stderr = bytearray()
+    try:
+        process = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            env=dict(environment),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=False,
+            close_fds=True,
+            start_new_session=True,
+        )
+        if process.stdout is None or process.stderr is None:
+            raise _BoundedProcessFailure
+        streams = (process.stdout, process.stderr)
+        for index, stream in enumerate(streams):
+            os.set_blocking(stream.fileno(), False)
+            selector.register(stream, selectors.EVENT_READ, index)
+        while selector.get_map():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise _BoundedProcessFailure
+            events = selector.select(remaining)
+            if not events:
+                raise _BoundedProcessFailure
+            for key, _mask in events:
+                target = stdout if key.data == 0 else stderr
+                stream_limit = stdout_limit if key.data == 0 else stderr_limit
+                if not _read_ready_stream(
+                    key.fileobj,
+                    target,
+                    stdout,
+                    stderr,
+                    stream_limit,
+                    combined_limit,
+                    deadline,
+                ):
+                    selector.unregister(key.fileobj)
+                    key.fileobj.close()
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise _BoundedProcessFailure
+        try:
+            returncode = process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            raise _BoundedProcessFailure from None
+        return subprocess.CompletedProcess(argv, returncode, bytes(stdout), bytes(stderr))
+    except (OSError, ValueError, _BoundedProcessFailure):
+        if process is not None:
+            try:
+                _terminate_process_group(process)
+            except _BoundedProcessFailure:
+                pass
+        raise _BoundedProcessFailure from None
+    finally:
+        selector.close()
+        for stream in streams:
+            if not stream.closed:
+                stream.close()
+
+
+def _read_ready_stream(
+    stream: BinaryIO,
+    target: bytearray,
+    stdout: bytearray,
+    stderr: bytearray,
+    stream_limit: int,
+    combined_limit: int,
+    deadline: float,
+) -> bool:
+    """增量读取一个 ready pipe，超过单流或合计上限时立即失败。
+
+    Args:
+        stream: selectors 返回的 pipe file object。
+        target: 当前 stdout 或 stderr buffer。
+        stdout: stdout buffer，用于合计预算。
+        stderr: stderr buffer，用于合计预算。
+        stream_limit: 当前 stream 的独立上限。
+        combined_limit: 两个 stream 的合计上限。
+        deadline: 与启动、selector 和 wait 共享的 monotonic deadline。
+
+    Returns:
+        pipe 仍打开时为 True，EOF 时为 False。
+
+    Raises:
+        _BoundedProcessFailure: deadline 或任一输出预算耗尽。
+    """
+    descriptor = stream.fileno()
+    while True:
+        if time.monotonic() >= deadline:
+            raise _BoundedProcessFailure
+        stream_remaining = stream_limit - len(target)
+        combined_remaining = combined_limit - len(stdout) - len(stderr)
+        read_size = min(8192, stream_remaining + 1, combined_remaining + 1)
+        try:
+            chunk = os.read(descriptor, max(1, read_size))
+        except BlockingIOError:
+            return True
+        if not chunk:
+            return False
+        if len(chunk) > stream_remaining or len(chunk) > combined_remaining:
+            raise _BoundedProcessFailure
+        target.extend(chunk)
+
+
+def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    """TERM→grace→KILL 独立进程组，并在 bounded deadline 内 reap leader。
+
+    Args:
+        process: 由当前 collector 以 start_new_session 启动的 direct child。
+
+    Raises:
+        _BoundedProcessFailure: direct child 无法在 cleanup deadline 内回收。
+    """
+    cleanup_deadline = time.monotonic() + _PROCESS_GROUP_CLEANUP_SECONDS
+    group_exists = True
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        group_exists = False
+    except OSError:
+        group_exists = process.returncode is None
+    if group_exists:
+        grace_deadline = min(
+            cleanup_deadline,
+            time.monotonic() + _PROCESS_GROUP_TERM_SECONDS,
+        )
+        while time.monotonic() < grace_deadline:
+            try:
+                os.killpg(process.pid, 0)
+            except ProcessLookupError:
+                group_exists = False
+                break
+            except OSError:
+                break
+            time.sleep(min(0.01, max(0.0, grace_deadline - time.monotonic())))
+    if group_exists:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        except OSError:
+            if process.returncode is None:
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+    if process.returncode is None:
+        remaining = cleanup_deadline - time.monotonic()
+        if remaining <= 0:
+            raise _BoundedProcessFailure
+        try:
+            process.wait(timeout=remaining)
+        except subprocess.TimeoutExpired:
+            raise _BoundedProcessFailure from None
 
 
 def _resolve_managed_node(candidate: Path) -> Path:
@@ -241,22 +464,18 @@ def _run_managed_node(
         TuiBundleError: 启动、超时、非零退出或输出边界不满足契约。
     """
     try:
-        completed = subprocess.run(
+        completed = _run_bounded_process(
             argv,
             cwd=cwd,
-            env=dict(environment),
-            capture_output=True,
-            timeout=10,
-            check=False,
-            shell=False,
+            environment=dict(environment),
+            timeout=_NODE_TIMEOUT_SECONDS,
+            stdout_limit=_NODE_OUTPUT_LIMIT,
+            stderr_limit=_NODE_OUTPUT_LIMIT,
+            combined_limit=_NODE_OUTPUT_LIMIT,
         )
-    except (OSError, subprocess.TimeoutExpired) as error:
-        raise TuiBundleError("managed Node command failed") from error
-    if (
-        completed.returncode != 0
-        or completed.stderr
-        or len(completed.stdout) > _NODE_OUTPUT_LIMIT
-    ):
+    except _BoundedProcessFailure:
+        raise TuiBundleError("managed Node command failed") from None
+    if completed.returncode != 0 or completed.stderr:
         raise TuiBundleError("managed Node command failed")
     return completed
 
@@ -294,7 +513,11 @@ def _smoke_materialized_tui(root: Path, node: Path, version: str) -> None:
 
 def _production_licenses(project: Path) -> bytes:
     """捕获、去路径并 canonicalize pnpm production license inventory。"""
-    completed = _run((*_PNPM, "--dir", str(project), "licenses", "list", "--prod", "--json"))
+    completed = _run(
+        (*_PNPM, "--dir", str(project), "licenses", "list", "--prod", "--json"),
+        stdout_limit=_LICENSE_OUTPUT_LIMIT,
+        combined_limit=_LICENSE_OUTPUT_LIMIT,
+    )
     try:
         document = json.loads(completed.stdout)
     except (UnicodeDecodeError, json.JSONDecodeError) as error:

@@ -6,14 +6,17 @@ import json
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
 
+import scripts.build_tui_bundle as tui_bundle_module
 from scripts.build_node_bundle import NodeBundleError, build_node_bundle
 from scripts.build_tui_bundle import TuiBundleError, build_tui_bundle, materialize_tree
 
@@ -136,6 +139,108 @@ class NodeBundleTest(unittest.TestCase):
         self._write_pins(hashlib.sha256(self.archive.read_bytes()).hexdigest())
         with self.assertRaisesRegex(NodeBundleError, "version mismatch"):
             build_node_bundle(self.pins, self.archive, PLATFORM, self.root / "wrong-version")
+
+
+class BoundedBundleProcessTest(unittest.TestCase):
+    """验证 release builder 的所有 child 输出、deadline 与进程组回收边界。"""
+
+    def test_pnpm_runner_stops_on_stream_and_combined_output_limits(self) -> None:
+        """pnpm stdout、stderr 或合计超限后必须立即终止且不回显内容。"""
+        cases = (
+            (129, 0),
+            (0, 129),
+            (80, 80),
+        )
+        for stdout_size, stderr_size in cases:
+            with self.subTest(stdout=stdout_size, stderr=stderr_size):
+                program = (
+                    "import os,time;"
+                    f"os.write(1,b's'*{stdout_size});"
+                    f"os.write(2,b'e'*{stderr_size});"
+                    "time.sleep(0.5)"
+                )
+                started = time.monotonic()
+                with (
+                    mock.patch.object(
+                        tui_bundle_module,
+                        "_COMMAND_STREAM_OUTPUT_LIMIT",
+                        128,
+                        create=True,
+                    ),
+                    mock.patch.object(
+                        tui_bundle_module,
+                        "_COMMAND_COMBINED_OUTPUT_LIMIT",
+                        128,
+                        create=True,
+                    ),
+                    mock.patch.object(
+                        tui_bundle_module,
+                        "_COMMAND_TIMEOUT_SECONDS",
+                        0.1,
+                        create=True,
+                    ),
+                    self.assertRaisesRegex(TuiBundleError, "pnpm release command failed") as raised,
+                ):
+                    tui_bundle_module._run((sys.executable, "-c", program))
+                self.assertLess(time.monotonic() - started, 0.4)
+                self.assertNotIn("sss", str(raised.exception))
+
+    def test_managed_node_output_limit_is_immediate_and_redacted(self) -> None:
+        """Node 超限不能先无界 capture 到 child 自行退出，也不能回显输出。"""
+        program = "import os,time;os.write(1,b'sensitive-marker'*20);time.sleep(0.5)"
+        started = time.monotonic()
+        with (
+            mock.patch.object(tui_bundle_module, "_NODE_OUTPUT_LIMIT", 128),
+            mock.patch.object(
+                tui_bundle_module,
+                "_NODE_TIMEOUT_SECONDS",
+                0.1,
+                create=True,
+            ),
+            self.assertRaisesRegex(TuiBundleError, "managed Node command failed") as raised,
+        ):
+            tui_bundle_module._run_managed_node(
+                (sys.executable, "-c", program),
+                cwd=Path.cwd(),
+                environment={},
+            )
+        self.assertLess(time.monotonic() - started, 0.4)
+        self.assertNotIn("sensitive-marker", str(raised.exception))
+
+    def test_leader_exit_with_descendant_holding_pipes_uses_one_deadline(self) -> None:
+        """leader 退出但后代持有 stdout/stderr 时不得越过同一 deadline。"""
+        with tempfile.TemporaryDirectory() as directory:
+            pid_path = Path(directory) / "descendant.pid"
+            program = (
+                "import pathlib,subprocess,sys;"
+                "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(20)']);"
+                f"pathlib.Path({str(pid_path)!r}).write_text(str(child.pid),encoding='utf-8')"
+            )
+            started = time.monotonic()
+            with (
+                mock.patch.object(
+                    tui_bundle_module,
+                    "_COMMAND_TIMEOUT_SECONDS",
+                    0.2,
+                ),
+                self.assertRaisesRegex(TuiBundleError, "pnpm release command failed"),
+            ):
+                tui_bundle_module._run((sys.executable, "-c", program))
+            self.assertLess(time.monotonic() - started, 0.7)
+            self.assertTrue(pid_path.is_file())
+            descendant_pid = int(pid_path.read_text(encoding="utf-8"))
+            cleanup_needed = False
+            deadline = time.monotonic() + 1
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(descendant_pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.01)
+            else:
+                cleanup_needed = True
+                os.kill(descendant_pid, signal.SIGKILL)
+            self.assertFalse(cleanup_needed, "builder left a descendant holding its pipes")
 
 
 class TuiBundleTest(unittest.TestCase):
