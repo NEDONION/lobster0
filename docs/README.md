@@ -159,6 +159,8 @@
   系统服务、health、Docker、飞书 15/15 与 24 小时 soak。
 - [Phase 6 自治运行与 Sandbox 计划](superpowers/plans/2026-08-08-phase-6-autonomy-runtime-and-sandbox.md)：
   Scheduler、Task Ledger、Heartbeat、主动投递、预算、OS Sandbox 与 Checkpoint。
+- [Phase 6 自治任务、Sandbox 与 Checkpoint 设计](superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md)：
+  已确认的 durable state machine、隔离 Session、Budget、ExecutionPlan、Docker/Seatbelt 与回滚边界。
 - [Phase 6.5 Browser Agent 计划](superpowers/plans/2026-08-08-phase-6-5-browser-agent.md)：
   独立 Chromium Profile、snapshot/ref、动作审批、Artifact 与浏览器回归。
 - [Phase 7 受控进化与 Memory Reflection 计划](superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md)：

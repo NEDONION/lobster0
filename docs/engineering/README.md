@@ -139,6 +139,7 @@ WebSocket ready 与 Owner 私聊 Delivery 已验证；完整 15-case、长期 so
 | --- | --- | --- |
 | [OpenClaw / Hermes Gap](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | Phase 5.3 收口后到 Phase 9 的优先级和非目标。 | 路线已确认；未交付部分不能写成当前能力。 |
 | [能力对齐工程总方案](20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Service、Automation、Sandbox、Browser、Evolution、Memory、Skills、MCP、Provider、Sub-agent、Media。 | `APPROVED ROADMAP`。 |
+| [Phase 6 已确认设计](../superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md) | Durable Task Ledger、Scheduler、Heartbeat、Budget、Docker/Seatbelt、Checkpoint。 | `APPROVED DESIGN / IMPLEMENTATION PENDING`；Phase 6.5 Browser 不在本轮。 |
 | [Phase 6 计划](../superpowers/plans/2026-08-08-phase-6-autonomy-runtime-and-sandbox.md) | Scheduler、Task Ledger、Heartbeat、Budget、Sandbox、Checkpoint。 | 依赖 Memory A～E。 |
 | [Phase 6.5 计划](../superpowers/plans/2026-08-08-phase-6-5-browser-agent.md) | Browser Profile、snapshot/ref、Policy、Artifact。 | 依赖 Phase 6 Sandbox。 |
 | [Phase 7 计划](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md) | Feedback、Proposal、Eval、Apply/Rollback。 | 依赖 Memory A～E 与 Phase 6。 |
