@@ -36,7 +36,7 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((code, error), (0, ""))
         lines = output.splitlines()
-        self.assertEqual(len(lines), 101)
+        self.assertEqual(len(lines), 102)
         self.assertEqual(lines, sorted(lines))
         self.assertTrue(any(line.startswith("CORE-001 active core ") for line in lines))
         self.assertTrue(any(line.startswith("PROTO-001 active provider ") for line in lines))
@@ -55,7 +55,7 @@ class CliEvalTest(unittest.TestCase):
                 ["eval", "validate", "--root", str(SCENARIO_ROOT)]
             )
 
-        self.assertEqual((code, output, error), (0, "Validated 101 eval cases.\n", ""))
+        self.assertEqual((code, output, error), (0, "Validated 102 eval cases.\n", ""))
         self.assertFalse(missing_home.exists())
 
     def test_run_offline_prints_pass_rows_and_summary(self) -> None:
@@ -102,10 +102,10 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((channel_code, channel_error), (0, ""))
         self.assertIn("PASS FEISHU-DM-001", channel_output)
-        self.assertIn("Channel eval: 32/32 passed, 0 failed", channel_output)
+        self.assertIn("Channel eval: 33/33 passed, 0 failed", channel_output)
         self.assertEqual((all_code, all_error), (0, ""))
         self.assertIn("Offline eval: 39/39 passed, 0 failed", all_output)
-        self.assertIn("Channel eval: 32/32 passed, 0 failed", all_output)
+        self.assertIn("Channel eval: 33/33 passed, 0 failed", all_output)
         self.assertIn("Automation eval: 15/15 passed, 0 failed", all_output)
 
     def test_run_automation_prints_versioned_cases_and_summary(self) -> None:
@@ -161,7 +161,7 @@ class CliEvalTest(unittest.TestCase):
         )
 
         self.assertEqual((code, error), (0, ""))
-        self.assertIn("Channel local soak: 64/64 checks passed across 2/2 runs", output)
+        self.assertIn("Channel local soak: 66/66 checks passed across 2/2 runs", output)
         self.assertNotIn("PASS FEISHU-DM-001", output)
 
     def test_run_channel_json_is_machine_readable_and_redacted(self) -> None:
@@ -185,12 +185,12 @@ class CliEvalTest(unittest.TestCase):
         self.assertEqual(report["schema_version"], 1)
         self.assertEqual(report["suite"], "channel")
         self.assertEqual(report["suite_version"], 1)
-        self.assertEqual(report["cases_per_run"], 32)
+        self.assertEqual(report["cases_per_run"], 33)
         self.assertEqual(report["repeat"], 2)
-        self.assertEqual(report["checks"], 64)
-        self.assertEqual(report["passed"], 64)
+        self.assertEqual(report["checks"], 66)
+        self.assertEqual(report["passed"], 66)
         self.assertEqual(report["failed"], 0)
-        self.assertEqual(len(report["case_ids"]), 32)
+        self.assertEqual(len(report["case_ids"]), 33)
         self.assertRegex(report["commit"], r"^(?:[0-9a-f]{40}|unknown)$")
         serialized = json.dumps(report, ensure_ascii=False).lower()
         self.assertNotIn("environment", serialized)

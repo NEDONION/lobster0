@@ -1,4 +1,4 @@
-"""Phase 5 当前事实、文档链接与进度页面的一致性门禁。"""
+"""Phase 6 当前事实、文档链接与进度页面的一致性门禁。"""
 
 import subprocess
 import sys
@@ -11,37 +11,38 @@ from scripts.validate_docs import _broken_links, _fence_failures, _html_failure
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-class Phase5DocumentationTest(unittest.TestCase):
-    """防止代码完成后文档仍停留在设计阶段或写成伪 live PASS。"""
+class Phase6DocumentationTest(unittest.TestCase):
+    """防止 Phase 6 完成后文档仍停留在规划阶段或写成伪 Live PASS。"""
 
     def test_primary_status_documents_share_the_same_verified_facts(self) -> None:
         """用户入口必须统一显示 implementation PASS 与当前真实门禁数字。"""
         paths = (
             "README.md",
             "README_EN.md",
+            "docs/product/20260807_产品需求文档.md",
             "docs/architecture/20260807_系统架构.md",
             "docs/engineering/README.md",
-            "docs/engineering/phase-5/20260808_telegram-discord-channels.md",
             "docs/getting-started/20260807_本地运行指南.md",
-            "docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md",
-            "docs/engineering/phase-5/20260808_testing-and-live-acceptance.md",
-            "docs/engineering/phase-5/20260808_feishu-live-e2e.md",
-            "docs/engineering/phase-5/20260808_feishu-gateway-runtime-and-macos-service.md",
+            "docs/engineering/phase-6/20260809_autonomy-runtime.md",
+            "docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md",
+            "docs/evals/README.md",
+            "docs/evals/releases/v0.7.0.md",
         )
         for relative in paths:
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("671", content)
-                self.assertIn("35", content)
+                self.assertIn("798", content)
+                self.assertIn("35/35", content)
                 self.assertIn("39/39", content)
-                self.assertIn("32/32", content)
-                self.assertIn("640/640", content)
+                self.assertIn("33/33", content)
+                self.assertIn("660/660", content)
+                self.assertIn("15/15", content)
                 self.assertIn("TARGETED CALLBACK LIVE VERIFIED", content)
                 self.assertIn("15-CASE LIVE PENDING", content)
 
-    def test_phase5_operational_documents_are_present_and_linked(self) -> None:
-        """实现、测试、排障和完成审计必须各有独立入口。"""
+    def test_operational_documents_are_present_and_linked(self) -> None:
+        """Phase 5 运维和 Phase 6 自治安全文档必须各有独立入口。"""
         engineering = (PROJECT_ROOT / "docs/engineering/README.md").read_text(
             encoding="utf-8"
         )
@@ -56,6 +57,13 @@ class Phase5DocumentationTest(unittest.TestCase):
         ):
             self.assertTrue((PROJECT_ROOT / "docs/engineering/phase-5" / name).is_file())
             self.assertIn(name, engineering)
+        for name in (
+            "20260809_autonomy-runtime.md",
+            "20260809_sandbox-and-checkpoint.md",
+        ):
+            self.assertTrue((PROJECT_ROOT / "docs/engineering/phase-6" / name).is_file())
+            self.assertIn(name, engineering)
+        self.assertIn("releases/v0.7.0.md", engineering)
 
     def test_memory_autopilot_status_and_release_evidence_are_consistent(self) -> None:
         """Memory A～E 用户入口必须统一为已实现，并引用十条 versioned case。"""
@@ -130,13 +138,14 @@ class Phase5DocumentationTest(unittest.TestCase):
         """可视化进度页必须能一眼区分代码完成与真实平台待验收。"""
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
-            "Memory A-E implementation pass",
-            "671 Python",
-            "35 TypeScript",
+            "Phase 6 implementation pass",
+            "798 Python",
+            "35/35 TypeScript",
             "39/39",
             "IMPLEMENTATION PASS",
-            "32/32",
-            "640/640",
+            "33/33",
+            "660/660",
+            "15/15 Automation",
             "TARGETED CALLBACK LIVE VERIFIED",
             "15-CASE LIVE PENDING",
             "Telegram live pending",
@@ -149,6 +158,7 @@ class Phase5DocumentationTest(unittest.TestCase):
         content = (PROJECT_ROOT / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("大约一半中文、一半英文", content)
         self.assertIn("--suite channel --repeat 20", content)
+        self.assertIn("--suite automation --repeat 20", content)
         self.assertIn("scripts/validate_docs.py", content)
 
     def test_documentation_validator_passes_repository(self) -> None:

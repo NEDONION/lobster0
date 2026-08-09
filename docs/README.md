@@ -66,6 +66,9 @@
 | [Memory Autopilot 正式设计](superpowers/specs/2026-08-08-memory-autopilot-design.md) | 已确认的产品语义、存储决策、安全边界、失败策略与验收门槛 |
 | [Memory Autopilot A～E 实施计划](superpowers/plans/2026-08-09-memory-autopilot.md) | 10 个 TDD 任务、精确文件/接口/命令、Crash Matrix 与完成定义 |
 | [Memory Autopilot 工程实现](engineering/phase-5/20260809_memory-autopilot.md) | 已实现的数据流、隐私、恢复、治理、迁移和运维入口 |
+| [Phase 6 Autonomy Runtime](engineering/phase-6/20260809_autonomy-runtime.md) | 已实现的 Task/Scheduler/Runner/Heartbeat、Budget、恢复与运维入口 |
+| [Phase 6 Sandbox 与 Checkpoint](engineering/phase-6/20260809_sandbox-and-checkpoint.md) | 已实现的 Plan/Approval 绑定、隔离后端、Checkpoint 与 Rollback |
+| [v0.7.0 发布证据](evals/releases/v0.7.0.md) | 798/798 Python、35/35 TypeScript、39/39 Agent、33/33 Channel、660/660 soak 与 15/15 Automation |
 | [能力对齐工程落地总方案](engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | 模块、数据模型、配置、错误码、测试矩阵与各 Phase 退出条件 |
 
 ## 使用与开发

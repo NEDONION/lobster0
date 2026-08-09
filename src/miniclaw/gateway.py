@@ -436,6 +436,7 @@ def _build_discord_channel(
         ChannelExperience(
             transport=transport,
             progress_enabled=True,
+            progress_is_final=True,
             update_interval=limits.progress_update_interval,
             max_visible_chars=selected.message_max_chars,
             observer=observer,

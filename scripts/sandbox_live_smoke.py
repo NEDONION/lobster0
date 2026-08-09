@@ -57,13 +57,20 @@ async def _run(args: argparse.Namespace) -> int:
         else:
             executable = args.executable or "/usr/bin/sandbox-exec"
             backend = SeatbeltSandbox(executable=executable)
-            argv = (sys.executable, str(probe), str(secret), str(result))
+            probe_executable = _seatbelt_probe_executable()
+            argv = (
+                probe_executable,
+                str(probe),
+                str(secret),
+                str(result),
+            )
+            read_roots = (_seatbelt_python_runtime_root(probe_executable),)
             backend_name = "seatbelt"
         plan = ExecutionPlan(
             argv=argv,
             cwd=workspace,
             environment_names=("LANG",),
-            read_roots=(),
+            read_roots=read_roots if args.backend == "seatbelt" else (),
             write_roots=(workspace,),
             timeout_seconds=20,
             memory_mib=256,
@@ -127,6 +134,20 @@ def _rootless_backend(args: argparse.Namespace) -> tuple[DockerSandbox, str]:
 def _stable_status(engine: str, contained: bool) -> str:
     """返回不含本机路径、UID 或进程细节的稳定 live 结果。"""
     return f"engine={engine} containment={'PASS' if contained else 'FAIL'}"
+
+
+def _seatbelt_probe_executable(value: str | None = None) -> str:
+    """冻结真实 Python executable，避免把 venv symlink 写入 Plan。"""
+    return str(Path(value or sys.executable).resolve(strict=True))
+
+
+def _seatbelt_python_runtime_root(executable: str) -> Path:
+    """返回只覆盖当前 Python 版本的最小只读 runtime root。"""
+    path = Path(executable)
+    root = path.parent.parent.resolve(strict=True)
+    if root == Path(root.anchor) or not (root / "lib").is_dir():
+        raise ValueError("seatbelt Python runtime root is unavailable")
+    return root
 
 
 def _probe_source() -> str:

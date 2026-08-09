@@ -17,19 +17,21 @@
 
 ```mermaid
 flowchart LR
-    CHANGE["代码或 Prompt 变更"] --> UNIT["671 Python + 35 TypeScript"]
+    CHANGE["代码或 Prompt 变更"] --> UNIT["798 Python + 35/35 TypeScript"]
     UNIT --> VALIDATE["eval validate"]
     VALIDATE --> OFFLINE["39 active offline cases"]
     OFFLINE --> CHANNEL["32 active Channel cases"]
     CHANNEL --> SOAK["20 runs / 640 checks"]
-    SOAK --> RUFF["Ruff + docs + diff check"]
+    SOAK --> AUTO["15 Automation / 300 soak"]
+    AUTO --> RUFF["Ruff + docs + diff check"]
     RUFF --> LIVE["15-step live harness per platform"]
     LIVE --> RECORD["release record"]
 ```
 
-当前全仓门禁是 **IMPLEMENTATION PASS**：671/671 Python tests、35/35 TypeScript、39/39 active offline Agent、
-32/32 Channel、640/640 local soak。Feishu 是 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram 与
-Discord 的真实验收均为 **LIVE PENDING**。
+当前全仓门禁是 **IMPLEMENTATION PASS**：798/798 Python tests、35/35 TypeScript、39/39 active offline Agent、
+33/33 Channel、660/660 local Channel soak、15/15 Automation 与 20 轮 300/300 Automation soak。Feishu 是
+**TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram 与 Discord 的真实验收均为
+**LIVE PENDING**；Docker 为 **LIVE VERIFIED**，Seatbelt 为 **LIVE PENDING**。
 Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已单独完成 3 次 planning probe。
 通用 live runner、费用趋势和 compare CLI 仍是后续能力。
 
@@ -53,3 +55,4 @@ Phase 2 release 已执行一次脱敏 DeepSeek smoke；`ACTION-OPEN-APP-001` 已
 - [v0.5.2：Phase 5.2 Feishu single-card + direct lark-cli Skill](releases/v0.5.2.md)
 - [v0.6.0：Memory Autopilot A～E](releases/v0.6.0.md)
 - [v0.6.1：Memory A～E + Feishu callback/continuation hardening](releases/v0.6.1.md)
+- [v0.7.0：Phase 6 Autonomy + Sandbox + Checkpoint](releases/v0.7.0.md)

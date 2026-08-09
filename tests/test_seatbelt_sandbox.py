@@ -1,11 +1,13 @@
 """macOS Seatbelt profile 与 availability contract。"""
 
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 
 from miniclaw.sandbox.base import ExecutionPlan, SandboxUnavailableError
 from miniclaw.sandbox.seatbelt import SeatbeltSandbox
+from scripts import sandbox_live_smoke
 
 
 class SeatbeltSandboxTest(unittest.IsolatedAsyncioTestCase):
@@ -39,10 +41,14 @@ class SeatbeltSandboxTest(unittest.IsolatedAsyncioTestCase):
         profile = SeatbeltSandbox().build_profile(self.plan)
 
         self.assertIn("(deny default)", profile)
+        self.assertIn('(import "system.sb")', profile)
+        self.assertLess(profile.index('(import "system.sb")'), profile.index("(deny network*)"))
         self.assertIn("(deny network*)", profile)
         self.assertIn(f'(literal "{self.plan.argv[0]}")', profile)
         self.assertIn(f'(subpath "{self.read_root}")', profile)
         self.assertIn(f'(subpath "{self.workspace}")', profile)
+        self.assertIn(f'(path-ancestors "{self.read_root}")', profile)
+        self.assertIn(f'(path-ancestors "{self.workspace}")', profile)
         self.assertNotIn("TOKEN", profile)
 
     def test_profile_escapes_paths_as_literals(self) -> None:
@@ -67,6 +73,15 @@ class SeatbeltSandboxTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn('write\\"root', profile)
         self.assertNotIn(f'(subpath "{quoted}")', profile)
+
+    def test_live_smoke_resolves_python_symlink_before_binding_profile(self) -> None:
+        """Live harness 必须和生产 Policy 一样先冻结真实 executable。"""
+        resolved = sandbox_live_smoke._seatbelt_probe_executable(sys.executable)
+        runtime_root = sandbox_live_smoke._seatbelt_python_runtime_root(resolved)
+
+        self.assertEqual(resolved, str(Path(sys.executable).resolve(strict=True)))
+        self.assertEqual(runtime_root, Path(resolved).parent.parent)
+        self.assertTrue((runtime_root / "lib").is_dir())
 
     async def test_unsupported_platform_fails_without_running_command(self) -> None:
         """非 macOS 或 executable 缺失时返回稳定 unavailable。"""

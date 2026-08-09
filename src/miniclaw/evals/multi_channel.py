@@ -24,6 +24,7 @@ from miniclaw.channels.base import (
 )
 from miniclaw.channels.delivery import DeliveryWorker, split_message
 from miniclaw.channels.discord import DiscordAdapter
+from miniclaw.channels.discord_rendering import render_discord_text
 from miniclaw.channels.manager import ChannelManager
 from miniclaw.channels.supervisor import ChannelRuntime, GatewaySupervisor
 from miniclaw.channels.telegram import TelegramAdapter
@@ -76,6 +77,10 @@ async def run_multi_channel_fixture(case: EvalCase) -> tuple[str, ...]:
         return await _restart_evidence(platform)
     if fixture == "isolation":
         return await _isolation_evidence(platform)
+    if fixture == "compact_reply":
+        if platform != "discord":
+            raise AssertionError("compact_reply is Discord-only")
+        return _discord_compact_reply_evidence(case.query)
     raise AssertionError("unknown multi-channel fixture")
 
 
@@ -85,6 +90,14 @@ def _platform(case: EvalCase) -> str:
     if case.id.startswith("DISCORD-"):
         return "discord"
     raise AssertionError("unknown multi-channel case prefix")
+
+
+def _discord_compact_reply_evidence(query: str) -> tuple[str, ...]:
+    """验证 Discord 生产 renderer 把标题压回正文且完整容纳短回答。"""
+    rendered = render_discord_text(query, max_chars=2000)
+    if rendered is None or rendered != "**核心能力**\n\n**文件与代码**":
+        raise AssertionError("Discord compact reply rendering failed")
+    return ("heading_compacted", "single_reply_ready")
 
 
 @dataclass(frozen=True, slots=True)

@@ -190,7 +190,7 @@ class DockerSandbox:
             read_index += 1
             destination = "/workspace" if root == plan.cwd else f"/mnt/readonly-{read_index}"
             mounts.extend(
-                ("--mount", f"type=bind,src={root},dst={destination},ro")
+                ("--mount", f"type=bind,src={root},dst={destination},readonly")
             )
         write_index = 0
         for root in plan.write_roots:
@@ -199,7 +199,7 @@ class DockerSandbox:
             else:
                 write_index += 1
                 destination = f"/mnt/write-{write_index}"
-            mounts.extend(("--mount", f"type=bind,src={root},dst={destination},rw"))
+            mounts.extend(("--mount", f"type=bind,src={root},dst={destination}"))
         environment: list[str] = []
         for name in plan.environment_names:
             environment.extend(("--env", name))

@@ -9,7 +9,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Node.js 22.19+](https://img.shields.io/badge/Node.js-22.19%2B-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
 [![Version](https://img.shields.io/badge/package-v0.1.0-8B5CF6)](pyproject.toml)
-[![Phase 5](https://img.shields.io/badge/Phase%205-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
+[![Phase 6](https://img.shields.io/badge/Phase%206-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
 [Why MiniClaw](#why-miniclaw) · [Capabilities](#current-capabilities) · [Quick start](#quick-start) · [Gallery](#product-gallery) · [Architecture](#how-it-works) · [Roadmap](#roadmap) · [Docs](#documentation)
@@ -21,7 +21,7 @@
 MiniClaw brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
-> The repository has passed the Phase 5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is now implemented locally: all four verified private entry points share one Owner Memory Space, Markdown stores semantic truth, and SQLite stores the durable control plane and rebuildable FTS5 projection.
+> The repository has passed the Phase 6 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is implemented locally. Phase 6 adds durable Tasks, Scheduler/Runner, E-stop, budgets, Approval continuation, proactive Delivery, immutable Docker/Seatbelt plans, Checkpoints, Rollback, and a 15-case Automation gate. Automation remains disabled by default. Docker containment is live verified; Seatbelt remains live pending because its Framework launcher is not yet represented in the immutable Plan.
 
 ## Why MiniClaw
 
@@ -46,7 +46,9 @@ MiniClaw is not a chat box wired directly to a shell. The model proposes a Tool 
 | Safety | Workspace Guard, hard-denied sensitive paths, exact argv, minimal child environment, HTTPS/DNS/SSRF validation, parameter-bound approvals. |
 | Channels | Feishu uses one `Claw Trail` Agent Card for redacted progress, Tool state, and the final answer; all three platforms keep isolated Transport/Delivery/Manager/queue/recovery pipelines while sharing one Agent Runtime. |
 | Data | SQLite Session/Message/Turn/ToolRun/Approval/Channel/Memory control plane; owner-only Markdown Truth and Skills. |
-| Operations | `init`, 23-check `doctor`, `gateway`, Memory rebuild, redacted logs, idempotent recovery, and versioned Eval gates. |
+| Automation | One-shot/interval/cron, durable TaskRuns, E-stop, budgets, Heartbeat, Approval continuation, and idempotent proactive Delivery. |
+| Sandbox | Immutable ExecutionPlans, fail-closed Docker/Seatbelt backends, Checkpoint CAS, and conflict-aware Rollback. |
+| Operations | `init`, `doctor`, `gateway`, the `task` control plane, Memory rebuild, redacted logs, idempotent recovery, and versioned Eval gates. |
 
 ### Permission modes
 
@@ -105,9 +107,11 @@ MINICLAW_TUI=textual uv run miniclaw
 | `uv run miniclaw init` | Idempotently initialize private state, config, Memory, Skills, and SQLite. |
 | `uv run miniclaw doctor` | Diagnose config, directory permissions, Provider, TUI, and database state. |
 | `uv run miniclaw gateway` | Start configured Feishu/Telegram/Discord gateways. |
+| `uv run miniclaw task list` | Inspect durable tasks; `show/runs/pause/resume/run/cancel/halt/unhalt` provide the control plane. |
 | `uv run miniclaw eval validate --root evals/scenarios` | Validate versioned JSONL scenarios. |
 | `uv run miniclaw eval run --suite offline --root evals/scenarios` | Run offline cases through the real Core/Policy/Tool/SQLite path. |
 | `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios` | Run all Channel cases and the 20-round local soak. |
+| `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios` | Run the 15 Phase 6 Automation cases and 20-round soak. |
 
 See the [local setup guide](docs/getting-started/20260807_本地运行指南.md) for Channel allowlists, Owner identities, and credentials.
 
@@ -147,6 +151,9 @@ flowchart LR
     EXEC --> POLICY["Policy + Permission Mode"]
     POLICY --> APPROVAL["bound Approval"]
     POLICY --> TOOLS["Files / HTTPS / CLI / Memory"]
+    CORE --> SCHED["Scheduler + TaskRunner"]
+    SCHED --> LEDGER["Task Ledger + E-stop"]
+    SCHED --> EXEC
     CORE --> DB["SQLite ledgers"]
     CORE --> MD["Markdown Memory + Skills"]
 ```
@@ -181,6 +188,23 @@ Architecture, implementation, and evidence references:
 - [Memory Autopilot engineering implementation](docs/engineering/phase-5/20260809_memory-autopilot.md)
 - [v0.6.0 release evidence](docs/evals/releases/v0.6.0.md)
 
+## Phase 6: autonomy with hard controls
+
+Phase 6 lets a long-running Gateway execute bounded background work without handing control to the model:
+
+- the SQLite Task Ledger freezes Task/Run snapshots and the Scheduler enqueues due slots idempotently;
+- each Run gets a fresh Automation Session, fixed Tool profile, and wall-clock/turn/tool/token/cost budgets;
+- Automation cannot expose `manage_task`; only the `complete_task` terminal Tool can declare success;
+- dangerous Tools still require a human Approval bound to canonical arguments and ExecutionPlan hash;
+- durable E-stop, lease recovery, idempotent Channel Delivery, and Heartbeat reuse the existing Runtime;
+- Docker/Seatbelt fail closed instead of falling back to Host; bounded Checkpoints precede file side effects, and Rollback requires a preview hash.
+
+Both `automation.enabled` and `heartbeat.enabled` default to false. Heartbeat currently has no Owner IM route, Checkpoints cover
+only the primary Workspace, and Rollback has no CLI/TUI yet. See the
+[Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md),
+[Sandbox and Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md), and
+[v0.7.0 release evidence](docs/evals/releases/v0.7.0.md).
+
 ## Security boundaries
 
 - Secrets never belong in the repository, ordinary logs, or Memory; common tokens, passwords, OTPs, Authorization values, and private keys are rejected at boundaries.
@@ -197,17 +221,19 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 
 | Gate | Current evidence |
 | --- | --- |
-| Python | 671/671 `unittest` PASS |
+| Python | 798/798 `unittest` PASS |
 | TUI | 35/35 TypeScript tests and build PASS |
 | Agent | 39/39 active offline cases PASS, including `MEM-AUTO-001..010` |
-| Channel | 32/32 versioned cases PASS |
-| Stability | 20 local Channel rounds, 640/640 PASS |
+| Channel | 33/33 versioned cases PASS |
+| Stability | 20 local Channel rounds, 660/660 PASS |
+| Automation | 15/15 versioned cases; 20 rounds, 300/300 PASS |
 | Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS; real-platform Live Gates pending |
 | Memory Autopilot | A–E IMPLEMENTATION PASS; live conclusions remain platform-specific |
+| Phase 6 | **IMPLEMENTATION PASS**; Docker LIVE VERIFIED / Seatbelt LIVE PENDING |
 
-Fake SDKs, offline scenarios, and the 640/640 local soak only establish **IMPLEMENTATION PASS**. They never masquerade as a live-platform PASS. Historical evidence lives under [`docs/evals/releases/`](docs/evals/releases/).
-The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent. Memory v0.6.0 recorded 666 Python, 35 TypeScript, and 39/39 Agent; current figures are in the table above and v0.6.1.
+Fake SDKs, offline scenarios, and the 660/660 local soak only establish **IMPLEMENTATION PASS**. They never masquerade as a live-platform PASS. Historical evidence lives under [`docs/evals/releases/`](docs/evals/releases/).
+The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent. Memory v0.6.0 recorded 666 Python, 35 TypeScript, and 39/39 Agent; current figures are in the table above and v0.7.0.
 
 ### Verification
 
@@ -217,6 +243,7 @@ pnpm --dir tui test
 pnpm --dir tui build
 uv run ruff check .
 uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 ```
@@ -226,24 +253,27 @@ git diff --check
 ```mermaid
 flowchart LR
     P53["v0.5.3\nLive Evidence closure"] --> MA["Memory A-E\nIMPLEMENTED"]
-    MA --> P6["Phase 6\nAutomation + Sandbox"]
+    MA --> P6["Phase 6\nIMPLEMENTED"]
     P6 --> P65["Phase 6.5\nBrowser Agent"]
     P65 --> P7["Phase 7\nControlled Evolution"]
     P7 --> P8["Phase 8\nSkills + MCP + Provider"]
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, v0.5.3 Core hardening, and Memory A–E are implemented. The next work is to close the strict Feishu/Discord Live Gates before Phase 6 autonomous tasks. Later roadmap nodes do not imply implementation.
+Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, v0.5.3 Core hardening, Memory A–E, and Phase 6 Autonomy/Sandbox are implemented. The next capability is **Phase 6.5 Browser Agent**; strict Feishu/Discord Live Evidence remains an independent parallel gate. Nodes after Phase 6 do not imply implementation.
 
 ## Repository layout
 
 ```text
 src/miniclaw/
 ├── agent/       # Context, Runner, Turn, Compaction
+├── automation/  # Task Ledger, Scheduler, Runner, Heartbeat, Delivery
+├── checkpoints/ # bounded CAS and conflict-aware Rollback
 ├── channels/    # Feishu / Telegram / Discord adapters and pipelines
 ├── memory/      # Markdown Truth, buffer/flush, FTS5, governance, reconcile, migration
 ├── policy/      # Workspace, Command, Network, Permission, Approval
 ├── providers/   # OpenAI-compatible Provider
+├── sandbox/     # immutable Plans and Host/Docker/Seatbelt backends
 ├── storage/     # SQLite schema, repositories, migrations
 ├── tools/       # eighteen built-in Tools
 └── tui/         # Textual fallback; default pi-tui lives in repository tui/
@@ -269,6 +299,8 @@ tests/           # Python unittest suite
 | [Capability-alignment engineering roadmap](docs/engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Module, data, and test boundaries for future deliveries |
 | [Memory A–E plan](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | Executable RED→GREEN delivery plan |
 | [Memory Autopilot implementation](docs/engineering/phase-5/20260809_memory-autopilot.md) | Current data flow, safety boundaries, recovery, and operations |
+| [Phase 6 Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md) | Tasks, Scheduler/Runner, Heartbeat, budgets, recovery, and operations |
+| [Phase 6 Sandbox and Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md) | Plan/Approval binding, isolation backends, Checkpoints, and Rollback |
 
 ## Contributing
 

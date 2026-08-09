@@ -55,6 +55,7 @@ class SeatbeltSandbox:
         lines = [
             "(version 1)",
             "(deny default)",
+            '(import "system.sb")',
             "(deny network*)",
             "(allow process-fork)",
             f'(allow process-exec (literal "{_escape(plan.argv[0])}"))',
@@ -63,9 +64,18 @@ class SeatbeltSandbox:
             '(allow file-read* (subpath "/System/Library"))',
         ]
         for root in plan.read_roots:
-            lines.append(f'(allow file-read* (subpath "{_escape(str(root))}"))')
+            escaped = _escape(str(root))
+            lines.append(
+                f'(allow file-read-metadata file-test-existence '
+                f'(path-ancestors "{escaped}"))'
+            )
+            lines.append(f'(allow file-read* (subpath "{escaped}"))')
         for root in plan.write_roots:
             escaped = _escape(str(root))
+            lines.append(
+                f'(allow file-read-metadata file-test-existence '
+                f'(path-ancestors "{escaped}"))'
+            )
             lines.append(f'(allow file-read* (subpath "{escaped}"))')
             lines.append(f'(allow file-write* (subpath "{escaped}"))')
         return "\n".join(lines) + "\n"
