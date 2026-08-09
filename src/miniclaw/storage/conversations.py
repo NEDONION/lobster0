@@ -111,6 +111,61 @@ class SessionRepository:
             conversation_id,
         )
 
+    def get_cli(self, user_id: int, conversation_id: str) -> Session | None:
+        """按 Owner 与 CLI 会话标识读取 Session，但绝不隐式创建。
+
+        Args:
+            user_id: 当前 Owner 的数据库 ID。
+            conversation_id: Desktop 或 CLI 使用的稳定会话标识。
+
+        Returns:
+            属于该 Owner 的 Session；不存在或属于其他 Owner 时返回 None。
+
+        Raises:
+            ValueError: 会话标识为空、超长或包含 NUL。
+        """
+        normalized = _session_key(
+            conversation_id,
+            "external_conversation_id",
+            maximum=256,
+        )
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                """
+                SELECT * FROM sessions
+                WHERE user_id = ? AND channel = 'cli' AND account_id = 'local'
+                  AND external_conversation_id = ?
+                """,
+                (user_id, normalized),
+            ).fetchone()
+        return None if row is None else _session_from_row(row)
+
+    def list_cli(self, user_id: int, limit: int = 50) -> tuple[Session, ...]:
+        """按更新时间从新到旧列出一个 Owner 的有限 CLI Session。
+
+        Args:
+            user_id: 当前 Owner 的数据库 ID。
+            limit: 最多返回的严格正整数条数。
+
+        Returns:
+            仅含 channel=cli、account=local 的不可变 Session 元组。
+
+        Raises:
+            ValueError: limit 不是严格正整数。
+        """
+        if type(limit) is not int or limit <= 0:
+            raise ValueError("Session limit must be a positive integer")
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                """
+                SELECT * FROM sessions
+                WHERE user_id = ? AND channel = 'cli' AND account_id = 'local'
+                ORDER BY updated_at DESC, id DESC LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+        return tuple(_session_from_row(row) for row in rows)
+
     def get_or_create(
         self,
         user_id: int,
@@ -805,6 +860,39 @@ class TurnRepository:
                 (session_id, limit),
             ).fetchall()
         return tuple(_turn_from_row(row) for row in rows)
+
+    def interrupt_stale(self) -> int:
+        """把上次进程遗留的 queued/running Turn 收敛为安全失败终态。
+
+        Returns:
+            本次被标记为 ``runtime_interrupted`` 的 Turn 数量。
+
+        Notes:
+            ``waiting_approval`` 可由持久审批继续，因此不会被修改。
+        """
+        now = _utc_now().isoformat()
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE sessions SET updated_at = ?
+                WHERE id IN (
+                    SELECT DISTINCT session_id FROM turns
+                    WHERE status IN ('queued', 'running')
+                )
+                """,
+                (now,),
+            )
+            cursor = connection.execute(
+                """
+                UPDATE turns SET
+                    status = 'failed', completed_at = ?,
+                    error_code = 'runtime_interrupted',
+                    error_message = 'MiniClaw Core 在上次运行期间退出'
+                WHERE status IN ('queued', 'running')
+                """,
+                (now,),
+            )
+        return cursor.rowcount
 
     def _terminal(
         self,

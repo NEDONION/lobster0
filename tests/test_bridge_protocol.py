@@ -154,6 +154,72 @@ class BridgeProtocolTest(unittest.TestCase):
                 )
             self.assertEqual(captured.exception.code, "invalid_memory_command")
 
+    def test_session_queries_accept_only_bounded_read_parameters(self) -> None:
+        """Desktop 会话查询不能携带 Owner、SQL 范围或无界 limit。"""
+        accepted = (
+            ("session.list", {"limit": 20}),
+            ("session.history", {"session_key": "task-1", "limit": 100}),
+        )
+        for request_type, payload in accepted:
+            request = decode_request(
+                json.dumps(
+                    {"v": 1, "id": "session-ok", "type": request_type, "payload": payload}
+                ).encode("utf-8")
+                + b"\n"
+            )
+            self.assertEqual(request.payload, payload)
+
+        rejected = (
+            ("session.list", {"limit": True}),
+            ("session.list", {"limit": 51}),
+            ("session.list", {"limit": 20, "owner_id": 1}),
+            ("session.history", {"session_key": "", "limit": 100}),
+            ("session.history", {"session_key": "task-1", "limit": 201}),
+        )
+        for request_type, payload in rejected:
+            with self.subTest(request_type=request_type, payload=payload):
+                with self.assertRaises(ProtocolError) as captured:
+                    decode_request(
+                        json.dumps(
+                            {
+                                "v": 1,
+                                "id": "session-bad",
+                                "type": request_type,
+                                "payload": payload,
+                            }
+                        ).encode("utf-8")
+                        + b"\n"
+                    )
+                self.assertEqual(captured.exception.code, "invalid_session_query")
+
+    def test_automation_list_accepts_only_a_bounded_read_limit(self) -> None:
+        """Automation 只读查询不能接收 Owner、bool 或无界数量。"""
+        request = decode_request(
+            b'{"v":1,"id":"automation-ok","type":"automation.list","payload":{"limit":50}}\n'
+        )
+        self.assertEqual(request.payload, {"limit": 50})
+
+        for payload in (
+            {"limit": True},
+            {"limit": 0},
+            {"limit": 101},
+            {"limit": 50, "owner_id": 1},
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ProtocolError) as captured:
+                    decode_request(
+                        json.dumps(
+                            {
+                                "v": 1,
+                                "id": "automation-bad",
+                                "type": "automation.list",
+                                "payload": payload,
+                            }
+                        ).encode("utf-8")
+                        + b"\n"
+                    )
+                self.assertEqual(captured.exception.code, "invalid_automation_query")
+
     def test_encode_frame_is_one_utf8_json_line_and_rejects_nan(self) -> None:
         """输出必须是一行紧凑 UTF-8 JSON，且不能编码非标准数值。"""
         encoded = encode_frame(

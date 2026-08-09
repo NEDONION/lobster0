@@ -61,6 +61,7 @@
 | [产品需求文档](product/20260807_产品需求文档.md) | 定位、用户流程、功能范围、图解、验收标准和里程碑 |
 | [系统架构](architecture/20260807_系统架构.md) | 运行边界、主链路、计划包结构和安全原则 |
 | [OpenClaw / Hermes 能力 Gap](architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 当前能力、竞品方法映射、优先级、v0.5.3 Evidence→Memory A～E→Phase 6～9 路线与非目标 |
+| [通用桌面 Agent 工作台设计](architecture/20260809_通用桌面Agent工作台设计.md) | WorkBuddy 式四界面、Codex 式浅色视觉、Electron + React、W0～W3 最小交付路线 |
 | [开发与交付时间线](engineering/20260809_development-timeline.md) | Capability Phase 与真实 Git/Release 交付顺序的对应关系 |
 | [Memory Autopilot 能力 Gap](architecture/20260808_Memory-Autopilot能力Gap与重构架构.md) | 当前失忆根因、EverOS/Tencent/OpenClaw 映射、L0→L3、跨渠道与分级自动治理 |
 | [Memory Autopilot 正式设计](superpowers/specs/2026-08-08-memory-autopilot-design.md) | 已确认的产品语义、存储决策、安全边界、失败策略与验收门槛 |

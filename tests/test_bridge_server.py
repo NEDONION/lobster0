@@ -6,11 +6,15 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.bootstrap import initialize_state
+from miniclaw.bridge.__main__ import build_parser
+from miniclaw.bridge.conversations import ConversationQueryError
 from miniclaw.bridge.server import BridgeServer
 from miniclaw.paths import build_state_paths
 from miniclaw.policy.approvals import ApprovalDecision
@@ -159,6 +163,26 @@ class BlockingTurnService:
             raise
 
 
+class FakeConversationConsole:
+    """记录 Bridge 注入的 Owner 与查询参数，并返回有限安全数据。"""
+
+    def __init__(self) -> None:
+        """初始化空调用记录。"""
+        self.calls: list[tuple] = []
+
+    def list_sessions(self, owner_id: int, *, limit: int) -> dict:
+        """返回一个固定最近任务摘要。"""
+        self.calls.append(("list", owner_id, limit))
+        return {"sessions": [{"session_key": "task-1", "status": "completed"}]}
+
+    def history(self, owner_id: int, *, session_key: str, limit: int) -> dict:
+        """返回固定历史，missing 使用稳定查询错误。"""
+        self.calls.append(("history", owner_id, session_key, limit))
+        if session_key == "missing":
+            raise ConversationQueryError("session_not_found", "任务不存在")
+        return {"session_key": session_key, "turns": [], "messages": []}
+
+
 def _runtime(service) -> SimpleNamespace:
     """创建只暴露 Bridge 所需公开字段的 Runtime。"""
     return SimpleNamespace(
@@ -173,6 +197,9 @@ def _runtime(service) -> SimpleNamespace:
         memory_console=SimpleNamespace(
             command=lambda **values: {"echo": values},
         ),
+        conversation_console=FakeConversationConsole(),
+        automation_enabled=True,
+        database=object(),
     )
 
 
@@ -180,8 +207,10 @@ async def _run_bridge_process(
     home: Path,
     cwd: Path,
     environ: dict[str, str],
+    *,
+    workspace: Path | None = None,
 ) -> tuple[int, bytes, bytes]:
-    """在隔离环境中启动真实 Bridge 并完成握手与关闭。"""
+    """在隔离环境中启动真实 Bridge，可选覆盖 Workspace，并完成握手与关闭。"""
     project = Path(__file__).resolve().parent.parent
     environment = {
         key: value
@@ -189,12 +218,12 @@ async def _run_bridge_process(
         if key not in {"MINICLAW_ENV_FILE", "MINICLAW_MODEL_API_KEY"}
     }
     environment.update({"PYTHONPATH": str(project / "src"), **environ})
+    arguments = ["-m", "miniclaw.bridge", "--home", str(home)]
+    if workspace is not None:
+        arguments.extend(("--workspace", str(workspace)))
     process = await asyncio.create_subprocess_exec(
         sys.executable,
-        "-m",
-        "miniclaw.bridge",
-        "--home",
-        str(home),
+        *arguments,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
@@ -223,6 +252,14 @@ async def _run_bridge_process(
 class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
     """验证客户端请求只能通过 Core 发布受控事件。"""
 
+    def test_parser_accepts_absolute_workspace_override(self) -> None:
+        """Desktop 可用独立参数绑定绝对 Workspace。"""
+        arguments = build_parser().parse_args(
+            ["--home", "/state/miniclaw", "--workspace", "/work/report"]
+        )
+
+        self.assertEqual(arguments.workspace, Path("/work/report"))
+
     async def test_handshake_turn_events_and_approval_share_one_protocol_stream(self) -> None:
         """握手、Turn、审批与续跑必须按请求和 RunEvent 顺序输出。"""
         reader = QueueReader()
@@ -244,6 +281,8 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hello["payload"]["model"], "deepseek-v4-pro")
         self.assertEqual(hello["payload"]["tools"], ["run_command"])
         self.assertEqual(hello["payload"]["permission_mode"], "safe")
+        self.assertTrue(hello["payload"]["automation_enabled"])
+        self.assertIn("automation_read", hello["payload"]["capabilities"])
 
         await reader.feed(
             _request("turn-1", "turn.start", {"session_key": "default", "text": "你好"})
@@ -302,6 +341,98 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await task, 0)
         self.assertEqual(writer.frames[-1]["type"], "response.ok")
         self.assertEqual(writer.frames[-1]["id"], "stop-1")
+
+    async def test_session_queries_bind_owner_and_return_stable_missing_error(self) -> None:
+        """Desktop 查询必须使用 Runtime Owner，缺失 Session 不能终止 Bridge。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+
+        await reader.feed(_request("list-1", "session.list", {"limit": 20}))
+        listed = await writer.wait_for_id("list-1")
+        self.assertEqual(listed["type"], "response.ok")
+        self.assertEqual(listed["payload"]["sessions"][0]["session_key"], "task-1")
+
+        await reader.feed(
+            _request(
+                "history-1",
+                "session.history",
+                {"session_key": "task-1", "limit": 100},
+            )
+        )
+        history = await writer.wait_for_id("history-1")
+        self.assertEqual(history["type"], "response.ok")
+        self.assertEqual(history["payload"]["session_key"], "task-1")
+
+        await reader.feed(
+            _request(
+                "history-missing",
+                "session.history",
+                {"session_key": "missing", "limit": 100},
+            )
+        )
+        missing = await writer.wait_for_id("history-missing")
+        self.assertEqual(missing["type"], "response.error")
+        self.assertEqual(missing["payload"]["code"], "session_not_found")
+        self.assertEqual(
+            runtime.conversation_console.calls,
+            [
+                ("list", 1, 20),
+                ("history", 1, "task-1", 100),
+                ("history", 1, "missing", 100),
+            ],
+        )
+
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        self.assertEqual(await task, 0)
+
+    async def test_automation_list_is_owner_scoped_and_exposes_only_safe_fields(self) -> None:
+        """Automation 查询只返回只读摘要，不泄露 prompt、delivery 或预算。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        repository = SimpleNamespace(
+            list=Mock(return_value=(
+                SimpleNamespace(
+                    id=4,
+                    name="每日简报",
+                    status=SimpleNamespace(value="active"),
+                    schedule=SimpleNamespace(
+                        kind=SimpleNamespace(value="cron"),
+                        next_run_at=datetime(2026, 8, 10, 1, tzinfo=UTC),
+                    ),
+                ),
+            ))
+        )
+        with patch(
+            "miniclaw.bridge.server.ScheduledTaskRepository",
+            return_value=repository,
+        ):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(_request("automation-1", "automation.list", {"limit": 50}))
+            response = await writer.wait_for_id("automation-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            self.assertEqual(await task, 0)
+
+        self.assertEqual(
+            response["payload"],
+            {
+                "enabled": True,
+                "tasks": [
+                    {
+                        "task_id": 4,
+                        "name": "每日简报",
+                        "status": "active",
+                        "schedule_kind": "cron",
+                        "next_run_at": "2026-08-10T01:00:00+00:00",
+                    }
+                ],
+            },
+        )
+        repository.list.assert_called_once_with(owner_id=1, limit=50)
 
     async def test_memory_command_routes_only_validated_core_arguments(self) -> None:
         """Bridge 把已验证 action/query/limit 路由到 Runtime Console。"""
@@ -383,17 +514,21 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         """真实 Bridge 子进程的 stdout 必须只有可独立解析的 NDJSON。"""
         with tempfile.TemporaryDirectory() as directory:
             home = Path(directory).resolve()
+            workspace = home / "selected-workspace"
+            workspace.mkdir()
             initialize_state(build_state_paths(home))
             returncode, stdout, stderr = await _run_bridge_process(
                 home,
                 Path(__file__).resolve().parent.parent,
                 {"MINICLAW_MODEL_API_KEY": "offline-test-key"},
+                workspace=workspace,
             )
 
         self.assertEqual(returncode, 0, stderr.decode("utf-8", errors="replace"))
         frames = [json.loads(line) for line in stdout.splitlines()]
         self.assertEqual([frame["id"] for frame in frames], ["hello-1", "stop-1"])
         self.assertEqual([frame["type"] for frame in frames], ["response.ok", "response.ok"])
+        self.assertEqual(frames[0]["payload"]["workspace"], workspace.name)
         self.assertEqual(stderr, b"")
 
     async def test_module_process_prefers_absolute_installed_env_file(self) -> None:

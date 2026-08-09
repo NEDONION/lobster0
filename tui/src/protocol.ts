@@ -20,6 +20,9 @@ export type RequestType =
   | "permissions.set"
   | "memory.command"
   | "session.new"
+  | "session.list"
+  | "session.history"
+  | "automation.list"
   | "bridge.shutdown";
 
 export type PermissionMode = "safe" | "smart" | "autopilot" | "yolo";

@@ -17,6 +17,7 @@ node_modules/
 .idea/
 dist/
 build/
+desktop/out/
 
 data/
 logs/

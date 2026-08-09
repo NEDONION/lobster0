@@ -6,11 +6,13 @@ from typing import Protocol
 
 from miniclaw import __version__
 from miniclaw.agent.events import RunEvent
+from miniclaw.automation.repository import ScheduledTaskRepository
 from miniclaw.memory.store import MemoryError
 from miniclaw.policy.approvals import ApprovalDecision
 from miniclaw.providers.base import JsonValue
 from miniclaw.runtime import AgentRuntime
 
+from .conversations import ConversationQueryError
 from .protocol import BridgeFrame, BridgeRequest, ProtocolError, decode_request, encode_frame
 
 
@@ -98,7 +100,11 @@ class BridgeServer:
                         "tools",
                         "approvals",
                         "telemetry",
+                        "sessions",
+                        "history",
+                        "automation_read",
                     ],
+                    "automation_enabled": self._runtime.automation_enabled,
                 },
             )
             return True
@@ -143,6 +149,41 @@ class BridgeServer:
         if request.type == "permissions.set":
             await self._set_permission_mode(request)
             return True
+        if request.type == "session.list":
+            limit = request.payload["limit"]
+            assert isinstance(limit, int) and not isinstance(limit, bool)
+            result = self._runtime.conversation_console.list_sessions(
+                self._runtime.owner_id,
+                limit=limit,
+            )
+            await self._ok(request.request_id, result)
+            return True
+        if request.type == "session.history":
+            limit = request.payload["limit"]
+            session_key = request.payload["session_key"]
+            assert isinstance(limit, int) and not isinstance(limit, bool)
+            assert isinstance(session_key, str)
+            try:
+                result = self._runtime.conversation_console.history(
+                    self._runtime.owner_id,
+                    session_key=session_key,
+                    limit=limit,
+                )
+            except ConversationQueryError as error:
+                await self._error(
+                    request.request_id,
+                    error.code,
+                    str(error),
+                    retryable=False,
+                )
+                return True
+            await self._ok(request.request_id, result)
+            return True
+        if request.type == "automation.list":
+            limit = request.payload["limit"]
+            assert isinstance(limit, int) and not isinstance(limit, bool)
+            await self._ok(request.request_id, self._list_automations(limit))
+            return True
         if request.type == "session.new":
             if self._active_task is not None or self._pending_approval_id is not None:
                 await self._error(
@@ -181,6 +222,30 @@ class BridgeServer:
         await self._cancel_active()
         await self._ok(request.request_id, {})
         return False
+
+    def _list_automations(self, limit: int) -> dict[str, JsonValue]:
+        """返回当前 Owner 的有限只读 Automation 摘要。"""
+        tasks = ScheduledTaskRepository(self._runtime.database).list(
+            owner_id=self._runtime.owner_id,
+            limit=limit,
+        )
+        return {
+            "enabled": self._runtime.automation_enabled,
+            "tasks": [
+                {
+                    "task_id": task.id,
+                    "name": task.name,
+                    "status": task.status.value,
+                    "schedule_kind": task.schedule.kind.value,
+                    "next_run_at": (
+                        None
+                        if task.schedule.next_run_at is None
+                        else task.schedule.next_run_at.isoformat()
+                    ),
+                }
+                for task in tasks
+            ],
+        }
 
     async def _set_permission_mode(self, request: BridgeRequest) -> None:
         """仅在无运行 Turn/待审批时切换共享权限状态。"""

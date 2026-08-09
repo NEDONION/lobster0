@@ -19,6 +19,9 @@ _REQUEST_TYPES = frozenset(
         "permissions.set",
         "memory.command",
         "session.new",
+        "session.list",
+        "session.history",
+        "automation.list",
         "bridge.shutdown",
     }
 )
@@ -191,6 +194,22 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
         ):
             raise ProtocolError("invalid_session", "Session 字段不合法")
         return
+    if request_type == "session.list":
+        if set(payload) != {"limit"} or not _integer_between(payload.get("limit"), 1, 50):
+            raise ProtocolError("invalid_session_query", "Session 查询字段不合法")
+        return
+    if request_type == "session.history":
+        if (
+            set(payload) != {"session_key", "limit"}
+            or not _bounded_string(payload.get("session_key"), 1, 256)
+            or not _integer_between(payload.get("limit"), 1, 200)
+        ):
+            raise ProtocolError("invalid_session_query", "Session 查询字段不合法")
+        return
+    if request_type == "automation.list":
+        if set(payload) != {"limit"} or not _integer_between(payload.get("limit"), 1, 100):
+            raise ProtocolError("invalid_automation_query", "Automation 查询字段不合法")
+        return
     if request_type == "permissions.set":
         mode = payload.get("mode")
         if set(payload) != {"mode"} or not isinstance(mode, str) or mode not in _PERMISSION_MODES:
@@ -210,6 +229,11 @@ def _bounded_string(value: JsonValue, minimum: int, maximum: int) -> bool:
         and minimum <= len(value) <= maximum
         and "\x00" not in value
     )
+
+
+def _integer_between(value: JsonValue, minimum: int, maximum: int) -> bool:
+    """判断 JSON 值是否为指定闭区间内的非 bool 整数。"""
+    return type(value) is int and minimum <= value <= maximum
 
 
 def _validate_memory_command(payload: dict[str, JsonValue]) -> None:
