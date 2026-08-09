@@ -1,0 +1,47 @@
+{
+  "uv": {
+    "version": "0.12.0",
+    "archives": {
+      "linux-x86_64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "eaf842262aa1c418d8ecc5605f02ee1ebfd369124fa48548e85f9481a47831a9"
+      },
+      "linux-arm64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-aarch64-unknown-linux-gnu.tar.gz",
+        "sha256": "2c5d6e3092cc5223b10ff403880cc75121bf64e84644e7a0c69f643b0d89ac95"
+      },
+      "macos-x86_64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-x86_64-apple-darwin.tar.gz",
+        "sha256": "d41593beaefc54bab7d062af0ef6ca093bfb81d001d58ebbef39e44423f9c496"
+      },
+      "macos-arm64": {
+        "url": "https://github.com/astral-sh/uv/releases/download/0.12.0/uv-aarch64-apple-darwin.tar.gz",
+        "sha256": "2b9e582af54f84fa50c115427451a6c13e80f43b52f8282b8af5791077317bbf"
+      }
+    }
+  },
+  "node": {
+    "version": "24.18.0",
+    "archives": {
+      "linux-x86_64": {
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.gz",
+        "sha256": "783130984963db7ba9cbd01089eaf2c2efb055c7c1693c943174b967b3050cb8"
+      },
+      "linux-arm64": {
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-arm64.tar.gz",
+        "sha256": "6b4484c2190274175df9aa8f28e2d758a819cb1c1fe6ab481e2f95b463ab8508"
+      },
+      "macos-x86_64": {
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-x64.tar.gz",
+        "sha256": "dfd0dbd3e721503434df7b7205e719f61b3a3a31b2bcf9729b8b91fea240f080"
+      },
+      "macos-arm64": {
+        "url": "https://nodejs.org/dist/v24.18.0/node-v24.18.0-darwin-arm64.tar.gz",
+        "sha256": "e1a97e14c99c803e96c7339403282ea05a499c32f8d83defe9ef5ec66f979ed1"
+      }
+    }
+  },
+  "pnpm": {
+    "version": "10.14.0"
+  }
+}
