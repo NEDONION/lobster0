@@ -1,6 +1,6 @@
 # MiniClaw Phase 6：macOS + 飞书生产验收设计
 
-> 状态：**DESIGN APPROVED / WRITTEN REVIEW PENDING**
+> 状态：**DESIGN APPROVED / IMPLEMENTATION PLANS COMPLETE**
 >
 > 日期：2026-08-10
 >
@@ -32,6 +32,12 @@ Delivery、ExecutionPlan、Checkpoint 和 Rollback 都有确定性测试与 vers
 3. Phase 6 的 reminder、interval、重启恢复、Approval、E-stop 和主动 Delivery 尚无飞书生产证据；
 4. 还没有绑定 commit 的 24 小时 service soak，因此不能声称长期运行稳定。
 
+2026-08-10 的设计 spike 补充了一条真实边界：隔离 worktree 中由 uv 管理的 CPython 3.12.11 使用现有 Plan v1 和
+Seatbelt profile 已得到 `engine=seatbelt containment=PASS`；此前失败来自 Homebrew Framework Python 3.13 的二次
+`Python.app` launcher。因此生产 LaunchAgent 必须使用独立 managed Python 3.12 runtime，不能复用开发目录里碰巧存在的
+Homebrew `.venv`。这条证据解决 Python probe 的 runtime 选择，但没有解决带 shebang 的 `lark-cli`/Node 等通用二次
+executable chain，所以后者仍按 Workstream A 进入 Plan v2 和 Approval hash。
+
 本轮不重新开发 Agent Core，也不新增另一套测试框架。它复用现有 live harness、SQLite durable truth、`launchd`、
 versioned JSONL 和脱敏 Evidence，只补足真实部署证据和确有必要的安全修复。
 
@@ -54,6 +60,7 @@ macOS 当前用户会话
 - 单 Owner；
 - 当前 Mac 的用户级 `launchd`；
 - 当前发布的 Python 包与 Node TUI/Bridge；
+- 与开发 `.venv` 分离的 managed CPython 3.12 runtime；
 - 一个已发布且 allowlist 正确的飞书 App/Bot；
 - DeepSeek OpenAI-compatible Provider；
 - `sandbox.backend="seatbelt"` 的 macOS command 路径；
@@ -420,6 +427,12 @@ stateDiagram-v2
 
 三个工作包顺序执行；B 依赖 A 的生产 runtime，C 依赖 A/B 的 stable harness。任一包未通过时保持
 `PRODUCTION PENDING`。
+
+可执行计划：
+
+- [PROD-A：macOS Runtime](../plans/2026-08-10-phase6-prod-a-macos-runtime.md)；
+- [PROD-B：Feishu Live](../plans/2026-08-10-phase6-prod-b-feishu-live.md)；
+- [PROD-C：Recovery、24h Soak 与发布](../plans/2026-08-10-phase6-prod-c-soak-release.md)。
 
 ## 15. 完成定义
 
