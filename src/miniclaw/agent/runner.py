@@ -72,7 +72,7 @@ class AgentRunner:
         provider: ModelProvider,
         executor: ToolExecutor | None = None,
         *,
-        max_iterations: int = 8,
+        max_iterations: int = 32,
         hard_max_iterations: int = 64,
         max_no_progress_iterations: int = 3,
     ) -> None:
@@ -81,9 +81,9 @@ class AgentRunner:
         Args:
             provider: 实际或 Fake 模型边界。
             executor: 可选的唯一安全 Tool 执行入口。
-            max_iterations: 包含最终响应在内的最多模型调用次数。
-            hard_max_iterations: 任何自适应策略都不能超过的循环硬上限。
-            max_no_progress_iterations: 允许连续无进展 Tool 循环的次数上限。
+            max_iterations: 包含最终响应在内的最多模型调用次数，默认 32。
+            hard_max_iterations: 任何自适应策略都不能超过的循环硬上限，默认 64。
+            max_no_progress_iterations: 允许连续无进展 Tool 循环的次数上限，默认 3。
 
         Raises:
             ValueError: 任一循环预算不是正整数，或 hard 上限低于常规上限。

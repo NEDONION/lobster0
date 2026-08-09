@@ -345,6 +345,20 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "max_tool_iterations"):
             load_config(self.paths, {}, {})
 
+    def test_new_agent_budget_keys_reject_invalid_toml_integers(self) -> None:
+        """新增 hard 与无进展预算必须拒绝零值和 bool TOML。"""
+        for content, expected in (
+            ("[agent]\nmax_tool_iterations_hard = 0\n", "max_tool_iterations_hard"),
+            (
+                "[agent]\nmax_no_progress_iterations = true\n",
+                "max_no_progress_iterations",
+            ),
+        ):
+            with self.subTest(content=content):
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
+
     def test_unknown_key_is_rejected(self) -> None:
         """拼错的配置项必须立即失败，而不是静默使用默认值。"""
         self.paths.config.write_text("[agent]\nmax_iterations = 8\n", encoding="utf-8")
@@ -366,6 +380,16 @@ class ConfigTest(unittest.TestCase):
         """整数环境变量写错时必须指出变量名，不能回退到不透明的默认值。"""
         with self.assertRaisesRegex(ConfigError, "MINICLAW_MAX_TOOL_ITERATIONS"):
             load_config(self.paths, {"MINICLAW_MAX_TOOL_ITERATIONS": "many"}, {})
+
+    def test_new_agent_budget_environment_values_must_be_integers(self) -> None:
+        """新增 Agent 预算环境变量不能把非整数静默回退为默认值。"""
+        for key in (
+            "MINICLAW_MAX_TOOL_ITERATIONS_HARD",
+            "MINICLAW_MAX_NO_PROGRESS_ITERATIONS",
+        ):
+            with self.subTest(key=key):
+                with self.assertRaisesRegex(ConfigError, key):
+                    load_config(self.paths, {key: "many"}, {})
 
     def test_relative_read_only_root_is_rejected(self) -> None:
         """附加只读根也必须是绝对路径，不能成为 Workspace 逃逸入口。"""

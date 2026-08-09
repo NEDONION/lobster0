@@ -105,6 +105,29 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 await runtime.aclose()
             self.assertFalse(runtime.memory_worker.running)
 
+    async def test_create_runtime_passes_all_adaptive_budgets_to_runner(self) -> None:
+        """Runtime 必须把 soft、hard 与无进展预算原样交给 AgentRunner。"""
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            initialize_state(paths)
+            paths.config.write_text(
+                "[agent]\n"
+                "max_tool_iterations = 40\n"
+                "max_tool_iterations_hard = 48\n"
+                "max_no_progress_iterations = 5\n",
+                encoding="utf-8",
+            )
+            config = load_config(paths)
+
+            runtime = create_runtime(config, paths, "test-key")
+            try:
+                runner = runtime.service._runner
+                self.assertEqual(runner._max_iterations, 40)
+                self.assertEqual(runner._hard_max_iterations, 48)
+                self.assertEqual(runner._max_no_progress_iterations, 5)
+            finally:
+                await runtime.aclose()
+
     async def test_channel_limits_map_all_typed_config_without_secrets(self) -> None:
         """三个平台应稳定映射同一公共预算，不复制 Manager factory。"""
         with tempfile.TemporaryDirectory() as directory:

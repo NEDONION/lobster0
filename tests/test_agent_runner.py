@@ -137,6 +137,32 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
             ToolRunRepository(self.database),
         )
 
+    def test_constructor_uses_adaptive_defaults_and_rejects_invalid_budgets(self) -> None:
+        """Runner 默认预算固定，并拒绝不可能的 adaptive budget 组合。"""
+        provider = FakeProvider(())
+        runner = AgentRunner(provider)
+
+        self.assertEqual(
+            (
+                runner._max_iterations,
+                runner._hard_max_iterations,
+                runner._max_no_progress_iterations,
+            ),
+            (32, 64, 3),
+        )
+        invalid_budgets = (
+            ({"hard_max_iterations": 0}, "hard_max_iterations"),
+            ({"max_no_progress_iterations": True}, "max_no_progress_iterations"),
+            (
+                {"max_iterations": 40, "hard_max_iterations": 32},
+                "hard_max_iterations",
+            ),
+        )
+        for kwargs, expected in invalid_budgets:
+            with self.subTest(kwargs=kwargs):
+                with self.assertRaisesRegex(ValueError, expected):
+                    AgentRunner(provider, **kwargs)
+
     async def test_final_text_returns_usage_and_single_iteration(self) -> None:
         """无 Tool Call 的正常响应应一次结束并保留可观察用量。"""
         provider = FakeProvider((response("world", input_tokens=9, output_tokens=3),))
