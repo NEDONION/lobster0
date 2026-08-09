@@ -1,0 +1,7 @@
+@import '@fontsource-variable/archivo';
+@import '@fontsource/ibm-plex-mono/400.css';
+
+:root {
+  --sl-font: 'Archivo Variable', 'PingFang SC', 'Noto Sans SC', sans-serif;
+  --sl-font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}

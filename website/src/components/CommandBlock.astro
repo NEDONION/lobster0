@@ -1,0 +1,58 @@
+---
+interface Props {
+  command: string;
+  label: string;
+  copyLabel: string;
+  copiedLabel: string;
+}
+
+const { command, label, copyLabel, copiedLabel } = Astro.props;
+---
+
+<div class="command-block" data-command-block>
+  <div class="command-block__bar">
+    <span>{label}</span>
+    <button
+      class="command-block__copy"
+      type="button"
+      data-copy-command
+      data-copy-label={copyLabel}
+      data-copied-label={copiedLabel}
+      aria-label={copyLabel}
+    >
+      <span class="command-block__copy-icon" aria-hidden="true"></span>
+      <span data-copy-text>{copyLabel}</span>
+    </button>
+  </div>
+  <pre tabindex="0"><code data-command>{command}</code></pre>
+  <span class="visually-hidden" data-copy-status aria-live="polite"></span>
+</div>
+
+<script>
+  const copyBlocks = document.querySelectorAll<HTMLElement>('[data-command-block]');
+
+  for (const block of copyBlocks) {
+    const button = block.querySelector<HTMLButtonElement>('[data-copy-command]');
+    const command = block.querySelector<HTMLElement>('[data-command]');
+    const label = block.querySelector<HTMLElement>('[data-copy-text]');
+    const status = block.querySelector<HTMLElement>('[data-copy-status]');
+
+    button?.addEventListener('click', async () => {
+      if (!command || !label || !status) return;
+      try {
+        await navigator.clipboard.writeText(command.textContent ?? '');
+        const copiedLabel = button.dataset.copiedLabel ?? 'Copied';
+        label.textContent = copiedLabel;
+        status.textContent = copiedLabel;
+        button.dataset.copied = 'true';
+        window.setTimeout(() => {
+          label.textContent = button.dataset.copyLabel ?? 'Copy';
+          status.textContent = '';
+          delete button.dataset.copied;
+        }, 2000);
+      } catch {
+        status.textContent = button.dataset.copyLabel ?? 'Copy';
+      }
+    });
+  }
+</script>

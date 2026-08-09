@@ -1,0 +1,16 @@
+---
+interface Props {
+  compact?: boolean;
+}
+
+const { compact = false } = Astro.props;
+---
+
+<span class:list={['brand', { 'brand--compact': compact }]}>
+  <svg class="brand__mark" viewBox="0 0 42 42" aria-hidden="true">
+    <path class="brand__trace brand__trace--blue" d="m5 8 11 13L5 34"></path>
+    <path class="brand__trace brand__trace--mint" d="m16 4 13 17-13 17"></path>
+    <path class="brand__trace brand__trace--white" d="m29 9 8 12-8 12"></path>
+  </svg>
+  {!compact && <span class="brand__wordmark">MiniClaw</span>}
+</span>

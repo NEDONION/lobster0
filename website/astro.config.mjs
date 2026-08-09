@@ -5,7 +5,7 @@ export default defineConfig({
   integrations: [
     starlight({
       title: {
-        root: 'MiniClaw 文档',
+        'zh-CN': 'MiniClaw 文档',
         en: 'MiniClaw Docs',
       },
       description: 'MiniClaw：小而完整、可自托管、边界可控的个人 AI Agent。',
