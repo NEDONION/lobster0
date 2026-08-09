@@ -22,9 +22,9 @@ _STEP_ICON = {
     "waiting": "◷",
     "incomplete": "!",
 }
-_LIST_PREFIX = re.compile(r"^\s*(?:[-*+]|\d+[.)])\s+(.+)$")
-_HEADING_PREFIX = re.compile(r"^\s*#{1,6}\s+(.+)$")
 _TABLE_SEPARATOR = re.compile(r"^:?-{3,}:?$")
+_FENCE_OPEN = re.compile(r"^\s*(`{3,}|~{3,}).*$")
+_HTML_TAG = re.compile(r"<!--.*?-->|</?[A-Za-z][^>\n]*>")
 _KEY_VALUE_FIRST_HEADERS = frozenset({"项目", "字段", "属性", "名称"})
 _KEY_VALUE_SECOND_HEADERS = frozenset({"内容", "值", "信息", "详情"})
 
@@ -69,7 +69,15 @@ def render_agent_progress_card(progress: AgentProgress) -> RenderedProgressCard:
             low = middle + 1
         else:
             high = middle - 1
-    return RenderedProgressCard(best_card, best_visible)
+    visible = _safe_markdown_prefix_length(answer, best_visible)
+    if visible != best_visible:
+        best_card = _build_card(
+            progress,
+            answer[:visible],
+            detail_indexes,
+            answer_trimmed=visible < len(answer),
+        )
+    return RenderedProgressCard(best_card, visible)
 
 
 def render_compact_progress(progress: AgentProgress) -> str:
@@ -125,9 +133,9 @@ def _build_card(
             ]
         )
     if answer or (answer_trimmed and progress.final_answer):
-        answer_content = _escape_markdown(_answer_as_bullets(answer))
+        answer_content = _render_answer_markdown(answer)
         if answer_trimmed:
-            answer_content += "\n- _答案过长，剩余内容将继续发送。_"
+            answer_content += "\n\n> _答案过长，剩余内容将继续发送。_"
         elements.extend(
             [
                 {"tag": "hr"},
@@ -168,13 +176,35 @@ def _trail_markdown(steps: tuple[ProgressStep, ...], detail_indexes: set[int]) -
     return "\n".join(lines)
 
 
-def _answer_as_bullets(answer: str) -> str:
-    """把最终回答转为项目符号；参数是原始答案，返回无表格的 Markdown 列表。"""
-    source = answer.splitlines()
-    bullets: list[str] = []
+def _render_answer_markdown(answer: str) -> str:
+    """规范化最终回答 Markdown，保留结构并仅降级 fence 外的表格。
+
+    参数：
+        answer：模型返回的原始最终回答。
+
+    返回：
+        适合飞书 Card Markdown 组件的内容；代码 fence 内文本不作变换。
+    """
+    source = answer.split("\n")
+    rendered: list[str] = []
     index = 0
+    active_fence: str | None = None
     while index < len(source):
         line = source[index]
+        if active_fence is not None:
+            rendered.append(line)
+            if _is_fence_close(line, active_fence):
+                active_fence = None
+            index += 1
+            continue
+
+        opening_fence = _fence_marker(line)
+        if opening_fence is not None:
+            rendered.append(line)
+            active_fence = opening_fence
+            index += 1
+            continue
+
         cells = _table_cells(line)
         separator = _table_cells(source[index + 1]) if index + 1 < len(source) else None
         if cells is not None and separator is not None and _is_table_separator(separator):
@@ -186,24 +216,57 @@ def _answer_as_bullets(answer: str) -> str:
                     break
                 rows.append(row)
                 index += 1
-            bullets.extend(_table_bullets(cells, rows))
+            rendered.extend(_table_bullets(cells, rows))
             continue
 
-        content = line.strip()
+        rendered.append(_escape_raw_html(line))
         index += 1
-        if not content:
-            continue
-        list_match = _LIST_PREFIX.fullmatch(content)
-        heading_match = _HEADING_PREFIX.fullmatch(content)
-        if list_match is not None:
-            content = list_match.group(1).strip()
-        elif heading_match is not None:
-            content = f"**{heading_match.group(1).strip()}**"
-        elif content.startswith(">"):
-            content = content[1:].strip()
-        if content:
-            bullets.append(f"- {content}")
-    return "\n".join(bullets)
+
+    if active_fence is not None:
+        rendered.append(active_fence)
+    return "\n".join(rendered)
+
+
+def _safe_markdown_prefix_length(answer: str, limit: int) -> int:
+    """返回不超过字符上限、优先落在 Markdown 结构边界的原始偏移。
+
+    参数：
+        answer：未规范化的原始最终回答。
+        limit：已由 Card 字节预算确认安全的最大字符偏移。
+
+    返回：
+        原始 `answer` 的精确前缀长度；单行文本不会因缺少边界而变成空字符串。
+    """
+    visible = min(max(limit, 0), len(answer))
+    if visible == 0 or visible == len(answer) or answer[:visible].endswith("\n"):
+        return visible
+
+    newline = answer.rfind("\n", 0, visible)
+    return newline + 1 if newline >= 0 else visible
+
+
+def _fence_marker(line: str) -> str | None:
+    """识别 Markdown fence 起始行，返回用于匹配闭合行的原始 marker。"""
+    match = _FENCE_OPEN.match(line)
+    return match.group(1) if match is not None else None
+
+
+def _is_fence_close(line: str, marker: str) -> bool:
+    """判断给定行是否闭合指定 Markdown fence。"""
+    stripped = line.lstrip()
+    if not stripped.startswith(marker[0] * len(marker)):
+        return False
+    closing = len(stripped) - len(stripped.lstrip(marker[0]))
+    return closing >= len(marker) and not stripped[closing:].strip()
+
+
+def _escape_raw_html(line: str) -> str:
+    """把代码 fence 外的原始 HTML 标签转为可见文本，避免触发飞书专用标签。"""
+    def escape_tag(match: re.Match[str]) -> str:
+        """转义单个已识别的 HTML 标签。"""
+        return match.group(0).replace("<", "&lt;").replace(">", "&gt;")
+
+    return _HTML_TAG.sub(escape_tag, line)
 
 
 def _table_cells(line: str) -> list[str] | None:
@@ -228,7 +291,7 @@ def _table_bullets(headers: list[str], rows: list[list[str]]) -> list[str]:
         and headers[1] in _KEY_VALUE_SECOND_HEADERS
     ):
         return [
-            f"- **{row[0]}**：{row[1]}"
+            f"- **{_escape_raw_html(row[0])}**：{_escape_raw_html(row[1])}"
             for row in rows
             if len(row) >= 2 and row[0] and row[1]
         ]
@@ -236,7 +299,7 @@ def _table_bullets(headers: list[str], rows: list[list[str]]) -> list[str]:
     bullets: list[str] = []
     for row in rows:
         fields = [
-            f"**{header}**：{value}"
+            f"**{_escape_raw_html(header)}**：{_escape_raw_html(value)}"
             for header, value in zip(headers, row, strict=False)
             if header and value
         ]
