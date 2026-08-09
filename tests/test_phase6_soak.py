@@ -11,7 +11,14 @@ from miniclaw.evals.phase6_soak import (
     SoakSnapshot,
     collect_soak_snapshot,
     evaluate_snapshot,
+    finish_soak,
     gateway_lease_is_fresh,
+    record_restart_result,
+    record_snapshot,
+    render_progress,
+    resume_soak,
+    start_soak,
+    write_progress,
 )
 from miniclaw.install.service import ServiceStatus
 from miniclaw.storage.database import Database
@@ -163,6 +170,188 @@ class Phase6SoakSnapshotTest(unittest.TestCase):
         lease.write_text("{}", encoding="utf-8")
         lease.chmod(0o600)
         self.assertFalse(gateway_lease_is_fresh(lease, "a" * 40))
+
+
+class Phase6SoakSessionTest(unittest.TestCase):
+    """验证 checkpoint 精确时长、恢复和 fail-closed 状态机。"""
+
+    def setUp(self) -> None:
+        """创建私有 checkpoint 目录和固定 release identity。"""
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name)
+        self.root.chmod(0o700)
+        self.checkpoint = self.root / "soak.json"
+        self.progress = self.root / "progress.txt"
+        self.state_home = self.root / "state"
+        self.state_home.mkdir(mode=0o700)
+        self.commit = "a" * 40
+        self.token = "run-token-123456"
+        self.now = datetime(2026, 8, 10, tzinfo=UTC)
+
+    def tearDown(self) -> None:
+        """删除隔离 checkpoint。"""
+        self.temporary.cleanup()
+
+    def _healthy(self, offset: int) -> SoakSnapshot:
+        """返回指定秒数的健康匿名采样。"""
+        observed = self.now + timedelta(seconds=offset)
+        return SoakSnapshot(
+            observed.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+            True,
+            True,
+            True,
+            True,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            True,
+        )
+
+    def _start(self, *, duration: int = 86_400):
+        """用固定输入启动测试 session。"""
+        return start_soak(
+            self.checkpoint,
+            commit=self.commit,
+            run_token=self.token,
+            state_home=self.state_home,
+            duration_seconds=duration,
+            now=self.now,
+            monotonic_now=100.0,
+        )
+
+    def test_start_is_exclusive_private_and_resume_binds_all_inputs(self) -> None:
+        """checkpoint 只能新建一次，resume 必须绑定 commit/run/home/duration。"""
+        session, checkpoint = self._start()
+        self.assertEqual(checkpoint.status, "running")
+        self.assertEqual(checkpoint.elapsed_seconds, 0)
+        self.assertEqual(checkpoint.sample_count, 0)
+        self.assertEqual(checkpoint.restart_status, "pending")
+        self.assertEqual(self.checkpoint.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn(self.token, self.checkpoint.read_text(encoding="utf-8"))
+        with self.assertRaisesRegex(SoakMonitorError, "checkpoint_exists"):
+            self._start()
+
+        resumed, same = resume_soak(
+            self.checkpoint,
+            commit=self.commit,
+            run_token=self.token,
+            state_home=self.state_home,
+            duration_seconds=86_400,
+            now=self.now + timedelta(seconds=30),
+            monotonic_now=200.0,
+        )
+        self.assertEqual(same, checkpoint)
+        self.assertEqual(resumed.commit, session.commit)
+        mismatches = (
+            {"commit": "b" * 40},
+            {"run_token": "different-token"},
+            {"state_home": self.root / "other"},
+            {"duration_seconds": 10},
+        )
+        for changed in mismatches:
+            values = {
+                "commit": self.commit,
+                "run_token": self.token,
+                "state_home": self.state_home,
+                "duration_seconds": 86_400,
+            }
+            values.update(changed)
+            with self.subTest(changed=changed), self.assertRaises(SoakMonitorError):
+                resume_soak(
+                    self.checkpoint,
+                    **values,
+                    now=self.now + timedelta(seconds=30),
+                    monotonic_now=200.0,
+                )
+
+    def test_samples_are_idempotent_and_time_anomalies_fail_closed(self) -> None:
+        """重复 sample 不计数，gap、时钟回退和 sleep jump 都终止本次 soak。"""
+        session, _ = self._start()
+        first = record_snapshot(session, self._healthy(60), monotonic_now=160.0)
+        duplicate = record_snapshot(session, self._healthy(60), monotonic_now=160.0)
+        self.assertEqual(duplicate, first)
+        self.assertEqual(first.sample_count, 1)
+
+        failed = record_snapshot(session, self._healthy(241), monotonic_now=341.0)
+        self.assertEqual(failed.status, "failed")
+        self.assertEqual(failed.violation_codes, ("monitor_gap",))
+        self.assertEqual(finish_soak(session).status, "failed")
+        with self.assertRaisesRegex(SoakMonitorError, "soak_failed"):
+            resume_soak(
+                self.checkpoint,
+                commit=self.commit,
+                run_token=self.token,
+                state_home=self.state_home,
+                duration_seconds=86_400,
+                now=self.now + timedelta(seconds=242),
+                monotonic_now=342.0,
+            )
+
+        for name, snapshot, monotonic, code in (
+            ("clock", self._healthy(59), 159.0, "clock_rollback"),
+            ("sleep", self._healthy(120), 280.0, "clock_jump"),
+            (
+                "invariant",
+                replace(self._healthy(120), secret_matches=1),
+                220.0,
+                "secret_match",
+            ),
+        ):
+            path = self.root / f"{name}.json"
+            other, _ = start_soak(
+                path,
+                commit=self.commit,
+                run_token=f"{self.token}-{name}",
+                state_home=self.state_home,
+                duration_seconds=86_400,
+                now=self.now,
+                monotonic_now=100.0,
+            )
+            if name == "clock":
+                record_snapshot(other, self._healthy(60), monotonic_now=160.0)
+            result = record_snapshot(other, snapshot, monotonic_now=monotonic)
+            self.assertEqual(result.status, "failed")
+            self.assertIn(code, result.violation_codes)
+
+    def test_exact_duration_requires_healthy_samples_and_restart_pass(self) -> None:
+        """不足一秒不能 PASS，达到 required time 且恢复通过才可终结。"""
+        session, _ = self._start(duration=10)
+        record_restart_result(session, passed=True)
+        before = record_snapshot(session, self._healthy(9), monotonic_now=109.0)
+        self.assertEqual(before.elapsed_seconds, 9)
+        self.assertEqual(finish_soak(session).status, "running")
+
+        at_required = record_snapshot(session, self._healthy(10), monotonic_now=110.0)
+        self.assertEqual(at_required.elapsed_seconds, 10)
+        passed = finish_soak(session)
+        self.assertEqual(passed.status, "passed")
+        self.assertEqual(resume_soak(
+            self.checkpoint,
+            commit=self.commit,
+            run_token=self.token,
+            state_home=self.state_home,
+            duration_seconds=10,
+            now=self.now + timedelta(seconds=11),
+            monotonic_now=111.0,
+        )[1].status, "passed")
+
+    def test_progress_is_bounded_and_atomic(self) -> None:
+        """外部进度只含状态、时长、sample 和 violation 数。"""
+        session, _ = self._start(duration=10)
+        record_restart_result(session, passed=True)
+        record_snapshot(session, self._healthy(10), monotonic_now=110.0)
+        checkpoint = finish_soak(session)
+        rendered = render_progress(checkpoint)
+        self.assertEqual(
+            rendered,
+            "status=passed elapsed=00:00:10 required=00:00:10 samples=1 violations=0",
+        )
+        write_progress(self.progress, checkpoint)
+        self.assertEqual(self.progress.read_text(encoding="utf-8"), rendered + "\n")
+        self.assertEqual(self.progress.stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":
