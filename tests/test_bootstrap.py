@@ -47,6 +47,10 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("# owner_user_id = 0", template)
         self.assertIn("# [channels.discord]", template)
         self.assertIn('# bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"', template)
+        self.assertIn("[automation]\nenabled = false", template)
+        self.assertIn("[heartbeat]\nenabled = false", template)
+        self.assertIn('[sandbox]\nbackend = "docker"', template)
+        self.assertIn("[checkpoint]\nenabled = true", template)
         self.assertNotIn("cli_", template)
         env_example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(
             encoding="utf-8"

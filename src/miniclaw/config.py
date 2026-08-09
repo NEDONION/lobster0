@@ -9,6 +9,7 @@ from math import isfinite
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from miniclaw.paths import StatePaths
 
@@ -37,7 +38,19 @@ BUILTIN_TOOL_NAMES = (
 DEFAULT_TOOL_MODE = "autopilot"
 
 _TOP_LEVEL_KEYS = frozenset(
-    {"agent", "provider", "workspace", "permissions", "tools", "ui", "channels"}
+    {
+        "agent",
+        "provider",
+        "workspace",
+        "permissions",
+        "tools",
+        "ui",
+        "channels",
+        "automation",
+        "heartbeat",
+        "sandbox",
+        "checkpoint",
+    }
 )
 _AGENT_KEYS = frozenset(
     {"model", "max_tool_iterations", "context_budget_tokens", "tool_result_max_chars"}
@@ -118,6 +131,30 @@ _DISCORD_KEYS = frozenset(
         "progress_update_interval",
         "typing_renew_interval",
     }
+)
+_AUTOMATION_KEYS = frozenset(
+    {
+        "enabled",
+        "max_active_tasks",
+        "max_concurrent_runs",
+        "misfire_grace_seconds",
+        "lease_seconds",
+    }
+)
+_HEARTBEAT_KEYS = frozenset(
+    {
+        "enabled",
+        "interval_seconds",
+        "timezone",
+        "active_hours_start",
+        "active_hours_end",
+    }
+)
+_SANDBOX_KEYS = frozenset(
+    {"backend", "image", "network", "memory_mib", "cpu_seconds", "pids_limit"}
+)
+_CHECKPOINT_KEYS = frozenset(
+    {"enabled", "max_entries", "max_total_bytes", "max_file_bytes", "max_count"}
 )
 _OVERRIDE_KEYS = frozenset({"model", "base_url", "api_key_env", "workspace"})
 _ENVIRONMENT_NAME = re.compile(r"[A-Z_][A-Z0-9_]*\Z")
@@ -290,6 +327,51 @@ class ChannelConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class AutomationConfig:
+    """保存后台任务开关、并发、misfire 与 lease 的硬上限。"""
+
+    enabled: bool = False
+    max_active_tasks: int = 50
+    max_concurrent_runs: int = 2
+    misfire_grace_seconds: int = 300
+    lease_seconds: int = 60
+
+
+@dataclass(frozen=True, slots=True)
+class HeartbeatConfig:
+    """保存 system-owned Heartbeat 的周期、时区与活跃时间。"""
+
+    enabled: bool = False
+    interval_seconds: int = 1800
+    timezone: str = "Asia/Shanghai"
+    active_hours_start: str = "08:00"
+    active_hours_end: str = "23:00"
+
+
+@dataclass(frozen=True, slots=True)
+class SandboxConfig:
+    """保存 Sandbox 后端及不可由模型扩大的资源限制。"""
+
+    backend: str = "docker"
+    image: str = "miniclaw-sandbox:phase6"
+    network: str = "none"
+    memory_mib: int = 512
+    cpu_seconds: int = 60
+    pids_limit: int = 128
+
+
+@dataclass(frozen=True, slots=True)
+class CheckpointConfig:
+    """保存文件恢复点的条目、字节与保留数量预算。"""
+
+    enabled: bool = True
+    max_entries: int = 2000
+    max_total_bytes: int = 64 * 1024 * 1024
+    max_file_bytes: int = 8 * 1024 * 1024
+    max_count: int = 100
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     """汇总 Phase 0 已实现的强类型配置。"""
 
@@ -300,6 +382,10 @@ class AppConfig:
     tools: ToolConfig = ToolConfig()
     ui: UIConfig = UIConfig()
     channels: ChannelConfig = ChannelConfig()
+    automation: AutomationConfig = AutomationConfig()
+    heartbeat: HeartbeatConfig = HeartbeatConfig()
+    sandbox: SandboxConfig = SandboxConfig()
+    checkpoint: CheckpointConfig = CheckpointConfig()
 
 
 def load_config(
@@ -331,6 +417,10 @@ def load_config(
     tools_raw = _section(raw, "tools", _TOOLS_KEYS)
     ui_raw = _section(raw, "ui", _UI_KEYS)
     channels_raw = _section(raw, "channels", _CHANNELS_KEYS)
+    automation_raw = _section(raw, "automation", _AUTOMATION_KEYS)
+    heartbeat_raw = _section(raw, "heartbeat", _HEARTBEAT_KEYS)
+    sandbox_raw = _section(raw, "sandbox", _SANDBOX_KEYS)
+    checkpoint_raw = _section(raw, "checkpoint", _CHECKPOINT_KEYS)
     feishu_raw = _section(
         channels_raw,
         "feishu",
@@ -684,6 +774,118 @@ def load_config(
         allow_guild_mentions=discord_allow_guild_mentions,
     )
 
+    automation_enabled = _boolean(
+        automation_raw.get("enabled", False), "automation.enabled"
+    )
+    automation_max_active_tasks = _bounded_integer(
+        automation_raw.get("max_active_tasks", 50),
+        "automation.max_active_tasks",
+        minimum=1,
+        maximum=1000,
+    )
+    automation_max_concurrent_runs = _bounded_integer(
+        automation_raw.get("max_concurrent_runs", 2),
+        "automation.max_concurrent_runs",
+        minimum=1,
+        maximum=16,
+    )
+    automation_misfire_grace_seconds = _bounded_integer(
+        automation_raw.get("misfire_grace_seconds", 300),
+        "automation.misfire_grace_seconds",
+        minimum=1,
+        maximum=86_400,
+    )
+    automation_lease_seconds = _bounded_integer(
+        automation_raw.get("lease_seconds", 60),
+        "automation.lease_seconds",
+        minimum=10,
+        maximum=3600,
+    )
+    heartbeat_enabled = _boolean(
+        heartbeat_raw.get("enabled", False), "heartbeat.enabled"
+    )
+    heartbeat_interval_seconds = _bounded_integer(
+        heartbeat_raw.get("interval_seconds", 1800),
+        "heartbeat.interval_seconds",
+        minimum=60,
+        maximum=86_400,
+    )
+    heartbeat_timezone = _iana_timezone(
+        heartbeat_raw.get("timezone", "Asia/Shanghai"), "heartbeat.timezone"
+    )
+    heartbeat_active_hours_start = _clock_time(
+        heartbeat_raw.get("active_hours_start", "08:00"),
+        "heartbeat.active_hours_start",
+    )
+    heartbeat_active_hours_end = _clock_time(
+        heartbeat_raw.get("active_hours_end", "23:00"),
+        "heartbeat.active_hours_end",
+    )
+    if heartbeat_active_hours_start == heartbeat_active_hours_end:
+        raise ConfigError("heartbeat active hours must not be empty")
+    sandbox_backend = _enum_string(
+        sandbox_raw.get("backend", "docker"),
+        "sandbox.backend",
+        frozenset({"host", "docker", "seatbelt"}),
+    )
+    sandbox_image = _sandbox_image(
+        sandbox_raw.get("image", "miniclaw-sandbox:phase6"), "sandbox.image"
+    )
+    sandbox_network = _enum_string(
+        sandbox_raw.get("network", "none"),
+        "sandbox.network",
+        frozenset({"none"}),
+    )
+    sandbox_memory_mib = _bounded_integer(
+        sandbox_raw.get("memory_mib", 512),
+        "sandbox.memory_mib",
+        minimum=64,
+        maximum=32_768,
+    )
+    sandbox_cpu_seconds = _bounded_integer(
+        sandbox_raw.get("cpu_seconds", 60),
+        "sandbox.cpu_seconds",
+        minimum=1,
+        maximum=3600,
+    )
+    sandbox_pids_limit = _bounded_integer(
+        sandbox_raw.get("pids_limit", 128),
+        "sandbox.pids_limit",
+        minimum=16,
+        maximum=4096,
+    )
+    checkpoint_enabled = _boolean(
+        checkpoint_raw.get("enabled", True), "checkpoint.enabled"
+    )
+    checkpoint_max_entries = _bounded_integer(
+        checkpoint_raw.get("max_entries", 2000),
+        "checkpoint.max_entries",
+        minimum=1,
+        maximum=10_000,
+    )
+    checkpoint_max_total_bytes = _bounded_integer(
+        checkpoint_raw.get("max_total_bytes", 64 * 1024 * 1024),
+        "checkpoint.max_total_bytes",
+        minimum=1024 * 1024,
+        maximum=1024 * 1024 * 1024,
+    )
+    checkpoint_max_file_bytes = _bounded_integer(
+        checkpoint_raw.get("max_file_bytes", 8 * 1024 * 1024),
+        "checkpoint.max_file_bytes",
+        minimum=1,
+        maximum=64 * 1024 * 1024,
+    )
+    if checkpoint_max_file_bytes > checkpoint_max_total_bytes:
+        raise ConfigError(
+            "checkpoint.max_file_bytes must not exceed checkpoint.max_total_bytes"
+        )
+    checkpoint_max_count = _bounded_integer(
+        checkpoint_raw.get("max_count", 100),
+        "checkpoint.max_count",
+        minimum=1,
+        maximum=1000,
+    )
+
     model = _environment_string(source, "MINICLAW_MODEL_NAME", model)
     max_tool_iterations = _environment_integer(
         source, "MINICLAW_MAX_TOOL_ITERATIONS", max_tool_iterations
@@ -797,6 +999,35 @@ def load_config(
                 typing_renew_interval=discord_typing_renew_interval,
             ),
         ),
+        automation=AutomationConfig(
+            enabled=automation_enabled,
+            max_active_tasks=automation_max_active_tasks,
+            max_concurrent_runs=automation_max_concurrent_runs,
+            misfire_grace_seconds=automation_misfire_grace_seconds,
+            lease_seconds=automation_lease_seconds,
+        ),
+        heartbeat=HeartbeatConfig(
+            enabled=heartbeat_enabled,
+            interval_seconds=heartbeat_interval_seconds,
+            timezone=heartbeat_timezone,
+            active_hours_start=heartbeat_active_hours_start,
+            active_hours_end=heartbeat_active_hours_end,
+        ),
+        sandbox=SandboxConfig(
+            backend=sandbox_backend,
+            image=sandbox_image,
+            network=sandbox_network,
+            memory_mib=sandbox_memory_mib,
+            cpu_seconds=sandbox_cpu_seconds,
+            pids_limit=sandbox_pids_limit,
+        ),
+        checkpoint=CheckpointConfig(
+            enabled=checkpoint_enabled,
+            max_entries=checkpoint_max_entries,
+            max_total_bytes=checkpoint_max_total_bytes,
+            max_file_bytes=checkpoint_max_file_bytes,
+            max_count=checkpoint_max_count,
+        ),
     )
 
 
@@ -907,6 +1138,68 @@ def _enum_string(value: object, name: str, allowed: frozenset[str]) -> str:
     if normalized not in allowed:
         raise ConfigError(f"{name} must be one of: {', '.join(sorted(allowed))}")
     return normalized
+
+
+def _iana_timezone(value: object, name: str) -> str:
+    """校验 IANA 时区名称并返回 zoneinfo 接受的规范输入。
+
+    Args:
+        value: TOML 中的候选时区。
+        name: 用于稳定错误信息的字段名。
+
+    Returns:
+        去除首尾空白后的 IANA 时区名。
+
+    Raises:
+        ConfigError: 值不是已安装时区数据库中的名称。
+    """
+    timezone_name = _non_empty_string(value, name)
+    try:
+        zone = ZoneInfo(timezone_name)
+    except (ZoneInfoNotFoundError, ValueError) as error:
+        raise ConfigError(f"{name} must be a valid IANA timezone") from error
+    return zone.key
+
+
+def _clock_time(value: object, name: str) -> str:
+    """校验二十四小时制 `HH:MM`，禁止宽松别名。
+
+    Args:
+        value: TOML 中的候选时间。
+        name: 用于稳定错误信息的字段名。
+
+    Returns:
+        原样的五字符时间。
+
+    Raises:
+        ConfigError: 类型、格式、小时或分钟越界。
+    """
+    if not isinstance(value, str) or re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d", value) is None:
+        raise ConfigError(f"{name} must use 24-hour HH:MM format")
+    return value
+
+
+def _sandbox_image(value: object, name: str) -> str:
+    """校验只能作为 Docker image 参数使用的有限标识。
+
+    Args:
+        value: 配置中的 image 名或 digest。
+        name: 用于稳定错误信息的字段名。
+
+    Returns:
+        已去除首尾空白的 image 标识。
+
+    Raises:
+        ConfigError: 值为空、过长、含空白、控制字符或 option 前缀。
+    """
+    image = _non_empty_string(value, name)
+    if (
+        len(image.encode("utf-8")) > 255
+        or image.startswith("-")
+        or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._/:@-]*", image) is None
+    ):
+        raise ConfigError(f"{name} must be a valid bounded container image")
+    return image
 
 
 def _enabled_tools(value: object) -> tuple[str, ...]:

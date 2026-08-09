@@ -421,6 +421,83 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaisesRegex(ConfigError, expected):
                     load_config(self.paths, {}, {})
 
+    def test_phase6_defaults_are_safe_typed_and_inert(self) -> None:
+        """Phase 6 默认不能启动后台任务，Sandbox 与 Checkpoint 必须使用有界值。"""
+        config = load_config(self.paths, {}, {})
+
+        self.assertFalse(config.automation.enabled)
+        self.assertEqual(config.automation.max_active_tasks, 50)
+        self.assertEqual(config.automation.max_concurrent_runs, 2)
+        self.assertEqual(config.automation.misfire_grace_seconds, 300)
+        self.assertEqual(config.automation.lease_seconds, 60)
+        self.assertFalse(config.heartbeat.enabled)
+        self.assertEqual(config.heartbeat.timezone, "Asia/Shanghai")
+        self.assertEqual(config.heartbeat.active_hours_start, "08:00")
+        self.assertEqual(config.heartbeat.active_hours_end, "23:00")
+        self.assertEqual(config.sandbox.backend, "docker")
+        self.assertEqual(config.sandbox.network, "none")
+        self.assertEqual(config.sandbox.memory_mib, 512)
+        self.assertTrue(config.checkpoint.enabled)
+        self.assertEqual(config.checkpoint.max_total_bytes, 64 * 1024 * 1024)
+
+    def test_phase6_sections_load_all_strict_values(self) -> None:
+        """合法 Phase 6 配置应保留精确预算、时区与 Sandbox 后端。"""
+        self.paths.config.parent.mkdir(parents=True, exist_ok=True)
+        self.paths.config.write_text(
+            "[automation]\n"
+            "enabled = true\nmax_active_tasks = 75\nmax_concurrent_runs = 3\n"
+            "misfire_grace_seconds = 600\nlease_seconds = 90\n\n"
+            "[heartbeat]\n"
+            'enabled = true\ninterval_seconds = 3600\ntimezone = "America/New_York"\n'
+            'active_hours_start = "09:15"\nactive_hours_end = "18:45"\n\n'
+            "[sandbox]\n"
+            'backend = "seatbelt"\nimage = "miniclaw-sandbox@sha256:'
+            + "a" * 64
+            + '"\nnetwork = "none"\nmemory_mib = 1024\ncpu_seconds = 120\n'
+            "pids_limit = 256\n\n"
+            "[checkpoint]\n"
+            "enabled = false\nmax_entries = 500\nmax_total_bytes = 16777216\n"
+            "max_file_bytes = 1048576\nmax_count = 25\n",
+            encoding="utf-8",
+        )
+
+        config = load_config(self.paths, {}, {})
+
+        self.assertTrue(config.automation.enabled)
+        self.assertEqual(config.automation.max_active_tasks, 75)
+        self.assertEqual(config.heartbeat.timezone, "America/New_York")
+        self.assertEqual(config.sandbox.backend, "seatbelt")
+        self.assertEqual(config.sandbox.pids_limit, 256)
+        self.assertFalse(config.checkpoint.enabled)
+        self.assertEqual(config.checkpoint.max_count, 25)
+
+    def test_phase6_unknown_invalid_and_inconsistent_values_fail_closed(self) -> None:
+        """拼错字段、坏类型、时区和越权预算不能回退为默认值。"""
+        invalid_configs = (
+            ("[automation]\nmystery = true\n", "automation.mystery"),
+            ("[automation]\nmax_active_tasks = true\n", "automation.max_active_tasks"),
+            ("[automation]\nmax_concurrent_runs = 17\n", "max_concurrent_runs"),
+            ("[automation]\nlease_seconds = 9\n", "automation.lease_seconds"),
+            ("[heartbeat]\ninterval_seconds = 59\n", "heartbeat.interval_seconds"),
+            ('[heartbeat]\ntimezone = "Mars/Olympus"\n', "heartbeat.timezone"),
+            ('[heartbeat]\nactive_hours_start = "8:00"\n', "active_hours_start"),
+            ('[heartbeat]\nactive_hours_start = "09:00"\nactive_hours_end = "09:00"\n',
+             "active hours"),
+            ('[sandbox]\nbackend = "process"\n', "sandbox.backend"),
+            ('[sandbox]\nnetwork = "host"\n', "sandbox.network"),
+            ('[sandbox]\nimage = "bad image"\n', "sandbox.image"),
+            ("[sandbox]\nmemory_mib = 0\n", "sandbox.memory_mib"),
+            ("[checkpoint]\nmax_entries = 10001\n", "checkpoint.max_entries"),
+            ("[checkpoint]\nmax_file_bytes = 2097152\nmax_total_bytes = 1048576\n",
+             "checkpoint.max_file_bytes"),
+            ("[checkpoint]\nenabled = 1\n", "checkpoint.enabled"),
+        )
+        for content, expected in invalid_configs:
+            with self.subTest(content=content):
+                self.paths.config.parent.mkdir(parents=True, exist_ok=True)
+                self.paths.config.write_text(content, encoding="utf-8")
+                with self.assertRaisesRegex(ConfigError, expected):
+                    load_config(self.paths, {}, {})
     def test_personal_root_resolution_is_stable_and_ignores_missing_defaults(self) -> None:
         """Personal 默认根只纳入真实目录，并保持显式根和 Workspace 去重。"""
         documents = self.home / "Documents"

@@ -215,6 +215,15 @@ def _render_default_config(paths: StatePaths) -> str:
         '[permissions]\nprofile = "personal"\nread_roots = []\nwrite_roots = []\n'
         "executable_roots = []\ndiscover_user_executables = true\n\n"
         '[tools]\nmode = "autopilot"\n\n'
+        "[automation]\nenabled = false\nmax_active_tasks = 50\n"
+        "max_concurrent_runs = 2\nmisfire_grace_seconds = 300\nlease_seconds = 60\n\n"
+        "[heartbeat]\nenabled = false\ninterval_seconds = 1800\n"
+        'timezone = "Asia/Shanghai"\nactive_hours_start = "08:00"\n'
+        'active_hours_end = "23:00"\n\n'
+        '[sandbox]\nbackend = "docker"\nimage = "miniclaw-sandbox:phase6"\n'
+        'network = "none"\nmemory_mib = 512\ncpu_seconds = 60\npids_limit = 128\n\n'
+        "[checkpoint]\nenabled = true\nmax_entries = 2000\n"
+        "max_total_bytes = 67108864\nmax_file_bytes = 8388608\nmax_count = 100\n\n"
         "# [channels.feishu]\n"
         "# enabled = false\n"
         '# account_id = "default"\n'
