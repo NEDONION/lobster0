@@ -9,7 +9,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Node.js 22.19+](https://img.shields.io/badge/Node.js-22.19%2B-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
 [![Version](https://img.shields.io/badge/package-v0.1.0-8B5CF6)](pyproject.toml)
-[![Phase 6](https://img.shields.io/badge/Phase%206-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
+[![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
 [Why MiniClaw](#why-miniclaw) · [Capabilities](#current-capabilities) · [Quick start](#quick-start) · [Gallery](#product-gallery) · [Architecture](#how-it-works) · [Roadmap](#roadmap) · [Docs](#documentation)
@@ -21,7 +21,7 @@
 MiniClaw brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
-> The repository has passed the Phase 6 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is implemented locally. Phase 6 adds durable Tasks, Scheduler/Runner, E-stop, budgets, Approval continuation, proactive Delivery, immutable Docker/Seatbelt plans, Checkpoints, Rollback, and a 15-case Automation gate. Automation remains disabled by default. Docker containment is live verified; Seatbelt remains live pending because its Framework launcher is not yet represented in the immutable Plan.
+> The repository has passed the Phase 6.5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is implemented locally. Phase 6 adds durable Tasks, Scheduler/Runner, E-stop, budgets, Approval continuation, proactive Delivery, immutable Docker/Seatbelt plans, Checkpoints, Rollback, and a 15-case Automation gate. Phase 6.5 adds a dedicated Chromium Profile, bounded snapshots/refs, eight policy-gated Browser Tools, and private screenshot/download Artifacts. Browser automation remains disabled by default and its controlled public live smoke is pending.
 
 ## Why MiniClaw
 
@@ -29,7 +29,7 @@ MiniClaw brings the model, tools, permissions, approvals, persistence, and multi
 | --- | --- |
 | Private and controlled | State, conversations, approvals, and audit stay local; secrets do not enter prompts, logs, or Memory. |
 | Small but complete | One Python Core, one primary TUI, and one OpenAI-compatible Provider before adding services. |
-| Able to act | Eighteen built-in tools cover system information, files, search, HTTPS, exact-argv CLIs, and Memory. |
+| Able to act | Eighteen Core tools cover the machine and Memory; enabling Browser adds eight isolated web tools. |
 | Explainable by default | Turn, ToolRun, Approval, Delivery, and Channel Inbox/Outbox state is persisted in SQLite. |
 | One Core, many entry points | TUI, Feishu, Telegram, and Discord reuse one `AgentRuntime`; transports and failure domains stay isolated. |
 | Evidence before expansion | Python and TypeScript tests, versioned Agent/Channel cases, 20-round soak, and docs validation gate changes. |
@@ -48,6 +48,7 @@ MiniClaw is not a chat box wired directly to a shell. The model proposes a Tool 
 | Data | SQLite Session/Message/Turn/ToolRun/Approval/Channel/Memory control plane; owner-only Markdown Truth and Skills. |
 | Automation | One-shot/interval/cron, durable TaskRuns, E-stop, budgets, Heartbeat, Approval continuation, and idempotent proactive Delivery. |
 | Sandbox | Immutable ExecutionPlans, fail-closed Docker/Seatbelt backends, Checkpoint CAS, and conflict-aware Rollback. |
+| Browser | Dedicated Chromium Profile, bounded snapshots/opaque refs, action approvals, and private screenshot/download Artifacts. |
 | Operations | `init`, `doctor`, `gateway`, the `task` control plane, Memory rebuild, redacted logs, idempotent recovery, and versioned Eval gates. |
 
 ### Permission modes
@@ -66,6 +67,7 @@ New installations and older configurations without `tools.mode` default to `auto
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
 - Node.js 22.19+ and pnpm for the default pi-tui
+- Chrome/Chromium and Playwright when Browser Agent is enabled
 - An OpenAI-compatible model endpoint; the default model is `deepseek-v4-pro`
 
 ### Install and run
@@ -77,6 +79,8 @@ cd miniclaw
 uv sync --extra dev --extra channels
 pnpm --dir tui install
 pnpm --dir tui build
+pnpm --dir browser-worker install
+pnpm --dir browser-worker build
 
 cp .env.example .env
 # Set MINICLAW_MODEL_API_KEY locally. Never commit .env.
@@ -112,6 +116,7 @@ MINICLAW_TUI=textual uv run miniclaw
 | `uv run miniclaw eval run --suite offline --root evals/scenarios` | Run offline cases through the real Core/Policy/Tool/SQLite path. |
 | `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios` | Run all Channel cases and the 20-round local soak. |
 | `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios` | Run the 15 Phase 6 Automation cases and 20-round soak. |
+| `uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios` | Run the 18 Phase 6.5 Browser cases and 20-round soak. |
 
 See the [local setup guide](docs/getting-started/20260807_本地运行指南.md) for Channel allowlists, Owner identities, and credentials.
 
@@ -205,6 +210,18 @@ only the primary Workspace, and Rollback has no CLI/TUI yet. See the
 [Sandbox and Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md), and
 [v0.7.0 release evidence](docs/evals/releases/v0.7.0.md).
 
+## Phase 6.5: isolated Browser Agent
+
+Browser is disabled by default. When enabled, one Runtime owns one TypeScript Worker and one dedicated MiniClaw Chromium
+Profile. The model can only request eight closed actions: open, snapshot, click, type, press, scroll, screenshot, and close.
+It cannot execute arbitrary JavaScript, read a personal Chrome Profile, export cookies, or type passwords and OTPs.
+
+Page content keeps `untrusted_web_content` provenance. Click and Enter/Space use parameter-bound Approval; public HTTPS and
+redirects reuse the SSRF Policy; screenshots and downloads return only private Artifact IDs. The exact status is
+**IMPLEMENTATION PASS / CONTROLLED LIVE SMOKE PENDING**. See the
+[Browser engineering guide](docs/engineering/phase-6/browser-agent.md) and
+[v0.6.5 evidence](docs/evals/releases/v0.6.5.md).
+
 ## Security boundaries
 
 - Secrets never belong in the repository, ordinary logs, or Memory; common tokens, passwords, OTPs, Authorization values, and private keys are rejected at boundaries.
@@ -221,19 +238,21 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 
 | Gate | Current evidence |
 | --- | --- |
-| Python | 798/798 `unittest` PASS |
-| TUI | 35/35 TypeScript tests and build PASS |
+| Python | 925/925 `unittest` PASS |
+| TUI | 36/36 TypeScript tests and build PASS |
+| Browser Worker | 14/14 TypeScript + real headless Chrome tests PASS |
 | Agent | 39/39 active offline cases PASS, including `MEM-AUTO-001..010` |
 | Channel | 33/33 versioned cases PASS |
 | Stability | 20 local Channel rounds, 660/660 PASS |
 | Automation | 15/15 versioned cases; 20 rounds, 300/300 PASS |
+| Browser | 18/18 versioned cases; 20 rounds, 360/360 PASS; controlled live smoke pending |
 | Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS; real-platform Live Gates pending |
 | Memory Autopilot | A–E IMPLEMENTATION PASS; live conclusions remain platform-specific |
 | Phase 6 | **IMPLEMENTATION PASS**; Docker LIVE VERIFIED / Seatbelt LIVE PENDING |
 
 Fake SDKs, offline scenarios, and the 660/660 local soak only establish **IMPLEMENTATION PASS**. They never masquerade as a live-platform PASS. Historical evidence lives under [`docs/evals/releases/`](docs/evals/releases/).
-The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent. Memory v0.6.0 recorded 666 Python, 35 TypeScript, and 39/39 Agent; current figures are in the table above and v0.7.0.
+The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent. Memory v0.6.0 recorded 666 Python tests and Phase 6 recorded 798; current figures are in the table above and v0.6.5.
 
 ### Verification
 
@@ -241,9 +260,12 @@ The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29
 uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 pnpm --dir tui build
+pnpm --dir browser-worker test
+pnpm --dir browser-worker build
 uv run ruff check .
 uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 ```
@@ -254,13 +276,13 @@ git diff --check
 flowchart LR
     P53["v0.5.3\nLive Evidence closure"] --> MA["Memory A-E\nIMPLEMENTED"]
     MA --> P6["Phase 6\nIMPLEMENTED"]
-    P6 --> P65["Phase 6.5\nBrowser Agent"]
+    P6 --> P65["Phase 6.5\nBrowser IMPLEMENTED"]
     P65 --> P7["Phase 7\nControlled Evolution"]
     P7 --> P8["Phase 8\nSkills + MCP + Provider"]
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, v0.5.3 Core hardening, Memory A–E, and Phase 6 Autonomy/Sandbox are implemented. The next capability is **Phase 6.5 Browser Agent**; strict Feishu/Discord Live Evidence remains an independent parallel gate. Nodes after Phase 6 do not imply implementation.
+Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, v0.5.3 Core hardening, Memory A–E, Phase 6 Autonomy/Sandbox, and Phase 6.5 Browser Agent are implemented. The next capability is **Phase 7 Controlled Evolution**; Browser live smoke and strict Feishu/Discord Live Evidence remain independent parallel gates.
 
 ## Repository layout
 
@@ -268,6 +290,8 @@ Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, v0.5.3 Core harden
 src/miniclaw/
 ├── agent/       # Context, Runner, Turn, Compaction
 ├── automation/  # Task Ledger, Scheduler, Runner, Heartbeat, Delivery
+├── artifacts/   # private Browser screenshot/download CAS and TTL
+├── browser/     # Worker Client, protocol models, discovery, action Policy
 ├── checkpoints/ # bounded CAS and conflict-aware Rollback
 ├── channels/    # Feishu / Telegram / Discord adapters and pipelines
 ├── memory/      # Markdown Truth, buffer/flush, FTS5, governance, reconcile, migration
@@ -275,11 +299,12 @@ src/miniclaw/
 ├── providers/   # OpenAI-compatible Provider
 ├── sandbox/     # immutable Plans and Host/Docker/Seatbelt backends
 ├── storage/     # SQLite schema, repositories, migrations
-├── tools/       # eighteen built-in Tools
+├── tools/       # eighteen Core Tools plus eight optional Browser Tools
 └── tui/         # Textual fallback; default pi-tui lives in repository tui/
 
 tui/             # Node.js pi-tui and Python Bridge client
-evals/           # versioned Agent / Channel scenarios
+browser-worker/  # TypeScript Playwright/Chromium isolation Worker
+evals/           # versioned Agent / Channel / Automation / Browser scenarios
 docs/            # product, architecture, engineering, plans, evidence, progress
 tests/           # Python unittest suite
 ```
@@ -301,6 +326,7 @@ tests/           # Python unittest suite
 | [Memory Autopilot implementation](docs/engineering/phase-5/20260809_memory-autopilot.md) | Current data flow, safety boundaries, recovery, and operations |
 | [Phase 6 Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md) | Tasks, Scheduler/Runner, Heartbeat, budgets, recovery, and operations |
 | [Phase 6 Sandbox and Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md) | Plan/Approval binding, isolation backends, Checkpoints, and Rollback |
+| [Phase 6.5 Browser Agent](docs/engineering/phase-6/browser-agent.md) | Dedicated Profile, snapshot/ref, Policy, Artifacts, recovery, and 18-case gate |
 
 ## Contributing
 

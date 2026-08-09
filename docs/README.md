@@ -69,6 +69,8 @@
 | [Phase 6 Autonomy Runtime](engineering/phase-6/20260809_autonomy-runtime.md) | 已实现的 Task/Scheduler/Runner/Heartbeat、Budget、恢复与运维入口 |
 | [Phase 6 Sandbox 与 Checkpoint](engineering/phase-6/20260809_sandbox-and-checkpoint.md) | 已实现的 Plan/Approval 绑定、隔离后端、Checkpoint 与 Rollback |
 | [v0.7.0 发布证据](evals/releases/v0.7.0.md) | 798/798 Python、35/35 TypeScript、39/39 Agent、33/33 Channel、660/660 soak 与 15/15 Automation |
+| [Phase 6.5 Browser Agent](engineering/phase-6/browser-agent.md) | 已实现的专用 Profile、Worker、snapshot/ref、Policy/Approval、Artifact 与恢复 |
+| [v0.6.5 Browser 发布证据](evals/releases/v0.6.5.md) | 925/925 Python、14/14 Worker、18/18 Browser 与 360/360 soak |
 | [能力对齐工程落地总方案](engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | 模块、数据模型、配置、错误码、测试矩阵与各 Phase 退出条件 |
 
 ## 使用与开发
@@ -167,7 +169,7 @@
 - [Phase 6 自治任务、Sandbox 与 Checkpoint 设计](superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md)：
   已确认的 durable state machine、隔离 Session、Budget、ExecutionPlan、Docker/Seatbelt 与回滚边界。
 - [Phase 6.5 Browser Agent 计划](superpowers/plans/2026-08-08-phase-6-5-browser-agent.md)：
-  独立 Chromium Profile、snapshot/ref、动作审批、Artifact 与浏览器回归。
+  独立 Chromium Profile、snapshot/ref、动作审批、Artifact 与浏览器回归；已实现，保留为施工记录。
 - [Phase 7 受控进化与 Memory Reflection 计划](superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md)：
   Feedback、Reflection、Proposal、扫描、评测、人工应用与回滚。
 - [Phase 8 Skills/MCP/Provider 韧性计划](superpowers/plans/2026-08-08-phase-8-skills-mcp-provider-resilience.md)：

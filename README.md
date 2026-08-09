@@ -9,7 +9,7 @@
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Node.js 22.19+](https://img.shields.io/badge/Node.js-22.19%2B-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
 [![Version](https://img.shields.io/badge/package-v0.1.0-8B5CF6)](pyproject.toml)
-[![Phase 6](https://img.shields.io/badge/Phase%206-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
+[![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
 [为什么是 MiniClaw](#为什么是-miniclaw) · [当前能力](#当前能力) · [快速开始](#快速开始) · [产品预览](#产品预览) · [架构](#工作原理) · [路线图](#路线图) · [文档](#文档)
@@ -34,6 +34,8 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 > Phase 6 自治运行与安全链路已完成本地实现：durable Task/Scheduler/Runner、E-stop、预算、Approval continuation、
 > 主动 Delivery、Docker/Seatbelt ExecutionPlan、Checkpoint/Rollback 和 15 条 Automation gate 已接通；Automation
 > 默认关闭；Docker 真实 containment 已验证，Seatbelt 因 Python Framework launcher 尚未进入 Plan 而保持 Live Pending。
+> Phase 6.5 Browser Agent 已完成本地实现：专用 Chromium Profile、snapshot/ref、八个受 Policy 管理的 Browser Tool、
+> Screenshot/Download Artifact 和 18 条版本化门禁已经接通；Browser 默认关闭，受控公网 Live smoke 尚未执行。
 
 ## 为什么是 MiniClaw
 
@@ -41,7 +43,7 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 | --- | --- |
 | 私有与可控 | 状态、会话、审批和审计保存在本机；Secret 不进入 Prompt、日志或 Memory。 |
 | 小而完整 | 一个 Python Core、一个主 TUI、一个 OpenAI-compatible Provider，不提前堆叠服务。 |
-| 真正能行动 | 18 个内置 Tool 覆盖系统信息、文件、搜索、HTTPS、exact-argv CLI 和 Memory。 |
+| 真正能行动 | 18 个 Core Tool 覆盖本机与 Memory；启用 Browser 后再加入 8 个隔离网页 Tool。 |
 | 默认可追溯 | Turn、ToolRun、Approval、Delivery 与 Channel Inbox/Outbox 都有 SQLite 状态。 |
 | 多入口同一 Core | TUI、Feishu、Telegram、Discord 复用同一个 `AgentRuntime`；Transport 和故障域隔离。 |
 | 先验证再扩张 | `unittest`、TypeScript test、Agent/Channel JSONL、20 轮 soak 和文档校验共同守门。 |
@@ -60,6 +62,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 | 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel/Memory control plane；owner-only Markdown Truth 与 Skills。 |
 | Automation | one-shot/interval/cron、durable TaskRun、E-stop、预算、Heartbeat、Approval continuation 与幂等主动投递。 |
 | Sandbox | immutable ExecutionPlan、Docker/Seatbelt fail-closed backend、Checkpoint CAS 与冲突感知 Rollback。 |
+| Browser | 专用 Chromium Profile、bounded snapshot/opaque ref、网页动作审批、私有 Screenshot/Download Artifact。 |
 | 运维 | `init`、`doctor`、`gateway`、`task` 控制面、Memory rebuild、结构化脱敏日志、幂等恢复与版本化 Eval。 |
 
 `init` 会幂等安装 `feishu-lark-cli` 与 `github-cli` Skill：飞书业务请求走官方 `lark-cli`，GitHub 远端请求走本机 `gh`，本地仓库请求走 `git`；凭据不进入 Tool 参数或模型上下文。
@@ -82,6 +85,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/)
 - Node.js 22.19+ 与 pnpm（默认 pi-tui）
+- Chrome/Chromium 与 Playwright（仅在启用 Browser Agent 时需要）
 - 一个 OpenAI-compatible 模型端点；默认配置为 `deepseek-v4-pro`
 
 ### 安装与启动
@@ -93,6 +97,8 @@ cd miniclaw
 uv sync --extra dev --extra channels
 pnpm --dir tui install
 pnpm --dir tui build
+pnpm --dir browser-worker install
+pnpm --dir browser-worker build
 
 cp .env.example .env
 # 只在本机填写 MINICLAW_MODEL_API_KEY；不要提交 .env
@@ -128,6 +134,7 @@ MINICLAW_TUI=textual uv run miniclaw
 | `uv run miniclaw eval run --suite offline --root evals/scenarios` | 跑真实 Core/Policy/Tool/SQLite 离线回归。 |
 | `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios` | 跑三平台 Channel gate 与 20 轮本地 soak。 |
 | `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios` | 跑 Phase 6 的 15 条 Automation gate 与 20 轮 soak。 |
+| `uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios` | 跑 Phase 6.5 的 18 条 Browser gate 与 20 轮 soak。 |
 
 Channel 的 allowlist、Owner 身份与平台凭据配置见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
 
@@ -221,6 +228,29 @@ Phase 6 让 MiniClaw 在 Gateway 常驻时执行受控后台任务，但不把�
 [Sandbox 与 Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md)和
 [v0.7.0 发布证据](docs/evals/releases/v0.7.0.md)。
 
+## Phase 6.5：隔离 Browser Agent
+
+Browser 默认关闭。开启后，一个 Runtime 独占一个 TypeScript Worker 和 MiniClaw 专用 Chromium Profile；模型只能使用
+`browser_open/snapshot/click/type/press/scroll/screenshot/close` 八个封闭 Tool，不能执行任意 JavaScript，也不能读取
+个人 Chrome Profile、Cookie、密码或 OTP。
+
+```toml
+[browser]
+enabled = true
+profile = "miniclaw"
+headed = true
+allow_personal_profile = false
+max_tabs = 8
+max_snapshot_chars = 20000
+inactivity_timeout_seconds = 120
+download_max_bytes = 20971520
+```
+
+网页内容始终作为 `untrusted_web_content`；点击与 Enter/Space 走参数绑定 Approval；公网 HTTPS 与 redirect 复用 SSRF
+Policy；截图和下载只返回私有 Artifact ID。当前状态为 **IMPLEMENTATION PASS / CONTROLLED LIVE SMOKE PENDING**。
+完整数据流、故障矩阵和验收方法见 [Browser Agent 工程文档](docs/engineering/phase-6/browser-agent.md)与
+[v0.6.5 发布证据](docs/evals/releases/v0.6.5.md)。
+
 ## 安全边界
 
 - Secret 永不进入仓库、普通日志或 Memory；常见 Token、密码、OTP、Authorization 和私钥在边界拒绝。
@@ -237,12 +267,14 @@ Phase 6 让 MiniClaw 在 Gateway 常驻时执行受控后台任务，但不把�
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Python | 798/798 `unittest` PASS |
-| TUI | 35/35 TypeScript tests + build PASS |
+| Python | 925/925 `unittest` PASS |
+| TUI | 36/36 TypeScript tests + build PASS |
+| Browser Worker | 14/14 TypeScript + 真实 headless Chrome tests PASS |
 | Agent | 39/39 active offline cases PASS（含 `MEM-AUTO-001..010`） |
 | Channel | 33/33 versioned cases PASS |
 | 稳定性 | 20 轮 local Channel soak，660/660 PASS |
 | Automation | 15/15 versioned cases；20 轮 300/300 PASS |
+| Browser | 18/18 versioned cases；20 轮 360/360 PASS；controlled live smoke pending |
 | Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
 | Telegram / Discord | Implementation PASS；真实平台 Live Gate 仍 pending |
 | Memory Autopilot | A～E IMPLEMENTATION PASS；真实 IM Live 结论沿用各平台 gate |
@@ -250,7 +282,7 @@ Phase 6 让 MiniClaw 在 Gateway 常驻时执行受控后台任务，但不把�
 
 本地 fake SDK、离线场景和 660/660 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
 Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；Memory v0.6.0 的历史基线为
-666 Python、35 TypeScript、39/39 Agent；当前发布数字以上表和 v0.7.0 为准。
+666 Python、35 TypeScript、39/39 Agent；Phase 6 历史基线为 798 Python。当前发布数字以上表和 v0.6.5 为准。
 
 ### 验证命令
 
@@ -258,9 +290,12 @@ Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 A
 uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 pnpm --dir tui build
+pnpm --dir browser-worker test
+pnpm --dir browser-worker build
 uv run ruff check .
 uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 ```
@@ -271,15 +306,15 @@ git diff --check
 flowchart LR
     P53["v0.5.3\nLive Evidence 收口"] --> MA["Memory A-E\nIMPLEMENTED"]
     MA --> P6["Phase 6\nIMPLEMENTED"]
-    P6 --> P65["Phase 6.5\nBrowser Agent"]
+    P6 --> P65["Phase 6.5\nBrowser IMPLEMENTED"]
     P65 --> P7["Phase 7\nControlled Evolution"]
     P7 --> P8["Phase 8\nSkills + MCP + Provider"]
     P8 --> P9["Phase 9\nSub-agent + Multimodal"]
 ```
 
-Owner `AUTOPILOT` 默认值、飞书 `Claw Trail` Agent Card、v0.5.3 Core hardening、Memory A～E 与 Phase 6
-Autonomy/Sandbox 已实现。下一条功能主线是 **Phase 6.5 Browser Agent**；Feishu/Discord 严格 Live Evidence
-仍作为独立验收并行收口。路线图中 Phase 6.5 之后节点不代表相应代码已经存在。
+Owner `AUTOPILOT` 默认值、飞书 `Claw Trail` Agent Card、v0.5.3 Core hardening、Memory A～E、Phase 6
+Autonomy/Sandbox 与 Phase 6.5 Browser Agent 已实现。下一条功能主线是 **Phase 7 Controlled Evolution**；
+Browser controlled live smoke 和 Feishu/Discord 严格 Live Evidence 仍作为独立验收并行收口。
 
 ## 仓库结构
 
@@ -287,6 +322,8 @@ Autonomy/Sandbox 已实现。下一条功能主线是 **Phase 6.5 Browser Agent*
 src/miniclaw/
 ├── agent/       # Context、Runner、Turn、Compaction
 ├── automation/  # Task Ledger、Scheduler、Runner、Heartbeat、Delivery
+├── artifacts/   # Browser Screenshot/Download 私有 CAS 与 TTL
+├── browser/     # Worker Client、协议模型、发现与动作 Policy
 ├── checkpoints/ # bounded CAS 与 conflict-aware Rollback
 ├── channels/    # Feishu / Telegram / Discord adapters and pipelines
 ├── memory/      # Markdown Truth、buffer/flush、FTS5、治理、对账与迁移
@@ -294,11 +331,12 @@ src/miniclaw/
 ├── providers/   # OpenAI-compatible Provider
 ├── sandbox/     # immutable Plan 与 Host/Docker/Seatbelt backend
 ├── storage/     # SQLite schema, repositories and migrations
-├── tools/       # 18 个内置 Tool
+├── tools/       # 18 个 Core Tool + 8 个可选 Browser Tool
 └── tui/         # Textual fallback；默认 pi-tui 在仓库 tui/
 
 tui/             # Node.js pi-tui + Python Bridge client
-evals/           # versioned Agent / Channel scenarios
+browser-worker/  # TypeScript Playwright/Chromium 隔离 Worker
+evals/           # versioned Agent / Channel / Automation / Browser scenarios
 docs/            # PRD、架构、工程、计划、发布证据与进度页
 tests/           # Python unittest
 ```
@@ -320,6 +358,7 @@ tests/           # Python unittest
 | [Memory Autopilot 工程实现](docs/engineering/phase-5/20260809_memory-autopilot.md) | 当前数据流、安全边界、恢复和运维入口 |
 | [Phase 6 Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md) | Task/Scheduler/Runner/Heartbeat、预算、恢复与运维入口 |
 | [Phase 6 Sandbox 与 Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md) | Plan/Approval 绑定、隔离后端、Checkpoint 与 Rollback |
+| [Phase 6.5 Browser Agent](docs/engineering/phase-6/browser-agent.md) | 专用 Profile、snapshot/ref、Policy、Artifact、恢复和 18-case gate |
 
 ## 参与开发
 

@@ -6,7 +6,7 @@
 >
 > 证据边界：SQLite、Scheduler、TaskRunner、Approval、Delivery、Heartbeat 与 15 条 Automation case 已完成离线确定性验收；真实 Feishu/Telegram/Discord 主动消息仍沿用各平台 Live Gate，不能写成 Live PASS。
 
-当前发布门禁：**798/798 Python**、**35/35 TypeScript**、**39/39 offline Agent**、
+Phase 6 发布时门禁：**798/798 Python**、**35/35 TypeScript**、**39/39 offline Agent**、
 **33/33 Channel**、**660/660 local Channel soak**、**15/15 Automation**，状态为
 **IMPLEMENTATION PASS**。Feishu 仍为 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**，
 Telegram/Discord 仍为 **LIVE PENDING**；Docker containment 为 **LIVE VERIFIED**，Seatbelt 为 **LIVE PENDING**。
@@ -351,7 +351,8 @@ uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scen
 - Heartbeat 目前无主动 IM route；
 - interrupted Run 不自动重放可能已有副作用的动作；
 - `complete_task` 只提供文本/静默，不提供任意 webhook；
-- Browser Agent 是 **Phase 6.5 PLANNED / NOT IMPLEMENTED**；
+- 本 Phase 6 快照发布时 Browser Agent 尚未实现；当前实现见
+  [Phase 6.5 Browser Agent](browser-agent.md)；
 - Controlled Evolution、自改 Prompt/Skill 是 Phase 7，不在 Phase 6；
 - Feishu/Discord 严格 15-case 和 Telegram live 仍是各自 **LIVE PENDING**。
 

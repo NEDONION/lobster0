@@ -39,6 +39,10 @@ uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenari
 uv run miniclaw eval run --suite automation --root evals/scenarios
 uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
 
+# Phase 6.5 Browser 18-case 与 20 轮稳定性门禁
+uv run miniclaw eval run --suite browser --root evals/scenarios
+uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
+
 # 当前发布文档、链接、Mermaid 与 HTML 一致性
 uv run python scripts/validate_docs.py
 ```
@@ -124,7 +128,9 @@ uv run python scripts/validate_docs.py
 5. Channel 改动运行 `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios`。
 6. Automation、Sandbox 或 Checkpoint 改动运行
    `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios`。
-7. 文档改动运行 `uv run python scripts/validate_docs.py`。
-8. `git diff --check` 无空白错误，diff 中无密钥、调试输出或意外大文件。
+7. Browser、Artifact 或 Worker 改动运行 `pnpm --dir browser-worker test` 和
+   `uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios`。
+8. 文档改动运行 `uv run python scripts/validate_docs.py`。
+9. `git diff --check` 无空白错误，diff 中无密钥、调试输出或意外大文件。
 
 若某项检查因环境或外部依赖无法执行，必须在最终说明中列出命令、原因和剩余风险。
