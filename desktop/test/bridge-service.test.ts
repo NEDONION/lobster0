@@ -14,17 +14,27 @@ const HELLO = {
   permission_mode: "safe",
   tools: ["read_file"],
   capabilities: ["streaming", "approvals"],
+  automation_enabled: true,
 };
 
 class FakeClient {
   public readonly helloCalls: [string | undefined, string | undefined][] = [];
   public readonly turns: [string, string][] = [];
   public readonly requests: [RequestType, Record<string, JsonValue>][] = [];
+  public shutdownCalls = 0;
   private eventHandler: ((frame: ServerFrame) => void) | undefined;
+
+  public constructor(
+    private readonly helloPayload: typeof HELLO = HELLO,
+    private readonly helloError: Error | null = null,
+  ) {}
 
   public async hello(clientName?: string, clientVersion?: string): Promise<typeof HELLO> {
     this.helloCalls.push([clientName, clientVersion]);
-    return HELLO;
+    if (this.helloError) {
+      throw this.helloError;
+    }
+    return this.helloPayload;
   }
 
   public onEvent(handler: (frame: ServerFrame) => void): () => void {
@@ -57,6 +67,18 @@ class FakeClient {
         }],
       };
     }
+    if (type === "automation.list") {
+      return {
+        enabled: true,
+        tasks: [{
+          task_id: 4,
+          name: "每日简报",
+          status: "active",
+          schedule_kind: "cron",
+          next_run_at: "2026-08-10T01:00:00+00:00",
+        }],
+      };
+    }
     return {
       session_key: "task-1",
       updated_at: "2026-08-09T00:00:00+00:00",
@@ -70,7 +92,9 @@ class FakeClient {
   public async setPermissionMode(mode: "safe" | "smart" | "autopilot" | "yolo") {
     return mode;
   }
-  public async shutdown(): Promise<void> {}
+  public async shutdown(): Promise<void> {
+    this.shutdownCalls += 1;
+  }
   public kill(): void {}
 
   public emit(frame: ServerFrame): void {
@@ -101,6 +125,7 @@ describe("BridgeService", () => {
       permissionMode: "safe",
       tools: ["read_file"],
       capabilities: ["streaming", "approvals"],
+      automationEnabled: true,
     });
     expect(service.status).toBe("idle");
   });
@@ -167,5 +192,78 @@ describe("BridgeService", () => {
       status: "failed",
       errorCode: "runtime_interrupted",
     });
+  });
+
+  it("maps the bounded read-only Automation response", async () => {
+    const client = new FakeClient();
+    const service = new BridgeService(() => client, {});
+    await service.start();
+
+    await expect(service.listAutomations(50)).resolves.toEqual({
+      enabled: true,
+      tasks: [{
+        taskId: 4,
+        name: "每日简报",
+        status: "active",
+        scheduleKind: "cron",
+        nextRunAt: "2026-08-10T01:00:00+00:00",
+      }],
+    });
+    expect(client.requests.at(-1)).toEqual(["automation.list", { limit: 50 }]);
+  });
+
+  it("restarts an idle Bridge with a selected workspace", async () => {
+    const clients: FakeClient[] = [];
+    const environments: NodeJS.ProcessEnv[] = [];
+    const service = new BridgeService((environment) => {
+      environments.push({ ...environment });
+      const workspace = environment.MINICLAW_WORKSPACE?.split("/").at(-1) ?? "report";
+      const client = new FakeClient({ ...HELLO, workspace });
+      clients.push(client);
+      return client;
+    }, { MINICLAW_HOME: "/state/miniclaw" });
+    await service.start();
+
+    const bootstrap = await service.restartWorkspace("/work/quarterly");
+
+    expect(bootstrap.workspace).toBe("quarterly");
+    expect(environments).toEqual([
+      { MINICLAW_HOME: "/state/miniclaw" },
+      { MINICLAW_HOME: "/state/miniclaw", MINICLAW_WORKSPACE: "/work/quarterly" },
+    ]);
+    expect(clients[0]?.shutdownCalls).toBe(1);
+  });
+
+  it("rejects workspace restart while a task is running", async () => {
+    const client = new FakeClient();
+    const service = new BridgeService(() => client, {});
+    await service.start();
+    await service.startTurn({ sessionKey: "task-1", text: "整理报告" });
+
+    await expect(service.restartWorkspace("/work/other"))
+      .rejects.toMatchObject({ code: "bridge_state" });
+    expect(client.shutdownCalls).toBe(0);
+  });
+
+  it("restores the previous Bridge configuration when the new workspace fails", async () => {
+    const environments: NodeJS.ProcessEnv[] = [];
+    let call = 0;
+    const service = new BridgeService((environment) => {
+      environments.push({ ...environment });
+      call += 1;
+      return call === 2
+        ? new FakeClient(HELLO, new Error("new bridge failed"))
+        : new FakeClient();
+    }, { MINICLAW_HOME: "/state/miniclaw" });
+    await service.start();
+
+    await expect(service.restartWorkspace("/work/broken")).rejects.toThrow("new bridge failed");
+
+    expect(service.status).toBe("idle");
+    expect(environments).toEqual([
+      { MINICLAW_HOME: "/state/miniclaw" },
+      { MINICLAW_HOME: "/state/miniclaw", MINICLAW_WORKSPACE: "/work/broken" },
+      { MINICLAW_HOME: "/state/miniclaw" },
+    ]);
   });
 });

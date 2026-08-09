@@ -14,6 +14,7 @@ export interface DesktopBootstrap {
   permissionMode: PermissionMode;
   tools: string[];
   capabilities: string[];
+  automationEnabled: boolean;
 }
 
 export interface StartTurnInput {
@@ -55,6 +56,11 @@ export interface AutomationSummary {
   nextRunAt: string | null;
 }
 
+export interface AutomationList {
+  enabled: boolean;
+  tasks: AutomationSummary[];
+}
+
 export interface DesktopApi {
   bootstrap(): Promise<DesktopBootstrap>;
   startTurn(input: StartTurnInput): Promise<void>;
@@ -63,7 +69,7 @@ export interface DesktopApi {
   setPermissionMode(mode: PermissionMode): Promise<PermissionMode>;
   listSessions(limit?: number): Promise<SessionSummary[]>;
   loadSession(sessionKey: string, limit?: number): Promise<SessionHistory>;
-  listAutomations(limit?: number): Promise<AutomationSummary[]>;
+  listAutomations(limit?: number): Promise<AutomationList>;
   chooseWorkspace(): Promise<string | null>;
   onFrame(handler: (frame: ServerFrame) => void): () => void;
 }
@@ -101,7 +107,7 @@ export function createDesktopApi(invoke: Invoke, subscribe: Subscribe): DesktopA
     loadSession: (sessionKey, limit = 100) =>
       invoke(DESKTOP_CHANNELS.sessionLoad, { sessionKey, limit }) as Promise<SessionHistory>,
     listAutomations: (limit = 50) =>
-      invoke(DESKTOP_CHANNELS.automationsList, { limit }) as Promise<AutomationSummary[]>,
+      invoke(DESKTOP_CHANNELS.automationsList, { limit }) as Promise<AutomationList>,
     chooseWorkspace: () =>
       invoke(DESKTOP_CHANNELS.workspaceChoose) as Promise<string | null>,
     onFrame: (handler) =>

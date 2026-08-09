@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -44,6 +44,10 @@ void app.whenReady().then(() => {
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send(DESKTOP_CHANNELS.frame, frame);
       }
+    },
+    async () => {
+      const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
+      return result.canceled ? null : (result.filePaths[0] ?? null);
     },
   );
   createWindow();

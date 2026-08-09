@@ -23,6 +23,7 @@ interface TaskWorkbenchProps {
   initialHistory: SessionHistory | null;
   sessions: SessionSummary[];
   onSelectSession: (sessionKey: string) => void;
+  onBusyChange: (busy: boolean) => void;
 }
 
 const STATUS_LABELS: Record<DesktopTaskStatus, string> = {
@@ -49,6 +50,7 @@ export function TaskWorkbench({
   initialHistory,
   sessions,
   onSelectSession,
+  onBusyChange,
 }: TaskWorkbenchProps): React.JSX.Element {
   const [task, setTask] = useState(() => (
     initialHistory ? hydrateSession(initialHistory) : createDesktopTaskState(sessionKey)
@@ -63,7 +65,12 @@ export function TaskWorkbench({
   }), []);
 
   const pendingApproval = task.run.pendingApproval;
-  const disabled = submitting || task.status === "running" || pendingApproval !== null;
+  const liveBusy = submitting || task.status === "running" || pendingApproval !== null;
+  const disabled = liveBusy;
+
+  useEffect(() => {
+    onBusyChange(liveBusy);
+  }, [liveBusy, onBusyChange]);
 
   async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
@@ -75,7 +82,10 @@ export function TaskWorkbench({
     setActionError(null);
     try {
       await window.miniclaw.startTurn({ sessionKey, text });
-      setTask((current) => appendDesktopUser(current, text));
+      setTask((current) => ({
+        ...appendDesktopUser(current, text),
+        status: "running",
+      }));
       setDraft("");
     } catch {
       setActionError("任务未能开始，请检查本地 Core 配置。");
@@ -138,6 +148,7 @@ export function TaskWorkbench({
               className="task-row"
               data-active="false"
               key={session.sessionKey}
+              disabled={liveBusy}
               onClick={() => onSelectSession(session.sessionKey)}
               type="button"
             >

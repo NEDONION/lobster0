@@ -6,8 +6,10 @@ import os
 import sys
 import tempfile
 import unittest
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from miniclaw.agent.events import RunEvent
 from miniclaw.bootstrap import initialize_state
@@ -196,6 +198,8 @@ def _runtime(service) -> SimpleNamespace:
             command=lambda **values: {"echo": values},
         ),
         conversation_console=FakeConversationConsole(),
+        automation_enabled=True,
+        database=object(),
     )
 
 
@@ -231,6 +235,8 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hello["payload"]["model"], "deepseek-v4-pro")
         self.assertEqual(hello["payload"]["tools"], ["run_command"])
         self.assertEqual(hello["payload"]["permission_mode"], "safe")
+        self.assertTrue(hello["payload"]["automation_enabled"])
+        self.assertIn("automation_read", hello["payload"]["capabilities"])
 
         await reader.feed(
             _request("turn-1", "turn.start", {"session_key": "default", "text": "你好"})
@@ -335,6 +341,52 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
 
         await reader.feed(_request("stop-1", "bridge.shutdown", {}))
         self.assertEqual(await task, 0)
+
+    async def test_automation_list_is_owner_scoped_and_exposes_only_safe_fields(self) -> None:
+        """Automation 查询只返回只读摘要，不泄露 prompt、delivery 或预算。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        repository = SimpleNamespace(
+            list=Mock(return_value=(
+                SimpleNamespace(
+                    id=4,
+                    name="每日简报",
+                    status=SimpleNamespace(value="active"),
+                    schedule=SimpleNamespace(
+                        kind=SimpleNamespace(value="cron"),
+                        next_run_at=datetime(2026, 8, 10, 1, tzinfo=UTC),
+                    ),
+                ),
+            ))
+        )
+        with patch(
+            "miniclaw.bridge.server.ScheduledTaskRepository",
+            return_value=repository,
+        ):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(_request("automation-1", "automation.list", {"limit": 50}))
+            response = await writer.wait_for_id("automation-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            self.assertEqual(await task, 0)
+
+        self.assertEqual(
+            response["payload"],
+            {
+                "enabled": True,
+                "tasks": [
+                    {
+                        "task_id": 4,
+                        "name": "每日简报",
+                        "status": "active",
+                        "schedule_kind": "cron",
+                        "next_run_at": "2026-08-10T01:00:00+00:00",
+                    }
+                ],
+            },
+        )
+        repository.list.assert_called_once_with(owner_id=1, limit=50)
 
     async def test_memory_command_routes_only_validated_core_arguments(self) -> None:
         """Bridge 把已验证 action/query/limit 路由到 Runtime Console。"""

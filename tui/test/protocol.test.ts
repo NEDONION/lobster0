@@ -61,7 +61,7 @@ test("client requests use one compact UTF-8 NDJSON line", () => {
   });
 });
 
-test("Desktop session queries use the shared versioned request union", () => {
+test("Desktop read queries use the shared versioned request union", () => {
   assert.equal(
     JSON.parse(encodeRequest("sessions-1", "session.list", { limit: 20 })).type,
     "session.list",
@@ -72,5 +72,9 @@ test("Desktop session queries use the shared versioned request union", () => {
       limit: 100,
     })).payload,
     { session_key: "task-1", limit: 100 },
+  );
+  assert.equal(
+    JSON.parse(encodeRequest("automation-1", "automation.list", { limit: 50 })).type,
+    "automation.list",
   );
 });

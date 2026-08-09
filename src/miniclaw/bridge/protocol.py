@@ -21,6 +21,7 @@ _REQUEST_TYPES = frozenset(
         "session.new",
         "session.list",
         "session.history",
+        "automation.list",
         "bridge.shutdown",
     }
 )
@@ -204,6 +205,10 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
             or not _integer_between(payload.get("limit"), 1, 200)
         ):
             raise ProtocolError("invalid_session_query", "Session 查询字段不合法")
+        return
+    if request_type == "automation.list":
+        if set(payload) != {"limit"} or not _integer_between(payload.get("limit"), 1, 100):
+            raise ProtocolError("invalid_automation_query", "Automation 查询字段不合法")
         return
     if request_type == "permissions.set":
         mode = payload.get("mode")

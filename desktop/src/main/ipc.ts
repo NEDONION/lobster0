@@ -28,6 +28,7 @@ export function registerDesktopIpc(
   register: RegisterHandler,
   bridge: BridgeService,
   publishFrame: (frame: ServerFrame) => void,
+  chooseWorkspace: () => Promise<string | null>,
 ): () => void {
   register(DESKTOP_CHANNELS.bootstrap, () => bridge.start());
   register(DESKTOP_CHANNELS.taskStart, (payload) => bridge.startTurn(validateStartTurnInput(payload)));
@@ -51,14 +52,17 @@ export function registerDesktopIpc(
     const input = validateHistoryInput(payload);
     return bridge.loadSession(input.sessionKey, input.limit);
   });
-  for (const channel of [
-    DESKTOP_CHANNELS.automationsList,
-    DESKTOP_CHANNELS.workspaceChoose,
-  ]) {
-    register(channel, () => Promise.reject(
-      new DesktopRequestError("feature_unavailable", "该 Desktop 功能尚未接入 Core"),
-    ));
-  }
+  register(DESKTOP_CHANNELS.automationsList, (payload) => {
+    const input = validateAutomationListInput(payload);
+    return bridge.listAutomations(input.limit);
+  });
+  register(DESKTOP_CHANNELS.workspaceChoose, async () => {
+    const selected = await chooseWorkspace();
+    if (selected === null) {
+      return null;
+    }
+    return (await bridge.restartWorkspace(selected)).workspace;
+  });
   return bridge.onFrame(publishFrame);
 }
 
@@ -112,6 +116,11 @@ export function validateHistoryInput(payload: unknown): {
     sessionKey: record.sessionKey,
     limit: integerBetween(record.limit, 1, 200, "invalid_session_query"),
   };
+}
+
+export function validateAutomationListInput(payload: unknown): { limit: number } {
+  const record = exactRecord(payload, ["limit"], "invalid_automation_query");
+  return { limit: integerBetween(record.limit, 1, 100, "invalid_automation_query") };
 }
 
 function exactRecord(

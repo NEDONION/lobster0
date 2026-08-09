@@ -8,9 +8,11 @@ import {
   type PermissionMode,
   type ServerFrame,
 } from "@miniclaw/pi-tui/protocol";
+import { isAbsolute } from "node:path";
 
 import type {
   ApprovalDecision,
+  AutomationList,
   DesktopBootstrap,
   SessionHistory,
   SessionSummary,
@@ -43,7 +45,7 @@ type ClientFactory = (environment: NodeJS.ProcessEnv) => BridgePort;
 
 export class BridgeService {
   private readonly createClient: ClientFactory;
-  private readonly environment: NodeJS.ProcessEnv;
+  private environment: NodeJS.ProcessEnv;
   private readonly frameHandlers = new Set<(frame: ServerFrame) => void>();
   private client: BridgePort | null = null;
   private bootstrapData: DesktopBootstrap | null = null;
@@ -57,7 +59,7 @@ export class BridgeService {
     environment: NodeJS.ProcessEnv = process.env,
   ) {
     this.createClient = createClient;
-    this.environment = environment;
+    this.environment = { ...environment };
   }
 
   public get status(): BridgeStatus {
@@ -182,6 +184,48 @@ export class BridgeService {
     };
   }
 
+  public async listAutomations(limit: number): Promise<AutomationList> {
+    const response = await this.requireClient().request("automation.list", { limit });
+    if (typeof response.enabled !== "boolean" || !Array.isArray(response.tasks)) {
+      throw protocolError();
+    }
+    return {
+      enabled: response.enabled,
+      tasks: response.tasks.map((value) => {
+        const record = recordValue(value);
+        return {
+          taskId: positiveInteger(record.task_id),
+          name: stringValue(record.name),
+          status: stringValue(record.status),
+          scheduleKind: stringValue(record.schedule_kind),
+          nextRunAt: nullableString(record.next_run_at),
+        };
+      }),
+    };
+  }
+
+  public async restartWorkspace(workspace: string): Promise<DesktopBootstrap> {
+    if (
+      this.currentStatus !== "idle"
+      || !isAbsolute(workspace)
+      || workspace.length > 4_096
+      || workspace.includes("\0")
+    ) {
+      throw new BridgeRequestError("bridge_state", "MiniClaw Core 当前状态不允许切换工作目录");
+    }
+    const previousEnvironment = this.environment;
+    await this.stop();
+    this.environment = { ...previousEnvironment, MINICLAW_WORKSPACE: workspace };
+    try {
+      return await this.start();
+    } catch (error) {
+      await this.stop();
+      this.environment = previousEnvironment;
+      await this.start().catch(() => undefined);
+      throw error;
+    }
+  }
+
   public async stop(): Promise<void> {
     if (this.startPromise) {
       await this.startPromise.catch(() => undefined);
@@ -270,6 +314,7 @@ function parseBootstrap(payload: Record<string, JsonValue>): DesktopBootstrap {
     permissionMode,
     tools: stringArray(payload.tools),
     capabilities: stringArray(payload.capabilities),
+    automationEnabled: booleanValue(payload.automation_enabled),
   };
 }
 
@@ -285,6 +330,13 @@ function stringArray(value: JsonValue | undefined): string[] {
     throw new BridgeRequestError("bridge_protocol", "MiniClaw Core 握手数据无效");
   }
   return value as string[];
+}
+
+function booleanValue(value: JsonValue | undefined): boolean {
+  if (typeof value !== "boolean") {
+    throw protocolError();
+  }
+  return value;
 }
 
 function recordValue(value: JsonValue): Record<string, JsonValue> {
