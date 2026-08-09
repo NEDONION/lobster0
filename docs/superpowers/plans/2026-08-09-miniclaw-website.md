@@ -6,7 +6,7 @@
 
 **Architecture:** A static Astro site lives in `website/` and imports one bilingual content document plus one language-neutral project facts document. Two marketing routes reuse the same Astro component tree, while Starlight owns the `/docs/` and `/en/docs/` routes. Vercel builds only `website/` and serves the generated `dist/` directory.
 
-**Tech Stack:** Astro 7.2.0, Starlight 0.41.7, TypeScript 7.0.2, Node built-in test runner, custom CSS, Vercel static deployment.
+**Tech Stack:** Astro 7.2.0, Starlight 0.41.7, TypeScript 6.0.3, Node built-in test runner, custom CSS, Vercel static deployment.
 
 ## Global Constraints
 
@@ -98,7 +98,7 @@ Expected: FAIL with `ENOENT` for `project-facts.json`.
   },
   "devDependencies": {
     "@astrojs/check": "0.9.10",
-    "typescript": "7.0.2"
+    "typescript": "6.0.3"
   }
 }
 ```

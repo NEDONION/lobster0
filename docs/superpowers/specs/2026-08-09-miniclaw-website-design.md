@@ -119,7 +119,7 @@ MESSAGE_RECEIVED → AGENT_PLANNING → POLICY_CHECK → APPROVAL → TOOL_EXECU
 - 代码目录：仓库根目录 `website/`。
 - 框架：Astro 7.2.0，默认静态输出。
 - 文档：Starlight 0.41.7。
-- 语言：TypeScript、Astro、原生 CSS；不引入 React、Tailwind 或通用组件库。
+- 语言：TypeScript 6.0.3、Astro、原生 CSS；不引入 React、Tailwind 或通用组件库。
 - 内容：`site-content.json` 保存双语首页文案，`project-facts.json` 保存共享事实和命令。
 - 页面：`index.astro` 与 `en/index.astro` 复用同一个 `HomePage.astro`。
 - 文档：Starlight `root` locale 为 `zh-CN`，`en` locale 为英文。
@@ -156,4 +156,3 @@ Astro 静态站不需要 Vercel adapter，也不需要环境变量、数据库�
 - 不复制全部工程文档到 Starlight。
 - 不生成虚假的客户 Logo、评价或产品控制台。
 - 不在本任务中修改 Python Core、TUI 或既有 Eval 数量断言。
-
