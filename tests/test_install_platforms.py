@@ -1331,6 +1331,67 @@ class InstallPlatformsTest(unittest.TestCase):
         self.assertEqual(completed.stdout, b"x" * 2048)
         self.assertEqual(completed.stderr, b"y" * 2048)
 
+    def test_round5_probe_cleans_descendant_after_successful_eof(self) -> None:
+        """leader 成功退出后也必须清理将 stdio 重定向的同组后代。"""
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
+            pid_path = Path(directory) / "descendant.pid"
+            program = (
+                "import pathlib,subprocess,sys;"
+                "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(20)'],"
+                "stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);"
+                f"pathlib.Path({str(pid_path)!r}).write_text(str(child.pid),encoding='utf-8')"
+            )
+            started = time.monotonic()
+            descendant_pid: int | None = None
+            cleanup_needed = False
+            try:
+                with (
+                    mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
+                    mock.patch.object(platforms_module, "_LOCAL_PROBE_TIMEOUT_SECONDS", 0.5),
+                ):
+                    completed = platforms_module._run_local_probe(
+                        (sys.executable, "-c", program),
+                        _account(),
+                        {},
+                    )
+                self.assertLess(time.monotonic() - started, 0.9)
+                self.assertEqual(completed.returncode, 0)
+                self.assertTrue(pid_path.exists())
+                descendant_pid = int(pid_path.read_text(encoding="utf-8"))
+                reaped_deadline = time.monotonic() + 1
+                while time.monotonic() < reaped_deadline:
+                    try:
+                        os.kill(descendant_pid, 0)
+                    except ProcessLookupError:
+                        break
+                    time.sleep(0.01)
+                else:
+                    cleanup_needed = True
+            finally:
+                if cleanup_needed and descendant_pid is not None:
+                    os.kill(descendant_pid, 9)
+            self.assertFalse(cleanup_needed, "successful probe left its descendant alive")
+            assert descendant_pid is not None
+            with self.assertRaises(ProcessLookupError):
+                os.kill(descendant_pid, 0)
+
+    def test_round5_probe_pipe_eof_still_honors_child_exit_deadline(self) -> None:
+        """pipe 先 EOF 不能让等待 direct child 超过同一 monotonic deadline。"""
+        program = "import os,time;os.close(1);os.close(2);time.sleep(20)"
+        started = time.monotonic()
+        with (
+            mock.patch.object(platforms_module.os, "geteuid", return_value=1001),
+            mock.patch.object(platforms_module, "_LOCAL_PROBE_TIMEOUT_SECONDS", 0.1),
+            self.assertRaisesRegex(InstallError, "system_dependency_missing") as raised,
+        ):
+            platforms_module._run_local_probe(
+                (sys.executable, "-c", program),
+                _account(),
+                {},
+            )
+        self.assertLess(time.monotonic() - started, 0.8)
+        self.assertIsNone(raised.exception.__cause__)
+
     def test_local_macos_probe_uses_fixed_seatbelt_containment(self) -> None:
         """production macOS probe 必须执行 fixed sandbox-exec deny-default smoke。"""
         macos = detect_macos("15.0", "arm64")

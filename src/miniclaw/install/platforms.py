@@ -5,6 +5,7 @@ import os
 import platform as host_platform
 import pwd
 import re
+import select
 import selectors
 import shutil
 import signal
@@ -41,7 +42,8 @@ _PINNED_IMAGE = re.compile(r"^[a-z0-9][a-z0-9._/:-]*@sha256:[0-9a-f]{64}$")
 _SAFE_EXECUTABLE_PATH = "/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin"
 _MAX_SANDBOX_RECEIPT_BYTES = 4096
 _LOCAL_PROBE_TIMEOUT_SECONDS = 45.0
-_PROCESS_GROUP_TERM_SECONDS = 0.25
+_PROCESS_GROUP_TERM_SECONDS = 0.05
+_PROCESS_GROUP_CLEANUP_SECONDS = 0.25
 _ROOTLESS_TOOLS = {
     "/usr/bin/dockerd-rootless-setuptool.sh",
     "/usr/share/docker.io/contrib/dockerd-rootless-setuptool.sh",
@@ -1482,6 +1484,12 @@ def _run_local_probe(
         )
         child_environment = {"PATH": _SAFE_EXECUTABLE_PATH, "LANG": "C.UTF-8"}
     process: subprocess.Popen[bytes] | None = None
+
+    def close_exit_observer() -> None:
+        """在 exit observer 尚未创建时提供 no-op cleanup。"""
+
+    cleanup_attempted = False
+    deadline = time.monotonic() + _LOCAL_PROBE_TIMEOUT_SECONDS
     try:
         process = subprocess.Popen(
             command,
@@ -1491,6 +1499,7 @@ def _run_local_probe(
             env=child_environment,
             start_new_session=True,
         )
+        direct_child_exited, close_exit_observer = _open_direct_child_exit_observer(process.pid)
         if process.stdout is None or process.stderr is None:
             raise OSError
         for stream in (process.stdout, process.stderr):
@@ -1500,7 +1509,6 @@ def _run_local_probe(
         try:
             selector.register(process.stdout, selectors.EVENT_READ, "stdout")
             selector.register(process.stderr, selectors.EVENT_READ, "stderr")
-            deadline = time.monotonic() + _LOCAL_PROBE_TIMEOUT_SECONDS
             while selector.get_map():
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
@@ -1520,19 +1528,29 @@ def _run_local_probe(
                         raise OSError
         finally:
             selector.close()
-        returncode = process.wait(timeout=1)
+        _wait_for_direct_child_exit(direct_child_exited, deadline)
+        cleanup_attempted = True
+        returncode = _cleanup_probe_process_group(process)
         completed = subprocess.CompletedProcess(
             command,
             returncode,
             bytes(output["stdout"]),
             bytes(output["stderr"]),
         )
-        process.stdout.close()
-        process.stderr.close()
         return completed
     except Exception:
-        if process is not None:
-            _terminate_probe_process_group(process)
+        if process is not None and not cleanup_attempted:
+            cleanup_attempted = True
+            try:
+                _cleanup_probe_process_group(process)
+            except Exception:
+                pass
+        raise InstallError("system_dependency_missing", "platform") from None
+    finally:
+        try:
+            close_exit_observer()
+        except Exception:
+            pass
         if process is not None:
             for stream in (process.stdout, process.stderr):
                 if stream is not None:
@@ -1540,55 +1558,117 @@ def _run_local_probe(
                         stream.close()
                     except Exception:
                         pass
-        raise InstallError("system_dependency_missing", "platform") from None
 
 
-def _terminate_probe_process_group(process: subprocess.Popen[bytes]) -> None:
-    """用 TERM→bounded wait→KILL 终止独立 probe process group 并 reap direct child。
+def _open_direct_child_exit_observer(
+    process_id: int,
+) -> tuple[Callable[[], bool], Callable[[], None]]:
+    """建立不 reap direct child 的退出观察器。
 
     Args:
-        process: 以 ``start_new_session=True`` 启动的 probe direct child。
+        process_id: 刚由当前进程启动且尚未 reap 的 child PID。
+
+    Returns:
+        无阻塞退出检查与关闭函数；观察期间 leader 仍保留 zombie/PGID。
+
+    Raises:
+        OSError: 当前 POSIX 平台没有可靠的 no-reap 观察边界。
+    """
+    waitid = getattr(os, "waitid", None)
+    if callable(waitid):
+
+        def waitid_exited() -> bool:
+            """用 WNOWAIT 观察 child 退出而不回收 leader。"""
+            result = waitid(os.P_PID, process_id, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+            return result is not None and result.si_pid == process_id
+
+        return waitid_exited, lambda: None
+    kqueue_type = getattr(select, "kqueue", None)
+    kevent_type = getattr(select, "kevent", None)
+    if not callable(kqueue_type) or not callable(kevent_type):
+        raise OSError
+    queue = kqueue_type()
+    exited = False
+    try:
+        event = kevent_type(
+            process_id,
+            filter=select.KQ_FILTER_PROC,
+            flags=select.KQ_EV_ADD | select.KQ_EV_ENABLE | select.KQ_EV_CLEAR,
+            fflags=select.KQ_NOTE_EXIT,
+        )
+        queue.control([event], 0, 0)
+    except ProcessLookupError:
+        # Popen 尚未 reap，因此立即 ESRCH 只能表示 child 已退出。
+        exited = True
+    except Exception:
+        queue.close()
+        raise OSError from None
+
+    def kqueue_exited() -> bool:
+        """用 EVFILT_PROC/NOTE_EXIT 观察 Darwin child 而不 reap。"""
+        nonlocal exited
+        if not exited:
+            exited = bool(queue.control(None, 1, 0))
+        return exited
+
+    return kqueue_exited, queue.close
+
+
+def _wait_for_direct_child_exit(exited: Callable[[], bool], deadline: float) -> None:
+    """在同一 monotonic deadline 内等待 direct child 退出但不 reap。
+
+    Args:
+        exited: no-reap 退出观察器。
+        deadline: 与 pipe/output 读取共享的 monotonic deadline。
+
+    Raises:
+        TimeoutError: child 未在 deadline 前退出。
+    """
+    while not exited():
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError
+        time.sleep(min(remaining, 0.01))
+
+
+def _cleanup_probe_process_group(process: subprocess.Popen[bytes]) -> int:
+    """在 reap leader 前无条件 TERM→grace→KILL 整个独立 process group。
+
+    Args:
+        process: 以 ``start_new_session=True`` 启动且尚未 reap 的 child。
+
+    Returns:
+        direct child 的 POSIX return code。
+
+    Raises:
+        OSError: 进程组无法在 bounded cleanup deadline 内回收。
     """
     process_group = process.pid
+    cleanup_deadline = time.monotonic() + _PROCESS_GROUP_CLEANUP_SECONDS
     try:
         os.killpg(process_group, signal.SIGTERM)
     except OSError:
         pass
-    deadline = time.monotonic() + _PROCESS_GROUP_TERM_SECONDS
-    while _process_group_exists(process_group) and time.monotonic() < deadline:
-        process.poll()
-        time.sleep(0.01)
-    if _process_group_exists(process_group):
-        try:
-            os.killpg(process_group, signal.SIGKILL)
-        except OSError:
-            pass
+    grace_deadline = min(cleanup_deadline, time.monotonic() + _PROCESS_GROUP_TERM_SECONDS)
+    while time.monotonic() < grace_deadline:
+        time.sleep(min(0.01, grace_deadline - time.monotonic()))
     try:
-        process.wait(timeout=_PROCESS_GROUP_TERM_SECONDS)
-    except Exception:
-        try:
-            process.kill()
-            process.wait(timeout=_PROCESS_GROUP_TERM_SECONDS)
-        except Exception:
-            pass
-
-
-def _process_group_exists(process_group: int) -> bool:
-    """判断 probe process group 是否仍包含存活或待 reap 的进程。
-
-    Args:
-        process_group: ``start_new_session`` 创建的 process group ID。
-
-    Returns:
-        group 仍存在时为 ``True``。
-    """
-    try:
-        os.killpg(process_group, 0)
-    except ProcessLookupError:
-        return False
+        os.killpg(process_group, signal.SIGKILL)
     except OSError:
-        return True
-    return True
+        pass
+    while True:
+        try:
+            reaped_pid, status = os.waitpid(process.pid, os.WNOHANG)
+        except ChildProcessError:
+            raise OSError from None
+        if reaped_pid == process.pid:
+            returncode = os.waitstatus_to_exitcode(status)
+            process.returncode = returncode
+            return returncode
+        remaining = cleanup_deadline - time.monotonic()
+        if remaining <= 0:
+            raise OSError
+        time.sleep(min(remaining, 0.01))
 
 
 def _lexical_absolute(path: Path) -> bool:
