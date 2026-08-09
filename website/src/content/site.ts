@@ -152,7 +152,7 @@ export const siteFacts = {
 export const marketingCopy = {
   'zh-CN': {
     meta: {
-      title: 'MiniClaw — 小而完整，真正能行动的个人 Agent',
+      title: 'MiniClaw — 你的本地行动助手',
       description:
         '一个本地优先、边界可检查的开源个人 Agent：同一个 Python Core，通过 TUI、飞书、Telegram 与 Discord 安全行动。',
     },
@@ -305,7 +305,7 @@ export const marketingCopy = {
   },
   en: {
     meta: {
-      title: 'MiniClaw — Small by design. Ready to act.',
+      title: 'MiniClaw — Your local agent, ready to act.',
       description:
         'A local-first open-source personal agent with inspectable boundaries: one Python core across TUI, Feishu, Telegram, and Discord.',
     },

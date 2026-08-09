@@ -39,6 +39,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       },
     },
     description: page.data.description,
+    metadataBase: new URL(siteUrl),
     openGraph: { url: `${siteUrl}${canonicalPath}` },
     title: page.data.title,
   };

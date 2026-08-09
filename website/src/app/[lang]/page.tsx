@@ -26,7 +26,11 @@ export async function generateMetadata({
       },
     },
     description: copy.meta.description,
-    openGraph: { url: `${siteUrl}${canonicalPath}` },
+    metadataBase: new URL(siteUrl),
+    openGraph: {
+      images: [{ alt: copy.meta.title, height: 630, url: `${siteUrl}/opengraph-image`, width: 1200 }],
+      url: `${siteUrl}${canonicalPath}`,
+    },
     title: { absolute: copy.meta.title },
   };
 }

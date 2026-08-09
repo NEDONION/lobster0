@@ -51,7 +51,11 @@ test('marketing page keeps its dense three-screen interaction contract', async (
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
+    const productTitleWidth = await page.locator('#product-title').evaluate(
+      (node) => node.getBoundingClientRect().width,
+    );
     expect(overflow).toBe(0);
+    expect(productTitleWidth).toBeGreaterThan(250);
   } else {
     const viewportHeights = await page.evaluate(
       () => document.documentElement.scrollHeight / window.innerHeight,
