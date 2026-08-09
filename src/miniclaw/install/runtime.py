@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import os
+import posixpath
 import re
 import selectors
 import signal
@@ -43,6 +44,7 @@ _SEMVER = re.compile(
     r"(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$"
 )
 _RECEIPT_KEYS = {
+    "executables_sha256",
     "git_commit",
     "installer_sha256",
     "node_sha256",
@@ -55,6 +57,12 @@ _RECEIPT_KEYS = {
     "version",
     "wheel_sha256",
 }
+_LEGACY_RECEIPT_KEYS = _RECEIPT_KEYS - {"executables_sha256"}
+_EXECUTABLES_FILENAME = ".runtime-executables.json"
+_TRANSIENT_RUNTIME_NAMES = frozenset({".home", ".inputs", ".tmp", ".uv-cache"})
+_RUNTIME_METADATA_PATHS = frozenset(
+    {_EXECUTABLES_FILENAME, "install-receipt.json", "release-manifest.json"}
+)
 _MAX_RECEIPT_BYTES = 64 * 1024
 _MAX_METADATA_BYTES = 1024 * 1024
 _MAX_OUTPUT_BYTES = 64 * 1024
@@ -191,6 +199,7 @@ class RuntimeReceipt:
         node_sha256: verified Node archive hash。
         tui_sha256: verified TUI archive hash。
         installer_sha256: verified installer zipapp hash。
+        executables_sha256: Runtime executable path manifest hash；legacy receipt 为 None。
 
     Raises:
         InstallError: 任一类型、版本、路径或 hash 不闭合。
@@ -207,10 +216,11 @@ class RuntimeReceipt:
     node_sha256: str
     tui_sha256: str
     installer_sha256: str
+    executables_sha256: str | None
 
     def __post_init__(self) -> None:
         """校验 receipt exact schema 与 cross-field bindings。"""
-        hashes = (
+        artifact_hashes = (
             self.wheel_sha256,
             self.requirements_sha256,
             self.node_sha256,
@@ -229,15 +239,28 @@ class RuntimeReceipt:
             or _SEMVER.fullmatch(self.node_version) is None
             or type(self.tui_version) is not str
             or self.tui_version != self.version
-            or any(type(value) is not str or _HASH.fullmatch(value) is None for value in hashes)
+            or any(
+                type(value) is not str or _HASH.fullmatch(value) is None
+                for value in artifact_hashes
+            )
+            or self.executables_sha256 is not None
+            and (
+                type(self.executables_sha256) is not str
+                or _HASH.fullmatch(self.executables_sha256) is None
+            )
         ):
             _runtime_failed()
 
     def to_bytes(self) -> bytes:
         """返回 deterministic exact-key owner-only receipt JSON。"""
+        keys = (
+            _LEGACY_RECEIPT_KEYS
+            if self.executables_sha256 is None
+            else _RECEIPT_KEYS
+        )
         return (
             json.dumps(
-                {name: getattr(self, name) for name in sorted(_RECEIPT_KEYS)},
+                {name: getattr(self, name) for name in sorted(keys)},
                 sort_keys=True,
                 separators=(",", ":"),
                 ensure_ascii=True,
@@ -277,8 +300,13 @@ class RuntimeReceipt:
             document = json.loads(payload.decode("utf-8"), object_pairs_hook=_strict_object)
         except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, RecursionError):
             _runtime_failed()
-        if type(document) is not dict or set(document) != _RECEIPT_KEYS:
+        if type(document) is not dict or frozenset(document) not in {
+            frozenset(_RECEIPT_KEYS),
+            frozenset(_LEGACY_RECEIPT_KEYS),
+        }:
             _runtime_failed()
+        if "executables_sha256" not in document:
+            document["executables_sha256"] = None
         try:
             return cls(**document)
         except (InstallError, TypeError):
@@ -327,6 +355,7 @@ class _SubprocessRunner:
                 shell=False,
                 close_fds=True,
                 start_new_session=True,
+                umask=0o077,
             )
         except OSError:
             _runtime_failed()
@@ -406,14 +435,14 @@ class RuntimeBuilder:
         try:
             if type(inputs) is not RuntimeInputs:
                 _runtime_failed()
-            program_mode, data_mode = _runtime_modes(inputs.layout)
+            program_mode, _data_mode = _runtime_modes(inputs.layout)
             if program_mode == 0o755 and not _is_root_builder():
                 _runtime_failed()
             artifacts, tokens = _preflight(inputs)
             _prepare_runtime_parent(inputs.layout)
             if _lexists(inputs.layout.staging) or _lexists(inputs.layout.runtime):
                 _runtime_failed()
-            os.mkdir(inputs.layout.staging, program_mode)
+            os.mkdir(inputs.layout.staging, 0o700)
             staging_metadata = inputs.layout.staging.lstat()
             staging_identity = (staging_metadata.st_dev, staging_metadata.st_ino)
             env = _runtime_environment(inputs.layout)
@@ -427,24 +456,24 @@ class RuntimeBuilder:
                 {"bin/python3.12"},
                 allow_internal_symlinks=True,
                 allow_public_read=True,
-                program_mode=program_mode,
+                program_mode=0o700,
             )
             _copy_verified_tree(
                 inputs.node,
                 inputs.layout.staging / "node",
                 {"bin/node"},
-                program_mode=program_mode,
+                program_mode=0o700,
             )
             _copy_verified_tree(
                 inputs.tui,
                 inputs.layout.staging / "tui",
                 set(),
-                program_mode=program_mode,
+                program_mode=0o700,
             )
             _copy_verified_file(
                 tokens["installer"],
                 inputs.layout.staging / "miniclaw-installer.pyz",
-                program_mode,
+                0o700,
             )
             private_tokens: dict[str, _FileToken] = {}
             for name, mode in (("uv", 0o700), ("requirements", 0o600), ("wheel", 0o600)):
@@ -474,7 +503,8 @@ class RuntimeBuilder:
                 _COMMAND_TIMEOUT_SECONDS,
                 (private_tokens["uv"],),
             )
-            _harden_and_fsync_tree(inputs.layout.staging / "venv", program_mode)
+            _normalize_staging_venv_link(inputs.layout)
+            _harden_and_fsync_tree(inputs.layout.staging / "venv", 0o700)
             self._checked(
                 (
                     str(private_tokens["uv"].path),
@@ -504,27 +534,54 @@ class RuntimeBuilder:
                 _COMMAND_TIMEOUT_SECONDS,
                 (private_tokens["uv"], private_tokens["wheel"]),
             )
-            _harden_and_fsync_tree(inputs.layout.staging, program_mode)
-            staging_python_version = self.smoke(inputs)
-            receipt = _receipt_for(inputs, artifacts, staging_python_version)
+            _harden_and_fsync_tree(inputs.layout.staging, 0o700)
+            executable_paths = _verify_runtime_tree(
+                inputs.layout.staging,
+                program_mode=0o700,
+                allow_transient=True,
+            )
+            executable_manifest = _executable_manifest_bytes(executable_paths)
+            executables_sha256 = hashlib.sha256(executable_manifest).hexdigest()
+            _write_exclusive(
+                inputs.layout.staging / _EXECUTABLES_FILENAME,
+                executable_manifest,
+                0o600,
+            )
+            staging_python_version = self._smoke(inputs, expected_program_mode=0o700)
+            receipt = _receipt_for(
+                inputs,
+                artifacts,
+                staging_python_version,
+                executables_sha256,
+            )
             _write_exclusive(
                 inputs.layout.staging / "release-manifest.json",
                 _manifest_bytes(inputs.manifest),
-                data_mode,
+                0o600,
             )
             _write_exclusive(
                 inputs.layout.staging / "install-receipt.json",
                 receipt.to_bytes(),
-                data_mode,
+                0o600,
             )
-            _harden_and_fsync_tree(inputs.layout.staging, program_mode)
+            _harden_and_fsync_tree(inputs.layout.staging, 0o700)
+            _verify_runtime_tree(
+                inputs.layout.staging,
+                program_mode=0o700,
+                expected_executables=executable_paths,
+                allow_transient=True,
+            )
             _rename_no_replace(inputs.layout.staging, inputs.layout.runtime)
             published = True
             moved = inputs.layout.runtime.lstat()
             if (moved.st_dev, moved.st_ino) != staging_identity:
                 _runtime_failed()
-            _repair_final_venv(inputs.layout)
-            final_python_version = self.smoke(inputs, runtime=inputs.layout.runtime)
+            _repair_final_venv(inputs.layout, expected_program_mode=0o700)
+            final_python_version = self._smoke(
+                inputs,
+                runtime=inputs.layout.runtime,
+                expected_program_mode=0o700,
+            )
             if final_python_version != staging_python_version:
                 _runtime_failed()
             final_env = _runtime_environment(inputs.layout, runtime=inputs.layout.runtime)
@@ -535,20 +592,31 @@ class RuntimeBuilder:
                 inputs.layout.runtime / ".inputs",
             ):
                 _remove_owned_tree(private)
-            _harden_and_fsync_tree(inputs.layout.runtime, program_mode)
+            _verify_runtime_tree(
+                inputs.layout.runtime,
+                program_mode=0o700,
+                expected_executables=executable_paths,
+            )
+            if program_mode == 0o755:
+                _publish_system_runtime(inputs.layout.runtime, executable_paths)
+            _verify_runtime_directory(
+                inputs.layout.runtime,
+                receipt,
+                program_mode=program_mode,
+            )
             _fsync_directory(inputs.layout.runtimes_dir)
             return receipt
         except InstallError:
             if published and staging_identity is not None:
-                _quarantine_and_remove(inputs.layout.runtime, staging_identity)
+                _secure_failed_tree(inputs.layout.runtime, staging_identity)
             elif staging_identity is not None:
-                _quarantine_and_remove(inputs.layout.staging, staging_identity)
+                _secure_failed_tree(inputs.layout.staging, staging_identity)
             raise
         except BaseException as error:
             if published and staging_identity is not None:
-                _quarantine_and_remove(inputs.layout.runtime, staging_identity)
+                _secure_failed_tree(inputs.layout.runtime, staging_identity)
             elif staging_identity is not None:
-                _quarantine_and_remove(inputs.layout.staging, staging_identity)
+                _secure_failed_tree(inputs.layout.staging, staging_identity)
             raise InstallError("runtime_install_failed", "manifest") from error
 
     def smoke(self, inputs: RuntimeInputs, *, runtime: Path | None = None) -> str:
@@ -562,6 +630,22 @@ class RuntimeBuilder:
         """
         if type(inputs) is not RuntimeInputs:
             _runtime_failed()
+        return self._smoke(
+            inputs,
+            runtime=runtime,
+            expected_program_mode=_program_mode(inputs.layout),
+        )
+
+    def _smoke(
+        self,
+        inputs: RuntimeInputs,
+        *,
+        runtime: Path | None = None,
+        expected_program_mode: int,
+    ) -> str:
+        """按显式 private/published mode 执行同一组 Runtime smoke。"""
+        if type(inputs) is not RuntimeInputs:
+            _runtime_failed()
         root = inputs.layout.staging if runtime is None else runtime
         if root not in {inputs.layout.staging, inputs.layout.runtime}:
             _runtime_failed()
@@ -569,7 +653,10 @@ class RuntimeBuilder:
         node = root / "node" / "bin" / "node"
         tui = root / "tui" / "dist" / "main.js"
         canonical_python = root / "python" / "bin" / "python3.12"
-        program_mode, data_mode = _runtime_modes(inputs.layout)
+        if expected_program_mode not in {0o700, 0o755}:
+            _runtime_failed()
+        program_mode = expected_program_mode
+        data_mode = 0o644 if program_mode == 0o755 else 0o600
         python_token, python_link = _verify_internal_python_link(
             python,
             root,
@@ -806,6 +893,8 @@ def retain_current_and_previous(layout: InstallLayout) -> tuple[Path, ...]:
                 _verify_runtime_directory(path, receipt, program_mode=program_mode)
             except InstallError:
                 continue
+            if receipt.executables_sha256 is None and receipt.runtime_relative not in protected:
+                continue
             managed[receipt.runtime_relative] = (path, receipt)
         if any(value not in managed for value in protected):
             _runtime_failed()
@@ -881,6 +970,7 @@ def _receipt_for(
     inputs: RuntimeInputs,
     artifacts: Mapping[str, Artifact],
     python_version: str,
+    executables_sha256: str,
 ) -> RuntimeReceipt:
     """从 manifest-bound artifacts 生成 runtime receipt。"""
     return RuntimeReceipt(
@@ -895,6 +985,7 @@ def _receipt_for(
         node_sha256=artifacts["node"].sha256,
         tui_sha256=artifacts["tui"].sha256,
         installer_sha256=artifacts["installer"].sha256,
+        executables_sha256=executables_sha256,
     )
 
 
@@ -979,10 +1070,55 @@ def _verify_internal_python_link(
     return executable, _SymlinkToken(path, _metadata_snapshot(metadata), target)
 
 
-def _repair_final_venv(layout: InstallLayout) -> None:
-    """把已发布 venv 的 interpreter link/config 改为 final Runtime 内部路径。"""
+def _normalize_staging_venv_link(layout: InstallLayout) -> None:
+    """把 uv 生成且绑定 staging canonical Python 的 absolute link 改为 relative。"""
+    runtime = layout.staging
+    python = runtime / "venv" / "bin" / "python"
+    canonical = runtime / "python" / "bin" / "python3.12"
+    temporary = python.with_name("python.relative")
+    try:
+        _verify_internal_python_link(
+            python,
+            runtime,
+            canonical,
+            require_relative=False,
+            expected_mode=0o700,
+        )
+        if os.readlink(python) != str(canonical):
+            _runtime_failed()
+        relative = os.path.relpath(canonical, start=python.parent)
+        os.symlink(relative, temporary)
+        os.replace(temporary, python)
+        _fsync_directory(python.parent)
+        _verify_internal_python_link(
+            python,
+            runtime,
+            canonical,
+            require_relative=True,
+            expected_mode=0o700,
+        )
+    except InstallError:
+        raise
+    except OSError:
+        _runtime_failed()
+    finally:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+
+
+def _repair_final_venv(
+    layout: InstallLayout,
+    *,
+    expected_program_mode: int,
+) -> None:
+    """按当前构建 mode 修复 final Runtime 内部 venv link/config。"""
     runtime = layout.runtime
-    program_mode, data_mode = _runtime_modes(layout)
+    if expected_program_mode not in {0o700, 0o755}:
+        _runtime_failed()
+    program_mode = expected_program_mode
+    data_mode = 0o644 if program_mode == 0o755 else 0o600
     python = runtime / "venv" / "bin" / "python"
     canonical = runtime / "python" / "bin" / "python3.12"
     config = runtime / "venv" / "pyvenv.cfg"
@@ -993,7 +1129,7 @@ def _repair_final_venv(layout: InstallLayout) -> None:
         if not stat.S_ISLNK(metadata.st_mode) or metadata.st_uid != os.geteuid():
             _runtime_failed()
         old_target = os.readlink(python)
-        expected_old = str(layout.staging / "python" / "bin" / "python3.12")
+        expected_old = os.path.relpath(canonical, start=python.parent)
         if old_target != expected_old:
             _runtime_failed()
         original = _read_private_regular(
@@ -1658,6 +1794,305 @@ def _harden_and_fsync_tree(root: Path, program_mode: int) -> None:
         _fsync_directory(directory)
 
 
+def _executable_manifest_bytes(paths: tuple[str, ...]) -> bytes:
+    """序列化 canonical Runtime executable path 清单。"""
+    if _validate_executable_paths(list(paths)) != paths:
+        _runtime_failed()
+    return (
+        json.dumps(
+            {"executables": list(paths)},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        )
+        + "\n"
+    ).encode()
+
+
+def _validate_executable_paths(values: object) -> tuple[str, ...]:
+    """校验 executable 清单是排序、唯一、非 transient 的 relative paths。"""
+    if type(values) is not list or len(values) > _MAX_TREE_ENTRIES:
+        _runtime_failed()
+    paths: list[str] = []
+    for value in values:
+        if type(value) is not str:
+            _runtime_failed()
+        pure = PurePosixPath(value)
+        if (
+            pure.is_absolute()
+            or not pure.parts
+            or str(pure) != value
+            or any(not _safe_component(part) for part in pure.parts)
+            or pure.parts[0] in _TRANSIENT_RUNTIME_NAMES
+            or value in _RUNTIME_METADATA_PATHS
+        ):
+            _runtime_failed()
+        paths.append(value)
+    result = tuple(paths)
+    if result != tuple(sorted(set(result))):
+        _runtime_failed()
+    return result
+
+
+def _load_runtime_executables(
+    root: Path,
+    receipt: RuntimeReceipt,
+    *,
+    data_mode: int,
+) -> tuple[str, ...]:
+    """读取 receipt-hash-bound executable path 清单。"""
+    expected_sha256 = receipt.executables_sha256
+    if type(expected_sha256) is not str:
+        _runtime_failed()
+    payload = _read_private_regular(
+        root / _EXECUTABLES_FILENAME,
+        os.geteuid(),
+        _MAX_METADATA_BYTES,
+        expected_mode=data_mode,
+    )
+    if not hmac.compare_digest(hashlib.sha256(payload).hexdigest(), expected_sha256):
+        _runtime_failed()
+    try:
+        document = json.loads(payload.decode("utf-8"), object_pairs_hook=_strict_object)
+    except (UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError, RecursionError):
+        _runtime_failed()
+    if type(document) is not dict or set(document) != {"executables"}:
+        _runtime_failed()
+    return _validate_executable_paths(document["executables"])
+
+
+def _verify_runtime_regular(path: Path, *, expected_mode: int) -> os.stat_result:
+    """descriptor-bound 验证 Runtime regular file owner、mode、nlink 与稳定 metadata。"""
+    descriptor = -1
+    parent = -1
+    try:
+        descriptor, parent, name, before = _open_regular_nofollow(path)
+        opened = os.fstat(descriptor)
+        after = os.stat(name, dir_fd=parent, follow_symlinks=False)
+    except InstallError:
+        raise
+    except OSError:
+        _runtime_failed()
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if parent >= 0:
+            os.close(parent)
+    if (
+        before.st_uid != os.geteuid()
+        or before.st_nlink != 1
+        or stat.S_IMODE(before.st_mode) != expected_mode
+        or _metadata_snapshot(opened) != _metadata_snapshot(before)
+        or _metadata_snapshot(after) != _metadata_snapshot(before)
+    ):
+        _runtime_failed()
+    return before
+
+
+def _verify_runtime_symlink(
+    root: Path,
+    path: Path,
+    *,
+    program_mode: int,
+    data_mode: int,
+    executable_paths: set[str],
+) -> None:
+    """验证 Runtime symlink lexical target、闭包、owner 与最终 target mode。"""
+    symlink_parent = -1
+    target_parent = -1
+    target_descriptor = -1
+    try:
+        symlink_parent, symlink_name = _open_parent_nofollow(path)
+        before = os.stat(symlink_name, dir_fd=symlink_parent, follow_symlinks=False)
+        target = os.readlink(symlink_name, dir_fd=symlink_parent)
+        pure = PurePosixPath(target)
+        resolved_root = root.resolve(strict=True)
+        resolved = path.resolve(strict=True)
+        target_parent, target_name = _open_parent_nofollow(resolved)
+        target_before = os.stat(
+            target_name,
+            dir_fd=target_parent,
+            follow_symlinks=False,
+        )
+        if not (
+            stat.S_ISREG(target_before.st_mode)
+            or stat.S_ISDIR(target_before.st_mode)
+        ):
+            _runtime_failed()
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        if stat.S_ISDIR(target_before.st_mode):
+            flags |= getattr(os, "O_DIRECTORY", 0)
+        target_descriptor = os.open(target_name, flags, dir_fd=target_parent)
+        target_metadata = os.fstat(target_descriptor)
+        target_after = os.stat(
+            target_name,
+            dir_fd=target_parent,
+            follow_symlinks=False,
+        )
+        resolved_after = path.resolve(strict=True)
+        after = os.stat(symlink_name, dir_fd=symlink_parent, follow_symlinks=False)
+    except (OSError, RuntimeError):
+        _runtime_failed()
+    finally:
+        if target_descriptor >= 0:
+            os.close(target_descriptor)
+        if target_parent >= 0:
+            os.close(target_parent)
+        if symlink_parent >= 0:
+            os.close(symlink_parent)
+    if (
+        not stat.S_ISLNK(before.st_mode)
+        or before.st_uid != os.geteuid()
+        or before.st_nlink != 1
+        or _metadata_snapshot(after) != _metadata_snapshot(before)
+        or pure.is_absolute()
+        or not target
+        or posixpath.normpath(target) != target
+        or "\\" in target
+        or unicodedata.normalize("NFC", target) != target
+        or not target.isprintable()
+        or len(target.encode("utf-8")) > 4096
+        or not resolved.is_relative_to(resolved_root)
+        or resolved_after != resolved
+        or _metadata_snapshot(target_metadata) != _metadata_snapshot(target_before)
+        or _metadata_snapshot(target_after) != _metadata_snapshot(target_before)
+        or target_metadata.st_uid != os.geteuid()
+    ):
+        _runtime_failed()
+    relative = resolved.relative_to(resolved_root).as_posix()
+    target_mode = stat.S_IMODE(target_metadata.st_mode)
+    if stat.S_ISDIR(target_metadata.st_mode):
+        parent = path.parent.resolve(strict=True)
+        if parent.is_relative_to(resolved) or target_mode != program_mode:
+            _runtime_failed()
+    elif stat.S_ISREG(target_metadata.st_mode):
+        expected = program_mode if relative in executable_paths else data_mode
+        if target_metadata.st_nlink != 1 or target_mode != expected:
+            _runtime_failed()
+    else:
+        _runtime_failed()
+
+
+def _verify_runtime_tree(
+    root: Path,
+    *,
+    program_mode: int,
+    expected_executables: tuple[str, ...] | None = None,
+    allow_transient: bool = False,
+) -> tuple[str, ...]:
+    """完整验证 Runtime owner/mode/type/symlink，并返回已知 program executables。"""
+    if program_mode not in {0o700, 0o755}:
+        _runtime_failed()
+    data_mode = 0o644 if program_mode == 0o755 else 0o600
+    observed_program: set[str] = set()
+    observed_all: set[str] = set()
+    symlinks: list[Path] = []
+    entries = 0
+    total = 0
+    _verify_directory(root, expected_mode=program_mode)
+    for directory, names, files in os.walk(root, topdown=True, followlinks=False):
+        current = Path(directory)
+        relative_directory = current.relative_to(root)
+        transient = bool(
+            relative_directory.parts
+            and relative_directory.parts[0] in _TRANSIENT_RUNTIME_NAMES
+        )
+        if transient and not allow_transient:
+            _runtime_failed()
+        _verify_directory(current, expected_mode=program_mode)
+        for name in sorted((*names, *files)):
+            entries += 1
+            if entries > _MAX_TREE_ENTRIES or not _safe_component(name):
+                _runtime_failed()
+            path = current / name
+            relative = path.relative_to(root).as_posix()
+            metadata = path.lstat()
+            if metadata.st_uid != os.geteuid():
+                _runtime_failed()
+            child_transient = relative.split("/", 1)[0] in _TRANSIENT_RUNTIME_NAMES
+            if child_transient and not allow_transient:
+                _runtime_failed()
+            if stat.S_ISLNK(metadata.st_mode):
+                symlinks.append(path)
+            elif stat.S_ISDIR(metadata.st_mode):
+                _verify_directory(path, expected_mode=program_mode)
+            elif stat.S_ISREG(metadata.st_mode):
+                mode = stat.S_IMODE(metadata.st_mode)
+                if mode not in {data_mode, program_mode}:
+                    _runtime_failed()
+                if relative in _RUNTIME_METADATA_PATHS and mode != data_mode:
+                    _runtime_failed()
+                stable = _verify_runtime_regular(path, expected_mode=mode)
+                total += stable.st_size
+                if total > _MAX_TREE_BYTES:
+                    _runtime_failed()
+                if mode == program_mode:
+                    observed_all.add(relative)
+                    if not child_transient:
+                        observed_program.add(relative)
+            else:
+                _runtime_failed()
+    expected = tuple(sorted(observed_program))
+    if expected_executables is not None and expected != expected_executables:
+        _runtime_failed()
+    for path in symlinks:
+        _verify_runtime_symlink(
+            root,
+            path,
+            program_mode=program_mode,
+            data_mode=data_mode,
+            executable_paths=observed_all,
+        )
+    return expected
+
+
+def _publish_system_runtime(root: Path, executable_paths: tuple[str, ...]) -> None:
+    """在 private root 后转换 program modes，并最后发布 0755 Runtime root。"""
+    _verify_runtime_tree(
+        root,
+        program_mode=0o700,
+        expected_executables=executable_paths,
+    )
+    executable_set = set(executable_paths)
+    directories: list[Path] = []
+    for directory, _names, files in os.walk(root, topdown=True, followlinks=False):
+        current = Path(directory)
+        directories.append(current)
+        for name in files:
+            path = current / name
+            metadata = path.lstat()
+            if stat.S_ISLNK(metadata.st_mode):
+                continue
+            if not stat.S_ISREG(metadata.st_mode):
+                _runtime_failed()
+            relative = path.relative_to(root).as_posix()
+            mode = 0o755 if relative in executable_set else 0o644
+            descriptor = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                os.fchmod(descriptor, mode)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+    for directory in reversed(directories):
+        descriptor, metadata = _open_directory_nofollow(directory)
+        try:
+            if metadata.st_uid != os.geteuid():
+                _runtime_failed()
+            os.fchmod(descriptor, 0o755)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    _verify_runtime_tree(
+        root,
+        program_mode=0o755,
+        expected_executables=executable_paths,
+    )
+
+
 def _manifest_bytes(manifest: ReleaseManifest) -> bytes:
     """将 strict ReleaseManifest 序列化为 deterministic exact JSON。"""
     document = {
@@ -1729,12 +2164,31 @@ def _verify_runtime_directory(
     *,
     program_mode: int = 0o700,
 ) -> None:
-    """校验 immutable Runtime root 和内部 receipt 完全绑定。"""
+    """重验完整 immutable Runtime tree 与 receipt/executable bindings。"""
     data_mode = 0o644 if program_mode == 0o755 else 0o600
-    _verify_directory(path, expected_mode=program_mode)
-    stored = RuntimeReceipt.load(
-        path / "install-receipt.json", expected_mode=data_mode
-    )
+    try:
+        stored = RuntimeReceipt.load(
+            path / "install-receipt.json", expected_mode=data_mode
+        )
+        if receipt.executables_sha256 is None:
+            if _lexists(path / _EXECUTABLES_FILENAME):
+                _runtime_failed()
+            executable_paths = None
+        else:
+            executable_paths = _load_runtime_executables(
+                path,
+                receipt,
+                data_mode=data_mode,
+            )
+        _verify_runtime_tree(
+            path,
+            program_mode=program_mode,
+            expected_executables=executable_paths,
+        )
+    except InstallError:
+        raise
+    except OSError:
+        _runtime_failed()
     if path.name != receipt.version or stored != receipt:
         _runtime_failed()
 
@@ -2005,26 +2459,62 @@ def _owned_symlink_state(path: Path) -> tuple[tuple[int, int], str] | None:
         return None
 
 
-def _quarantine_and_remove(path: Path, identity: tuple[int, int]) -> None:
+def _revoke_tree_root_private(path: Path, identity: tuple[int, int]) -> bool:
+    """将仍由本轮持有 inode 的失败树根目录 descriptor-bound 降权为 0700。"""
+    descriptor = -1
+    try:
+        descriptor, metadata = _open_directory_nofollow(path)
+        if (
+            (metadata.st_dev, metadata.st_ino) != identity
+            or metadata.st_uid != os.geteuid()
+        ):
+            return False
+        os.fchmod(descriptor, 0o700)
+        os.fsync(descriptor)
+        after = os.fstat(descriptor)
+        pathname = path.lstat()
+        return (
+            (after.st_dev, after.st_ino) == identity
+            and (pathname.st_dev, pathname.st_ino) == identity
+            and after.st_uid == os.geteuid()
+            and pathname.st_uid == os.geteuid()
+            and stat.S_IMODE(after.st_mode) == 0o700
+            and stat.S_IMODE(pathname.st_mode) == 0o700
+        )
+    except (InstallError, OSError):
+        return False
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _secure_failed_tree(path: Path, identity: tuple[int, int]) -> None:
+    """先撤回失败树公开可遍历权限，再 best-effort 原子隔离并清理。"""
+    _revoke_tree_root_private(path, identity)
+    _quarantine_and_remove(path, identity)
+
+
+def _quarantine_and_remove(path: Path, identity: tuple[int, int]) -> bool:
     """只清理由本轮持有 inode 的目录，并先从公开 namespace 隔离。"""
     if not _lexists(path):
-        return
+        return True
     quarantine = path.with_name(f".{path.name}.cleanup-{os.getpid()}")
     try:
         if _lexists(quarantine):
-            return
+            return False
         metadata = path.lstat()
         if (metadata.st_dev, metadata.st_ino) != identity or not stat.S_ISDIR(metadata.st_mode):
-            return
+            return False
         _rename_no_replace(path, quarantine)
         moved = quarantine.lstat()
         if (moved.st_dev, moved.st_ino) != identity:
-            return
+            return False
         _fsync_directory(path.parent)
         _remove_owned_tree(quarantine)
         _fsync_directory(path.parent)
-    except OSError:
-        return
+        return True
+    except (InstallError, OSError):
+        return False
 
 
 def _remove_owned_tree(root: Path) -> None:
