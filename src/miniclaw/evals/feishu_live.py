@@ -6,12 +6,10 @@ import json
 import os
 import re
 import sqlite3
-import stat
 import subprocess
 import sys
-from collections.abc import Callable, Container, Iterator, Mapping, Sequence
+from collections.abc import Callable, Container, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +19,15 @@ from miniclaw.doctor import CheckResult, CheckStatus, run_local_checks
 from miniclaw.env import DotEnvError, load_dotenv
 from miniclaw.evals.cases import EvalCase, EvalCaseError, load_feishu_live_cases
 from miniclaw.evals.gateway_process import ManagedGateway, ManagedGatewayError
+from miniclaw.evals.production_evidence import (
+    ProductionEvidenceError,
+    utc_timestamp,
+    validate_commit,
+    write_private_json,
+)
+from miniclaw.evals.production_evidence import (
+    scan_secret_matches as _scan_secret_matches,
+)
 from miniclaw.gateway import GatewayConfigError, validate_gateway_environment
 from miniclaw.gateway_lease import GatewayProvenance
 from miniclaw.paths import (
@@ -144,10 +151,6 @@ _REPORT_KEYS = frozenset(
         "release_status",
     }
 )
-_MAX_SCAN_FILES = 1000
-_MAX_SCAN_FILE_BYTES = 1024 * 1024
-
-
 def run_feishu_live_harness(argv: Sequence[str] | None = None) -> int:
     """运行显式确认、真实 Gateway、人工动作和自动 SQLite 取证闭环。"""
     arguments = _build_live_parser().parse_args(argv)
@@ -764,7 +767,7 @@ def _prepare_output_directory(path: Path) -> None:
 
 def _utc_timestamp() -> str:
     """返回 Evidence 契约接受的微秒 UTC 时间。"""
-    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return utc_timestamp()
 
 
 def _filename_timestamp(value: str) -> str:
@@ -888,57 +891,20 @@ def write_evidence(path: Path, report: Mapping[str, object]) -> None:
     if not _is_valid_report(report):
         raise FeishuLiveError("invalid_evidence_report")
     try:
-        rendered = json.dumps(
-            report,
-            ensure_ascii=False,
-            sort_keys=True,
-            indent=2,
-            allow_nan=False,
-        ) + "\n"
-    except (TypeError, ValueError):
-        raise FeishuLiveError("invalid_evidence_report") from None
-
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    try:
-        descriptor = os.open(path, flags, 0o600)
-    except FileExistsError:
-        raise FeishuLiveError("evidence_already_exists") from None
-    except OSError:
-        raise FeishuLiveError("evidence_write_failed") from None
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            handle.write(rendered)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except OSError:
-        try:
-            path.unlink(missing_ok=True)
-        except OSError:
-            pass
-        raise FeishuLiveError("evidence_write_failed") from None
+        write_private_json(path, report)
+    except ProductionEvidenceError as error:
+        code = error.code
+        if code == "invalid_evidence_payload":
+            code = "invalid_evidence_report"
+        raise FeishuLiveError(code) from None
 
 
 def scan_secret_matches(paths: Sequence[Path], secrets: Sequence[str]) -> int:
     """有界扫描普通小文件并只返回 exact secret 的匿名命中次数。"""
-    if any(not isinstance(secret, str) or not 1 <= len(secret) <= 4096 for secret in secrets):
-        raise FeishuLiveError("invalid_secret_scan")
-    needles = tuple(dict.fromkeys(secret.encode("utf-8") for secret in secrets))
-    if not needles:
-        return 0
-
-    matches = 0
-    visited = 0
-    for candidate in _iter_scan_candidates(paths):
-        if visited >= _MAX_SCAN_FILES:
-            break
-        visited += 1
-        content = _read_bounded_regular_file(candidate)
-        if content is None:
-            continue
-        matches += sum(content.count(needle) for needle in needles)
-    return matches
+    try:
+        return _scan_secret_matches(paths, secrets)
+    except ProductionEvidenceError as error:
+        raise FeishuLiveError(error.code) from None
 
 
 def _validate_case_result(result: FeishuCaseResult) -> FeishuCaseResult:
@@ -1192,7 +1158,10 @@ def _is_safe_error_code(value: object) -> bool:
 
 def _is_commit(value: object) -> bool:
     """判断是否是完整小写 Git SHA-1。"""
-    return isinstance(value, str) and re.fullmatch(r"[0-9a-f]{40}", value) is not None
+    try:
+        return validate_commit(value) == value
+    except ProductionEvidenceError:
+        return False
 
 
 def _is_timestamp(value: object) -> bool:
@@ -1200,52 +1169,6 @@ def _is_timestamp(value: object) -> bool:
     return isinstance(value, str) and re.fullmatch(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", value
     ) is not None
-
-
-def _iter_scan_candidates(paths: Sequence[Path]) -> Iterator[Path]:
-    """按稳定顺序枚举普通文件候选，从不跟随目录或文件 symlink。"""
-    for root in sorted(paths, key=lambda item: str(item)):
-        try:
-            if root.is_symlink():
-                continue
-            if root.is_file():
-                yield root
-                continue
-            if not root.is_dir():
-                continue
-        except OSError:
-            continue
-        for directory, directory_names, file_names in os.walk(root, followlinks=False):
-            base = Path(directory)
-            directory_names[:] = sorted(
-                name for name in directory_names if not (base / name).is_symlink()
-            )
-            for name in sorted(file_names):
-                yield base / name
-
-
-def _read_bounded_regular_file(path: Path) -> bytes | None:
-    """使用 no-follow fd 读取至多 1 MiB，竞态变大时安全跳过。"""
-    flags = os.O_RDONLY
-    if hasattr(os, "O_NOFOLLOW"):
-        flags |= os.O_NOFOLLOW
-    try:
-        descriptor = os.open(path, flags)
-    except OSError:
-        return None
-    try:
-        metadata = os.fstat(descriptor)
-        if not stat.S_ISREG(metadata.st_mode) or metadata.st_size > _MAX_SCAN_FILE_BYTES:
-            return None
-        with os.fdopen(descriptor, "rb", closefd=False) as handle:
-            content = handle.read(_MAX_SCAN_FILE_BYTES + 1)
-        if len(content) > _MAX_SCAN_FILE_BYTES:
-            return None
-        return content
-    except OSError:
-        return None
-    finally:
-        os.close(descriptor)
 
 
 type _EvidenceCheck = Callable[[sqlite3.Connection, DatabaseCheckpoint], bool]
