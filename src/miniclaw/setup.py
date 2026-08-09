@@ -55,14 +55,15 @@ def validate_secret_value(value: str) -> str:
         通过校验的原始值，不做规范化或引号变换。
 
     Raises:
-        SetupError: 值为空、带边缘空白、引号前缀或控制换行/NUL。
+        SetupError: 值为空、带边缘空白、引号前缀、NUL 或任一 splitlines 分隔符。
     """
     if (
         not isinstance(value, str)
         or not value
         or value != value.strip()
         or value[0] in "'\""
-        or any(character in value for character in "\r\n\0")
+        or "\0" in value
+        or value.splitlines() != [value]
     ):
         raise SetupError("unsafe secret value")
     return value

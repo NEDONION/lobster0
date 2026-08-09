@@ -11,6 +11,7 @@ from types import TracebackType
 from unittest import mock
 
 from miniclaw.config import load_config
+from miniclaw.env import load_dotenv
 from miniclaw.paths import build_state_paths
 from miniclaw.setup import (
     SetupAnswers,
@@ -140,6 +141,37 @@ class SetupTest(unittest.TestCase):
             ):
                 validate_secret_value(value)
         self.assertEqual(validate_secret_value("safe=#value"), "safe=#value")
+
+    def test_setup_secrets_cannot_add_a_second_dotenv_entry(self) -> None:
+        """所有 splitlines 分隔符都应在写入前拒绝，安全值只 round-trip 一个 key。"""
+        separators = ("\v", "\f", "\x1c", "\x1d", "\x1e", "\x85", "\u2028", "\u2029")
+        for separator in separators:
+            with self.subTest(separator=ascii(separator)):
+                paths = build_state_paths(self.root / f"state-{ord(separator)}")
+                with self.assertRaisesRegex(SetupError, "unsafe secret"):
+                    write_fresh_setup(
+                        paths,
+                        SetupAnswers.defaults(),
+                        {
+                            "MINICLAW_MODEL_API_KEY": (
+                                f"safe{separator}INJECTED_ENV=owned"
+                            )
+                        },
+                        PINNED_IMAGE,
+                    )
+                self.assertFalse(paths.secrets_file.exists())
+
+        safe_paths = build_state_paths(self.root / "safe-state")
+        write_fresh_setup(
+            safe_paths,
+            SetupAnswers.defaults(),
+            {"MINICLAW_MODEL_API_KEY": "safe=value"},
+            PINNED_IMAGE,
+        )
+        environment: dict[str, str] = {}
+        loaded = load_dotenv(safe_paths.secrets_file, environment)
+        self.assertEqual(loaded, ("MINICLAW_MODEL_API_KEY",))
+        self.assertEqual(environment, {"MINICLAW_MODEL_API_KEY": "safe=value"})
 
     def test_setup_rejects_unsafe_home_and_invalid_answers_before_writing(self) -> None:
         """state home 的 symlink/宽权限与无效 Owner ID 都应 fail closed。"""

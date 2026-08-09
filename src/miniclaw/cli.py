@@ -170,6 +170,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     home = getattr(arguments, "command_home", None) or arguments.home
     try:
+        if arguments.command == "setup":
+            selected_home = (
+                home or os.environ.get("MINICLAW_HOME") or Path.home() / ".miniclaw"
+            )
+            if Path(selected_home).expanduser().is_symlink():
+                raise PathConfigurationError(
+                    "MiniClaw setup home must not be a symbolic link"
+                )
         paths = build_state_paths(resolve_home(home))
     except (PathConfigurationError, ConfigError) as error:
         print(f"error: {error}", file=sys.stderr)

@@ -23,6 +23,7 @@ from miniclaw.automation.repository import ScheduledTaskRepository  # noqa: E402
 from miniclaw.cli import build_parser, main  # noqa: E402
 from miniclaw.config import load_config  # noqa: E402
 from miniclaw.paths import build_state_paths  # noqa: E402
+from miniclaw.setup import SetupAnswers, write_fresh_setup  # noqa: E402
 from miniclaw.storage.database import Database  # noqa: E402
 from miniclaw.storage.repositories import OwnerRepository  # noqa: E402
 
@@ -246,6 +247,34 @@ class CliTest(unittest.TestCase):
         call = interactive.call_args
         self.assertEqual(call.args[0].home, Path(directory).resolve())
         self.assertEqual(call.kwargs, {"sandbox_image": pinned})
+
+    def test_setup_rejects_lexical_symlink_home_before_resolution(self) -> None:
+        """CLI setup 不得先把 existing symlink home 解引用成可写 target。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "target"
+            target.mkdir(mode=0o700)
+            link = root / "state"
+            link.symlink_to(target, target_is_directory=True)
+
+            def setup_without_tty(paths, *, sandbox_image):
+                return write_fresh_setup(
+                    paths,
+                    SetupAnswers.defaults(),
+                    {"MINICLAW_MODEL_API_KEY": "test-only-key"},
+                    sandbox_image,
+                )
+
+            with mock.patch(
+                "miniclaw.cli.run_interactive_setup",
+                side_effect=setup_without_tty,
+            ):
+                exit_code, output, error = run_cli(["setup", "--home", str(link)])
+
+            self.assertEqual(exit_code, 2)
+            self.assertEqual(output, "")
+            self.assertIn("symbolic link", error)
+            self.assertEqual(tuple(target.iterdir()), ())
 
     def test_init_accepts_digest_pinned_sandbox_image_and_stays_idempotent(self) -> None:
         """init 的唯一新增值参数应写入 pin，重复执行仍不覆盖配置。"""
