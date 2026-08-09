@@ -281,7 +281,7 @@ class CliTest(unittest.TestCase):
             entry.write_text("// test entry\n", encoding="utf-8")
 
             with (
-                mock.patch("miniclaw.cli.Path.cwd", return_value=root),
+                mock.patch("miniclaw.env.Path.cwd", return_value=root),
                 mock.patch.dict(
                     "miniclaw.cli.os.environ",
                     {
@@ -295,6 +295,51 @@ class CliTest(unittest.TestCase):
                 exit_code, output, error = run_cli(
                     ["doctor", "--home", str(state)]
                 )
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("missing environment", output)
+        self.assertNotIn(secret, output + error)
+
+    def test_doctor_loads_installed_secret_file_without_echoing_it(self) -> None:
+        """doctor 应只加载显式安装态 Secret 文件，且不向诊断输出泄露凭据。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            state = root / "state"
+            run_cli(["init", "--home", str(state)])
+            with (state / "config.toml").open("a", encoding="utf-8") as config_file:
+                config_file.write(
+                    "\n[channels.feishu]\n"
+                    "enabled = true\n"
+                    'owner_open_id = "ou_owner"\n'
+                    'allowed_open_ids = ["ou_owner"]\n'
+                )
+            secret = "doctor-installed-secret"
+            dotenv = state / "secrets.env"
+            dotenv.write_text(
+                "MINICLAW_FEISHU_APP_ID=cli_test\n"
+                f"MINICLAW_FEISHU_APP_SECRET={secret}\n",
+                encoding="utf-8",
+            )
+            dotenv.chmod(0o600)
+            node = root / "test-node"
+            node.write_text("#!/bin/sh\nprintf 'v22.19.0\\n'\n", encoding="utf-8")
+            node.chmod(0o700)
+            entry = root / "main.js"
+            entry.write_text("// test entry\n", encoding="utf-8")
+
+            with (
+                mock.patch.dict(
+                    "miniclaw.cli.os.environ",
+                    {
+                        "MINICLAW_ENV_FILE": str(dotenv),
+                        "MINICLAW_NODE": str(node),
+                        "MINICLAW_TUI_ENTRY": str(entry),
+                    },
+                    clear=True,
+                ),
+                mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()),
+            ):
+                exit_code, output, error = run_cli(["doctor", "--home", str(state)])
 
         self.assertEqual(exit_code, 0)
         self.assertNotIn("missing environment", output)

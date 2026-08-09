@@ -16,6 +16,7 @@ class StatePaths:
 
     home: Path
     config: Path
+    secrets_file: Path
     database: Path
     soul: Path
     user: Path
@@ -99,6 +100,7 @@ def build_state_paths(home: Path) -> StatePaths:
     return StatePaths(
         home=resolved_home,
         config=resolved_home / "config.toml",
+        secrets_file=resolved_home / "secrets.env",
         database=resolved_home / "miniclaw.db",
         soul=resolved_home / "SOUL.md",
         user=resolved_home / "USER.md",

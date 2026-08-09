@@ -25,7 +25,7 @@ from miniclaw.automation.repository import (
 from miniclaw.bootstrap import BootstrapError, initialize_state
 from miniclaw.config import ConfigError
 from miniclaw.doctor import CheckStatus, run_local_checks
-from miniclaw.env import DotEnvError, load_dotenv
+from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from miniclaw.evals.automation import run_automation_suite
 from miniclaw.evals.cases import EvalCaseError, load_automation_cases, load_cases
 from miniclaw.evals.channel import run_channel_suite
@@ -163,7 +163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.command == "doctor":
         environment = dict(os.environ)
         try:
-            load_dotenv(Path.cwd() / ".env", environment)
+            load_dotenv(resolve_dotenv_path(paths, environment), environment)
         except DotEnvError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2

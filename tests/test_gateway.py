@@ -146,6 +146,40 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
             validate_gateway_environment(disabled, {}, sdk_available=True)
         self.assertIn("disabled", str(raised.exception))
 
+    async def test_gateway_loads_installed_secret_file_without_echoing_it(self) -> None:
+        """Gateway 只从显式安装态 Secret 文件加载凭据，且不输出其内容。"""
+        sentinel = "gateway-installed-secret"
+        self.paths.secrets_file.write_text(
+            f"MINICLAW_MODEL_API_KEY={sentinel}\n",
+            encoding="utf-8",
+        )
+        self.paths.secrets_file.chmod(0o600)
+        ready: list[str] = []
+
+        async def create_supervisor(*_args: object, **_kwargs: object) -> object:
+            """返回无需网络且立即结束的 Supervisor。"""
+            return SimpleNamespace(run=lambda **_values: asyncio.sleep(0))
+
+        def validate(_config: object, environment: dict[str, str]) -> object:
+            """确认真实 dotenv loader 已向当前环境写入安装态凭据。"""
+            self.assertEqual(environment["MINICLAW_MODEL_API_KEY"], sentinel)
+            return SimpleNamespace()
+
+        with (
+            patch("miniclaw.gateway.load_config", return_value=self.config),
+            patch("miniclaw.gateway.validate_gateway_environment", side_effect=validate),
+            patch("miniclaw.gateway._configure_channel_logging"),
+            patch("miniclaw.channels.sdk_logging.install_feishu_sdk_log_filter"),
+            patch("miniclaw.gateway.create_gateway_supervisor", side_effect=create_supervisor),
+        ):
+            await run_gateway(
+                self.paths,
+                environ={"MINICLAW_ENV_FILE": str(self.paths.secrets_file)},
+                ready=ready.append,
+            )
+
+        self.assertNotIn(sentinel, "\n".join(ready))
+
     def test_discord_experience_uses_progress_as_final_reply(self) -> None:
         """Discord 短回答必须由同一 progress 消息承载。"""
         selected = replace(
