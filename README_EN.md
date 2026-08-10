@@ -1,6 +1,6 @@
 <div align="center">
 
-# Lobster0
+# 🦞 Lobster0
 
 **A small, complete, private-by-default personal agent you can self-host.**
 

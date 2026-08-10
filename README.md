@@ -1,6 +1,6 @@
 <div align="center">
 
-# Lobster0
+# 🦞 Lobster0
 
 **一个小而完整、私有自托管、默认受控的个人 Agent。**
 
