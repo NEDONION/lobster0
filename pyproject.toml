@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+  "PyYAML>=6.0.2,<7",
   "ruff>=0.9",
 ]
 feishu = [

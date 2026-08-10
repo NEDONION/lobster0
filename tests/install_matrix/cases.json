@@ -1,0 +1,493 @@
+{
+  "cases": [
+    {
+      "design_case": 1,
+      "id": "blank-user-fresh-install",
+      "live_command": [
+        "install-smoke",
+        "--json"
+      ],
+      "local_offline": true,
+      "probe": "tier1_platform_matrix",
+      "title": "blank user directory fresh install"
+    },
+    {
+      "design_case": 2,
+      "id": "no-system-interpreters",
+      "live_pending_reason": "absence of a system Python/Node/pnpm is a host property; it must be provisioned on the runner image and cannot be asserted by one CLI command",
+      "local_offline": true,
+      "probe": "managed_runtime_closure",
+      "title": "install with no system Python/Node/pnpm"
+    },
+    {
+      "design_case": 3,
+      "id": "privilege-refused",
+      "live_pending_reason": "refusing elevation must be exercised by the bootstrap under a host without an escalation path, not by the installed CLI",
+      "local_offline": true,
+      "probe": "privilege_fail_closed",
+      "title": "unprivileged and refused elevation"
+    },
+    {
+      "design_case": 4,
+      "id": "dry-run-zero-writes",
+      "live_pending_reason": "the live form needs the release installer zipapp plus a filesystem snapshot diff, which this harness does not orchestrate yet",
+      "local_offline": true,
+      "probe": "dry_run_zero_writes",
+      "title": "--dry-run performs zero persistent writes"
+    },
+    {
+      "design_case": 5,
+      "id": "json-no-onboard",
+      "live_pending_reason": "the live form needs a second unattended bootstrap run on a clean account, which this harness does not orchestrate yet",
+      "local_offline": true,
+      "probe": "json_boundary_fail_closed",
+      "title": "--json --no-onboard automated install"
+    },
+    {
+      "design_case": 6,
+      "id": "tui-entry-smoke",
+      "live_command": [
+        "install-smoke",
+        "--json"
+      ],
+      "local_offline": false,
+      "pending_reason": "local Node/pnpm are below the project floor; the pi-tui bundle can only be built and smoked on CI or a Tier 1 host",
+      "title": "pi-tui entry and import smoke"
+    },
+    {
+      "design_case": 7,
+      "id": "channel-sdk-smoke",
+      "live_command": [
+        "install-smoke",
+        "--json"
+      ],
+      "local_offline": true,
+      "probe": "feature_registry_closure",
+      "title": "three Channel SDK import and contract smoke"
+    },
+    {
+      "design_case": 8,
+      "id": "version-and-doctor",
+      "live_command": [
+        "doctor"
+      ],
+      "local_offline": true,
+      "probe": "version_identity",
+      "title": "lobster0 --version and Doctor"
+    },
+    {
+      "design_case": 9,
+      "id": "service-lifecycle",
+      "live_pending_reason": "install/start/status/restart/logs/uninstall plus a real reboot need host orchestration outside this harness",
+      "local_offline": false,
+      "pending_reason": "systemd user units, launchd LaunchAgents and real reboots require a Tier 1 VM or physical host",
+      "title": "service install/start/status/restart/logs/uninstall and reboot"
+    },
+    {
+      "design_case": 10,
+      "id": "idempotent-reinstall",
+      "live_pending_reason": "a second full bootstrap run and a receipt diff are required; this harness does not orchestrate the rerun",
+      "local_offline": false,
+      "pending_reason": "idempotence is only meaningful against a real installed prefix and receipt on a Tier 1 host",
+      "title": "repeated install is idempotent"
+    },
+    {
+      "design_case": 11,
+      "id": "upgrade-n-minus-one",
+      "live_pending_reason": "an N-1 install, a live database and a second Release are required; this harness does not stage them",
+      "local_offline": false,
+      "pending_reason": "two real managed Runtimes and a live database are required for an upgrade run",
+      "title": "N-1 to N upgrade"
+    },
+    {
+      "design_case": 12,
+      "id": "failure-injection",
+      "live_pending_reason": "injecting a bad hash, a network cut, a full disk and a failing health check requires host-level fault injection",
+      "local_offline": true,
+      "probe": "artifact_integrity_rejection",
+      "title": "injected bad hash, network loss, low disk and failed health"
+    },
+    {
+      "design_case": 13,
+      "id": "rollback-keeps-previous",
+      "live_pending_reason": "rollback needs a staged N-1 Runtime and a database backup that this harness does not stage",
+      "local_offline": false,
+      "pending_reason": "rollback needs a real N-1 Runtime, database backup and service health check",
+      "title": "rollback keeps the previous Runtime usable"
+    },
+    {
+      "design_case": 14,
+      "id": "uninstall-preserves-data",
+      "live_pending_reason": "a destructive uninstall must run last against a real receipt and state root; this harness does not sequence it",
+      "local_offline": false,
+      "pending_reason": "data-preserving uninstall must be proven against a real receipt, service and state root",
+      "title": "default uninstall preserves user data"
+    },
+    {
+      "design_case": 15,
+      "id": "secret-scan",
+      "live_pending_reason": "scanning the installed Runtime, logs and service files needs the real install layout, not the repository tree",
+      "local_offline": true,
+      "probe": "secret_scan",
+      "title": "tracked, runtime, log and service Secret scan"
+    }
+  ],
+  "platforms": [
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "ubuntu",
+      "distro_version": "22.04",
+      "id": "ubuntu-22.04-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "ubuntu-22.04"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "ubuntu",
+      "distro_version": "22.04",
+      "id": "ubuntu-22.04-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "ubuntu-22.04"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "ubuntu",
+      "distro_version": "24.04",
+      "id": "ubuntu-24.04-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "ubuntu-24.04"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "ubuntu",
+      "distro_version": "24.04",
+      "id": "ubuntu-24.04-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "ubuntu-24.04"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "debian",
+      "distro_version": "12",
+      "id": "debian-12-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "debian-12"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "debian",
+      "distro_version": "12",
+      "id": "debian-12-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "debian-12"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "debian",
+      "distro_version": "13",
+      "id": "debian-13-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "debian-13"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "debian",
+      "distro_version": "13",
+      "id": "debian-13-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "debian-13"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "rhel",
+      "distro_version": "9",
+      "id": "rhel-9-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "rhel-9"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "rhel",
+      "distro_version": "9",
+      "id": "rhel-9-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "rhel-9"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "rhel",
+      "distro_version": "10",
+      "id": "rhel-10-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "rhel-10"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "rhel",
+      "distro_version": "10",
+      "id": "rhel-10-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "rhel-10"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "rocky",
+      "distro_version": "9",
+      "id": "rocky-9-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "rocky-9"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "rocky",
+      "distro_version": "9",
+      "id": "rocky-9-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "rocky-9"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "rocky",
+      "distro_version": "10",
+      "id": "rocky-10-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "rocky-10"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "rocky",
+      "distro_version": "10",
+      "id": "rocky-10-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "rocky-10"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "almalinux",
+      "distro_version": "9",
+      "id": "almalinux-9-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "almalinux-9"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "almalinux",
+      "distro_version": "9",
+      "id": "almalinux-9-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "almalinux-9"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "linux-x86_64",
+      "distro": "almalinux",
+      "distro_version": "10",
+      "id": "almalinux-10-x86_64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "x64",
+        "almalinux-10"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "linux-arm64",
+      "distro": "almalinux",
+      "distro_version": "10",
+      "id": "almalinux-10-arm64",
+      "os": "linux",
+      "runner_labels": [
+        "self-hosted",
+        "linux",
+        "arm64",
+        "almalinux-10"
+      ],
+      "service_manager": "systemd-user",
+      "uname_machine": "aarch64"
+    },
+    {
+      "arch": "x86_64",
+      "artifact_platform": "macos-x86_64",
+      "distro": "macos",
+      "distro_version": "13",
+      "id": "macos-13-x86_64",
+      "macos_version": "13.7",
+      "os": "macos",
+      "runner_labels": [
+        "self-hosted",
+        "macos",
+        "x64",
+        "macos-13"
+      ],
+      "service_manager": "launchd",
+      "uname_machine": "x86_64"
+    },
+    {
+      "arch": "arm64",
+      "artifact_platform": "macos-arm64",
+      "distro": "macos",
+      "distro_version": "13",
+      "id": "macos-13-arm64",
+      "macos_version": "13.7",
+      "os": "macos",
+      "runner_labels": [
+        "self-hosted",
+        "macos",
+        "arm64",
+        "macos-13"
+      ],
+      "service_manager": "launchd",
+      "uname_machine": "arm64"
+    }
+  ],
+  "release_matrix": "docs/superpowers/specs/2026-08-09-one-line-install-and-release-design.md#222-release-install-matrix",
+  "schema_version": 1
+}
