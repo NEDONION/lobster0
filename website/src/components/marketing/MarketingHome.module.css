@@ -620,13 +620,9 @@
   padding-block: 8px;
 }
 
-.root :global(.runtime-map) {
+.root :global(.runtime-scene) {
   margin: 20px;
-  border-color: rgb(18 23 34 / 8%);
   border-radius: 12px;
-  background-color: #f7f9fc;
-  background-size: 32px 32px;
-  box-shadow: inset 0 1px white;
 }
 
 .root :global(.channels-map) {
@@ -942,7 +938,7 @@
     font-size: 1.75rem;
   }
 
-  .root :global(.runtime-map),
+  .root :global(.runtime-scene),
   .root :global(.channels-map),
   .root :global(.flow-diagram),
   .root :global(.multi-channel-map) {

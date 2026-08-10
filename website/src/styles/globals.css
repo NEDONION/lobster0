@@ -754,16 +754,44 @@ pre {
   transform: translateY(-50%);
 }
 
-.runtime-map {
+.runtime-scene {
   align-self: stretch;
   margin: 24px;
-  border: 1px solid var(--line);
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 12px;
-  background:
-    linear-gradient(color-mix(in srgb, var(--line) 33%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 33%, transparent) 1px, transparent 1px),
-    #f8f9fc;
-  background-size: 28px 28px;
+  background: var(--terminal);
+  overflow: hidden;
+}
+
+.runtime-scene__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  color: #a6aec0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.runtime-scene__dots {
+  display: flex;
+  gap: 6px;
+}
+
+.runtime-scene__dots i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #6a7180;
+}
+
+.runtime-scene__dots i:nth-child(2) {
+  background: var(--warn);
+}
+
+.runtime-scene__dots i:nth-child(3) {
+  background: var(--safe);
 }
 
 .runtime-map {
@@ -771,7 +799,7 @@ pre {
   flex-direction: column;
   align-content: center;
   justify-content: center;
-  padding: 22px 24px;
+  padding: 20px 24px 22px;
   gap: 0;
   list-style: none;
   counter-reset: none;
@@ -794,7 +822,7 @@ pre {
   bottom: 0;
   left: 3px;
   width: 1px;
-  background: color-mix(in srgb, var(--line) 90%, transparent);
+  background: rgb(255 255 255 / 12%);
 }
 
 .runtime-map > li:first-child::before {
@@ -814,18 +842,18 @@ pre {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: var(--muted);
+  background: #6f7789;
   transform: translateY(-50%);
-  box-shadow: 0 0 0 3px var(--surface);
+  box-shadow: 0 0 0 3px var(--terminal);
 }
 
 .runtime-map > li[data-state='allowed']::after,
 .runtime-map > li[data-state='succeeded']::after {
-  background: #2caf88;
+  background: var(--safe);
 }
 
 .runtime-map > li[data-state='waiting']::after {
-  background: #e4a93d;
+  background: var(--warn);
 }
 
 .runtime-map > li[data-state='running']::after {
@@ -833,14 +861,14 @@ pre {
 }
 
 .runtime-map__index {
-  color: color-mix(in srgb, var(--muted) 72%, transparent);
+  color: #5b6272;
   font-family: var(--font-mono);
   font-size: 0.64rem;
 }
 
 .runtime-map__detail {
   grid-column: 2;
-  color: var(--muted);
+  color: #8792a6;
   font-family: var(--font-mono);
   font-size: 0.63rem;
   line-height: 1.5;
@@ -851,8 +879,8 @@ pre {
   grid-column: 3;
   border-radius: 999px;
   padding: 2px 9px;
-  background: color-mix(in srgb, var(--muted) 12%, transparent);
-  color: var(--muted);
+  background: rgb(255 255 255 / 8%);
+  color: #8792a6;
   font-family: var(--font-mono);
   font-size: 0.6rem;
   font-style: normal;
@@ -861,18 +889,18 @@ pre {
 
 .runtime-map > li[data-state='allowed'] .runtime-map__state,
 .runtime-map > li[data-state='succeeded'] .runtime-map__state {
-  background: rgb(44 175 136 / 13%);
-  color: #1d8967;
+  background: rgb(44 175 136 / 18%);
+  color: #6fe0b8;
 }
 
 .runtime-map > li[data-state='waiting'] .runtime-map__state {
-  background: rgb(228 169 61 / 16%);
-  color: #9a6f14;
+  background: rgb(228 169 61 / 20%);
+  color: #f0c674;
 }
 
 .runtime-map > li[data-state='running'] .runtime-map__state {
-  background: color-mix(in srgb, var(--signal) 12%, transparent);
-  color: var(--signal);
+  background: color-mix(in srgb, var(--signal) 22%, transparent);
+  color: #b9c4ff;
 }
 
 .runtime-map strong,
@@ -882,6 +910,7 @@ pre {
 
 .runtime-map strong {
   overflow-wrap: anywhere;
+  color: #f5f7fb;
   font-size: 0.72rem;
   line-height: 1.35;
 }
@@ -1845,10 +1874,13 @@ pre {
     grid-template-columns: minmax(290px, 5fr) minmax(0, 7fr);
   }
 
-  .runtime-map,
+  .runtime-scene,
   .channels-map {
     margin: 18px;
-    padding: 24px;
+  }
+
+  .runtime-map {
+    padding: 18px 20px;
   }
 
   .runtime-map > li {
@@ -2016,10 +2048,13 @@ pre {
     gap: 0 14px;
   }
 
-  .runtime-map,
+  .runtime-scene,
   .channels-map {
     margin: 14px;
-    padding: 20px;
+  }
+
+  .runtime-map {
+    padding: 14px 16px;
   }
 
   .runtime-map > li {
