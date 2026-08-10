@@ -124,7 +124,7 @@ export const siteFacts = {
     'RESULT_DELIVERED',
   ],
   install: [
-    'git clone https://github.com/NEDONION/miniclaw.git',
+    'git clone https://github.com/NEDONION/mini-claw.git',
     'cd miniclaw',
     'uv sync --extra dev --extra channels',
     'pnpm --dir tui install',
@@ -139,13 +139,13 @@ export const siteFacts = {
     implementationPassIsLivePass: false,
   },
   links: {
-    github: 'https://github.com/NEDONION/miniclaw',
-    issues: 'https://github.com/NEDONION/miniclaw/issues',
+    github: 'https://github.com/NEDONION/mini-claw',
+    issues: 'https://github.com/NEDONION/mini-claw/issues',
     product:
-      'https://github.com/NEDONION/miniclaw/blob/main/docs/product/20260807_%E4%BA%A7%E5%93%81%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3.md',
+      'https://github.com/NEDONION/mini-claw/blob/main/docs/product/20260807_%E4%BA%A7%E5%93%81%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3.md',
     architecture:
-      'https://github.com/NEDONION/miniclaw/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md',
-    evaluation: 'https://github.com/NEDONION/miniclaw/tree/main/evals',
+      'https://github.com/NEDONION/mini-claw/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md',
+    evaluation: 'https://github.com/NEDONION/mini-claw/tree/main/evals',
   },
 } as const;
 

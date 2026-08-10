@@ -92,7 +92,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 ### 安装与启动
 
 ```bash
-git clone https://github.com/NEDONION/miniclaw.git
+git clone https://github.com/NEDONION/mini-claw.git
 cd miniclaw
 
 uv sync --extra dev --extra channels

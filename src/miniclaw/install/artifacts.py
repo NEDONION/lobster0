@@ -28,8 +28,8 @@ _MAX_REDIRECTS = 5
 _MAX_ENTRIES = 20_000
 _MAX_BYTES = 1_073_741_824
 _REDIRECT_STATUSES = frozenset({301, 302, 303, 307, 308})
-_RELEASES_API_URL = "https://api.github.com/repos/NEDONION/miniclaw/releases?per_page=20"
-_GITHUB_RELEASE_PREFIX = "/NEDONION/miniclaw/releases/"
+_RELEASES_API_URL = "https://api.github.com/repos/NEDONION/mini-claw/releases?per_page=20"
+_GITHUB_RELEASE_PREFIX = "/NEDONION/mini-claw/releases/"
 
 
 class _Response(Protocol):

@@ -59,7 +59,7 @@ _SUPPORTED_PLATFORMS = {
     ("macos", "x86_64"),
     ("macos", "arm64"),
 }
-_MINICLAW_REPOSITORY = "https://github.com/NEDONION/miniclaw"
+_MINICLAW_REPOSITORY = "https://github.com/NEDONION/mini-claw"
 _NODE_REPOSITORY = "https://github.com/nodejs/node"
 _SOURCE_REPOSITORIES = {_MINICLAW_REPOSITORY, _NODE_REPOSITORY}
 _ARTIFACT_RULES = {
@@ -523,11 +523,11 @@ class ReleaseManifest:
 
     def _validate_release_urls(self) -> None:
         """把 MiniClaw GitHub asset tag 绑定到 manifest 自身版本。"""
-        expected = f"/NEDONION/miniclaw/releases/download/v{self.version}/"
+        expected = f"/NEDONION/mini-claw/releases/download/v{self.version}/"
         for artifact in self.artifacts:
             parts = urlsplit(artifact.url)
             if parts.hostname == "github.com" and parts.path.startswith(
-                "/NEDONION/miniclaw/"
+                "/NEDONION/mini-claw/"
             ):
                 if not parts.path.startswith(expected):
                     _invalid("artifacts.url")
@@ -1131,7 +1131,7 @@ def _validate_artifact_url(value: object) -> None:
     if (
         parts.hostname != "github.com"
         or len(segments) != 7
-        or segments[1:5] != ["NEDONION", "miniclaw", "releases", "download"]
+        or segments[1:5] != ["NEDONION", "mini-claw", "releases", "download"]
         or any(segment in {"", ".", ".."} for segment in segments[5:])
     ):
         _invalid("artifacts.url")
