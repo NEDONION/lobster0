@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from collections.abc import Mapping
@@ -13,6 +14,13 @@ from types import TracebackType
 
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 LAUNCHER_SOURCE = REPOSITORY_ROOT / "start-desktop.command"
+# `start-desktop.command` 是 macOS 专属入口：`.command` 后缀依赖 Finder 双击
+# 打开 Terminal 执行，脚本本身也固定 `#!/bin/zsh`。Linux 既没有该约定也没有
+# `/bin/zsh`，因此这些用例在非 macOS 上精确跳过，而不是把断言改宽。
+_MACOS_ONLY = unittest.skipUnless(
+    sys.platform == "darwin",
+    "start-desktop.command 是 macOS 专属入口（.command + /bin/zsh）",
+)
 
 
 class LauncherSandbox:
@@ -273,6 +281,7 @@ chmod 755 .venv/bin/python .venv/bin/lobster0
         target.chmod(0o755)
 
 
+@_MACOS_ONLY
 class DesktopLauncherTest(unittest.TestCase):
     """验证 Desktop 一键入口只执行受控且稳定的启动步骤。"""
 

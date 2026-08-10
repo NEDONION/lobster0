@@ -1176,23 +1176,32 @@ def _ensure_safe_directory(path: Path, expected_uid: int, *, create_mode: int) -
 
 
 def _create_regular(path: Path, payload: bytes, mode: int) -> tuple[int, int]:
-    """先完整持久化私有 temp，再以 hardlink O_EXCL 发布 regular file。"""
-    temporary, identity = _prepare_regular(path, payload, mode)
+    """先完整持久化私有 temp，再以 hardlink O_EXCL 发布 regular file。
+
+    整个发布与失败清理过程中都持有 `_prepare_regular` 返回的描述符不放，
+    直到清理结束才关闭。这样内核无法回收本次 inode 号，`_unlink_same_inode`
+    的 ``(st_dev, st_ino)`` 归属判断才真正成立；否则竞态进程新建的文件可能
+    落在被复用的同一个 inode 号上，导致我们把别人的文件当成自己的删掉。
+    """
+    temporary, identity, descriptor = _prepare_regular(path, payload, mode)
     published = False
     try:
-        os.link(temporary, path, follow_symlinks=False)
-        published = True
-        _unlink_same_inode(temporary, identity)
-        metadata = path.lstat()
-        if (metadata.st_dev, metadata.st_ino) != identity or metadata.st_nlink != 1:
-            _ownership_invalid()
-        _fsync_directory(path.parent)
-        return identity
-    except BaseException:
-        if published:
-            _unlink_same_inode(path, identity)
-        _unlink_same_inode(temporary, identity)
-        raise
+        try:
+            os.link(temporary, path, follow_symlinks=False)
+            published = True
+            _unlink_same_inode(temporary, identity)
+            metadata = path.lstat()
+            if (metadata.st_dev, metadata.st_ino) != identity or metadata.st_nlink != 1:
+                _ownership_invalid()
+            _fsync_directory(path.parent)
+            return identity
+        except BaseException:
+            if published:
+                _unlink_same_inode(path, identity)
+            _unlink_same_inode(temporary, identity)
+            raise
+    finally:
+        os.close(descriptor)
 
 
 def _create_symlink(path: Path, target: str) -> tuple[int, int]:
@@ -1217,8 +1226,19 @@ def _create_symlink(path: Path, target: str) -> tuple[int, int]:
         raise
 
 
-def _prepare_regular(path: Path, payload: bytes, mode: int) -> tuple[Path, tuple[int, int]]:
-    """在目标同目录用 O_EXCL temp 完整写入、chmod 并 fsync regular bytes。"""
+def _prepare_regular(
+    path: Path, payload: bytes, mode: int
+) -> tuple[Path, tuple[int, int], int]:
+    """在目标同目录用 O_EXCL temp 完整写入、chmod 并 fsync regular bytes。
+
+    Returns:
+        temp 路径、``(st_dev, st_ino)`` 归属 token，以及**仍然打开**的描述符。
+
+    调用方必须持有该描述符直到本次发布的清理窗口结束，再自行关闭：只要它
+    还开着，内核就不会把这个 inode 号回收给别人。描述符一旦提前关闭，
+    inode 号立即可被复用，此后单靠 ``(st_dev, st_ino)`` 判断"这还是不是我
+    创建的文件"就不再成立——见 `_unlink_same_inode` 的说明。
+    """
     descriptor, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.",
         suffix=".tmp",
@@ -1232,13 +1252,12 @@ def _prepare_regular(path: Path, payload: bytes, mode: int) -> tuple[Path, tuple
         os.fchmod(descriptor, mode)
         _write_all(descriptor, payload)
         os.fsync(descriptor)
-        return temporary, identity
+        return temporary, identity, descriptor
     except BaseException:
+        os.close(descriptor)
         if identity is not None:
             _unlink_same_inode(temporary, identity)
         raise
-    finally:
-        os.close(descriptor)
 
 
 def _write_all(descriptor: int, payload: bytes) -> None:
