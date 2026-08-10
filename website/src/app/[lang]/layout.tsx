@@ -7,7 +7,7 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { marketingCopy } from '@/content/site';
+import { marketingCopy, siteFacts } from '@/content/site';
 import { AppProvider } from '@/components/AppProvider';
 import { getLocale, locales } from '@/lib/i18n';
 import { i18nUI } from '@/lib/layout.shared';
@@ -28,14 +28,14 @@ export async function generateMetadata({
   return {
     description: copy.meta.description,
     icons: { icon: '/favicon.svg' },
-    metadataBase: new URL('https://lobster0.vercel.app'),
+    metadataBase: new URL(siteFacts.siteUrl),
     openGraph: {
       description: copy.meta.description,
       images: [
         {
           alt: copy.meta.title,
           height: 630,
-          url: 'https://lobster0.vercel.app/opengraph-image',
+          url: `${siteFacts.siteUrl}/opengraph-image`,
           width: 1200,
         },
       ],
@@ -51,7 +51,7 @@ export async function generateMetadata({
     twitter: {
       card: 'summary_large_image',
       description: copy.meta.description,
-      images: ['https://lobster0.vercel.app/opengraph-image'],
+      images: [`${siteFacts.siteUrl}/opengraph-image`],
       title: copy.meta.title,
     },
   };

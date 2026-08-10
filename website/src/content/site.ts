@@ -143,6 +143,7 @@ export const siteFacts = {
     automationDefault: false,
     implementationPassIsLivePass: false,
   },
+  siteUrl: 'https://lobster0.jchu.tech',
   links: {
     github: 'https://github.com/NEDONION/lobster0',
     issues: 'https://github.com/NEDONION/lobster0/issues',
