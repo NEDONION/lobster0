@@ -86,14 +86,16 @@ class FakeRunner:
                 encoding="utf-8",
             )
             (python.parents[1] / "pyvenv.cfg").chmod(0o600)
+            if self.venv_symlink_target is not None:
+                (python.parent / "escape").symlink_to(self.venv_symlink_target)
+        if len(argv) >= 3 and argv[1:3] == ("pip", "install") and "--no-deps" in argv:
+            python = Path(argv[argv.index("--python") + 1])
             if self.miniclaw_mode is not None:
                 (python.parent / "miniclaw").write_text(
                     "#!/bin/sh\nexit 0\n",
                     encoding="utf-8",
                 )
                 (python.parent / "miniclaw").chmod(self.miniclaw_mode)
-            if self.venv_symlink_target is not None:
-                (python.parent / "escape").symlink_to(self.venv_symlink_target)
         if argv[-1:] == ("--version",) and "/node/" in argv[0]:
             return CommandResult(0, self.node_version, b"")
         if len(argv) >= 3 and argv[-2] == "-c":
@@ -614,6 +616,41 @@ class InstallRuntimeTests(unittest.TestCase):
         """user Runtime 的必需 miniclaw entry script 为 0600 时必须拒绝。"""
         runner = FakeRunner()
         runner.miniclaw_mode = 0o600
+
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(runner).build(self.inputs)
+
+        self.assertFalse(self.layout.staging.exists())
+        self.assertFalse(self.layout.runtime.exists())
+
+    def test_user_runtime_accepts_safe_initial_entry_mode_and_hardens_it(self) -> None:
+        """uv 生成 owner-x 且不可写的 0711 entry 应在发布前收敛为 0700。"""
+        runner = FakeRunner()
+        runner.miniclaw_mode = 0o711
+
+        RuntimeBuilder(runner).build(self.inputs)
+
+        entry = self.layout.runtime / "venv" / "bin" / "miniclaw"
+        self.assertEqual(stat.S_IMODE(entry.stat().st_mode), 0o700)
+        executable_manifest = json.loads(
+            (self.layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            executable_manifest["executables"],
+            [
+                "miniclaw-installer.pyz",
+                "node/bin/node",
+                "python/bin/python3.12",
+                "venv/bin/miniclaw",
+            ],
+        )
+
+    def test_user_runtime_rejects_writable_initial_entry_mode(self) -> None:
+        """uv entry 的 group/world 写位必须在任何 harden 或发布前拒绝。"""
+        runner = FakeRunner()
+        runner.miniclaw_mode = 0o722
 
         with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
             RuntimeBuilder(runner).build(self.inputs)

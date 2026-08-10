@@ -1842,14 +1842,14 @@ def _executable_manifest_bytes(paths: tuple[str, ...]) -> bytes:
 
 
 def _required_runtime_executables(root: Path) -> tuple[str, ...]:
-    """验证四个 verified-source Runtime entrypoints 存在且原本可执行。"""
+    """验证四个 verified-source Runtime entrypoints 存在且初始权限安全可执行。"""
     for relative in _REQUIRED_RUNTIME_EXECUTABLES:
         path = root.joinpath(*PurePosixPath(relative).parts)
         try:
             mode = stat.S_IMODE(path.lstat().st_mode)
         except OSError:
             _runtime_failed()
-        if mode != 0o700:
+        if not mode & stat.S_IXUSR or mode & 0o022:
             _runtime_failed()
         _verify_executable(path, expected_mode=mode)
     return _REQUIRED_RUNTIME_EXECUTABLES
