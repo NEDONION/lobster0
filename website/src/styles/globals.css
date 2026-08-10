@@ -1593,14 +1593,10 @@ pre {
   align-items: center;
   gap: 28px;
   margin: 22px;
-  border: 1px solid var(--line);
+  border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 12px;
   padding: 30px;
-  background:
-    linear-gradient(color-mix(in srgb, var(--line) 34%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 34%, transparent) 1px, transparent 1px),
-    #f8f9fc;
-  background-size: 28px 28px;
+  background: var(--terminal);
 }
 
 .multi-channel-map__runtime {
@@ -1609,16 +1605,15 @@ pre {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--signal) 32%, var(--line));
+  border: 1px solid rgb(255 255 255 / 16%);
   border-radius: 50%;
   padding: 26px;
-  background: color-mix(in srgb, var(--signal) 8%, white);
+  background: #0d1017;
   text-align: center;
-  box-shadow: 0 6px 16px rgb(91 108 255 / 10%);
+  box-shadow: 0 0 0 6px rgb(66 103 245 / 8%), 0 6px 16px rgb(0 0 0 / 24%);
 }
 
-.multi-channel-map__runtime span,
-.multi-channel-map__surfaces header span {
+.multi-channel-map__runtime span {
   color: var(--signal);
   font-family: var(--font-mono);
   font-size: 0.58rem;
@@ -1631,12 +1626,13 @@ pre {
 
 .multi-channel-map__runtime strong {
   margin-top: 10px;
+  color: #f5f7fb;
   font-size: 0.9rem;
 }
 
 .multi-channel-map__runtime small {
   margin-top: 10px;
-  color: var(--muted);
+  color: #8792a6;
   font-family: var(--font-mono);
   font-size: 0.57rem;
   line-height: 1.45;
@@ -1649,11 +1645,10 @@ pre {
 }
 
 .multi-channel-map__surfaces > div {
-  border: 1px solid var(--line);
-  border-radius: 14px;
+  border: 1px solid rgb(255 255 255 / 10%);
+  border-radius: 10px;
   padding: 14px;
-  background: var(--surface);
-  box-shadow: 0 4px 12px rgb(16 19 26 / 5%);
+  background: #0d1017;
 }
 
 .multi-channel-map__surfaces header {
@@ -1663,7 +1658,23 @@ pre {
   gap: 8px;
 }
 
+.multi-channel-map__icon {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 7px;
+  background: #fff;
+}
+
+.multi-channel-map__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
 .multi-channel-map__surfaces header strong {
+  color: #f5f7fb;
   font-size: 0.7rem;
 }
 
@@ -1672,7 +1683,7 @@ pre {
   height: 7px;
   border-radius: 50%;
   background: var(--safe);
-  box-shadow: 0 0 0 4px color-mix(in srgb, var(--safe) 18%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--safe) 22%, transparent);
 }
 
 .multi-channel-map__surfaces dl {
@@ -1683,20 +1694,20 @@ pre {
 .multi-channel-map__surfaces dl div {
   display: flex;
   justify-content: space-between;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgb(255 255 255 / 8%);
   padding-top: 6px;
 }
 
 .multi-channel-map__surfaces dt,
 .multi-channel-map__surfaces dd {
   margin: 0;
-  color: var(--muted);
+  color: #6f7789;
   font-family: var(--font-mono);
   font-size: 0.52rem;
 }
 
 .multi-channel-map__surfaces dd {
-  color: #27785f;
+  color: #6fe0b8;
 }
 
 .quick-start-close {
