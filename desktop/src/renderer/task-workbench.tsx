@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import type {
   ApprovalDecision,
@@ -14,6 +14,7 @@ import {
   createDesktopTaskState,
   hydrateSession,
   reduceDesktopFrame,
+  toggleDesktopItem,
   type DesktopTaskStatus,
 } from "./task-state";
 
@@ -62,12 +63,24 @@ export function TaskWorkbench({
   const [submitting, setSubmitting] = useState(false);
   const [resolvingApproval, setResolvingApproval] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => window.miniclaw.onFrame((frame) => {
     setTask((current) => reduceDesktopFrame(current, frame));
   }), []);
 
   const pendingApproval = task.run.pendingApproval;
+
+  useEffect(() => {
+    const timeline = timelineRef.current;
+    if (timeline) {
+      timeline.scrollTop = timeline.scrollHeight;
+    }
+  }, [task.run.timeline, pendingApproval]);
+
+  function toggleReasoning(id: number): void {
+    setTask((current) => toggleDesktopItem(current, id));
+  }
   const liveBusy = submitting || task.status === "running" || pendingApproval !== null;
   const disabled = liveBusy;
 
@@ -200,7 +213,7 @@ export function TaskWorkbench({
           </div>
         ) : (
         <>
-        <div className="timeline" aria-live="polite">
+        <div className="timeline" aria-live="polite" ref={timelineRef}>
           {task.run.timeline.map((item) => {
             if (item.kind === "user" || item.kind === "assistant") {
               return (
@@ -212,9 +225,17 @@ export function TaskWorkbench({
             }
             if (item.kind === "reasoning") {
               return (
-                <article className="activity-item" key={item.id}>
-                  <span>思考</span>
-                  <Markdown content={item.content} />
+                <article className="activity-item reasoning-item" data-expanded={item.expanded} key={item.id}>
+                  <button
+                    aria-expanded={item.expanded}
+                    className="reasoning-toggle"
+                    onClick={() => toggleReasoning(item.id)}
+                    type="button"
+                  >
+                    <span className="reasoning-caret" aria-hidden="true">{item.expanded ? "▾" : "▸"}</span>
+                    <span>思考</span>
+                  </button>
+                  {item.expanded ? <Markdown content={item.content} /> : null}
                 </article>
               );
             }
@@ -259,32 +280,6 @@ export function TaskWorkbench({
         </>
         )}
       </section>
-
-      <aside className="result-panel">
-        <div className="panel-heading">
-          <span>结果</span>
-          <strong>{task.run.lastAssistantText ? "1" : "0"}</strong>
-        </div>
-        {task.run.lastAssistantText ? (
-          <div className="result-content">
-            <span>最终回复</span>
-            <Markdown content={task.run.lastAssistantText} />
-          </div>
-        ) : (
-          <div className="result-empty">
-            <span>R</span>
-            <p>任务完成后，最终回复会集中在这里。</p>
-          </div>
-        )}
-        <dl className="telemetry-list">
-          <div><dt>工具调用</dt><dd>{task.run.telemetry.toolCalls}</dd></div>
-          <div><dt>迭代</dt><dd>{task.run.telemetry.iterations}</dd></div>
-          <div>
-            <dt>耗时</dt>
-            <dd>{task.run.telemetry.durationMs === null ? "—" : `${task.run.telemetry.durationMs} ms`}</dd>
-          </div>
-        </dl>
-      </aside>
     </section>
   );
 }
