@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+} from "react";
 
 import type {
   ApprovalDecision,
@@ -14,9 +21,9 @@ import {
   createDesktopTaskState,
   hydrateSession,
   reduceDesktopFrame,
-  toggleDesktopItem,
   type DesktopTaskStatus,
 } from "./task-state";
+import { groupTimeline, toolDetail } from "./timeline-blocks";
 
 interface TaskWorkbenchProps {
   sessionKey: string;
@@ -63,7 +70,9 @@ export function TaskWorkbench({
   const [submitting, setSubmitting] = useState(false);
   const [resolvingApproval, setResolvingApproval] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [expandedProcesses, setExpandedProcesses] = useState<ReadonlySet<number>>(new Set());
   const timelineRef = useRef<HTMLDivElement>(null);
+  const timelineBlocks = useMemo(() => groupTimeline(task.run.timeline), [task.run.timeline]);
 
   useEffect(() => window.lobster0.onFrame((frame) => {
     setTask((current) => reduceDesktopFrame(current, frame));
@@ -78,8 +87,18 @@ export function TaskWorkbench({
     }
   }, [task.run.timeline, pendingApproval]);
 
-  function toggleReasoning(id: number): void {
-    setTask((current) => toggleDesktopItem(current, id));
+  // 过程块的折叠是纯展示层概念（由连续的思考/工具聚合而成），
+  // 因此折叠状态放在本地，而不是 pi-tui 的逐条 expanded 字段上。
+  function toggleProcess(id: number): void {
+    setExpandedProcesses((current) => {
+      const next = new Set(current);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   }
   const liveBusy = submitting || task.status === "running" || pendingApproval !== null;
   const disabled = liveBusy;
@@ -220,44 +239,53 @@ export function TaskWorkbench({
         ) : (
         <>
         <div className="timeline" aria-live="polite" ref={timelineRef}>
-          {task.run.timeline.map((item) => {
-            if (item.kind === "user" || item.kind === "assistant") {
+          {timelineBlocks.map((block) => {
+            if (block.kind === "message") {
+              const { item } = block;
               return (
-                <article className={`message message-${item.kind}`} key={item.id}>
+                <article className={`message message-${item.kind}`} key={block.id}>
                   <span>{item.kind === "user" ? "你" : "Lobster0"}</span>
                   {item.content ? <Markdown content={item.content} /> : <p>…</p>}
                 </article>
               );
             }
-            if (item.kind === "reasoning") {
-              return (
-                <article className="activity-item reasoning-item" data-expanded={item.expanded} key={item.id}>
-                  <button
-                    aria-expanded={item.expanded}
-                    className="reasoning-toggle"
-                    onClick={() => toggleReasoning(item.id)}
-                    type="button"
-                  >
-                    <span className="reasoning-caret" aria-hidden="true">{item.expanded ? "▾" : "▸"}</span>
-                    <span>思考</span>
-                  </button>
-                  {item.expanded ? <Markdown content={item.content} /> : null}
-                </article>
-              );
-            }
-            if (item.kind === "tool") {
-              return (
-                <article className="activity-item tool-activity" key={item.id}>
-                  <span>{item.name}</span>
-                  <Markdown content={item.summary} />
-                  <small>{item.status}</small>
-                </article>
-              );
-            }
+            const expanded = expandedProcesses.has(block.id);
             return (
-              <article className="activity-item" key={item.id}>
-                <span>提示</span>
-                <Markdown content={item.content} />
+              <article className="process-block" data-expanded={expanded} key={block.id}>
+                <button
+                  aria-expanded={expanded}
+                  className="process-toggle"
+                  onClick={() => toggleProcess(block.id)}
+                  type="button"
+                >
+                  <span className="process-caret" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                  <span>过程</span>
+                  <span className="process-count">{block.items.length} 步</span>
+                </button>
+                {expanded ? (
+                  <div className="process-items">
+                    {block.items.map((item) => {
+                      if (item.kind === "tool") {
+                        const detail = toolDetail(item);
+                        return (
+                          <div className="process-item process-tool" key={item.id}>
+                            <span className="process-tool-name">{item.name}</span>
+                            {detail ? <span className="process-tool-detail">{detail}</span> : null}
+                            <small>{item.status}</small>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="process-item" key={item.id}>
+                          <span className="process-item-kind">
+                            {item.kind === "reasoning" ? "思考" : "提示"}
+                          </span>
+                          <Markdown content={item.content} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </article>
             );
           })}

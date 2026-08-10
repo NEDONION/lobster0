@@ -608,8 +608,7 @@ select:focus-visible {
   gap: 5px;
 }
 
-.message > span,
-.activity-item > span {
+.message > span {
   color: var(--lobster-text-muted);
   font-size: var(--lobster-text-xs);
 }
@@ -774,42 +773,18 @@ select:focus-visible {
   font-weight: 600;
 }
 
-.activity-item {
-  position: relative;
+/* ---------- Process block（聚合的思考与工具调用） ---------- */
+
+.process-block {
   display: grid;
-  gap: 3px;
-  margin-left: 6px;
-  padding-left: 14px;
-  color: var(--lobster-text-secondary);
-  font-size: var(--lobster-text-xs);
+  gap: 4px;
 }
 
-.activity-item::before {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 0;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--lobster-gray-4);
-  content: "";
-}
-
-.tool-activity small {
-  width: fit-content;
-  border-radius: 4px;
-  padding: 1px 5px;
-  color: var(--lobster-text-secondary);
-  background: var(--lobster-surface-raised);
-  font-family: var(--lobster-font-mono);
-  font-size: 10px;
-}
-
-.reasoning-toggle {
+.process-toggle {
   display: flex;
   width: fit-content;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -819,18 +794,75 @@ select:focus-visible {
   font-size: var(--lobster-text-xs);
 }
 
-.reasoning-toggle:hover {
+.process-toggle:hover {
   color: var(--lobster-text-secondary);
 }
 
-.reasoning-caret {
+.process-caret {
   display: inline-block;
   width: 8px;
   font-size: 9px;
 }
 
-.reasoning-item .markdown {
-  margin-top: 2px;
+.process-count {
+  color: var(--lobster-text-muted);
+  font-family: var(--lobster-font-mono);
+  font-size: 10px;
+}
+
+/* 展开后用一条细竖线把整段过程收拢成一块，而不是每条各自成段。 */
+.process-items {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin-left: 4px;
+  padding-left: 12px;
+}
+
+.process-items::before {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--lobster-gray-4);
+  content: "";
+}
+
+.process-item {
+  display: grid;
+  gap: 2px;
+  color: var(--lobster-text-secondary);
+  font-size: var(--lobster-text-xs);
+}
+
+.process-item-kind,
+.process-tool-name {
+  color: var(--lobster-text-muted);
+  font-size: 11px;
+}
+
+.process-tool-name {
+  font-family: var(--lobster-font-mono);
+}
+
+.process-tool-detail {
+  color: var(--lobster-text-secondary);
+  font-size: var(--lobster-text-xs);
+}
+
+.process-tool small {
+  width: fit-content;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--lobster-text-secondary);
+  background: var(--lobster-surface-raised);
+  font-family: var(--lobster-font-mono);
+  font-size: 10px;
+}
+
+.process-item .markdown {
   font-size: 11px;
   line-height: 1.5;
 }
