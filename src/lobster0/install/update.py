@@ -151,6 +151,14 @@ def backup_database(source: Path, destination: Path) -> None:
 def restore_database(backup: Path, destination: Path) -> None:
     """把 owner-only 备份原子恢复到 destination：临时文件 + fsync + replace。
 
+    `backup_database` 用 ``sqlite3.Connection.backup`` 生成备份，产出的是
+    一个已经把 WAL 内容合并进主文件、自包含的单文件快照。恢复时如果
+    `destination` 旁边还留有失败 migration 遗留的 ``-wal``/``-shm``
+    sidecar，它们描述的是被替换掉的旧主文件内容；一旦主文件被替换而
+    sidecar 未清理，下一次打开会用不匹配的 WAL 帧去恢复一个它们从未
+    见过的主文件，存在损坏风险。因此替换主文件之后必须立即清理这两个
+    sidecar，让恢复后的数据库回到一个自洽的冷启动状态。
+
     Args:
         backup: 已确认存在的 owner-only 备份文件。
         destination: 待恢复覆盖的当前数据库路径。
@@ -173,6 +181,8 @@ def restore_database(backup: Path, destination: Path) -> None:
         finally:
             os.close(descriptor)
         os.replace(temporary, destination)
+        _unlink_if_exists(destination.with_name(f"{destination.name}-wal"))
+        _unlink_if_exists(destination.with_name(f"{destination.name}-shm"))
         _fsync_directory(destination.parent)
     except BaseException:
         _unlink_if_exists(temporary)

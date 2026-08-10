@@ -206,6 +206,18 @@ class DatabaseBackupRestoreTests(unittest.TestCase):
             restore_database(self.tmp / "absent-backup.db", self.database)
         self.assertEqual(self.database.read_bytes(), before)
 
+    def test_restore_discards_stale_wal_and_shm_sidecars(self) -> None:
+        """失败 migration 遗留的 -wal/-shm 描述旧主文件，必须随恢复一起清理。"""
+        backup_database(self.database, self.backup_path)
+        wal = self.database.with_name(f"{self.database.name}-wal")
+        shm = self.database.with_name(f"{self.database.name}-shm")
+        wal.write_bytes(b"stale-wal-frames-from-failed-migration")
+        shm.write_bytes(b"stale-shm")
+        restore_database(self.backup_path, self.database)
+        self.assertFalse(wal.exists())
+        self.assertFalse(shm.exists())
+        self.assertEqual(_read_values(self.database), ("seed",))
+
 
 class UpdateCoordinatorTests(unittest.TestCase):
     """覆盖每个 crash window 的确定性终态，以及 no-shortcut 不变量。"""
