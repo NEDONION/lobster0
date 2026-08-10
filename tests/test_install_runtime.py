@@ -228,6 +228,35 @@ class InstallRuntimeTests(unittest.TestCase):
         metadata = selected.staging.lstat()
         return metadata.st_dev, metadata.st_ino
 
+    def _write_owned_staging(
+        self,
+        layout: InstallLayout | None = None,
+        manifest: ReleaseManifest | None = None,
+    ) -> tuple[int, int]:
+        """写入与 builder canonical manifest 和 exact staging inode 绑定的 fixture。"""
+        selected = self.layout if layout is None else layout
+        selected_manifest = self.manifest if manifest is None else manifest
+        identity = self._write_private_staging(selected)
+        marker = {
+            "git_commit": selected_manifest.git_commit,
+            "manifest_schema_version": selected_manifest.schema_version,
+            "manifest_sha256": hashlib.sha256(
+                runtime_module._manifest_bytes(selected_manifest)
+            ).hexdigest(),
+            "schema_version": 1,
+            "staging_device": identity[0],
+            "staging_inode": identity[1],
+            "staging_relative": selected.staging.relative_to(
+                selected.program_prefix
+            ).as_posix(),
+            "version": selected_manifest.version,
+        }
+        self._write_private(
+            selected.staging / ".runtime-recovery.json",
+            (json.dumps(marker, sort_keys=True, separators=(",", ":")) + "\n").encode(),
+        )
+        return identity
+
     def _discard_interrupted_staging(
         self,
         layout: InstallLayout,
@@ -525,6 +554,58 @@ class InstallRuntimeTests(unittest.TestCase):
         self.assertIn(
             f"home = {self.layout.runtime / 'python' / 'bin'}",
             (self.layout.runtime / "venv" / "pyvenv.cfg").read_text(encoding="utf-8"),
+        )
+
+    def test_build_writes_manifest_bound_recovery_marker_before_staging_content(
+        self,
+    ) -> None:
+        """builder 必须在空 staging 中先 durable 写入 data-only ownership marker。"""
+        real_write = runtime_module._write_exclusive
+        marker_seen = False
+
+        def observe_marker(path: Path, payload: bytes, mode: int) -> None:
+            """在 marker 写入边界观察真实 staging 目录，而不替换写入行为。"""
+            nonlocal marker_seen
+            if path.name == ".runtime-recovery.json":
+                self.assertEqual(tuple(path.parent.iterdir()), ())
+                marker_seen = True
+            real_write(path, payload, mode)
+
+        with mock.patch.object(
+            runtime_module,
+            "_write_exclusive",
+            side_effect=observe_marker,
+        ):
+            RuntimeBuilder(self.runner).build(self.inputs)
+
+        marker = self.layout.runtime / ".runtime-recovery.json"
+        self.assertTrue(marker_seen)
+        self.assertEqual(stat.S_IMODE(marker.lstat().st_mode), 0o600)
+        document = json.loads(marker.read_text(encoding="utf-8"))
+        runtime_identity = self.layout.runtime.lstat()
+        self.assertEqual(
+            document,
+            {
+                "git_commit": self.manifest.git_commit,
+                "manifest_schema_version": 1,
+                "manifest_sha256": hashlib.sha256(
+                    (self.layout.runtime / "release-manifest.json").read_bytes()
+                ).hexdigest(),
+                "schema_version": 1,
+                "staging_device": runtime_identity.st_dev,
+                "staging_inode": runtime_identity.st_ino,
+                "staging_relative": "runtimes/.0.7.0.staging",
+                "version": "0.7.0",
+            },
+        )
+        executable_document = json.loads(
+            (self.layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertNotIn(
+            ".runtime-recovery.json",
+            executable_document["executables"],
         )
 
     def test_system_runtime_is_root_owned_public_program_data_and_activates(self) -> None:
@@ -1494,9 +1575,110 @@ class InstallRuntimeTests(unittest.TestCase):
 
         self.assertFalse(self.layout.runtimes_dir.exists())
 
+    def test_discard_interrupted_staging_rejects_unmarked_empty_and_malformed_trees(
+        self,
+    ) -> None:
+        """合法 foreign、空目录或 malformed marker 都必须保留并 stable fail。"""
+        lock = self._acquire_live_lock()
+
+        for case in ("empty", "unmarked", "malformed"):
+            with self.subTest(case=case):
+                if case == "empty":
+                    self.layout.runtimes_dir.mkdir(parents=True, mode=0o700)
+                    self.layout.staging.mkdir(mode=0o700)
+                else:
+                    self._write_private_staging()
+                    if case == "malformed":
+                        self._write_private(
+                            self.layout.staging / ".runtime-recovery.json",
+                            b"{}\n",
+                        )
+                identity = self.layout.staging.lstat()
+                try:
+                    with self.assertRaisesRegex(
+                        InstallError,
+                        "runtime_install_failed",
+                    ):
+                        self._discard_interrupted_staging(
+                            self.layout,
+                            lock,
+                            self.manifest,
+                        )
+                    after = self.layout.staging.lstat()
+                    self.assertEqual(
+                        (after.st_dev, after.st_ino),
+                        (identity.st_dev, identity.st_ino),
+                    )
+                finally:
+                    if self.layout.staging.exists():
+                        shutil.rmtree(self.layout.staging)
+
+    def test_discard_interrupted_staging_rejects_same_version_different_manifest(
+        self,
+    ) -> None:
+        """同 SemVer 但 commit/artifact closure 不同的事务不得消费旧 marker。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        different_manifest = replace(self.manifest, git_commit="f" * 40)
+
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            self._discard_interrupted_staging(
+                self.layout,
+                lock,
+                different_manifest,
+            )
+
+        after = self.layout.staging.lstat()
+        self.assertEqual((after.st_dev, after.st_ino), identity)
+
+    def test_discard_interrupted_staging_rejects_marker_replaced_during_full_scan(
+        self,
+    ) -> None:
+        """marker 必须围绕 full-tree scan 稳定双读，漂移时不得 quarantine。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        real_read = runtime_module._read_private_regular
+        marker_reads = 0
+
+        def replace_after_first_read(
+            path: Path,
+            uid: int,
+            limit: int,
+            *,
+            expected_mode: int = 0o600,
+        ) -> bytes:
+            """首轮 stable read 后把 marker 换成同权限 malformed regular。"""
+            nonlocal marker_reads
+            payload = real_read(
+                path,
+                uid,
+                limit,
+                expected_mode=expected_mode,
+            )
+            if path.name == ".runtime-recovery.json":
+                marker_reads += 1
+                if marker_reads == 1:
+                    path.write_bytes(b"{}\n")
+                    path.chmod(0o600)
+            return payload
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_read_private_regular",
+                side_effect=replace_after_first_read,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertGreaterEqual(marker_reads, 2)
+        after = self.layout.staging.lstat()
+        self.assertEqual((after.st_dev, after.st_ino), identity)
+
     def test_discard_interrupted_staging_removes_only_verified_private_tree(self) -> None:
         """live lock 只清理 target Release 的完整 private partial staging。"""
-        self._write_private_staging()
+        self._write_owned_staging()
         lock = self._acquire_live_lock()
 
         self.assertTrue(
@@ -1513,7 +1695,7 @@ class InstallRuntimeTests(unittest.TestCase):
         self,
     ) -> None:
         """wrong Release、closed lock 或另一 layout 的真实 lock 都不得授权清理。"""
-        identity = self._write_private_staging()
+        identity = self._write_owned_staging()
         closed = self._acquire_live_lock()
         closed.close()
         with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
@@ -1544,7 +1726,7 @@ class InstallRuntimeTests(unittest.TestCase):
     ) -> None:
         """current/current.next/root receipt 的 target Release 引用都保护 staging。"""
         RuntimeBuilder(self.runner).build(self.inputs)
-        identity = self._write_private_staging()
+        identity = self._write_owned_staging()
         lock = self._acquire_live_lock()
         target = "runtimes/0.7.0"
 
@@ -1606,7 +1788,7 @@ class InstallRuntimeTests(unittest.TestCase):
                     self.layout.runtimes_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
                     self.layout.staging.symlink_to(external, target_is_directory=True)
                 else:
-                    self._write_private_staging()
+                    self._write_owned_staging()
                     if case == "data-mode":
                         (self.layout.staging / "partial" / "data").chmod(0o644)
                     elif case == "escape":
@@ -1628,7 +1810,7 @@ class InstallRuntimeTests(unittest.TestCase):
         self,
     ) -> None:
         """full scan 后的 concurrent replacement 不能被当成 verified staging 删除。"""
-        identity = self._write_private_staging()
+        identity = self._write_owned_staging()
         lock = self._acquire_live_lock()
         original = self.layout.staging.with_name(".0.7.0.staging.original")
 
@@ -1662,7 +1844,7 @@ class InstallRuntimeTests(unittest.TestCase):
     ) -> None:
         """durable quarantine 后新 target 引用必须恢复 exact staging 并返回 False。"""
         RuntimeBuilder(self.runner).build(self.inputs)
-        identity = self._write_private_staging()
+        identity = self._write_owned_staging()
         lock = self._acquire_live_lock()
 
         def publish_reference(layout: InstallLayout) -> None:
@@ -1687,7 +1869,7 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_discard_interrupted_staging_lock_drift_fails_without_deletion(self) -> None:
         """reference facts 读取期间 lock pathname 漂移必须报错并恢复 staging。"""
-        identity = self._write_private_staging()
+        identity = self._write_owned_staging()
         lock = self._acquire_live_lock()
         real_references = runtime_module._stable_runtime_reference_facts
         calls = 0
@@ -1725,7 +1907,7 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_discard_interrupted_staging_fsync_failure_restores_exact_inode(self) -> None:
         """quarantine destination fsync 失败必须恢复 exact staging 并稳定报错。"""
-        identity = self._write_private_staging()
+        identity = self._write_owned_staging()
         lock = self._acquire_live_lock()
         real_fsync = runtime_module._fsync_directory
         failed = False

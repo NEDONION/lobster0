@@ -60,9 +60,15 @@ _RECEIPT_KEYS = {
 }
 _LEGACY_RECEIPT_KEYS = _RECEIPT_KEYS - {"executables_sha256"}
 _EXECUTABLES_FILENAME = ".runtime-executables.json"
+_RECOVERY_MARKER_FILENAME = ".runtime-recovery.json"
 _TRANSIENT_RUNTIME_NAMES = frozenset({".home", ".inputs", ".tmp", ".uv-cache"})
 _RUNTIME_METADATA_PATHS = frozenset(
-    {_EXECUTABLES_FILENAME, "install-receipt.json", "release-manifest.json"}
+    {
+        _EXECUTABLES_FILENAME,
+        _RECOVERY_MARKER_FILENAME,
+        "install-receipt.json",
+        "release-manifest.json",
+    }
 )
 _REQUIRED_RUNTIME_EXECUTABLES = (
     "miniclaw-installer.pyz",
@@ -506,6 +512,11 @@ class RuntimeBuilder:
             os.mkdir(inputs.layout.staging, 0o700)
             staging_metadata = inputs.layout.staging.lstat()
             staging_identity = (staging_metadata.st_dev, staging_metadata.st_ino)
+            _write_runtime_recovery_marker(
+                inputs.layout,
+                inputs.manifest,
+                staging_identity,
+            )
             env = _runtime_environment(inputs.layout)
             for private in (env["HOME"], env["TMPDIR"], env["UV_CACHE_DIR"]):
                 os.mkdir(private, 0o700)
@@ -967,7 +978,13 @@ def discard_interrupted_runtime_staging(
                 _runtime_failed()
             return False
 
-        identity, executables = _verified_private_staging_tree(layout.staging)
+        identity = _directory_identity(layout.staging, expected_mode=0o700)
+        marker = _runtime_recovery_marker_bytes(layout, manifest, identity)
+        identity, executables = _verified_private_staging_tree(
+            layout.staging,
+            marker=marker,
+            identity=identity,
+        )
         first = _stable_runtime_reference_facts(layout, verify_links=True)
         second = _stable_runtime_reference_facts(layout, verify_links=True)
         if first != second:
@@ -975,6 +992,7 @@ def discard_interrupted_runtime_staging(
         if target in second.targets:
             _verified_private_staging_tree(
                 layout.staging,
+                marker=marker,
                 identity=identity,
                 executables=executables,
             )
@@ -984,6 +1002,7 @@ def discard_interrupted_runtime_staging(
 
         _verified_private_staging_tree(
             layout.staging,
+            marker=marker,
             identity=identity,
             executables=executables,
         )
@@ -1008,6 +1027,7 @@ def discard_interrupted_runtime_staging(
 
         _verified_private_staging_tree(
             quarantine.private,
+            marker=marker,
             identity=identity,
             executables=executables,
         )
@@ -1017,6 +1037,7 @@ def discard_interrupted_runtime_staging(
                 _runtime_failed()
             _verified_private_staging_tree(
                 layout.staging,
+                marker=marker,
                 identity=identity,
                 executables=executables,
             )
@@ -2464,6 +2485,98 @@ def _manifest_bytes(manifest: ReleaseManifest) -> bytes:
     return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
+def _runtime_recovery_marker_bytes(
+    layout: InstallLayout,
+    manifest: ReleaseManifest,
+    identity: tuple[int, int],
+) -> bytes:
+    """序列化 manifest、relative staging path 与 exact root inode 绑定 marker。
+
+    Args:
+        layout: marker 所属 validated target Release layout。
+        manifest: 当前构建或 recovery 的 strict Release manifest。
+        identity: staging root 的 device/inode token。
+
+    Returns:
+        deterministic owner-only recovery marker bytes。
+
+    Raises:
+        InstallError: 类型、版本、relative path 或 inode token 不闭合。
+    """
+    if (
+        type(layout) is not InstallLayout
+        or type(manifest) is not ReleaseManifest
+        or type(identity) is not tuple
+        or len(identity) != 2
+        or any(type(value) is not int or value < 0 for value in identity)
+        or manifest.version != layout.runtime.name
+        or layout.staging != layout.runtimes_dir / f".{manifest.version}.staging"
+    ):
+        _runtime_failed()
+    try:
+        relative = layout.staging.relative_to(layout.program_prefix).as_posix()
+    except ValueError:
+        _runtime_failed()
+    if relative != f"runtimes/.{manifest.version}.staging":
+        _runtime_failed()
+    document = {
+        "git_commit": manifest.git_commit,
+        "manifest_schema_version": manifest.schema_version,
+        "manifest_sha256": hashlib.sha256(_manifest_bytes(manifest)).hexdigest(),
+        "schema_version": 1,
+        "staging_device": identity[0],
+        "staging_inode": identity[1],
+        "staging_relative": relative,
+        "version": manifest.version,
+    }
+    return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
+
+
+def _write_runtime_recovery_marker(
+    layout: InstallLayout,
+    manifest: ReleaseManifest,
+    identity: tuple[int, int],
+) -> None:
+    """在空 staging 中 exclusive 写入并 durable 验证 recovery marker。
+
+    Args:
+        layout: marker 所属 validated target Release layout。
+        manifest: 当前构建的 strict Release manifest。
+        identity: 新建 staging root 的 device/inode token。
+
+    Returns:
+        无返回值；marker file 与 staging directory 均已 fsync。
+
+    Raises:
+        InstallError: marker collision、写入、metadata、内容或持久化失败。
+    """
+    payload = _runtime_recovery_marker_bytes(layout, manifest, identity)
+    marker = layout.staging / _RECOVERY_MARKER_FILENAME
+    _write_exclusive(marker, payload, 0o600)
+    stored = _read_private_regular(
+        marker,
+        os.geteuid(),
+        _MAX_METADATA_BYTES,
+        expected_mode=0o600,
+    )
+    if not hmac.compare_digest(stored, payload):
+        _runtime_failed()
+    _fsync_directory(layout.staging)
+    if (
+        _directory_identity(layout.staging, expected_mode=0o700) != identity
+        or not hmac.compare_digest(
+            _read_private_regular(
+                marker,
+                os.geteuid(),
+                _MAX_METADATA_BYTES,
+                expected_mode=0o600,
+            ),
+            payload,
+        )
+    ):
+        _runtime_failed()
+
+
 def _write_exclusive(path: Path, payload: bytes, mode: int) -> None:
     """以 O_EXCL、fchmod、fsync 写一个 Runtime metadata file。"""
     descriptor = -1
@@ -3282,35 +3395,61 @@ def _remove_owned_tree(root: Path) -> None:
 def _verified_private_staging_tree(
     path: Path,
     *,
-    identity: tuple[int, int] | None = None,
+    marker: bytes,
+    identity: tuple[int, int],
     executables: tuple[str, ...] | None = None,
 ) -> tuple[tuple[int, int], tuple[str, ...]]:
-    """完整验证 owner-only staging tree，并绑定稳定 root inode。
+    """用稳定 marker 完整验证 owner-only staging tree 与 root inode。
 
     Args:
         path: public staging 或 0700 quarantine 内的 exact tree path。
-        identity: 可选的先前 root device/inode token。
+        marker: 与 canonical manifest、relative path 和 root inode 绑定的 exact bytes。
+        identity: 先前绑定的 root device/inode token。
         executables: 可选的先前 private executable path 集合。
 
     Returns:
         当前稳定 root identity 与完整验证得到的 executable paths。
 
     Raises:
-        InstallError: 参数未成对、tree facts 或 root identity 漂移。
+        InstallError: marker、tree facts、executable closure 或 root identity 漂移。
     """
-    if (identity is None) != (executables is None):
+    if (
+        type(marker) is not bytes
+        or not marker
+        or len(marker) > _MAX_METADATA_BYTES
+        or type(identity) is not tuple
+        or len(identity) != 2
+        or any(type(value) is not int or value < 0 for value in identity)
+    ):
         _runtime_failed()
     observed_identity = _directory_identity(path, expected_mode=0o700)
+    if observed_identity != identity:
+        _runtime_failed()
+    marker_path = path / _RECOVERY_MARKER_FILENAME
+    first_marker = _read_private_regular(
+        marker_path,
+        os.geteuid(),
+        _MAX_METADATA_BYTES,
+        expected_mode=0o600,
+    )
+    if not hmac.compare_digest(first_marker, marker):
+        _runtime_failed()
     observed_executables = _verify_runtime_tree(
         path,
         program_mode=0o700,
         expected_executables=executables,
         allow_transient=True,
     )
+    second_marker = _read_private_regular(
+        marker_path,
+        os.geteuid(),
+        _MAX_METADATA_BYTES,
+        expected_mode=0o600,
+    )
     if (
         _directory_identity(path, expected_mode=0o700) != observed_identity
-        or identity is not None
-        and observed_identity != identity
+        or not hmac.compare_digest(second_marker, first_marker)
+        or not hmac.compare_digest(second_marker, marker)
     ):
         _runtime_failed()
     return observed_identity, observed_executables
