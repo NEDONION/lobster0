@@ -1,0 +1,39 @@
+#!/usr/bin/env python3
+"""供 bootstrap 集成测试使用的离线 ``uname`` fake。
+
+默认透传真实主机的 ``-s``/``-m`` 事实，测试可通过 ``FAKE_UNAME_S`` /
+``FAKE_UNAME_M`` 覆盖，用来演练不受支持的 OS/架构。
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import platform
+import sys
+
+
+def _log(args: list[str]) -> None:
+    """把本次调用追加进 ``FAKE_CALL_LOG``（若已设置）。"""
+    log = os.environ.get("FAKE_CALL_LOG")
+    if not log:
+        return
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"cmd": "uname", "args": args}) + "\n")
+
+
+def main() -> int:
+    """只理解模板固定使用的 ``-s``/``-m`` 调用。"""
+    args = sys.argv[1:]
+    _log(args)
+    if args == ["-s"]:
+        print(os.environ.get("FAKE_UNAME_S") or platform.uname().system)
+        return 0
+    if args == ["-m"]:
+        print(os.environ.get("FAKE_UNAME_M") or platform.uname().machine)
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

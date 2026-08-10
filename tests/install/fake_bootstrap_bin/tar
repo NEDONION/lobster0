@@ -1,0 +1,109 @@
+#!/usr/bin/env python3
+"""供 bootstrap 集成测试使用的离线 tar fake。
+
+只理解模板固定使用的调用形状：``tar -xzf ARCHIVE -C DEST_DIR``。不解压任何
+真实字节，只在 dest 下按官方 uv release 布局（嵌套目录 + 单个可执行文件）
+放置一个离线 ``fake_uv`` 可执行文件，供后续 bootstrap 步骤调用。
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+_UV_SOURCE = '''#!/usr/bin/env python3
+"""供 bootstrap 集成测试使用的离线 uv fake，只理解 python install/find。"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+
+
+def _log(args):
+    log = os.environ.get("FAKE_CALL_LOG")
+    if not log:
+        return
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"cmd": "uv", "args": args}) + "\\n")
+
+
+def main():
+    args = sys.argv[1:]
+    _log(args)
+    root = os.environ.get("UV_PYTHON_INSTALL_DIR")
+    if args == ["python", "install", "3.12"]:
+        if os.environ.get("FAKE_UV_INSTALL_FAIL"):
+            return 9
+        if not root:
+            return 2
+        target_dir = os.path.join(root, "cpython-3.12.0-fake", "bin")
+        os.makedirs(target_dir, exist_ok=True)
+        executable = os.path.join(target_dir, "python3.12")
+        script = (
+            "#!" + sys.executable + "\\n"
+            "import json, os, stat, sys\\n"
+            "record = os.environ.get('FAKE_PYZ_RECORD')\\n"
+            "if record:\\n"
+            "    tree_dir = os.path.dirname(sys.argv[1]) if len(sys.argv) > 1 else None\\n"
+            "    mode = stat.S_IMODE(os.stat(tree_dir).st_mode) if tree_dir else None\\n"
+            "    with open(record, 'w', encoding='utf-8') as fh:\\n"
+            "        json.dump({'argv': sys.argv[1:], 'work_dir_mode': mode}, fh)\\n"
+            "raise SystemExit(int(os.environ.get('FAKE_PYZ_EXIT_CODE', '0')))\\n"
+        )
+        with open(executable, "w", encoding="utf-8") as handle:
+            handle.write(script)
+        os.chmod(executable, 0o755)
+        return 0
+    if args == ["python", "find", "--managed-python", "3.12"]:
+        if not root:
+            return 2
+        executable = os.path.join(root, "cpython-3.12.0-fake", "bin", "python3.12")
+        if not os.path.isfile(executable):
+            return 3
+        print(executable)
+        return 0
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+'''
+
+
+def _log(args: list[str]) -> None:
+    """把本次调用追加进 ``FAKE_CALL_LOG``（若已设置）。"""
+    log = os.environ.get("FAKE_CALL_LOG")
+    if not log:
+        return
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"cmd": "tar", "args": args}) + "\n")
+
+
+def main() -> int:
+    """离线模拟 uv release archive 的 nested-directory 解压布局。"""
+    args = sys.argv[1:]
+    _log(args)
+    if len(args) != 4 or args[0] != "-xzf" or args[2] != "-C":
+        return 2
+    archive, dest_dir = args[1], args[3]
+
+    fail_tokens = [item for item in os.environ.get("FAKE_TAR_FAIL_MATCH", "").split(",") if item]
+    if any(token in archive for token in fail_tokens):
+        return 2
+    if not os.path.isfile(archive):
+        return 2
+
+    nested = os.path.join(dest_dir, "uv-fake-platform")
+    os.makedirs(nested, exist_ok=True)
+    target = os.path.join(nested, "uv")
+    with open(target, "w", encoding="utf-8") as handle:
+        handle.write(_UV_SOURCE)
+    os.chmod(target, 0o755)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

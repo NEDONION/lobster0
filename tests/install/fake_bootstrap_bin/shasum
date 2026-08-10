@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""供 bootstrap 集成测试使用的离线 ``shasum -a 256`` fake，计算真实 SHA-256。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sys
+
+
+def _log(args: list[str]) -> None:
+    """把本次调用追加进 ``FAKE_CALL_LOG``（若已设置）。"""
+    log = os.environ.get("FAKE_CALL_LOG")
+    if not log:
+        return
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"cmd": "shasum", "args": args}) + "\n")
+
+
+def main() -> int:
+    """只理解 macOS 风格的 ``shasum -a 256 <path>`` 调用。"""
+    args = sys.argv[1:]
+    _log(args)
+    if len(args) != 3 or args[0] != "-a" or args[1] != "256":
+        return 1
+    path = args[2]
+    try:
+        with open(path, "rb") as handle:
+            digest = hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return 1
+    print(f"{digest}  {path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
