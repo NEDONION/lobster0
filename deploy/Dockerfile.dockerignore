@@ -1,0 +1,7 @@
+# Runtime 镜像只需要 lock、已校验 wheel、native bundle 与 entrypoint。
+*
+!requirements-all.lock
+!deploy/entrypoint.sh
+!deploy/artifacts
+deploy/artifacts/.gitkeep
+!dist/lobster0_agent-0.7.0-py3-none-any.whl
