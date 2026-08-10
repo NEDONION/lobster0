@@ -19,10 +19,6 @@ export function EvidenceStrip({ copy }: { copy: MarketingCopy['evidence'] }) {
           </div>
         ))}
       </dl>
-      <p>
-        <span aria-hidden="true">!</span>
-        {copy.disclosure}
-      </p>
     </aside>
   );
 }

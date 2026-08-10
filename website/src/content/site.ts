@@ -157,8 +157,8 @@ export const marketingCopy = {
         '一个本地优先、边界可检查的开源个人 Agent：同一个 Python Core，通过 TUI、飞书、Telegram 与 Discord 安全行动。',
     },
     nav: {
-      product: '能力',
-      workbench: '实证',
+      product: '特性',
+      workbench: '演示',
       docs: '文档',
       github: 'GitHub',
       language: 'English',
@@ -206,7 +206,7 @@ export const marketingCopy = {
       },
     },
     product: {
-      eyebrow: '能力视图 / 02',
+      eyebrow: '特性 / 02',
       title: '一个 Core，五个可检查的系统面。',
       lead: '像产品一样易读，像开源工程一样具体。切换能力，直接查看结构、边界与验证证据。',
     },
@@ -253,7 +253,7 @@ export const marketingCopy = {
       },
     ],
     workbench: {
-      eyebrow: '真实实证 / 03',
+      eyebrow: '演示 / 03',
       title: '看真实执行，不看概念渲染。',
       lead: '两张仓库内 TUI 截图，加上一张多入口结构图，展示 MiniClaw 今天已经验证的工作方式。',
     },
@@ -310,8 +310,8 @@ export const marketingCopy = {
         'A local-first open-source personal agent with inspectable boundaries: one Python core across TUI, Feishu, Telegram, and Discord.',
     },
     nav: {
-      product: 'Capabilities',
-      workbench: 'Evidence',
+      product: 'Features',
+      workbench: 'Demo',
       docs: 'Docs',
       github: 'GitHub',
       language: '简体中文',
@@ -359,7 +359,7 @@ export const marketingCopy = {
       },
     },
     product: {
-      eyebrow: 'CAPABILITY EXPLORER / 02',
+      eyebrow: 'FEATURES / 02',
       title: 'One core. Five inspectable system views.',
       lead: 'Readable like a product, specific like an open-source system. Switch views to inspect structure, boundaries, and evidence.',
     },
@@ -406,7 +406,7 @@ export const marketingCopy = {
       },
     ],
     workbench: {
-      eyebrow: 'REAL WORKBENCH / 03',
+      eyebrow: 'DEMO / 03',
       title: 'Inspect real execution—not a concept render.',
       lead: 'Two repository-owned TUI captures and one channel diagram show the workflows MiniClaw can substantiate today.',
     },

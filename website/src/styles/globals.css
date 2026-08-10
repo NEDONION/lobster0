@@ -154,10 +154,9 @@ pre {
 .marketing-section {
   position: relative;
   display: grid;
-  min-height: 82svh;
   align-items: center;
   border-bottom: 1px solid var(--line);
-  padding-block: 56px;
+  padding-block: 48px;
 }
 
 .hero-shell {
@@ -643,7 +642,6 @@ pre {
 
 .capability-panel {
   display: grid;
-  min-height: 390px;
   grid-template-columns: minmax(310px, 4fr) minmax(0, 8fr);
   border: 1px solid var(--line);
   border-top: 0;
@@ -660,7 +658,6 @@ pre {
 }
 
 .capability-panel__copy > span,
-.runtime-map span,
 .channels-map span,
 .safety-map span,
 .memory-map span,
@@ -737,24 +734,112 @@ pre {
 }
 
 .runtime-map {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  display: flex;
+  flex-direction: column;
   align-content: center;
-  gap: 18px;
-  padding: 34px;
+  justify-content: center;
+  padding: 22px 24px;
+  gap: 0;
+  list-style: none;
+  counter-reset: none;
 }
 
-.runtime-map > div {
+.runtime-map > li {
   position: relative;
-  display: flex;
-  min-height: 118px;
-  flex-direction: column;
-  justify-content: space-between;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  padding: 16px;
-  background: color-mix(in srgb, var(--surface) 94%, transparent);
-  box-shadow: 0 12px 28px rgb(16 19 26 / 6%);
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 9px 0 9px 14px;
+}
+
+/* connecting rail */
+.runtime-map > li::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: color-mix(in srgb, var(--line) 90%, transparent);
+}
+
+.runtime-map > li:first-child::before {
+  top: 50%;
+}
+
+.runtime-map > li:last-child::before {
+  bottom: 50%;
+}
+
+/* node dot */
+.runtime-map > li::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--muted);
+  transform: translateY(-50%);
+  box-shadow: 0 0 0 3px var(--surface);
+}
+
+.runtime-map > li[data-state='allowed']::after,
+.runtime-map > li[data-state='succeeded']::after {
+  background: #2caf88;
+}
+
+.runtime-map > li[data-state='waiting']::after {
+  background: #e4a93d;
+}
+
+.runtime-map > li[data-state='running']::after {
+  background: var(--signal);
+}
+
+.runtime-map__index {
+  color: color-mix(in srgb, var(--muted) 72%, transparent);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+}
+
+.runtime-map__detail {
+  grid-column: 2;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.63rem;
+  line-height: 1.5;
+}
+
+.runtime-map__state {
+  grid-row: 1;
+  grid-column: 3;
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-style: normal;
+  letter-spacing: 0.02em;
+}
+
+.runtime-map > li[data-state='allowed'] .runtime-map__state,
+.runtime-map > li[data-state='succeeded'] .runtime-map__state {
+  background: rgb(44 175 136 / 13%);
+  color: #1d8967;
+}
+
+.runtime-map > li[data-state='waiting'] .runtime-map__state {
+  background: rgb(228 169 61 / 16%);
+  color: #9a6f14;
+}
+
+.runtime-map > li[data-state='running'] .runtime-map__state {
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  color: var(--signal);
 }
 
 .runtime-map strong,
@@ -767,27 +852,8 @@ pre {
 
 .runtime-map strong {
   overflow-wrap: anywhere;
-  font-size: 0.68rem;
+  font-size: 0.72rem;
   line-height: 1.35;
-}
-
-.runtime-map i {
-  position: absolute;
-  z-index: 1;
-  top: 50%;
-  right: -15px;
-  color: var(--signal);
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  font-style: normal;
-  transform: translateY(-50%);
-}
-
-.runtime-map > div:nth-child(3) i {
-  top: auto;
-  right: 50%;
-  bottom: -17px;
-  transform: rotate(90deg);
 }
 
 .channels-map {
@@ -1321,7 +1387,7 @@ pre {
 }
 
 .quick-start-close > .command-copy pre {
-  max-height: 110px;
+  max-height: none;
 }
 
 @media (min-width: 821px) {
@@ -1453,12 +1519,8 @@ pre {
     padding: 24px;
   }
 
-  .runtime-map {
-    gap: 10px;
-  }
-
-  .runtime-map > div {
-    padding: 12px;
+  .runtime-map > li {
+    padding-block: 7px;
   }
 
   .channels-map {
@@ -1632,12 +1694,15 @@ pre {
     padding: 20px;
   }
 
-  .runtime-map {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .runtime-map > li {
+    grid-template-columns: 22px minmax(0, 1fr);
+    row-gap: 2px;
   }
 
-  .runtime-map i {
-    display: none;
+  .runtime-map__state {
+    grid-row: 2;
+    grid-column: 2;
+    justify-self: start;
   }
 
   .channels-map__edges,
