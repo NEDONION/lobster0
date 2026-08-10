@@ -1,11 +1,11 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from "react";
 
 import type {
   ApprovalDecision,
   DesktopBootstrap,
   SessionHistory,
-  SessionSummary,
 } from "../common/api";
+import { resolveComposerKeyAction } from "./composer-keys";
 import {
   appendDesktopUser,
   cancelDesktopTask,
@@ -21,8 +21,6 @@ interface TaskWorkbenchProps {
   bootstrap: DesktopBootstrap | null;
   bootstrapError: string | null;
   initialHistory: SessionHistory | null;
-  sessions: SessionSummary[];
-  onSelectSession: (sessionKey: string) => void;
   onBusyChange: (busy: boolean) => void;
 }
 
@@ -43,13 +41,17 @@ const APPROVAL_LABELS: Record<ApprovalDecision, string> = {
   always: "始终允许",
 };
 
+export function workspaceBasename(workspace: string): string {
+  const trimmed = workspace.replace(/[\\/]+$/, "");
+  const separator = Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"));
+  return separator === -1 ? trimmed : trimmed.slice(separator + 1);
+}
+
 export function TaskWorkbench({
   sessionKey,
   bootstrap,
   bootstrapError,
   initialHistory,
-  sessions,
-  onSelectSession,
   onBusyChange,
 }: TaskWorkbenchProps): React.JSX.Element {
   const [task, setTask] = useState(() => (
@@ -72,9 +74,8 @@ export function TaskWorkbench({
     onBusyChange(liveBusy);
   }, [liveBusy, onBusyChange]);
 
-  async function submit(event: FormEvent<HTMLFormElement>): Promise<void> {
-    event.preventDefault();
-    if (disabled || draft.trim().length === 0) {
+  async function submitDraft(): Promise<void> {
+    if (disabled || bootstrap === null || draft.trim().length === 0) {
       return;
     }
     const text = draft;
@@ -91,6 +92,18 @@ export function TaskWorkbench({
       setActionError("任务未能开始，请检查本地 Core 配置。");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function onComposerKeyDown(event: KeyboardEvent<HTMLTextAreaElement>): void {
+    const action = resolveComposerKeyAction({
+      key: event.key,
+      shiftKey: event.shiftKey,
+      isComposing: event.nativeEvent.isComposing,
+    });
+    if (action === "send") {
+      event.preventDefault();
+      void submitDraft();
     }
   }
 
@@ -123,65 +136,71 @@ export function TaskWorkbench({
   const approvalChoices: ApprovalDecision[] = pendingApproval
     ? ["deny", ...pendingApproval.grantModes]
     : [];
+  const emptyTask = task.run.timeline.length === 0;
+
+  const composer = (
+    <form
+      className="composer"
+      onSubmit={(event: FormEvent<HTMLFormElement>) => {
+        event.preventDefault();
+        void submitDraft();
+      }}
+    >
+      {bootstrapError || actionError ? (
+        <p className="composer-error" role="alert">{actionError ?? bootstrapError}</p>
+      ) : null}
+      <textarea
+        aria-label="任务内容"
+        disabled={disabled || bootstrap === null}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={onComposerKeyDown}
+        placeholder={bootstrap ? "描述目标、背景和期望产物…" : "正在连接 MiniClaw Core…"}
+        rows={emptyTask ? 5 : 3}
+        value={draft}
+      />
+      <div className="composer-actions">
+        <span>
+          {bootstrap
+            ? `Main Agent · ${bootstrap.model} · ${workspaceBasename(bootstrap.workspace)} · ${bootstrap.permissionMode}`
+            : "本地 Core"}
+        </span>
+        {task.status === "running" || task.status === "waiting_approval" ? (
+          <button className="button-secondary" onClick={() => void cancel()} type="button">
+            停止
+          </button>
+        ) : null}
+        <button
+          className="button-primary"
+          disabled={disabled || bootstrap === null || draft.trim().length === 0}
+          type="submit"
+        >
+          {submitting ? "正在发送" : "发送"}
+        </button>
+      </div>
+    </form>
+  );
 
   return (
     <section className="task-layout" aria-label="任务工作台">
-      <aside className="task-list-panel">
-        <div className="panel-heading">
-          <span>任务</span>
-          <strong>
-            {sessions.some((item) => item.sessionKey === sessionKey)
-              ? sessions.length
-              : sessions.length + 1}
-          </strong>
-        </div>
-        <div className="task-list-scroll">
-          <button aria-current="page" className="task-row" data-active="true" type="button">
-            <span className="task-row-dot" aria-hidden="true" />
-            <span>
-              <strong>{sessions.find((item) => item.sessionKey === sessionKey)?.title ?? "当前任务"}</strong>
-              <small>{STATUS_LABELS[task.status]}</small>
-            </span>
-          </button>
-          {sessions.filter((item) => item.sessionKey !== sessionKey).map((session) => (
-            <button
-              className="task-row"
-              data-active="false"
-              key={session.sessionKey}
-              disabled={liveBusy}
-              onClick={() => onSelectSession(session.sessionKey)}
-              type="button"
-            >
-              <span className="task-row-dot" aria-hidden="true" />
-              <span>
-                <strong>{session.title}</strong>
-                <small>{session.status}</small>
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="task-context">
-          <span>工作目录</span>
-          <strong>{bootstrap?.workspace ?? "等待 Core"}</strong>
-        </div>
-      </aside>
-
-      <section className="conversation-panel">
+      <section className="conversation-panel" data-mode={emptyTask ? "empty" : "thread"}>
         <div className="conversation-header">
           <div>
             <span className="eyebrow">CURRENT TASK</span>
-            <h1>当前任务</h1>
+            <h1>{emptyTask ? "新任务" : "当前任务"}</h1>
           </div>
           <span className="task-status" data-status={task.status}>{STATUS_LABELS[task.status]}</span>
         </div>
 
+        {emptyTask ? (
+          <div className="conversation-invite">
+            <h2>今天想完成什么？</h2>
+            <p>说明目标和期望结果，MiniClaw 会在需要操作本地资源时请求审批。</p>
+            {composer}
+          </div>
+        ) : (
+        <>
         <div className="timeline" aria-live="polite">
-          {task.run.timeline.length === 0 ? (
-            <div className="timeline-empty">
-              <span>开始一个任务</span>
-              <p>说明目标和期望结果，MiniClaw 会在需要操作本地资源时请求审批。</p>
-            </div>
-          ) : task.run.timeline.map((item) => {
+          {task.run.timeline.map((item) => {
             if (item.kind === "user" || item.kind === "assistant") {
               return (
                 <article className={`message message-${item.kind}`} key={item.id}>
@@ -235,35 +254,9 @@ export function TaskWorkbench({
             </section>
           ) : null}
         </div>
-
-        <form className="composer" onSubmit={(event) => void submit(event)}>
-          {bootstrapError || actionError ? (
-            <p className="composer-error" role="alert">{actionError ?? bootstrapError}</p>
-          ) : null}
-          <textarea
-            aria-label="任务内容"
-            disabled={disabled || bootstrap === null}
-            onChange={(event) => setDraft(event.target.value)}
-            placeholder={bootstrap ? "描述你想完成的事情…" : "正在连接 MiniClaw Core…"}
-            rows={3}
-            value={draft}
-          />
-          <div className="composer-actions">
-            <span>{bootstrap ? `${bootstrap.model} · ${bootstrap.permissionMode}` : "本地 Core"}</span>
-            {task.status === "running" || task.status === "waiting_approval" ? (
-              <button className="button-secondary" onClick={() => void cancel()} type="button">
-                取消
-              </button>
-            ) : null}
-            <button
-              className="button-primary"
-              disabled={disabled || bootstrap === null || draft.trim().length === 0}
-              type="submit"
-            >
-              {submitting ? "正在开始" : "开始任务"}
-            </button>
-          </div>
-        </form>
+        {composer}
+        </>
+        )}
       </section>
 
       <aside className="result-panel">

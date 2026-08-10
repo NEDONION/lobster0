@@ -49,7 +49,7 @@ flowchart LR
 | D4 | 实现并展示 depth-1 子 Agent | 权限扩大、递归、恢复和预算 |
 | D5 | 完整恢复、可用性、许可和真实 smoke | 把自动化通过误写成生产验证 |
 
-## 4. D1：LobsterAI-first 打开即聊
+## 4. D1：LobsterAI-first 打开即聊（已实现，2026-08-10）
 
 独立设计：[Desktop D1 打开即聊设计](../../superpowers/specs/2026-08-10-desktop-d1-conversation-shell-design.md)。
 
@@ -95,11 +95,14 @@ D1 不增加 Bridge 请求、数据库迁移或依赖。当前 `task.start`、Se
 
 ### 4.5 退出条件
 
-- D1 独立设计和实施计划已提交；
-- Desktop tests/typecheck/build 通过；
-- 真实 Python Bridge + Electron 进程 smoke 通过；
-- 手工确认应用启动后首屏可直接输入、发送和停止；
-- 文档只宣称 D1 已实现，D2～D5 仍标记 pending。
+- D1 独立设计和实施计划已提交；✅
+- Desktop tests/typecheck/build 通过；✅（35 tests）
+- 真实 Python Bridge + Electron 进程 smoke 通过；⏳ 待补
+- 手工确认应用启动后首屏可直接输入、发送和停止；✅（浏览器预览验证首屏、时间线、两个断点、Enter/Shift+Enter/输入法）
+- 文档只宣称 D1 已实现，D2～D5 仍标记 pending。✅
+
+视觉基准在实施中调整为直接采用 [LobsterAI](https://github.com/netease-youdao/LobsterAI)（MIT）的
+`classic-light` 设计系统，取代设计初稿的自定义墨绿方案，详见 D1 设计文档 §5。
 
 ## 5. D2：附件、模型、Workspace 与 Agent 选择
 

@@ -2,7 +2,7 @@
 
 > 日期：2026-08-10
 > 文档类型：Phase D1 产品与界面设计
-> 状态：`DRAFT FOR REVIEW / IMPLEMENTATION PENDING`
+> 状态：`IMPLEMENTED`（2026-08-10）
 > 上位需求：[桌面多 Agent 工作台开发需求](../../product/20260810_桌面多Agent工作台开发需求.md)
 > 总体架构：[LobsterAI-first 桌面多 Agent 设计](../../architecture/20260810_LobsterAI-first桌面多Agent设计.md)
 
@@ -94,35 +94,42 @@ Desktop D1 面向桌面窗口，不承诺手机浏览器布局。
 
 ## 5. 视觉方向
 
-主题是“本地工作台”，不是聊天网站。整体浅色、安静，唯一明显强调放在 Composer。
+视觉基准直接采用 [LobsterAI](https://github.com/netease-youdao/LobsterAI)（MIT License）的设计系统，主题为
+`classic-light`。这与总体架构的 LobsterAI-first 路线一致：token 命名保持与上游相同，后续对齐成本最低。
 
-### 5.1 色彩
+### 5.1 Token 体系
 
-| 名称 | Hex | 用途 |
+`desktop/src/renderer/theme.css` 移植上游 `--lobster-*` 变量，`styles.css` 只消费这些变量，不再自定义色值：
+
+| Token | 值 | 用途 |
 | --- | --- | --- |
-| Porcelain | `#F4F6F3` | 应用背景 |
-| Paper | `#FFFFFF` | 主面板和 Composer |
-| Ink | `#18221D` | 主要文字和品牌标记 |
-| Moss | `#2F6B4F` | 发送、选中、焦点和 ready 状态 |
-| Mist | `#E3E9E5` | 边框、hover 和分隔 |
-| Amber | `#A85E24` | 审批与警告 |
+| `--lobster-primary` | `#3B82F6` | 主操作、选中、焦点 |
+| `--lobster-background` | `#F8F9FB` | 应用背景与侧栏 |
+| `--lobster-surface` | `#FFFFFF` | 主面板和 Composer |
+| `--lobster-surface-raised` | `#F0F1F4` | 徽标、次级底色 |
+| `--lobster-chat-user` | `#DBEAFE` | 用户消息气泡 |
+| `--lobster-chat-bot` | `#F0F1F4` | 助手消息气泡 |
+| `--lobster-border` | `rgba(224,226,231,0.6)` | 边框与分隔 |
+| `--lobster-warning` | `#F59E0B` | 审批卡片 |
+| `--lobster-destructive` | `#EF4444` | 错误 |
 
-不使用大面积渐变、玻璃拟态或深色侧栏。错误继续使用可区分的红色，不用颜色单独传达状态。
+同时移植上游的排版档位（`--lobster-text-*` / `--lobster-leading-*`）、圆角（`--lobster-radius: 0.5rem`）、
+三级阴影（subtle / card / elevated）与滚动条样式。D1 只启用 `classic-light` 单主题，深色与主题切换仍是非目标。
+
+`tailwind.config.ts` 用 `color-mix()` 把这些变量桥接成 Tailwind 语义色，便于后续组件直接使用 utility class。
 
 ### 5.2 字体
 
-- 标题：`Avenir Next` → `PingFang SC` → system sans，较紧字距；
-- 正文：系统 UI sans，保证中文输入和跨平台可用；
-- 模型、Workspace、状态：`SFMono-Regular` → `Consolas` → monospace。
+沿用上游字体栈：`-apple-system` → `SF Pro Text` → `PingFang SC` → `Microsoft YaHei` → system sans，
+正文字重 445（对齐 VS Code/Codex 的 body weight）；模型、Workspace、状态等使用 `ui-monospace` → `SF Mono` → `Menlo`。
 
 不下载 Web Font，不增加网络和打包依赖。
 
 ### 5.3 标志性元素
 
-大 Composer 是唯一视觉主角：像一块放在工作台中央的“任务托盘”，用 1px Moss 内边、轻阴影和底部状态轨道承载
-Main Agent、模型、Workspace、权限与发送动作。发送后它缩为时间线底部的紧凑形态，用户始终能确认自己仍在同一任务。
-
-其他元素保持平直、低对比，不和 Composer 争抢注意力。
+界面整体紧凑、低对比：侧栏项 32px 高、6px 圆角、hover 用 3% 黑；面板 12px 圆角配 card 阴影。
+大 Composer 仍是唯一视觉主角——空任务时居中放大，承载 Main Agent、模型、Workspace、权限与发送动作；
+发送后缩为时间线底部的紧凑形态，用户始终能确认自己仍在同一任务。
 
 ## 6. 组件与职责
 
@@ -170,7 +177,8 @@ export type ViewId = "task" | "automation" | "settings";
 
 ### 6.4 CSS
 
-继续使用一个 `styles.css`，避免为 D1 引入 CSS-in-JS 或组件库。删除 Home 和内部任务列表的无用规则；为合并左栏、
+拆成两层，不引入 CSS-in-JS 或组件库：`theme.css` 只放移植自 LobsterAI 的 `--lobster-*` token 与滚动条样式；
+`styles.css` 保留语义 class 结构并全部消费这些 token。删除 Home 和内部任务列表的无用规则；为合并左栏、
 空态/线程态 Composer 和响应式布局增加明确 class。保留 `prefers-reduced-motion`、`:focus-visible` 和原生表单语义。
 
 ## 7. 状态与数据流
@@ -260,16 +268,18 @@ D1 不新增测试库。使用已安装的 React/ReactDOM/Vitest：
 
 ## 11. 文件范围
 
-预计修改：
+实际修改：
 
 - `desktop/src/renderer/app.tsx`；
 - `desktop/src/renderer/task-workbench.tsx`；
 - `desktop/src/renderer/navigation.ts`；
 - `desktop/src/renderer/styles.css`；
+- `desktop/tailwind.config.ts`（桥接 `--lobster-*` 到 Tailwind 语义色）；
 - `desktop/test/navigation.test.ts`；
-- 新增 `desktop/test/app.test.tsx`；
-- 新增 Composer keyboard 纯函数测试，文件名在实施计划中根据最终边界冻结；
-- `desktop/tsconfig.json` 仅在需要纳入 `.tsx` test 时修改；
+- 新增 `desktop/src/renderer/theme.css`（LobsterAI classic-light token）；
+- 新增 `desktop/src/renderer/composer-keys.ts`（Enter / Shift+Enter / 输入法纯函数）；
+- 新增 `desktop/test/app.test.tsx`、`desktop/test/composer-keys.test.ts`；
+- `desktop/tsconfig.json` 纳入 `test/**/*.tsx`；
 - D1 完成后同步 README、总产品/架构/落地文档和工程索引状态。
 
 D1 不修改 Python Core、Bridge protocol、SQLite migration、Preload、IPC、ArtifactStore 或 Provider。
