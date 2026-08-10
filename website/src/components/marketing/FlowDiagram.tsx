@@ -36,9 +36,15 @@ export function FlowDiagram({ ariaLabel, steps }: { ariaLabel: string; steps: re
   }, [reducedMotion, started]);
 
   const play = started || reducedMotion;
+  const halted = steps.some((step) => step.state === 'blocked');
 
   return (
-    <div className="flow-diagram" data-reduced-motion={reducedMotion ? 'true' : 'false'} ref={rootRef}>
+    <div
+      className="flow-diagram"
+      data-halted={halted ? 'true' : 'false'}
+      data-reduced-motion={reducedMotion ? 'true' : 'false'}
+      ref={rootRef}
+    >
       <ol aria-label={ariaLabel} className="flow-diagram__nodes">
         {steps.map((step, index) => (
           <motion.li

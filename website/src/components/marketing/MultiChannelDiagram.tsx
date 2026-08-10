@@ -40,7 +40,7 @@ export function MultiChannelDiagram({ locale, workflow }: { locale: Locale; work
   return (
     <article className="workflow-panel workflow-panel--channels">
       <div className="workflow-panel__copy">
-        <span>03 / {zh ? '共享核心 · 隔离入口' : 'SHARED CORE · ISOLATED EDGES'}</span>
+        <span>03 / {zh ? '边界时刻' : 'BOUNDARY MOMENT'}</span>
         <h3>{workflow.title}</h3>
         <p>{workflow.summary}</p>
       </div>

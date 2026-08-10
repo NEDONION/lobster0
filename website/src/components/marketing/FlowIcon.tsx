@@ -9,6 +9,8 @@ const paths: Record<FlowIconId, string> = {
   run: '<rect x="3" y="4" width="18" height="16" rx="3.4"/><polyline points="7.4,10 10.8,12.5 7.4,15"/><line x1="12.6" y1="15" x2="16.6" y2="15"/>',
   result:
     '<circle cx="12" cy="12" r="9"/><polyline points="7.8,12.4 10.6,15.2 16.2,8.8"/>',
+  stop:
+    '<circle cx="12" cy="12" r="9"/><line x1="8.5" y1="8.5" x2="15.5" y2="15.5"/><line x1="15.5" y1="8.5" x2="8.5" y2="15.5"/>',
   program:
     '<path d="M7.5 3h6l4 4v14h-10.5V3Z"/><path d="M13.5 3v4h4"/><polyline points="9.3,13 7.3,15 9.3,17"/><polyline points="12.7,13 14.7,15 12.7,17"/>',
 };
