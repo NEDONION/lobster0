@@ -9,7 +9,7 @@ import { useReducedMotionPreference } from '@/lib/motion';
 import { SurfaceIcon } from './SurfaceIcon';
 
 export function MultiChannelDiagram({ locale, workflow }: { locale: Locale; workflow: WorkflowCopy }) {
-  const zh = locale === 'zh-CN';
+  const ui = marketingCopy[locale].ui;
   const reducedMotion = useReducedMotionPreference();
   const rootRef = useRef<HTMLDivElement>(null);
   const [started, setStarted] = useState(false);
@@ -40,12 +40,12 @@ export function MultiChannelDiagram({ locale, workflow }: { locale: Locale; work
   return (
     <article className="workflow-panel workflow-panel--channels">
       <div className="workflow-panel__copy">
-        <span>03 / {zh ? '边界时刻' : 'BOUNDARY MOMENT'}</span>
+        <span>03 / {ui.boundaryMoment}</span>
         <h3>{workflow.title}</h3>
         <p>{workflow.summary}</p>
       </div>
       <div
-        aria-label={zh ? '共享 AgentRuntime 与隔离入口' : 'Shared AgentRuntime with isolated channel edges'}
+        aria-label={ui.isolationAria}
         className="multi-channel-map"
         ref={rootRef}
       >
@@ -55,9 +55,9 @@ export function MultiChannelDiagram({ locale, workflow }: { locale: Locale; work
           initial={reducedMotion ? false : { opacity: 0, scale: 0.85 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
-          <span>{zh ? '共享核心' : 'SHARED CORE'}</span>
+          <span>{ui.sharedCore}</span>
           <strong>AgentRuntime</strong>
-          <small>{zh ? 'Agent · 策略 · 工具 · 记忆' : 'Agent · Policy · Tools · Memory'}</small>
+          <small>{ui.coreStack}</small>
         </motion.div>
         <div className="multi-channel-map__surfaces">
           {siteFacts.surfaces.map((surfaceId, index) => {
@@ -74,13 +74,13 @@ export function MultiChannelDiagram({ locale, workflow }: { locale: Locale; work
                     <SurfaceIcon name={surface?.name ?? surfaceId} />
                   </span>
                   <strong>{surface?.name ?? surfaceId}</strong>
-                  <i aria-label={zh ? '健康' : 'healthy'} />
+                  <i aria-label={ui.healthy} />
                 </header>
                 <dl>
-                  <div><dt>{zh ? '传输' : 'Transport'}</dt><dd>{zh ? '隔离' : 'isolated'}</dd></div>
-                  <div><dt>{zh ? '交付' : 'Delivery'}</dt><dd>{zh ? '隔离' : 'isolated'}</dd></div>
-                  <div><dt>{zh ? '队列' : 'queue'}</dt><dd>{zh ? '隔离' : 'isolated'}</dd></div>
-                  <div><dt>{zh ? '故障' : 'failure'}</dt><dd>{zh ? '受控' : 'contained'}</dd></div>
+                  <div><dt>{ui.transport}</dt><dd>{ui.isolated}</dd></div>
+                  <div><dt>{ui.delivery}</dt><dd>{ui.isolated}</dd></div>
+                  <div><dt>{ui.queue}</dt><dd>{ui.isolated}</dd></div>
+                  <div><dt>{ui.failure}</dt><dd>{ui.contained}</dd></div>
                 </dl>
               </motion.div>
             );

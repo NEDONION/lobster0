@@ -12,19 +12,19 @@ interface WorkbenchProps {
 
 function FlowWorkflow({ locale, workflow, index }: { locale: Locale; workflow: WorkflowCopy; index: number }) {
   if (!workflow.flow) return null;
-  const zh = locale === 'zh-CN';
+  const ui = marketingCopy[locale].ui;
 
   return (
     <article className="workflow-panel workflow-panel--flow">
       <div className="workflow-panel__copy">
-        <span>0{index + 1} / {zh ? '边界时刻' : 'BOUNDARY MOMENT'}</span>
+        <span>0{index + 1} / {ui.boundaryMoment}</span>
         <h3>{workflow.title}</h3>
         <p>{workflow.summary}</p>
       </div>
       <FlowDiagram
         ariaLabel={workflow.id === 'denied'
-          ? (zh ? '请求 → 参数锁定 → 拒绝 → 终止' : 'request → arguments locked → denied → stopped')
-          : (zh ? '程序 → 退出码 → stderr → 如实回报' : 'program → exit code → stderr → reported as-is')}
+          ? (ui.deniedAria)
+          : (ui.crashAria)}
         steps={workflow.flow}
       />
     </article>

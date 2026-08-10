@@ -1,13 +1,12 @@
-import { siteFacts, type Locale, type MarketingCopy } from '@/content/site';
+import { siteFacts, type MarketingCopy } from '@/content/site';
 
-export function EvidenceStrip({ copy, locale }: { copy: MarketingCopy['evidence']; locale: Locale }) {
-  const zh = locale === 'zh-CN';
+export function EvidenceStrip({ copy }: { copy: MarketingCopy['evidence'] }) {
   const facts = [
     { label: copy.labels.core, value: '1' },
     { label: copy.labels.surfaces, value: String(siteFacts.counts.surfaces) },
     { label: copy.labels.tools, value: String(siteFacts.counts.tools) },
     { label: copy.labels.permissionModes, value: String(siteFacts.counts.permissionModes) },
-    { label: copy.labels.dataLocation, value: zh ? '本机' : 'local' },
+    { label: copy.labels.dataLocation, value: copy.labels.dataLocationValue },
   ];
 
   return (

@@ -9,17 +9,23 @@ import {
 } from './i18n';
 
 describe('marketing locale helpers', () => {
-  it('rejects unknown route locales', () => {
+  it('accepts every supported locale and rejects the rest', () => {
     expect(getLocale('zh-CN')).toBe('zh-CN');
     expect(getLocale('en')).toBe('en');
-    expect(getLocale('fr')).toBeNull();
+    expect(getLocale('ja')).toBe('ja');
+    expect(getLocale('ko')).toBe('ko');
+    expect(getLocale('fr')).toBe('fr');
+    expect(getLocale('de')).toBeNull();
   });
 
-  it('keeps Chinese prefix-free and prefixes English', () => {
+  it('keeps Chinese prefix-free and prefixes every other locale', () => {
     expect(localizedPath('zh-CN', '/')).toBe('/');
     expect(localizedPath('zh-CN', '/docs')).toBe('/docs');
     expect(localizedPath('en', '/')).toBe('/en');
     expect(localizedPath('en', '/docs')).toBe('/en/docs');
+    expect(localizedPath('ja', '/')).toBe('/ja');
+    expect(localizedPath('ko', '/docs')).toBe('/ko/docs');
+    expect(localizedPath('fr', '/')).toBe('/fr');
   });
 
   it('rewrites the root without a trailing slash redirect', () => {

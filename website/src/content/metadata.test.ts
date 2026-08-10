@@ -4,13 +4,30 @@ import robots from '@/app/robots';
 import sitemap from '@/app/sitemap';
 
 describe('public metadata', () => {
-  it('publishes localized homes and docs', () => {
-    const urls = sitemap().map((entry) => entry.url);
+  it('publishes every locale home and docs page', () => {
+    const entries = sitemap();
+    const urls = entries.map((entry) => entry.url);
     expect(urls).toContain('https://lobster0.jchu.tech/');
     expect(urls).toContain('https://lobster0.jchu.tech/en');
+    expect(urls).toContain('https://lobster0.jchu.tech/ja');
+    expect(urls).toContain('https://lobster0.jchu.tech/ko');
+    expect(urls).toContain('https://lobster0.jchu.tech/fr');
     expect(urls).toContain('https://lobster0.jchu.tech/docs');
     expect(urls).toContain('https://lobster0.jchu.tech/en/docs');
-    expect(urls).toHaveLength(14);
+    expect(urls).toContain('https://lobster0.jchu.tech/fr/docs');
+    // 5 locales x 7 pages (home + 6 docs)
+    expect(urls).toHaveLength(35);
+    expect(new Set(urls).size).toBe(35);
+
+    // every entry advertises all five hreflang alternates
+    const home = entries.find((entry) => entry.url === 'https://lobster0.jchu.tech/');
+    expect(Object.keys(home?.alternates?.languages ?? {})).toEqual([
+      'zh-CN',
+      'en',
+      'ja',
+      'ko',
+      'fr',
+    ]);
   });
 
   it('advertises the sitemap and keeps APIs out of search results', () => {

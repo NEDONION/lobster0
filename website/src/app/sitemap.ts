@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 import { siteFacts } from '@/content/site';
+import { locales, localizedPath } from '@/lib/i18n';
 
 const siteUrl = siteFacts.siteUrl;
 const docsSlugs = ['', 'getting-started', 'runtime', 'security', 'channels', 'memory'];
@@ -13,26 +14,17 @@ export default function sitemap(): MetadataRoute.Sitemap {
   const paths = ['/', ...docsSlugs.map((slug) => (slug ? `/docs/${slug}` : '/docs'))];
 
   return paths.flatMap((path) => {
-    const zh = path;
-    const en = path === '/' ? '/en' : `/en${path}`;
-    const languages = {
-      'zh-CN': absolute(zh),
-      en: absolute(en),
-    };
+    // Every locale variant of this page points at the same alternates map so
+    // search engines can pick the right language for each visitor.
+    const languages = Object.fromEntries(
+      locales.map((locale) => [locale, absolute(localizedPath(locale, path as `/${string}`))]),
+    );
 
-    return [
-      {
-        alternates: { languages },
-        changeFrequency: 'weekly' as const,
-        priority: path === '/' ? 1 : 0.8,
-        url: absolute(zh),
-      },
-      {
-        alternates: { languages },
-        changeFrequency: 'weekly' as const,
-        priority: path === '/' ? 0.9 : 0.7,
-        url: absolute(en),
-      },
-    ];
+    return locales.map((locale) => ({
+      alternates: { languages },
+      changeFrequency: 'weekly' as const,
+      priority: locale === 'zh-CN' ? (path === '/' ? 1 : 0.8) : path === '/' ? 0.9 : 0.7,
+      url: absolute(localizedPath(locale, path as `/${string}`)),
+    }));
   });
 }

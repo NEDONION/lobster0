@@ -7,6 +7,7 @@ import { CommandCopy } from './CommandCopy';
 
 export function QuickStartClose({ locale }: { locale: Locale }) {
   const copy = marketingCopy[locale];
+  const ui = copy.ui;
 
   return (
     <div className="quick-start-close">
@@ -14,7 +15,7 @@ export function QuickStartClose({ locale }: { locale: Locale }) {
         <p className="section-kicker">{copy.quickStart.eyebrow}</p>
         <h3>{copy.quickStart.title}</h3>
         <p>{copy.quickStart.lead}</p>
-        <div className="quick-start-close__requirements" aria-label={locale === 'zh-CN' ? '运行要求' : 'Requirements'}>
+        <div className="quick-start-close__requirements" aria-label={ui.requirements}>
           <span>Python {siteFacts.requirements.python}</span>
           <span>Node.js {siteFacts.requirements.node}</span>
         </div>
