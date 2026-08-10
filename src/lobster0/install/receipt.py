@@ -303,6 +303,7 @@ class InstallReceipt:
         temporary_identity: tuple[int, int] | None = None
         replaced_identity: tuple[int, int] | None = None
         replaced = False
+        descriptor = -1
         try:
             descriptor = os.open(
                 temporary,
@@ -311,14 +312,11 @@ class InstallReceipt:
             )
             metadata = os.fstat(descriptor)
             temporary_identity = (metadata.st_dev, metadata.st_ino)
-            try:
-                os.fchmod(descriptor, 0o600)
-                if metadata.st_uid != uid:
-                    os.fchown(descriptor, uid, -1)
-                _write_all(descriptor, payload)
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+            os.fchmod(descriptor, 0o600)
+            if metadata.st_uid != uid:
+                os.fchown(descriptor, uid, -1)
+            _write_all(descriptor, payload)
+            os.fsync(descriptor)
             os.replace(temporary, path)
             replaced = True
             replaced_identity = temporary_identity
@@ -330,6 +328,14 @@ class InstallReceipt:
             if replaced and replaced_identity is not None:
                 _restore_receipt(path, original, uid, replaced_identity)
             raise InstallError("uninstall_ownership_mismatch", "manifest") from error
+        finally:
+            # 描述符必须活过 replace 与整个失败清理窗口：`_unlink_same_inode`
+            # 只凭 (st_dev, st_ino) 认领文件，而 Linux 会立刻把刚释放的 inode 号
+            # 复用给新建文件。提前关闭就等于放开 inode 号，之后清理可能删掉
+            # 竞态进程刚创建的同名新文件。`finally` 在 `except` 之后执行，
+            # 所以清理期间它仍然是打开的。
+            if descriptor >= 0:
+                os.close(descriptor)
 
 
 def managed_file_sha256(
@@ -546,42 +552,47 @@ def _restore_receipt(
     identity: tuple[int, int] | None = None
     quarantined: _QuarantinedPath | None = None
     published = False
+    descriptor = -1
     try:
-        quarantined = _quarantine_expected(path, replaced_identity, require_symlink=False)
-        if quarantined is None:
-            return
-        descriptor = os.open(
-            recovery,
-            os.O_WRONLY | os.O_CREAT | os.O_EXCL | _no_follow_flag(),
-            0o600,
-        )
-        metadata = os.fstat(descriptor)
-        identity = (metadata.st_dev, metadata.st_ino)
         try:
+            quarantined = _quarantine_expected(path, replaced_identity, require_symlink=False)
+            if quarantined is None:
+                return
+            descriptor = os.open(
+                recovery,
+                os.O_WRONLY | os.O_CREAT | os.O_EXCL | _no_follow_flag(),
+                0o600,
+            )
+            metadata = os.fstat(descriptor)
+            identity = (metadata.st_dev, metadata.st_ino)
             os.fchmod(descriptor, 0o600)
             if metadata.st_uid != owner_uid:
                 os.fchown(descriptor, owner_uid, -1)
             _write_all(descriptor, original)
             os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
-        os.link(recovery, path, follow_symlinks=False)
-        published = True
-        _unlink_same_inode(recovery, identity)
-        try:
-            _fsync_directory(path.parent)
-        except OSError:
-            _invalid()
-        if not quarantined.discard():
-            _invalid()
-    except OSError:
-        if published and identity is not None:
-            _unlink_same_inode(path, identity)
-        if quarantined is not None and not quarantined.restore():
-            _invalid()
-    finally:
-        if identity is not None:
+            os.link(recovery, path, follow_symlinks=False)
+            published = True
             _unlink_same_inode(recovery, identity)
+            try:
+                _fsync_directory(path.parent)
+            except OSError:
+                _invalid()
+            if not quarantined.discard():
+                _invalid()
+        except OSError:
+            if published and identity is not None:
+                _unlink_same_inode(path, identity)
+            if quarantined is not None and not quarantined.restore():
+                _invalid()
+        finally:
+            if identity is not None:
+                _unlink_same_inode(recovery, identity)
+    finally:
+        # 与 `InstallReceipt.write` 同理：recovery 描述符必须活过 link 发布与
+        # 全部 `_unlink_same_inode` 清理，否则 Linux 复用 inode 号后，这些清理
+        # 可能认领并删掉别人的同名文件。
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def _fsync_directory(path: Path) -> None:
@@ -604,7 +615,14 @@ def _write_all(descriptor: int, payload: bytes) -> None:
 
 
 def _unlink_same_inode(path: Path, identity: tuple[int, int]) -> None:
-    """把公开 pathname 隔离后，仅清理匹配调用方 token 的目录项。"""
+    """把公开 pathname 隔离后，仅清理匹配调用方 token 的目录项。
+
+    归属判断只有 ``(st_dev, st_ino)``，因此**调用方必须在整个清理窗口内持有一个
+    指向该 inode 的打开描述符**。只要描述符还开着，内核就不会回收这个 inode 号；
+    一旦提前关闭，Linux 会立刻把它复用给新建文件，此时竞态进程在同一 pathname
+    上新建的文件可能带着同一个 inode 号出现，这里就会把别人的文件当成自己的删掉。
+    macOS 通常不这么快复用 inode 号，所以该缺陷只在 Linux 上稳定复现。
+    """
     quarantined = _quarantine_expected(path, identity)
     if quarantined is not None and not quarantined.discard():
         _invalid()

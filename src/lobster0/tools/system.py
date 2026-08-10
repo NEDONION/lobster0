@@ -223,13 +223,21 @@ def _run_fixed(argv: list[str]) -> subprocess.CompletedProcess[str] | None:
 
 
 def _linux_cpu_model() -> str | None:
-    """从 Linux 标准 procfs 读取第一个 CPU 型号。"""
+    """从 Linux 标准 procfs 读取第一个 CPU 型号。
+
+    必须用 context manager 持有 handle：直接 ``for line in open(...)`` 再从循环里
+    ``return``，会把关闭时机交给 GC，命中型号那一行时文件永远不是显式关闭的，
+    CPython 因此在析构时报 ``ResourceWarning: unclosed file``。这条路径只在
+    Linux 上执行，macOS 走 ``platform.processor()`` 分支，所以泄漏只会在
+    Linux——也就是本项目的头号目标平台——上出现。
+    """
     if platform.system() != "Linux":
         return platform.processor() or None
     try:
-        for line in open("/proc/cpuinfo", encoding="utf-8"):  # noqa: SIM115
-            if line.lower().startswith("model name"):
-                return line.partition(":")[2].strip() or None
+        with open("/proc/cpuinfo", encoding="utf-8") as handle:
+            for line in handle:
+                if line.lower().startswith("model name"):
+                    return line.partition(":")[2].strip() or None
     except OSError:
         return None
     return None

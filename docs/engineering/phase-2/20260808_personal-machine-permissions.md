@@ -113,17 +113,21 @@ sequenceDiagram
 
 ## 7. 默认 Roots
 
-macOS `personal` Profile 在目录真实存在时使用：
+`personal` Profile 在目录真实存在时使用：
 
 ### Read roots
 
 1. Owner Home；
-2. `/Applications`；
-3. `/opt/homebrew`；
-4. `/usr/local`；
+2. `/Applications`（仅 macOS）；
+3. `/opt/homebrew`（仅 macOS）；
+4. `/usr/local`（仅 macOS）；
 5. `[permissions].read_roots` 中的显式真实目录。
 
 ### Write roots
+
+默认写根与平台无关，macOS 与 Linux 使用同一份清单：`Desktop`/`Documents`/`Downloads`
+正是 Linux `xdg-user-dirs` 的默认英文名，`PycharmProjects`/`WebstormProjects` 是
+JetBrains 在各平台相同的默认目录。
 
 1. `~/Desktop`；
 2. `~/Documents`；

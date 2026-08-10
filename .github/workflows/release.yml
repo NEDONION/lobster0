@@ -139,6 +139,32 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/uv"
           tar -xzf "${RUNNER_TEMP}/uv.tar.gz" -C "${RUNNER_TEMP}/uv" --strip-components=1
           echo "${RUNNER_TEMP}/uv" >> "${GITHUB_PATH}"
+      - name: Install the default managed Node
+        run: |
+          set -euo pipefail
+          pin="$(python3 -c "import json;a=json.load(open('release/runtime-versions.json'))['node']['archives']['linux-x86_64'];print(a['url'],a['sha256'])")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+            -o "${RUNNER_TEMP}/node.tar.gz" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/node.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/node"
+          tar -xzf "${RUNNER_TEMP}/node.tar.gz" -C "${RUNNER_TEMP}/node" --strip-components=1
+          echo "${RUNNER_TEMP}/node/bin" >> "${GITHUB_PATH}"
+      - name: Prepare the Node projects the offline suite executes
+        run: |
+          set -euo pipefail
+          node --version | grep -F 'v24.18.0'
+          corepack enable
+          # corepack 自带的 pnpm 新于项目 pin，且仓库根没有 package.json，
+          # `corepack pnpm --dir <project>` 解析不到项目声明的版本，会直接以
+          # 版本不符退出。显式激活项目 pin 之后 corepack 才会用正确的 pnpm。
+          pin="$(python3 -c "import json;t=json.load(open('tui/package.json'))['packageManager'];b=json.load(open('browser-worker/package.json'))['packageManager'];assert t==b,(t,b);print(t)")"
+          corepack prepare "${pin}" --activate
+          # BROWSER-017 需要真实的 Worker ProfileLock，test_release_bundles
+          # 需要已安装依赖的 tui 工作区；两者都不会由测试自己构建。
+          corepack pnpm --dir browser-worker install --frozen-lockfile
+          corepack pnpm --dir browser-worker build
+          test -f browser-worker/dist/profile.js
+          corepack pnpm --dir tui install --frozen-lockfile
       - name: Rerun the complete offline gate
         run: |
           set -euo pipefail
@@ -331,6 +357,7 @@ jobs:
           set -euo pipefail
           node --version | grep -F 'v24.18.0'
           corepack enable
+          corepack prepare "$(python3 -c "import json;print(json.load(open('tui/package.json'))['packageManager'])")" --activate
           mkdir -p "${RUNNER_TEMP}/bundles"
           python3 scripts/build_tui_bundle.py \
             --platform "${PLATFORM}" \

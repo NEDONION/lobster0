@@ -278,12 +278,23 @@ class InstallReceiptTests(unittest.TestCase):
         self.assertFalse(any(path.name.endswith(".tmp") for path in self.root.iterdir()))
 
     def test_general_cleanup_quarantines_instead_of_unlinking_postcheck_replacement(self) -> None:
-        """通用 temp cleanup 的最终 lstat 后 replacement 也不能被 pathname unlink。"""
+        """通用 temp cleanup 的最终 lstat 后 replacement 也不能被 pathname unlink。
+
+        这里按 `_unlink_same_inode` 的真实契约持有 target 的打开描述符：只有
+        inode 被描述符钉住，``(st_dev, st_ino)`` token 才代表"我创建的那个文件"。
+        描述符一关，Linux 会立刻把该 inode 号复用给 replacement，token 便会错误
+        地匹配上别人的文件——macOS 只是碰巧不这么快复用而已。钉住之后
+        replacement 在两个平台上都必然落在不同 inode 上，这条断言才真正在证明
+        "identity 校验发生在原子 quarantine rename 之后，失配时恢复而不是删除"。
+        """
         target = self.root / "owned.tmp"
         target.write_bytes(b"owned")
-        metadata = target.lstat()
+        descriptor = os.open(target, os.O_RDONLY)
+        self.addCleanup(os.close, descriptor)
+        metadata = os.fstat(descriptor)
         identity = (metadata.st_dev, metadata.st_ino)
         replacement = b"replacement"
+
         def replace_before_quarantine(path: Path) -> None:
             """在原子 quarantine 前替换公开 pathname。"""
             path.unlink()
@@ -295,6 +306,7 @@ class InstallReceiptTests(unittest.TestCase):
             side_effect=replace_before_quarantine,
         ):
             receipt_module._unlink_same_inode(target, identity)
+        self.assertNotEqual(target.lstat().st_ino, identity[1])
         self.assertEqual(target.read_bytes(), replacement)
 
     def test_quarantine_post_rename_failure_restores_or_keeps_explicit_evidence(self) -> None:
