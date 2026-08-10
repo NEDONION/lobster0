@@ -1,7 +1,11 @@
 {
   "name": "@lobster0/desktop",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "private": true,
+  "description": "Lobster0 desktop workbench",
+  "license": "MIT",
+  "author": "NEDONION",
+  "homepage": "https://github.com/NEDONION/lobster0",
   "type": "module",
   "packageManager": "pnpm@10.14.0",
   "engines": {
@@ -13,14 +17,15 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "smoke": "electron scripts/smoke-electron.mjs"
+    "smoke": "electron scripts/smoke-electron.mjs",
+    "package": "electron-builder --config electron-builder.json --publish never"
   },
   "dependencies": {
     "@lobster0/pi-tui": "file:../tui",
     "react": "18.3.1",
     "react-dom": "18.3.1",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
@@ -28,6 +33,7 @@
     "@types/react-dom": "18.3.7",
     "@vitejs/plugin-react": "5.1.4",
     "electron": "43.2.0",
+    "electron-builder": "26.15.3",
     "electron-vite": "5.0.0",
     "postcss": "8.5.12",
     "tailwindcss": "3.4.17",

@@ -2,11 +2,32 @@ import { defineI18n } from 'fumadocs-core/i18n';
 
 import type { Locale } from '@/content/site';
 
-export const locales = ['zh-CN', 'en'] as const satisfies readonly Locale[];
+export const locales = ['zh-CN', 'en', 'ja', 'ko', 'fr'] as const satisfies readonly Locale[];
 
 export const localeNames: Record<Locale, string> = {
   'zh-CN': '简体中文',
   en: 'English',
+  ja: '日本語',
+  ko: '한국어',
+  fr: 'Français',
+};
+
+/** Short label shown inside the compact language toggle. */
+export const localeShortNames: Record<Locale, string> = {
+  'zh-CN': '中',
+  en: 'EN',
+  ja: 'JA',
+  ko: 'KO',
+  fr: 'FR',
+};
+
+/** OpenGraph `og:locale` value per language. */
+export const openGraphLocales: Record<Locale, string> = {
+  'zh-CN': 'zh_CN',
+  en: 'en_US',
+  ja: 'ja_JP',
+  ko: 'ko_KR',
+  fr: 'fr_FR',
 };
 
 const i18nBypassPaths = new Set([
@@ -21,7 +42,9 @@ const i18nBypassPrefixes = ['/api', '/_next', '/images'];
 export const i18n = defineI18n({
   languages: [...locales],
   defaultLanguage: 'zh-CN',
-  fallbackLanguage: null,
+  // Docs are only authored in zh-CN and en. ja/ko/fr are marketing-only locales,
+  // so their /docs routes fall back to English instead of 404-ing.
+  fallbackLanguage: 'en',
   hideLocale: 'default-locale',
 });
 
@@ -38,7 +61,7 @@ export function isI18nBypassPath(pathname: string): boolean {
 
 export function localizedPath(locale: Locale, path: `/${string}`): string {
   if (locale === 'zh-CN') return path;
-  return path === '/' ? '/en' : `/en${path}`;
+  return path === '/' ? `/${locale}` : `/${locale}${path}`;
 }
 
 export function normalizeFrameworkPathname(pathname: string): string {

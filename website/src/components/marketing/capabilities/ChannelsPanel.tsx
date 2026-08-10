@@ -10,7 +10,7 @@ import { SurfaceIcon } from '../SurfaceIcon';
 const edgeX = [12, 37.3, 62.6, 88];
 
 export function ChannelsPanel({ copy, locale }: { copy: CapabilityCopy; locale: Locale }) {
-  const zh = locale === 'zh-CN';
+  const ui = marketingCopy[locale].ui;
   const reducedMotion = useReducedMotionPreference();
   const surfaces = marketingCopy[locale].hero.surfaces;
 
@@ -27,7 +27,7 @@ export function ChannelsPanel({ copy, locale }: { copy: CapabilityCopy; locale: 
         </ul>
       </div>
       <div
-        aria-label={zh ? '一个 AgentRuntime 与四个隔离入口' : 'One AgentRuntime and four isolated surfaces'}
+        aria-label={ui.channelsAria}
         className="channels-map"
         data-reduced-motion={reducedMotion ? 'true' : 'false'}
       >
@@ -37,9 +37,9 @@ export function ChannelsPanel({ copy, locale }: { copy: CapabilityCopy; locale: 
           initial={reducedMotion ? false : { opacity: 0, scale: 0.85 }}
           transition={{ duration: 0.4, ease: 'easeOut' }}
         >
-          <span>{zh ? '共享核心' : 'SHARED'}</span>
+          <span>{ui.sharedCoreShort}</span>
           <strong>AgentRuntime</strong>
-          <small>{zh ? 'Python Core / 策略 / 记忆' : 'Python Core / Policy / Memory'}</small>
+          <small>{ui.coreStackShort}</small>
         </motion.div>
         <div aria-hidden="true" className="channels-map__wires">
           <span className="channels-map__wire channels-map__wire--trunk" />
@@ -63,7 +63,7 @@ export function ChannelsPanel({ copy, locale }: { copy: CapabilityCopy; locale: 
                   <SurfaceIcon name={surface?.name ?? surfaceId} />
                 </span>
                 <strong>{surface?.name ?? surfaceId}</strong>
-                <small>{zh ? '传输 · 交付 · 队列' : 'transport · delivery · queue'}</small>
+                <small>{ui.edgeSummary}</small>
               </motion.li>
             );
           })}
