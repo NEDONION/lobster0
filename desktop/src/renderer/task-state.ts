@@ -4,6 +4,7 @@ import {
   createInitialState,
   reduceFrame,
   type AppState,
+  type Telemetry,
 } from "@lobster0/pi-tui/state";
 
 import type { SessionHistory } from "../common/api";
@@ -22,6 +23,15 @@ export interface DesktopTaskState {
   status: DesktopTaskStatus;
   run: AppState;
   error: string | null;
+  /**
+   * 每个已完成回合的 telemetry 快照，按 turnId 索引。
+   *
+   * `AppState.telemetry` 只保留最近一次运行的数字，会被下一回合覆盖；
+   * 而界面要在每条回复下方显示"这一条"的耗时与用量，因此在回合结束时
+   * 把当时的读数固定下来。失败或取消的回合不记录——那些数字不完整，
+   * 展示出来会误导。
+   */
+  turnTelemetry: Readonly<Record<number, Telemetry>>;
 }
 
 export function createDesktopTaskState(sessionKey: string): DesktopTaskState {
@@ -30,6 +40,7 @@ export function createDesktopTaskState(sessionKey: string): DesktopTaskState {
     status: "idle",
     run: createInitialState(),
     error: null,
+    turnTelemetry: {},
   };
 }
 
@@ -109,7 +120,17 @@ export function reduceDesktopFrame(
     return { ...state, status: "waiting_approval", run: reduced, error: null };
   }
   if (frame.type === "event.turn_finished") {
-    return { ...state, status: "completed", run: reduced, error: null };
+    const turnId = frame.payload.turn_id;
+    return {
+      ...state,
+      status: "completed",
+      run: reduced,
+      error: null,
+      turnTelemetry:
+        typeof turnId === "number"
+          ? { ...state.turnTelemetry, [turnId]: reduced.telemetry }
+          : state.turnTelemetry,
+    };
   }
   if (frame.type === "event.turn_failed") {
     return {

@@ -102,9 +102,10 @@ select:focus-visible {
 }
 
 /* 侧栏所有条目共享同一套尺寸节奏；视觉保持克制，默认无背景色块，
-   只有 hover 和选中态才出现中性浅灰底，强调色不用于大面积填充。 */
-.nav-item,
-.sidebar-create {
+   只有 hover 和选中态才出现中性浅灰底，强调色不用于大面积填充。
+   「新建对话」直接挂 .nav-item 类复用这一整套，只靠 + 图标区分，
+   从结构上杜绝两者再次出现偏差。 */
+.nav-item {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -120,14 +121,12 @@ select:focus-visible {
   text-align: left;
 }
 
-.nav-item:hover:not(:disabled),
-.sidebar-create:hover:not(:disabled) {
+.nav-item:hover:not(:disabled) {
   color: var(--lobster-foreground);
   background: var(--lobster-hover);
 }
 
-.nav-item:disabled,
-.sidebar-create:disabled {
+.nav-item:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -137,9 +136,6 @@ select:focus-visible {
   background: var(--lobster-surface-raised);
   font-weight: var(--lobster-ui-font-weight-medium);
 }
-
-/* 新建对话是主操作，但靠位置和字重区分即可，不需要整块填色。 */
-/* 「新建对话」与导航项完全同款，只靠开头的 + 图标区分，不再额外加粗或加深。 */
 
 .nav-mark {
   width: 16px;
@@ -538,18 +534,16 @@ select:focus-visible {
   letter-spacing: -0.01em;
 }
 
-/* 运行指标与状态同处顶栏右侧：指标用等宽字体、低对比，状态标签保持醒目。 */
-.conversation-meta {
+/* 运行指标跟随它所属的那条回复，而不是汇总在顶栏——顶栏只有一份数字，
+   会被下一回合覆盖，滚动查看历史时容易误读成当前这条的成绩。 */
+.message-telemetry {
   display: flex;
-  align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
-}
-
-.telemetry-fact {
+  margin-top: 2px;
   color: var(--lobster-text-muted);
   font-family: var(--lobster-font-mono);
   font-size: 11px;
-  white-space: nowrap;
 }
 
 .task-status {
@@ -1064,15 +1058,12 @@ select:focus-visible {
 
   .brand > span:last-child,
   .nav-item > span:last-child,
-  .sidebar-create > span:last-child,
   .sidebar-status > span:not(.pulse-dot),
-  .sidebar-status > strong,
   .sidebar-recent {
     display: none;
   }
 
-  .nav-item,
-  .sidebar-create {
+  .nav-item {
     justify-content: center;
     padding-inline: 0;
   }
@@ -1084,7 +1075,6 @@ select:focus-visible {
 
 @media (prefers-reduced-motion: no-preference) {
   .nav-item,
-  .sidebar-create,
   .sidebar-recent-list button,
   .button-primary,
   .button-secondary,

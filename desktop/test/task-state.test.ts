@@ -109,3 +109,73 @@ describe("Desktop task state", () => {
     expect(state.error).toBe("上次运行意外中断");
   });
 });
+
+describe("per-turn telemetry snapshots", () => {
+  it("keeps each finished turn's telemetry so every reply can show its own metrics", () => {
+    let state = createDesktopTaskState("s");
+    state = reduceDesktopFrame(state, frame("event.turn_started", { turn_id: 1 }));
+    state = reduceDesktopFrame(
+      state,
+      frame("event.model_usage", {
+        turn_id: 1,
+        iteration: 2,
+        context_tokens: 900,
+        input_tokens: 700,
+        output_tokens: 120,
+        tool_calls: 3,
+      }),
+    );
+    state = reduceDesktopFrame(
+      state,
+      frame("event.turn_finished", { turn_id: 1, content: "done", duration_ms: 4200 }),
+    );
+
+    const first = state.turnTelemetry[1];
+    expect(first?.durationMs).toBe(4200);
+    expect(first?.toolCalls).toBe(3);
+    expect(first?.iterations).toBe(2);
+    expect(first?.inputTokens).toBe(700);
+  });
+
+  it("does not let a later turn overwrite an earlier turn's numbers", () => {
+    let state = createDesktopTaskState("s");
+    state = reduceDesktopFrame(state, frame("event.turn_started", { turn_id: 1 }));
+    state = reduceDesktopFrame(
+      state,
+      frame("event.model_usage", { turn_id: 1, iteration: 1, tool_calls: 5 }),
+    );
+    state = reduceDesktopFrame(
+      state,
+      frame("event.turn_finished", { turn_id: 1, content: "a", duration_ms: 1000 }),
+    );
+    state = reduceDesktopFrame(state, frame("event.turn_started", { turn_id: 2 }));
+    state = reduceDesktopFrame(
+      state,
+      frame("event.model_usage", { turn_id: 2, iteration: 1, tool_calls: 1 }),
+    );
+    state = reduceDesktopFrame(
+      state,
+      frame("event.turn_finished", { turn_id: 2, content: "b", duration_ms: 2000 }),
+    );
+
+    expect(state.turnTelemetry[1]?.durationMs).toBe(1000);
+    expect(state.turnTelemetry[1]?.toolCalls).toBe(5);
+    expect(state.turnTelemetry[2]?.durationMs).toBe(2000);
+    expect(state.turnTelemetry[2]?.toolCalls).toBe(1);
+  });
+
+  it("records nothing for turns that failed or were cancelled", () => {
+    let state = createDesktopTaskState("s");
+    state = reduceDesktopFrame(state, frame("event.turn_started", { turn_id: 1 }));
+    state = reduceDesktopFrame(
+      state,
+      frame("event.turn_failed", { turn_id: 1, error_code: "provider_error" }),
+    );
+
+    expect(state.turnTelemetry[1]).toBeUndefined();
+  });
+
+  it("starts empty so a fresh conversation shows no stale metrics", () => {
+    expect(createDesktopTaskState("s").turnTelemetry).toEqual({});
+  });
+});

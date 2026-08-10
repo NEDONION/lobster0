@@ -7,6 +7,8 @@ import {
   type KeyboardEvent,
 } from "react";
 
+import type { Telemetry } from "@lobster0/pi-tui/state";
+
 import type {
   ApprovalDecision,
   DesktopBootstrap,
@@ -23,7 +25,7 @@ import {
   reduceDesktopFrame,
   type DesktopTaskStatus,
 } from "./task-state";
-import { telemetryFacts as buildTelemetryFacts } from "./telemetry-facts";
+import { telemetryFacts } from "./telemetry-facts";
 import { groupTimeline, toolDetail } from "./timeline-blocks";
 
 interface TaskWorkbenchProps {
@@ -57,6 +59,26 @@ export function workspaceBasename(workspace: string): string {
   return separator === -1 ? trimmed : trimmed.slice(separator + 1);
 }
 
+/** 渲染某一条助手回复自己的运行指标；没有记录（历史会话、失败回合）时不占位。 */
+function MessageTelemetry({ telemetry }: { telemetry: Telemetry | undefined }): React.JSX.Element | null {
+  if (!telemetry) {
+    return null;
+  }
+  const facts = telemetryFacts(telemetry);
+  if (facts.length === 0) {
+    return null;
+  }
+  return (
+    <div className="message-telemetry">
+      {facts.map((fact) => (
+        <span key={fact.label} title={fact.label}>
+          {fact.value}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function TaskWorkbench({
   sessionKey,
   bootstrap,
@@ -74,10 +96,6 @@ export function TaskWorkbench({
   const [expandedProcesses, setExpandedProcesses] = useState<ReadonlySet<number>>(new Set());
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineBlocks = useMemo(() => groupTimeline(task.run.timeline), [task.run.timeline]);
-  const telemetryFacts = useMemo(
-    () => buildTelemetryFacts(task.run.telemetry),
-    [task.run.telemetry],
-  );
 
   useEffect(() => window.lobster0.onFrame((frame) => {
     setTask((current) => reduceDesktopFrame(current, frame));
@@ -229,16 +247,9 @@ export function TaskWorkbench({
               <span className="eyebrow">CONVERSATION</span>
               <h1>当前对话</h1>
             </div>
-            <div className="conversation-meta">
-              {telemetryFacts.map((fact) => (
-                <span className="telemetry-fact" key={fact.label} title={fact.label}>
-                  {fact.value}
-                </span>
-              ))}
-              <span className="task-status" data-status={task.status}>
-                {STATUS_LABELS[task.status]}
-              </span>
-            </div>
+            <span className="task-status" data-status={task.status}>
+              {STATUS_LABELS[task.status]}
+            </span>
           </div>
         )}
 
@@ -258,6 +269,9 @@ export function TaskWorkbench({
                 <article className={`message message-${item.kind}`} key={block.id}>
                   <span>{item.kind === "user" ? "你" : "Lobster0"}</span>
                   {item.content ? <Markdown content={item.content} /> : <p>…</p>}
+                  {item.kind === "assistant" ? (
+                    <MessageTelemetry telemetry={task.turnTelemetry[item.turnId]} />
+                  ) : null}
                 </article>
               );
             }
