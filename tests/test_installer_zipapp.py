@@ -88,6 +88,28 @@ class InstallerZipappTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, detail):
                     builder.validate_imports(source)
 
+    def test_ast_boundary_rejects_dynamic_module_access_and_constant_folding(self) -> None:
+        """importlib/builtins 的 alias、全局访问与常量折叠均必须 fail closed。"""
+        cases = (
+            ("import importlib as loader\nloader\n", "importlib"),
+            ("import builtins as b\nb\n", "builtins"),
+            ("globals()['__builtins__']\n", "__builtins__"),
+            ("globals()['__built' + 'ins__']\n", "__builtins__"),
+            (
+                "import importlib\n"
+                "getattr(importlib, 'import_' + 'module')('httpx')\n",
+                "importlib",
+            ),
+        )
+        builder = _load_builder()
+        for payload, detail in cases:
+            with self.subTest(detail=detail), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "install"
+                source.mkdir()
+                (source / "__init__.py").write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, detail):
+                    builder.validate_imports(source)
+
     def test_archive_contains_only_install_package_with_fixed_timestamps(self) -> None:
         """pyz 不得携带主包其他模块、cache 或本机时间。"""
         builder = _load_builder()

@@ -9,6 +9,7 @@ import os
 import pty
 import pwd
 import select
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -26,7 +27,7 @@ from miniclaw.config import ConfigError, load_config
 from miniclaw.install import __main__ as installer_cli
 from miniclaw.install import orchestrator as install_orchestrator
 from miniclaw.install.__main__ import _public_argv, main
-from miniclaw.install.layout import InstallLayout
+from miniclaw.install.layout import InstallLayout, InstallLock
 from miniclaw.install.models import (
     InstallError,
     InstallEvent,
@@ -145,6 +146,7 @@ class _Operations:
         self.current = "old"
         self.service = "old"
         self.held_lock: _Lock | None = None
+        self.recovery_manifest: object | None = None
 
     def _call(self, name: str) -> None:
         """记录一次调用并在命中注入点时失败。"""
@@ -207,10 +209,16 @@ class _Operations:
         self.held_lock = _Lock(self.calls)
         return self.held_lock
 
-    def recover(self, _layout: object, lock: _Lock) -> None:
+    def recover(
+        self,
+        _layout: object,
+        lock: _Lock,
+        manifest: object,
+    ) -> None:
         """记录 lock-bound Runtime 与 downloads 恢复边界。"""
         if lock is not self.held_lock:
             raise AssertionError("recovery did not receive the acquired lock")
+        self.recovery_manifest = manifest
         self.calls.append("recover")
 
     def previous_current(self, _layout: object) -> str:
@@ -439,6 +447,7 @@ class InstallerStateMachineTests(unittest.TestCase):
         """同版本重试恢复必须使用当前 with 返回的 actual lock。"""
         operations = _Operations()
         Installer(self.bootstrap, operations=operations).run(self.request)
+        self.assertIs(operations.recovery_manifest, _Plan.manifest)
         self.assertLess(
             operations.calls.index("recover"),
             operations.calls.index("previous_current"),
@@ -1064,6 +1073,9 @@ class RetryRecoveryTests(unittest.TestCase):
         self.layout.runtimes_dir.mkdir(mode=0o700, parents=True)
         self.layout.program_prefix.chmod(0o700)
         self.operations = _SystemOperations(mock.sentinel.bootstrap)  # type: ignore[arg-type]
+        self.manifest = ReleaseManifest.from_bytes(
+            (Path(__file__).parent / "install" / "manifest_v1.json").read_bytes()
+        )
 
     def _receipt(self, *, service: bool) -> InstallReceipt:
         """返回可写入当前 layout 的 valid fresh/managed receipt。"""
@@ -1081,21 +1093,125 @@ class RetryRecoveryTests(unittest.TestCase):
             service_file_sha256="c" * 64 if service else None,
         )
 
+    def test_fresh_layout_recovery_treats_missing_runtimes_as_empty(self) -> None:
+        """首次安装缺少 runtimes/ 必须返回 empty 并通过真实 lock recovery。"""
+        fresh_home = self.home / "fresh"
+        fresh_home.mkdir(mode=0o700)
+        layout = InstallLayout.user(fresh_home, version="0.7.0")
+        try:
+            recovered = install_orchestrator._discard_stale_downloads(layout)
+        except InstallError as error:
+            self.fail(f"missing runtimes was not empty: {error.code}")
+        self.assertIs(recovered, False)
+        with mock.patch(
+            "miniclaw.install.layout._probe_process",
+            return_value=("alive", "2026-08-10T00:00:00Z"),
+        ):
+            with InstallLock.acquire(layout) as lock:
+                self.operations.recover(layout, lock, self.manifest)
+        self.assertFalse(layout.runtimes_dir.exists())
+
+    def test_interrupted_staging_recovery_allows_same_version_retry(self) -> None:
+        """Task8D public recovery 必须收到 exact facts，并让同版本 retry。"""
+        staging = self.layout.staging
+        staging.mkdir(mode=0o700)
+        partial = staging / "partial"
+        partial.mkdir(mode=0o700)
+        data = partial / "data"
+        data.write_bytes(b"interrupted")
+        data.chmod(0o600)
+        order: list[str] = []
+
+        def discard_staging(*_args: object) -> bool:
+            """模拟已由 Task8D 验证并 durable 删除 marker-bound residue。"""
+            order.append("staging")
+            shutil.rmtree(staging)
+            return True
+
+        def discard_runtime(*_args: object) -> bool:
+            """记录 final Runtime recovery 必须发生在 staging 之后。"""
+            order.append("runtime")
+            return False
+
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator.discard_interrupted_runtime_staging",
+                side_effect=discard_staging,
+            ) as recover_staging,
+            mock.patch(
+                "miniclaw.install.orchestrator.discard_unactivated_runtime",
+                side_effect=discard_runtime,
+            ) as recover_runtime,
+            mock.patch(
+                "miniclaw.install.layout._probe_process",
+                return_value=("alive", "2026-08-10T00:00:00Z"),
+            ),
+        ):
+            with InstallLock.acquire(self.layout) as lock:
+                self.operations.recover(self.layout, lock, self.manifest)
+                recover_staging.assert_called_once_with(self.layout, lock, self.manifest)
+                recover_runtime.assert_called_once_with(self.layout, lock)
+        self.assertEqual(order, ["staging", "runtime"])
+        self.assertFalse(staging.exists())
+        staging.mkdir(mode=0o700)
+        self.assertTrue(staging.is_dir())
+
+    def test_staging_recovery_propagates_reference_foreign_and_lock_errors(self) -> None:
+        """Task8D 的 reference、foreign tree 与 lock 错误均不得被 Task11 吞掉。"""
+        for case in ("reference", "foreign", "lock"):
+            with self.subTest(case=case):
+                home = self.home / case
+                home.mkdir(mode=0o700)
+                layout = InstallLayout.user(home, version=self.manifest.version)
+                layout.runtimes_dir.mkdir(mode=0o700, parents=True)
+                layout.program_prefix.chmod(0o700)
+                marker: Path | None = None
+                if case == "reference":
+                    layout.current.symlink_to(f"runtimes/{self.manifest.version}")
+                elif case == "foreign":
+                    external = home / "external"
+                    external.mkdir(mode=0o700)
+                    marker = external / "marker"
+                    marker.write_bytes(b"foreign")
+                    layout.staging.symlink_to(external, target_is_directory=True)
+                with mock.patch(
+                    "miniclaw.install.layout._probe_process",
+                    return_value=("alive", "2026-08-10T00:00:00Z"),
+                ):
+                    lock = InstallLock.acquire(layout)
+                    if case == "lock":
+                        lock.close()
+                    try:
+                        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                            self.operations.recover(layout, lock, self.manifest)
+                    finally:
+                        lock.close()
+                if marker is not None:
+                    self.assertEqual(marker.read_bytes(), b"foreign")
+
     def test_recovery_calls_public_runtime_api_and_removes_exact_stale_downloads(self) -> None:
         """lock 内恢复必须复用 Task8 public API 并清理 exact owner downloads。"""
         stale = self.layout.runtimes_dir / ".0.7.0.downloads"
         stale.mkdir(mode=0o700)
         (stale / "partial").write_bytes(b"partial")
         held_lock = mock.sentinel.held_lock
-        with mock.patch(
-            "miniclaw.install.orchestrator.discard_unactivated_runtime",
-            return_value=True,
-        ) as discard:
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator.discard_interrupted_runtime_staging",
+                return_value=False,
+            ) as discard_staging,
+            mock.patch(
+                "miniclaw.install.orchestrator.discard_unactivated_runtime",
+                return_value=True,
+            ) as discard_runtime,
+        ):
             self.operations.recover(
                 self.layout,
                 held_lock,  # type: ignore[arg-type]
+                self.manifest,
             )
-        discard.assert_called_once_with(self.layout, held_lock)
+        discard_staging.assert_called_once_with(self.layout, held_lock, self.manifest)
+        discard_runtime.assert_called_once_with(self.layout, held_lock)
         self.assertFalse(stale.exists())
 
     def test_recovery_never_follows_foreign_downloads_symlink(self) -> None:
@@ -1116,6 +1232,7 @@ class RetryRecoveryTests(unittest.TestCase):
             self.operations.recover(
                 self.layout,
                 mock.sentinel.held_lock,  # type: ignore[arg-type]
+                self.manifest,
             )
         self.assertTrue(stale.is_symlink())
         self.assertEqual(marker.read_bytes(), b"foreign")
@@ -1162,6 +1279,7 @@ class RetryRecoveryTests(unittest.TestCase):
             self.operations.recover(
                 self.layout,
                 mock.sentinel.held_lock,  # type: ignore[arg-type]
+                self.manifest,
             )
         discard.assert_not_called()
         self.assertEqual(self.layout.receipt.read_bytes(), before)

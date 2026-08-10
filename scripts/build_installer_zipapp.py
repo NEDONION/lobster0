@@ -16,7 +16,12 @@ _TIMESTAMP = 315_532_800
 _ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 _SHEBANG = b"#!/usr/bin/env python3\n"
 _DYNAMIC_BUILTINS = {"__import__", "compile", "eval", "exec"}
-_DYNAMIC_NAMES = _DYNAMIC_BUILTINS | {"import_module"}
+_DYNAMIC_MODULES = {"builtins", "importlib"}
+_DYNAMIC_NAMES = _DYNAMIC_BUILTINS | _DYNAMIC_MODULES | {
+    "__builtins__",
+    "import_module",
+}
+_DYNAMIC_ATTRIBUTES = (_DYNAMIC_BUILTINS - {"compile"}) | {"import_module"}
 
 
 def validate_imports(source: Path) -> None:
@@ -61,52 +66,51 @@ def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
     Raises:
         ValueError: 发现 dynamic import、eval/exec/compile 或简单 alias 绕过。
     """
-    builtins_aliases = {"builtins", "__builtins__"}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            builtins_aliases.update(
-                alias.asname or alias.name
-                for alias in node.names
-                if alias.name == "builtins"
-            )
-    changed = True
-    while changed:
-        changed = False
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Name):
-                continue
-            if node.value.id not in builtins_aliases:
-                continue
-            for target in node.targets:
-                if isinstance(target, ast.Name) and target.id not in builtins_aliases:
-                    builtins_aliases.add(target.id)
-                    changed = True
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and node.id in _DYNAMIC_BUILTINS:
+    nodes = tuple(ast.walk(tree))
+    for node in nodes:
+        if isinstance(node, ast.Name) and node.id in _DYNAMIC_NAMES:
             raise ValueError(f"unsafe dynamic {node.id} in {path.name}")
-        if isinstance(node, ast.Constant) and node.value in _DYNAMIC_NAMES:
-            raise ValueError(f"unsafe dynamic {node.value} in {path.name}")
-        if isinstance(node, ast.Attribute) and (
-            node.attr == "import_module"
-            or node.attr in _DYNAMIC_BUILTINS
-            and _attribute_root(node) in builtins_aliases
-        ):
+        if isinstance(node, ast.Attribute) and node.attr in _DYNAMIC_ATTRIBUTES:
             raise ValueError(f"unsafe dynamic {node.attr} in {path.name}")
-        if (
-            isinstance(node, ast.ImportFrom)
-            and node.module in {"builtins", "importlib"}
-            and any(alias.name in _DYNAMIC_NAMES for alias in node.names)
-        ):
-            name = next(alias.name for alias in node.names if alias.name in _DYNAMIC_NAMES)
-            raise ValueError(f"unsafe dynamic {name} in {path.name}")
+        if isinstance(node, ast.ImportFrom):
+            blocked = next(
+                (alias.name for alias in node.names if alias.name in _DYNAMIC_NAMES),
+                None,
+            )
+            if blocked is not None:
+                raise ValueError(f"unsafe dynamic {blocked} in {path.name}")
+        folded = _constant_string(node) if isinstance(node, ast.expr) else None
+        if folded in _DYNAMIC_NAMES:
+            raise ValueError(f"unsafe dynamic {folded} in {path.name}")
+    for node in nodes:
+        modules: tuple[str, ...] = ()
+        if isinstance(node, ast.Import):
+            modules = tuple(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module is not None:
+            modules = (node.module,)
+        blocked = next(
+            (
+                name.split(".", 1)[0]
+                for name in modules
+                if name.split(".", 1)[0] in _DYNAMIC_MODULES
+            ),
+            None,
+        )
+        if blocked is not None:
+            raise ValueError(f"unsafe dynamic {blocked} in {path.name}")
 
 
-def _attribute_root(node: ast.Attribute) -> str | None:
-    """返回 attribute chain 的 root Name，其他动态表达式返回空。"""
-    value: ast.expr = node.value
-    while isinstance(value, ast.Attribute):
-        value = value.value
-    return value.id if isinstance(value, ast.Name) else None
+def _constant_string(node: ast.expr) -> str | None:
+    """折叠 bounded literal string 加法，其他表达式返回空。"""
+    if isinstance(node, ast.Constant) and type(node.value) is str:
+        return node.value
+    if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Add):
+        return None
+    left = _constant_string(node.left)
+    right = _constant_string(node.right)
+    if left is None or right is None or len(left) + len(right) > 128:
+        return None
+    return left + right
 
 
 def build_zipapp(source: Path, output: Path) -> Path:

@@ -62,6 +62,7 @@ from miniclaw.install.runtime import (
     RuntimeReceipt,
     _SubprocessRunner,
     activate_runtime,
+    discard_interrupted_runtime_staging,
     discard_unactivated_runtime,
     retain_current_and_previous,
 )
@@ -373,8 +374,13 @@ class _Operations(Protocol):
     def previous_current(self, layout: InstallLayout) -> str | None:
         """返回事务前 current symlink target。"""
 
-    def recover(self, layout: InstallLayout, lock: InstallLock) -> None:
-        """在 actual lock 下恢复未激活 Runtime 与 stale downloads。"""
+    def recover(
+        self,
+        layout: InstallLayout,
+        lock: InstallLock,
+        manifest: ReleaseManifest,
+    ) -> None:
+        """在 actual lock 下恢复 staging、未激活 Runtime 与 stale downloads。"""
 
     def download(self, plan: InstallPlan, layout: InstallLayout) -> _Downloaded:
         """下载并解包全部 verified artifacts。"""
@@ -510,7 +516,7 @@ class Installer:
         plan = self._operations.prepare_dependencies(plan, self._bootstrap)
         layout = self._operations.layout(plan)
         with self._operations.lock(layout) as held_lock:
-            self._operations.recover(layout, held_lock)
+            self._operations.recover(layout, held_lock, plan.manifest)
             previous = self._operations.previous_current(layout)
             stage = "locked"
             try:
@@ -742,10 +748,16 @@ class _SystemOperations:
         self._previous[layout.program_prefix] = previous
         return previous
 
-    def recover(self, layout: InstallLayout, lock: InstallLock) -> None:
+    def recover(
+        self,
+        layout: InstallLayout,
+        lock: InstallLock,
+        manifest: ReleaseManifest,
+    ) -> None:
         """在 actual install lock 下恢复本版本的 crash residue。"""
         _reject_existing_receipt(layout)
         _discard_stale_downloads(layout)
+        discard_interrupted_runtime_staging(layout, lock, manifest)
         discard_unactivated_runtime(layout, lock)
 
     def download(self, plan: InstallPlan, layout: InstallLayout) -> _Downloaded:
@@ -1098,7 +1110,10 @@ def _discard_downloads_tree(
         InstallError: owner、类型、mode、inode 或 durability 漂移。
     """
     try:
-        parent = layout.runtimes_dir.lstat()
+        try:
+            parent = layout.runtimes_dir.lstat()
+        except FileNotFoundError:
+            return False
         if (
             not stat.S_ISDIR(parent.st_mode)
             or parent.st_uid != os.geteuid()
