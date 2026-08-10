@@ -6,12 +6,9 @@ export const contentType = 'image/png';
 
 function ArrowMark({ size: markSize }: { size: number }) {
   return (
-    <svg height={markSize} viewBox="0 0 64 64" width={markSize}>
-      <rect fill="#121722" height="64" rx="14" width="64" />
-      <path d="M14 17 29 32 14 47" fill="none" stroke="#5B72FF" strokeLinecap="round" strokeWidth="6" />
-      <path d="m28 12 16 20-16 20" fill="none" stroke="#70D6A8" strokeLinecap="round" strokeWidth="6" />
-      <path d="m43 18 9 14-9 14" fill="none" stroke="#EEF2F7" strokeLinecap="round" strokeWidth="6" />
-    </svg>
+    <div style={{ alignItems: 'center', display: 'flex', fontSize: markSize, height: markSize, justifyContent: 'center', lineHeight: 1, width: markSize }}>
+      🦞
+    </div>
   );
 }
 

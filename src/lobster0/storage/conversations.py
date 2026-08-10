@@ -380,6 +380,11 @@ class MessageRepository:
 
         Returns:
             摘要在前、未压缩原消息按 ID 正序排列的上下文。
+
+        窗口首条不是 User 消息时，会在摘要覆盖范围之后往前补齐到最近一条 User 消息，
+        避免把 Assistant Tool Call 切在窗口外、只留下裸 Tool Result（真实事故见
+        docs/engineering/phase-4/20260811_approval-continuation-context-window-400-incident.md）。
+        补齐后的条数因此可以略多于 ``limit``，与 :meth:`list_recent` 的契约一致。
         """
         if type(limit) is not int or limit <= 0:
             raise ValueError("message limit must be a positive integer")
@@ -398,19 +403,21 @@ class MessageRepository:
                 (session_id, compaction.last_message_id, limit),
             ).fetchall()
             ordered = list(reversed(rows))
-            if ordered and ordered[0]["turn_id"] is not None:
-                prefix = connection.execute(
-                    "SELECT * FROM messages "
-                    "WHERE session_id = ? AND role != 'system' AND turn_id = ? "
-                    "AND id > ? AND id < ? ORDER BY id",
-                    (
-                        session_id,
-                        ordered[0]["turn_id"],
-                        compaction.last_message_id,
-                        ordered[0]["id"],
-                    ),
-                ).fetchall()
-                ordered = [*prefix, *ordered]
+            if ordered and ordered[0]["role"] != "user":
+                boundary = connection.execute(
+                    "SELECT id FROM messages "
+                    "WHERE session_id = ? AND role = 'user' AND id > ? AND id < ? "
+                    "ORDER BY id DESC LIMIT 1",
+                    (session_id, compaction.last_message_id, ordered[0]["id"]),
+                ).fetchone()
+                if boundary is not None:
+                    prefix = connection.execute(
+                        "SELECT * FROM messages "
+                        "WHERE session_id = ? AND role != 'system' "
+                        "AND id >= ? AND id < ? ORDER BY id",
+                        (session_id, boundary["id"], ordered[0]["id"]),
+                    ).fetchall()
+                    ordered = [*prefix, *ordered]
         if summary_row is None:
             raise ConversationDataError("compaction summary message is missing")
         return _provider_safe_context(
@@ -1013,11 +1020,17 @@ def _provider_safe_context(
     Orphan Tool Call 只连带它紧邻的前一条 User 消息一起剔除——那条消息是它唯一的触发
     者；再往前的消息属于更早、已经配对完整的交互，不受影响。
 
+    判定按 Assistant 批次结算，并且两个方向都要收口（真实事故见
+    docs/engineering/phase-4/20260811_approval-continuation-context-window-400-incident.md）：
+    一个批次只拿到部分结果时，除了那条 Assistant 消息，**它已经配对成功的 Tool Result
+    也必须一起剔除**，否则会留下没有 Tool Call 的裸 Tool Result；反过来，Tool Result 的
+    Assistant 消息被上下文窗口或 compaction 切在范围之外时，这条结果同样必须剔除。
+
     Args:
         messages: 按消息 ID 递增排列的持久上下文。
 
     Returns:
-        保留完整审批 continuation，并删除新 User 消息前仍 orphan 的 Tool Call/Tool Result。
+        保留完整审批 continuation，并删除任何无法双向配对的 Tool Call/Tool Result。
 
     Raises:
         ConversationDataError: Tool Call metadata 或 Tool Message 已损坏。
@@ -1028,46 +1041,50 @@ def _provider_safe_context(
         if message.metadata.get("channel_notice") is not True
     )
     invalid_message_ids: set[int] = set()
-    invalid_call_ids: set[str] = set()
-    pending_calls: dict[str, int] = {}
-    pending_trigger_id: int | None = None
+    unanswered_calls: set[str] = set()
+    answered_results: dict[str, int] = {}
+    batch_assistant_id: int | None = None
+    batch_trigger_id: int | None = None
     previous_message: StoredMessage | None = None
 
-    def _invalidate_pending() -> None:
-        nonlocal pending_trigger_id
-        if not pending_calls:
-            pending_trigger_id = None
-            return
-        invalid_message_ids.update(pending_calls.values())
-        invalid_call_ids.update(pending_calls.keys())
-        if pending_trigger_id is not None:
-            invalid_message_ids.add(pending_trigger_id)
-        pending_calls.clear()
-        pending_trigger_id = None
+    def _settle_batch() -> None:
+        """结算当前 Assistant 批次：完整则保留，缺结果则整批剔除。"""
+        nonlocal batch_assistant_id, batch_trigger_id
+        if batch_assistant_id is not None and unanswered_calls:
+            invalid_message_ids.add(batch_assistant_id)
+            invalid_message_ids.update(answered_results.values())
+            if batch_trigger_id is not None:
+                invalid_message_ids.add(batch_trigger_id)
+        unanswered_calls.clear()
+        answered_results.clear()
+        batch_assistant_id = None
+        batch_trigger_id = None
 
     for message in provider_messages:
         call_ids = _stored_tool_call_ids(message)
         if call_ids:
-            _invalidate_pending()
-            pending_calls.update((call_id, message.id) for call_id in call_ids)
+            _settle_batch()
+            batch_assistant_id = message.id
+            unanswered_calls.update(call_ids)
             if previous_message is not None and previous_message.role == "user":
-                pending_trigger_id = previous_message.id
+                batch_trigger_id = previous_message.id
             previous_message = message
             continue
         if message.role == "tool":
             if message.tool_call_id is None:
                 raise ConversationDataError("tool message has no tool_call_id")
-            if message.tool_call_id in pending_calls:
-                pending_calls.pop(message.tool_call_id)
-                if not pending_calls:
-                    pending_trigger_id = None
-            elif message.tool_call_id in invalid_call_ids:
+            if message.tool_call_id in unanswered_calls:
+                unanswered_calls.discard(message.tool_call_id)
+                answered_results[message.tool_call_id] = message.id
+            else:
+                # 裸 Tool Result：Assistant Tool Call 被上下文窗口或 compaction 切掉、
+                # 已被判定失效，或同一个 call_id 被重复回答。
                 invalid_message_ids.add(message.id)
             previous_message = message
             continue
-        _invalidate_pending()
+        _settle_batch()
         previous_message = message
-    _invalidate_pending()
+    _settle_batch()
     if not invalid_message_ids:
         return provider_messages
     return tuple(

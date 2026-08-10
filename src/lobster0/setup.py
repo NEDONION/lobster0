@@ -21,6 +21,21 @@ _FEISHU_SECRETS = ("LOBSTER0_FEISHU_APP_ID", "LOBSTER0_FEISHU_APP_SECRET")
 _TELEGRAM_SECRET = "LOBSTER0_TELEGRAM_BOT_TOKEN"
 _DISCORD_SECRET = "LOBSTER0_DISCORD_BOT_TOKEN"
 
+# 交互式 setup 的获取指引：这些 ID 都不是用户日常能看到的值，不给来源会直接卡住。
+_FEISHU_OWNER_HINT = (
+    "  Owner 是唯一能私聊指挥这个 Bot 的人，填你自己的飞书 open_id（形如 ou_xxx）。\n"
+    "  获取方式：飞书开放平台 open.feishu.cn → 开发者后台 → 应用 →「测试企业/成员」，\n"
+    "  或在已装 lark-cli 的机器上执行 `lark-cli auth status`（返回里的 openId）。\n"
+)
+_TELEGRAM_OWNER_HINT = (
+    "  Owner 是唯一能私聊指挥这个 Bot 的人，填你自己的 Telegram 数字 user ID。\n"
+    "  获取方式：在 Telegram 里私聊 @userinfobot，它会直接回复你的 ID。\n"
+)
+_DISCORD_OWNER_HINT = (
+    "  Owner 是唯一能私聊指挥这个 Bot 的人，填你自己的 Discord 数字 user ID。\n"
+    "  获取方式：设置 →「高级设置」打开开发者模式，右键你的头像 →「复制用户 ID」。\n"
+)
+
 
 class SetupError(ValueError):
     """表示 fresh setup 输入或目标状态不满足安全约束。"""
@@ -281,17 +296,31 @@ def run_interactive_setup(
         with _open_tty() as tty:
             enable_feishu = _ask_yes_no(tty, "Enable Feishu? [y/N]: ")
             feishu_owner = (
-                _ask_text(tty, "Feishu Owner open_id: ") if enable_feishu else None
+                _ask_text(
+                    tty,
+                    "Feishu Owner open_id: ",
+                    hint=_FEISHU_OWNER_HINT,
+                )
+                if enable_feishu
+                else None
             )
             enable_telegram = _ask_yes_no(tty, "Enable Telegram? [y/N]: ")
             telegram_owner = (
-                _ask_owner_user_id(tty, "Telegram Owner user ID: ")
+                _ask_owner_user_id(
+                    tty,
+                    "Telegram Owner user ID: ",
+                    hint=_TELEGRAM_OWNER_HINT,
+                )
                 if enable_telegram
                 else None
             )
             enable_discord = _ask_yes_no(tty, "Enable Discord? [y/N]: ")
             discord_owner = (
-                _ask_owner_user_id(tty, "Discord Owner user ID: ")
+                _ask_owner_user_id(
+                    tty,
+                    "Discord Owner user ID: ",
+                    hint=_DISCORD_OWNER_HINT,
+                )
                 if enable_discord
                 else None
             )
@@ -535,27 +564,31 @@ def _ask_yes_no(tty: TextIO, prompt: str) -> bool:
     raise SetupError("answer must be yes or no")
 
 
-def _ask_text(tty: TextIO, prompt: str) -> str:
+def _ask_text(tty: TextIO, prompt: str, *, hint: str | None = None) -> str:
     """从控制终端读取并修剪一个非 Secret 文本回答。
 
     Args:
         tty: 已打开的控制终端。
         prompt: 不含 Secret 的提示文本。
+        hint: 提问前先展示的获取指引；不含 Secret，可省略。
 
     Returns:
         去除首尾空白的单行回答。
     """
+    if hint:
+        tty.write(hint)
     tty.write(prompt)
     tty.flush()
     return tty.readline().strip()
 
 
-def _ask_owner_user_id(tty: TextIO, prompt: str) -> int:
+def _ask_owner_user_id(tty: TextIO, prompt: str, *, hint: str | None = None) -> int:
     """从控制终端读取整数型 Owner user ID。
 
     Args:
         tty: 已打开的控制终端。
         prompt: 不含 Secret 的提示文本。
+        hint: 提问前先展示的获取指引；不含 Secret，可省略。
 
     Returns:
         尚待平台范围校验的整数。
@@ -564,6 +597,6 @@ def _ask_owner_user_id(tty: TextIO, prompt: str) -> int:
         SetupError: 回答无法按十进制整数解析。
     """
     try:
-        return int(_ask_text(tty, prompt))
+        return int(_ask_text(tty, prompt, hint=hint))
     except ValueError as error:
         raise SetupError("Owner user ID must be an integer") from error

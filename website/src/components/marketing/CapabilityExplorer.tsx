@@ -38,7 +38,6 @@ export function CapabilityExplorer({ locale }: { locale: Locale }) {
             <p className="section-kicker">{copy.product.eyebrow}</p>
             <h2 id="product-title">{copy.product.title}</h2>
           </div>
-          <p className="section-lead">{copy.product.lead}</p>
         </div>
         <HashTabs ariaLabel={copy.nav.product} items={items} />
       </div>

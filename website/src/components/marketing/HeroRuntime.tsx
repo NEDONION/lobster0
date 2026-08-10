@@ -30,7 +30,7 @@ export function HeroRuntime({ locale }: { locale: Locale }) {
           </div>
         </div>
         <ClawTrace copy={copy.trace} surfaces={copy.hero.surfaces} />
-        <EvidenceStrip copy={copy.evidence} />
+        <EvidenceStrip copy={copy.evidence} locale={locale} />
       </div>
     </section>
   );

@@ -18,6 +18,7 @@ from lobster0.install.models import (
     PlatformKey,
     ReleaseManifest,
 )
+from lobster0.storage.migrations import LATEST_SCHEMA_VERSION
 
 
 class InstallModelsTest(unittest.TestCase):
@@ -104,7 +105,7 @@ class InstallModelsTest(unittest.TestCase):
         manifest = ReleaseManifest.from_bytes(self.fixture.read_bytes())
 
         self.assertEqual(manifest.version, "0.7.0")
-        self.assertEqual(manifest.database_schema, 5)
+        self.assertEqual(manifest.database_schema, LATEST_SCHEMA_VERSION)
         selected = manifest.require_artifact("tui", PlatformKey("linux", "x86_64"))
         self.assertEqual(selected.component_version, "0.7.0")
         with self.assertRaises(dataclasses.FrozenInstanceError):
@@ -388,7 +389,9 @@ class InstallModelsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(InstallError, "manifest_invalid"):
             ReleaseManifest.from_bytes(
-                self.manifest_bytes({"minimum_readable_schema": 6})
+                self.manifest_bytes(
+                    {"minimum_readable_schema": LATEST_SCHEMA_VERSION + 1}
+                )
             )
 
     def test_manifest_enforces_byte_and_artifact_budgets(self) -> None:
@@ -598,7 +601,9 @@ class InstallModelsTest(unittest.TestCase):
 
         self.assertEqual(schema["additionalProperties"], False)
         self.assertEqual(schema["properties"]["schema_version"]["const"], 1)
-        self.assertEqual(schema["properties"]["database_schema"]["const"], 5)
+        self.assertEqual(
+            schema["properties"]["database_schema"]["const"], LATEST_SCHEMA_VERSION
+        )
         self.assertEqual(schema["properties"]["artifacts"]["maxItems"], 128)
         self.assertEqual(schema["properties"]["node"]["properties"]["default"]["const"], "24.18.0")
         self.assertEqual(

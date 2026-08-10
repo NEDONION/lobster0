@@ -1,6 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Lobster0">
-  <rect width="64" height="64" rx="14" fill="#121722"/>
-  <path d="M14 17 29 32 14 47" fill="none" stroke="#5b72ff" stroke-linecap="round" stroke-width="7"/>
-  <path d="m28 12 16 20-16 20" fill="none" stroke="#70d6a8" stroke-linecap="round" stroke-width="7"/>
-  <path d="m43 18 9 14-9 14" fill="none" stroke="#eef2f7" stroke-linecap="round" stroke-width="6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" role="img" aria-label="Lobster0">
+  <defs>
+    <mask id="notch">
+      <rect x="0" y="0" width="240" height="240" fill="#fff"/>
+      <path d="M34,132 L52,150 L30,152 Z" fill="#000"/>
+      <path d="M206,132 L188,150 L210,152 Z" fill="#000"/>
+    </mask>
+  </defs>
+  <ellipse cx="120" cy="104" rx="30" ry="26" fill="#f0532f"/>
+  <path d="M108,84 Q92,56 78,40" fill="none" stroke="#c94827" stroke-width="5" stroke-linecap="round"/>
+  <path d="M132,84 Q148,56 162,40" fill="none" stroke="#c94827" stroke-width="5" stroke-linecap="round"/>
+  <circle cx="110" cy="98" r="5.5" fill="#1a1d24"/>
+  <circle cx="130" cy="98" r="5.5" fill="#1a1d24"/>
+  <circle cx="112" cy="96" r="1.7" fill="#fff"/>
+  <circle cx="132" cy="96" r="1.7" fill="#fff"/>
+  <ellipse cx="120" cy="146" rx="32" ry="28" fill="#e8492c"/>
+  <ellipse cx="120" cy="180" rx="25" ry="19" fill="#f0532f"/>
+  <ellipse cx="120" cy="204" rx="18" ry="15" fill="#e8492c"/>
+  <path d="M120,212 C112,212 100,220 96,232 C104,236 112,232 118,222 Z" fill="#f6b73c"/>
+  <path d="M120,212 C128,212 140,220 144,232 C136,236 128,232 122,222 Z" fill="#f6b73c"/>
+  <path d="M120,214 C114,218 112,228 116,238 C120,240 124,238 126,230 C127,222 124,216 120,214 Z" fill="#e8a52f"/>
+  <path d="M92,158 L76,170 M96,176 L82,188 M148,158 L164,170 M144,176 L158,188" fill="none" stroke="#c94827" stroke-width="4" stroke-linecap="round"/>
+  <path d="M96,140 L70,150" stroke="#e8492c" stroke-width="10" stroke-linecap="round"/>
+  <path d="M72,152 C70,138 60,128 46,128 C32,128 24,138 26,152 C28,166 40,174 54,172 C64,170 71,164 72,152 Z" fill="#e8492c" mask="url(#notch)"/>
+  <path d="M144,140 L170,150" stroke="#e8492c" stroke-width="10" stroke-linecap="round"/>
+  <path d="M168,152 C170,138 180,128 194,128 C208,128 216,138 214,152 C212,166 200,174 186,172 C176,170 169,164 168,152 Z" fill="#e8492c" mask="url(#notch)"/>
 </svg>

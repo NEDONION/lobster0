@@ -59,6 +59,6 @@
     {"os": "macos", "arch": "arm64"}
   ],
   "features": ["agent", "tools", "memory", "skills", "tui", "feishu", "telegram", "discord", "gateway", "automation", "sandbox", "checkpoint"],
-  "database_schema": 5,
+  "database_schema": 7,
   "minimum_readable_schema": 5
 }

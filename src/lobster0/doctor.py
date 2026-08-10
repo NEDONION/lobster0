@@ -21,6 +21,11 @@ from lobster0.config import (
     load_config,
     resolve_permission_roots,
 )
+from lobster0.install.layout import InstallLayout
+from lobster0.install.models import InstallError
+from lobster0.install.orchestrator import resolve_install_facts
+from lobster0.install.receipt import InstallReceipt, managed_file_sha256
+from lobster0.install.runtime import RuntimeReceipt
 from lobster0.paths import StatePaths
 from lobster0.policy.command import CommandPolicyError, normalize_command
 from lobster0.policy.executables import ExecutableEnvironment, discover_executables
@@ -62,7 +67,7 @@ def run_local_checks(
         environ: 配置覆盖使用的环境变量；默认使用当前进程环境。
 
     Returns:
-        固定二十八项、按依赖顺序排列的安全诊断结果。
+        二十八项本地诊断，外加一项 `install_method`；受管安装再追加五项安装事实。
     """
     state_result = _check_state_home(paths)
     config_result, config = _check_config(paths, environ)
@@ -98,6 +103,144 @@ def run_local_checks(
         _check_channel_runtime(config, "discord", source),
         _check_channel_database(paths),
         _check_channel_workers(config),
+        *_check_install(paths, source),
+    )
+
+
+def _check_install(paths: StatePaths, environ: Mapping[str, str]) -> tuple[CheckResult, ...]:
+    """报告安装方式与受管 Runtime/Node/TUI/service 事实，全程离线只读。
+
+    源码 checkout 只产生一项 `install_method` WARN，绝不因为缺少安装事实而
+    FAIL；受管安装再补齐 receipt、Runtime、Node、TUI 与 service 五项事实。
+    本函数不发起任何网络调用，也不读取任何 Secret 值。
+
+    Args:
+        paths: 需要诊断的 Lobster0 状态路径。
+        environ: 用于发现受管 program prefix 的环境变量。
+
+    Returns:
+        一项或六项安全诊断结果。
+    """
+    facts = resolve_install_facts(paths.home, environ=environ)
+    if not facts.managed or facts.receipt is None or facts.layout is None:
+        return (
+            CheckResult(
+                "install_method",
+                CheckStatus.WARN,
+                f"source checkout; no managed install receipt was found ({facts.detail})",
+            ),
+        )
+    receipt = facts.receipt
+    layout = facts.layout
+    runtime = layout.program_prefix / receipt.current_runtime
+    return (
+        CheckResult(
+            "install_method",
+            CheckStatus.PASS,
+            f"managed install {receipt.version} at {layout.program_prefix}",
+        ),
+        _check_release_receipt(layout, receipt),
+        _check_managed_runtime(layout, receipt, runtime),
+        *_check_managed_components(runtime),
+        _check_managed_service(layout, receipt),
+    )
+
+
+def _check_release_receipt(layout: InstallLayout, receipt: InstallReceipt) -> CheckResult:
+    """确认 launcher 与 PATH command link 仍匹配 install receipt。"""
+    name = "release_receipt"
+    try:
+        if managed_file_sha256(layout.launcher) != receipt.launcher_sha256:
+            return CheckResult(name, CheckStatus.FAIL, "stable launcher no longer matches receipt")
+        link = layout.command_link
+        relative = os.path.relpath(layout.launcher, start=link.parent)
+        if not link.is_symlink() or os.readlink(link) != relative:
+            return CheckResult(name, CheckStatus.FAIL, "PATH command link is not the managed link")
+    except (InstallError, OSError):
+        return CheckResult(name, CheckStatus.FAIL, "managed program files cannot be verified")
+    return CheckResult(
+        name,
+        CheckStatus.PASS,
+        f"receipt {receipt.version} matches the launcher and command link",
+    )
+
+
+def _check_managed_runtime(
+    layout: InstallLayout,
+    receipt: InstallReceipt,
+    runtime: Path,
+) -> CheckResult:
+    """确认 current 指向 receipt 记录的 Runtime，且 Runtime receipt 可读。"""
+    name = "managed_runtime"
+    current = layout.current
+    try:
+        if not current.is_symlink() or os.readlink(current) != receipt.current_runtime:
+            return CheckResult(name, CheckStatus.FAIL, "current does not point at the Runtime")
+        if not (runtime / "venv" / "bin" / "python").is_file():
+            return CheckResult(name, CheckStatus.FAIL, "managed Runtime venv is missing")
+        RuntimeReceipt.load(runtime / "install-receipt.json")
+    except (InstallError, OSError):
+        return CheckResult(name, CheckStatus.FAIL, "managed Runtime cannot be verified")
+    return CheckResult(
+        name,
+        CheckStatus.PASS,
+        f"managed Runtime {receipt.current_runtime} is activated",
+    )
+
+
+def _check_managed_components(runtime: Path) -> tuple[CheckResult, ...]:
+    """从 Runtime receipt 报告受管 Node 与 TUI 事实，不执行任何子进程。"""
+    try:
+        runtime_receipt = RuntimeReceipt.load(runtime / "install-receipt.json")
+    except (InstallError, OSError):
+        return (
+            CheckResult("managed_node", CheckStatus.FAIL, "managed Node cannot be verified"),
+            CheckResult("managed_tui", CheckStatus.FAIL, "managed TUI cannot be verified"),
+        )
+    node = runtime / "node" / "bin" / "node"
+    node_version = tuple(int(part) for part in runtime_receipt.node_version.split("."))
+    if not node.is_file() or node.is_symlink():
+        node_result = CheckResult("managed_node", CheckStatus.FAIL, "managed Node is missing")
+    elif not is_supported_node_version(node_version):
+        node_result = CheckResult(
+            "managed_node",
+            CheckStatus.FAIL,
+            f"managed Node {runtime_receipt.node_version} is outside the supported range",
+        )
+    else:
+        node_result = CheckResult(
+            "managed_node",
+            CheckStatus.PASS,
+            f"managed Node {runtime_receipt.node_version} is installed",
+        )
+    entry = runtime / "tui" / "dist" / "main.js"
+    if not entry.is_file() or entry.is_symlink():
+        tui_result = CheckResult("managed_tui", CheckStatus.FAIL, "managed TUI entry is missing")
+    else:
+        tui_result = CheckResult(
+            "managed_tui",
+            CheckStatus.PASS,
+            f"managed pi-tui {runtime_receipt.tui_version} entry is ready",
+        )
+    return (node_result, tui_result)
+
+
+def _check_managed_service(layout: InstallLayout, receipt: InstallReceipt) -> CheckResult:
+    """只按 receipt 的 label/path/hash 比对 service 文件，不调用 service manager。"""
+    name = "managed_service"
+    digest = receipt.service_file_sha256
+    if digest is None or receipt.service_file is None:
+        return CheckResult(name, CheckStatus.WARN, "no managed Gateway service is installed")
+    service_file = layout.command_link.parents[2] / receipt.service_file
+    try:
+        if managed_file_sha256(service_file) != digest:
+            return CheckResult(name, CheckStatus.FAIL, "service file no longer matches receipt")
+    except (InstallError, OSError):
+        return CheckResult(name, CheckStatus.FAIL, "managed service file cannot be verified")
+    return CheckResult(
+        name,
+        CheckStatus.PASS,
+        f"managed service {receipt.service_label} matches receipt",
     )
 
 

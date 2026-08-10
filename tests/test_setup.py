@@ -419,6 +419,25 @@ class SetupTest(unittest.TestCase):
         visible = tty.output.getvalue() + stdout.getvalue() + stderr.getvalue()
         self.assertNotIn(sentinel, visible)
 
+    def test_interactive_setup_explains_where_to_find_each_owner_id(self) -> None:
+        """启用 Channel 时必须先给出 Owner ID 的获取指引，否则用户无从填起。"""
+        tty = _FakeTty(["y\n", "ou_owner\n", "y\n", "123\n", "y\n", "456\n"])
+
+        with (
+            mock.patch("lobster0.setup._open_tty", return_value=tty),
+            mock.patch("lobster0.setup.getpass.getpass", return_value="secret"),
+            contextlib.redirect_stdout(io.StringIO()),
+            contextlib.redirect_stderr(io.StringIO()),
+        ):
+            run_interactive_setup(self.paths, sandbox_image=PINNED_IMAGE)
+
+        visible = tty.output.getvalue()
+        # 每个 Owner 提问前都要说明这个 ID 是什么、去哪里取。
+        self.assertIn("ou_xxx", visible)
+        self.assertIn("lark-cli auth status", visible)
+        self.assertIn("@userinfobot", visible)
+        self.assertIn("开发者模式", visible)
+
     def test_interactive_setup_uses_real_duplex_controlling_tty(self) -> None:
         """零与全 Channel setup 都应通过 non-seekable controlling TTY 安全完成。"""
         cases = (

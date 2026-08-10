@@ -1,8 +1,8 @@
 # Phase 7 Controlled Evolution 工程落地方案
 
 > 文档日期：2026-08-10（施工状态更新于 2026-08-11）  
-> 状态：**IMPLEMENTATION IN PROGRESS（Task 1/6 完成；Task 2/6、Task 3/6 部分完成——飞书命令未接线，
-> Memory candidate 仅支持 forget）**  
+> 状态：**IMPLEMENTATION IN PROGRESS（Task 1/6 完成；Task 2、3、4 部分完成——飞书命令未接线、
+> Memory candidate 仅支持 forget、评测缺 failure case 与 baseline/candidate 差分）**  
 > 前置条件：Phase 6 生产验收通过；Memory Autopilot A～E 已实现  
 > 施工偏离说明：Phase 6 生产验收（真实 Seatbelt 2/2、飞书 15/15、Automation 10/10、24 小时 soak）截至
 > 2026-08-11 仍是 `PRODUCTION SOAK PENDING`，未通过。Owner 明确决定跳过该前置条件、提前开工 Phase 7 第 16
@@ -575,12 +575,37 @@ Markdown 正文，没有可执行 Python，因此没有实现文档提到的"Pyt
 自然吻合；在没有想清楚这种情况下的正确语义前，没有为了"看起来功能齐全"而硬凑一个假 SourceRef，
 留作后续单独设计的缺口。
 
-### Task 4：Evaluator 与 Receipt
+### Task 4：Evaluator 与 Receipt —— **PARTIAL（2026-08-11）：确定性 Gate 与 receipt 完成，failure/差分未实现**
 
 - 复用 Eval Runner；
 - 加 failure/safety/incident suites；
 - 固定 baseline/candidate、预算、case result 和 receipt hash；
 - deterministic gate 是审批前硬条件。
+
+实现落点：`src/lobster0/evolution/evaluator.py`、`tests/test_evolution_evaluator.py`（16 个 case）。
+
+**已实现**：`suite_manifest_hash` 对 `evals/scenarios` 下全部 versioned JSONL 的文件名与内容取稳定
+哈希（增删改任一 case 都会改变 manifest，"偷偷少跑几条 case"无法逃过绑定）；`evaluate_gate` 输出四类
+稳定违规码 `regression_failed` / `safety_failed` / `duration_budget_exceeded` / `suite_empty`，其中
+`0/0` 明确不算通过；`safety_failures` 按 `capability == "safety"` 的真实 case 子集统计；
+`evaluate_proposal_version` 复用既有 `run_offline_suite`，逐 case 写入 `eval_case_results`，并把
+EvalRun 结算为 passed/failed，Runner 抛错时结算为 `error` 而不会停留在 running；
+`eval_receipt_hash` 绑定 proposal version、suite manifest、逐 case 结果哈希、预算与 Runner 版本，
+测试逐项验证"改任何一项都会产生不同 receipt"，从而使基于旧 receipt 的 Approval 失效。
+
+**未实现，且不是简单遗漏**：
+
+1. **由 `/bad` 反馈自动生成 failure case**。离线 case 需要脚本化的 Provider 响应序列
+   （`offline.responses`）才能确定性重放，而 Feedback 记录里只有脱敏后的自然语言，无法凭空合成
+   一条可执行 case。这一项需要单独设计"如何把一次真实失败对话固化成可重放 case"。
+2. **baseline / candidate 差分对比**。候选真正生效依赖 Task 5 的 active revision overlay；在那之前
+   `run_offline_suite` 跑的始终是本机现状，跑两遍只会得到同一结果，做成"对比"是自欺。
+3. **token / 费用预算**。离线 suite 用脚本化 Provider，case 里的 token 数是文件里的固定常量而不是
+   真实用量，拿它当预算会得到一个看起来在把关、实际恒真的门。`EvaluationBudget` 因此只暴露真实
+   测得的 `max_total_duration_ms`；真实 token/费用预算属于 live Provider 证据路径，当前不存在。
+
+因此当前 receipt 的语义是"该 commit 的确定性全量回归在评测时点全绿且未超时间预算"，
+**不是**"候选修复了那条反馈"。
 
 ### Task 5：Approval、Apply 与 Rollback
 
