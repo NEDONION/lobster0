@@ -179,3 +179,85 @@ describe("per-turn telemetry snapshots", () => {
     expect(createDesktopTaskState("s").turnTelemetry).toEqual({});
   });
 });
+
+describe("streaming paragraph breaks", () => {
+  it("separates text produced across tool-calling rounds", () => {
+    // 每轮迭代的文字都追加到同一个 assistant item，Core 不发换行，
+    // 直接拼接会糊成一大段；工具调用之后的新文字应当另起一段。
+    let state = createDesktopTaskState("s");
+    state = reduceDesktopFrame(state, frame("event.turn_started", { turn_id: 1 }));
+    state = reduceDesktopFrame(
+      state,
+      frame("event.model_text_delta", { turn_id: 1, text: "先查一下命令。" }),
+    );
+    state = reduceDesktopFrame(
+      state,
+      frame("event.tool_requested", {
+        turn_id: 1,
+        call_id: "c1",
+        tool_name: "run_command",
+        summary: "run_command x · 1 arg",
+        arguments: {},
+      }),
+    );
+    state = reduceDesktopFrame(
+      state,
+      frame("event.tool_finished", { call_id: "c1", status: "succeeded" }),
+    );
+    state = reduceDesktopFrame(
+      state,
+      frame("event.model_text_delta", { turn_id: 1, text: "结果太大，缩小范围。" }),
+    );
+
+    const assistant = state.run.timeline.find((item) => item.kind === "assistant");
+    expect(assistant?.kind === "assistant" && assistant.content).toBe(
+      "先查一下命令。\n\n结果太大，缩小范围。",
+    );
+  });
+
+  it("does not add a leading break before the very first chunk", () => {
+    let state = createDesktopTaskState("s");
+    state = reduceDesktopFrame(state, frame("event.turn_started", { turn_id: 1 }));
+    state = reduceDesktopFrame(
+      state,
+      frame("event.model_text_delta", { turn_id: 1, text: "开头。" }),
+    );
+
+    const assistant = state.run.timeline.find((item) => item.kind === "assistant");
+    expect(assistant?.kind === "assistant" && assistant.content).toBe("开头。");
+  });
+
+  it("keeps consecutive deltas inside one round glued together", () => {
+    // 同一轮内的流式分片是半句半句到达的，绝不能被拆段。
+    let state = createDesktopTaskState("s");
+    state = reduceDesktopFrame(state, frame("event.turn_started", { turn_id: 1 }));
+    state = reduceDesktopFrame(state, frame("event.model_text_delta", { turn_id: 1, text: "半句" }));
+    state = reduceDesktopFrame(state, frame("event.model_text_delta", { turn_id: 1, text: "话。" }));
+
+    const assistant = state.run.timeline.find((item) => item.kind === "assistant");
+    expect(assistant?.kind === "assistant" && assistant.content).toBe("半句话。");
+  });
+
+  it("lets the final content replace the streamed draft untouched", () => {
+    let state = createDesktopTaskState("s");
+    state = reduceDesktopFrame(state, frame("event.turn_started", { turn_id: 1 }));
+    state = reduceDesktopFrame(state, frame("event.model_text_delta", { turn_id: 1, text: "过程。" }));
+    state = reduceDesktopFrame(
+      state,
+      frame("event.tool_requested", {
+        turn_id: 1,
+        call_id: "c1",
+        tool_name: "read_file",
+        summary: "read_file a.md",
+        arguments: {},
+      }),
+    );
+    state = reduceDesktopFrame(
+      state,
+      frame("event.turn_finished", { turn_id: 1, content: "最终回复", duration_ms: 10 }),
+    );
+
+    const assistant = state.run.timeline.find((item) => item.kind === "assistant");
+    expect(assistant?.kind === "assistant" && assistant.content).toBe("最终回复");
+  });
+});

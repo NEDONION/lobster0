@@ -518,20 +518,13 @@ select:focus-visible {
   grid-template-rows: minmax(0, 1fr);
 }
 
+/* 只承载本轮状态标签，标题由外层 workspace-header 提供，故靠右且高度收窄。 */
 .conversation-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  min-height: 52px;
-  padding: 10px 18px;
+  justify-content: flex-end;
+  padding: 8px 18px;
   border-bottom: 1px solid var(--lobster-border);
-}
-
-.conversation-header h1 {
-  margin: 3px 0 0;
-  font-size: var(--lobster-text-base);
-  font-weight: 600;
-  letter-spacing: -0.01em;
 }
 
 /* 运行指标跟随它所属的那条回复，而不是汇总在顶栏——顶栏只有一份数字，
@@ -968,6 +961,23 @@ select:focus-visible {
 .approval-actions button:hover:not(:disabled),
 .button-secondary:hover:not(:disabled) {
   background: var(--lobster-surface-raised);
+}
+
+/* 运行中的主操作是「停止」，用醒目的警示色，避免用户找不到刹车。 */
+.button-stop {
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 0 12px;
+  color: var(--lobster-destructive-foreground);
+  background: var(--lobster-destructive);
+  cursor: pointer;
+  font-size: var(--lobster-text-xs);
+  font-weight: var(--lobster-ui-font-weight-medium);
+}
+
+.button-stop:hover {
+  background: #d93a3a;
 }
 
 .button-primary {

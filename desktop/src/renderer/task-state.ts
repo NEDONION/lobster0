@@ -32,6 +32,15 @@ export interface DesktopTaskState {
    * 展示出来会误导。
    */
   turnTelemetry: Readonly<Record<number, Telemetry>>;
+  /**
+   * 下一段流式文本是否需要另起一段。
+   *
+   * 一个回合里模型可能产出多轮文字（每轮之间夹着工具调用），Core 把它们
+   * 作为独立的 delta 发出、且不带换行，pi-tui 又全部追加进同一条消息，
+   * 结果就是几百字糊成一整段。工具调用意味着上一段话已经说完，因此在
+   * 它之后的第一段新文本前补一个空行。
+   */
+  pendingParagraphBreak: boolean;
 }
 
 export function createDesktopTaskState(sessionKey: string): DesktopTaskState {
@@ -41,6 +50,7 @@ export function createDesktopTaskState(sessionKey: string): DesktopTaskState {
     run: createInitialState(),
     error: null,
     turnTelemetry: {},
+    pendingParagraphBreak: false,
   };
 }
 
@@ -112,12 +122,13 @@ export function reduceDesktopFrame(
 ): DesktopTaskState {
   // 折叠状态不再挂在逐条 item 上：Desktop 把连续的思考与工具聚合成「过程」块，
   // 由渲染层维护块级折叠，因此这里不需要再干预 pi-tui 的 expanded 默认值。
-  const reduced = reduceFrame(state.run, frame);
+  const reduced = reduceFrame(state.run, withParagraphBreak(state, frame));
+  const pendingParagraphBreak = nextParagraphBreak(state, frame);
   if (frame.type === "event.turn_started") {
-    return { ...state, status: "running", run: reduced, error: null };
+    return { ...state, status: "running", run: reduced, error: null, pendingParagraphBreak };
   }
   if (frame.type === "event.approval_required") {
-    return { ...state, status: "waiting_approval", run: reduced, error: null };
+    return { ...state, status: "waiting_approval", run: reduced, error: null, pendingParagraphBreak };
   }
   if (frame.type === "event.turn_finished") {
     const turnId = frame.payload.turn_id;
@@ -126,6 +137,7 @@ export function reduceDesktopFrame(
       status: "completed",
       run: reduced,
       error: null,
+      pendingParagraphBreak: false,
       turnTelemetry:
         typeof turnId === "number"
           ? { ...state.turnTelemetry, [turnId]: reduced.telemetry }
@@ -138,10 +150,11 @@ export function reduceDesktopFrame(
       status: "failed",
       run: terminal(reduced),
       error: `本轮失败：${stableCode(frame.payload.error_code, "agent")}`,
+      pendingParagraphBreak: false,
     };
   }
   if (frame.type === "event.turn_cancelled") {
-    return { ...state, status: "cancelled", run: terminal(reduced), error: null };
+    return { ...state, status: "cancelled", run: terminal(reduced), error: null, pendingParagraphBreak: false };
   }
   if (frame.type === "event.bridge_error") {
     return {
@@ -149,9 +162,33 @@ export function reduceDesktopFrame(
       status: "failed",
       run: terminal(reduced),
       error: `Core 操作失败：${stableCode(frame.payload.code, "core_operation_failed")}`,
+      pendingParagraphBreak: false,
     };
   }
-  return { ...state, run: reduced };
+  return { ...state, run: reduced, pendingParagraphBreak };
+}
+
+/** 工具调用把一段话切断了，下一段文本应当另起一段。 */
+function nextParagraphBreak(state: DesktopTaskState, frame: ServerFrame): boolean {
+  if (frame.type === "event.tool_requested") {
+    return true;
+  }
+  if (frame.type === "event.model_text_delta") {
+    return false;
+  }
+  return state.pendingParagraphBreak;
+}
+
+/** 在需要断段时，给这一片流式文本前补一个空行；其余帧原样透传。 */
+function withParagraphBreak(state: DesktopTaskState, frame: ServerFrame): ServerFrame {
+  if (!state.pendingParagraphBreak || frame.type !== "event.model_text_delta") {
+    return frame;
+  }
+  const text = frame.payload.text;
+  if (typeof text !== "string" || text.length === 0) {
+    return frame;
+  }
+  return { ...frame, payload: { ...frame.payload, text: `\n\n${text}` } };
 }
 
 function terminal(state: AppState): AppState {

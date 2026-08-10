@@ -220,11 +220,13 @@ export function TaskWorkbench({
             ? `Main Agent · ${bootstrap.model} · ${workspaceBasename(bootstrap.workspace)} · ${bootstrap.permissionMode}`
             : "本地 Core"}
         </span>
+        {/* 运行中把「停止」提为主按钮并隐藏「发送」：跑飞的回合需要一眼能找到刹车，
+            此时发送本来也是禁用的，留着只会挤占注意力。 */}
         {task.status === "running" || task.status === "waiting_approval" ? (
-          <button className="button-secondary" onClick={() => void cancel()} type="button">
-            停止
+          <button className="button-stop" onClick={() => void cancel()} type="button">
+            停止运行
           </button>
-        ) : null}
+        ) : (
         <button
           className="button-primary"
           disabled={disabled || bootstrap === null || draft.trim().length === 0}
@@ -232,6 +234,7 @@ export function TaskWorkbench({
         >
           {submitting ? "正在发送" : "发送"}
         </button>
+        )}
       </div>
     </form>
   );
@@ -241,12 +244,10 @@ export function TaskWorkbench({
       <section className="conversation-panel" data-mode={emptyTask ? "empty" : "thread"}>
         {/* 空态下这条 header 会和居中的邀请标题重复，中间还留出一大片空白，
             所以只在已有对话时显示；空态由 conversation-invite 独占整个区域。 */}
+        {/* 外层 workspace-header 已经有 CONVERSATION 标题，这里只补充本轮运行状态，
+            不再重复渲染一遍标题（此前两处同时输出，界面上出现两个 CONVERSATION）。 */}
         {emptyTask ? null : (
           <div className="conversation-header">
-            <div>
-              <span className="eyebrow">CONVERSATION</span>
-              <h1>当前对话</h1>
-            </div>
             <span className="task-status" data-status={task.status}>
               {STATUS_LABELS[task.status]}
             </span>
