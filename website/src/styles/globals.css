@@ -753,7 +753,6 @@ pre {
 }
 
 .runtime-map,
-.channels-map,
 .safety-map,
 .memory-map,
 .automation-map {
@@ -893,59 +892,132 @@ pre {
 
 .channels-map {
   display: grid;
-  grid-template-columns: minmax(180px, 0.8fr) minmax(0, 1.6fr);
-  align-items: center;
-  gap: 28px;
-  padding: 34px;
+  grid-template-rows: auto 30px auto;
+  align-self: stretch;
+  min-height: 360px;
+  align-content: center;
+  margin: 24px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  padding: 40px 24px 34px;
+  background: var(--terminal);
 }
 
-.channels-map__core,
-.channels-map__edges > div {
-  display: flex;
-  flex-direction: column;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  box-shadow: 0 12px 30px rgb(16 19 26 / 7%);
+.channels-map__wires {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.channels-map__wire {
+  position: absolute;
+  background: rgb(255 255 255 / 30%);
+}
+
+.channels-map__wire--trunk {
+  top: 0;
+  bottom: 50%;
+  left: 50%;
+  width: 1.5px;
+  transform: translateX(-50%);
+}
+
+.channels-map__wire--bus {
+  top: 50%;
+  right: 12%;
+  left: 12%;
+  height: 1.5px;
+  overflow: hidden;
+}
+
+.channels-map__wire--bus::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--signal) 45%, transparent 90%);
+  background-repeat: no-repeat;
+  background-size: 45% 100%;
+  content: '';
+}
+
+.channels-map[data-reduced-motion='false'] .channels-map__wire--bus::after {
+  animation: flowPulse 3.4s linear infinite;
+}
+
+.channels-map__wire--drop {
+  top: 50%;
+  bottom: 0;
+  width: 1.5px;
+  transform: translateX(-50%);
 }
 
 .channels-map__core {
-  min-height: 180px;
-  justify-content: center;
-  border-radius: 50%;
-  padding: 28px;
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 168px;
+  margin: 0 auto;
+  flex-direction: column;
+  align-items: center;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 999px;
+  padding: 20px 16px;
+  background: #0d1017;
+  box-shadow: 0 0 0 6px rgb(66 103 245 / 8%), 0 16px 34px rgb(0 0 0 / 30%);
   text-align: center;
 }
 
+.channels-map__core span {
+  color: var(--signal) !important;
+}
+
 .channels-map__core strong {
-  margin-top: 9px;
-  font-size: 0.9rem;
+  margin-top: 7px;
+  color: #f5f7fb;
+  font-size: 0.86rem;
 }
 
 .channels-map small,
 .memory-map small {
-  margin-top: 8px;
-  color: var(--muted);
+  margin-top: 6px;
+  color: #8792a6;
   font-family: var(--font-mono);
-  font-size: 0.58rem;
-  line-height: 1.45;
+  font-size: 0.56rem;
+  line-height: 1.4;
 }
 
 .channels-map__edges {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  position: relative;
+  z-index: 1;
+  height: 96px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.channels-map__edges > div {
-  min-height: 118px;
-  justify-content: center;
-  border-radius: 14px;
-  padding: 16px;
+.channels-map__edges > li {
+  position: absolute;
+  top: 0;
+  display: flex;
+  width: 108px;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.channels-map__edge-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1.5px solid rgb(255 255 255 / 16%);
+  border-radius: 12px;
+  background: #fff;
 }
 
 .channels-map__edges strong {
-  margin-top: 7px;
-  font-size: 0.78rem;
+  margin-top: 8px;
+  color: #f5f7fb;
+  font-size: 0.74rem;
 }
 
 .safety-map {

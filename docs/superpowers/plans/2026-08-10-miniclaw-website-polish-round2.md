@@ -127,6 +127,28 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
 - `npx vitest run`：28/28 通过
 - 可视化：Playwright + 系统 Chrome 截图确认（详见上文），不再依赖坏掉的 Browser 面板
 
-### 待办（未开始）
+### 待办
 
-`多入口` / `安全边界` / `记忆` / `自动化` 四个能力面板的视觉统一——Round 3 因面板故障搁置，本轮时间优先给了截图空白 bug、语言切换器和演示区域动画化。现在可视化验证方式已经恢复，下一轮可以直接做。
+`安全边界` / `记忆` / `自动化` 三个能力面板的视觉统一还没做。
+
+## Round 5（2026-08-10，进行中）
+
+### `多入口`（ChannelsPanel）重做：卡片网格 → 暗色 hub-and-spoke 拓扑图
+
+- **设计**：改成和 `FlowDiagram`（演示区域）同一套暗色终端视觉语言——中心 `AgentRuntime` 胶囊节点，向下用树形连接线（主干 → 横向汇流线 + 4 条支线）分别连到 4 个入口节点；入口节点直接复用 `SurfaceIcon.tsx` 的真实品牌图标（飞书/Telegram/Discord 官方 SVG + TUI 终端图标），而不是纯文字。汇流线上叠加一条常驻的流动光效（复用已有的 `flowPulse` keyframe）。核心节点和入口节点都有入场动效（缩放淡入 / 交错上滑淡入），尊重 reduced motion。
+- **踩的坑（供以后同类改动参考）**：
+  1. 最初用一个 `<svg viewBox="0 0 100 62" preserveAspectRatio="none">` 画连接线，实测发现**非等比缩放会把 `stroke-dasharray` 的虚线段严重拉伸变形**（横向拉伸约 8 倍、纵向约 5.8 倍，虚线段变成一坨坨色块），而且线条颜色只有 16% 透明度白色，在截图里几乎完全看不见——两个问题叠加导致连接线实质上"不存在"。改成纯 CSS 定位的 `<span>` 元素（主干/汇流线/支线各自 `position:absolute` + `top/bottom/left/right` 精确计算），彻底避开 SVG 非等比缩放的坑，颜色也提到 30% 透明度、线宽 1.5px 保证可读。
+  2. Framer Motion 的 `animate={{ y: ... }}` 会接管元素的 `transform` 属性，**和 CSS 里写的 `transform: translateX(-50%)` 会冲突**（谁的 transform 生效取决于内联样式覆盖顺序，实测 CSS 的会被 Framer 直接吃掉）。改成把居中偏移也交给 Framer 自己管：`style={{ left: '12%', x: '-50%' }}`，让 Framer 把静态的 `x` 和动画的 `y` 合并进同一个 transform。
+  3. **最隐蔽的一个**：改完背景色一直不生效，实测 `getComputedStyle` 发现 `.channels-map` 的背景色是浅色 `rgb(247,249,252)`，不是我写的 `var(--terminal)`。根因是 `MarketingHome.module.css` 里有一条 `.root :global(.runtime-map), .root :global(.channels-map), .root :global(.safety-map), .root :global(.memory-map), .root :global(.automation-map) { background-color: #f7f9fc; ... }`——CSS Module 的 `:global()` 选择器因为多了 `.root` 祖先类，**优先级天然比 `globals.css` 里的同名单类选择器高**，不管源码顺序谁在后面都会赢。这是本轮会话里第三次踩到同一类型的坑（前两次是 `.evidence-strip` 和 `.runtime-map`），说明这个 module CSS 文件里还有大量"影子样式"，以后每次重做一个 `*-map` 组件之前，应该**先搜一遍 `MarketingHome.module.css` 里同名的 `:global(...)` 规则**，而不是等改完发现不生效再排查。已经把 `.channels-map` 从这条共享浅色背景规则里摘出来，单独给了一条深色边框规则；顺带删掉了两条只会匹配旧 `> div` 结构（现在改成了 `> li`）、永远不会再命中的死规则（`nth-child` 描边色、hover 效果）。
+- **可视化验证**：Playwright + 系统 Chrome 截图确认，中心节点、四条品牌图标入口节点、树形连接线（含流动光效）全部按预期渲染；和下方演示区域的暗色面板视觉语言一致。
+- **文件**：`website/src/components/marketing/capabilities/ChannelsPanel.tsx`、`website/src/styles/globals.css`、`website/src/components/marketing/MarketingHome.module.css`
+
+### 验证
+
+- `npx tsc --noEmit`：通过
+- `npx eslint src/`：通过
+- `npx vitest run`：28/28 通过
+
+### 待办
+
+`安全边界` / `记忆` / `自动化` 三个能力面板还没做。用户中途提出一个新的更大范围的需求（项目改名，仓库地址换成 NEDONION/lobster0，需要同步改 README 和官网），本轮时间优先处理改名调研，这三个面板的重做顺延到改名之后。
