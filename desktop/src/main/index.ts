@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,12 +26,37 @@ function createWindow(): void {
     },
   });
 
+  window.webContents.setWindowOpenHandler(({ url }) => {
+    if (isExternalHttpUrl(url)) {
+      void shell.openExternal(url);
+    }
+    return { action: "deny" };
+  });
+  window.webContents.on("will-navigate", (event, url) => {
+    if (url === window.webContents.getURL()) {
+      return;
+    }
+    event.preventDefault();
+    if (isExternalHttpUrl(url)) {
+      void shell.openExternal(url);
+    }
+  });
+
   const rendererUrl = process.env.ELECTRON_RENDERER_URL;
   if (!app.isPackaged && rendererUrl) {
     void window.loadURL(rendererUrl);
     return;
   }
   void window.loadFile(join(currentDirectory, "../renderer/index.html"));
+}
+
+function isExternalHttpUrl(url: string): boolean {
+  try {
+    const protocol = new URL(url).protocol;
+    return protocol === "https:" || protocol === "http:";
+  } catch {
+    return false;
+  }
 }
 
 void app.whenReady().then(() => {

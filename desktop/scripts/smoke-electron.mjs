@@ -18,9 +18,11 @@ async function captureWhenReady() {
       await sleep(3000);
       const composer = await window.webContents.executeJavaScript(
         `(() => {
-          const textarea = document.querySelector('textarea[aria-label="任务内容"]');
+          const textarea = document.querySelector('textarea[aria-label="消息内容"]');
           const create = [...document.querySelectorAll('button')]
-            .find((b) => b.textContent.includes('新建任务'));
+            .find((b) => b.textContent.includes('新建对话'));
+          const dragRegion = document.querySelector('.app-drag-region');
+          const dragStyle = dragRegion ? getComputedStyle(dragRegion) : null;
           return JSON.stringify({
             composerVisible: Boolean(textarea),
             composerEnabled: Boolean(textarea && !textarea.disabled),
@@ -29,6 +31,7 @@ async function captureWhenReady() {
             navLabels: [...document.querySelectorAll('.nav-item')].map((n) => n.textContent.trim()),
             homeGridGone: !document.querySelector('.home-grid'),
             statusTrack: document.querySelector('.composer-actions > span')?.textContent ?? null,
+            dragRegionAppRegion: dragStyle ? dragStyle.getPropertyValue('-webkit-app-region') : null,
           });
         })()`,
       );
@@ -49,11 +52,14 @@ function assert(state) {
   const failures = [];
   if (!state.composerVisible) failures.push("composer missing on first paint");
   if (!state.composerEnabled) failures.push("composer disabled — Core never became ready");
-  if (!state.createTaskInSidebar) failures.push("新建任务 not in the shared sidebar");
+  if (!state.createTaskInSidebar) failures.push("新建对话 not in the shared sidebar");
   if (!state.homeGridGone) failures.push("legacy home grid still rendered");
   if (state.navLabels.length !== 3) failures.push("expected exactly 3 nav views");
   if (!state.statusTrack?.startsWith("Main Agent · ")) {
     failures.push("composer status track missing real Core values");
+  }
+  if (state.dragRegionAppRegion !== "drag") {
+    failures.push("window drag region missing — window would be unmovable");
   }
   for (const failure of failures) {
     console.log("SMOKE_FAIL " + failure);

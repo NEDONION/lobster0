@@ -52,6 +52,8 @@ flowchart LR
 ## 4. D1：LobsterAI-first 打开即聊（已实现，2026-08-10）
 
 独立设计：[Desktop D1 打开即聊设计](../../superpowers/specs/2026-08-10-desktop-d1-conversation-shell-design.md)。
+跟进修复（真实使用后发现的窗口拖拽、对话命名、Markdown 渲染缺口）：
+[D1 跟进修复记录](20260810_D1跟进修复-拖拽命名与Markdown渲染.md)。
 
 ### 4.1 用户结果
 

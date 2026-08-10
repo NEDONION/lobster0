@@ -12,8 +12,8 @@ import { TaskWorkbench } from "./task-workbench";
 
 const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }> = {
   task: {
-    eyebrow: "TASK WORKBENCH",
-    title: "任务工作台",
+    eyebrow: "CONVERSATION",
+    title: "对话",
     body: "Python Core 接通后，这里会显示真实对话、工具过程和审批状态。",
   },
   automation: {
@@ -74,7 +74,7 @@ export function App(): React.JSX.Element {
       }
     }).catch(() => {
       if (active) {
-        setSessionsError("最近任务读取失败，请稍后重试。");
+        setSessionsError("最近对话读取失败，请稍后重试。");
       }
     });
     return () => {
@@ -122,7 +122,7 @@ export function App(): React.JSX.Element {
       setHistory(loaded);
       setView("task");
     } catch {
-      setSessionsError("任务历史读取失败，请稍后重试。");
+      setSessionsError("对话历史读取失败，请稍后重试。");
     }
   }
 
@@ -166,6 +166,7 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="app-shell min-h-screen">
+      <div className="app-drag-region" aria-hidden="true" />
       <aside className="sidebar">
         <div className="brand" aria-label="MiniClaw Desktop">
           <span className="brand-mark" aria-hidden="true">M</span>
@@ -178,7 +179,7 @@ export function App(): React.JSX.Element {
           type="button"
         >
           <span className="nav-mark" aria-hidden="true">＋</span>
-          <span>新建任务</span>
+          <span>新建对话</span>
         </button>
         <nav className="navigation" aria-label="主导航">
           {NAV_ITEMS.map((item) => (
@@ -195,13 +196,13 @@ export function App(): React.JSX.Element {
             </button>
           ))}
         </nav>
-        <section className="sidebar-recent" aria-label="最近任务">
-          <span className="sidebar-recent-heading">最近任务</span>
+        <section className="sidebar-recent" aria-label="最近对话">
+          <span className="sidebar-recent-heading">最近对话</span>
           {sessionsError ? (
             <p className="sidebar-recent-error" role="alert">{sessionsError}</p>
           ) : null}
           {sessions.length === 0 && !sessionsError ? (
-            <p className="sidebar-recent-empty">还没有历史任务。</p>
+            <p className="sidebar-recent-empty">还没有历史对话。</p>
           ) : (
             <div className="sidebar-recent-list">
               {sessions.map((session) => (

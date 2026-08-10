@@ -6,6 +6,7 @@ import type {
   SessionHistory,
 } from "../common/api";
 import { resolveComposerKeyAction } from "./composer-keys";
+import { Markdown } from "./markdown";
 import {
   appendDesktopUser,
   cancelDesktopTask,
@@ -150,7 +151,7 @@ export function TaskWorkbench({
         <p className="composer-error" role="alert">{actionError ?? bootstrapError}</p>
       ) : null}
       <textarea
-        aria-label="任务内容"
+        aria-label="消息内容"
         disabled={disabled || bootstrap === null}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={onComposerKeyDown}
@@ -181,12 +182,12 @@ export function TaskWorkbench({
   );
 
   return (
-    <section className="task-layout" aria-label="任务工作台">
+    <section className="task-layout" aria-label="对话工作台">
       <section className="conversation-panel" data-mode={emptyTask ? "empty" : "thread"}>
         <div className="conversation-header">
           <div>
-            <span className="eyebrow">CURRENT TASK</span>
-            <h1>{emptyTask ? "新任务" : "当前任务"}</h1>
+            <span className="eyebrow">CONVERSATION</span>
+            <h1>{emptyTask ? "新对话" : "当前对话"}</h1>
           </div>
           <span className="task-status" data-status={task.status}>{STATUS_LABELS[task.status]}</span>
         </div>
@@ -205,7 +206,7 @@ export function TaskWorkbench({
               return (
                 <article className={`message message-${item.kind}`} key={item.id}>
                   <span>{item.kind === "user" ? "你" : "MiniClaw"}</span>
-                  <p>{item.content || "…"}</p>
+                  {item.content ? <Markdown content={item.content} /> : <p>…</p>}
                 </article>
               );
             }
@@ -213,7 +214,7 @@ export function TaskWorkbench({
               return (
                 <article className="activity-item" key={item.id}>
                   <span>思考</span>
-                  <p>{item.content}</p>
+                  <Markdown content={item.content} />
                 </article>
               );
             }
@@ -221,7 +222,7 @@ export function TaskWorkbench({
               return (
                 <article className="activity-item tool-activity" key={item.id}>
                   <span>{item.name}</span>
-                  <p>{item.summary}</p>
+                  <Markdown content={item.summary} />
                   <small>{item.status}</small>
                 </article>
               );
@@ -229,7 +230,7 @@ export function TaskWorkbench({
             return (
               <article className="activity-item" key={item.id}>
                 <span>提示</span>
-                <p>{item.content}</p>
+                <Markdown content={item.content} />
               </article>
             );
           })}
@@ -267,7 +268,7 @@ export function TaskWorkbench({
         {task.run.lastAssistantText ? (
           <div className="result-content">
             <span>最终回复</span>
-            <p>{task.run.lastAssistantText}</p>
+            <Markdown content={task.run.lastAssistantText} />
           </div>
         ) : (
           <div className="result-empty">

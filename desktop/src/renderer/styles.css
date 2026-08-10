@@ -45,6 +45,20 @@ select:focus-visible {
   height: 100vh;
 }
 
+/* Electron removes the native title bar (titleBarStyle: hiddenInset), so the
+   window otherwise has no draggable surface at all. This strip sits above the
+   sidebar brand and the workspace header — both non-interactive in that band
+   across every view — so it is safe to make the whole thing draggable. */
+.app-drag-region {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 40;
+  -webkit-app-region: drag;
+}
+
 /* ---------- Sidebar ---------- */
 
 .sidebar {
@@ -575,10 +589,7 @@ select:focus-visible {
 }
 
 .timeline-empty p,
-.message p,
-.activity-item p,
 .approval-card p,
-.result-content p,
 .result-empty p {
   margin: 0;
   line-height: var(--lobster-leading-base);
@@ -597,13 +608,12 @@ select:focus-visible {
   font-size: var(--lobster-text-xs);
 }
 
-.message p {
+.message .markdown {
   border-radius: 12px;
   padding: 9px 13px;
   color: var(--lobster-chat-bot-foreground);
   background: var(--lobster-chat-bot);
   font-size: var(--lobster-text-sm);
-  white-space: pre-wrap;
 }
 
 .message-user {
@@ -614,9 +624,148 @@ select:focus-visible {
   text-align: right;
 }
 
-.message-user p {
+.message-user .markdown {
   color: var(--lobster-chat-user-foreground);
   background: var(--lobster-chat-user);
+}
+
+/* ---------- Markdown content ---------- */
+
+.markdown {
+  display: grid;
+  gap: 8px;
+  overflow-wrap: anywhere;
+  line-height: var(--lobster-leading-base);
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown pre {
+  margin: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 4px 0 0;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.markdown h1 { font-size: var(--lobster-text-lg); }
+.markdown h2 { font-size: var(--lobster-text-base); }
+.markdown h3,
+.markdown h4 { font-size: var(--lobster-text-sm); }
+
+.markdown strong {
+  font-weight: 600;
+}
+
+.markdown em {
+  font-style: italic;
+}
+
+.markdown ul,
+.markdown ol {
+  padding-left: 1.25em;
+  display: grid;
+  gap: 3px;
+}
+
+.markdown ul {
+  list-style: disc;
+}
+
+.markdown ol {
+  list-style: decimal;
+}
+
+.markdown li::marker {
+  color: var(--lobster-text-muted);
+}
+
+.markdown li > ul,
+.markdown li > ol {
+  margin-top: 3px;
+}
+
+.markdown a {
+  color: var(--lobster-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown a:hover {
+  color: var(--lobster-primary-hover);
+}
+
+.markdown code {
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--lobster-gray-9);
+  background: var(--lobster-gray-3);
+  font-family: var(--lobster-font-mono);
+  font-size: var(--lobster-code-font-size);
+}
+
+.markdown pre {
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  color: var(--lobster-gray-9);
+  background: var(--lobster-gray-2);
+}
+
+.markdown pre code {
+  padding: 0;
+  color: inherit;
+  background: none;
+}
+
+.markdown blockquote {
+  padding-left: 10px;
+  border-left: 2px solid var(--lobster-gray-4);
+  color: var(--lobster-text-secondary);
+}
+
+.markdown hr {
+  margin: 2px 0;
+  border: 0;
+  border-top: 1px solid var(--lobster-border);
+}
+
+.markdown .markdown-table-wrap {
+  overflow-x: auto;
+}
+
+.markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: var(--lobster-text-xs);
+}
+
+.markdown th,
+.markdown td {
+  padding: 5px 9px;
+  border: 1px solid var(--lobster-border);
+  text-align: left;
+}
+
+.markdown th {
+  color: var(--lobster-text-secondary);
+  background: var(--lobster-gray-2);
+  font-weight: 600;
 }
 
 .activity-item {
@@ -806,13 +955,10 @@ select:focus-visible {
   gap: 7px;
 }
 
-.result-content p {
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 12;
+.result-content .markdown {
+  max-height: 320px;
+  overflow-y: auto;
   font-size: var(--lobster-text-xs);
-  white-space: pre-wrap;
 }
 
 .result-empty {

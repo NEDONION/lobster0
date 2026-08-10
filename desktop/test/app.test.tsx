@@ -7,12 +7,12 @@ describe("desktop app shell", () => {
   const markup = renderToStaticMarkup(<App />);
 
   it("shows the task composer on the first paint", () => {
-    expect(markup).toContain('aria-label="任务内容"');
+    expect(markup).toContain('aria-label="消息内容"');
   });
 
-  it("offers new task and recent tasks from the shared sidebar", () => {
-    expect(markup).toContain("新建任务");
-    expect(markup).toContain("最近任务");
+  it("offers new conversation and recent conversations from the shared sidebar", () => {
+    expect(markup).toContain("新建对话");
+    expect(markup).toContain("最近对话");
   });
 
   it("drops the old home entry view", () => {
