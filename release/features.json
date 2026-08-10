@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "features": [
+    {
+      "feature": "agent",
+      "module": "lobster0.agent.runner",
+      "attribute": "AgentRunner"
+    },
+    {
+      "feature": "automation",
+      "module": "lobster0.automation.scheduler",
+      "attribute": "Scheduler"
+    },
+    {
+      "feature": "checkpoint",
+      "module": "lobster0.checkpoints.store",
+      "attribute": "CheckpointStore"
+    },
+    {
+      "feature": "discord",
+      "module": "lobster0.channels.discord",
+      "attribute": "DiscordAdapter"
+    },
+    {
+      "feature": "feishu",
+      "module": "lobster0.channels.feishu",
+      "attribute": "FeishuAdapter"
+    },
+    {
+      "feature": "gateway",
+      "module": "lobster0.gateway",
+      "attribute": "prepare_gateway_sdk_runtime"
+    },
+    {
+      "feature": "heartbeat",
+      "module": "lobster0.automation.heartbeat",
+      "attribute": "HeartbeatReconciler"
+    },
+    {
+      "feature": "memory",
+      "module": "lobster0.memory.service",
+      "attribute": "MemoryService"
+    },
+    {
+      "feature": "rollback",
+      "module": "lobster0.checkpoints.rollback",
+      "attribute": "RollbackService"
+    },
+    {
+      "feature": "sandbox",
+      "module": "lobster0.sandbox.base",
+      "attribute": "ExecutionPlan"
+    },
+    {
+      "feature": "skills",
+      "module": "lobster0.skills.loader",
+      "attribute": "SkillLoader"
+    },
+    {
+      "feature": "telegram",
+      "module": "lobster0.channels.telegram",
+      "attribute": "TelegramAdapter"
+    },
+    {
+      "feature": "tools",
+      "module": "lobster0.tools.registry",
+      "attribute": "ToolRegistry"
+    },
+    {
+      "feature": "tui",
+      "module": "lobster0.tui_launcher",
+      "attribute": "is_supported_node_version"
+    }
+  ]
+}

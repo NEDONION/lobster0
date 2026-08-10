@@ -175,7 +175,7 @@ class InstallPlatformsTest(unittest.TestCase):
                 {"os": "macos", "arch": "arm64"},
             ],
             "features": [],
-            "database_schema": 5,
+            "database_schema": 7,
             "minimum_readable_schema": 5,
         }
         return ReleaseManifest.from_bytes(json.dumps(document).encode("utf-8"))

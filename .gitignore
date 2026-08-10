@@ -26,3 +26,10 @@ workspace/
 .lobster0/
 .worktrees/
 .local/
+
+/release-artifacts/
+/release-manifest.json
+/release-inputs.json
+/SHA256SUMS
+/install.sh
+/lobster0-installer.pyz
