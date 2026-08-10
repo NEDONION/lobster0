@@ -11,6 +11,7 @@ import shlex
 import stat
 import subprocess
 import tempfile
+import weakref
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,6 +36,20 @@ _MAX_LOCK_BYTES = 4096
 _SYSTEM_PREFIX = Path("/usr/local/lib/miniclaw")
 _SYSTEM_COMMAND = Path("/usr/local/bin/miniclaw")
 ProcessState = Literal["alive", "dead", "unknown"]
+
+
+@dataclass(frozen=True, slots=True)
+class _LockOwnership:
+    """保存仅由 lock 创建路径登记的 immutable ownership 事实。"""
+
+    path: Path
+    payload: bytes
+    identity: tuple[int, int]
+    descriptor: int
+    proof_descriptor: int
+    pid: int
+    uid: int
+    start: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,7 +318,7 @@ class InstallLayout:
 class InstallLock:
     """持有一个绑定创建 inode 与进程 identity 的 install lock。"""
 
-    __slots__ = ("_closed", "_descriptor", "_identity", "_path", "_payload")
+    __slots__ = ("_closed", "_descriptor", "_identity", "_path", "_payload", "__weakref__")
 
     def __init__(
         self,
@@ -390,35 +405,113 @@ class InstallLock:
             if identity is not None:
                 _unlink_same_inode(path, identity)
             raise
-        return cls(path, payload, cast(tuple[int, int], identity), descriptor)
+        proof_descriptor = -1
+        try:
+            proof_descriptor = os.dup(descriptor)
+            lock = cls(path, payload, cast(tuple[int, int], identity), descriptor)
+            _LOCK_OWNERS[lock] = _LockOwnership(
+                path,
+                payload,
+                cast(tuple[int, int], identity),
+                descriptor,
+                proof_descriptor,
+                os.getpid(),
+                uid,
+                cast(str, process_start),
+            )
+            return lock
+        except BaseException:
+            if proof_descriptor >= 0:
+                os.close(proof_descriptor)
+            os.close(descriptor)
+            _unlink_same_inode(path, cast(tuple[int, int], identity))
+            raise
+
+    def owns(self, layout: InstallLayout) -> bool:
+        """判断当前实例是否仍持有指定 layout 的原始 install lock。
+
+        Args:
+            layout: 需要验证 lock 路径的 canonical 安装 layout。
+
+        Returns:
+            仅当实例、进程、fd、inode、payload、owner 与路径仍完全绑定时返回 true。
+        """
+        ownership = _LOCK_OWNERS.get(self)
+        try:
+            if (
+                type(layout) is not InstallLayout
+                or self._closed
+                or ownership is None
+                or self._path != ownership.path
+                or self._payload != ownership.payload
+                or self._identity != ownership.identity
+                or self._descriptor != ownership.descriptor
+                or layout.lock != ownership.path
+                or os.getpid() != ownership.pid
+                or os.geteuid() != ownership.uid
+                or _probe_process(ownership.pid) != ("alive", ownership.start)
+                or not _same_open_description(
+                    ownership.descriptor,
+                    ownership.proof_descriptor,
+                )
+            ):
+                return False
+            return _lock_path_owned(
+                ownership.path,
+                ownership.descriptor,
+                ownership.identity,
+                ownership.payload,
+                ownership.uid,
+            )
+        except (AttributeError, OSError):
+            return False
 
     def close(self) -> None:
         """仅删除仍匹配创建 inode 和 exact payload 的 lock。"""
         if self._closed:
             return
         self._closed = True
+        ownership = _LOCK_OWNERS.pop(self, None)
+        if ownership is None:
+            return
         try:
-            if _lock_path_owned(
-                self._path,
-                self._descriptor,
-                self._identity,
-                self._payload,
-                os.geteuid(),
+            instance_matches = (
+                self._path == ownership.path
+                and self._payload == ownership.payload
+                and self._identity == ownership.identity
+                and self._descriptor == ownership.descriptor
+            )
+        except AttributeError:
+            instance_matches = False
+        descriptor_owned = _same_open_description(
+            ownership.descriptor,
+            ownership.proof_descriptor,
+        )
+        try:
+            if instance_matches and descriptor_owned and _lock_path_owned(
+                ownership.path,
+                ownership.descriptor,
+                ownership.identity,
+                ownership.payload,
+                ownership.uid,
             ):
                 _quarantine_owned_lock(
-                    self._path,
-                    self._descriptor,
-                    self._identity,
-                    self._payload,
-                    os.geteuid(),
+                    ownership.path,
+                    ownership.descriptor,
+                    ownership.identity,
+                    ownership.payload,
+                    ownership.uid,
                 )
         except (InstallError, OSError):
             pass
         finally:
-            try:
-                os.close(self._descriptor)
-            except OSError:
-                pass
+            for descriptor in (
+                (ownership.descriptor,) if descriptor_owned else ()
+            ) + (ownership.proof_descriptor,):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
 
     def __enter__(self) -> InstallLock:
         """返回当前已持有 lock。"""
@@ -433,6 +526,11 @@ class InstallLock:
         """离开 context 时释放 ownership-bound lock。"""
         del exception_type, exception, traceback
         self.close()
+
+
+_LOCK_OWNERS: weakref.WeakKeyDictionary[InstallLock, _LockOwnership] = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def render_launcher(layout: InstallLayout) -> bytes:
@@ -728,6 +826,30 @@ def _lock_path_owned(
         )
     except (InstallError, OSError):
         return False
+
+
+def _same_open_description(descriptor: int, proof_descriptor: int) -> bool:
+    """用 dup 共享 offset 验证 fd 编号仍指向 acquire 的 open description。"""
+    descriptor_offset: int | None = None
+    proof_offset: int | None = None
+    try:
+        descriptor_offset = os.lseek(descriptor, 0, os.SEEK_CUR)
+        proof_offset = os.lseek(proof_descriptor, 0, os.SEEK_CUR)
+        if descriptor_offset != proof_offset:
+            return False
+        marker = 0 if descriptor_offset else 1
+        os.lseek(proof_descriptor, marker, os.SEEK_SET)
+        return os.lseek(descriptor, 0, os.SEEK_CUR) == marker
+    except OSError:
+        return False
+    finally:
+        try:
+            if proof_offset is not None:
+                os.lseek(proof_descriptor, proof_offset, os.SEEK_SET)
+            if descriptor_offset is not None:
+                os.lseek(descriptor, descriptor_offset, os.SEEK_SET)
+        except OSError:
+            pass
 
 
 def _quarantine_owned_lock(
