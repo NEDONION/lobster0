@@ -1,6 +1,6 @@
 export type Locale = 'zh-CN' | 'en';
 export type CapabilityId = 'runtime' | 'channels' | 'safety' | 'memory' | 'automation';
-export type WorkflowId = 'approval' | 'external-cli' | 'multi-channel';
+export type WorkflowId = 'denied' | 'crash' | 'isolation';
 
 export interface CapabilityCopy {
   id: CapabilityId;
@@ -11,8 +11,8 @@ export interface CapabilityCopy {
   facts: readonly string[];
 }
 
-export type FlowIcon = 'intent' | 'argv' | 'gate' | 'run' | 'result' | 'program';
-export type FlowState = 'default' | 'waiting' | 'active' | 'done';
+export type FlowIcon = 'intent' | 'argv' | 'gate' | 'run' | 'result' | 'program' | 'stop';
+export type FlowState = 'default' | 'waiting' | 'active' | 'done' | 'blocked';
 
 export interface FlowStepCopy {
   icon: FlowIcon;
@@ -259,40 +259,39 @@ export const marketingCopy = {
     ],
     workbench: {
       eyebrow: '运行机制 / 03',
-      title: '看真实机制，不看功能截图。',
-      lead: '两条动画化的真实执行链路，加上一张多入口结构图，展示 Lobster0 今天已经验证的工作方式——开发中持续变化，截图只会过时。',
+      title: '出问题的时候，它怎么做。',
+      lead: '被拒绝、执行失败、入口断线——Agent 真正的可信度不在顺利的时候，而在这三种时刻。',
     },
     workflows: [
       {
-        id: 'approval',
-        label: 'SAFE 审批',
-        title: '高风险动作先展示影响与 exact argv。',
-        summary: 'Owner 看到目标与参数后再决定，授权不会转移给另一组参数。',
+        id: 'denied',
+        label: '审批被拒',
+        title: '你说不，它就真的停下。',
+        summary: '拒绝不是"换个说法再试"。被拒的那组参数当场作废，Agent 不会绕道、不会重试、不会拆成小步偷偷执行。',
         flow: [
-          { icon: 'intent', label: '用户请求', detail: '"帮我发一条安全问候"', state: 'default' },
-          { icon: 'argv', label: 'exact argv', detail: 'printf "Hello, Lobster0!"', state: 'default' },
-          { icon: 'gate', label: 'Owner 审批', detail: '参数已锁定，等待确认', state: 'waiting' },
-          { icon: 'run', label: '隔离执行', detail: '仅这组 argv 可以运行', state: 'active' },
-          { icon: 'result', label: '结果返回', detail: '回到同一对话', state: 'done' },
+          { icon: 'intent', label: '请求', detail: '"把 /tmp 清干净"', state: 'default' },
+          { icon: 'argv', label: '参数锁定', detail: 'rm -rf /tmp/*', state: 'default' },
+          { icon: 'gate', label: 'Owner 拒绝', detail: '点了「不允许」', state: 'blocked' },
+          { icon: 'stop', label: '当场终止', detail: '这组 argv 直接作废', state: 'blocked' },
         ],
       },
       {
-        id: 'external-cli',
-        label: '外部 CLI',
-        title: '程序与参数结构化传递。',
-        summary: '外部 CLI 执行结果回到原会话，执行顺序和失败位置保持可观察。',
+        id: 'crash',
+        label: '执行失败',
+        title: '失败停在原地，不装作成功。',
+        summary: '工具挂了就是挂了。退出码、stderr、失败在第几步，都原样回到对话里，而不是被模型润色成一句"已完成"。',
         flow: [
-          { icon: 'program', label: '程序', detail: 'git log --oneline -5', state: 'default' },
-          { icon: 'argv', label: 'argv[]', detail: '["git","log","--oneline","-5"]', state: 'default' },
-          { icon: 'run', label: '隔离子进程', detail: '独立 stdout / stderr', state: 'active' },
-          { icon: 'result', label: '结构化结果', detail: '返回原会话', state: 'done' },
+          { icon: 'program', label: '程序', detail: 'git push origin main', state: 'default' },
+          { icon: 'run', label: '子进程退出', detail: 'exit code 128', state: 'blocked' },
+          { icon: 'argv', label: '原始 stderr', detail: 'rejected: non-fast-forward', state: 'default' },
+          { icon: 'result', label: '如实回报', detail: '失败位置与原因都在', state: 'done' },
         ],
       },
       {
-        id: 'multi-channel',
-        label: '多入口',
-        title: '共享能力，不共享故障。',
-        summary: '一个 AgentRuntime 连接四个入口；每个平台保留独立 Transport、Delivery、queue 与运行期状态。',
+        id: 'isolation',
+        label: '故障隔离',
+        title: '一个入口挂了，其他照常。',
+        summary: '飞书网关断线时，TUI、Telegram、Discord 的队列和交付状态完全不受影响——共享的是能力，不是故障域。',
       },
     ],
     quickStart: {
@@ -413,40 +412,39 @@ export const marketingCopy = {
     ],
     workbench: {
       eyebrow: 'HOW IT RUNS / 03',
-      title: 'Inspect the real mechanism—not a feature screenshot.',
-      lead: 'Two animated execution paths, plus one channel diagram, show the workflows Lobster0 can substantiate today—actively evolving, so a screenshot would just go stale.',
+      title: 'What it does when things go wrong.',
+      lead: 'Denied, failed, disconnected — an agent earns trust in these three moments, not in the happy path.',
     },
     workflows: [
       {
-        id: 'approval',
-        label: 'SAFE Approval',
-        title: 'Risky actions show impact and exact argv first.',
-        summary: 'The Owner decides with the target and parameters visible; approval never transfers to different arguments.',
+        id: 'denied',
+        label: 'Approval denied',
+        title: 'You say no, and it actually stops.',
+        summary: 'A denial is not "rephrase and retry". The rejected arguments are void on the spot — no detour, no retry, no quietly splitting the task into smaller steps.',
         flow: [
-          { icon: 'intent', label: 'User request', detail: '"send a safe greeting"', state: 'default' },
-          { icon: 'argv', label: 'exact argv', detail: 'printf "Hello, Lobster0!"', state: 'default' },
-          { icon: 'gate', label: 'Owner approval', detail: 'arguments locked, awaiting confirm', state: 'waiting' },
-          { icon: 'run', label: 'Isolated execution', detail: 'only this exact argv runs', state: 'active' },
-          { icon: 'result', label: 'Result delivered', detail: 'back to the same conversation', state: 'done' },
+          { icon: 'intent', label: 'Request', detail: '"clean out /tmp"', state: 'default' },
+          { icon: 'argv', label: 'Arguments locked', detail: 'rm -rf /tmp/*', state: 'default' },
+          { icon: 'gate', label: 'Owner denies', detail: 'tapped "Deny"', state: 'blocked' },
+          { icon: 'stop', label: 'Stopped', detail: 'these argv are void', state: 'blocked' },
         ],
       },
       {
-        id: 'external-cli',
-        label: 'External CLI',
-        title: 'Programs and arguments stay structured.',
-        summary: 'External CLI results return to the same conversation with execution order and failures visible.',
+        id: 'crash',
+        label: 'Execution fails',
+        title: 'Failure stops where it happened.',
+        summary: 'A failed tool stays failed. Exit code, stderr, and which step broke all come back verbatim — not smoothed over into "done".',
         flow: [
-          { icon: 'program', label: 'Program', detail: 'git log --oneline -5', state: 'default' },
-          { icon: 'argv', label: 'argv[]', detail: '["git","log","--oneline","-5"]', state: 'default' },
-          { icon: 'run', label: 'Isolated subprocess', detail: 'separate stdout / stderr', state: 'active' },
-          { icon: 'result', label: 'Structured result', detail: 'returned to the conversation', state: 'done' },
+          { icon: 'program', label: 'Program', detail: 'git push origin main', state: 'default' },
+          { icon: 'run', label: 'Subprocess exits', detail: 'exit code 128', state: 'blocked' },
+          { icon: 'argv', label: 'Raw stderr', detail: 'rejected: non-fast-forward', state: 'default' },
+          { icon: 'result', label: 'Reported as-is', detail: 'where and why it failed', state: 'done' },
         ],
       },
       {
-        id: 'multi-channel',
-        label: 'Multi-channel',
-        title: 'Share capability, not failure.',
-        summary: 'One AgentRuntime connects four surfaces; every platform keeps its own transport, delivery, queue, and runtime state.',
+        id: 'isolation',
+        label: 'Fault isolation',
+        title: 'One surface goes down, the rest keep running.',
+        summary: 'When the Feishu gateway drops, the TUI, Telegram, and Discord queues and delivery state are untouched — capability is shared, the failure domain is not.',
       },
     ],
     quickStart: {

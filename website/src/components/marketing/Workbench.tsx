@@ -17,14 +17,14 @@ function FlowWorkflow({ locale, workflow, index }: { locale: Locale; workflow: W
   return (
     <article className="workflow-panel workflow-panel--flow">
       <div className="workflow-panel__copy">
-        <span>0{index + 1} / {zh ? '真实执行机制' : 'REAL MECHANISM'}</span>
+        <span>0{index + 1} / {zh ? '边界时刻' : 'BOUNDARY MOMENT'}</span>
         <h3>{workflow.title}</h3>
         <p>{workflow.summary}</p>
       </div>
       <FlowDiagram
-        ariaLabel={workflow.id === 'approval'
-          ? (zh ? '影响 → exact argv → 所有者决定' : 'impact → exact argv → owner decision')
-          : (zh ? '程序 → argv[] → 结果' : 'program → argv[] → result')}
+        ariaLabel={workflow.id === 'denied'
+          ? (zh ? '请求 → 参数锁定 → 拒绝 → 终止' : 'request → arguments locked → denied → stopped')
+          : (zh ? '程序 → 退出码 → stderr → 如实回报' : 'program → exit code → stderr → reported as-is')}
         steps={workflow.flow}
       />
     </article>
@@ -37,7 +37,7 @@ export function Workbench({ locale, workflows }: WorkbenchProps) {
     id: workflow.id,
     label: workflow.label,
     panel:
-      workflow.id === 'multi-channel' ? (
+      workflow.id === 'isolation' ? (
         <MultiChannelDiagram locale={locale} workflow={workflow} />
       ) : (
         <FlowWorkflow index={index} locale={locale} workflow={workflow} />

@@ -820,6 +820,11 @@ pre {
   flex-direction: column;
   align-content: center;
   justify-content: center;
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
   padding: 20px 24px 22px;
   gap: 0;
   list-style: none;
@@ -946,7 +951,11 @@ pre {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 40px 24px 34px;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
 }
 
 .channels-map__wires {
@@ -1071,7 +1080,11 @@ pre {
   justify-content: center;
   min-height: 360px;
   padding: 30px 24px;
-  background: color-mix(in srgb, var(--canvas) 60%, white);
+  background-color: color-mix(in srgb, var(--canvas) 70%, white);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--line) 38%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 38%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
 }
 
 .chat-scene__window {
@@ -1246,6 +1259,11 @@ pre {
   grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: stretch;
   gap: 0;
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
   padding: 20px;
 }
 
@@ -1525,7 +1543,11 @@ pre {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 44px 30px;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
 }
 
 .flow-diagram__nodes {
@@ -1559,7 +1581,8 @@ pre {
   animation: flowPulse 3.4s linear infinite;
 }
 
-.flow-diagram[data-reduced-motion='true'] .flow-diagram__nodes::after {
+.flow-diagram[data-reduced-motion='true'] .flow-diagram__nodes::after,
+.flow-diagram[data-halted='true'] .flow-diagram__nodes::after {
   animation: none;
   opacity: 0;
 }
@@ -1620,6 +1643,16 @@ pre {
   color: var(--signal);
 }
 
+.flow-diagram__nodes > li[data-state='blocked'] .flow-diagram__icon {
+  border-color: color-mix(in srgb, var(--coral) 60%, transparent);
+  background: color-mix(in srgb, var(--coral) 14%, var(--surface));
+  color: #b23a20;
+}
+
+.flow-diagram__nodes > li[data-state='blocked'] strong {
+  color: #b23a20;
+}
+
 .flow-diagram__nodes > li[data-state='done'] .flow-diagram__icon {
   border-color: color-mix(in srgb, var(--safe) 55%, transparent);
   background: color-mix(in srgb, var(--safe) 13%, var(--surface));
@@ -1657,7 +1690,11 @@ pre {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 30px;
-  background: var(--surface);
+  background-color: var(--surface);
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+  background-size: 26px 26px;
 }
 
 .multi-channel-map__runtime {
