@@ -62,3 +62,4 @@ Phase 6 macOS + 飞书生产验收工具已完成，仍为 **PRODUCTION SOAK PEN
 - [v0.6.1：Memory A～E + Feishu callback/continuation hardening](releases/v0.6.1.md)
 - [v0.7.0：Phase 6 Autonomy + Sandbox + Checkpoint](releases/v0.7.0.md)
 - [v0.6.5：Phase 6.5 Isolated Browser Agent capability record](releases/v0.6.5.md)
+- [v0.7.0-install：一行安装与可信发布候选记录（RELEASE CANDIDATE / PUBLIC GATES PENDING）](releases/v0.7.0-install.md)

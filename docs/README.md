@@ -78,6 +78,8 @@
 | [v0.7.0 发布证据](evals/releases/v0.7.0.md) | 798/798 Python、35/35 TypeScript、39/39 Agent、33/33 Channel、660/660 soak 与 15/15 Automation |
 | [Phase 6.5 Browser Agent](engineering/phase-6/browser-agent.md) | 已实现的专用 Profile、Worker、snapshot/ref、Policy/Approval、Artifact 与恢复 |
 | [v0.6.5 Browser 发布证据](evals/releases/v0.6.5.md) | 925/925 Python、14/14 Worker、18/18 Browser 与 360/360 soak |
+| [安装与发布运维手册](engineering/operations/20260809_install-release-operations.md) | 草稿 Release 提升、Trusted Publisher、镜像摘要核对、`rollback_conflict` 人工恢复与撤销流程 |
+| [v0.7.0 一行安装候选记录](evals/releases/v0.7.0-install.md) | 一行安装链路的真实门禁状态与最终判定所需的外部 `release-evidence.json`（当前 PENDING） |
 | [能力对齐工程落地总方案](engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | 模块、数据模型、配置、错误码、测试矩阵与各 Phase 退出条件 |
 
 ## 使用与开发
