@@ -768,7 +768,7 @@ jobs:
           cp "candidate/${WHEEL}" "candidate/${SDIST}" pypi-dist/
           test "$(ls pypi-dist | wc -l)" -eq 2
       - name: Publish to PyPI through OIDC trusted publishing
-        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33
         with:
           packages-dir: pypi-dist
           print-hash: true
