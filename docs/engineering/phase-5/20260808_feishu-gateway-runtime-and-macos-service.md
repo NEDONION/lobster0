@@ -126,67 +126,36 @@ Message ID。
 
 ## 5. macOS 后台常驻
 
-Mac 上推荐使用用户级 `launchd`，而不是 `nohup` 或一直开着 Terminal。下面是模板；所有路径必须改成当前机器的
-绝对路径，plist 不展开 `~`。
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>io.miniclaw.gateway</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/absolute/path/to/miniclaw/.venv/bin/miniclaw</string>
-    <string>gateway</string>
-  </array>
-  <key>WorkingDirectory</key>
-  <string>/absolute/path/to/miniclaw</string>
-  <key>RunAtLoad</key>
-  <true/>
-  <key>KeepAlive</key>
-  <true/>
-  <key>ThrottleInterval</key>
-  <integer>10</integer>
-  <key>StandardOutPath</key>
-  <string>/Users/your-name/.miniclaw/logs/gateway.stdout.log</string>
-  <key>StandardErrorPath</key>
-  <string>/Users/your-name/.miniclaw/logs/gateway.stderr.log</string>
-</dict>
-</plist>
-```
-
-保存为：
-
-```text
-~/Library/LaunchAgents/io.miniclaw.gateway.plist
-```
-
-检查并启动：
+Mac 上使用 MiniClaw 自己管理的用户级 `launchd`，不要手写 plist、使用 `nohup`，也不要让生产服务复用仓库开发
+`.venv`。先将项目安装到独立的 uv tool runtime；当前生产门禁要求 managed CPython 3.12：
 
 ```bash
-plutil -lint ~/Library/LaunchAgents/io.miniclaw.gateway.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.miniclaw.gateway.plist
-launchctl kickstart -k gui/$(id -u)/io.miniclaw.gateway
-launchctl print gui/$(id -u)/io.miniclaw.gateway
+uv tool install --force --no-cache --python 3.12 --managed-python '.[feishu]'
+miniclaw service install
+miniclaw service status
+miniclaw service restart
+miniclaw service status
 ```
 
-停止并卸载：
+`service install` 先运行 Gateway/Storage/Sandbox/Feishu Doctor，并要求只启用 Feishu；检查失败时不写 plist。受管服务固定
+使用 label `io.miniclaw.gateway`、exact `gateway --home <state-home>` argv 与独立 launcher。plist 和 ownership receipt 均为
+owner-only；只有 receipt hash 匹配的文件才能覆盖或删除，遇到手工/外部 plist 会 fail closed。
 
-```bash
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/io.miniclaw.gateway.plist
+```mermaid
+flowchart LR
+    CLI["miniclaw service install"] --> PRE["Feishu-only preflight"]
+    PRE --> PLIST["owner-only plist + clean commit"]
+    PLIST --> LAUNCHD["launchd bootstrap"]
+    LAUNCHD --> G["managed Python 3.12 Gateway"]
+    G --> F["Feishu WebSocket"]
 ```
 
-安全要求：
+Secret 值只由 `MINICLAW_ENV_FILE` 指向的 owner-only dotenv 在进程启动时读取；plist 不复制 App Secret、Token 或模型
+API Key。plist 只记录 clean 40-hex commit provenance，状态目录和日志目录保持 owner-only。`service restart` 使用固定
+`launchctl kickstart -k`，`service uninstall` 仅删除 MiniClaw 自己的文件。
 
-- Secret 继续放仓库本地 `.env`，权限为 `0600`；不要写进 plist；
-- `WorkingDirectory` 指向仓库根目录，确保现有 `.env` 加载语义不变；
-- `ProgramArguments` 直接指向项目虚拟环境，不依赖 shell rc、alias 或交互式 PATH；
-- `KeepAlive=true` 同时恢复正常和异常退出；Gateway 自身的 lease 阻止重启竞争形成两个有效实例；
-- 日志目录使用 owner-only 权限，并纳入轮转；
-- 升级代码前先停止服务，完成门禁后再启动，避免运行中 import 到半更新文件。
+升级流程必须保持 runtime 与 commit 一致：代码和门禁完成并形成 clean commit 后，用 `--no-cache` 重装 tool runtime，
+再执行 `service install` 更新 provenance。不要在服务运行时让它 import 未提交或半更新的源码。
 
 ## 6. “永远在线”的真实边界
 
@@ -215,6 +184,7 @@ VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy�
 | Real Gateway handshake | PASS | 真实凭据、WebSocket 和 Supervisor ready |
 | Real Owner DM | 2 条 Delivery `sent`，每条 1 次 | 真实入站、Agent、Outbox、回复闭环 |
 | Typing reaction | 自动化 PASS；人工可见性待确认 | 添加/清理语义正确，平台视觉证据仍待 Owner |
+| Managed LaunchAgent lifecycle | PASS | 独立 Python 3.12 runtime、owned plist/receipt、install/status/restart |
 | Feishu 15-case suite | PENDING | 还不能标记 `FEISHU_E2E_VERIFIED` |
 
 ## 8. 已知边界

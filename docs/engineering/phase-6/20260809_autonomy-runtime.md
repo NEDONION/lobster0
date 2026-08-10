@@ -5,6 +5,8 @@
 > 状态：**IMPLEMENTATION PASS**
 >
 > 证据边界：SQLite、Scheduler、TaskRunner、Approval、Delivery、Heartbeat 与 15 条 Automation case 已完成离线确定性验收；真实 Feishu/Telegram/Discord 主动消息仍沿用各平台 Live Gate，不能写成 Live PASS。
+> macOS + 飞书生产验收工具已实现，当前仍是 **PRODUCTION SOAK PENDING**；操作见
+> [生产级验收 Runbook](20260810_macos-feishu-production-acceptance.md)。
 
 Phase 6 发布时门禁：**798/798 Python**、**35/35 TypeScript**、**39/39 offline Agent**、
 **33/33 Channel**、**660/660 local Channel soak**、**15/15 Automation**，状态为

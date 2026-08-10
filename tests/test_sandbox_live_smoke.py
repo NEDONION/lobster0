@@ -2,13 +2,20 @@
 
 import argparse
 import io
+import json
 import stat
+import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
+from miniclaw.sandbox.base import (
+    ExecutableRef,
+    ExecutionPlan,
+    ExecutionReceipt,
+    SandboxPlanError,
+)
 from miniclaw.sandbox.docker import RootlessClientTransport
 from scripts import sandbox_live_smoke
 
@@ -73,6 +80,32 @@ class _PermissionAwareDockerBackend(_SuccessfulDockerBackend):
         )
 
 
+class _SuccessfulSeatbeltBackend:
+    """模拟 Seatbelt 成功，同时保留 v2 executable chain。"""
+
+    def __init__(self) -> None:
+        """初始化尚未执行的 plan 观察值。"""
+        self.plan: ExecutionPlan | None = None
+
+    async def execute(self, plan: ExecutionPlan) -> ExecutionReceipt:
+        """写入探针结果并返回绑定原 Seatbelt plan 的 receipt。"""
+        self.plan = plan
+        (plan.cwd / "result.txt").write_text("workspace-write-ok", encoding="utf-8")
+        return ExecutionReceipt(
+            plan_hash=plan.sha256,
+            backend="seatbelt",
+            exit_code=0,
+            signal=None,
+            timed_out=False,
+            stdout="outside-secret-denied\nnetwork-denied\n",
+            stderr="",
+            stdout_truncated=False,
+            stderr_truncated=False,
+            duration_ms=1,
+            changed_paths=(),
+        )
+
+
 class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
     """验证 live smoke 显式选择 rootless engine 且不泄露本机事实。"""
 
@@ -84,6 +117,7 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             confirm_live=True,
             image="example/miniclaw@sha256:" + "a" * 64,
             executable=None,
+            probe="python",
         )
         error = io.StringIO()
 
@@ -101,6 +135,7 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             confirm_live=True,
             image="example/miniclaw@sha256:" + "a" * 64,
             executable=None,
+            probe="python",
         )
         backend = _SuccessfulDockerBackend()
         output = io.StringIO()
@@ -134,6 +169,7 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             confirm_live=True,
             image="example/miniclaw@sha256:" + "a" * 64,
             executable=None,
+            probe="python",
         )
         backend = _PermissionAwareDockerBackend()
         output = io.StringIO()
@@ -174,6 +210,7 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             confirm_live=True,
             image="example/miniclaw@sha256:" + "a" * 64,
             executable=None,
+            probe="python",
         )
 
         with mock.patch(
@@ -195,9 +232,121 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             "engine=docker-rootless containment=PASS",
         )
         self.assertEqual(
-            sandbox_live_smoke._stable_status("seatbelt", False),
-            "engine=seatbelt containment=FAIL",
+            sandbox_live_smoke._stable_status("seatbelt", False, "node-chain"),
+            "engine=seatbelt probe=node-chain containment=FAIL",
         )
+
+    async def test_node_chain_probe_binds_fixture_env_and_exact_node(self) -> None:
+        """node-chain live 路径必须构造真实 env shebang v2 plan。"""
+        arguments = argparse.Namespace(
+            backend="seatbelt",
+            engine=None,
+            confirm_live=True,
+            image=None,
+            executable=None,
+            probe="node-chain",
+        )
+        backend = _SuccessfulSeatbeltBackend()
+        output = io.StringIO()
+
+        def node_probe(workspace: Path) -> tuple[str, str]:
+            node = workspace / "node"
+            node.write_bytes(b"native-node")
+            node.chmod(0o700)
+            probe = workspace / "probe.js"
+            probe.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+            probe.chmod(0o700)
+            return str(probe), str(workspace)
+
+        with (
+            mock.patch("scripts.sandbox_live_smoke.SeatbeltSandbox", return_value=backend),
+            mock.patch(
+                "scripts.sandbox_live_smoke._seatbelt_node_probe",
+                side_effect=node_probe,
+            ),
+            redirect_stdout(output),
+        ):
+            result = await sandbox_live_smoke._run(arguments)
+
+        self.assertEqual(result, 0)
+        assert backend.plan is not None
+        self.assertEqual(backend.plan.schema_version, 2)
+        self.assertEqual(
+            tuple(ref.path.name for ref in backend.plan.executables),
+            ("probe.js", "env", "node"),
+        )
+        self.assertEqual(
+            output.getvalue(),
+            "engine=seatbelt probe=node-chain containment=PASS\n",
+        )
+
+    async def test_unavailable_node_chain_does_not_fall_back_to_python(self) -> None:
+        """找不到 deterministic Node 时必须明确失败，不能借 Python probe 过 Gate。"""
+        arguments = argparse.Namespace(
+            backend="seatbelt",
+            engine=None,
+            confirm_live=True,
+            image=None,
+            executable=None,
+            probe="node-chain",
+        )
+        error = io.StringIO()
+
+        with (
+            mock.patch(
+                "scripts.sandbox_live_smoke._seatbelt_node_probe",
+                side_effect=ValueError("private path"),
+            ),
+            redirect_stderr(error),
+        ):
+            result = await sandbox_live_smoke._run(arguments)
+
+        self.assertEqual(result, 3)
+        self.assertEqual(error.getvalue(), "seatbelt probe is unavailable\n")
+        self.assertNotIn("private path", error.getvalue())
+
+    async def test_seatbelt_output_is_private_and_bound_to_clean_commit(self) -> None:
+        """显式 output-dir 才写 0600、schema-valid 的 commit-bound Evidence。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "evidence"
+            arguments = argparse.Namespace(
+                backend="seatbelt",
+                engine=None,
+                confirm_live=True,
+                image=None,
+                executable=None,
+                probe="python",
+                output_dir=str(output_dir),
+            )
+            backend = _SuccessfulSeatbeltBackend()
+            with (
+                mock.patch(
+                    "scripts.sandbox_live_smoke.clean_repository_commit",
+                    return_value="a" * 40,
+                ),
+                mock.patch(
+                    "scripts.sandbox_live_smoke._seatbelt_probe",
+                    return_value=("/usr/bin/python3", "/usr/bin"),
+                ),
+                mock.patch(
+                    "scripts.sandbox_live_smoke.capture_executable_chain",
+                    return_value=(ExecutableRef(Path("/usr/bin/python3"), "b" * 64),),
+                ),
+                mock.patch(
+                    "scripts.sandbox_live_smoke.SeatbeltSandbox",
+                    return_value=backend,
+                ),
+                redirect_stdout(io.StringIO()),
+            ):
+                result = await sandbox_live_smoke._run(arguments)
+
+            self.assertEqual(result, 0)
+            files = tuple(output_dir.glob("*.json"))
+            self.assertEqual(len(files), 1)
+            self.assertEqual(files[0].stat().st_mode & 0o777, 0o600)
+            report = json.loads(files[0].read_text(encoding="utf-8"))
+            self.assertEqual(report["commit"], "a" * 40)
+            self.assertEqual(report["release_status"], "SEATBELT_CONTAINMENT_VERIFIED")
 
 
 if __name__ == "__main__":

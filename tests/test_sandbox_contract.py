@@ -9,7 +9,12 @@ from unittest import mock
 
 from miniclaw.bootstrap import initialize_state
 from miniclaw.paths import build_state_paths
-from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
+from miniclaw.sandbox.base import (
+    ExecutableRef,
+    ExecutionPlan,
+    ExecutionReceipt,
+    SandboxPlanError,
+)
 from miniclaw.sandbox.host import HostSandbox
 from miniclaw.sandbox.repository import ExecutionPlanRepository
 from miniclaw.storage.database import Database
@@ -88,6 +93,84 @@ class ExecutionPlanContractTest(unittest.TestCase):
 
         self.assertEqual(restored, plan)
         self.assertEqual(restored.sha256, plan.sha256)
+
+    def test_v1_canonical_json_remains_byte_compatible(self) -> None:
+        """增加 v2 后，历史 v1 JSON 的字段与字节顺序不能变化。"""
+        plan = self.plan(
+            argv=("/python", "script.py"),
+            cwd=Path("/workspace"),
+            write_roots=(Path("/workspace"),),
+        )
+
+        self.assertEqual(
+            plan.canonical_json,
+            '{"argv":["/python","script.py"],"backend":"host","cpu_seconds":30,'
+            '"cwd":"/workspace","environment_names":["LANG","PATH"],"memory_mib":512,'
+            '"network_mode":"none","pids_limit":64,"read_roots":[],"schema_version":1,'
+            '"timeout_seconds":30,"write_roots":["/workspace"]}',
+        )
+        self.assertEqual(
+            ExecutionPlan.from_canonical_json(plan.canonical_json).canonical_json,
+            plan.canonical_json,
+        )
+
+    def test_v2_binds_exact_executable_paths_and_hashes(self) -> None:
+        """v2 必须按执行顺序持久化 exact executable path 与摘要。"""
+        first = ExecutableRef(Path("/bin/echo"), "a" * 64)
+        second = ExecutableRef(Path("/usr/bin/env"), "b" * 64)
+        plan = self.plan(
+            backend="seatbelt",
+            schema_version=2,
+            executables=(first, second),
+        )
+
+        restored = ExecutionPlan.from_canonical_json(plan.canonical_json)
+
+        self.assertEqual(restored.executables, (first, second))
+        self.assertIn(
+            '"executables":[{"path":"/bin/echo","sha256":"' + "a" * 64,
+            plan.canonical_json,
+        )
+        self.assertEqual(restored.sha256, plan.sha256)
+
+    def test_v2_rejects_ambiguous_or_unbound_executable_refs(self) -> None:
+        """无绑定、重复、过长或不由 Seatbelt 消费的 chain 必须失败关闭。"""
+        valid = ExecutableRef(Path("/bin/echo"), "a" * 64)
+        with self.assertRaises(SandboxPlanError):
+            self.plan(backend="seatbelt", schema_version=2, executables=())
+        with self.assertRaises(SandboxPlanError):
+            self.plan(executables=(valid,))
+        with self.assertRaises(SandboxPlanError):
+            self.plan(backend="host", schema_version=2, executables=(valid,))
+        with self.assertRaises(SandboxPlanError):
+            self.plan(
+                backend="seatbelt",
+                schema_version=2,
+                executables=(valid, valid),
+            )
+        with self.assertRaises(SandboxPlanError):
+            self.plan(
+                backend="seatbelt",
+                schema_version=2,
+                executables=tuple(
+                    ExecutableRef(Path(f"/bin/tool-{index}"), f"{index + 1:064x}")
+                    for index in range(5)
+                ),
+            )
+
+    def test_executable_ref_rejects_relative_control_and_bad_hash(self) -> None:
+        """ExecutableRef 的 path/hash 输入不能制造歧义或非标准摘要。"""
+        invalid = (
+            (Path("relative"), "a" * 64),
+            (Path("/bin/bad\nname"), "a" * 64),
+            (Path("/bin/echo"), "A" * 64),
+            (Path("/bin/echo"), "not-sha256"),
+        )
+        for path, digest in invalid:
+            with self.subTest(path=path, digest=digest), self.assertRaises(
+                SandboxPlanError
+            ):
+                ExecutableRef(path, digest)
 
 
 class HostSandboxTest(unittest.IsolatedAsyncioTestCase):

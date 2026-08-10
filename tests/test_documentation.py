@@ -29,8 +29,8 @@ class Phase6DocumentationTest(unittest.TestCase):
             with self.subTest(path=relative):
                 content = (PROJECT_ROOT / relative).read_text(encoding="utf-8")
                 self.assertIn("IMPLEMENTATION PASS", content)
-                self.assertIn("925", content)
-                self.assertIn("36/36", content)
+                self.assertIn("1005", content)
+                self.assertIn("41/41", content)
                 self.assertIn("14/14", content)
                 self.assertIn("39/39", content)
                 self.assertIn("33/33", content)
@@ -41,6 +41,8 @@ class Phase6DocumentationTest(unittest.TestCase):
                 self.assertIn("CONTROLLED LIVE SMOKE PENDING", content)
                 self.assertIn("TARGETED CALLBACK LIVE VERIFIED", content)
                 self.assertIn("15-CASE LIVE PENDING", content)
+                self.assertIn("PRODUCTION SOAK PENDING", content)
+                self.assertNotIn("MACOS+FEISHU PRODUCTION VERIFIED", content)
 
     def test_operational_documents_are_present_and_linked(self) -> None:
         """Phase 5 运维和 Phase 6 自治安全文档必须各有独立入口。"""
@@ -61,6 +63,7 @@ class Phase6DocumentationTest(unittest.TestCase):
         for name in (
             "20260809_autonomy-runtime.md",
             "20260809_sandbox-and-checkpoint.md",
+            "20260810_macos-feishu-production-acceptance.md",
             "browser-agent.md",
         ):
             self.assertTrue((PROJECT_ROOT / "docs/engineering/phase-6" / name).is_file())
@@ -142,8 +145,8 @@ class Phase6DocumentationTest(unittest.TestCase):
         content = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         for needle in (
             "Phase 6.5 implementation pass",
-            "925 Python",
-            "36/36 TUI",
+            "1005 Python",
+            "41/41 TUI",
             "14/14 Worker",
             "39/39",
             "IMPLEMENTATION PASS",
@@ -157,8 +160,10 @@ class Phase6DocumentationTest(unittest.TestCase):
             "15-CASE LIVE PENDING",
             "Telegram live pending",
             "Discord live pending",
+            "PRODUCTION SOAK PENDING",
         ):
             self.assertIn(needle, content)
+        self.assertNotIn("MACOS+FEISHU PRODUCTION VERIFIED", content)
 
     def test_agents_file_contains_mixed_commit_and_phase5_gate(self) -> None:
         """后续 Agent 必须知道中英混合提交规范与发布命令。"""
@@ -168,6 +173,31 @@ class Phase6DocumentationTest(unittest.TestCase):
         self.assertIn("--suite automation --repeat 20", content)
         self.assertIn("--suite browser --repeat 20", content)
         self.assertIn("scripts/validate_docs.py", content)
+
+    def test_phase7_landing_is_detailed_and_explicitly_not_implemented(self) -> None:
+        """Phase 7 入口必须可达、可施工，并且不能冒充当前功能。"""
+        relative = "phase-7/20260810_controlled-evolution.md"
+        path = PROJECT_ROOT / "docs/engineering" / relative
+        self.assertTrue(path.is_file())
+        content = path.read_text(encoding="utf-8")
+        self.assertIn("ENGINEERING PLAN / NOT IMPLEMENTED", content)
+        self.assertGreaterEqual(content.count("```mermaid"), 5)
+        for heading in (
+            "SQLite v7 设计",
+            "Proposal 状态机",
+            "Eval Gate",
+            "Atomic Apply、Crash Recovery 与 Rollback",
+            "分 Task 实施顺序",
+            "Definition of Done",
+        ):
+            self.assertIn(heading, content)
+        engineering = (PROJECT_ROOT / "docs/engineering/README.md").read_text(
+            encoding="utf-8"
+        )
+        progress = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
+        self.assertIn(relative, engineering)
+        self.assertIn("../engineering/phase-7/20260810_controlled-evolution.md", progress)
+        self.assertIn("ENGINEERING PLAN · NOT IMPLEMENTED", progress)
 
     def test_documentation_validator_passes_repository(self) -> None:
         """内部链接、Mermaid fence、HTML 与事实扫描由一个可复现脚本校验。"""

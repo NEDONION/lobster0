@@ -86,6 +86,7 @@ class CliTest(unittest.TestCase):
         self.assertIn("eval", help_text)
         self.assertIn("gateway", help_text)
         self.assertIn("task", help_text)
+        self.assertIn("service", help_text)
         self.assertIn("all enabled IM channels", help_text)
         self.assertNotIn("chat", help_text)
         self.assertNotIn("approvals", help_text)

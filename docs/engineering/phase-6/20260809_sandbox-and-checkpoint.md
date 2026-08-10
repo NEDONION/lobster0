@@ -2,14 +2,16 @@
 
 > 实现日期：2026-08-09
 >
-> 状态：**IMPLEMENTATION PASS / DOCKER LIVE VERIFIED / SEATBELT LIVE PENDING**
+> 状态：**IMPLEMENTATION PASS / DOCKER LIVE VERIFIED / SEATBELT LIVE VERIFIED（当前 macOS）**
 >
-> 边界：合约、argv、持久绑定、故障恢复和离线安全回归已通过；Docker 的真实逃逸探针已经 PASS；Seatbelt
-> 仍需把 Homebrew Framework launcher 显式纳入 immutable Plan 后重验。
+> 边界：合约、argv、持久绑定、故障恢复和离线安全回归已通过；Docker 与当前 Mac 的 Seatbelt
+> 真实逃逸探针均已 PASS。Seatbelt 结论只覆盖本机已绑定的 executable chain，不代表其他 macOS/runtime 自动通过。
+> 当前 release candidate 的 commit-bound Seatbelt 2/2 与 24h aggregate 仍为 **PRODUCTION SOAK PENDING**；见
+> [macOS + 飞书生产级验收](20260810_macos-feishu-production-acceptance.md)。
 
 Phase 6 发布时门禁：**798/798 Python**、**35/35 TypeScript**、**39/39 offline Agent**、
 **33/33 Channel**、**660/660 local Channel soak**、**15/15 Automation**，状态为
-**IMPLEMENTATION PASS**。Docker containment 为 **LIVE VERIFIED**；Seatbelt 为 **LIVE PENDING**。Feishu 仍为
+**IMPLEMENTATION PASS**。Docker containment 为 **LIVE VERIFIED**；当前 Mac Seatbelt 为 **LIVE VERIFIED**。Feishu 仍为
 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**，Telegram/Discord 仍为 **LIVE PENDING**。
 
 Sandbox 不是“把命令放进另一个函数”。它要解决的是：模型请求、Policy 判断、Owner 审批和最终执行必须是同一个
@@ -62,6 +64,7 @@ flowchart TD
 ```text
 schema_version
 argv[]
+executables[]  # v2 only: exact path + SHA-256
 cwd
 environment_names[]
 read_roots[] / write_roots[]
@@ -70,7 +73,9 @@ network_mode
 backend
 ```
 
-canonical JSON 使用固定 key 顺序、规范绝对路径和排序后的环境变量名/mount，再计算 SHA-256。Plan 只保存环境变量名，
+v1 保持历史 canonical JSON 与 hash 逐字兼容；新 Seatbelt Plan 使用 v2，并按执行顺序保存 1～4 个
+`ExecutableRef(path, sha256)`。canonical JSON 使用固定 key 顺序、规范绝对路径和排序后的环境变量名/mount，再计算
+SHA-256。Plan 只保存环境变量名，
 永远不保存值。相同事实得到相同 hash；argv、cwd、mount、预算或 backend 任一变化都会得到不同 hash。
 
 `argv[0]` 必须是非空 executable；后续参数可以是合法空字符串，所以 `lark-cli --query ""` 能保持 exact argv。
@@ -109,7 +114,7 @@ Receipt；相同 Receipt 可重试，不同结果返回 `execution_receipt_confl
 | --- | --- | --- | --- | --- |
 | Host | 交互式 Owner exact-argv 命令 | 最小 env、固定 cwd、process group、timeout | 本机命令本身不可用则失败 | IMPLEMENTATION PASS |
 | Docker | Linux/VPS Automation 推荐 | read-only rootfs、network none、cap drop、non-root、mount allowlist | fail closed，绝不 Host fallback | IMPLEMENTATION PASS / **LIVE VERIFIED** |
-| Seatbelt | macOS Automation 可选 | deny-default profile、literal roots、network deny | `sandbox-exec` 缺失即 fail closed | IMPLEMENTATION PASS / **LIVE PENDING** |
+| Seatbelt | macOS Automation 可选 | deny-default profile、exact executable chain、literal roots、network deny | `sandbox-exec` 缺失或 chain 变化即 fail closed | IMPLEMENTATION PASS / **当前 Mac LIVE VERIFIED** |
 
 Automation 使用配置的 Docker/Seatbelt；交互式 TUI/IM 命令继续使用 Host + Approval。这样不会让升级后所有正常本机命令
 突然进容器，也不会让后台任务绕过显式 sandbox 配置。
@@ -140,9 +145,15 @@ docker run --rm --init
 ## 7. Seatbelt hardening
 
 Seatbelt profile 从 deny-default 开始，导入现代 macOS 启动普通进程所需的 `system.sb`，随后再次显式禁止网络；
-只开放 exact process、必要系统读取、literal read/write subpath。每个声明 root 只对父目录开放
+只开放 v2 Plan 中逐个绑定的 exact process、必要系统读取、literal read/write subpath，不使用 executable
+`subpath`。每个声明 root 只对父目录开放
 `file-read-metadata + path-ancestors`，不开放父目录内容。路径经过 canonicalize 和转义，不能把 `)`、引号或换行
 注入 profile。profile 作为独立文件/参数传给 `sandbox-exec`，命令仍是 exact argv。
+
+Core 在 Policy/Approval 前解析 executable chain，使用 no-follow 打开 regular executable 并保存 SHA-256；backend
+执行前再次核对。支持 direct executable、absolute shebang 和单一 `/usr/bin/env NAME`。为避免 shell 重新解释，带参数
+shebang、`env -S`、shell interpreter、symlink mutation 或超过四项的 chain 都稳定拒绝。Host 与 Docker 的历史 Plan
+继续使用 v1；Host 只提供最小环境与 exact argv，**不等于 sandbox**。
 
 Seatbelt 是 macOS 兼容后端，不是未来长期的跨平台承诺；如果系统移除 `/usr/bin/sandbox-exec`，MiniClaw 返回
 `sandbox_backend_unavailable`，不会在 Host 重试。
@@ -258,7 +269,8 @@ uv run miniclaw eval run --suite automation --root evals/scenarios
 ```bash
 uv run python scripts/sandbox_live_smoke.py --backend docker \
   --image 'registry.example/miniclaw-sandbox@sha256:<digest>'
-uv run python scripts/sandbox_live_smoke.py --backend seatbelt
+uv run python scripts/sandbox_live_smoke.py --backend seatbelt --confirm-live --probe python
+uv run python scripts/sandbox_live_smoke.py --backend seatbelt --confirm-live --probe node-chain
 ```
 
 Live smoke 必须证明：Workspace 允许范围可见；网络不可达；父进程 sentinel 不可见；未声明写路径失败；缺 backend 不
@@ -266,13 +278,13 @@ fallback。若本机没有可用 pinned image、Docker daemon 或 `sandbox-exec`
 `build_argv` 单测冒充 containment PASS。
 
 本轮真实结果：Docker 使用本机已有的 sha256-pinned Python image，`exit=0`，Workspace 写、外部 Secret deny 与
-network deny 全部 PASS。Seatbelt 已证明 `sandbox-exec`、`system.sb` 和 path ancestor 生效，但 Homebrew Framework
-Python 会二次 `posix_spawn` `Resources/Python.app/.../Python`；当前 Plan 只有一个 executable，不能在不扩权的情况下
-批准该 launcher，因此保留 **LIVE PENDING**。
+network deny 全部 PASS。Seatbelt 的 managed Python 与 `/usr/bin/env node` chain 两个真实 probe 均为
+`containment=PASS`，证明当前 Mac 的 executable chain、Workspace allow、外部 Secret deny 与 network deny 生效。
+这项证据不外推到未执行 probe 的机器、解释器或操作系统版本。
 
 ## 14. 当前限制
 
-- Docker live containment 已验证；Seatbelt 仍缺 Framework launcher 的显式 Plan 字段与 hash/Approval 绑定；
+- Docker 与当前 Mac Seatbelt live containment 已验证；更换 Python、Node 或 macOS 后必须重新运行两个 live probe；
 - Docker socket 永远不能挂进 MiniClaw 容器；
 - Automation command 当前默认 Workspace 只读，尚未提供用户级 writable mount 配置；
 - Checkpoint 只覆盖主 Workspace，不覆盖 Personal 外部 write roots；

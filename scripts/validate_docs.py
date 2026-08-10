@@ -25,7 +25,9 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/engineering/phase-5/20260809_memory-autopilot.md"),
     Path("docs/engineering/phase-6/20260809_autonomy-runtime.md"),
     Path("docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md"),
+    Path("docs/engineering/phase-6/20260810_macos-feishu-production-acceptance.md"),
     Path("docs/engineering/phase-6/browser-agent.md"),
+    Path("docs/engineering/phase-7/20260810_controlled-evolution.md"),
     Path("docs/superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md"),
     Path("docs/superpowers/plans/2026-08-09-phase-6-autonomy-sandbox.md"),
     Path("docs/getting-started/20260807_本地运行指南.md"),
@@ -49,8 +51,8 @@ FACT_RELATIVE_DOCS = (
 )
 REQUIRED_FACTS = (
     "IMPLEMENTATION PASS",
-    "925",
-    "36/36",
+    "1005",
+    "41/41",
     "14/14",
     "39/39",
     "33/33",
@@ -61,6 +63,7 @@ REQUIRED_FACTS = (
     "CONTROLLED LIVE SMOKE PENDING",
     "TARGETED CALLBACK LIVE VERIFIED",
     "15-CASE LIVE PENDING",
+    "PRODUCTION SOAK PENDING",
 )
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 FENCE = re.compile(r"^\s*```([^`]*)$")
