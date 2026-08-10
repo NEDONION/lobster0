@@ -484,7 +484,6 @@
   left: 0;
   display: grid;
   grid-column: 1;
-  grid-template-columns: minmax(0, 8fr) minmax(300px, 4fr);
   border-color: rgb(18 23 34 / 9%);
   border-radius: 18px;
   background: rgb(255 255 255 / 94%);
@@ -532,11 +531,6 @@
 
 .root :global(.evidence-strip dd) {
   font-size: 1.25rem;
-}
-
-.root :global(.evidence-strip p) {
-  border-left: 1px solid rgb(18 23 34 / 8%);
-  font-size: 0.68rem;
 }
 
 .root :global(.section-frame h2) {
@@ -955,11 +949,6 @@
 
   .root :global(.evidence-strip dl > div:last-child) {
     grid-column: 1 / -1;
-  }
-
-  .root :global(.evidence-strip p) {
-    border-top: 1px solid rgb(18 23 34 / 8%);
-    border-left: 0;
   }
 
   .root :global(.section-heading-grid) {

@@ -593,30 +593,6 @@ pre {
   letter-spacing: -0.04em;
 }
 
-.evidence-strip p {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 0;
-  padding: 18px 22px;
-  color: var(--muted);
-  font-size: 0.72rem;
-  line-height: 1.5;
-}
-
-.evidence-strip p span {
-  display: grid;
-  width: 24px;
-  height: 24px;
-  flex: 0 0 auto;
-  place-items: center;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--warn) 25%, white);
-  color: #805b0d;
-  font-family: var(--font-mono);
-  font-weight: 700;
-}
-
 .section-frame h2 {
   font-size: clamp(2.6rem, 4.5vw, 4.25rem);
 }
@@ -1567,14 +1543,6 @@ pre {
 
   .claw-trace__detail {
     display: none;
-  }
-
-  .evidence-strip {
-    grid-template-columns: 1fr;
-  }
-
-  .evidence-strip p {
-    border-top: 1px solid var(--line);
   }
 
   .capability-panel {
