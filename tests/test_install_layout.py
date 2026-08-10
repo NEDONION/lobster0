@@ -406,6 +406,101 @@ class InstallLayoutTests(unittest.TestCase):
         replacement = InstallLock.acquire(layout)
         replacement.close()
 
+    def test_lock_gc_finalizer_requires_exact_creator_process_identity(self) -> None:
+        """pid、euid、process start 漂移或不可读时仅关闭 fd，不得删除 lock 路径。"""
+        original_pid = os.getpid()
+        original_uid = os.geteuid()
+        cases = (
+            ("pid", mock.patch.object(layout_module.os, "getpid", return_value=original_pid + 1)),
+            ("euid", mock.patch.object(layout_module.os, "geteuid", return_value=original_uid + 1)),
+            (
+                "start",
+                mock.patch.object(
+                    layout_module,
+                    "_probe_process",
+                    return_value=("alive", "2026-01-01T00:00:00Z"),
+                ),
+            ),
+            (
+                "unavailable",
+                mock.patch.object(layout_module, "_probe_process", return_value=("alive", None)),
+            ),
+        )
+        for drift, identity_patch in cases:
+            with self.subTest(drift=drift):
+                layout = InstallLayout.user(self.home, version="0.7.0")
+                lock = InstallLock.acquire(layout)
+                descriptors = (
+                    lock._descriptor,
+                    layout_module._LOCK_OWNERS[lock].proof_descriptor,
+                )
+                reference = weakref.ref(lock)
+
+                with identity_patch:
+                    del lock
+                    gc.collect()
+
+                self.assertIsNone(reference())
+                self.assertTrue(layout.lock.exists())
+                for held in descriptors:
+                    with self.subTest(descriptor=held), self.assertRaises(OSError):
+                        os.fstat(held)
+                layout.lock.unlink()
+
+    @unittest.skipUnless(hasattr(os, "fork"), "requires os.fork")
+    def test_lock_child_cleanup_preserves_parent_lock_and_closes_inherited_fds(self) -> None:
+        """fork child 的 GC 或显式 close 只能关闭子进程 fd，不能删除父进程 lock。"""
+        program = """
+import gc
+import os
+import sys
+from pathlib import Path
+
+from miniclaw.install.layout import InstallLayout, InstallLock, _LOCK_OWNERS
+
+layout = InstallLayout.user(Path(sys.argv[1]), version="0.7.0")
+cleanup = sys.argv[2]
+lock = InstallLock.acquire(layout)
+descriptors = (lock._descriptor, _LOCK_OWNERS[lock].proof_descriptor)
+child_pid = os.fork()
+if child_pid == 0:
+    try:
+        if cleanup == "gc":
+            del lock
+            gc.collect()
+        else:
+            lock.close()
+        outcomes = [layout.lock.exists()]
+        for held in descriptors:
+            try:
+                os.fstat(held)
+            except OSError:
+                outcomes.append(True)
+            else:
+                outcomes.append(False)
+        os._exit(0 if all(outcomes) else 2)
+    except BaseException:
+        os._exit(3)
+
+_, child_status = os.waitpid(child_pid, 0)
+try:
+    if os.waitstatus_to_exitcode(child_status) != 0 or not lock.owns(layout):
+        raise SystemExit(4)
+finally:
+    lock.close()
+"""
+        for cleanup in ("gc", "close"):
+            with self.subTest(cleanup=cleanup):
+                result = subprocess.run(
+                    (sys.executable, "-c", program, str(self.home), cleanup),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+
     def test_lock_finalizer_cannot_delete_replacement_or_replay_after_close(self) -> None:
         """stale GC callback 与 explicit close 后 callback 都不能删除新的 lock instance。"""
         layout = InstallLayout.user(self.home, version="0.7.0")

@@ -367,6 +367,7 @@ class InstallLock:
     @classmethod
     def _create(cls, path: Path) -> InstallLock:
         """创建、fsync 并返回一个新的 exact JSON lock。"""
+        pid = os.getpid()
         uid = os.geteuid()
         descriptor = os.open(
             path,
@@ -378,10 +379,10 @@ class InstallLock:
         try:
             metadata = os.fstat(descriptor)
             identity = (metadata.st_dev, metadata.st_ino)
-            state, process_start = _probe_process(os.getpid())
+            state, process_start = _probe_process(pid)
             if state != "alive" or process_start is None or not _valid_utc(process_start):
                 raise InstallError("install_locked", "manifest")
-            document = {"pid": os.getpid(), "uid": uid, "start": process_start}
+            document = {"pid": pid, "uid": uid, "start": process_start}
             payload = (
                 json.dumps(
                     document,
@@ -419,7 +420,9 @@ class InstallLock:
                 cast(tuple[int, int], identity),
                 descriptor,
                 proof_descriptor,
+                pid,
                 uid,
+                cast(str, process_start),
             )
             _LOCK_OWNERS[lock] = _LockOwnership(
                 path,
@@ -427,7 +430,7 @@ class InstallLock:
                 cast(tuple[int, int], identity),
                 descriptor,
                 proof_descriptor,
-                os.getpid(),
+                pid,
                 uid,
                 cast(str, process_start),
                 finalizer,
@@ -506,7 +509,9 @@ class InstallLock:
             ownership.identity,
             ownership.descriptor,
             ownership.proof_descriptor,
+            ownership.pid,
             ownership.uid,
+            ownership.start,
             instance_matches,
         )
 
@@ -881,13 +886,39 @@ def _finalize_lock(
     identity: tuple[int, int],
     descriptor: int,
     proof_descriptor: int,
+    expected_pid: int,
     expected_uid: int,
+    expected_start: str,
     remove_path: bool = True,
 ) -> None:
-    """清理 exact lock 路径并关闭仍属于本实例的 descriptor，且不向外抛错。"""
+    """由创建进程清理 exact lock，并在任意进程关闭仍属于本实例的 descriptor。
+
+    Args:
+        path: acquire 时创建的 lock 路径。
+        payload: acquire 时写入的 exact JSON bytes。
+        identity: acquire 时记录的设备号与 inode。
+        descriptor: lock 的原始 open descriptor。
+        proof_descriptor: 与原始 descriptor 共享 open description 的私有副本。
+        expected_pid: acquire 进程 PID。
+        expected_uid: acquire 进程 effective UID。
+        expected_start: acquire 进程的 UTC start identity。
+        remove_path: 实例可变字段仍匹配时才允许删除路径。
+
+    Returns:
+        无返回值；身份失配或 cleanup 失败时 fail closed，且不向外抛错。
+    """
+    process_owned = False
+    try:
+        process_owned = (
+            os.getpid() == expected_pid
+            and os.geteuid() == expected_uid
+            and _probe_process(expected_pid) == ("alive", expected_start)
+        )
+    except OSError:
+        pass
     descriptor_owned = _same_open_description(descriptor, proof_descriptor)
     try:
-        if remove_path and descriptor_owned and _lock_path_owned(
+        if process_owned and remove_path and descriptor_owned and _lock_path_owned(
             path,
             descriptor,
             identity,
