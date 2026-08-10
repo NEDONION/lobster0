@@ -38,6 +38,7 @@ from miniclaw.install.runtime import (
     RuntimeInputs,
     RuntimeReceipt,
     activate_runtime,
+    discard_interrupted_runtime_staging,
     discard_unactivated_runtime,
     retain_current_and_previous,
 )
@@ -211,6 +212,32 @@ class InstallRuntimeTests(unittest.TestCase):
         lock = InstallLock.acquire(self.layout if layout is None else layout)
         self.addCleanup(lock.close)
         return lock
+
+    def _write_private_staging(self, layout: InstallLayout | None = None) -> tuple[int, int]:
+        """写入可代表任意 interrupted build 阶段的完整 private staging facts。"""
+        selected = self.layout if layout is None else layout
+        if not selected.program_prefix.exists():
+            selected.program_prefix.mkdir(mode=0o700)
+        if not selected.runtimes_dir.exists():
+            selected.runtimes_dir.mkdir(mode=0o700)
+        selected.staging.mkdir(mode=0o700)
+        partial = selected.staging / "partial"
+        partial.mkdir(mode=0o700)
+        self._write_private(partial / "data", b"partial build data\n")
+        self._write_private(partial / "program", b"#!/bin/sh\nexit 0\n", 0o700)
+        metadata = selected.staging.lstat()
+        return metadata.st_dev, metadata.st_ino
+
+    def _discard_interrupted_staging(
+        self,
+        layout: InstallLayout,
+        lock: InstallLock,
+        manifest: ReleaseManifest,
+    ) -> bool:
+        """调用 Task8D public API，并断言其封闭 bool 结果。"""
+        result = discard_interrupted_runtime_staging(layout, lock, manifest)
+        self.assertIs(type(result), bool)
+        return result
 
     def _write_wheel(
         self,
@@ -1454,6 +1481,282 @@ class InstallRuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(InstallError, "activation_failed"):
             activate_runtime(self.layout, receipt)
         self.assertEqual(os.readlink(self.layout.current), "runtimes/0.6.0")
+
+    def test_discard_interrupted_staging_returns_false_when_absent_without_writes(
+        self,
+    ) -> None:
+        """目标 staging 不存在时返回 False，且 recovery 不创建 runtimes namespace。"""
+        lock = self._acquire_live_lock()
+
+        self.assertFalse(
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+        )
+
+        self.assertFalse(self.layout.runtimes_dir.exists())
+
+    def test_discard_interrupted_staging_removes_only_verified_private_tree(self) -> None:
+        """live lock 只清理 target Release 的完整 private partial staging。"""
+        self._write_private_staging()
+        lock = self._acquire_live_lock()
+
+        self.assertTrue(
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+        )
+
+        self.assertFalse(self.layout.staging.exists())
+        self.assertEqual(
+            tuple(self.layout.runtimes_dir.glob("..0.7.0.staging.quarantine-*")),
+            (),
+        )
+
+    def test_discard_interrupted_staging_requires_matching_release_and_live_lock(
+        self,
+    ) -> None:
+        """wrong Release、closed lock 或另一 layout 的真实 lock 都不得授权清理。"""
+        identity = self._write_private_staging()
+        closed = self._acquire_live_lock()
+        closed.close()
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            self._discard_interrupted_staging(self.layout, closed, self.manifest)
+
+        lock = self._acquire_live_lock()
+        wrong_manifest = self._manifest_for_version("0.8.0")
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            self._discard_interrupted_staging(self.layout, lock, wrong_manifest)
+
+        other_layout = InstallLayout._build(
+            self.home / "other-program",
+            self.home / "other-state",
+            self.home / ".local" / "bin" / "miniclaw",
+            "0.7.0",
+        )
+        other_lock = self._acquire_live_lock(other_layout)
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            self._discard_interrupted_staging(self.layout, other_lock, self.manifest)
+
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+
+    def test_discard_interrupted_staging_preserves_every_target_release_reference(
+        self,
+    ) -> None:
+        """current/current.next/root receipt 的 target Release 引用都保护 staging。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        identity = self._write_private_staging()
+        lock = self._acquire_live_lock()
+        target = "runtimes/0.7.0"
+
+        for link in (self.layout.current, self.layout.current.with_name("current.next")):
+            with self.subTest(reference=link.name):
+                link.symlink_to(target)
+                self.assertFalse(
+                    self._discard_interrupted_staging(self.layout, lock, self.manifest)
+                )
+                link.unlink()
+
+        receipt = InstallReceipt(
+            schema_version=1,
+            version="0.7.0",
+            git_commit=self.manifest.git_commit,
+            platform=self.platform,
+            installed_at="2026-08-10T00:00:00Z",
+            managed_files=(("bin/miniclaw", "f" * 64),),
+            current_runtime=target,
+            previous_runtime=None,
+            service_label=None,
+            service_file=None,
+            service_file_sha256=None,
+        )
+        receipt.write(self.layout.receipt)
+        self.assertFalse(
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+        )
+        self.layout.receipt.unlink()
+
+        self._write_runtime_receipt("0.8.0")
+        replace(
+            receipt,
+            version="0.8.0",
+            current_runtime="runtimes/0.8.0",
+            previous_runtime=target,
+        ).write(self.layout.receipt)
+        self.assertFalse(
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+        )
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+
+    def test_discard_interrupted_staging_rejects_untrusted_tree_facts(self) -> None:
+        """foreign type、mode、symlink 与 special staging facts 均失败关闭并原样保留。"""
+        lock = self._acquire_live_lock()
+        external = self.root / "external-staging"
+        external.mkdir(mode=0o700)
+        cases = ("regular-root", "root-symlink", "data-mode", "escape", "special")
+
+        for case in cases:
+            with self.subTest(case=case):
+                if case == "regular-root":
+                    self.layout.runtimes_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+                    self._write_private(self.layout.staging, b"foreign regular\n")
+                elif case == "root-symlink":
+                    self.layout.runtimes_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+                    self.layout.staging.symlink_to(external, target_is_directory=True)
+                else:
+                    self._write_private_staging()
+                    if case == "data-mode":
+                        (self.layout.staging / "partial" / "data").chmod(0o644)
+                    elif case == "escape":
+                        (self.layout.staging / "escape").symlink_to(external)
+                    else:
+                        os.mkfifo(self.layout.staging / "pipe", 0o600)
+
+                try:
+                    with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                        self._discard_interrupted_staging(self.layout, lock, self.manifest)
+                    self.assertTrue(os.path.lexists(self.layout.staging))
+                finally:
+                    if self.layout.staging.is_symlink() or self.layout.staging.is_file():
+                        self.layout.staging.unlink()
+                    elif self.layout.staging.exists():
+                        shutil.rmtree(self.layout.staging)
+
+    def test_discard_interrupted_staging_preserves_check_to_rename_replacement(
+        self,
+    ) -> None:
+        """full scan 后的 concurrent replacement 不能被当成 verified staging 删除。"""
+        identity = self._write_private_staging()
+        lock = self._acquire_live_lock()
+        original = self.layout.staging.with_name(".0.7.0.staging.original")
+
+        def replace_before_rename(path: Path) -> None:
+            """在 quarantine rename 前发布 foreign replacement。"""
+            path.rename(original)
+            path.mkdir(mode=0o700)
+            self._write_private(path / "marker", b"replacement\n")
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_race_hook",
+                side_effect=replace_before_rename,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertEqual(
+            (original.lstat().st_dev, original.lstat().st_ino),
+            identity,
+        )
+        self.assertEqual(
+            (self.layout.staging / "marker").read_bytes(),
+            b"replacement\n",
+        )
+
+    def test_discard_interrupted_staging_restores_when_reference_appears_after_quarantine(
+        self,
+    ) -> None:
+        """durable quarantine 后新 target 引用必须恢复 exact staging 并返回 False。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        identity = self._write_private_staging()
+        lock = self._acquire_live_lock()
+
+        def publish_reference(layout: InstallLayout) -> None:
+            """在 public staging 消失后发布 target Release current。"""
+            self.assertFalse(layout.staging.exists())
+            layout.current.symlink_to("runtimes/0.7.0")
+
+        with mock.patch.object(
+            runtime_module,
+            "_runtime_quarantine_commit_hook",
+            side_effect=publish_reference,
+        ):
+            self.assertFalse(
+                self._discard_interrupted_staging(self.layout, lock, self.manifest)
+            )
+
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+
+    def test_discard_interrupted_staging_lock_drift_fails_without_deletion(self) -> None:
+        """reference facts 读取期间 lock pathname 漂移必须报错并恢复 staging。"""
+        identity = self._write_private_staging()
+        lock = self._acquire_live_lock()
+        real_references = runtime_module._stable_runtime_reference_facts
+        calls = 0
+
+        def replace_lock(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """post-quarantine final facts 后用同 bytes 新 inode 替换 lock path。"""
+            nonlocal calls
+            references = real_references(layout, verify_links=verify_links)
+            calls += 1
+            if calls == 5:
+                payload = layout.lock.read_bytes()
+                layout.lock.unlink()
+                layout.lock.write_bytes(payload)
+                layout.lock.chmod(0o600)
+            return references
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=replace_lock,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+
+    def test_discard_interrupted_staging_fsync_failure_restores_exact_inode(self) -> None:
+        """quarantine destination fsync 失败必须恢复 exact staging 并稳定报错。"""
+        identity = self._write_private_staging()
+        lock = self._acquire_live_lock()
+        real_fsync = runtime_module._fsync_directory
+        failed = False
+
+        def fail_destination_once(path: Path) -> None:
+            """只中断 staging private quarantine directory 的首次 fsync。"""
+            nonlocal failed
+            if (
+                path.parent == self.layout.runtimes_dir
+                and path.name.startswith("..0.7.0.staging.quarantine-")
+                and not failed
+            ):
+                failed = True
+                raise OSError("injected staging destination fsync failure")
+            real_fsync(path)
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=fail_destination_once,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertTrue(failed)
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
 
     def test_discard_verified_unactivated_runtime_allows_same_version_retry(self) -> None:
         """live lock 可清理完整未激活 Runtime，并解除同版本重试 collision。"""

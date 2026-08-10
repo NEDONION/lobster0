@@ -921,6 +921,128 @@ def activate_runtime(layout: InstallLayout, receipt: RuntimeReceipt) -> None:
         raise InstallError("activation_failed", "manifest") from error
 
 
+def discard_interrupted_runtime_staging(
+    layout: InstallLayout,
+    lock: InstallLock,
+    manifest: ReleaseManifest,
+) -> bool:
+    """清理 target Release 遗留的完整 private staging tree。
+
+    Args:
+        layout: 与 target Release version 绑定的 validated layout。
+        lock: 当前进程通过 `InstallLock.acquire` 持有的原始实例。
+        manifest: 当前事务已验证且与 layout version 一致的 Release manifest。
+
+    Returns:
+        durable 隔离并提交删除时返回 true；不存在或 target Release 被引用时返回 false。
+
+    Raises:
+        InstallError: 类型、lock、Release、tree、reference、inode 或持久化事实不可信。
+    """
+    quarantine: _RuntimeQuarantine | None = None
+    try:
+        if (
+            type(layout) is not InstallLayout
+            or type(lock) is not InstallLock
+            or type(manifest) is not ReleaseManifest
+        ):
+            _runtime_failed()
+        if not lock.owns(layout):
+            _runtime_failed()
+        if (
+            manifest.version != layout.runtime.name
+            or layout.staging
+            != layout.runtimes_dir / f".{manifest.version}.staging"
+        ):
+            _runtime_failed()
+        target = f"runtimes/{manifest.version}"
+        if not _lexists(layout.staging):
+            references = _stable_runtime_reference_facts(layout, verify_links=True)
+            if (
+                _lexists(layout.staging)
+                or references
+                != _stable_runtime_reference_facts(layout, verify_links=True)
+                or not lock.owns(layout)
+            ):
+                _runtime_failed()
+            return False
+
+        identity, executables = _verified_private_staging_tree(layout.staging)
+        first = _stable_runtime_reference_facts(layout, verify_links=True)
+        second = _stable_runtime_reference_facts(layout, verify_links=True)
+        if first != second:
+            _runtime_failed()
+        if target in second.targets:
+            _verified_private_staging_tree(
+                layout.staging,
+                identity=identity,
+                executables=executables,
+            )
+            if not lock.owns(layout):
+                _runtime_failed()
+            return False
+
+        _verified_private_staging_tree(
+            layout.staging,
+            identity=identity,
+            executables=executables,
+        )
+        if not lock.owns(layout):
+            _runtime_failed()
+        quarantine = _quarantine_runtime_target(
+            layout.staging,
+            identity,
+            program_mode=0o700,
+        )
+        try:
+            _runtime_quarantine_commit_hook(layout)
+            post_first = _stable_runtime_reference_facts(layout, verify_links=True)
+            post_second = _stable_runtime_reference_facts(layout, verify_links=True)
+        except BaseException:
+            _restore_or_preserve_runtime_quarantine(quarantine)
+            quarantine = None
+            raise
+        if post_first != post_second:
+            _restore_or_preserve_runtime_quarantine(quarantine)
+            _runtime_failed()
+
+        _verified_private_staging_tree(
+            quarantine.private,
+            identity=identity,
+            executables=executables,
+        )
+        final_references = _stable_runtime_reference_facts(layout, verify_links=True)
+        if target in final_references.targets:
+            if not _restore_or_preserve_runtime_quarantine(quarantine):
+                _runtime_failed()
+            _verified_private_staging_tree(
+                layout.staging,
+                identity=identity,
+                executables=executables,
+            )
+            restored_references = _stable_runtime_reference_facts(
+                layout,
+                verify_links=True,
+            )
+            if target not in restored_references.targets or not lock.owns(layout):
+                _runtime_failed()
+            return False
+        if final_references != post_second or not lock.owns(layout):
+            _restore_or_preserve_runtime_quarantine(quarantine)
+            _runtime_failed()
+
+        _discard_runtime_quarantine(quarantine)
+        return True
+    except InstallError as error:
+        if error.code == "runtime_install_failed":
+            raise
+        raise InstallError("runtime_install_failed", "manifest") from error
+    except BaseException as error:
+        if quarantine is not None:
+            _restore_or_preserve_runtime_quarantine(quarantine)
+        raise InstallError("runtime_install_failed", "manifest") from error
+
+
 def discard_unactivated_runtime(layout: InstallLayout, lock: InstallLock) -> bool:
     """清理完整、未被引用且尚未激活的目标 Runtime。
 
@@ -3155,6 +3277,43 @@ def _remove_owned_tree(root: Path) -> None:
             else:
                 _runtime_failed()
     root.rmdir()
+
+
+def _verified_private_staging_tree(
+    path: Path,
+    *,
+    identity: tuple[int, int] | None = None,
+    executables: tuple[str, ...] | None = None,
+) -> tuple[tuple[int, int], tuple[str, ...]]:
+    """完整验证 owner-only staging tree，并绑定稳定 root inode。
+
+    Args:
+        path: public staging 或 0700 quarantine 内的 exact tree path。
+        identity: 可选的先前 root device/inode token。
+        executables: 可选的先前 private executable path 集合。
+
+    Returns:
+        当前稳定 root identity 与完整验证得到的 executable paths。
+
+    Raises:
+        InstallError: 参数未成对、tree facts 或 root identity 漂移。
+    """
+    if (identity is None) != (executables is None):
+        _runtime_failed()
+    observed_identity = _directory_identity(path, expected_mode=0o700)
+    observed_executables = _verify_runtime_tree(
+        path,
+        program_mode=0o700,
+        expected_executables=executables,
+        allow_transient=True,
+    )
+    if (
+        _directory_identity(path, expected_mode=0o700) != observed_identity
+        or identity is not None
+        and observed_identity != identity
+    ):
+        _runtime_failed()
+    return observed_identity, observed_executables
 
 
 def _directory_identity(path: Path, *, expected_mode: int = 0o700) -> tuple[int, int]:
