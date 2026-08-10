@@ -39,6 +39,12 @@
 | 正文字体 | `anthropic-sans`（Anthropic 私有 Web Font，见 §3 边界声明） |
 | 大标题字体 | 衬线体（同为私有 Web Font，肉眼确认是衬线，家族名未公开） |
 
+**重要限制**：这次取色的对象是 claude.ai **未登录状态的登录页**，不是登录后的真实应用内部界面
+（没有账号权限进入）。登录页属于营销/转化场景，`#d97757` 这个高饱和品牌色是 Logo 和 CTA 的用色，
+不代表应用内部真实高频交互场景（按钮、选中态）的强调色强度——第一版直接采用这个色值（只做 WCAG
+对比度校准）后，用户反馈"太鲜艳，真实 Claude 桌面版没有这个颜色"，最终改为同色相大幅降饱和度的
+版本，见 §4 表格。
+
 ## 3. 边界声明：参照视觉语言，不复制品牌资产
 
 - **不下载/嵌入 `anthropic-sans` 或 Claude 的专有衬线字体**——这些是 Anthropic 的私有资产，直接引入
@@ -60,11 +66,11 @@
 | `--lobster-surface` | `#ffffff` | `#ffffff`（不变） | Claude 卡片同为纯白 |
 | `--lobster-surface-raised` | `#f0f1f4` | `#f1efe9` | 暖灰化 |
 | `--lobster-foreground` / `--lobster-text-primary` | `#0d0d0d` | `#0b0b0b` | Claude 实测值 |
-| `--lobster-primary` / `--lobster-accent` | `#3b82f6` | `#d97757` | Claude 实测品牌色 |
-| `--lobster-primary-hover` | `#2563eb` | `#c1653d` | 加深版强调色，同色相降低明度 |
-| `--lobster-primary-muted` | `rgba(59,130,246,0.1)` | `rgba(217,119,87,0.1)` | 同色相降低不透明度 |
-| `--lobster-chat-user` | `#dbeafe`（浅蓝） | `#f4e4d9`（浅橙棕） | 用户消息气泡跟随强调色改暖 |
-| `--lobster-chat-user-foreground` | `#1e3a8a`（深蓝） | `#7c3d22`（深橙棕） | 同上 |
+| `--lobster-primary` / `--lobster-accent` | `#3b82f6` | `#875645` | Claude 实测品牌色 `#d97757`（H15° S64%）来自登录页 Logo，是营销/转化场景刻意选用的高饱和色，直接用在按钮/选中态大色块上用户反馈"太鲜艳，真实 Claude 应用没有这个颜色"；同色相把饱和度大幅降到 32%（H15° S32% L40%），做成低调赭石棕，配白字 6.09:1，配主背景 5.78:1，均超过 WCAG AA |
+| `--lobster-primary-hover` | `#2563eb` | `#6f4739` | 同色相再降明度一档（7.97:1） |
+| `--lobster-primary-muted` | `rgba(59,130,246,0.1)` | `rgba(135,86,69,0.1)` | 同色相降低不透明度 |
+| `--lobster-chat-user` | `#dbeafe`（浅蓝） | `#f2ebe8`（浅暖灰棕） | 用户消息气泡跟随强调色改暖，同样降饱和度避免鲜艳 |
+| `--lobster-chat-user-foreground` | `#1e3a8a`（深蓝） | `#634136`（深暖棕） | 配气泡背景 7.62:1 |
 | `--lobster-chat-bot` | `#f0f1f4` | `#f1efe9` | 暖灰化，与 `surface-raised` 一致 |
 | `--lobster-text-secondary` | `#6b7280`（冷灰） | `#65635b`（暖灰） | 贴近 Claude 实测次级色 |
 | `--lobster-text-muted` | `#9ca3af`（冷灰） | `#8a887f`（暖灰） | 贴近 Claude 实测更浅次级色 |
@@ -124,9 +130,14 @@
 ## 8. 验证方式
 
 - 视觉 smoke：复用 D1 已建立的模式（真实 CSS + 真实组件渲染，Browser 面板截图核对空态、消息气泡、
-  折叠思考、设置/自动化页）；
-- 对比度检查：新 `primary`（`#d97757`）作为按钮背景配白字、作为链接色配 `background`（`#faf9f5`）背景，
-  需要满足 WCAG AA（4.5:1 正文 / 3:1 大字号），实现时用工具核实，不满足则微调明度；
+  折叠思考、设置/自动化页）；第一版按登录页实测色值 `#d97757` 校准对比度后（`#c6522c`）截图给用户看，
+  反馈"太鲜艳，真实 Claude 应用没有这个颜色"——登录页 CTA 是转化场景，会刻意用更醒目的高饱和色，
+  不能直接当成应用内部真实强调色的依据。改为同色相大幅降饱和度（H15° S64%→S32%）得到 `#875645`，
+  用户确认这版"克制"，符合预期；
+- 对比度检查（已用 WCAG 相对亮度公式脚本核实，非目测，最终版）：`primary`（`#875645`）配白字按钮
+  6.09:1、hover 态（`#6f4739`）7.97:1、配主背景 5.78:1；`text-primary`/`text-secondary` 配背景分别
+  18.68:1/5.71:1、用户消息气泡文字配气泡背景 7.62:1，均满足 WCAG AA 正文 4.5:1；`text-muted` 3.37:1，
+  满足大字号/UI 组件 3:1 门槛，符合它只用于辅助性小字号提示的实际用法；
 - 复用 `scripts/smoke-electron.mjs` 真实 Electron + Python Bridge smoke，不需要新增断言（视觉调整不
   改变 DOM 结构和可访问性属性，现有断言应继续通过）。
 

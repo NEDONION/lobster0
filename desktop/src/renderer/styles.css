@@ -310,6 +310,7 @@ select:focus-visible {
 
 .intro h1 {
   margin: 0;
+  font-family: var(--lobster-font-serif);
   font-size: var(--lobster-text-2xl);
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -547,6 +548,7 @@ select:focus-visible {
 
 .conversation-invite h2 {
   margin: 0;
+  font-family: var(--lobster-font-serif);
   font-size: var(--lobster-text-xl);
   font-weight: 600;
   letter-spacing: -0.02em;
@@ -883,11 +885,11 @@ select:focus-visible {
 .button-primary {
   border: 1px solid transparent;
   color: var(--lobster-primary-foreground);
-  background: var(--lobster-primary);
+  background: var(--lobster-foreground);
 }
 
 .button-primary:hover:not(:disabled) {
-  background: var(--lobster-primary-hover);
+  background: var(--lobster-gray-8);
 }
 
 .approval-actions button:disabled,

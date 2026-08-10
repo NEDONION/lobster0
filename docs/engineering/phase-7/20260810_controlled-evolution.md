@@ -1,8 +1,11 @@
 # Phase 7 Controlled Evolution 工程落地方案
 
-> 文档日期：2026-08-10  
-> 状态：**ENGINEERING PLAN / NOT IMPLEMENTED**  
+> 文档日期：2026-08-10（施工状态更新于 2026-08-11）  
+> 状态：**IMPLEMENTATION IN PROGRESS（Task 1/6 完成；Task 2/6 部分完成，飞书命令未接线）**  
 > 前置条件：Phase 6 生产验收通过；Memory Autopilot A～E 已实现  
+> 施工偏离说明：Phase 6 生产验收（真实 Seatbelt 2/2、飞书 15/15、Automation 10/10、24 小时 soak）截至
+> 2026-08-11 仍是 `PRODUCTION SOAK PENDING`，未通过。Owner 明确决定跳过该前置条件、提前开工 Phase 7 第 16
+> 节 Task 1；本文档如实标注这一偏离，不得在其他状态行隐藏或改写成前置条件已满足。  
 > 核心原则：Lobster0 可以提出改进，但不能自己批准、应用或部署改进
 
 ## 1. 一句话解释
@@ -507,18 +510,42 @@ Unit 和 integration 必须离线、快速、可重复。Live Provider/飞书 ev
 
 ## 16. 分 Task 实施顺序
 
-### Task 1：Schema v7 与 Repository
+### Task 1：Schema v7 与 Repository —— **DONE（2026-08-11）**
 
 - 先写 migration/recovery RED；
 - 迁移旧占位 feedback/proposals/eval_runs；
 - 实现 append-only ProposalVersion、EvalCaseResult、ActiveRevision CAS；
 - 验证 v6 升 v7、空库 v1→v7、失败整单 rollback。
 
-### Task 2：Feedback CLI 与飞书命令
+实现落点：`0007_controlled_evolution.sql`（新增 `proposal_versions`、`eval_case_results`、
+`active_revision`，重建 `feedback`/`proposals`/`eval_runs`）、`src/lobster0/evolution/models.py`、
+`src/lobster0/evolution/repository.py`（`FeedbackRepository`、`ProposalRepository`、
+`EvalRepository`、`ActiveRevisionRepository`）、`tests/test_evolution_repository.py`。当前仅覆盖
+Repository 层：Proposal 状态机跳转表、ActiveRevision compare-and-swap、append-only version/
+case result 去重全部有测试；CLI、飞书命令、Candidate 生成、Evaluator 集成、Approval/Apply/Rollback
+仍是 Task 2～6，未开始。全仓离线门禁（Python unittest、ruff）在这次改动后仍然全部通过。
+
+### Task 2：Feedback CLI 与飞书命令 —— **PARTIAL（2026-08-11）：CLI 与命令逻辑完成，飞书未接线**
 
 - 实现严格 parser、message ownership、source event 幂等和 redaction；
 - CLI list/show/forget；
 - 飞书单卡 receipt，不泄露上下文。
+
+实现落点：`src/lobster0/evolution/redaction.py`（Secret/Token/邮箱/绝对路径脱敏 + 4000 字符上限）、
+`src/lobster0/channels/feedback_commands.py`（`ChannelFeedbackController`，严格 `/good`、`/bad <原因>`
+解析、Owner gate、按平台 message ID 反查目标 assistant message、脱敏后落库）、`cli.py` 的
+`feedback list/show/forget` 子命令。`MessageRepository` 新增 `get(message_id)`。
+
+**已知缺口，飞书命令尚未真正可用**：`ChannelFeedbackController` 没有被接入 `ChannelManager._process()`。
+原因是排查后发现 `InboundMessage`/`StoredInboundEvent.reply_to_message_id` 现在承载的其实是"我们的回复
+应该发到哪条消息"（飞书 `normalize()` 里直接赋值成当前收到消息自己的 `message_id`），不是"这条收到的消息
+本身回复了哪条消息"。也就是说，当前整条入站消息管线里根本没有"用户在飞书里回复了哪条历史消息"这个数据——
+飞书官方 SDK 的 `parent_id`/`root_id` 从未被读取或传递。要让 `/good`、`/bad` 真正在飞书里可用，需要先给
+`InboundMessage`（`channels/base.py`）、`FeishuMessageView`/`_OfficialMessageView`（`channels/feishu.py`）、
+入站事件持久化模型（`storage/channels.py`）新增一个独立字段承载这个"被回复的平台 message ID"，再在
+`ChannelManager._process()` 里接入 `ChannelFeedbackController`（仿照现有 `_approvals` 那一段）。这是一处
+未预见的前置缺口，故意没有在没有真实 SDK 环境验证字段映射前就动手改动线上飞书收发链路；已作为 Task 2 的
+遗留项，未折叠进"完成"。
 
 ### Task 3：受限 Candidate
 

@@ -173,7 +173,7 @@ export function App(): React.JSX.Element {
           <span>Lobster0</span>
         </div>
         <button
-          className="button-primary sidebar-create"
+          className="sidebar-create"
           disabled={bootstrap === null || taskBusy}
           onClick={createTask}
           type="button"
