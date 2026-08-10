@@ -1130,32 +1130,44 @@ pre {
 
 .workflow-panel__copy > dl {
   display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin: auto 0 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--canvas);
 }
 
 .workflow-panel__copy > dl div {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-top: 1px solid var(--line);
-  padding-block: 8px;
-  gap: 16px;
+  flex-direction: column-reverse;
+  justify-content: center;
+  border-left: 1px solid var(--line);
+  padding: 12px 14px;
+  gap: 4px;
+}
+
+.workflow-panel__copy > dl div:first-child {
+  border-left: 0;
 }
 
 .workflow-panel__copy dt,
 .workflow-panel__copy dd {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 0.63rem;
 }
 
 .workflow-panel__copy dt {
   color: var(--muted);
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
 }
 
 .workflow-panel__copy dd {
   color: var(--ink);
-  text-align: right;
+  font-size: 0.72rem;
+  font-weight: 650;
+  overflow-wrap: anywhere;
 }
 
 .workflow-shot {
