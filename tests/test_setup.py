@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 import warnings
+from collections.abc import Callable
 from pathlib import Path
 from types import TracebackType
 from unittest import mock
@@ -460,6 +461,42 @@ class SetupTest(unittest.TestCase):
                 config_text = paths.config.read_text(encoding="utf-8")
                 self.assertTrue(all(secret not in config_text for secret in secrets))
 
+    def test_open_tty_delegates_duplex_io_and_context_to_owned_pty(self) -> None:
+        """single owner 应保留真实 PTY 的双工、fileno、isatty 与上下文语义。"""
+        master, slave = os.openpty()
+
+        def close_if_open(descriptor: int) -> None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+
+        self.addCleanup(close_if_open, master)
+        self.addCleanup(close_if_open, slave)
+
+        with mock.patch("miniclaw.setup.os.open", return_value=slave):
+            with setup_module._open_tty() as tty:
+                self.assertTrue(tty.isatty())
+                self.assertTrue(os.isatty(tty.fileno()))
+                self.assertTrue(tty.readable())
+                self.assertTrue(tty.writable())
+                self.assertFalse(tty.seekable())
+                self.assertEqual(tty.encoding, "utf-8")
+                tty.write("prompt> ")
+                tty.flush()
+                readable, _, _ = select.select((master,), (), (), 1)
+                self.assertEqual(readable, [master])
+                self.assertEqual(os.read(master, len(b"prompt> ")), b"prompt> ")
+                os.write(master, b"answer\n")
+                self.assertEqual(tty.readline(), "answer\n")
+                reader_descriptor = tty.fileno()
+
+        self.assertTrue(tty.closed)
+        with self.assertRaises(ValueError):
+            tty.fileno()
+        with self.assertRaises(OSError):
+            os.fstat(reader_descriptor)
+
     def test_open_tty_rejects_non_character_device_without_dynamic_cause(self) -> None:
         """普通 fd 不得冒充终端，错误不得泄漏路径或动态底层原因。"""
         reader, writer = os.pipe()
@@ -559,6 +596,125 @@ class SetupTest(unittest.TestCase):
         except OSError:
             self.fail("foreign descriptor was closed by cleanup retry")
         self.assertTrue(stat.S_ISCHR(metadata.st_mode))
+
+    def test_open_tty_async_wrapper_boundaries_keep_one_descriptor_owner(self) -> None:
+        """wrapper 构造前后异步中断时 raw wrapper 不得与外层重复拥有 OS fd。"""
+        real_open = os.open
+        real_close = os.close
+        real_dup = os.dup
+        real_fileio = io.FileIO
+        real_pair = io.BufferedRWPair
+        real_text = io.TextIOWrapper
+
+        def close_if_open(value: int) -> None:
+            try:
+                real_close(value)
+            except OSError:
+                pass
+
+        for boundary in ("fileio", "pair", "text"):
+            for phase in ("before", "after"):
+                with self.subTest(boundary=boundary, phase=phase):
+                    self._assert_async_tty_boundary_is_single_owner(
+                        boundary,
+                        phase,
+                        real_open=real_open,
+                        real_close=real_close,
+                        real_dup=real_dup,
+                        real_fileio=real_fileio,
+                        real_pair=real_pair,
+                        real_text=real_text,
+                    )
+
+    def _assert_async_tty_boundary_is_single_owner(
+        self,
+        boundary: str,
+        phase: str,
+        *,
+        real_open: Callable[[str, int], int],
+        real_close: Callable[[int], None],
+        real_dup: Callable[[int], int],
+        real_fileio: Callable[..., io.FileIO],
+        real_pair: Callable[..., io.BufferedRWPair],
+        real_text: Callable[..., io.TextIOWrapper],
+    ) -> None:
+        """在一个 wrapper 构造边界注入中断并断言 fd 只有外层 owner。"""
+        descriptor = real_open(os.devnull, os.O_RDWR)
+        descriptors = [descriptor]
+        closefd_values: list[bool] = []
+        text_calls = [0]
+
+        def close_if_open(value: int) -> None:
+            try:
+                real_close(value)
+            except OSError:
+                pass
+
+        self.addCleanup(close_if_open, descriptor)
+
+        def duplicate(value: int) -> int:
+            duplicated = real_dup(value)
+            descriptors.append(duplicated)
+            self.addCleanup(close_if_open, duplicated)
+            return duplicated
+
+        def interrupt_fileio(*args: object, **kwargs: object) -> io.FileIO:
+            if phase == "before":
+                raise KeyboardInterrupt
+            raw = real_fileio(*args, **kwargs)
+            closefd_values.append(raw.closefd)
+            raise KeyboardInterrupt
+
+        def interrupt_pair(
+            reader: io.FileIO,
+            writer: io.FileIO,
+            *args: object,
+            **kwargs: object,
+        ) -> io.BufferedRWPair:
+            closefd_values.extend((reader.closefd, writer.closefd))
+            if phase == "before":
+                raise KeyboardInterrupt
+            pair = real_pair(reader, writer, *args, **kwargs)
+            del pair
+            raise KeyboardInterrupt
+
+        def interrupt_text(*args: object, **kwargs: object) -> io.TextIOWrapper:
+            if phase == "before":
+                raise KeyboardInterrupt
+            text = real_text(*args, **kwargs)
+            text_calls[0] += 1
+            del text
+            raise KeyboardInterrupt
+
+        stream: io.TextIOBase | None = None
+        interrupted = False
+        with contextlib.ExitStack() as stack:
+            stack.enter_context(mock.patch("miniclaw.setup.os.open", return_value=descriptor))
+            stack.enter_context(mock.patch("miniclaw.setup.os.dup", side_effect=duplicate))
+            if boundary == "fileio":
+                stack.enter_context(mock.patch("io.FileIO", side_effect=interrupt_fileio))
+            elif boundary == "pair":
+                stack.enter_context(mock.patch("io.BufferedRWPair", side_effect=interrupt_pair))
+            else:
+                stack.enter_context(mock.patch("io.TextIOWrapper", side_effect=interrupt_text))
+            try:
+                stream = setup_module._open_tty()
+            except KeyboardInterrupt:
+                interrupted = True
+        if stream is not None:
+            stream.close()
+
+        self.assertTrue(interrupted)
+        if boundary == "fileio":
+            self.assertEqual(closefd_values, [] if phase == "before" else [False])
+        elif boundary == "pair":
+            self.assertEqual(closefd_values, [False, False])
+        else:
+            self.assertEqual(text_calls, [0] if phase == "before" else [1])
+        for value in descriptors:
+            with self.subTest(descriptor=value):
+                with self.assertRaises(OSError):
+                    os.fstat(value)
 
 
 if __name__ == "__main__":
