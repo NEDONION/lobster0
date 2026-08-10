@@ -268,6 +268,14 @@ class MessageRepository:
                 ordered = [*prefix, *ordered]
         return tuple(_message_from_row(row) for row in ordered)
 
+    def get(self, message_id: int) -> StoredMessage | None:
+        """按内部 ID 读取一条消息；不存在时返回 None。"""
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT * FROM messages WHERE id = ?", (message_id,)
+            ).fetchone()
+        return None if row is None else _message_from_row(row)
+
     def final_assistant_for_turn(self, turn_id: int) -> StoredMessage:
         """读取 completed Turn 最后一条 Assistant Message。"""
         with self._database.connect_read_only() as connection:

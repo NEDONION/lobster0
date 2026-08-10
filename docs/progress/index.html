@@ -466,8 +466,8 @@
         </article>
         <article class="phase current">
           <div class="phase-no">Phase 7</div>
-          <div><h3>Controlled Evolution</h3><p>详细工程落地方案已发布：Feedback、受限 Prompt/Skill/Memory Proposal、全量评测、Owner 审批、原子应用和回滚；Task 1（Schema v7 + Repository）已实现，Task 2～6（CLI、飞书命令、Candidate、Evaluator、Approval/Apply/Rollback）尚未开始。Owner 明确决定在 Phase 6 生产验收通过前提前开工。</p></div>
-          <span class="pill">IMPLEMENTATION IN PROGRESS · TASK 1/6</span>
+          <div><h3>Controlled Evolution</h3><p>详细工程落地方案已发布：Feedback、受限 Prompt/Skill/Memory Proposal、全量评测、Owner 审批、原子应用和回滚；Task 1（Schema v7 + Repository）已实现。Task 2 的 Feedback CLI 与飞书命令解析/脱敏已实现并有测试覆盖，但飞书 /good、/bad 尚未接入 ChannelManager——现有入站消息模型不携带"回复了哪条消息"，需要先补一个字段才能真正在飞书里触发。Task 3～6 尚未开始。Owner 明确决定在 Phase 6 生产验收通过前提前开工。</p></div>
+          <span class="pill">IMPLEMENTATION IN PROGRESS · TASK 1/6 + TASK 2 PARTIAL</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 8</div>

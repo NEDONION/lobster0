@@ -37,6 +37,8 @@ from lobster0.evals.cases import (
 )
 from lobster0.evals.channel import run_channel_suite
 from lobster0.evals.runner import run_offline_suite
+from lobster0.evolution.models import Feedback, FeedbackRating
+from lobster0.evolution.repository import EvolutionError, FeedbackRepository
 from lobster0.gateway import (
     GatewayConfigError,
     GatewayRuntimeError,
@@ -121,6 +123,26 @@ def build_parser() -> argparse.ArgumentParser:
     task_halt = task_subparsers.add_parser("halt", help="activate durable automation E-stop")
     task_halt.add_argument("--reason", required=True)
     task_subparsers.add_parser("unhalt", help="clear durable automation E-stop")
+    feedback_parser = subparsers.add_parser(
+        "feedback",
+        help="inspect and manage Owner feedback for Controlled Evolution",
+    )
+    feedback_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute Lobster0 state directory",
+    )
+    feedback_subparsers = feedback_parser.add_subparsers(
+        dest="feedback_command", required=True
+    )
+    feedback_list = feedback_subparsers.add_parser("list", help="list recorded feedback")
+    feedback_list.add_argument("--rating", choices=("good", "bad"))
+    feedback_show = feedback_subparsers.add_parser("show", help="show one redacted feedback")
+    feedback_show.add_argument("feedback_id", type=_positive_cli_id)
+    feedback_forget = feedback_subparsers.add_parser(
+        "forget", help="clear a feedback's reason material"
+    )
+    feedback_forget.add_argument("feedback_id", type=_positive_cli_id)
     service_parser = subparsers.add_parser(
         "service",
         help="manage the owned macOS LaunchAgent",
@@ -232,6 +254,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.command == "task":
         return _run_task(paths, arguments)
+
+    if arguments.command == "feedback":
+        return _run_feedback(paths, arguments)
 
     if arguments.command == "service":
         return _run_service(paths, arguments)
@@ -407,6 +432,43 @@ def _run_task(paths: StatePaths, arguments: argparse.Namespace) -> int:
         return 5
 
 
+def _run_feedback(paths: StatePaths, arguments: argparse.Namespace) -> int:
+    """执行 repository-only Feedback 运维命令，不加载 Provider 或 Channel SDK。"""
+    if not paths.database.is_file() or paths.database.is_symlink():
+        print("error: Lobster0 state is not initialized", file=sys.stderr)
+        return 2
+    try:
+        database = Database(paths.database)
+        apply_migrations(database)
+        owner = OwnerRepository(database).get_or_create()
+        feedback = FeedbackRepository(database)
+        command = arguments.feedback_command
+        if command == "list":
+            rating = None if arguments.rating is None else FeedbackRating(arguments.rating)
+            selected = feedback.list(owner.id, rating=rating)
+            for item in selected:
+                print(_feedback_line(item))
+            if not selected:
+                print("No feedback.")
+            return 0
+        if command == "show":
+            item = feedback.get(owner.id, arguments.feedback_id)
+            print(_feedback_line(item))
+            print(f"reason={item.redacted_reason or '-'}")
+            return 0
+        if command == "forget":
+            item = feedback.forget(owner.id, arguments.feedback_id)
+            print(_feedback_line(item))
+            return 0
+        raise ValueError("unsupported feedback command")
+    except EvolutionError as error:
+        print(f"error: {error.code}", file=sys.stderr)
+        return 4
+    except (DatabaseError, MigrationError, OSError, sqlite3.Error) as error:
+        print(f"error: {type(error).__name__}", file=sys.stderr)
+        return 5
+
+
 def _run_service(paths: StatePaths, arguments: argparse.Namespace) -> int:
     """执行固定的 macOS LaunchAgent lifecycle，不公开 manager 原始输出。
 
@@ -561,6 +623,15 @@ def _task_line(task: ScheduledTask) -> str:
     return (
         f"task={task.id} name={task.name!r} status={task.status.value}{system} "
         f"schedule={task.schedule.kind.value} next={next_run} version={task.version}"
+    )
+
+
+def _feedback_line(item: Feedback) -> str:
+    """渲染不含完整原因正文的单行 Feedback 摘要。"""
+    reason_present = " has_reason" if item.redacted_reason else ""
+    return (
+        f"feedback={item.id} message={item.message_id} rating={item.rating.value} "
+        f"status={item.status.value}{reason_present} created={item.created_at.isoformat()}"
     )
 
 
