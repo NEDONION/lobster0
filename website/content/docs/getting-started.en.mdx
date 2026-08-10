@@ -1,0 +1,42 @@
+---
+title: Install and run
+description: Install MiniClaw from source, initialize it, run Doctor, and launch the TUI.
+---
+
+## Requirements
+
+- Python 3.12 or newer.
+- [`uv`](https://docs.astral.sh/uv/) for Python environments and dependencies.
+- Node.js 22.19+ and `pnpm` for the default pi-tui.
+- An OpenAI-compatible model service and credentials you control.
+
+## Run from source
+
+```bash
+git clone https://github.com/NEDONION/miniclaw.git
+cd miniclaw
+uv sync --extra dev --extra channels
+pnpm --dir tui install
+pnpm --dir tui build
+cp .env.example .env
+uv run miniclaw init
+uv run miniclaw doctor
+uv run miniclaw
+```
+
+`cp .env.example .env` creates local configuration only. Fill in the Provider and optional Channel
+settings from the template. Never commit a real API key, app secret, or token.
+
+## Initialize and diagnose
+
+`miniclaw init` creates the required local structure. `miniclaw doctor` checks the environment and
+configuration. After Doctor passes, `uv run miniclaw` launches the primary TUI.
+
+> **Start with the TUI**
+>
+> Complete one normal conversation and one tool call that needs approval before connecting a messaging
+> platform. This makes it easier to separate Core, Provider, and Channel Transport issues.
+
+Next, read [Runtime](/en/docs/runtime) and [Security boundaries](/en/docs/security). Development,
+test, and release commands remain authoritative in the repository [README](https://github.com/NEDONION/miniclaw#readme)
+and `pyproject.toml`.

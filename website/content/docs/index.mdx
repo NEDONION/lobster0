@@ -1,0 +1,34 @@
+---
+title: 从这里开始
+description: 了解 MiniClaw 的定位、当前能力和最短上手路径。
+---
+
+MiniClaw 是一个小而完整、可自托管、边界可控的个人 AI Agent。它把 Agent、Policy、
+Approval、Tool、Memory 和多个消息入口放在同一个 Python Core 周围，让“能做事”和“知道边界”
+同时成立。
+
+## 选择你的路径
+
+- **第一次运行：** 前往[安装与启动](/docs/getting-started)，完成依赖、初始化、Doctor 和 TUI 启动。
+- **理解执行链：** 阅读[运行时](/docs/runtime)，了解消息如何从入口进入同一个 AgentRuntime。
+- **配置权限：** 阅读[安全边界](/docs/security)，选择 Permission Mode 并理解硬拒绝规则。
+- **接入消息平台：** 阅读[多入口](/docs/channels)，再进入仓库中的平台配置文档。
+- **治理长期记忆：** 阅读[记忆](/docs/memory)，理解 Markdown Truth 与 SQLite Projection。
+
+## 当前可验证范围
+
+MiniClaw 当前提供主 TUI、飞书、Telegram、Discord 四个入口，18 个内置 Tool，33 条 versioned
+Channel cases 和 15 条 versioned Automation cases。Automation 默认关闭。
+
+> **证据边界**
+>
+> 本地 fake SDK、场景门禁和 soak 通过，只能记为 Implementation PASS。它不自动代表真实平台
+> Live PASS；各平台的真实平台 Live Gate 状态必须以仓库当前发布证据为准。
+
+## 深入工程资料
+
+用户文档只保留上手所需内容。更完整的范围、架构与评测证据位于 GitHub：
+
+- [产品需求文档](https://github.com/NEDONION/miniclaw/blob/main/docs/product/20260807_%E4%BA%A7%E5%93%81%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3.md)
+- [系统架构](https://github.com/NEDONION/miniclaw/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md)
+- [版本化评测场景](https://github.com/NEDONION/miniclaw/tree/main/evals)

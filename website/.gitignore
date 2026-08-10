@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.astro/
+.next/
+.source/
+coverage/
+playwright-report/
+test-results/
+*.tsbuildinfo
+.vercel
+.env*

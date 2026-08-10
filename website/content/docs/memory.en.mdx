@@ -1,0 +1,29 @@
+---
+title: Memory
+description: Owner Memory, Markdown Truth, SQLite Projection, and cross-channel boundaries.
+---
+
+## Owner is the boundary
+
+Long-term memory belongs to an Owner. Only conversations resolved to the same Owner can share Owner
+Memory. A Channel name is not an authorization boundary by itself.
+
+## Markdown Truth
+
+Markdown files are the long-term source of truth: readable, reviewable, versionable, and directly
+correctable by the owner. Durable facts should not exist only in an opaque index or model context.
+
+## SQLite Projection
+
+SQLite stores the structured control plane and rebuildable projections. It supports retrieval,
+relationships, and governance without replacing Markdown Truth. A damaged projection should be
+rebuildable from the source of truth.
+
+## Disclosure boundaries
+
+- Secrets are never written to Memory.
+- Tool output needs clear semantics and owner boundaries before becoming a durable fact.
+- Cross-channel sharing only occurs inside the same Owner context.
+- Correcting or deleting a durable fact should rebuild related projections.
+
+See the [system architecture](https://github.com/NEDONION/miniclaw/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md) for deeper data responsibilities.
