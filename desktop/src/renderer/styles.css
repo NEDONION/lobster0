@@ -811,34 +811,45 @@ select:focus-visible {
   gap: 4px;
 }
 
+/* 整块都是点击区域：原先只有一个 9px 的箭头可点，几乎看不见也点不中。
+   给足高度与内边距，并在 hover 时出现底色，明确它是可交互的。 */
 .process-toggle {
   display: flex;
   width: fit-content;
+  height: 28px;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
   margin: 0;
-  padding: 0;
+  padding: 0 10px 0 8px;
   border: 0;
-  color: var(--lobster-text-muted);
-  background: none;
+  border-radius: 8px;
+  color: var(--lobster-text-secondary);
+  background: transparent;
   cursor: pointer;
   font-size: var(--lobster-text-xs);
 }
 
 .process-toggle:hover {
-  color: var(--lobster-text-secondary);
+  color: var(--lobster-foreground);
+  background: var(--lobster-hover);
 }
 
 .process-caret {
   display: inline-block;
-  width: 8px;
-  font-size: 9px;
+  width: 12px;
+  color: var(--lobster-text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.process-toggle:hover .process-caret {
+  color: var(--lobster-foreground);
 }
 
 .process-count {
   color: var(--lobster-text-muted);
   font-family: var(--lobster-font-mono);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* 展开后用一条细竖线把整段过程收拢成一块，而不是每条各自成段。 */
