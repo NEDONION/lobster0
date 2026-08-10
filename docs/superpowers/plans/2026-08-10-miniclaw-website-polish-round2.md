@@ -152,3 +152,52 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
 ### 待办
 
 `安全边界` / `记忆` / `自动化` 三个能力面板还没做。用户中途提出一个新的更大范围的需求（项目改名，仓库地址换成 NEDONION/lobster0，需要同步改 README 和官网），本轮时间优先处理改名调研，这三个面板的重做顺延到改名之后。
+
+## Round 6（2026-08-11）
+
+### 触发反馈
+
+用户提出三件事：项目改名为 `lobster0`（GitHub 仓库已经从 `NEDONION/mini-claw` 重命名为 `NEDONION/lobster0`，确认过展示名就用小写 `lobster0`，和仓库 slug 一致）；参照 claw-x.com / openagents.org / lobsterai.youdao.com 三个站点重做设计，圆角太多、"能力/特性"板块精度不够；域名换成对应的。
+
+设计方向上，先出了三版静态提案（深海终端 / 龙虾蓝图 / 真实界面剧场），用户选了**方向 C：真实界面剧场**——保留现有浅色系统和字体，把抽象节点图/连线图换成真实产品界面模拟（聊天窗口、终端窗口），让访客一眼看懂"这是真产品在跑"。
+
+### 已完成
+
+#### 1. 域名：新增 lobster0.jchu.tech
+
+`npx vercel domains add lobster0.jchu.tech miniclaw`，DNS 已验证通过（`vercel domains verify` 返回 `status: ok`）。沿用 `miniclaw.jchu.tech` 那次的操作方式，域名指向同一个 Vercel 项目（miniclaw 项目暂未改名，产品名和项目名解耦，不互相依赖）。
+
+#### 2. 全局圆角系统性收紧
+
+参照 claw-x.com（10–16px）和 openagents.org（5–16px）的实测圆角值，把 `globals.css` + `MarketingHome.module.css` 里散落的圆角从 18–28px（含多处 999px 胶囊按钮）统一收紧到 8–12px。**保留**了小徽标/标签（`.claw-trace__status`、`.runtime-map__state`、`.flow-diagram__icon` 等）的 999px/50% 圆形——这类小尺寸 pill 在两个参考站点里也是标准用法，不属于"滥用"，真正需要收紧的是大容器和主按钮。改动是纯字符串精确匹配替换（`border-radius: 18px;` → `12px;` 等），没有动其他属性，风险低。
+
+#### 3. 特性板块 03/04/05 从抽象图改成"真实界面剧场"
+
+- **03 安全边界**：改成飞书聊天窗口模拟——用户请求高风险操作 → Agent 提示需要确认 exact argv → `POLICY_CHECK` 卡片展示真实命令 `rm -rf /tmp/miniclaw-cache-2026` 和四档权限模式按钮（SAFE 高亮）→ `RESULT_DELIVERED` 卡片展示四项检查通过。新建 `.chat-scene` / `.chat-bubble` / `.chat-card` / `.chat-modes` 系列样式，复用 `SurfaceIcon.tsx` 的真实飞书图标做窗口顶栏。
+- **04 记忆**：改成深色终端窗口，左栏是 `facts.md` 的真实 Markdown 片段（帯简单语法高亮），右栏是对应的 SQL 查询与格式化表格结果，中间"投影"箭头用已有的 `flowPulse` 光效动画连接。直接展示"Markdown 是 Truth，SQLite 是 Projection"这句话在真实文件/查询层面是什么样子，比两个方块加箭头有说服力。
+- **05 自动化**：改成 Discord 聊天窗口模拟——定时任务触发 → `AUTOMATION_GATE` 拦截卡片，带一个真实的 iOS 风格开关组件（当前关闭态）+ "默认关闭"文字 → 绿色"一旦开启"卡片展示 所有者启用→策略门禁→15 条版本化场景 的流程 → 底部 `Implementation PASS ≠ Live PASS` 免责声明条。复用 `SurfaceIcon.tsx` 的 Discord 图标。
+- 03/05 两个聊天窗口共享同一套 `.chat-scene` 系列样式（只是 app 图标、消息内容、卡片状态不同），04 记忆单独一套 `.memory-scene` 终端样式。三个面板都用 IntersectionObserver 触发的交错入场动画（复用已经验证过的“进入视口再播放”模式），尊重 reduced motion。
+- 旧的 `.safety-map` / `.memory-map` / `.automation-map` 系列 CSS（含 `globals.css` 和 `MarketingHome.module.css` 两处）全部删除，没有留死代码。
+- 同步更新了 `MarketingHome.test.tsx` 里断言"默认状态"文字的用例，改成断言新文案"默认关闭"。
+
+**02 多入口没有改成聊天窗口**——这是有意的技术判断：多入口面板讲的是"一个 AgentRuntime 同时连接四个平台"，这是架构关系，不是单次交互，塞进一个聊天窗口反而讲不清楚。Round 5 刚做的深色 hub-and-spoke 拓扑图保留，且和这轮新增的 `.chat-scene` / `.memory-scene` 深色终端窗口在视觉基调上是统一的（都是浅色外壳 + 深色终端/窗口展示关键机制），不违和。
+
+#### 4. 出过一版静态设计提案（未采纳的两版记录在案，供以后参考）
+
+在动代码之前，先用 Artifact 出了三版静态 HTML 提案给用户选：
+
+- **方向 A 深海终端**：延续已验证的深色终端节点图语言精修，圆角收紧，风险最低。
+- **方向 B 龙虾蓝图**（未采纳，但认为是三版里最独特的一版）：暖白图纸底 + 蓝图网格线 + 龙虾壳橙红强调色，工程图纸美学（裁切标记、刻度尺、图纸标注），直接呼应新名字"lobster0"和产品"结构化、可审查"的叙事，市面上 AI Agent 官网基本没人这么做。
+- **方向 C 真实界面剧场**（用户选中）：如上。
+
+第一次发布的 Artifact 链接用户点开显示 404（怀疑是权限问题——Artifact 默认私有，只有发布账号能直接打开），改用 `SendUserFile` 直接把 HTML 文件发过去解决。
+
+### 验证
+
+- `npx tsc --noEmit` / `npx eslint src/` / `npx vitest run`（28/28）：全部通过
+- `npx playwright test tests/e2e/marketing.spec.ts`：2 个失败，和 Round 3/4 记录的**同一组**预先存在的 flaky（`#safety-tab` 时序、`.claw-trace` reduced-motion 断言）一致，与本轮改动无关
+- 可视化：Playwright + 系统 Chrome 截图，03/04/05 三个面板桌面端逐一截图确认
+
+### 待办
+
+项目改名（README.md / README_EN.md / 官网品牌名 MiniClaw → lobster0，含 `siteFacts.install` 里写死的旧仓库地址）还没做，是这轮最后剩下的一项。

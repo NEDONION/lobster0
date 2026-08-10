@@ -80,7 +80,7 @@
 
 .root :global(.header-github) {
   min-height: 40px;
-  border-radius: 12px;
+  border-radius: 10px;
   padding-inline: 16px;
   transition: transform 160ms ease, box-shadow 160ms ease;
 }
@@ -182,7 +182,7 @@
 
 .root :global(.button) {
   min-height: 46px;
-  border-radius: 12px;
+  border-radius: 10px;
   padding-inline: 20px;
   font-size: 0.9rem;
   box-shadow: none;
@@ -281,7 +281,7 @@
   grid-template-rows: auto auto;
   align-items: center;
   border: 1px solid rgb(18 23 34 / 9%);
-  border-radius: 16px;
+  border-radius: 12px;
   padding: 10px 12px;
   gap: 1px 10px;
   background: rgb(255 255 255 / 92%);
@@ -411,7 +411,7 @@
   align-items: center;
   margin: 0;
   border: 1px solid rgb(18 23 34 / 9%);
-  border-radius: 15px;
+  border-radius: 12px;
   padding: 0 8px;
   background: rgb(255 255 255 / 88%);
   box-shadow: 0 16px 44px rgb(30 45 75 / 8%);
@@ -485,7 +485,7 @@
   display: grid;
   grid-column: 1;
   border-color: rgb(18 23 34 / 9%);
-  border-radius: 18px;
+  border-radius: 12px;
   background: rgb(255 255 255 / 94%);
   box-shadow: var(--shadow-float);
   overflow: hidden;
@@ -571,7 +571,7 @@
 
 .root :global(.hash-tabs__list) {
   border-color: rgb(18 23 34 / 9%);
-  border-radius: 14px 14px 0 0;
+  border-radius: 10px 10px 0 0;
   background: #f7f9fc;
   overflow: hidden;
 }
@@ -602,7 +602,7 @@
 .root :global(.capability-panel) {
   min-height: 388px;
   border-color: rgb(18 23 34 / 9%);
-  border-radius: 0 0 22px 22px;
+  border-radius: 0 0 12px 12px;
   box-shadow: 0 26px 70px rgb(30 45 75 / 9%);
   overflow: hidden;
 }
@@ -632,13 +632,10 @@
   padding-block: 8px;
 }
 
-.root :global(.runtime-map),
-.root :global(.safety-map),
-.root :global(.memory-map),
-.root :global(.automation-map) {
+.root :global(.runtime-map) {
   margin: 20px;
   border-color: rgb(18 23 34 / 8%);
-  border-radius: 18px;
+  border-radius: 12px;
   background-color: #f7f9fc;
   background-size: 32px 32px;
   box-shadow: inset 0 1px white;
@@ -647,22 +644,9 @@
 .root :global(.channels-map) {
   margin: 20px;
   border-color: rgb(255 255 255 / 10%);
-  border-radius: 18px;
+  border-radius: 12px;
 }
 
-.root :global(.safety-map__modes > div),
-.root :global(.memory-map > div),
-.root :global(.automation-map__status) {
-  border-color: rgb(18 23 34 / 8%);
-  box-shadow: 0 10px 24px rgb(30 45 75 / 7%);
-  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-}
-
-.root :global(.safety-map__modes > div:hover) {
-  border-color: rgb(66 103 245 / 28%);
-  box-shadow: 0 14px 28px rgb(30 45 75 / 10%);
-  transform: translateY(-2px);
-}
 
 .root :global(.workbench) {
   min-height: 0;
@@ -675,7 +659,7 @@
 .root :global(.workflow-panel) {
   min-height: 410px;
   border-color: rgb(18 23 34 / 9%);
-  border-radius: 0 0 22px 22px;
+  border-radius: 0 0 12px 12px;
   box-shadow: 0 26px 70px rgb(30 45 75 / 9%);
   overflow: hidden;
 }
@@ -711,7 +695,7 @@
 .root :global(.quick-start-close) {
   margin-top: 22px;
   border-color: rgb(18 23 34 / 9%);
-  border-radius: 22px;
+  border-radius: 12px;
   box-shadow: 0 24px 70px rgb(30 45 75 / 10%);
   overflow: hidden;
 }
@@ -725,7 +709,7 @@
 }
 
 .root :global(.quick-start-close > .command-copy) {
-  border-radius: 16px;
+  border-radius: 12px;
 }
 
 .root :global(.marketing-footer) {
@@ -917,7 +901,7 @@
     position: static;
     display: block;
     margin-top: 16px;
-    border-radius: 16px;
+    border-radius: 12px;
   }
 
   .root :global(.evidence-strip dl) {
@@ -947,7 +931,7 @@
   }
 
   .root :global(.hash-tabs__list) {
-    border-radius: 12px 12px 0 0;
+    border-radius: 10px 10px 0 0;
   }
 
   .root :global(.hash-tabs__list button) {
@@ -957,7 +941,7 @@
 
   .root :global(.capability-panel),
   .root :global(.workflow-panel) {
-    border-radius: 0 0 18px 18px;
+    border-radius: 0 0 12px 12px;
   }
 
   .root :global(.capability-panel__copy),
@@ -972,9 +956,6 @@
 
   .root :global(.runtime-map),
   .root :global(.channels-map),
-  .root :global(.safety-map),
-  .root :global(.memory-map),
-  .root :global(.automation-map),
   .root :global(.flow-diagram),
   .root :global(.multi-channel-map) {
     margin: 12px;
@@ -985,7 +966,7 @@
   }
 
   .root :global(.quick-start-close) {
-    border-radius: 18px;
+    border-radius: 12px;
   }
 }
 

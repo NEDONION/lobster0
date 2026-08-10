@@ -36,6 +36,6 @@ describe('MarketingHome', () => {
 
     expect(screen.getByText('01 / 核心循环')).toBeInTheDocument();
     await user.click(screen.getByRole('tab', { name: /自动化/ }));
-    expect(screen.getByText('默认状态')).toBeInTheDocument();
+    expect(screen.getByText('默认关闭')).toBeInTheDocument();
   });
 });
