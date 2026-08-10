@@ -18,7 +18,7 @@ MiniClaw；安装过程不要求克隆仓库，不把 Secret 写进命令行、�
 
 ```bash
 curl -fsSL --proto '=https' --tlsv1.2 \
-  https://github.com/NEDONION/miniclaw/releases/latest/download/install.sh | bash
+  https://github.com/NEDONION/mini-claw/releases/latest/download/install.sh | bash
 ```
 
 “安装完成”不是只有 `miniclaw` 命令存在，而是必须同时满足：
@@ -218,7 +218,7 @@ zipapp 只能导入标准库和 `miniclaw.install` 同包模块，不能依赖�
 路径、`..`、symlink、hardlink、device 和目标目录逃逸，并在写入前执行 entry 数量与总字节预算。
 
 安装器调用外部程序必须传 argv 数组，不经过 shell 字符串。下载 URL 只来自已验证 manifest 中的
-`https://github.com/NEDONION/miniclaw/`、`https://files.pythonhosted.org/`、`https://nodejs.org/` 和 Astral uv
+`https://github.com/NEDONION/mini-claw/`、`https://files.pythonhosted.org/`、`https://nodejs.org/` 和 Astral uv
 官方 Release allowlist。
 
 ## 9. Release Manifest

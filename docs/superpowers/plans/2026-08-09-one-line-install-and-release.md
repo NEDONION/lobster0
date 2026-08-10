@@ -726,7 +726,7 @@ def test_tar_rejects_every_escaping_or_special_member(self) -> None:
 
 Also test short read, content-length mismatch, hash mismatch, redirect outside allowlist, credentials/query/fragment, timeout, interrupted `.part`, pre-existing target, case-colliding paths on macOS semantics, mode stripping, and no log body leakage.
 
-`tests/test_install_releases.py` covers fixed `v0.7.0`, stable latest redirect, bounded `api.github.com/repos/NEDONION/miniclaw/releases?per_page=20` dev discovery, draft exclusion, prerelease requirement, semver ordering, oversized/malformed API JSON and wrong repository/asset name. Installed downgrade/equal-version refusal is tested in Task 11/13 so a fresh machine may explicitly install an older supported Release. All HTTP responses use fakes.
+`tests/test_install_releases.py` covers fixed `v0.7.0`, stable latest redirect, bounded `api.github.com/repos/NEDONION/mini-claw/releases?per_page=20` dev discovery, draft exclusion, prerelease requirement, semver ordering, oversized/malformed API JSON and wrong repository/asset name. Installed downgrade/equal-version refusal is tested in Task 11/13 so a fresh machine may explicitly install an older supported Release. All HTTP responses use fakes.
 
 - [ ] **Step 2: Run RED**
 
@@ -762,9 +762,9 @@ def _safe_member_path(root: Path, name: str) -> Path:
     return target
 ```
 
-`resolve_release_source` maps explicit versions to `https://github.com/NEDONION/miniclaw/releases/download/v<version>/release-manifest.json`, stable to `https://github.com/NEDONION/miniclaw/releases/latest/download/release-manifest.json`, and dev to the bounded GitHub Releases API response's exact `release-manifest.json` browser-download URL. It rejects stable prereleases, dev drafts and repositories outside `NEDONION/miniclaw`.
+`resolve_release_source` maps explicit versions to `https://github.com/NEDONION/mini-claw/releases/download/v<version>/release-manifest.json`, stable to `https://github.com/NEDONION/mini-claw/releases/latest/download/release-manifest.json`, and dev to the bounded GitHub Releases API response's exact `release-manifest.json` browser-download URL. It rejects stable prereleases, dev drafts and repositories outside `NEDONION/mini-claw`.
 
-Use a redirect handler that revalidates every Location. The initial host allowlist is `github.com`, `api.github.com`, `files.pythonhosted.org`, `nodejs.org` and official Astral endpoints; only a request originating at `github.com/NEDONION/miniclaw/releases/` may redirect to HTTPS `release-assets.githubusercontent.com`. Stream into an `O_EXCL` `.part`, cap bytes before write, fsync, compare exact size/hash with `hmac.compare_digest`, then `os.replace`. For tar, first validate all headers and cumulative declared sizes, then reopen and copy only regular files/directories with a second actual-byte budget; create dirs 0700/files 0600 or executable 0700 only for manifest-declared executable paths; fsync and leave destination empty on failure.
+Use a redirect handler that revalidates every Location. The initial host allowlist is `github.com`, `api.github.com`, `files.pythonhosted.org`, `nodejs.org` and official Astral endpoints; only a request originating at `github.com/NEDONION/mini-claw/releases/` may redirect to HTTPS `release-assets.githubusercontent.com`. Stream into an `O_EXCL` `.part`, cap bytes before write, fsync, compare exact size/hash with `hmac.compare_digest`, then `os.replace`. For tar, first validate all headers and cumulative declared sizes, then reopen and copy only regular files/directories with a second actual-byte budget; create dirs 0700/files 0600 or executable 0700 only for manifest-declared executable paths; fsync and leave destination empty on failure.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -1691,7 +1691,7 @@ README primary command is:
 
 ```bash
 curl -fsSL --proto '=https' --tlsv1.2 \
-  https://github.com/NEDONION/miniclaw/releases/latest/download/install.sh | bash
+  https://github.com/NEDONION/mini-claw/releases/latest/download/install.sh | bash
 ```
 
 Document interactive and `--no-onboard --no-service --json`, exact supported/unsupported matrix, sudo plan, Secret file, rootless/non-root boundary, service commands, update/rollback conflict, uninstall/purge semantics, diagnostics and source development using uv/pnpm. Architecture shows bootstrap → pyz → manifest → staging → smoke → current → service; product marks Gap complete only after evidence. Operations runbook contains draft promotion, PyPI Trusted Publisher, GHCR digest, rollback-conflict recovery and revocation.
