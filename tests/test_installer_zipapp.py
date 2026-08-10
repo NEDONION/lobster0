@@ -43,7 +43,8 @@ class InstallerZipappTests(unittest.TestCase):
             source = Path(temporary) / "install"
             source.mkdir()
             (source / "__init__.py").write_text(
-                "import json\nimport sys\nprint(getattr(sys, 'argv')[0])\n"
+                "import json\nimport os\nimport sys\nprint(sys.argv[0])\n"
+                "print(getattr(os, 'O_NOFOLLOW', 0))\n"
                 "from . import models\nfrom miniclaw.install import models\n",
                 encoding="utf-8",
             )
@@ -162,6 +163,69 @@ class InstallerZipappTests(unittest.TestCase):
                 (source / "__init__.py").write_text(payload, encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, "getattr"):
                     builder.validate_imports(source)
+
+    def test_ast_boundary_rejects_dunder_escape_and_hidden_getattr_bindings(self) -> None:
+        """通用 dunder 与非 Name binding 不得绕过 closed-world reflection boundary。"""
+        cases = (
+            (
+                "import os\n"
+                "os.__builtins__['__im' + 'port__']('httpx')\n",
+                "__builtins__",
+            ),
+            (
+                "def marker():\n    pass\n"
+                "marker.__globals__['__built' + 'ins__']['__im' + 'port__']('httpx')\n",
+                "__globals__",
+            ),
+            (
+                "import os\ntry:\n    raise RuntimeError\n"
+                "except RuntimeError as getattr:\n"
+                "    getattr(os, 'O_NOFOLLOW', 0)\n",
+                "getattr",
+            ),
+            (
+                "import os\nmatch object():\n    case getattr:\n"
+                "        getattr(os, 'O_NOFOLLOW', 0)\n",
+                "getattr",
+            ),
+        )
+        builder = _load_builder()
+        for payload, detail in cases:
+            with self.subTest(detail=detail), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "install"
+                source.mkdir()
+                (source / "__init__.py").write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, detail):
+                    builder.validate_imports(source)
+
+    def test_ast_boundary_rejects_unaudited_constant_getattr_name(self) -> None:
+        """exact string 仍须来自真实 install package 审计形成的字段 allowlist。"""
+        builder = _load_builder()
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "install"
+            source.mkdir()
+            (source / "__init__.py").write_text(
+                "import sys\ngetattr(sys, 'argv')\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "getattr"):
+                builder.validate_imports(source)
+
+    def test_ast_boundary_accepts_only_audited_dunder_attributes(self) -> None:
+        """真实 install package 所需的四个 bounded dunder Attribute 必须继续可构建。"""
+        builder = _load_builder()
+        with tempfile.TemporaryDirectory() as temporary:
+            source = Path(temporary) / "install"
+            source.mkdir()
+            (source / "__init__.py").write_text(
+                "class Example:\n    pass\n"
+                "instance = object.__new__(Example)\n"
+                "object.__setattr__(instance, 'value', 1)\n"
+                "instance.__post_init__()\n"
+                "super().__init__()\n",
+                encoding="utf-8",
+            )
+            builder.validate_imports(source)
 
     def test_archive_contains_only_install_package_with_fixed_timestamps(self) -> None:
         """pyz 不得携带主包其他模块、cache 或本机时间。"""

@@ -6,6 +6,7 @@ import argparse
 import ast
 import os
 import shutil
+import symtable
 import sys
 import tempfile
 import zipapp
@@ -31,6 +32,29 @@ _DYNAMIC_ATTRIBUTES = (_DYNAMIC_BUILTINS - {"compile"}) | {
     "import_module",
     "modules",
 }
+_SAFE_GETATTR_NAMES = {
+    "O_CLOEXEC",
+    "O_DIRECTORY",
+    "O_NOFOLLOW",
+    "_evidence",
+    "getcode",
+    "getheader",
+    "headers",
+    "items",
+    "kevent",
+    "kqueue",
+    "lstat",
+    "require_backend",
+    "run",
+    "status",
+    "waitid",
+}
+_SAFE_DUNDER_ATTRIBUTES = {
+    "__init__",  # InstallError delegates construction to RuntimeError.
+    "__new__",  # Frozen layout/service records require explicit allocation.
+    "__post_init__",  # Sealed records re-run their bounded validation.
+    "__setattr__",  # Frozen dataclass fields are initialized explicitly.
+}
 
 
 def validate_imports(source: Path) -> None:
@@ -49,8 +73,9 @@ def validate_imports(source: Path) -> None:
     if not files or any(path.is_symlink() or not path.is_file() for path in files):
         raise ValueError("installer source contains unsafe Python files")
     for path in files:
-        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        _require_safe_syntax(tree, path)
+        source_text = path.read_text(encoding="utf-8")
+        tree = ast.parse(source_text, filename=str(path))
+        _require_safe_syntax(tree, path, source_text)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -65,16 +90,29 @@ def validate_imports(source: Path) -> None:
                 _require_import(node.module, allowed, path)
 
 
-def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
+def _require_safe_syntax(tree: ast.AST, path: Path, source_text: str) -> None:
     """拒绝绕过 static import allowlist 的动态加载与 code execution。
 
     Args:
         tree: 一个 install module 的完整 Python AST。
         path: 仅用于安全错误定位的源文件路径。
+        source_text: 与 tree 对应的完整源码，供 stdlib symtable 分析 binding。
 
     Raises:
         ValueError: 发现 dynamic import、eval/exec/compile 或简单 alias 绕过。
     """
+    scopes = [symtable.symtable(source_text, str(path), "exec")]
+    while scopes:
+        scope = scopes.pop()
+        for symbol in scope.get_symbols():
+            if symbol.get_name() == "getattr" and (
+                symbol.is_parameter()
+                or symbol.is_assigned()
+                or symbol.is_imported()
+                or symbol.is_local()
+            ):
+                raise ValueError(f"unsafe dynamic getattr in {path.name}")
+        scopes.extend(scope.get_children())
     nodes = tuple(ast.walk(tree))
     direct_getattr: set[int] = set()
     unsafe_getattr = False
@@ -89,23 +127,11 @@ def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
                 or node.keywords
                 or not isinstance(node.args[1], ast.Constant)
                 or type(node.args[1].value) is not str
-                or node.args[1].value in _DYNAMIC_NAMES
+                or node.args[1].value not in _SAFE_GETATTR_NAMES
             ):
                 unsafe_getattr = True
             else:
                 direct_getattr.add(id(node.func))
-        elif isinstance(node, ast.arg) and node.arg == "getattr":
-            unsafe_getattr = True
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and (
-            node.name == "getattr"
-        ):
-            unsafe_getattr = True
-        elif isinstance(node, ast.alias) and (
-            node.asname == "getattr"
-            or node.asname is None
-            and node.name == "getattr"
-        ):
-            unsafe_getattr = True
     for node in nodes:
         if (
             isinstance(node, ast.Name)
@@ -115,8 +141,15 @@ def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
             unsafe_getattr = True
         if isinstance(node, ast.Name) and node.id in _DYNAMIC_NAMES:
             raise ValueError(f"unsafe dynamic {node.id} in {path.name}")
-        if isinstance(node, ast.Attribute) and node.attr in _DYNAMIC_ATTRIBUTES:
-            raise ValueError(f"unsafe dynamic {node.attr} in {path.name}")
+        if isinstance(node, ast.Attribute):
+            if (
+                node.attr.startswith("__")
+                and node.attr.endswith("__")
+                and node.attr not in _SAFE_DUNDER_ATTRIBUTES
+            ):
+                raise ValueError(f"unsafe dynamic {node.attr} in {path.name}")
+            if node.attr in _DYNAMIC_ATTRIBUTES:
+                raise ValueError(f"unsafe dynamic {node.attr} in {path.name}")
         if isinstance(node, ast.Constant) and node.value in _DYNAMIC_NAMES:
             raise ValueError(f"unsafe dynamic {node.value} in {path.name}")
         if isinstance(node, ast.ImportFrom):
