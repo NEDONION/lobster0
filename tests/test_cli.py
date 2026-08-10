@@ -3,6 +3,7 @@
 import argparse
 import contextlib
 import io
+import json
 import sys
 import tempfile
 import unittest
@@ -13,6 +14,7 @@ from unittest import mock
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
+from lobster0 import __version__  # noqa: E402
 from lobster0.automation.models import (  # noqa: E402
     DeliveryTarget,
     ScheduleKind,
@@ -449,6 +451,151 @@ class CliTest(unittest.TestCase):
             ):
                 exit_code, output, error = run_cli(["gateway", "--home", directory])
         self.assertEqual((exit_code, output, error), (0, "", ""))
+
+    def test_service_update_and_uninstall_dispatch_outside_agent_runtime(self) -> None:
+        """公共 lifecycle 命令只把 typed action 交给安装模块，不加载 Agent runtime。"""
+        with tempfile.TemporaryDirectory() as directory:
+            for argv, action in (
+                (["service", "--home", directory, "status"], "service.status"),
+                (["service", "--home", directory, "logs"], "service.logs"),
+                (["update", "--home", directory], "update"),
+                (["uninstall", "--home", directory], "uninstall"),
+            ):
+                with (
+                    self.subTest(argv=argv),
+                    mock.patch("lobster0.cli.run_install_action", return_value=0) as run,
+                    mock.patch(
+                        "lobster0.cli.resolve_install_facts",
+                        return_value=mock.Mock(managed=True),
+                    ),
+                    mock.patch(
+                        "lobster0.runtime.create_runtime",
+                        side_effect=AssertionError("Agent runtime must not load"),
+                    ),
+                ):
+                    self.assertEqual(main(argv), 0)
+                    self.assertEqual(run.call_args.args[0], action)
+
+    def test_service_falls_back_to_source_checkout_launchagent(self) -> None:
+        """没有 receipt 的源码 checkout 必须保持 Phase 6 LaunchAgent 行为。"""
+        service = mock.Mock()
+        service.restart = mock.Mock(return_value=None)
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch("lobster0.cli.run_install_action") as managed,
+            mock.patch("lobster0.cli._launchd_service", return_value=service),
+        ):
+            exit_code, output, error = run_cli(["service", "--home", directory, "restart"])
+
+        self.assertEqual((exit_code, error), (0, ""))
+        self.assertIn("service restarted", output)
+        managed.assert_not_called()
+
+    def test_service_logs_is_unavailable_in_source_checkout(self) -> None:
+        """logs 只对受管安装有意义，源码模式必须干净失败。"""
+        with tempfile.TemporaryDirectory() as directory:
+            exit_code, output, error = run_cli(["service", "--home", directory, "logs"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(output, "")
+        self.assertIn("service_logs_unavailable", error)
+
+    def test_lifecycle_help_exposes_no_secret_bearing_flags(self) -> None:
+        """service/update/uninstall 帮助不得出现任何 Secret 值参数。"""
+        parser = build_parser()
+        commands = next(
+            action.choices
+            for action in parser._actions
+            if hasattr(action, "choices") and isinstance(action.choices, dict)
+        )
+        for name in ("service", "update", "uninstall", "install-smoke"):
+            with self.subTest(command=name):
+                options = {
+                    option
+                    for action in commands[name]._actions
+                    for option in action.option_strings
+                }
+                self.assertTrue(
+                    {
+                        "--api-key",
+                        "--token",
+                        "--app-secret",
+                        "--secret",
+                        "--secrets-file",
+                        "--password",
+                    }.isdisjoint(options)
+                )
+        uninstall_options = {
+            option
+            for action in commands["uninstall"]._actions
+            for option in action.option_strings
+        }
+        self.assertIn("--purge-data", uninstall_options)
+        self.assertIn("--yes-i-understand-data-loss", uninstall_options)
+
+    def test_uninstall_maps_the_exact_long_confirmation_flag(self) -> None:
+        """`--yes-i-understand-data-loss` 必须是唯一的非交互破坏性确认。"""
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch("lobster0.cli.run_install_action", return_value=0) as run,
+            mock.patch(
+                "lobster0.cli.resolve_install_facts",
+                return_value=mock.Mock(managed=True),
+            ),
+        ):
+            exit_code, _output, _error = run_cli(
+                [
+                    "uninstall",
+                    "--home",
+                    directory,
+                    "--purge-data",
+                    "--yes-i-understand-data-loss",
+                ]
+            )
+
+        self.assertEqual(exit_code, 0)
+        self.assertTrue(run.call_args.kwargs["purge_data"])
+        self.assertTrue(run.call_args.kwargs["confirm_data_loss"])
+
+    def test_install_smoke_emits_one_json_document_without_network(self) -> None:
+        """install-smoke 必须输出 status/version 且不触碰 Provider、Channel 或网络。"""
+        with tempfile.TemporaryDirectory() as directory:
+            run_cli(["init", "--home", directory])
+            node = Path(directory) / "test-node"
+            node.write_text("#!/bin/sh\nprintf 'v22.22.3\\n'\n", encoding="utf-8")
+            node.chmod(0o700)
+            entry = Path(directory) / "main.js"
+            entry.write_text("// test entry\n", encoding="utf-8")
+            with (
+                mock.patch.dict(
+                    "os.environ",
+                    {
+                        "LOBSTER0_NODE": str(node),
+                        "LOBSTER0_TUI_ENTRY": str(entry),
+                    },
+                    clear=False,
+                ),
+                mock.patch(
+                    "lobster0.runtime.create_runtime",
+                    side_effect=AssertionError("Provider runtime must not load"),
+                ),
+                mock.patch(
+                    "socket.socket",
+                    side_effect=AssertionError("install-smoke must not open sockets"),
+                ),
+                mock.patch(
+                    "lobster0.cli.importlib.util.find_spec",
+                    return_value=object(),
+                ),
+            ):
+                exit_code, output, error = run_cli(
+                    ["install-smoke", "--home", directory, "--json"]
+                )
+
+        self.assertEqual((exit_code, error), (0, ""))
+        document = json.loads(output)
+        self.assertEqual(document["status"], "ok")
+        self.assertEqual(document["version"], __version__)
 
     def test_gateway_preloads_channel_sdk_before_starting_asyncio(self) -> None:
         """飞书 SDK 必须在主循环启动前加载，避免捕获正在运行的 loop。"""

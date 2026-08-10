@@ -78,7 +78,10 @@ class ServiceCliTest(unittest.TestCase):
             for action in service._actions
             if hasattr(action, "choices") and isinstance(action.choices, dict)
         )
-        self.assertEqual(set(choices), {"install", "status", "restart", "uninstall"})
+        self.assertEqual(
+            set(choices),
+            {"install", "status", "logs", "restart", "uninstall"},
+        )
 
     def test_each_action_dispatches_once_and_status_is_structured(self) -> None:
         """CLI 只调用选定动作，status 不转发 launchctl 原始输出。"""
