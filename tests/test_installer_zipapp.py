@@ -62,6 +62,32 @@ class InstallerZipappTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "relative"):
                 builder.validate_imports(source)
 
+    def test_ast_boundary_rejects_dynamic_import_and_code_execution_aliases(self) -> None:
+        """动态 import 与 builtin code execution 的简单 alias 绕过都必须拒绝。"""
+        cases = (
+            ("__import__('httpx')\n", "__import__"),
+            ("import importlib as loader\nloader.import_module('httpx')\n", "import_module"),
+            (
+                "from importlib import import_module as load\nload('httpx')\n",
+                "import_module",
+            ),
+            ("runner = eval\nrunner('40 + 2')\n", "eval"),
+            ("import builtins as b\ngetattr(b, 'exec')('pass')\n", "exec"),
+            ("import builtins as b\nalias = b\nalias.eval('40 + 2')\n", "eval"),
+            (
+                "from builtins import compile as build\nbuild('pass', 'x', 'exec')\n",
+                "compile",
+            ),
+        )
+        builder = _load_builder()
+        for payload, detail in cases:
+            with self.subTest(detail=detail), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "install"
+                source.mkdir()
+                (source / "__init__.py").write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, detail):
+                    builder.validate_imports(source)
+
     def test_archive_contains_only_install_package_with_fixed_timestamps(self) -> None:
         """pyz 不得携带主包其他模块、cache 或本机时间。"""
         builder = _load_builder()

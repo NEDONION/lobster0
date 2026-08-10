@@ -8,9 +8,14 @@ import json
 import os
 import pwd
 import re
+import selectors
 import shutil
+import signal
 import stat
+import subprocess
 import sys
+import tempfile
+import time
 import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -57,12 +62,14 @@ from miniclaw.install.runtime import (
     RuntimeReceipt,
     _SubprocessRunner,
     activate_runtime,
+    discard_unactivated_runtime,
     retain_current_and_previous,
 )
 from miniclaw.install.service import (
     ServicePlatform,
     render_service_spec,
     service_install,
+    service_uninstall,
 )
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
@@ -79,6 +86,7 @@ _MAX_SECRET_BYTES = 64 * 1024
 _MAX_CONFIG_BYTES = 1024 * 1024
 _PATH = "/usr/local/bin:/usr/bin:/bin"
 _TIMEOUT = 300.0
+_OUTPUT_LIMIT = 64 * 1024
 _INTERNAL_HOP = "MINICLAW_INSTALLER_HOPS"
 _CHANNEL_FIELDS = {
     "feishu": ("app_id_env", "app_secret_env"),
@@ -174,6 +182,165 @@ class _Downloaded:
     sandbox_image: str
 
 
+class _InteractiveSubprocessRunner:
+    """保留 controlling TTY，并有界收集 setup 子进程输出。"""
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        timeout: float,
+    ) -> CommandResult:
+        """在当前 session 的独立 process group 中执行交互 setup。
+
+        Args:
+            argv: 不经过 shell 的 exact 参数数组。
+            env: 不含 Secret value 的 fixed 环境。
+            timeout: stdout、stderr 与进程退出共享的秒级 deadline。
+
+        Returns:
+            最多各 64 KiB 的 stdout、stderr 与稳定退出码。
+
+        Raises:
+            InstallError: 参数无效或子进程无法启动。
+        """
+        if (
+            type(argv) is not tuple
+            or not argv
+            or any(type(value) is not str or not value or "\x00" in value for value in argv)
+            or type(env) is not dict
+            or any(
+                type(name) is not str
+                or not name
+                or "=" in name
+                or "\x00" in name
+                or type(value) is not str
+                or "\x00" in value
+                for name, value in env.items()
+            )
+            or type(timeout) not in {int, float}
+            or timeout <= 0
+        ):
+            raise InstallError("doctor_blocked", "service")
+        try:
+            tty = os.open("/dev/tty", os.O_RDWR | getattr(os, "O_CLOEXEC", 0))
+            foreground = os.tcgetpgrp(tty)
+            process = subprocess.Popen(
+                argv,
+                stdin=None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+                shell=False,
+                close_fds=True,
+                process_group=0,
+                umask=0o077,
+            )
+        except OSError:
+            try:
+                os.close(tty)
+            except (OSError, UnboundLocalError):
+                pass
+            raise InstallError("doctor_blocked", "service") from None
+        try:
+            _set_foreground_process_group(tty, process.pid)
+        except OSError:
+            _terminate_process_group(process)
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    stream.close()
+            os.close(tty)
+            raise InstallError("doctor_blocked", "service") from None
+        assert process.stdout is not None and process.stderr is not None
+        deadline = time.monotonic() + float(timeout)
+        outputs = (bytearray(), bytearray())
+        overflow = [False, False]
+        selector: selectors.BaseSelector | None = None
+        timed_out = False
+        try:
+            selector = selectors.DefaultSelector()
+            for index, stream in enumerate((process.stdout, process.stderr)):
+                os.set_blocking(stream.fileno(), False)
+                selector.register(stream, selectors.EVENT_READ, index)
+            while selector.get_map():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                    break
+                ready = selector.select(remaining)
+                if not ready:
+                    timed_out = True
+                    break
+                for key, _ in ready:
+                    try:
+                        payload = os.read(key.fileobj.fileno(), 16 * 1024)
+                    except BlockingIOError:
+                        continue
+                    if not payload:
+                        selector.unregister(key.fileobj)
+                        key.fileobj.close()
+                        continue
+                    output = outputs[key.data]
+                    available = _OUTPUT_LIMIT - len(output)
+                    output.extend(payload[:available])
+                    overflow[key.data] |= len(payload) > available
+            if not timed_out:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    timed_out = True
+                else:
+                    try:
+                        returncode = process.wait(timeout=remaining)
+                    except subprocess.TimeoutExpired:
+                        timed_out = True
+            if timed_out:
+                _terminate_process_group(process)
+                returncode = -signal.SIGKILL
+        except BaseException:
+            _terminate_process_group(process)
+            raise
+        finally:
+            if selector is not None:
+                selector.close()
+            for stream in (process.stdout, process.stderr):
+                if not stream.closed:
+                    stream.close()
+            try:
+                _set_foreground_process_group(tty, foreground)
+            finally:
+                os.close(tty)
+        if any(overflow) and returncode == 0:
+            returncode = 125
+        return CommandResult(returncode, bytes(outputs[0]), bytes(outputs[1]))
+
+
+def _terminate_process_group(process: subprocess.Popen[bytes]) -> None:
+    """终止交互 setup 的整个 process group 并回收 leader。"""
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    process.wait()
+
+
+def _set_foreground_process_group(tty: int, process_group: int) -> None:
+    """阻塞 SIGTTOU 后原子切换 controlling TTY 的前台 process group。
+
+    Args:
+        tty: 当前 session 的 controlling TTY descriptor。
+        process_group: 已存在且属于当前 session 的 process group id。
+
+    Raises:
+        OSError: TTY 或 process group 在切换前已经失效。
+    """
+    previous = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGTTOU})
+    try:
+        os.tcsetpgrp(tty, process_group)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK, previous)
+
+
 class _Operations(Protocol):
     """描述 Installer 状态机需要的最小副作用集合。"""
 
@@ -205,6 +372,9 @@ class _Operations(Protocol):
 
     def previous_current(self, layout: InstallLayout) -> str | None:
         """返回事务前 current symlink target。"""
+
+    def recover(self, layout: InstallLayout, lock: InstallLock) -> None:
+        """在 actual lock 下恢复未激活 Runtime 与 stale downloads。"""
 
     def download(self, plan: InstallPlan, layout: InstallLayout) -> _Downloaded:
         """下载并解包全部 verified artifacts。"""
@@ -297,8 +467,15 @@ class Installer:
         if type(request) is not InstallRequest:
             raise InstallError("request_invalid", "model")
         self._events = []
+        hop = self._environ.get(_INTERNAL_HOP)
+        if hop not in {None, "", "1"}:
+            raise InstallError("request_invalid", "manifest")
+        if request.action == "uninstall" or request.action == "update" and request.dry_run:
+            raise InstallError("request_invalid", "action")
         plan = self._operations.preflight(request, self._bootstrap)
         self._emit(InstallEvent("install.preflight", "ok", None, "manifest"))
+        if request.action == "update" and hop == "1":
+            raise InstallError("request_invalid", "action")
         if request.dry_run:
             self._emit(
                 InstallEvent(
@@ -315,9 +492,6 @@ class Installer:
                 False,
                 tuple(self._events),
             )
-        hop = self._environ.get(_INTERNAL_HOP)
-        if hop not in {None, "", "1"}:
-            raise InstallError("request_invalid", "manifest")
         handoff = self._operations.select_target(
             request,
             plan,
@@ -331,9 +505,12 @@ class Installer:
             executable, argv, environment = handoff
             self._execve(executable, argv, environment)
             raise InstallError("installer_error", "manifest")
+        if request.action == "update":
+            raise InstallError("request_invalid", "action")
         plan = self._operations.prepare_dependencies(plan, self._bootstrap)
         layout = self._operations.layout(plan)
-        with self._operations.lock(layout):
+        with self._operations.lock(layout) as held_lock:
+            self._operations.recover(layout, held_lock)
             previous = self._operations.previous_current(layout)
             stage = "locked"
             try:
@@ -405,14 +582,16 @@ class _SystemOperations:
         self.bootstrap = bootstrap
         self.opener = opener
         self.runner = _SubprocessRunner()
+        self.interactive_runner = _InteractiveSubprocessRunner()
         self._platform: DetectedPlatform | None = None
         self._downloaded: dict[Path, _Downloaded] = {}
-        self._download_roots: dict[Path, Path] = {}
+        self._download_roots: dict[Path, tuple[Path, tuple[int, int]]] = {}
         self._previous: dict[Path, str | None] = {}
         self._prior_receipts: dict[Path, InstallReceipt | None] = {}
         self._launcher_existed: dict[Path, bool] = {}
         self._command_existed: dict[Path, bool] = {}
         self._created_metadata_hashes: dict[Path, tuple[str, str]] = {}
+        self._installed_services: dict[Path, tuple[ServicePlatform, str, bool]] = {}
         self._sandbox_artifact: Path | None = None
         self._sandbox_image: str | None = None
 
@@ -563,6 +742,12 @@ class _SystemOperations:
         self._previous[layout.program_prefix] = previous
         return previous
 
+    def recover(self, layout: InstallLayout, lock: InstallLock) -> None:
+        """在 actual install lock 下恢复本版本的 crash residue。"""
+        _reject_existing_receipt(layout)
+        _discard_stale_downloads(layout)
+        discard_unactivated_runtime(layout, lock)
+
     def download(self, plan: InstallPlan, layout: InstallLayout) -> _Downloaded:
         """重验 sandbox 后下载其余五类 artifacts 并安全解包 Node/TUI。"""
         try:
@@ -576,7 +761,11 @@ class _SystemOperations:
             layout.runtimes_dir.mkdir(mode=runtime_parent_mode, parents=True, exist_ok=True)
             root = layout.runtimes_dir / f".{plan.manifest.version}.downloads"
             root.mkdir(mode=0o700)
-            self._download_roots[layout.program_prefix] = root
+            root_metadata = root.lstat()
+            self._download_roots[layout.program_prefix] = (
+                root,
+                (root_metadata.st_dev, root_metadata.st_ino),
+            )
             selected = {
                 kind: plan.manifest.require_artifact(kind, plan.platform)
                 for kind in ("wheel", "requirements", "node", "tui", "installer")
@@ -674,8 +863,9 @@ class _SystemOperations:
             "--sandbox-image",
             downloaded.sandbox_image,
         )
+        runner = self.interactive_runner if command == "setup" else self.runner
         _checked_owner_command(
-            self.runner,
+            runner,
             argv,
             layout,
             system_prefix=plan.request.system_prefix,
@@ -730,9 +920,8 @@ class _SystemOperations:
         built: RuntimeReceipt,
     ) -> None:
         """安装 stable launcher 并原子写不含 Secret 的 receipt。"""
+        _reject_existing_receipt(layout)
         prior: InstallReceipt | None = None
-        if layout.receipt.exists():
-            prior = InstallReceipt.load(layout.receipt)
         self._prior_receipts[layout.program_prefix] = prior
         self._launcher_existed[layout.program_prefix] = layout.launcher.exists()
         self._command_existed[layout.program_prefix] = layout.command_link.is_symlink()
@@ -773,16 +962,25 @@ class _SystemOperations:
             digest, label, relative = _install_service_as_owner(layout, platform, self.runner)
         else:
             spec = render_service_spec(layout, platform)
-            digest = service_install(spec, self.runner)
             label = spec.label
             relative = _service_relative(spec.path, _invoking_account())
-        current = InstallReceipt.load(layout.receipt)
-        replace(
-            current,
-            service_label=label,
-            service_file=relative,
-            service_file_sha256=digest,
-        ).write(layout.receipt)
+            digest = service_install(spec, self.runner)
+        self._installed_services[layout.program_prefix] = (
+            platform,
+            digest,
+            plan.request.system_prefix,
+        )
+        try:
+            current = InstallReceipt.load(layout.receipt)
+            replace(
+                current,
+                service_label=label,
+                service_file=relative,
+                service_file_sha256=digest,
+            ).write(layout.receipt)
+        except BaseException:
+            self._rollback_installed_service(layout)
+            raise
 
     def retain(self, layout: InstallLayout) -> None:
         """复用 Runtime retention，仅保留 current 与 N-1。"""
@@ -790,6 +988,8 @@ class _SystemOperations:
 
     def rollback(self, layout: InstallLayout, previous: str | None, stage: str) -> None:
         """activation 后失败时只恢复仍指向本次 target 的 current。"""
+        if layout.program_prefix in self._installed_services:
+            self._rollback_installed_service(layout)
         if stage not in {"activated", "committing", "committed", "service"}:
             return
         _restore_current(layout, previous)
@@ -821,28 +1021,142 @@ class _SystemOperations:
             else:
                 prior.write(layout.receipt)
 
+    def _rollback_installed_service(self, layout: InstallLayout) -> None:
+        """用 Task10 public uninstall 与 exact digest 撤销本事务 fresh service。"""
+        platform, digest, system_prefix = self._installed_services[layout.program_prefix]
+        if system_prefix:
+            _uninstall_service_as_owner(layout, platform, digest, self.runner)
+        else:
+            service_uninstall(
+                render_service_spec(layout, platform),
+                self.runner,
+                expected_sha256=digest,
+            )
+        del self._installed_services[layout.program_prefix]
+
     def cleanup(self, layout: InstallLayout) -> None:
         """只删除本事务创建且仍在固定位置的 downloads tree。"""
         self._downloaded.pop(layout.program_prefix, None)
-        download_root = self._download_roots.pop(layout.program_prefix, None)
+        download_receipt = self._download_roots.pop(layout.program_prefix, None)
         self._prior_receipts.pop(layout.program_prefix, None)
         self._launcher_existed.pop(layout.program_prefix, None)
         self._command_existed.pop(layout.program_prefix, None)
         self._created_metadata_hashes.pop(layout.program_prefix, None)
+        self._installed_services.pop(layout.program_prefix, None)
         sandbox = self._sandbox_artifact
         self._sandbox_artifact = None
         self._sandbox_image = None
         if sandbox is not None:
             _unlink_ephemeral(sandbox)
-        if download_root is None:
+        if download_receipt is None:
             return
+        download_root, identity = download_receipt
         try:
             if download_root.parent == layout.runtimes_dir and download_root.name == (
                 f".{layout.runtime.name}.downloads"
             ):
-                shutil.rmtree(download_root)
-        except OSError:
+                _discard_downloads_tree(layout, download_root, identity)
+        except (InstallError, OSError):
             pass
+
+
+def _discard_stale_downloads(layout: InstallLayout) -> bool:
+    """no-follow quarantine 并删除 Task11 自有的 stale downloads tree。
+
+    Args:
+        layout: 已绑定目标版本与受管 runtimes parent 的严格 layout。
+
+    Returns:
+        删除 exact current-owner downloads tree 时为 true；不存在时为 false。
+
+    Raises:
+        InstallError: parent、source、inode 或 quarantine durability 不可信。
+    """
+    return _discard_downloads_tree(
+        layout,
+        layout.runtimes_dir / f".{layout.runtime.name}.downloads",
+        None,
+    )
+
+
+def _discard_downloads_tree(
+    layout: InstallLayout,
+    path: Path,
+    expected_identity: tuple[int, int] | None,
+) -> bool:
+    """按可选创建 receipt quarantine 并删除一个 exact downloads inode。
+
+    Args:
+        layout: 已绑定受管 runtimes parent 的严格 layout。
+        path: parent 下固定版本的 downloads 路径。
+        expected_identity: 当前事务创建时记录的 device/inode，或 retry 时为空。
+
+    Returns:
+        删除 exact downloads tree 时为 true；不存在时为 false。
+
+    Raises:
+        InstallError: owner、类型、mode、inode 或 durability 漂移。
+    """
+    try:
+        parent = layout.runtimes_dir.lstat()
+        if (
+            not stat.S_ISDIR(parent.st_mode)
+            or parent.st_uid != os.geteuid()
+            or stat.S_IMODE(parent.st_mode) & 0o022
+        ):
+            raise InstallError("runtime_install_failed", "manifest")
+        try:
+            before = path.lstat()
+        except FileNotFoundError:
+            return False
+        if (
+            not stat.S_ISDIR(before.st_mode)
+            or before.st_uid != os.geteuid()
+            or stat.S_IMODE(before.st_mode) != 0o700
+        ):
+            raise InstallError("runtime_install_failed", "manifest")
+        identity = (before.st_dev, before.st_ino)
+        if expected_identity is not None and identity != expected_identity:
+            raise InstallError("runtime_install_failed", "manifest")
+        quarantine = Path(
+            tempfile.mkdtemp(
+                prefix=f".{layout.runtime.name}.downloads-quarantine-",
+                dir=layout.runtimes_dir,
+            )
+        )
+        quarantine_identity = quarantine.lstat()
+        private = quarantine / "payload"
+        private.mkdir(mode=0o700)
+        os.rename(path, private)
+        _fsync_directory(layout.runtimes_dir)
+        _fsync_directory(quarantine)
+        moved = private.lstat()
+        if (
+            not stat.S_ISDIR(moved.st_mode)
+            or moved.st_uid != os.geteuid()
+            or stat.S_IMODE(moved.st_mode) != 0o700
+            or (moved.st_dev, moved.st_ino) != identity
+            or not shutil.rmtree.avoids_symlink_attacks
+        ):
+            raise InstallError("runtime_install_failed", "manifest")
+        shutil.rmtree(private)
+        current_quarantine = quarantine.lstat()
+        if (
+            not stat.S_ISDIR(current_quarantine.st_mode)
+            or (current_quarantine.st_dev, current_quarantine.st_ino)
+            != (quarantine_identity.st_dev, quarantine_identity.st_ino)
+            or current_quarantine.st_uid != os.geteuid()
+            or stat.S_IMODE(current_quarantine.st_mode) != 0o700
+        ):
+            raise InstallError("runtime_install_failed", "manifest")
+        _fsync_directory(quarantine)
+        quarantine.rmdir()
+        _fsync_directory(layout.runtimes_dir)
+        return True
+    except InstallError:
+        raise
+    except OSError:
+        raise InstallError("runtime_install_failed", "manifest") from None
 
 
 def verify_bootstrap_inputs(inputs: BootstrapInputs) -> bytes:
@@ -934,6 +1248,66 @@ def _invoking_account() -> pwd.struct_passwd:
     return _resolve_invoking_user(uid, user, original_uid)
 
 
+def _target_environment(account: pwd.struct_passwd) -> dict[str, str]:
+    """从 validated passwd 构造不继承 parent 的固定 target-user 环境。
+
+    Args:
+        account: Task5 已验证的 non-root passwd 记录。
+
+    Returns:
+        仅含 HOME、USER、LOGNAME、XDG_RUNTIME_DIR 与固定 PATH 的新字典。
+
+    Raises:
+        InstallError: passwd 字段无法安全表达为进程环境。
+    """
+    if (
+        type(account) is not pwd.struct_passwd
+        or type(account.pw_uid) is not int
+        or account.pw_uid <= 0
+        or type(account.pw_name) is not str
+        or not account.pw_name
+        or "\x00" in account.pw_name
+        or type(account.pw_dir) is not str
+        or not account.pw_dir.startswith("/")
+        or "\x00" in account.pw_dir
+    ):
+        raise InstallError("privilege_denied", "platform")
+    return {
+        "HOME": account.pw_dir,
+        "LOGNAME": account.pw_name,
+        "PATH": _PATH,
+        "USER": account.pw_name,
+        "XDG_RUNTIME_DIR": f"/run/user/{account.pw_uid}",
+    }
+
+
+def _environment_assignments(environment: dict[str, str]) -> tuple[str, ...]:
+    """把内部 fixed environment 转为 env -i 的 deterministic assignments。
+
+    Args:
+        environment: `_target_environment` 及可选 MiniClaw path 字段。
+
+    Returns:
+        HOME/PATH/user identity 后跟 state path 的 fixed 参数元组。
+
+    Raises:
+        InstallError: 出现未封闭 key 或缺少任一 target identity 字段。
+    """
+    order = (
+        "HOME",
+        "PATH",
+        "USER",
+        "LOGNAME",
+        "XDG_RUNTIME_DIR",
+        "MINICLAW_HOME",
+        "MINICLAW_ENV_FILE",
+    )
+    required = set(order[:5])
+    if not required.issubset(environment) or not set(environment).issubset(order):
+        raise InstallError("privilege_denied", "platform")
+    return tuple(f"{name}={environment[name]}" for name in order if name in environment)
+
+
 def _execute_dependency_actions(
     actions: tuple[PrivilegeAction, ...],
     platform: DetectedPlatform,
@@ -962,6 +1336,7 @@ def _execute_dependency_actions(
         raise InstallError("privilege_denied", "system_argvs")
     pending = list(actions)
     executed: list[tuple[str, ...]] = []
+    environment = _target_environment(_invoking_account())
     while pending:
         if len(executed) >= 16:
             raise InstallError("privilege_denied", "system_argvs")
@@ -976,7 +1351,7 @@ def _execute_dependency_actions(
             sandbox_artifact_path=sandbox_artifact_path,
             after_execution=False,
         )
-        result = runner.run(action.argv, env={"PATH": _PATH}, timeout=_TIMEOUT)
+        result = runner.run(action.argv, env=dict(environment), timeout=_TIMEOUT)
         if type(result) is not CommandResult or result.returncode != 0:
             code = "privilege_denied" if action.requires_sudo else "system_dependency_missing"
             raise InstallError(code, "system_argvs")
@@ -1038,7 +1413,7 @@ def _unlink_ephemeral(path: Path) -> None:
 
 
 def _checked_owner_command(
-    runner: _SubprocessRunner,
+    runner: _SubprocessRunner | _InteractiveSubprocessRunner,
     argv: tuple[str, ...],
     layout: InstallLayout,
     *,
@@ -1046,6 +1421,13 @@ def _checked_owner_command(
 ) -> CommandResult:
     """用 minimal env 执行 staged state/Doctor 命令并拒绝 raw output 转发。"""
     account = _invoking_account()
+    environment = _target_environment(account)
+    environment.update(
+        {
+            "MINICLAW_HOME": str(layout.state_home),
+            "MINICLAW_ENV_FILE": str(layout.secrets_file),
+        }
+    )
     selected = argv
     if system_prefix:
         selected = (
@@ -1055,18 +1437,9 @@ def _checked_owner_command(
             "--",
             "/usr/bin/env",
             "-i",
-            f"HOME={account.pw_dir}",
-            f"PATH={_PATH}",
-            f"MINICLAW_HOME={layout.state_home}",
-            f"MINICLAW_ENV_FILE={layout.secrets_file}",
+            *_environment_assignments(environment),
             *argv,
         )
-    environment = {
-        "HOME": account.pw_dir,
-        "PATH": _PATH,
-        "MINICLAW_HOME": str(layout.state_home),
-        "MINICLAW_ENV_FILE": str(layout.secrets_file),
-    }
     result = runner.run(selected, env=environment, timeout=_TIMEOUT)
     if type(result) is not CommandResult or result.returncode != 0:
         raise InstallError("doctor_blocked", "service")
@@ -1188,6 +1561,7 @@ def _service_inputs_complete_as_owner(
 ) -> bool:
     """让 system-prefix 目标用户读取配置与 Secret，并只返回 readiness token。"""
     account = _invoking_account()
+    environment = _target_environment(account)
     code = (
         "import sys;from pathlib import Path;"
         "from miniclaw.install.orchestrator import _service_inputs_complete;"
@@ -1201,8 +1575,7 @@ def _service_inputs_complete_as_owner(
         "--",
         "/usr/bin/env",
         "-i",
-        f"HOME={account.pw_dir}",
-        f"PATH={_PATH}",
+        *_environment_assignments(environment),
         str(python),
         "-I",
         "-c",
@@ -1210,7 +1583,7 @@ def _service_inputs_complete_as_owner(
         str(config),
         str(secrets),
     )
-    result = runner.run(argv, env={"PATH": _PATH}, timeout=_TIMEOUT)
+    result = runner.run(argv, env=environment, timeout=_TIMEOUT)
     if type(result) is not CommandResult or result.returncode != 0:
         raise InstallError("doctor_blocked", "service")
     return result.stdout == b"ready\n"
@@ -1278,19 +1651,17 @@ def _import_secrets_as_owner(
 ) -> None:
     """让 system-prefix 目标用户读取、校验并 O_EXCL 导入 Secret。"""
     code = (
-        "import os,stat,sys,tempfile;from pathlib import Path;"
-        "from miniclaw.env import load_dotenv;"
+        "import os,stat,sys;from pathlib import Path;"
+        "from miniclaw.install.orchestrator import _parse_secret_names;"
         "src=Path(sys.argv[1]);dst=Path(sys.argv[2]);"
         "fd=os.open(src,os.O_RDONLY|getattr(os,'O_NOFOLLOW',0));s=os.fstat(fd);"
         "assert stat.S_ISREG(s.st_mode) and s.st_uid==os.geteuid() and s.st_nlink==1 "
         f"and stat.S_IMODE(s.st_mode)==0o600 and s.st_size<={_MAX_SECRET_BYTES};"
         "data=os.read(fd,s.st_size+1);os.close(fd);assert len(data)==s.st_size;"
-        "tmp=tempfile.TemporaryDirectory(prefix='miniclaw-secret-');p=Path(tmp.name)/'s.env';"
-        "p.write_bytes(data);p.chmod(0o600);load_dotenv(p,{});"
+        "_parse_secret_names(data);"
         "dst.parent.mkdir(mode=0o700,parents=True,exist_ok=True);"
         "o=os.open(dst,os.O_WRONLY|os.O_CREAT|os.O_EXCL|"
-        "getattr(os,'O_NOFOLLOW',0),0o600);os.write(o,data);os.fsync(o);os.close(o);"
-        "tmp.cleanup()"
+        "getattr(os,'O_NOFOLLOW',0),0o600);os.write(o,data);os.fsync(o);os.close(o)"
     )
     _run_owner_helper(runner, python, code, (str(source), str(layout.secrets_file)), account)
 
@@ -1303,6 +1674,7 @@ def _run_owner_helper(
     account: pwd.struct_passwd,
 ) -> None:
     """用 sudo user 与 fixed env 执行不回传配置/Secret 的 staged helper。"""
+    environment = _target_environment(account)
     argv = (
         "/usr/bin/sudo",
         "-u",
@@ -1310,15 +1682,14 @@ def _run_owner_helper(
         "--",
         "/usr/bin/env",
         "-i",
-        f"HOME={account.pw_dir}",
-        f"PATH={_PATH}",
+        *_environment_assignments(environment),
         str(python),
         "-I",
         "-c",
         code,
         *arguments,
     )
-    result = runner.run(argv, env={"PATH": _PATH}, timeout=_TIMEOUT)
+    result = runner.run(argv, env=environment, timeout=_TIMEOUT)
     if result.returncode != 0:
         raise InstallError("doctor_blocked", "service")
 
@@ -1330,6 +1701,7 @@ def _install_service_as_owner(
 ) -> tuple[str, str, str]:
     """在 system-prefix 模式让 non-root child 调用 Task10 lifecycle。"""
     account = _invoking_account()
+    environment = _target_environment(account)
     code = (
         "import json;from pathlib import Path;from miniclaw.install.layout import InstallLayout;"
         "from miniclaw.install.service import ServicePlatform,render_service_spec,service_install;"
@@ -1346,8 +1718,7 @@ def _install_service_as_owner(
         "--",
         "/usr/bin/env",
         "-i",
-        f"HOME={account.pw_dir}",
-        f"PATH={_PATH}",
+        *_environment_assignments(environment),
         str(python),
         "-I",
         "-c",
@@ -1360,7 +1731,7 @@ def _install_service_as_owner(
         account.pw_dir,
         platform.value,
     )
-    result = runner.run(argv, env={"HOME": account.pw_dir, "PATH": _PATH}, timeout=_TIMEOUT)
+    result = runner.run(argv, env=environment, timeout=_TIMEOUT)
     try:
         value = json.loads(result.stdout.decode("utf-8"))
         digest, label, path = value
@@ -1371,12 +1742,90 @@ def _install_service_as_owner(
     return digest, label, _service_relative(Path(path), account)
 
 
+def _uninstall_service_as_owner(
+    layout: InstallLayout,
+    platform: ServicePlatform,
+    digest: str,
+    runner: _SubprocessRunner,
+) -> None:
+    """让 system-prefix 目标用户调用 Task10 public service uninstall。
+
+    Args:
+        layout: 已激活 fresh Runtime 与目标用户 state 的严格 layout。
+        platform: 已安装 user service 的固定 manager。
+        digest: service install 返回并写入 receipt 的 exact SHA-256。
+        runner: 不转发 raw output 的 bounded parent runner。
+
+    Raises:
+        InstallError: target-user helper 或 exact ownership rollback 失败。
+    """
+    account = _invoking_account()
+    environment = _target_environment(account)
+    code = (
+        "import sys;from pathlib import Path;from miniclaw.install.layout import InstallLayout;"
+        "from miniclaw.install.service import ServicePlatform,render_service_spec,"
+        "service_uninstall;"
+        "l=InstallLayout._build(Path(sys.argv[1]),Path(sys.argv[2]),Path(sys.argv[3]),"
+        "sys.argv[4],owner_uid=int(sys.argv[5]),user_home=Path(sys.argv[6]));"
+        "s=render_service_spec(l,ServicePlatform(sys.argv[7]));"
+        "service_uninstall(s,expected_sha256=sys.argv[8])"
+    )
+    python = layout.runtime / "venv" / "bin" / "python"
+    argv = (
+        "/usr/bin/sudo",
+        "-u",
+        account.pw_name,
+        "--",
+        "/usr/bin/env",
+        "-i",
+        *_environment_assignments(environment),
+        str(python),
+        "-I",
+        "-c",
+        code,
+        str(layout.program_prefix),
+        str(layout.state_home),
+        str(layout.command_link),
+        layout.runtime.name,
+        str(account.pw_uid),
+        account.pw_dir,
+        platform.value,
+        digest,
+    )
+    result = runner.run(
+        argv,
+        env=environment,
+        timeout=_TIMEOUT,
+    )
+    if type(result) is not CommandResult or result.returncode != 0:
+        raise InstallError("service_install_failed", "service")
+
+
 def _service_relative(path: Path, account: pwd.struct_passwd) -> str:
     """把固定用户 service path 转为 receipt 安全相对路径。"""
     try:
         return PurePosixPath(path.relative_to(Path(account.pw_dir))).as_posix()
     except ValueError:
         raise InstallError("service_install_failed", "service") from None
+
+
+def _reject_existing_receipt(layout: InstallLayout) -> None:
+    """拒绝 Task13 才能迁移的任一 existing managed install receipt。
+
+    Args:
+        layout: fresh install 即将修改的目标 layout。
+
+    Raises:
+        InstallError: receipt 已存在、类型/owner/schema 不可信或需 update migration。
+    """
+    try:
+        layout.receipt.lstat()
+    except FileNotFoundError:
+        return
+    except OSError:
+        raise InstallError("uninstall_ownership_mismatch", "manifest") from None
+    InstallReceipt.load(layout.receipt)
+    raise InstallError("request_invalid", "action")
 
 
 def _prior_command_hash(layout: InstallLayout, prior: InstallReceipt | None) -> str | None:

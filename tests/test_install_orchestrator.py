@@ -5,9 +5,16 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
+import pty
 import pwd
+import select
+import subprocess
+import sys
 import tempfile
+import time
 import unittest
+import warnings
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import replace
 from pathlib import Path
@@ -17,7 +24,9 @@ from urllib.request import Request
 
 from miniclaw.config import ConfigError, load_config
 from miniclaw.install import __main__ as installer_cli
+from miniclaw.install import orchestrator as install_orchestrator
 from miniclaw.install.__main__ import _public_argv, main
+from miniclaw.install.layout import InstallLayout
 from miniclaw.install.models import (
     InstallError,
     InstallEvent,
@@ -43,7 +52,7 @@ from miniclaw.install.orchestrator import (
     verify_bootstrap_inputs,
 )
 from miniclaw.install.platforms import DependencyPlan, DetectedPlatform, PrivilegeAction
-from miniclaw.install.receipt import managed_file_sha256
+from miniclaw.install.receipt import InstallReceipt, managed_file_sha256
 from miniclaw.install.runtime import CommandResult
 from miniclaw.install.service import ServicePlatform
 from miniclaw.paths import build_state_paths
@@ -135,6 +144,7 @@ class _Operations:
         self.service_ready = True
         self.current = "old"
         self.service = "old"
+        self.held_lock: _Lock | None = None
 
     def _call(self, name: str) -> None:
         """记录一次调用并在命中注入点时失败。"""
@@ -155,6 +165,8 @@ class _Operations:
                 "activate": "activation_failed",
                 "commit": "installer_error",
                 "service": "service_install_failed",
+                "service_receipt": "installer_error",
+                "retain": "runtime_install_failed",
             }[name]
             raise InstallError(code, "manifest")
 
@@ -192,7 +204,14 @@ class _Operations:
 
     def lock(self, _layout: object) -> _Lock:
         """返回记录型 owner lock。"""
-        return _Lock(self.calls)
+        self.held_lock = _Lock(self.calls)
+        return self.held_lock
+
+    def recover(self, _layout: object, lock: _Lock) -> None:
+        """记录 lock-bound Runtime 与 downloads 恢复边界。"""
+        if lock is not self.held_lock:
+            raise AssertionError("recovery did not receive the acquired lock")
+        self.calls.append("recover")
 
     def previous_current(self, _layout: object) -> str:
         """返回事务开始前的 current。"""
@@ -235,10 +254,11 @@ class _Operations:
         """启动 fake service。"""
         self._call("service")
         self.service = "new"
+        self._call("service_receipt")
 
     def retain(self, _layout: object) -> None:
         """记录 Runtime retention。"""
-        self.calls.append("retain")
+        self._call("retain")
 
     def rollback(self, _layout: object, previous: str, _stage: str) -> None:
         """恢复 fake current/service。"""
@@ -339,6 +359,68 @@ class InstallerStateMachineTests(unittest.TestCase):
         self.assertEqual(result.platform, PlatformKey("linux", "x86_64"))
         self.assertEqual(operations.calls, ["preflight"])
 
+    def test_unsupported_actions_and_update_dry_run_fail_without_operations(self) -> None:
+        """Task11 不得让 uninstall 或假 update dry-run 进入任一副作用边界。"""
+        for action, dry_run, hop in (
+            ("uninstall", False, None),
+            ("uninstall", True, "1"),
+            ("update", True, None),
+            ("update", True, "1"),
+        ):
+            with self.subTest(action=action, dry_run=dry_run, hop=hop):
+                operations = _Operations()
+                environment = {} if hop is None else {"MINICLAW_INSTALLER_HOPS": hop}
+                with self.assertRaises(InstallError) as raised:
+                    Installer(
+                        self.bootstrap,
+                        operations=operations,
+                        environ=environment,
+                    ).run(replace(self.request, action=action, dry_run=dry_run))
+                self.assertEqual((raised.exception.code, raised.exception.detail), (
+                    "request_invalid",
+                    "action",
+                ))
+                self.assertEqual(operations.calls, [])
+
+    def test_update_target_hop_fails_after_preflight_before_pipeline(self) -> None:
+        """已跳转的 update target 只验证 bootstrap，不再 discovery 或安装。"""
+        operations = _Operations()
+        with self.assertRaisesRegex(InstallError, "request_invalid"):
+            Installer(
+                self.bootstrap,
+                operations=operations,
+                environ={"MINICLAW_INSTALLER_HOPS": "1"},
+            ).run(replace(self.request, action="update"))
+        self.assertEqual(operations.calls, ["preflight"])
+
+    def test_update_without_verified_handoff_never_runs_install_pipeline(self) -> None:
+        """第一跳 update 缺少 target handoff 时必须 fail closed。"""
+        operations = _Operations()
+        with self.assertRaisesRegex(InstallError, "request_invalid"):
+            Installer(self.bootstrap, operations=operations).run(
+                replace(self.request, action="update")
+            )
+        self.assertEqual(operations.calls, ["preflight", "select_target"])
+
+    def test_update_first_hop_execs_verified_target_once(self) -> None:
+        """第一跳 update 只能执行一次 target installer，不能进入 Task11 pipeline。"""
+        operations = _Operations()
+        handoff = (
+            "/managed/python",
+            ("/managed/python", "/bootstrap/target.pyz", "update"),
+            {"PATH": "/usr/bin:/bin", "MINICLAW_INSTALLER_HOPS": "1"},
+        )
+        operations.handoff = handoff
+        calls: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
+        with self.assertRaisesRegex(InstallError, "installer_error"):
+            Installer(
+                self.bootstrap,
+                operations=operations,
+                execve=lambda path, argv, env: calls.append((path, argv, env)),
+            ).run(replace(self.request, action="update"))
+        self.assertEqual(calls, [handoff])
+        self.assertEqual(operations.calls, ["preflight", "select_target"])
+
     def test_dependency_preparation_failure_never_creates_persistent_layout(self) -> None:
         """sandbox/live probe 失败必须发生在 layout、lock 与 current 读取之前。"""
         for stage, code in (
@@ -352,6 +434,17 @@ class InstallerStateMachineTests(unittest.TestCase):
                 self.assertEqual(raised.exception.code, code)
                 self.assertNotIn("layout", operations.calls)
                 self.assertNotIn("lock.enter", operations.calls)
+
+    def test_lock_bound_recovery_precedes_current_download_and_build(self) -> None:
+        """同版本重试恢复必须使用当前 with 返回的 actual lock。"""
+        operations = _Operations()
+        Installer(self.bootstrap, operations=operations).run(self.request)
+        self.assertLess(
+            operations.calls.index("recover"),
+            operations.calls.index("previous_current"),
+        )
+        self.assertLess(operations.calls.index("recover"), operations.calls.index("download"))
+        self.assertLess(operations.calls.index("recover"), operations.calls.index("venv"))
 
     def test_zero_channel_state_skips_gateway_service(self) -> None:
         """Doctor 判定无完整 Channel 时仍安装 TUI，但不创建 Gateway service。"""
@@ -386,6 +479,8 @@ class InstallerStateMachineTests(unittest.TestCase):
             "activate": "activation_failed",
             "commit": "installer_error",
             "service": "service_install_failed",
+            "service_receipt": "installer_error",
+            "retain": "runtime_install_failed",
         }
         for stage, code in expected.items():
             with self.subTest(stage=stage):
@@ -631,9 +726,18 @@ class DependencyActionTests(unittest.TestCase):
 
         runner = Runner()
         verifier = mock.Mock(side_effect=(None, (self.followup,), None, None))
-        with mock.patch(
-            "miniclaw.install.orchestrator.verify_privilege_action",
-            verifier,
+        account = pwd.struct_passwd(
+            ("alice", "x", 1001, 1001, "Alice", "/home/alice", "/bin/sh")
+        )
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator.verify_privilege_action",
+                verifier,
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator._invoking_account",
+                return_value=account,
+            ),
         ):
             executed = _execute_dependency_actions(
                 (self.first,),
@@ -647,8 +751,26 @@ class DependencyActionTests(unittest.TestCase):
         self.assertEqual(
             runner.calls,
             [
-                (self.first.argv, {"PATH": "/usr/local/bin:/usr/bin:/bin"}),
-                (self.followup.argv, {"PATH": "/usr/local/bin:/usr/bin:/bin"}),
+                (
+                    self.first.argv,
+                    {
+                        "HOME": "/home/alice",
+                        "LOGNAME": "alice",
+                        "PATH": "/usr/local/bin:/usr/bin:/bin",
+                        "USER": "alice",
+                        "XDG_RUNTIME_DIR": "/run/user/1001",
+                    },
+                ),
+                (
+                    self.followup.argv,
+                    {
+                        "HOME": "/home/alice",
+                        "LOGNAME": "alice",
+                        "PATH": "/usr/local/bin:/usr/bin:/bin",
+                        "USER": "alice",
+                        "XDG_RUNTIME_DIR": "/run/user/1001",
+                    },
+                ),
             ],
         )
         self.assertEqual(
@@ -689,6 +811,81 @@ class DependencyActionTests(unittest.TestCase):
                 Runner(),  # type: ignore[arg-type]
             )
         self.assertEqual(len(verifier.call_args_list), 1)
+
+    def test_setup_actions_use_validated_target_environment_and_one_timeout(self) -> None:
+        """direct/sudo setup 都不得继承 root HOME、Secret 或动态 PATH。"""
+        class Runner:
+            """记录每项 action 的 exact env 与 timeout。"""
+
+            def __init__(self) -> None:
+                """初始化有序调用记录。"""
+                self.calls: list[tuple[tuple[str, ...], dict[str, str], float]] = []
+
+            def run(
+                self,
+                argv: tuple[str, ...],
+                *,
+                env: dict[str, str],
+                timeout: float,
+            ) -> CommandResult:
+                """返回成功且不产生 raw output。"""
+                self.calls.append((argv, env, timeout))
+                return CommandResult(0, b"", b"")
+
+        tool = "/usr/bin/dockerd-rootless-setuptool.sh"
+        direct = PrivilegeAction(
+            category="system-package",
+            argv=(tool, "install"),
+            requires_sudo=False,
+            reason="configure rootless Docker for target user",
+        )
+        sudo = PrivilegeAction(
+            category="system-package",
+            argv=("/usr/bin/sudo", "-u", "alice", "--", tool, "install"),
+            requires_sudo=True,
+            reason="configure rootless Docker for target user",
+        )
+        account = pwd.struct_passwd(
+            ("alice", "x", 1001, 1001, "Alice", "/home/alice", "/bin/sh")
+        )
+        runner = Runner()
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator.verify_privilege_action",
+                return_value=None,
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator._invoking_account",
+                return_value=account,
+            ),
+            mock.patch.dict(
+                os.environ,
+                {"HOME": "/root", "SECRET_SENTINEL": "must-not-inherit"},
+                clear=True,
+            ),
+        ):
+            _execute_dependency_actions(
+                (direct, sudo),
+                self.platform,
+                replace(self.request, allow_system_packages=True),
+                mock.sentinel.manifest,  # type: ignore[arg-type]
+                Path("/bootstrap/sandbox-image.txt"),
+                runner,  # type: ignore[arg-type]
+            )
+        expected = {
+            "HOME": "/home/alice",
+            "LOGNAME": "alice",
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "USER": "alice",
+            "XDG_RUNTIME_DIR": "/run/user/1001",
+        }
+        self.assertEqual(
+            runner.calls,
+            [
+                (direct.argv, expected, 300.0),
+                (sudo.argv, expected, 300.0),
+            ],
+        )
 
 
 class DependencyPreparationTests(unittest.TestCase):
@@ -852,6 +1049,263 @@ class CommitRollbackTests(unittest.TestCase):
                     command_existed=True,
                 )
             self.assertEqual(launcher.read_bytes(), b"foreign")
+
+
+class RetryRecoveryTests(unittest.TestCase):
+    """覆盖 Task8 public Runtime recovery 与 Task11 downloads quarantine。"""
+
+    def setUp(self) -> None:
+        """创建当前 owner 的真实 user layout。"""
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.home = Path(self.temporary.name).resolve()
+        self.home.chmod(0o700)
+        self.layout = InstallLayout.user(self.home, version="0.7.0")
+        self.layout.runtimes_dir.mkdir(mode=0o700, parents=True)
+        self.layout.program_prefix.chmod(0o700)
+        self.operations = _SystemOperations(mock.sentinel.bootstrap)  # type: ignore[arg-type]
+
+    def _receipt(self, *, service: bool) -> InstallReceipt:
+        """返回可写入当前 layout 的 valid fresh/managed receipt。"""
+        return InstallReceipt(
+            schema_version=1,
+            version="0.7.0",
+            git_commit="a" * 40,
+            platform=PlatformKey("macos", "arm64"),
+            installed_at="2026-08-10T00:00:00Z",
+            managed_files=(("bin/miniclaw", "b" * 64),),
+            current_runtime="runtimes/0.7.0",
+            previous_runtime=None,
+            service_label="io.miniclaw.gateway" if service else None,
+            service_file="Library/LaunchAgents/io.miniclaw.gateway.plist" if service else None,
+            service_file_sha256="c" * 64 if service else None,
+        )
+
+    def test_recovery_calls_public_runtime_api_and_removes_exact_stale_downloads(self) -> None:
+        """lock 内恢复必须复用 Task8 public API 并清理 exact owner downloads。"""
+        stale = self.layout.runtimes_dir / ".0.7.0.downloads"
+        stale.mkdir(mode=0o700)
+        (stale / "partial").write_bytes(b"partial")
+        held_lock = mock.sentinel.held_lock
+        with mock.patch(
+            "miniclaw.install.orchestrator.discard_unactivated_runtime",
+            return_value=True,
+        ) as discard:
+            self.operations.recover(
+                self.layout,
+                held_lock,  # type: ignore[arg-type]
+            )
+        discard.assert_called_once_with(self.layout, held_lock)
+        self.assertFalse(stale.exists())
+
+    def test_recovery_never_follows_foreign_downloads_symlink(self) -> None:
+        """伪造 downloads symlink 必须保留其 target 并稳定失败。"""
+        external = self.home / "foreign"
+        external.mkdir(mode=0o700)
+        marker = external / "marker"
+        marker.write_bytes(b"foreign")
+        stale = self.layout.runtimes_dir / ".0.7.0.downloads"
+        stale.symlink_to(external, target_is_directory=True)
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator.discard_unactivated_runtime",
+                return_value=False,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self.operations.recover(
+                self.layout,
+                mock.sentinel.held_lock,  # type: ignore[arg-type]
+            )
+        self.assertTrue(stale.is_symlink())
+        self.assertEqual(marker.read_bytes(), b"foreign")
+
+    def test_cleanup_removes_only_the_recorded_downloads_inode(self) -> None:
+        """事务 cleanup 只能删除 download 时绑定的 exact inode。"""
+        downloads = self.layout.runtimes_dir / ".0.7.0.downloads"
+        downloads.mkdir(mode=0o700)
+        metadata = downloads.lstat()
+        self.operations._download_roots[self.layout.program_prefix] = (
+            downloads,
+            (metadata.st_dev, metadata.st_ino),
+        )
+        self.operations.cleanup(self.layout)
+        self.assertFalse(downloads.exists())
+
+    def test_cleanup_preserves_replaced_downloads_inode(self) -> None:
+        """同路径 foreign replacement 不得被事务 finally 当作 staging 删除。"""
+        downloads = self.layout.runtimes_dir / ".0.7.0.downloads"
+        downloads.mkdir(mode=0o700)
+        metadata = downloads.lstat()
+        downloads.rmdir()
+        downloads.mkdir(mode=0o700)
+        marker = downloads / "foreign"
+        marker.write_bytes(b"foreign")
+        self.operations._download_roots[self.layout.program_prefix] = (
+            downloads,
+            (metadata.st_dev, metadata.st_ino),
+        )
+        self.operations.cleanup(self.layout)
+        self.assertEqual(marker.read_bytes(), b"foreign")
+
+    def test_existing_managed_receipt_stops_fresh_install_before_recovery(self) -> None:
+        """Task11 fresh install 不得覆盖 Task13 才能迁移的 managed receipt。"""
+        receipt = self._receipt(service=True)
+        receipt.write(self.layout.receipt)
+        before = self.layout.receipt.read_bytes()
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator.discard_unactivated_runtime",
+            ) as discard,
+            self.assertRaisesRegex(InstallError, "request_invalid"),
+        ):
+            self.operations.recover(
+                self.layout,
+                mock.sentinel.held_lock,  # type: ignore[arg-type]
+            )
+        discard.assert_not_called()
+        self.assertEqual(self.layout.receipt.read_bytes(), before)
+
+    def test_commit_never_clears_existing_service_receipt(self) -> None:
+        """即使绕过 recovery，commit 也不能先清空已有 service metadata。"""
+        receipt = self._receipt(service=True)
+        receipt.write(self.layout.receipt)
+        before = self.layout.receipt.read_bytes()
+        with self.assertRaisesRegex(InstallError, "request_invalid"):
+            self.operations.commit(
+                mock.sentinel.plan,  # type: ignore[arg-type]
+                self.layout,
+                mock.sentinel.runtime,  # type: ignore[arg-type]
+            )
+        self.assertEqual(self.layout.receipt.read_bytes(), before)
+
+
+class ServiceTransactionTests(unittest.TestCase):
+    """覆盖 fresh service 与 receipt/retention 的原子回滚。"""
+
+    def setUp(self) -> None:
+        """创建 user layout、fresh receipt 与离线 service plan。"""
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.home = Path(self.temporary.name).resolve()
+        self.home.chmod(0o700)
+        self.layout = InstallLayout.user(self.home, version="0.7.0")
+        self.layout.runtimes_dir.mkdir(mode=0o700, parents=True)
+        self.layout.program_prefix.chmod(0o700)
+        InstallReceipt(
+            schema_version=1,
+            version="0.7.0",
+            git_commit="a" * 40,
+            platform=PlatformKey("linux", "x86_64"),
+            installed_at="2026-08-10T00:00:00Z",
+            managed_files=(("bin/miniclaw", "b" * 64),),
+            current_runtime="runtimes/0.7.0",
+            previous_runtime=None,
+            service_label=None,
+            service_file=None,
+            service_file_sha256=None,
+        ).write(self.layout.receipt)
+        self.operations = _SystemOperations(mock.sentinel.bootstrap)  # type: ignore[arg-type]
+        self.plan = SimpleNamespace(
+            service_manager="systemd-user",
+            request=SimpleNamespace(system_prefix=False),
+        )
+        self.account = pwd.struct_passwd(
+            ("alice", "x", os.geteuid(), os.getegid(), "Alice", str(self.home), "/bin/sh")
+        )
+        self.spec = SimpleNamespace(
+            label="miniclaw-gateway.service",
+            path=self.home / ".config/systemd/user/miniclaw-gateway.service",
+        )
+
+    def test_receipt_write_failure_uninstalls_new_service_with_exact_hash(self) -> None:
+        """service 成功后 receipt 失败必须立即调用 Task10 public uninstall。"""
+        digest = "d" * 64
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator._invoking_account",
+                return_value=self.account,
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator.render_service_spec",
+                return_value=self.spec,
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator.service_install",
+                return_value=digest,
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator.service_uninstall",
+            ) as uninstall,
+            mock.patch.object(
+                InstallReceipt,
+                "write",
+                side_effect=InstallError("installer_error", "manifest"),
+            ),
+            self.assertRaisesRegex(InstallError, "installer_error"),
+        ):
+            self.operations.install_service(
+                self.plan,  # type: ignore[arg-type]
+                self.layout,
+            )
+        uninstall.assert_called_once_with(
+            self.spec,
+            self.operations.runner,
+            expected_sha256=digest,
+        )
+
+    def test_invalid_service_destination_fails_before_install(self) -> None:
+        """目标用户或相对路径无法验证时不得先创建无 receipt 的 service。"""
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator.render_service_spec",
+                return_value=self.spec,
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator._invoking_account",
+                side_effect=InstallError("privilege_denied", "platform"),
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator.service_install",
+            ) as install,
+            self.assertRaisesRegex(InstallError, "privilege_denied"),
+        ):
+            self.operations.install_service(
+                self.plan,  # type: ignore[arg-type]
+                self.layout,
+            )
+        install.assert_not_called()
+
+    def test_retention_failure_rollback_uninstalls_service_before_metadata(self) -> None:
+        """retention crash 的 rollback 必须先撤销已落地 service。"""
+        digest = "e" * 64
+        self.operations._installed_services[self.layout.program_prefix] = (
+            ServicePlatform.SYSTEMD_USER,
+            digest,
+            False,
+        )
+        order: list[str] = []
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator.render_service_spec",
+                return_value=self.spec,
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator.service_uninstall",
+                side_effect=lambda *_args, **_kwargs: order.append("service"),
+            ) as uninstall,
+            mock.patch(
+                "miniclaw.install.orchestrator._restore_current",
+                side_effect=lambda *_args: order.append("metadata"),
+            ),
+        ):
+            self.operations.rollback(self.layout, None, "service")
+        uninstall.assert_called_once_with(
+            self.spec,
+            self.operations.runner,
+            expected_sha256=digest,
+        )
+        self.assertEqual(order, ["service", "metadata"])
 
 
 class BootstrapTrustTests(unittest.TestCase):
@@ -1210,7 +1664,14 @@ class SystemPrefixCommandTests(unittest.TestCase):
             )
         self.assertEqual((digest, label), ("a" * 64, "miniclaw.service"))
         self.assertEqual(relative, ".config/systemd/user/miniclaw.service")
-        for argv, environment in runner.calls:
+        base_environment = {
+            "HOME": "/home/alice",
+            "LOGNAME": "alice",
+            "PATH": "/usr/local/bin:/usr/bin:/bin",
+            "USER": "alice",
+            "XDG_RUNTIME_DIR": "/run/user/1001",
+        }
+        for index, (argv, environment) in enumerate(runner.calls):
             self.assertEqual(
                 argv[:8],
                 (
@@ -1224,8 +1685,228 @@ class SystemPrefixCommandTests(unittest.TestCase):
                     "PATH=/usr/local/bin:/usr/bin:/bin",
                 ),
             )
+            self.assertIn("USER=alice", argv)
+            self.assertIn("LOGNAME=alice", argv)
+            self.assertIn("XDG_RUNTIME_DIR=/run/user/1001", argv)
             self.assertIn(str(python), argv)
+            expected = dict(base_environment)
+            if index < 2:
+                expected.update(
+                    {
+                        "MINICLAW_ENV_FILE": "/home/alice/.miniclaw/secrets.env",
+                        "MINICLAW_HOME": "/home/alice/.miniclaw",
+                    }
+                )
+            self.assertEqual(environment, expected)
             self.assertNotIn("SECRET_SENTINEL", repr((argv, environment)))
+
+
+class InteractiveSetupRunnerTests(unittest.TestCase):
+    """覆盖 installer setup 的 controlling TTY 与 init stdin 隔离。"""
+
+    def _setup_case(
+        self,
+        *,
+        run_onboarding: bool,
+    ) -> tuple[_SystemOperations, SimpleNamespace, SimpleNamespace]:
+        """构造只运行 setup/init 选择逻辑的最小完整 case。"""
+        operations = _SystemOperations(mock.sentinel.bootstrap)  # type: ignore[arg-type]
+        operations.runner = mock.sentinel.closed_stdin_runner  # type: ignore[assignment]
+        operations.interactive_runner = mock.sentinel.tty_runner  # type: ignore[attr-defined]
+        layout = SimpleNamespace(
+            program_prefix=Path("/program"),
+            runtime=Path("/program/runtimes/0.7.0"),
+            state_home=Path("/state"),
+            secrets_file=Path("/state/secrets.env"),
+        )
+        operations._downloaded[layout.program_prefix] = SimpleNamespace(
+            root=Path("/scratch"),
+            sandbox_image="example/miniclaw@sha256:" + "a" * 64,
+        )
+        plan = SimpleNamespace(
+            request=SimpleNamespace(
+                config_file=None,
+                secrets_file=None,
+                system_prefix=False,
+            ),
+            run_onboarding=run_onboarding,
+        )
+        return operations, layout, plan
+
+    def test_real_interactive_setup_can_open_controlling_tty(self) -> None:
+        """交互 runner 不得创建新 session 或关闭 setup 的 stdin。"""
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary) / "state"
+            code = (
+                "import sys;from pathlib import Path;"
+                "from miniclaw.paths import build_state_paths;"
+                "from miniclaw.setup import run_interactive_setup;"
+                "run_interactive_setup(build_state_paths(Path(sys.argv[1])),"
+                "sandbox_image='ghcr.io/nedonion/miniclaw-sandbox@sha256:"
+                + "a" * 64
+                + "')"
+            )
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"This process .* forkpty\(\) may lead to deadlocks",
+                    category=DeprecationWarning,
+                )
+                pid, descriptor = pty.fork()
+            if pid == 0:
+                runner = install_orchestrator._InteractiveSubprocessRunner()
+                try:
+                    result = runner.run(
+                        (sys.executable, "-I", "-c", code, str(state)),
+                        env={"HOME": temporary, "PATH": "/usr/bin:/bin"},
+                        timeout=10.0,
+                    )
+                except BaseException as error:
+                    os.write(2, type(error).__name__.encode() + b"\n")
+                    os._exit(1)
+                if result.returncode != 0:
+                    os.write(2, result.stdout + result.stderr)
+                os._exit(0 if result.returncode == 0 else 1)
+            try:
+                exchanges = (
+                    (b"Enable Feishu?", b"n\n"),
+                    (b"Enable Telegram?", b"n\n"),
+                    (b"Enable Discord?", b"n\n"),
+                    (b"Model API key:", b"model-secret\n"),
+                )
+                next_exchange = 0
+                deadline = time.monotonic() + 15.0
+                status: int | None = None
+                transcript = bytearray()
+                while time.monotonic() < deadline:
+                    waited, candidate = os.waitpid(pid, os.WNOHANG)
+                    if waited == pid:
+                        status = candidate
+                        break
+                    ready, _, _ = select.select([descriptor], [], [], 0.05)
+                    if ready:
+                        try:
+                            transcript.extend(os.read(descriptor, 4096))
+                        except OSError:
+                            pass
+                        if (
+                            next_exchange < len(exchanges)
+                            and exchanges[next_exchange][0] in transcript
+                        ):
+                            os.write(descriptor, exchanges[next_exchange][1])
+                            next_exchange += 1
+                if status is None:
+                    os.kill(pid, 9)
+                    _, status = os.waitpid(pid, 0)
+                self.assertTrue(os.WIFEXITED(status))
+                self.assertEqual(
+                    os.WEXITSTATUS(status),
+                    0,
+                    transcript.decode("utf-8", errors="replace"),
+                )
+                self.assertTrue((state / "config.toml").is_file())
+                self.assertTrue((state / "secrets.env").is_file())
+            finally:
+                os.close(descriptor)
+
+    def test_noninteractive_init_keeps_closed_stdin_runner(self) -> None:
+        """init 不能误用继承 controlling TTY 的交互 runner。"""
+        operations, layout, plan = self._setup_case(run_onboarding=False)
+        with mock.patch("miniclaw.install.orchestrator._checked_owner_command") as checked:
+            operations.setup(
+                plan,  # type: ignore[arg-type]
+                layout,  # type: ignore[arg-type]
+                mock.sentinel.receipt,  # type: ignore[arg-type]
+            )
+        self.assertIs(checked.call_args.args[0], mock.sentinel.closed_stdin_runner)
+        self.assertIn("init", checked.call_args.args[1])
+
+    def test_interactive_setup_uses_controlling_tty_runner(self) -> None:
+        """setup 必须显式选择保留 controlling TTY 的 runner。"""
+        operations, layout, plan = self._setup_case(run_onboarding=True)
+        with mock.patch("miniclaw.install.orchestrator._checked_owner_command") as checked:
+            operations.setup(
+                plan,  # type: ignore[arg-type]
+                layout,  # type: ignore[arg-type]
+                mock.sentinel.receipt,  # type: ignore[arg-type]
+            )
+        self.assertIs(checked.call_args.args[0], mock.sentinel.tty_runner)
+        self.assertIn("setup", checked.call_args.args[1])
+
+    def test_runner_interrupt_kills_descendant_process_group(self) -> None:
+        """父进程异步中断也必须清理 setup process group 与 pipe。"""
+        class Stream:
+            """提供 selector 注册所需的最小 pipe 视图。"""
+
+            def __init__(self, descriptor: int) -> None:
+                """保存固定 descriptor 与关闭状态。"""
+                self.descriptor = descriptor
+                self.closed = False
+
+            def fileno(self) -> int:
+                """返回 fixed pipe descriptor。"""
+                return self.descriptor
+
+            def close(self) -> None:
+                """记录 pipe 已关闭。"""
+                self.closed = True
+
+        class Selector:
+            """在首次等待时注入异步中断。"""
+
+            def register(self, *_args: object) -> None:
+                """接受两个 pipe 的注册。"""
+
+            def get_map(self) -> dict[int, int]:
+                """保持循环进入 selector 等待。"""
+                return {1: 1}
+
+            def select(self, _timeout: float) -> list[object]:
+                """模拟调用方收到 KeyboardInterrupt。"""
+                raise KeyboardInterrupt
+
+            def close(self) -> None:
+                """关闭 fake selector。"""
+
+        stdout = Stream(10)
+        stderr = Stream(11)
+        process = SimpleNamespace(
+            pid=1234,
+            stdout=stdout,
+            stderr=stderr,
+            wait=mock.Mock(return_value=0),
+        )
+        with (
+            mock.patch("miniclaw.install.orchestrator.os.open", return_value=9),
+            mock.patch("miniclaw.install.orchestrator.os.close") as close,
+            mock.patch("miniclaw.install.orchestrator.os.tcgetpgrp", return_value=77),
+            mock.patch(
+                "miniclaw.install.orchestrator.os.set_blocking",
+                side_effect=KeyboardInterrupt,
+            ),
+            mock.patch("miniclaw.install.orchestrator.os.killpg") as killpg,
+            mock.patch(
+                "miniclaw.install.orchestrator.subprocess.Popen",
+                return_value=process,
+            ),
+            mock.patch(
+                "miniclaw.install.orchestrator.selectors.DefaultSelector",
+                return_value=Selector(),
+            ),
+            mock.patch("miniclaw.install.orchestrator._set_foreground_process_group") as fg,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            install_orchestrator._InteractiveSubprocessRunner().run(
+                ("/runtime/bin/miniclaw", "setup"),
+                env={"HOME": "/home/alice", "PATH": "/usr/bin:/bin"},
+                timeout=10.0,
+            )
+        killpg.assert_called_once_with(1234, 9)
+        process.wait.assert_called_once_with()
+        self.assertTrue(stdout.closed)
+        self.assertTrue(stderr.closed)
+        self.assertEqual(fg.call_args_list, [mock.call(9, 1234), mock.call(9, 77)])
+        close.assert_called_once_with(9)
 
 
 class _SchemaRunner:
@@ -1245,6 +1926,29 @@ class _SchemaRunner:
         except ConfigError:
             return CommandResult(1, b"", b"")
         return CommandResult(0, b"", b"")
+
+
+class _OwnerHelperRunner:
+    """以当前测试用户真实执行 system-prefix staged helper body。"""
+
+    def run(
+        self,
+        argv: tuple[str, ...],
+        *,
+        env: dict[str, str],
+        timeout: float,
+    ) -> CommandResult:
+        """跳过 sudo/env wrapper，只执行同一 Python -I helper argv。"""
+        isolated = argv.index("-I")
+        completed = subprocess.run(
+            argv[isolated - 1 :],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            env=env,
+            timeout=timeout,
+            check=False,
+        )
+        return CommandResult(completed.returncode, completed.stdout, completed.stderr)
 
 
 class ImportSafetyTests(unittest.TestCase):
@@ -1369,6 +2073,83 @@ class ImportSafetyTests(unittest.TestCase):
         self.assertEqual((self.state / "secrets.env").stat().st_mode & 0o777, 0o600)
         self.assertNotIn("SECRET_SENTINEL", stdout.getvalue() + stderr.getvalue())
 
+    def test_system_prefix_secret_helper_rejects_duplicate_and_quoted_values(self) -> None:
+        """target-user helper 必须复用 normal strict dotenv schema 后才可落盘。"""
+        source = self.root / "system.env"
+        account = pwd.struct_passwd(
+            (
+                "alice",
+                "x",
+                os.geteuid(),
+                os.getegid(),
+                "Alice",
+                str(self.root),
+                "/bin/sh",
+            )
+        )
+        for index, payload in enumerate(
+            (
+                "MINICLAW_MODEL_API_KEY=first\nMINICLAW_MODEL_API_KEY=second\n",
+                'MINICLAW_MODEL_API_KEY="quoted-secret"\n',
+            )
+        ):
+            with self.subTest(index=index):
+                source.write_text(payload, encoding="utf-8")
+                source.chmod(0o600)
+                state = self.root / f"system-state-{index}"
+                layout = SimpleNamespace(
+                    state_home=state,
+                    secrets_file=state / "secrets.env",
+                )
+                with (
+                    mock.patch(
+                        "miniclaw.install.orchestrator._invoking_account",
+                        return_value=account,
+                    ),
+                    self.assertRaisesRegex(InstallError, "doctor_blocked"),
+                ):
+                    _import_secrets(
+                        source,
+                        layout,  # type: ignore[arg-type]
+                        Path(sys.executable),
+                        _OwnerHelperRunner(),  # type: ignore[arg-type]
+                        system_prefix=True,
+                    )
+                self.assertFalse(layout.secrets_file.exists())
+
+    def test_system_prefix_config_helper_rejects_credentials_before_copy(self) -> None:
+        """target-user config helper 必须在 credential-bearing schema 落盘前失败。"""
+        source = self.root / "system.toml"
+        source.write_text('[provider]\napi_key="SECRET_SENTINEL"\n', encoding="utf-8")
+        source.chmod(0o600)
+        account = pwd.struct_passwd(
+            (
+                "alice",
+                "x",
+                os.geteuid(),
+                os.getegid(),
+                "Alice",
+                str(self.root),
+                "/bin/sh",
+            )
+        )
+        with (
+            mock.patch(
+                "miniclaw.install.orchestrator._invoking_account",
+                return_value=account,
+            ),
+            self.assertRaisesRegex(InstallError, "doctor_blocked"),
+        ):
+            _validate_and_import_config(
+                source,
+                self.layout,  # type: ignore[arg-type]
+                Path(sys.executable),
+                self.scratch,
+                _OwnerHelperRunner(),  # type: ignore[arg-type]
+                True,
+            )
+        self.assertFalse((self.state / "config.toml").exists())
+
 
 class ServiceReadinessTests(unittest.TestCase):
     """覆盖 enabled Channel 与 owner-only Secret names 的完整性门禁。"""
@@ -1455,7 +2236,16 @@ class ServiceReadinessTests(unittest.TestCase):
             argv[:7],
             ("/usr/bin/sudo", "-u", "alice", "--", "/usr/bin/env", "-i", "HOME=/home/alice"),
         )
-        self.assertEqual(environment, {"PATH": "/usr/local/bin:/usr/bin:/bin"})
+        self.assertEqual(
+            environment,
+            {
+                "HOME": "/home/alice",
+                "LOGNAME": "alice",
+                "PATH": "/usr/local/bin:/usr/bin:/bin",
+                "USER": "alice",
+                "XDG_RUNTIME_DIR": "/run/user/1001",
+            },
+        )
 
     def test_system_prefix_config_import_does_not_read_source_as_root(self) -> None:
         """system-prefix config source 只能由 target-user helper 打开。"""

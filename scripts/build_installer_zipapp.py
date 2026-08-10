@@ -15,6 +15,8 @@ from pathlib import Path
 _TIMESTAMP = 315_532_800
 _ZIP_TIME = (1980, 1, 1, 0, 0, 0)
 _SHEBANG = b"#!/usr/bin/env python3\n"
+_DYNAMIC_BUILTINS = {"__import__", "compile", "eval", "exec"}
+_DYNAMIC_NAMES = _DYNAMIC_BUILTINS | {"import_module"}
 
 
 def validate_imports(source: Path) -> None:
@@ -34,6 +36,7 @@ def validate_imports(source: Path) -> None:
         raise ValueError("installer source contains unsafe Python files")
     for path in files:
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        _require_safe_syntax(tree, path)
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -46,6 +49,64 @@ def validate_imports(source: Path) -> None:
                 if node.module is None:
                     raise ValueError(f"unsafe import in {path.name}")
                 _require_import(node.module, allowed, path)
+
+
+def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
+    """拒绝绕过 static import allowlist 的动态加载与 code execution。
+
+    Args:
+        tree: 一个 install module 的完整 Python AST。
+        path: 仅用于安全错误定位的源文件路径。
+
+    Raises:
+        ValueError: 发现 dynamic import、eval/exec/compile 或简单 alias 绕过。
+    """
+    builtins_aliases = {"builtins", "__builtins__"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            builtins_aliases.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name == "builtins"
+            )
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Assign) or not isinstance(node.value, ast.Name):
+                continue
+            if node.value.id not in builtins_aliases:
+                continue
+            for target in node.targets:
+                if isinstance(target, ast.Name) and target.id not in builtins_aliases:
+                    builtins_aliases.add(target.id)
+                    changed = True
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in _DYNAMIC_BUILTINS:
+            raise ValueError(f"unsafe dynamic {node.id} in {path.name}")
+        if isinstance(node, ast.Constant) and node.value in _DYNAMIC_NAMES:
+            raise ValueError(f"unsafe dynamic {node.value} in {path.name}")
+        if isinstance(node, ast.Attribute) and (
+            node.attr == "import_module"
+            or node.attr in _DYNAMIC_BUILTINS
+            and _attribute_root(node) in builtins_aliases
+        ):
+            raise ValueError(f"unsafe dynamic {node.attr} in {path.name}")
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module in {"builtins", "importlib"}
+            and any(alias.name in _DYNAMIC_NAMES for alias in node.names)
+        ):
+            name = next(alias.name for alias in node.names if alias.name in _DYNAMIC_NAMES)
+            raise ValueError(f"unsafe dynamic {name} in {path.name}")
+
+
+def _attribute_root(node: ast.Attribute) -> str | None:
+    """返回 attribute chain 的 root Name，其他动态表达式返回空。"""
+    value: ast.expr = node.value
+    while isinstance(value, ast.Attribute):
+        value = value.value
+    return value.id if isinstance(value, ast.Name) else None
 
 
 def build_zipapp(source: Path, output: Path) -> Path:
