@@ -141,7 +141,42 @@ message with 'tool_calls'","type":"invalid_request_error"}}
 - 既有用例 `test_context_keeps_unrelated_tool_result_when_a_later_batch_is_orphaned`
   （上一次事故的回归）必须继续通过。
 
-## 6. 遗留项（本次未修）
+## 6. 后续：`command_forbidden` 拒绝信息不可操作，导致 `loop_no_progress`
+
+修复上线并把 `tools.mode` 改成 `yolo` 后，session 20 的 turn 295 出现新症状：Owner 只发了
+"你现在在吗"，Agent 却连跑 11 步、最后以 `loop_no_progress` 停止。
+
+### 6.1 这不是改名或本次修复引入的
+
+- `~/.miniclaw/config.toml` 与 `~/.lobster0/config.toml` 逐行 diff，只差环境变量名、workspace
+  路径和 `tools.mode`；`[permissions]`、`[tools]` 完全一致，**没有配置在迁移中丢失**。
+- `command_forbidden` 最早出现在 `2026-08-07T21:47:01Z`，改名前 3 天就有，旧库累计 45 次。
+
+### 6.2 真实原因
+
+Claw Trail 里 3 个 ✕ 全部是 `policy/command.py` 的**硬禁止**，在 `normalize_command()` 阶段
+就 DENY，早于任何权限模式判断，`yolo` 也绕不过：
+
+- `env` 命中 `_FORBIDDEN_PROGRAMS`；
+- `python -m …` / `python -c …` 命中 `_is_inline_evaluation`（成功的两步是
+  `python tests/test_x.py`，直接执行脚本文件，不带开关）。
+
+这两条规则本身是对的。问题在于回给模型的 `ToolResult.failure(code, decision.reason)` 里，
+`reason` 只有 `"program is not allowed"` / `"inline code execution is not allowed"`——
+**没有指出是哪个开关触发的，也没有给替代做法**。模型换个写法再试，再撞同一面墙，连续 3 轮
+无新成功结果后被 `max_no_progress_iterations` 保护性中断。
+
+### 6.3 修复
+
+把三处 `CommandPolicyError` 的 message 改成"诊断 + 可执行的替代方案"，稳定 `error_code`
+不变（渠道文案和审计仍按 `command_forbidden` 归类）：
+
+- 硬禁止程序按类别给替代路径（shell/包装器 → 直接调目标程序；网络下载 → 用 `http_get`；
+  文件破坏 → 用 `edit_file`/`write_file`；包管理 → 明确不可用）；
+- inline 执行指出命中的具体开关，并要求改为执行脚本文件；
+- 被禁 git 子命令指出是哪个子命令。
+
+## 7. 遗留项（本次未修）
 
 1. **审批频率**：`~/.miniclaw/config.toml` 里 `tools.mode = "safe"`，`edit_file` /
    `write_file` / `propose_memory` 这些 MEDIUM Tool 每次调用都要一张卡，`run_command`

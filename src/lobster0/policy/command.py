@@ -64,6 +64,54 @@ _FORBIDDEN_PROGRAMS = frozenset(
         "tee",
     }
 )
+_FORBIDDEN_REMEDIES: tuple[tuple[frozenset[str], str], ...] = (
+    (
+        frozenset({"bash", "sh", "zsh", "dash", "ksh", "csh", "fish", "cmd", "powershell", "pwsh"}),
+        "call the target program directly with exact argv; there is no shell to interpret pipes, "
+        "redirection or globs",
+    ),
+    (
+        frozenset({"env", "xargs", "sudo", "su", "doas"}),
+        "call the target program directly instead of wrapping it",
+    ),
+    (
+        frozenset({"curl", "wget", "ssh", "scp", "sftp", "rsync", "nc", "ncat", "telnet", "ftp"}),
+        "use the http_get tool for HTTPS reads; outbound transfers are not available",
+    ),
+    (
+        frozenset({"rm", "rmdir", "unlink", "shred", "mv", "cp", "truncate", "dd", "tee"}),
+        "use write_file or edit_file to change workspace files",
+    ),
+    (
+        frozenset(
+            {
+                "pip",
+                "pip3",
+                "npm",
+                "yarn",
+                "pnpm",
+                "brew",
+                "apt",
+                "apt-get",
+                "yum",
+                "dnf",
+                "pacman",
+                "gem",
+            }
+        ),
+        "installing packages is not available; work with what the environment already provides",
+    ),
+    (
+        frozenset({"docker", "podman", "nerdctl", "systemctl", "service", "launchctl"}),
+        "managing containers or system services is not available",
+    ),
+)
+_INLINE_SWITCHES: tuple[tuple[tuple[str, ...], frozenset[str], bool], ...] = (
+    (("python", "pypy"), frozenset({"-c", "-m"}), True),
+    (("node", "deno", "bun"), frozenset({"-e", "--eval", "-p", "--print"}), False),
+    (("ruby", "perl"), frozenset({"-e"}), False),
+    (("php",), frozenset({"-r"}), False),
+)
 
 
 class CommandPolicyError(ValueError):
@@ -124,12 +172,32 @@ def normalize_command(
 
     name = Path(resolved_program).name.casefold()
     if name in _FORBIDDEN_PROGRAMS or name.startswith("pip3."):
-        raise CommandPolicyError("command_forbidden", "program is not allowed")
-    if _is_inline_evaluation(name, args):
-        raise CommandPolicyError("command_forbidden", "inline code execution is not allowed")
-    if name == "git" and _is_forbidden_git(args):
-        raise CommandPolicyError("command_forbidden", "git operation is not allowed")
+        raise CommandPolicyError(
+            "command_forbidden",
+            f"'{name}' is permanently blocked and cannot be approved; {_forbidden_remedy(name)}",
+        )
+    switch = _inline_evaluation_switch(name, args)
+    if switch is not None:
+        raise CommandPolicyError(
+            "command_forbidden",
+            f"'{name} {switch}' runs inline code and is permanently blocked; drop {switch} and "
+            "execute a script file instead, writing it with write_file first if needed",
+        )
+    if name == "git" and (subcommand := _forbidden_git_subcommand(args)) is not None:
+        raise CommandPolicyError(
+            "command_forbidden",
+            f"'git {subcommand}' is permanently blocked and cannot be approved; read-only git "
+            "commands such as status, diff and log are available",
+        )
     return NormalizedCommand(resolved_program, args)
+
+
+def _forbidden_remedy(name: str) -> str:
+    """为硬禁止程序返回一句可执行的替代做法。"""
+    for names, remedy in _FORBIDDEN_REMEDIES:
+        if name in names:
+            return remedy
+    return "there is no approved way to run it"
 
 
 def _has_control(value: str) -> bool:
@@ -137,21 +205,20 @@ def _has_control(value: str) -> bool:
     return any(ord(character) < 32 or ord(character) == 127 for character in value)
 
 
-def _is_inline_evaluation(name: str, args: tuple[str, ...]) -> bool:
-    """拒绝常见解释器的字符串或模块执行开关。"""
-    if name.startswith(("python", "pypy")):
-        return any(argument in {"-c", "-m"} for argument in args)
-    if name in {"node", "deno", "bun"}:
-        return any(argument in {"-e", "--eval", "-p", "--print"} for argument in args)
-    if name in {"ruby", "perl"}:
-        return "-e" in args
-    return name == "php" and "-r" in args
+def _inline_evaluation_switch(name: str, args: tuple[str, ...]) -> str | None:
+    """返回命中的解释器内联执行开关，便于把具体原因回给模型。"""
+    for names, switches, by_prefix in _INLINE_SWITCHES:
+        if not (name.startswith(names) if by_prefix else name in names):
+            continue
+        for argument in args:
+            if argument in switches:
+                return argument
+    return None
 
 
-def _is_forbidden_git(args: tuple[str, ...]) -> bool:
-    """拒绝上传和直接破坏工作树的 Git 子命令。"""
-    return (
-        any(argument in {"push", "clean", "config", "credential"} for argument in args)
-        or "reset" in args
-        and "--hard" in args
-    )
+def _forbidden_git_subcommand(args: tuple[str, ...]) -> str | None:
+    """返回命中的被禁 Git 子命令，用于给出可读的拒绝原因。"""
+    for argument in args:
+        if argument in {"push", "clean", "config", "credential"}:
+            return argument
+    return "reset --hard" if "reset" in args and "--hard" in args else None

@@ -68,6 +68,32 @@ class CommandPolicyTest(unittest.TestCase):
             ):
                 normalize_command(program, args, self.workspace)
 
+    def test_hard_denial_names_the_trigger_and_offers_a_way_forward(self) -> None:
+        """硬拒绝必须说清命中了什么并给出替代做法，否则模型只会重试到 loop_no_progress。
+
+        真实事故：Agent 反复重试 ``python -m`` 与 ``env``，每次只收到 "inline code execution
+        is not allowed"，无法自我纠正，最终被 no-progress 保护中断，详见
+        docs/engineering/phase-4/20260811_approval-continuation-context-window-400-incident.md。
+        """
+        cases = (
+            (sys.executable, ("-m", "pytest"), "-m", "script file"),
+            (sys.executable, ("-c", "print(1)"), "-c", "script file"),
+            ("env", ("X=1", "ls"), "env", "directly"),
+            ("bash", ("-lc", "id"), "bash", "exact argv"),
+            ("rm", ("target",), "rm", "edit_file"),
+            ("curl", ("https://example.com",), "curl", "http_get"),
+            ("git", ("push",), "git push", "status"),
+            ("git", ("reset", "--hard"), "git reset --hard", "status"),
+        )
+        for program, args, trigger, remedy in cases:
+            with self.subTest(program=program, args=args):
+                with self.assertRaises(CommandPolicyError) as error:
+                    normalize_command(program, args, self.workspace)
+                message = str(error.exception)
+                self.assertEqual(error.exception.code, "command_forbidden")
+                self.assertIn(trigger, message)
+                self.assertIn(remedy, message)
+
     def test_exact_argv_preserves_boundaries_and_does_not_match_extra_args(self) -> None:
         """参数边界、空参数和重复参数必须原样保留。"""
         allowed = normalize_command(sys.executable, ("script.py", "", "x", "x"), self.workspace)
