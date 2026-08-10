@@ -1,0 +1,886 @@
+name: release
+
+# 受保护 v* tag 是唯一的发布入口。装配顺序被 tests/test_install_matrix_contract.py 钉死：
+#   Python/Node/TUI/images/pyz -> build_sbom.py -> build_release_manifest.py manifest
+#   -> render_install_script.py -> build_release_manifest.py checksums
+#   -> verify_release_artifacts.py -> attest -> draft Release -> Tier 1 gates -> publish
+#
+# 跨 job 的 artifact 交接一律经由「同一个 draft Release + SHA-256 复核」完成，
+# 不引入任何计划之外未审阅的 Action。draft Release 对匿名访问不可见，
+# 也不会成为 latest；只有 publish 作业在全部门禁通过后才把它翻成 stable。
+#
+# 【必须强制】发布期三条义务（来自 Task 16 复核实测）：
+#   1. deploy/Dockerfile 构建必须传 --build-arg LOBSTER0_REQUIRE_NATIVE_BUNDLES=1，
+#      否则缺失原生 Node/TUI 包只会被静默跳过。
+#   2. deploy/Dockerfile 构建必须传非空 --build-arg LOBSTER0_WHEEL_SHA256，
+#      为空时 Dockerfile 走的是「跳过校验」分支。
+#   3. wheel 必须先于镜像构建：images 作业 needs python-build，并按该作业输出的
+#      摘要重新校验取回的 wheel，杜绝用陈旧 wheel 静默打包旧代码。
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  RUNTIME_IMAGE: ghcr.io/nedonion/lobster0
+  SANDBOX_IMAGE: ghcr.io/nedonion/lobster0-sandbox
+
+jobs:
+  guard:
+    name: tag and version guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.facts.outputs.version }}
+      tag: ${{ steps.facts.outputs.tag }}
+      commit: ${{ steps.facts.outputs.commit }}
+      source_date_epoch: ${{ steps.facts.outputs.source_date_epoch }}
+      wheel: ${{ steps.facts.outputs.wheel }}
+      sdist: ${{ steps.facts.outputs.sdist }}
+    steps:
+      - name: Check out the tagged commit with full history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bind the tag, the version constant and the commit into one fact
+        id: facts
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          constant="$(python3 -c "import re,pathlib;print(re.search(r'__version__:\s*str\s*=\s*\"([^\"]+)\"',pathlib.Path('src/lobster0/_version.py').read_text(encoding='utf-8')).group(1))")"
+          test "${version}" = "${constant}"
+          printf '%s' "${version}" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          test -z "$(git status --porcelain)"
+          test "$(git rev-parse --verify "${tag}^{commit}")" = "$(git rev-parse HEAD)"
+          commit="$(git rev-parse HEAD)"
+          epoch="$(git show -s --format=%ct "${tag}^{commit}")"
+          echo "SOURCE_DATE_EPOCH=${epoch}" >> "${GITHUB_ENV}"
+          {
+            echo "version=${version}"
+            echo "tag=${tag}"
+            echo "commit=${commit}"
+            echo "source_date_epoch=${epoch}"
+            echo "wheel=lobster0_agent-${version}-py3-none-any.whl"
+            echo "sdist=lobster0_agent-${version}.tar.gz"
+          } >> "${GITHUB_OUTPUT}"
+
+  offline-gate:
+    name: offline gate on the tagged commit
+    needs: [guard]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Install the pinned uv
+        run: |
+          set -euo pipefail
+          pin="$(python3 -c "import json;a=json.load(open('release/runtime-versions.json'))['uv']['archives']['linux-x86_64'];print(a['url'],a['sha256'])")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "${RUNNER_TEMP}/uv.tar.gz" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/uv.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/uv"
+          tar -xzf "${RUNNER_TEMP}/uv.tar.gz" -C "${RUNNER_TEMP}/uv" --strip-components=1
+          echo "${RUNNER_TEMP}/uv" >> "${GITHUB_PATH}"
+      - name: Rerun the complete offline gate
+        run: |
+          set -euo pipefail
+          uv sync --locked --extra dev --extra all
+          uv run python -m unittest discover -s tests -q
+          uv run --with ruff ruff check .
+          uv run python scripts/validate_docs.py
+          uv run python tests/install_matrix/run_install_matrix.py --local-offline
+
+  draft-release:
+    name: create the immutable draft release shell
+    needs: [guard, offline-gate]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Create the draft release that carries every candidate artifact
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            state="$(gh release view "${TAG}" --json isDraft --jq '.isDraft')"
+            test "${state}" = "true"
+          else
+            gh release create "${TAG}" \
+              --draft \
+              --title "Lobster0 ${TAG}" \
+              --notes "Release candidate for ${TAG}. Not promoted until every Tier 1 gate passes."
+          fi
+
+  python-build:
+    name: build the Python distributions
+    needs: [guard, offline-gate, draft-release]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    outputs:
+      wheel_sha256: ${{ steps.dist.outputs.wheel_sha256 }}
+      sdist_sha256: ${{ steps.dist.outputs.sdist_sha256 }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+      WHEEL: ${{ needs.guard.outputs.wheel }}
+      SDIST: ${{ needs.guard.outputs.sdist }}
+      SOURCE_DATE_EPOCH: ${{ needs.guard.outputs.source_date_epoch }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Install the pinned uv
+        run: |
+          set -euo pipefail
+          pin="$(python3 -c "import json;a=json.load(open('release/runtime-versions.json'))['uv']['archives']['linux-x86_64'];print(a['url'],a['sha256'])")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "${RUNNER_TEMP}/uv.tar.gz" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/uv.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/uv"
+          tar -xzf "${RUNNER_TEMP}/uv.tar.gz" -C "${RUNNER_TEMP}/uv" --strip-components=1
+          echo "${RUNNER_TEMP}/uv" >> "${GITHUB_PATH}"
+      - name: Build the wheel and sdist from the tagged tree
+        id: dist
+        run: |
+          set -euo pipefail
+          uv build --out-dir dist
+          test -f "dist/${WHEEL}"
+          test -f "dist/${SDIST}"
+          wheel_sha256="$(sha256sum "dist/${WHEEL}" | cut -d' ' -f1)"
+          sdist_sha256="$(sha256sum "dist/${SDIST}" | cut -d' ' -f1)"
+          {
+            echo "wheel_sha256=${wheel_sha256}"
+            echo "sdist_sha256=${sdist_sha256}"
+          } >> "${GITHUB_OUTPUT}"
+          gh release upload "${TAG}" "dist/${WHEEL}" "dist/${SDIST}" --clobber
+
+  node-bundles:
+    name: managed Node bundle
+    needs: [guard, draft-release]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos-x86_64
+            runner: macos-13
+          - platform: macos-arm64
+            runner: macos-14
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Fetch and verify the pinned upstream Node archive
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/pins"
+          pin="$(python3 -c "import json,os;a=json.load(open('release/runtime-versions.json'))['node']['archives'][os.environ['PLATFORM']];print(a['url'],a['sha256'])")"
+          name="$(basename "${pin%% *}")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+            -o "${RUNNER_TEMP}/pins/${name}" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/pins/${name}" | shasum -a 256 -c -
+          echo "NODE_ARCHIVE=${RUNNER_TEMP}/pins/${name}" >> "${GITHUB_ENV}"
+      - name: Build the deterministic managed Node bundle
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/bundles"
+          python3 scripts/build_node_bundle.py \
+            --archive "${NODE_ARCHIVE}" \
+            --platform "${PLATFORM}" \
+            --output-dir "${RUNNER_TEMP}/bundles"
+      - name: Hand the bundle over through the draft release with its digest
+        run: |
+          set -euo pipefail
+          bundle="$(ls "${RUNNER_TEMP}/bundles"/lobster0-node-*.tar.gz)"
+          shasum -a 256 "${bundle}" | cut -d' ' -f1 > "${bundle}.sha256"
+          gh release upload "${TAG}" "${bundle}" "${bundle}.sha256" --clobber
+
+  tui-bundles:
+    name: platform pi-tui bundle
+    needs: [guard, draft-release, node-bundles]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux-x86_64
+            runner: ubuntu-24.04
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+          - platform: macos-x86_64
+            runner: macos-13
+          - platform: macos-arm64
+            runner: macos-14
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+      VERSION: ${{ needs.guard.outputs.version }}
+      PLATFORM: ${{ matrix.platform }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Install the default managed Node for this platform
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/pins" "${RUNNER_TEMP}/node"
+          pin="$(python3 -c "import json,os;a=json.load(open('release/runtime-versions.json'))['node']['archives'][os.environ['PLATFORM']];print(a['url'],a['sha256'])")"
+          name="$(basename "${pin%% *}")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+            -o "${RUNNER_TEMP}/pins/${name}" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/pins/${name}" | shasum -a 256 -c -
+          tar -xzf "${RUNNER_TEMP}/pins/${name}" -C "${RUNNER_TEMP}/node" --strip-components=1
+          echo "${RUNNER_TEMP}/node/bin" >> "${GITHUB_PATH}"
+      - name: Build the deterministic pi-tui bundle
+        run: |
+          set -euo pipefail
+          node --version | grep -F 'v24.18.0'
+          corepack enable
+          mkdir -p "${RUNNER_TEMP}/bundles"
+          python3 scripts/build_tui_bundle.py \
+            --platform "${PLATFORM}" \
+            --version "${VERSION}" \
+            --node "${RUNNER_TEMP}/node/bin/node" \
+            --output-dir "${RUNNER_TEMP}/bundles"
+      - name: Hand the bundle over through the draft release with its digest
+        run: |
+          set -euo pipefail
+          bundle="$(ls "${RUNNER_TEMP}/bundles"/lobster0-tui-*.tar.gz)"
+          shasum -a 256 "${bundle}" | cut -d' ' -f1 > "${bundle}.sha256"
+          gh release upload "${TAG}" "${bundle}" "${bundle}.sha256" --clobber
+
+  images:
+    name: non-root container images
+    needs: [guard, python-build, node-bundles, tui-bundles]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      packages: write
+    outputs:
+      runtime_digest: ${{ steps.build.outputs.runtime_digest }}
+      sandbox_digest: ${{ steps.build.outputs.sandbox_digest }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+      VERSION: ${{ needs.guard.outputs.version }}
+      WHEEL: ${{ needs.guard.outputs.wheel }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Take back the freshly built wheel and pin it to the build job digest
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "${TAG}" --pattern "${WHEEL}" --dir dist --clobber
+          printf '%s  %s\n' \
+            "${{ needs.python-build.outputs.wheel_sha256 }}" "dist/${WHEEL}" | sha256sum -c -
+      - name: Take back the linux native bundles for this image
+        run: |
+          set -euo pipefail
+          mkdir -p deploy/artifacts
+          for name in \
+            "lobster0-node-24.18.0-linux-x86_64.tar.gz" \
+            "lobster0-tui-${VERSION}-linux-x86_64.tar.gz"; do
+            gh release download "${TAG}" --pattern "${name}" --dir deploy/artifacts --clobber
+            gh release download "${TAG}" --pattern "${name}.sha256" \
+              --dir "${RUNNER_TEMP}" --clobber
+            printf '%s  %s\n' "$(cat "${RUNNER_TEMP}/${name}.sha256")" \
+              "deploy/artifacts/${name}" | sha256sum -c -
+          done
+      - name: Authenticate to the registry with the short-lived workflow token
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' \
+            | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+      - name: Build and push both images by digest only
+        id: build
+        run: |
+          set -euo pipefail
+          docker buildx create --name lobster0-release --driver docker-container --use
+          docker buildx build \
+            --file deploy/Dockerfile \
+            --build-arg LOBSTER0_REQUIRE_NATIVE_BUNDLES=1 \
+            --build-arg LOBSTER0_WHEEL_SHA256=${{ needs.python-build.outputs.wheel_sha256 }} \
+            --build-arg LOBSTER0_TUI_BUNDLE="lobster0-tui-${VERSION}-linux-x86_64.tar.gz" \
+            --build-arg LOBSTER0_NODE_BUNDLE="lobster0-node-24.18.0-linux-x86_64.tar.gz" \
+            --provenance false \
+            --metadata-file "${RUNNER_TEMP}/runtime-metadata.json" \
+            --output "type=image,name=${RUNTIME_IMAGE},push-by-digest=true,name-canonical=true,push=true" \
+            .
+          docker buildx build \
+            --file deploy/sandbox.Dockerfile \
+            --provenance false \
+            --metadata-file "${RUNNER_TEMP}/sandbox-metadata.json" \
+            --output "type=image,name=${SANDBOX_IMAGE},push-by-digest=true,name-canonical=true,push=true" \
+            .
+          runtime_digest="$(python3 -c "import json,os;print(json.load(open(os.environ['RUNNER_TEMP']+'/runtime-metadata.json'))['containerimage.digest'])")"
+          sandbox_digest="$(python3 -c "import json,os;print(json.load(open(os.environ['RUNNER_TEMP']+'/sandbox-metadata.json'))['containerimage.digest'])")"
+          {
+            echo "runtime_digest=${runtime_digest}"
+            echo "sandbox_digest=${sandbox_digest}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Hand the image digests over through the draft release
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/digests"
+          printf '%s@%s' "${RUNTIME_IMAGE}" "${{ steps.build.outputs.runtime_digest }}" \
+            > "${RUNNER_TEMP}/digests/lobster0-runtime-image-${VERSION}.txt"
+          printf '%s@%s' "${SANDBOX_IMAGE}" "${{ steps.build.outputs.sandbox_digest }}" \
+            > "${RUNNER_TEMP}/digests/lobster0-sandbox-image-${VERSION}.txt"
+          gh release upload "${TAG}" \
+            "${RUNNER_TEMP}/digests/lobster0-runtime-image-${VERSION}.txt" \
+            "${RUNNER_TEMP}/digests/lobster0-sandbox-image-${VERSION}.txt" --clobber
+
+  assemble:
+    name: assemble and independently verify the release
+    needs: [guard, python-build, node-bundles, tui-bundles, images]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    outputs:
+      manifest_sha256: ${{ steps.verify.outputs.manifest_sha256 }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+      VERSION: ${{ needs.guard.outputs.version }}
+      WHEEL: ${{ needs.guard.outputs.wheel }}
+      SDIST: ${{ needs.guard.outputs.sdist }}
+      SOURCE_DATE_EPOCH: ${{ needs.guard.outputs.source_date_epoch }}
+    steps:
+      - name: Check out the tagged commit with full history
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Install the pinned uv
+        run: |
+          set -euo pipefail
+          pin="$(python3 -c "import json;a=json.load(open('release/runtime-versions.json'))['uv']['archives']['linux-x86_64'];print(a['url'],a['sha256'])")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "${RUNNER_TEMP}/uv.tar.gz" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/uv.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/uv"
+          tar -xzf "${RUNNER_TEMP}/uv.tar.gz" -C "${RUNNER_TEMP}/uv" --strip-components=1
+          echo "${RUNNER_TEMP}/uv" >> "${GITHUB_PATH}"
+      - name: Collect every candidate artifact into one closed-world directory
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts
+          cp requirements-all.lock release-artifacts/requirements-all.lock
+          python3 scripts/build_installer_zipapp.py \
+            --output release-artifacts/lobster0-installer.pyz
+          gh release download "${TAG}" --dir "${RUNNER_TEMP}/incoming" --clobber \
+            --pattern "${WHEEL}" \
+            --pattern "${SDIST}" \
+            --pattern 'lobster0-node-*.tar.gz' \
+            --pattern 'lobster0-tui-*.tar.gz' \
+            --pattern 'lobster0-*-image-*.txt' \
+            --pattern '*.sha256'
+          for bundle in "${RUNNER_TEMP}/incoming"/lobster0-*.tar.gz; do
+            printf '%s  %s\n' "$(cat "${bundle}.sha256")" "${bundle}" | sha256sum -c -
+          done
+          printf '%s  %s\n' "${{ needs.python-build.outputs.wheel_sha256 }}" \
+            "${RUNNER_TEMP}/incoming/${WHEEL}" | sha256sum -c -
+          printf '%s  %s\n' "${{ needs.python-build.outputs.sdist_sha256 }}" \
+            "${RUNNER_TEMP}/incoming/${SDIST}" | sha256sum -c -
+          grep -Fq "${{ needs.images.outputs.runtime_digest }}" \
+            "${RUNNER_TEMP}/incoming/lobster0-runtime-image-${VERSION}.txt"
+          grep -Fq "${{ needs.images.outputs.sandbox_digest }}" \
+            "${RUNNER_TEMP}/incoming/lobster0-sandbox-image-${VERSION}.txt"
+          find "${RUNNER_TEMP}/incoming" -maxdepth 1 -type f ! -name '*.sha256' \
+            -exec cp {} release-artifacts/ \;
+      - name: Generate both SBOM documents from the locked dependency set
+        run: |
+          set -euo pipefail
+          uv export --locked --all-extras --no-dev --no-emit-project \
+            --format cyclonedx1.5 --output-file "${RUNNER_TEMP}/python-components.json"
+          artifacts=()
+          for path in release-artifacts/*; do
+            artifacts+=(--artifact "${path}")
+          done
+          python3 scripts/build_sbom.py \
+            --version "${VERSION}" \
+            --git-commit "${{ needs.guard.outputs.commit }}" \
+            --source-date-epoch "${SOURCE_DATE_EPOCH}" \
+            --python-components "${RUNNER_TEMP}/python-components.json" \
+            --requirements-lock requirements-all.lock \
+            "${artifacts[@]}" \
+            --image-digest "release-artifacts/lobster0-runtime-image-${VERSION}.txt" \
+            --image-digest "release-artifacts/lobster0-sandbox-image-${VERSION}.txt" \
+            --cyclonedx-output "release-artifacts/lobster0-${VERSION}-sbom.cyclonedx.json" \
+            --spdx-output "release-artifacts/lobster0-${VERSION}-sbom.spdx.json"
+      - name: Build the closed-world release manifest
+        run: |
+          set -euo pipefail
+          printf '#!/bin/sh\nexit 0\n' > install.sh
+          chmod 0755 install.sh
+          uv run --locked python scripts/build_release_manifest.py \
+            --artifact-dir release-artifacts \
+            --install-script install.sh \
+            --output release-manifest.json \
+            manifest --release-inputs-output release-inputs.json
+      - name: Render the pinned one-line bootstrap from the manifest facts
+        run: |
+          set -euo pipefail
+          python3 scripts/render_install_script.py \
+            --fixture release-inputs.json \
+            --output install.sh
+      - name: Build the checksums that cover the manifest, bootstrap and artifacts
+        run: |
+          set -euo pipefail
+          uv run --locked python scripts/build_release_manifest.py \
+            --artifact-dir release-artifacts \
+            --install-script install.sh \
+            --output SHA256SUMS \
+            checksums --manifest release-manifest.json
+      - name: Independently verify the candidate release from disk
+        id: verify
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_release_artifacts.py \
+            --manifest release-manifest.json \
+            --schema release/manifest.schema.json \
+            --artifact-dir release-artifacts \
+            --checksums SHA256SUMS \
+            --install-script install.sh
+          manifest_sha256="$(sha256sum release-manifest.json | cut -d' ' -f1)"
+          echo "manifest_sha256=${manifest_sha256}" >> "${GITHUB_OUTPUT}"
+      - name: Publish the verified set into the draft release
+        run: |
+          set -euo pipefail
+          gh release upload "${TAG}" \
+            release-manifest.json \
+            SHA256SUMS \
+            install.sh \
+            release-artifacts/lobster0-installer.pyz \
+            release-artifacts/requirements-all.lock \
+            "release-artifacts/lobster0-${VERSION}-sbom.cyclonedx.json" \
+            "release-artifacts/lobster0-${VERSION}-sbom.spdx.json" --clobber
+
+  attestation:
+    name: attest every release subject
+    needs: [guard, assemble]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+      VERSION: ${{ needs.guard.outputs.version }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Take back the verified release set and recheck every digest
+        run: |
+          set -euo pipefail
+          mkdir -p subjects
+          gh release download "${TAG}" --dir subjects --clobber
+          rm -f subjects/*.sha256
+          (cd subjects && sha256sum -c SHA256SUMS)
+          test "$(sha256sum subjects/release-manifest.json | cut -d' ' -f1)" \
+            = "${{ needs.assemble.outputs.manifest_sha256 }}"
+      - name: Record the build provenance predicate for this run
+        run: |
+          set -euo pipefail
+          python3 - <<'PREDICATE' > "${RUNNER_TEMP}/predicate.json"
+          import json
+          import os
+
+          print(
+              json.dumps(
+                  {
+                      "buildDefinition": {
+                          "buildType": "https://github.com/NEDONION/lobster0/release",
+                          "externalParameters": {
+                              "repository": os.environ["GITHUB_REPOSITORY"],
+                              "ref": os.environ["GITHUB_REF"],
+                              "commit": os.environ["GITHUB_SHA"],
+                          },
+                      },
+                      "runDetails": {
+                          "builder": {
+                              "id": "https://github.com/actions/runner/github-hosted"
+                          },
+                          "metadata": {
+                              "invocationId": os.environ["GITHUB_RUN_ID"],
+                          },
+                      },
+                  },
+                  sort_keys=True,
+              )
+          )
+          PREDICATE
+      - name: Attest the manifest, bootstrap, checksums and every artifact
+        uses: actions/attest@508db95dd578ae2727ebd6217d5ba78e4fbda05d
+        with:
+          subject-path: |
+            subjects/release-manifest.json
+            subjects/SHA256SUMS
+            subjects/install.sh
+            subjects/lobster0-installer.pyz
+            subjects/requirements-all.lock
+            subjects/lobster0_agent-*.whl
+            subjects/lobster0_agent-*.tar.gz
+            subjects/lobster0-node-*.tar.gz
+            subjects/lobster0-tui-*.tar.gz
+            subjects/lobster0-*-sbom.*.json
+            subjects/lobster0-*-image-*.txt
+          predicate-type: https://slsa.dev/provenance/v1
+          predicate-path: ${{ runner.temp }}/predicate.json
+
+  tier1-runner-preflight:
+    name: Tier 1 self-hosted runner preflight
+    needs: [guard]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    outputs:
+      platforms: ${{ steps.preflight.outputs.platforms }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      # 这一步是「自托管组合不可用必须阻断 stable 发布」的落点。
+      # 本仓库当前注册的自托管 runner 数为 0，而且 GITHUB_TOKEN 也没有列举 runner 的
+      # administration 权限，因此这一步必然失败，tier1-install 与 publish 随之被跳过：
+      # 缺席的 Tier 1 组合以 PENDING 记录在 evidence 里，绝不会被当成通过。
+      - name: Require every declared Tier 1 label set to be registered and idle
+        id: preflight
+        run: |
+          set -euo pipefail
+          required="$(python3 tests/install_matrix/run_install_matrix.py --required-runner-labels)"
+          printf '%s' "${required}" > "${RUNNER_TEMP}/required.json"
+          if ! gh api "repos/${GITHUB_REPOSITORY}/actions/runners" --paginate \
+              > "${RUNNER_TEMP}/registered.json" 2>"${RUNNER_TEMP}/registered.err"; then
+            printf '[]' > "${RUNNER_TEMP}/registered.json"
+          fi
+          python3 - <<'CHECK'
+          import json
+          import os
+          import sys
+
+          temp = os.environ["RUNNER_TEMP"]
+          required = json.load(open(f"{temp}/required.json", encoding="utf-8"))
+          try:
+              payload = json.load(open(f"{temp}/registered.json", encoding="utf-8"))
+          except json.JSONDecodeError:
+              payload = []
+          runners = payload.get("runners", []) if isinstance(payload, dict) else []
+          available = [
+              {str(label["name"]).lower() for label in runner.get("labels", [])}
+              for runner in runners
+              if runner.get("status") == "online"
+          ]
+          missing = [
+              entry["id"]
+              for entry in required
+              if not any(
+                  {label.lower() for label in entry["runner_labels"]} <= labels
+                  for labels in available
+              )
+          ]
+          evidence = {
+              "schema_version": 1,
+              "gate": "tier1-install",
+              "required_combinations": len(required),
+              "registered_online_runners": len(available),
+              "missing_combinations": missing,
+              "status": "PASS" if not missing else "PENDING",
+          }
+          with open("release-evidence.json", "w", encoding="utf-8") as handle:
+              json.dump(evidence, handle, ensure_ascii=False, indent=2, sort_keys=True)
+              handle.write("\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+              handle.write(f"platforms={json.dumps(required)}\n")
+          with open(f"{temp}/missing.txt", "w", encoding="utf-8") as handle:
+              for name in missing:
+                  handle.write(f"PENDING {name}\n")
+          sys.stdout.write(json.dumps(evidence, sort_keys=True) + "\n")
+          CHECK
+          cat release-evidence.json >> "${GITHUB_STEP_SUMMARY}"
+          if [ -s "${RUNNER_TEMP}/missing.txt" ]; then
+            echo "PENDING: Tier 1 self-hosted combinations below are not registered and" >&2
+            echo "online, so stable promotion is blocked for this tag." >&2
+            cat "${RUNNER_TEMP}/missing.txt" >&2
+            exit 1
+          fi
+
+  tier1-install:
+    name: Tier 1 install matrix
+    needs: [guard, assemble, attestation, tier1-runner-preflight]
+    runs-on: ${{ matrix.platform.runner_labels }}
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        platform: ${{ fromJSON(needs.tier1-runner-preflight.outputs.platforms) }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Install from the draft release bootstrap and verify its digest
+        run: |
+          set -euo pipefail
+          gh release download "${TAG}" --dir "${RUNNER_TEMP}/bootstrap" --clobber \
+            --pattern 'install.sh' --pattern 'SHA256SUMS'
+          (cd "${RUNNER_TEMP}/bootstrap" && grep -F '  install.sh' SHA256SUMS | shasum -a 256 -c -)
+          sh "${RUNNER_TEMP}/bootstrap/install.sh" --no-onboard --install-service
+      - name: Run every Tier 1 install matrix case on this host
+        run: |
+          set -euo pipefail
+          python3 tests/install_matrix/run_install_matrix.py \
+            --all-cases \
+            --platform "${{ matrix.platform.id }}" \
+            --release-tag "${TAG}" \
+            --evidence-output "${RUNNER_TEMP}/tier1-evidence.json"
+          cat "${RUNNER_TEMP}/tier1-evidence.json"
+
+  publish:
+    name: promote the release
+    needs: [guard, images, assemble, attestation, tier1-install]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: pypi
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+      VERSION: ${{ needs.guard.outputs.version }}
+      WHEEL: ${{ needs.guard.outputs.wheel }}
+      SDIST: ${{ needs.guard.outputs.sdist }}
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Take back the verified release set and recheck every digest
+        run: |
+          set -euo pipefail
+          mkdir -p candidate
+          gh release download "${TAG}" --dir candidate --clobber
+          rm -f candidate/*.sha256
+          (cd candidate && sha256sum -c SHA256SUMS)
+          test "$(sha256sum candidate/release-manifest.json | cut -d' ' -f1)" \
+            = "${{ needs.assemble.outputs.manifest_sha256 }}"
+      - name: Verify the published attestations before anything leaves the repository
+        run: |
+          set -euo pipefail
+          for subject in candidate/release-manifest.json candidate/SHA256SUMS \
+              candidate/install.sh "candidate/${WHEEL}" "candidate/${SDIST}"; do
+            gh attestation verify "${subject}" --repo "${GITHUB_REPOSITORY}"
+          done
+      - name: Stage exactly the two distributions for trusted publishing
+        run: |
+          set -euo pipefail
+          mkdir -p pypi-dist
+          cp "candidate/${WHEEL}" "candidate/${SDIST}" pypi-dist/
+          test "$(ls pypi-dist | wc -l)" -eq 2
+      - name: Publish to PyPI through OIDC trusted publishing
+        uses: pypa/gh-action-pypi-publish@cef221092ed1bacb1cc03d23a2d87d1d172e277b
+        with:
+          packages-dir: pypi-dist
+          print-hash: true
+      - name: Authenticate to the registry with the short-lived workflow token
+        run: |
+          set -euo pipefail
+          printf '%s' '${{ secrets.GITHUB_TOKEN }}' \
+            | docker login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+      - name: Promote the gated image digests to their release tags
+        run: |
+          set -euo pipefail
+          runtime="$(cat "candidate/lobster0-runtime-image-${VERSION}.txt")"
+          sandbox="$(cat "candidate/lobster0-sandbox-image-${VERSION}.txt")"
+          test "${runtime}" = "${RUNTIME_IMAGE}@${{ needs.images.outputs.runtime_digest }}"
+          test "${sandbox}" = "${SANDBOX_IMAGE}@${{ needs.images.outputs.sandbox_digest }}"
+          docker buildx imagetools create --tag "${RUNTIME_IMAGE}:${VERSION}" "${runtime}"
+          docker buildx imagetools create --tag "${SANDBOX_IMAGE}:${VERSION}" "${sandbox}"
+      - name: Write, attach and attest the canonical release evidence
+        run: |
+          set -euo pipefail
+          python3 - <<'EVIDENCE' > release-evidence.json
+          import json
+          import os
+
+          print(
+              json.dumps(
+                  {
+                      "schema_version": 1,
+                      "product": "lobster0",
+                      "version": os.environ["VERSION"],
+                      "release_tag": os.environ["TAG"],
+                      "commit": os.environ["GITHUB_SHA"],
+                      "workflow_run": os.environ["GITHUB_RUN_ID"],
+                      "manifest_sha256": os.environ["MANIFEST_SHA256"],
+                      "runtime_image": os.environ["RUNTIME_DIGEST"],
+                      "sandbox_image": os.environ["SANDBOX_DIGEST"],
+                      "tier1_cases": int(os.environ["TIER1_CASES"]),
+                      "status": "PASS",
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+                  sort_keys=True,
+              )
+          )
+          EVIDENCE
+          gh release upload "${TAG}" release-evidence.json --clobber
+        env:
+          MANIFEST_SHA256: ${{ needs.assemble.outputs.manifest_sha256 }}
+          RUNTIME_DIGEST: ${{ needs.images.outputs.runtime_digest }}
+          SANDBOX_DIGEST: ${{ needs.images.outputs.sandbox_digest }}
+          TIER1_CASES: 15
+      - name: Promote the draft release to stable
+        run: |
+          set -euo pipefail
+          gh release edit "${TAG}" --draft=false --latest
+
+  public-smoke:
+    name: public one-line install smoke
+    needs: [guard, publish]
+    runs-on: [self-hosted, linux, x64, ubuntu-24.04]
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.guard.outputs.version }}
+    steps:
+      - name: Install from the public stable URL on a fresh Tier 1 host
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' --tlsv1.2 \
+            https://github.com/NEDONION/lobster0/releases/latest/download/install.sh \
+            | bash -s -- --no-onboard --no-service
+      - name: Require the public install to report the promoted version
+        run: |
+          set -euo pipefail
+          "${HOME}/.local/bin/lobster0" --version | grep -F "${VERSION}"
+
+  demote-release:
+    name: return the release to draft
+    needs: [guard, publish, public-smoke]
+    # 公共 smoke 失败时立即把 GitHub Release 退回 draft，防止 latest 停留在坏版本。
+    # 已经不可变的 PyPI 版本既不删除也不覆盖，修复必须走 0.7.1。
+    if: failure() && needs.publish.result == 'success' && needs.public-smoke.result == 'failure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.guard.outputs.tag }}
+    steps:
+      - name: Return the release to draft and record the failing evidence
+        run: |
+          set -euo pipefail
+          gh release edit "${TAG}" --draft=true
+          python3 - <<'EVIDENCE' > release-evidence.json
+          import json
+          import os
+
+          print(
+              json.dumps(
+                  {
+                      "schema_version": 1,
+                      "gate": "public-smoke",
+                      "release_tag": os.environ["TAG"],
+                      "workflow_run": os.environ["GITHUB_RUN_ID"],
+                      "status": "FAIL",
+                  },
+                  ensure_ascii=False,
+                  indent=2,
+                  sort_keys=True,
+              )
+          )
+          EVIDENCE
+          gh release upload "${TAG}" release-evidence.json --clobber

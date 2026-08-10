@@ -1,0 +1,220 @@
+name: ci
+
+# 每次 push/PR 都必须重跑与本地相同的离线门禁。
+# 这个工作流永远不响应 v* tag，也没有任何发布权限：发布只由 release.yml 承担。
+# 外部 Action 只允许出现计划已审阅的固定 commit；其余工具一律用 release/runtime-versions.json
+# 里的固定 URL 与 SHA-256 自取，避免引入未审阅的第三方 Action。
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  offline:
+    name: offline gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Install the pinned uv from release/runtime-versions.json
+        run: |
+          set -euo pipefail
+          pin="$(python3 -c "import json;a=json.load(open('release/runtime-versions.json'))['uv']['archives']['linux-x86_64'];print(a['url'],a['sha256'])")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "${RUNNER_TEMP}/uv.tar.gz" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/uv.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/uv"
+          tar -xzf "${RUNNER_TEMP}/uv.tar.gz" -C "${RUNNER_TEMP}/uv" --strip-components=1
+          echo "${RUNNER_TEMP}/uv" >> "${GITHUB_PATH}"
+      - name: Synchronize the locked development environment
+        run: |
+          set -euo pipefail
+          uv sync --locked --extra dev --extra all
+      - name: Run the workflow policy contract first
+        run: |
+          set -euo pipefail
+          uv run python -m unittest tests.test_install_matrix_contract -v
+      - name: Run the full offline unit suite
+        run: |
+          set -euo pipefail
+          uv run python -m unittest discover -s tests -q
+      - name: Run Ruff
+        run: |
+          set -euo pipefail
+          uv run --with ruff ruff check .
+      - name: Validate the documentation contract
+        run: |
+          set -euo pipefail
+          uv run python scripts/validate_docs.py
+      - name: Build the Python distributions
+        run: |
+          set -euo pipefail
+          uv build --out-dir "${RUNNER_TEMP}/dist"
+          test -f "${RUNNER_TEMP}/dist/lobster0_agent-0.7.0-py3-none-any.whl"
+          test -f "${RUNNER_TEMP}/dist/lobster0_agent-0.7.0.tar.gz"
+
+  node-22:
+    name: node 22 pi-tui
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Install the lowest accepted managed Node
+        env:
+          NODE_VERSION: 22.22.3
+          NODE_SHA256: c7a10d6816da8eaaa7534dd73c71c6e2b2c391dbbf845e364902d156615dd1b8
+        run: |
+          set -euo pipefail
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+            -o "${RUNNER_TEMP}/node.tar.gz" \
+            "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz"
+          printf '%s  %s\n' "${NODE_SHA256}" "${RUNNER_TEMP}/node.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/node"
+          tar -xzf "${RUNNER_TEMP}/node.tar.gz" -C "${RUNNER_TEMP}/node" --strip-components=1
+          echo "${RUNNER_TEMP}/node/bin" >> "${GITHUB_PATH}"
+      - name: Run the pi-tui suite on Node 22.22.3
+        run: |
+          set -euo pipefail
+          node --version | grep -F 'v22.22.3'
+          corepack enable
+          corepack pnpm --dir tui install --frozen-lockfile
+          corepack pnpm --dir tui test
+          corepack pnpm --dir tui build
+
+  node-24:
+    name: node 24 pi-tui
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Install the default managed Node
+        run: |
+          set -euo pipefail
+          pin="$(python3 -c "import json;a=json.load(open('release/runtime-versions.json'))['node']['archives']['linux-x86_64'];print(a['url'],a['sha256'])")"
+          mkdir -p "${RUNNER_TEMP}/pins"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+            -o "${RUNNER_TEMP}/pins/node-v24.18.0-linux-x64.tar.gz" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" \
+            "${RUNNER_TEMP}/pins/node-v24.18.0-linux-x64.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/node"
+          tar -xzf "${RUNNER_TEMP}/pins/node-v24.18.0-linux-x64.tar.gz" \
+            -C "${RUNNER_TEMP}/node" --strip-components=1
+          echo "${RUNNER_TEMP}/node/bin" >> "${GITHUB_PATH}"
+      - name: Run the pi-tui suite on Node 24.18.0
+        run: |
+          set -euo pipefail
+          node --version | grep -F 'v24.18.0'
+          corepack enable
+          corepack pnpm --dir tui install --frozen-lockfile
+          corepack pnpm --dir tui test
+          corepack pnpm --dir tui build
+      - name: Build the reproducible Node and TUI bundles
+        run: |
+          set -euo pipefail
+          python3 scripts/build_node_bundle.py \
+            --archive "${RUNNER_TEMP}/pins/node-v24.18.0-linux-x64.tar.gz" \
+            --platform linux-x86_64 \
+            --output-dir "${RUNNER_TEMP}/bundles"
+          python3 scripts/build_tui_bundle.py \
+            --platform linux-x86_64 \
+            --version 0.7.0 \
+            --node "${RUNNER_TEMP}/node/bin/node" \
+            --output-dir "${RUNNER_TEMP}/bundles"
+
+  artifact-build:
+    name: artifact reproducibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the exact commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Install the pinned uv from release/runtime-versions.json
+        run: |
+          set -euo pipefail
+          pin="$(python3 -c "import json;a=json.load(open('release/runtime-versions.json'))['uv']['archives']['linux-x86_64'];print(a['url'],a['sha256'])")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 -o "${RUNNER_TEMP}/uv.tar.gz" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/uv.tar.gz" | sha256sum -c -
+          mkdir -p "${RUNNER_TEMP}/uv"
+          tar -xzf "${RUNNER_TEMP}/uv.tar.gz" -C "${RUNNER_TEMP}/uv" --strip-components=1
+          echo "${RUNNER_TEMP}/uv" >> "${GITHUB_PATH}"
+      - name: Synchronize the locked development environment
+        run: |
+          set -euo pipefail
+          uv sync --locked --extra dev --extra all
+      - name: Prove the installer zipapp is byte reproducible
+        run: |
+          set -euo pipefail
+          uv run python scripts/build_installer_zipapp.py \
+            --output "${RUNNER_TEMP}/first-lobster0-installer.pyz"
+          uv run python scripts/build_installer_zipapp.py \
+            --output "${RUNNER_TEMP}/second-lobster0-installer.pyz"
+          first="$(sha256sum "${RUNNER_TEMP}/first-lobster0-installer.pyz" | cut -d' ' -f1)"
+          second="$(sha256sum "${RUNNER_TEMP}/second-lobster0-installer.pyz" | cut -d' ' -f1)"
+          test "${first}" = "${second}"
+      - name: Prove the Python distributions are byte reproducible
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct HEAD)"
+          export SOURCE_DATE_EPOCH
+          uv build --out-dir "${RUNNER_TEMP}/dist-a"
+          uv build --out-dir "${RUNNER_TEMP}/dist-b"
+          (cd "${RUNNER_TEMP}/dist-a" && sha256sum ./*) > "${RUNNER_TEMP}/a.sha"
+          (cd "${RUNNER_TEMP}/dist-b" && sha256sum ./*) > "${RUNNER_TEMP}/b.sha"
+          diff -u "${RUNNER_TEMP}/a.sha" "${RUNNER_TEMP}/b.sha"
+      - name: Run the installer adversarial and offline install matrix gates
+        run: |
+          set -euo pipefail
+          uv run python -m unittest \
+            tests.test_install_artifacts \
+            tests.test_install_orchestrator \
+            tests.test_install_platforms \
+            tests.test_install_releases \
+            tests.test_installer_zipapp -q
+          uv run python tests/install_matrix/run_install_matrix.py --list
+          uv run python tests/install_matrix/run_install_matrix.py --local-offline

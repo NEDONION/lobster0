@@ -1,0 +1,51 @@
+version: 2
+
+# Action 更新只提 PR，不自动合并：每个新的 commit SHA 都必须先被人工审阅，
+# 再写进 tests/test_install_matrix_contract.py 的已审阅名单。
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'ci(actions)'
+    labels:
+      - dependencies
+      - supply-chain
+
+  - package-ecosystem: pip
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'build(deps)'
+    labels:
+      - dependencies
+
+  - package-ecosystem: npm
+    directory: /tui
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: 'build(tui)'
+    labels:
+      - dependencies
+
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 2
+    commit-message:
+      prefix: 'build(image)'
+    labels:
+      - dependencies
+      - supply-chain
