@@ -50,6 +50,7 @@ class _LockOwnership:
     pid: int
     uid: int
     start: str
+    finalizer: weakref.finalize
 
 
 @dataclass(frozen=True, slots=True)
@@ -406,9 +407,20 @@ class InstallLock:
                 _unlink_same_inode(path, identity)
             raise
         proof_descriptor = -1
+        finalizer: weakref.finalize | None = None
         try:
             proof_descriptor = os.dup(descriptor)
             lock = cls(path, payload, cast(tuple[int, int], identity), descriptor)
+            finalizer = weakref.finalize(
+                lock,
+                _finalize_lock,
+                path,
+                payload,
+                cast(tuple[int, int], identity),
+                descriptor,
+                proof_descriptor,
+                uid,
+            )
             _LOCK_OWNERS[lock] = _LockOwnership(
                 path,
                 payload,
@@ -418,9 +430,12 @@ class InstallLock:
                 os.getpid(),
                 uid,
                 cast(str, process_start),
+                finalizer,
             )
             return lock
         except BaseException:
+            if finalizer is not None:
+                finalizer.detach()
             if proof_descriptor >= 0:
                 os.close(proof_descriptor)
             os.close(descriptor)
@@ -483,35 +498,17 @@ class InstallLock:
             )
         except AttributeError:
             instance_matches = False
-        descriptor_owned = _same_open_description(
+        if ownership.finalizer.detach() is None:
+            return
+        _finalize_lock(
+            ownership.path,
+            ownership.payload,
+            ownership.identity,
             ownership.descriptor,
             ownership.proof_descriptor,
+            ownership.uid,
+            instance_matches,
         )
-        try:
-            if instance_matches and descriptor_owned and _lock_path_owned(
-                ownership.path,
-                ownership.descriptor,
-                ownership.identity,
-                ownership.payload,
-                ownership.uid,
-            ):
-                _quarantine_owned_lock(
-                    ownership.path,
-                    ownership.descriptor,
-                    ownership.identity,
-                    ownership.payload,
-                    ownership.uid,
-                )
-        except (InstallError, OSError):
-            pass
-        finally:
-            for descriptor in (
-                (ownership.descriptor,) if descriptor_owned else ()
-            ) + (ownership.proof_descriptor,):
-                try:
-                    os.close(descriptor)
-                except OSError:
-                    pass
 
     def __enter__(self) -> InstallLock:
         """返回当前已持有 lock。"""
@@ -803,29 +800,55 @@ def _lock_path_owned(
     payload: bytes,
     expected_uid: int,
 ) -> bool:
-    """用持有 fd、两次 no-follow pathname 事实和 exact payload 绑定 lock。"""
+    """用持有 fd、稳定 metadata 与两次 exact read 绑定 lock。"""
     try:
         held_before = os.fstat(descriptor)
         path_before = path.lstat()
+        snapshot = _owned_lock_snapshot(held_before, identity, expected_uid)
         if (
-            (held_before.st_dev, held_before.st_ino) != identity
-            or (path_before.st_dev, path_before.st_ino) != identity
-            or held_before.st_uid != expected_uid
-            or held_before.st_nlink != 1
-            or not stat.S_ISREG(path_before.st_mode)
+            snapshot is None
+            or _owned_lock_snapshot(path_before, identity, expected_uid) != snapshot
         ):
             return False
-        if _read_lock_bytes(path, expected_uid) != payload:
-            return False
-        held_after = os.fstat(descriptor)
-        path_after = path.lstat()
-        return (
-            (held_after.st_dev, held_after.st_ino) == identity
-            and (path_after.st_dev, path_after.st_ino) == identity
-            and held_after.st_nlink == 1
-        )
+        for _ in range(2):
+            if _read_lock_bytes(path, expected_uid) != payload:
+                return False
+            held_after = os.fstat(descriptor)
+            path_after = path.lstat()
+            if (
+                _owned_lock_snapshot(held_after, identity, expected_uid) != snapshot
+                or _owned_lock_snapshot(path_after, identity, expected_uid) != snapshot
+            ):
+                return False
+        return True
     except (InstallError, OSError):
         return False
+
+
+def _owned_lock_snapshot(
+    metadata: os.stat_result,
+    identity: tuple[int, int],
+    expected_uid: int,
+) -> tuple[int, int, int, int, int, int, int, int] | None:
+    """返回 exact private regular lock 的稳定 metadata，失配时返回空。"""
+    if (
+        not stat.S_ISREG(metadata.st_mode)
+        or (metadata.st_dev, metadata.st_ino) != identity
+        or metadata.st_uid != expected_uid
+        or stat.S_IMODE(metadata.st_mode) != 0o600
+        or metadata.st_nlink != 1
+    ):
+        return None
+    return (
+        metadata.st_dev,
+        metadata.st_ino,
+        metadata.st_mode,
+        metadata.st_uid,
+        metadata.st_nlink,
+        metadata.st_size,
+        metadata.st_mtime_ns,
+        metadata.st_ctime_ns,
+    )
 
 
 def _same_open_description(descriptor: int, proof_descriptor: int) -> bool:
@@ -850,6 +873,42 @@ def _same_open_description(descriptor: int, proof_descriptor: int) -> bool:
                 os.lseek(descriptor, descriptor_offset, os.SEEK_SET)
         except OSError:
             pass
+
+
+def _finalize_lock(
+    path: Path,
+    payload: bytes,
+    identity: tuple[int, int],
+    descriptor: int,
+    proof_descriptor: int,
+    expected_uid: int,
+    remove_path: bool = True,
+) -> None:
+    """清理 exact lock 路径并关闭仍属于本实例的 descriptor，且不向外抛错。"""
+    descriptor_owned = _same_open_description(descriptor, proof_descriptor)
+    try:
+        if remove_path and descriptor_owned and _lock_path_owned(
+            path,
+            descriptor,
+            identity,
+            payload,
+            expected_uid,
+        ):
+            _quarantine_owned_lock(
+                path,
+                descriptor,
+                identity,
+                payload,
+                expected_uid,
+            )
+    except (InstallError, OSError):
+        pass
+    finally:
+        for held in ((descriptor,) if descriptor_owned else ()) + (proof_descriptor,):
+            try:
+                os.close(held)
+            except OSError:
+                pass
 
 
 def _quarantine_owned_lock(

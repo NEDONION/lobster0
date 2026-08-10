@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import gc
 import json
 import os
 import pwd
@@ -11,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import weakref
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -340,6 +343,97 @@ class InstallLayoutTests(unittest.TestCase):
         finally:
             os.close(reused)
             lock.close()
+
+    def test_lock_owns_rechecks_payload_and_mode_after_final_read_race(self) -> None:
+        """final payload read 后同 inode 内容或 mode 漂移也必须 fail closed。"""
+        for mutation in ("payload", "mode"):
+            with self.subTest(mutation=mutation):
+                layout = InstallLayout.user(self.home, version="0.7.0")
+                lock = InstallLock.acquire(layout)
+                real_read = layout_module._read_lock_bytes
+                calls = {"count": 0}
+
+                def mutate_after_read(
+                    path: Path,
+                    uid: int,
+                    *,
+                    read: Callable[[Path, int], bytes] = real_read,
+                    selected: str = mutation,
+                    counter: dict[str, int] = calls,
+                ) -> bytes:
+                    """在首轮 snapshot 后的第二次 payload read 制造同 inode 漂移。"""
+                    payload = read(path, uid)
+                    counter["count"] += 1
+                    if counter["count"] < 2:
+                        return payload
+                    if selected == "payload":
+                        path.write_bytes(b"{}\n")
+                        path.chmod(0o600)
+                    else:
+                        path.chmod(0o644)
+                    return payload
+
+                try:
+                    with mock.patch.object(
+                        layout_module,
+                        "_read_lock_bytes",
+                        side_effect=mutate_after_read,
+                    ):
+                        self.assertFalse(lock.owns(layout))
+                    self.assertEqual(calls["count"], 2)
+                    self.assertTrue(layout.lock.exists())
+                finally:
+                    lock.close()
+                    if layout.lock.exists():
+                        layout.lock.unlink()
+
+    def test_lock_gc_finalizer_removes_owned_path_and_closes_both_descriptors(self) -> None:
+        """遗失 live lock 对象时 finalizer 必须释放路径和原始/proof fd。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        lock = InstallLock.acquire(layout)
+        descriptor = lock._descriptor
+        proof_descriptor = layout_module._LOCK_OWNERS[lock].proof_descriptor
+        reference = weakref.ref(lock)
+
+        del lock
+        gc.collect()
+
+        self.assertIsNone(reference())
+        self.assertFalse(layout.lock.exists())
+        for held in (descriptor, proof_descriptor):
+            with self.subTest(descriptor=held), self.assertRaises(OSError):
+                os.fstat(held)
+        replacement = InstallLock.acquire(layout)
+        replacement.close()
+
+    def test_lock_finalizer_cannot_delete_replacement_or_replay_after_close(self) -> None:
+        """stale GC callback 与 explicit close 后 callback 都不能删除新的 lock instance。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        stale = InstallLock.acquire(layout)
+        stale_descriptors = (
+            stale._descriptor,
+            layout_module._LOCK_OWNERS[stale].proof_descriptor,
+        )
+        stale_reference = weakref.ref(stale)
+        layout.lock.unlink()
+        replacement = InstallLock.acquire(layout)
+
+        del stale
+        gc.collect()
+        self.assertIsNone(stale_reference())
+        for held in stale_descriptors:
+            with self.subTest(descriptor=held), self.assertRaises(OSError):
+                os.fstat(held)
+        self.assertTrue(replacement.owns(layout))
+
+        replacement.close()
+        replacement_reference = weakref.ref(replacement)
+        current = InstallLock.acquire(layout)
+        del replacement
+        gc.collect()
+        self.assertIsNone(replacement_reference())
+        self.assertTrue(current.owns(layout))
+        current.close()
 
     def test_lock_requires_real_process_start_before_creating_path(self) -> None:
         """把 wall clock 冒充 process start 会把活锁误判成 PID reuse stale。"""
