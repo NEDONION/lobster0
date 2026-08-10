@@ -64,15 +64,98 @@ New installations and older configurations without `tools.mode` default to `auto
 
 ## Quick start
 
-### Requirements
+### One-line install
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- Node.js 22.22.3–<23 or 24.15.0–<25 and pnpm for the default pi-tui (managed default: 24.18.0)
-- Chrome/Chromium and Playwright when Browser Agent is enabled
-- An OpenAI-compatible model endpoint; the default model is `deepseek-v4-pro`
+```bash
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash
+```
 
-### Install and run
+> [!IMPORTANT]
+> This command describes the behaviour **after** the v0.7.0 Release is published. This repository
+> has no Release and no tag yet, so the URL currently returns 404. The one-line install path is
+> **RELEASE CANDIDATE / PUBLIC GATES PENDING**: the real-machine install matrix, the package
+> publish and the image digest smokes have never been executed. Per-item evidence lives in the
+> [v0.7.0 one-line install candidate record](docs/evals/releases/v0.7.0-install.md).
+> Until then, use the [source development install](#source-development-install) below.
+
+The installer ships its own pinned uv, managed Python 3.12, managed Node.js and platform pi-tui
+bundle, so **no preinstalled Python, Node.js or pnpm is required**. It installs into `~/.lobster0`
+with the command entry at `~/.local/bin/lobster0`, and a default install never asks for sudo;
+system packages, linger and a system prefix each print an exact plan and ask again. The Python
+distribution name is `lobster0-agent`; the CLI, the import package and the state home stay
+`lobster0`.
+
+Print the plan with zero writes and zero component downloads:
+
+```bash
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash -s -- --dry-run
+```
+
+Fully non-interactive install (prepare the config template and the owner-only Secret file first):
+
+```bash
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh \
+  | bash -s -- --no-onboard --no-install-service --json \
+      --config /absolute/path/to/config.toml \
+      --secrets-file /absolute/path/to/secrets.env
+```
+
+Remaining flags: `--version <semver>`, `--channel stable|dev`, `--prefix <absolute-path>`,
+`--system-prefix`, `--install-service`, `--allow-system-packages`, `--verbose`. A non-TTY stdin with
+incomplete arguments fails closed; secrets are only read from hidden `/dev/tty` input, an owner-only
+Secret file or the existing process environment — never from the command line.
+
+### Supported platforms
+
+| Platform | Versions | Architectures | Managed service |
+| --- | --- | --- | --- |
+| Ubuntu | 22.04, 24.04 | x86_64, arm64 | systemd user |
+| Debian | 12, 13 | x86_64, arm64 | systemd user |
+| RHEL / Rocky / Alma | 9, 10 | x86_64, arm64 | systemd user |
+| macOS | 13 and newer | Intel (x86_64), Apple Silicon (arm64) | LaunchAgent |
+
+Explicitly unsupported, rejected with `unsupported_platform` before any write: native Windows and
+WSL, Alpine/musl, declarative NixOS installs, Android/Termux, 32-bit architectures, and Linux hosts
+without systemd as a resident service host.
+
+That table is the designed Tier 1 scope, not a verified result — none of those combinations has run
+the real-machine install matrix yet.
+
+### Node policy
+
+The managed Node.js version is 24.18.0. Only `22.22.3 <= version < 23.0.0` and
+`24.15.0 <= version < 25.0.0` are accepted; Node 20/23/25/26 are rejected. The one-line installer
+downloads and verifies its own managed Node and neither uses nor requires a machine-wide Node.
+
+### Service, upgrade and uninstall
+
+| Command | Purpose |
+| --- | --- |
+| `lobster0 service install` | Install and enable the managed Gateway user service |
+| `lobster0 service status` | Inspect the managed service |
+| `lobster0 service logs` | Read managed service logs |
+| `lobster0 service restart` | Restart the managed service |
+| `lobster0 service uninstall` | Remove only the service, keeping the install and all data |
+| `lobster0 uninstall` | Remove the managed Runtime, launcher and receipt, **keeping every user file under `~/.lobster0`** |
+| `lobster0 uninstall --purge-data --yes-i-understand-data-loss` | Also delete the enumerated state; `workspace/` is still kept |
+
+**Upgrading means re-running the one-line install command above.** `lobster0 update` on an installed
+CLI currently prints `update_requires_bootstrap` and exits with code 2: the update pipeline needs the
+trust root established by bootstrap (a pinned uv and a managed Python), and the managed Runtime
+deletes `.inputs` on activation by design, so it fails closed instead of degrading to an untrusted
+`PATH` uv. A failed upgrade rolls back automatically; if external writes happened after the
+migration it returns `rollback_conflict` and preserves the scene — manual recovery is documented in
+the [install and release operations runbook](docs/engineering/operations/20260809_install-release-operations.md).
+
+### Source development install
+
+Contributors use the source path and provide their own Python 3.12+,
+[uv](https://docs.astral.sh/uv/), Node.js 22.22.3–<23 or 24.15.0–<25 and pnpm for the default pi-tui
+(managed default: 24.18.0), plus Chrome/Chromium and Playwright when Browser Agent is enabled, plus
+an OpenAI-compatible model endpoint (default `deepseek-v4-pro`).
 
 ```bash
 git clone https://github.com/NEDONION/lobster0.git
@@ -252,9 +335,12 @@ Read the [system architecture](docs/architecture/20260807_系统架构.md) and [
 | Telegram / Discord | Implementation PASS; real-platform Live Gates pending |
 | Memory Autopilot | A–E IMPLEMENTATION PASS; live conclusions remain platform-specific |
 | Phase 6 | **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING**; production tooling is complete, strict 25-case and 24h evidence are pending |
+| One-line install and release | **RELEASE CANDIDATE / PUBLIC GATES PENDING**; the real-machine install matrix, package publish, image digest smokes and attestation verification have never run, and the repository has no Release or tag |
 
 Fake SDKs, offline scenarios, and the 660/660 local soak only establish **IMPLEMENTATION PASS**. They never masquerade as a live-platform PASS. Historical evidence lives under [`docs/evals/releases/`](docs/evals/releases/).
 The pre-Memory Phase 5 historical baseline was 562 Python, 30 TypeScript, and 29/29 Agent. Memory v0.6.0 recorded 666 Python tests and Phase 6 recorded 798; current figures are in the table above and v0.6.5.
+The 1005 figure is the Phase 6.5 Python baseline; the install/release tests are not folded into it yet, and a full local `unittest discover` currently runs 1547 tests — per-item results are in the
+[v0.7.0 one-line install candidate record](docs/evals/releases/v0.7.0-install.md).
 
 ### Verification
 
@@ -319,6 +405,8 @@ tests/           # Python unittest suite
 | [Product requirements](docs/product/20260807_产品需求文档.md) | Scope, non-goals, and acceptance criteria |
 | [System architecture](docs/architecture/20260807_系统架构.md) | Module boundaries, data flow, and safety principles |
 | [Local setup guide](docs/getting-started/20260807_本地运行指南.md) | Installation, config, TUI, Gateway, troubleshooting |
+| [Install and release operations](docs/engineering/operations/20260809_install-release-operations.md) | Draft Release promotion, PyPI/GHCR verification, `rollback_conflict` recovery, revocation |
+| [v0.7.0 one-line install candidate](docs/evals/releases/v0.7.0-install.md) | Real gate status of the install path and the external evidence required for a final verdict (currently PENDING) |
 | [Engineering index](docs/engineering/README.md) | Implemented modules versus planned designs |
 | [Development timeline](docs/engineering/20260809_development-timeline.md) | Mapping between architecture phases, delivery versions, and evidence states |
 | [Progress page](docs/progress/index.html) | Current phase, evidence, and next work |

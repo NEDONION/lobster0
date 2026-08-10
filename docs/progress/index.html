@@ -608,12 +608,27 @@
         <div class="decision"><code>lark-cli</code><p>Channel 负责收发消息；业务查询由 Skill 生成 lark-cli argv 并经过 run_command / Policy / Approval。私有标题和 URL 进入模型前必须得到 Owner 授权。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/lobster0/commit/c5f5e5b">c5f5e5b Worker + provenance</a> · <a href="https://github.com/NEDONION/lobster0/commit/cc31b74">cc31b74 Artifact CAS</a> · <a href="https://github.com/NEDONION/lobster0/commit/3cf3fe7">3cf3fe7 Browser gate</a></p></div>
       </article>
+      <article class="work-card">
+        <p class="eyebrow">一行安装与可信发布 · RELEASE CANDIDATE / PUBLIC GATES PENDING</p>
+        <h3>安装与发布链路</h3>
+        <p>面向普通用户的主安装方式是一行命令 <code>curl -fsSL --proto '=https' --tlsv1.2 https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash</code>；Python 分发名是 <code>lobster0-agent</code>，CLI、import 与状态根保持 <code>lobster0</code>。</p>
+        <ul class="checklist">
+          <li class="complete">POSIX bootstrap → stdlib-only installer zipapp → 已校验 manifest → 版本化 Runtime staging</li>
+          <li class="complete">受管 Python 3.12 / Node 24.18.0 / pi-tui bundle；用户无需预装 Python、Node.js 或 pnpm</li>
+          <li class="complete">smoke + 数据库保护 + 服务健康检查通过后才原子切换 current；保留 N-1 Runtime</li>
+          <li class="complete">默认卸载保留全部用户数据；<code>--purge-data</code> 是唯一破坏性路径且始终保留 Workspace</li>
+          <li class="pending">真机安装矩阵：本仓库自托管 runner 注册数实测为 0，从未运行</li>
+          <li class="pending">包发布、镜像摘要冒烟与 attestation 校验：仓库当前没有任何 Release 或 tag，一行安装 URL 会 404</li>
+          <li class="pending">升级入口：<code>lobster0 update</code> 按设计 fail closed（<code>update_requires_bootstrap</code>），升级方式是重新运行一行安装命令</li>
+        </ul>
+        <p>判定契约与逐项证据见 <a href="../evals/releases/v0.7.0-install.md">v0.7.0 一行安装候选记录</a> 与 <a href="../engineering/operations/20260809_install-release-operations.md">安装与发布运维手册</a>。</p>
+      </article>
     </section>
 
     <footer class="footer">
       <span>Last updated · 2026-08-10 · 1005 Python + 41/41 TUI + 14/14 Worker · Agent 39/39 · Channel 33/33 · Automation 15/15 · Browser 18/18 · Phase 6 production tooling pass · soak pending</span>
       <span>Historical Phase 5 implementation pass baseline · 562 Python · 30 TypeScript · Agent 29/29 · Channel 32/32 · local soak 640/640.</span>
-      <span><a href="../engineering/phase-6/20260810_macos-feishu-production-acceptance.md">Production Runbook</a> · <a href="../engineering/phase-6/browser-agent.md">Browser Agent</a> · <a href="../evals/releases/v0.6.5.md">v0.6.5</a> · <a href="../engineering/phase-6/20260809_autonomy-runtime.md">Autonomy Runtime</a> · <a href="../engineering/phase-6/20260809_sandbox-and-checkpoint.md">Sandbox + Checkpoint</a> · <a href="../engineering/phase-5/20260809_memory-autopilot.md">Memory Autopilot</a></span>
+      <span><a href="../engineering/operations/20260809_install-release-operations.md">Install + Release Runbook</a> · <a href="../evals/releases/v0.7.0-install.md">v0.7.0 install candidate</a> · <a href="../engineering/phase-6/20260810_macos-feishu-production-acceptance.md">Production Runbook</a> · <a href="../engineering/phase-6/browser-agent.md">Browser Agent</a> · <a href="../evals/releases/v0.6.5.md">v0.6.5</a> · <a href="../engineering/phase-6/20260809_autonomy-runtime.md">Autonomy Runtime</a> · <a href="../engineering/phase-6/20260809_sandbox-and-checkpoint.md">Sandbox + Checkpoint</a> · <a href="../engineering/phase-5/20260809_memory-autopilot.md">Memory Autopilot</a></span>
     </footer>
   </main>
 </body>
