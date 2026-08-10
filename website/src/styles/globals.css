@@ -1259,6 +1259,45 @@ pre {
   letter-spacing: 0.05em;
 }
 
+.memory-pane__label--short {
+  color: #f8bf45;
+}
+
+.memory-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-list > li {
+  display: grid;
+  grid-template-columns: 62px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--signal) 55%, transparent);
+  padding: 5px 0 5px 10px;
+}
+
+.memory-list--short > li {
+  border-left-color: color-mix(in srgb, var(--warn) 55%, transparent);
+}
+
+.memory-list b {
+  color: #8792a6;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.memory-list span {
+  color: #e6eaf2;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
 .memory-pane pre {
   margin: 0;
   overflow-x: auto;
