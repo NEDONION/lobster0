@@ -1,0 +1,38 @@
+#!/usr/bin/env python3
+"""供 bootstrap 集成测试使用的离线 ``sha256sum`` fake，计算真实 SHA-256。"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import sys
+
+
+def _log(args: list[str]) -> None:
+    """把本次调用追加进 ``FAKE_CALL_LOG``（若已设置）。"""
+    log = os.environ.get("FAKE_CALL_LOG")
+    if not log:
+        return
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps({"cmd": "sha256sum", "args": args}) + "\n")
+
+
+def main() -> int:
+    """输出与 GNU coreutils 一致的 ``<hash>  <path>`` 格式。"""
+    args = sys.argv[1:]
+    _log(args)
+    if len(args) != 1:
+        return 1
+    path = args[0]
+    try:
+        with open(path, "rb") as handle:
+            digest = hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return 1
+    print(f"{digest}  {path}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
