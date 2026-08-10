@@ -106,7 +106,7 @@ pre {
   font-family: var(--font-mono);
   font-size: 0.82rem;
   font-weight: 700;
-  box-shadow: 0 8px 20px color-mix(in srgb, var(--signal) 24%, transparent);
+  box-shadow: 0 2px 6px color-mix(in srgb, var(--signal) 22%, transparent);
 }
 
 .marketing-nav,
@@ -173,7 +173,7 @@ pre {
   border-radius: 14px;
   padding: 6px;
   background: var(--surface);
-  box-shadow: 0 18px 40px rgb(16 19 26 / 14%);
+  box-shadow: 0 8px 20px rgb(16 19 26 / 10%);
   list-style: none;
 }
 
@@ -280,29 +280,29 @@ pre {
 
 .button {
   display: inline-flex;
-  min-height: 48px;
+  min-height: 40px;
   align-items: center;
   justify-content: center;
   border: 1px solid transparent;
-  border-radius: 10px;
-  padding: 0 22px;
-  gap: 12px;
-  font-weight: 680;
+  border-radius: 8px;
+  padding: 0 16px;
+  gap: 8px;
+  font-size: 0.875rem;
+  font-weight: 500;
   text-decoration: none;
   transition:
-    transform 160ms ease,
-    box-shadow 160ms ease,
-    border-color 160ms ease;
-}
-
-.button:hover {
-  transform: translateY(-2px);
+    background-color 150ms ease,
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
 .button--primary {
   background: var(--ink);
   color: white;
-  box-shadow: 0 12px 32px color-mix(in srgb, var(--ink) 16%, transparent);
+}
+
+.button--primary:hover {
+  background: color-mix(in srgb, var(--ink) 85%, white);
 }
 
 .button--secondary {
@@ -311,13 +311,18 @@ pre {
   color: var(--ink);
 }
 
+.button--secondary:hover {
+  border-color: color-mix(in srgb, var(--ink) 28%, var(--line));
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface));
+}
+
 .command-copy {
   margin-top: 28px;
   border: 1px solid rgb(255 255 255 / 10%);
   border-radius: 12px;
   background: var(--terminal);
   color: #f5f7fb;
-  box-shadow: 0 22px 50px rgb(16 19 26 / 15%);
+  box-shadow: 0 8px 20px rgb(16 19 26 / 12%);
 }
 
 .command-copy__bar {
@@ -402,7 +407,7 @@ pre {
     linear-gradient(145deg, rgb(255 255 255 / 5%), transparent 38%),
     var(--terminal);
   color: #f6f7fb;
-  box-shadow: 0 32px 80px rgb(16 19 26 / 19%);
+  box-shadow: 0 12px 28px rgb(16 19 26 / 14%);
 }
 
 .claw-trace__topline {
@@ -560,7 +565,7 @@ pre {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 93%, transparent);
-  box-shadow: 0 18px 50px rgb(16 19 26 / 7%);
+  box-shadow: 0 6px 16px rgb(16 19 26 / 6%);
 }
 
 .evidence-strip dl {
@@ -682,7 +687,7 @@ pre {
   border-top: 0;
   border-radius: 0 0 14px 14px;
   background: var(--surface);
-  box-shadow: 0 30px 80px rgb(16 19 26 / 9%);
+  box-shadow: 0 10px 24px rgb(16 19 26 / 7%);
 }
 
 .capability-panel__copy {
@@ -953,7 +958,7 @@ pre {
   border-radius: 999px;
   padding: 20px 16px;
   background: #0d1017;
-  box-shadow: 0 0 0 6px rgb(66 103 245 / 8%), 0 16px 34px rgb(0 0 0 / 30%);
+  box-shadow: 0 0 0 6px rgb(66 103 245 / 8%), 0 6px 16px rgb(0 0 0 / 22%);
   text-align: center;
 }
 
@@ -1025,7 +1030,7 @@ pre {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--surface);
-  box-shadow: 0 20px 44px rgb(18 23 34 / 8%);
+  box-shadow: 0 8px 18px rgb(18 23 34 / 7%);
   overflow: hidden;
 }
 
@@ -1343,7 +1348,7 @@ pre {
   border-top: 0;
   border-radius: 0 0 14px 14px;
   background: var(--canvas);
-  box-shadow: 0 28px 70px rgb(16 19 26 / 9%);
+  box-shadow: 0 10px 24px rgb(16 19 26 / 7%);
 }
 
 .workflow-panel__copy {
@@ -1430,7 +1435,7 @@ pre {
   border-radius: 12px;
   padding: 44px 30px;
   background: var(--terminal);
-  box-shadow: 0 20px 50px rgb(16 19 26 / 18%);
+  box-shadow: 0 8px 20px rgb(16 19 26 / 14%);
 }
 
 .flow-diagram__nodes {
@@ -1580,7 +1585,7 @@ pre {
   padding: 26px;
   background: color-mix(in srgb, var(--signal) 8%, white);
   text-align: center;
-  box-shadow: 0 18px 42px rgb(91 108 255 / 12%);
+  box-shadow: 0 6px 16px rgb(91 108 255 / 10%);
 }
 
 .multi-channel-map__runtime span,
@@ -1619,7 +1624,7 @@ pre {
   border-radius: 14px;
   padding: 14px;
   background: var(--surface);
-  box-shadow: 0 12px 28px rgb(16 19 26 / 6%);
+  box-shadow: 0 4px 12px rgb(16 19 26 / 5%);
 }
 
 .multi-channel-map__surfaces header {
@@ -1675,7 +1680,7 @@ pre {
   background:
     radial-gradient(circle at 88% 20%, color-mix(in srgb, var(--signal) 16%, transparent), transparent 32%),
     var(--canvas);
-  box-shadow: 0 22px 60px rgb(16 19 26 / 8%);
+  box-shadow: 0 8px 18px rgb(16 19 26 / 6%);
 }
 
 .quick-start-close__copy {
@@ -1775,7 +1780,7 @@ pre {
   color: white;
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  box-shadow: 0 7px 18px color-mix(in srgb, var(--signal) 22%, transparent);
+  box-shadow: 0 3px 8px color-mix(in srgb, var(--signal) 18%, transparent);
 }
 
 .not-found-page {
