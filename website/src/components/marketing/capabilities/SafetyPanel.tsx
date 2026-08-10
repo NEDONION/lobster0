@@ -28,7 +28,7 @@ export function SafetyPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
         setStarted(true);
         observer.disconnect();
       },
-      { threshold: 0.4 },
+      { threshold: [0, 0.4] },
     );
     observer.observe(node);
     return () => observer.disconnect();

@@ -533,7 +533,6 @@
 
 .root :global(.channels-map) {
   margin: 20px;
-  border-color: rgb(255 255 255 / 10%);
   border-radius: 12px;
 }
 
@@ -566,20 +565,7 @@
 
 .root :global(.flow-diagram) {
   position: relative;
-  border-color: rgb(255 255 255 / 12%);
-  box-shadow: 0 22px 50px rgb(18 23 34 / 18%);
   overflow: hidden;
-}
-
-.root :global(.flow-diagram::after) {
-  position: absolute;
-  inset: -30% auto -30% -45%;
-  width: 34%;
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 11%), transparent);
-  content: '';
-  pointer-events: none;
-  transform: skewX(-18deg);
-  animation: imageSheen 6.8s ease-in-out infinite;
 }
 
 .root :global(.quick-start-close) {
@@ -842,10 +828,6 @@
     margin: 12px;
   }
 
-  .root :global(.flow-diagram::after) {
-    display: none;
-  }
-
   .root :global(.quick-start-close) {
     border-radius: 12px;
   }
@@ -857,8 +839,7 @@
   .root :global(.hero-runtime__mark),
   .root :global(.hero-network__route-pulse),
   .root :global(.hero-network__signal),
-  .root :global(.hero-surface-card),
-  .root :global(.flow-diagram::after) {
+  .root :global(.hero-surface-card) {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
