@@ -12,7 +12,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke": "electron scripts/smoke-electron.mjs"
   },
   "dependencies": {
     "@miniclaw/pi-tui": "file:../tui",
