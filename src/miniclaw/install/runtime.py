@@ -1038,6 +1038,10 @@ def discard_interrupted_runtime_staging(
         if target in final_references.targets:
             if not _restore_or_preserve_runtime_quarantine(quarantine):
                 _runtime_failed()
+            restored_references = _stable_runtime_reference_facts(
+                layout,
+                verify_links=True,
+            )
             _verified_private_staging_tree(
                 layout.staging,
                 marker=marker,
@@ -1045,14 +1049,26 @@ def discard_interrupted_runtime_staging(
                 executables=executables,
                 marker_token=marker_token,
             )
-            restored_references = _stable_runtime_reference_facts(
-                layout,
-                verify_links=True,
-            )
-            if target not in restored_references.targets or not lock.owns(layout):
+            still_owned = lock.owns(layout)
+            if target not in restored_references.targets or not still_owned:
                 _runtime_failed()
             return False
-        if final_references != post_second or not lock.owns(layout):
+        if final_references != post_second:
+            _restore_or_preserve_runtime_quarantine(quarantine)
+            _runtime_failed()
+        try:
+            _verified_private_staging_tree(
+                quarantine.private,
+                marker=marker,
+                identity=identity,
+                executables=executables,
+                marker_token=marker_token,
+            )
+        except BaseException:
+            _restore_or_preserve_runtime_quarantine(quarantine)
+            quarantine = None
+            raise
+        if not lock.owns(layout):
             _restore_or_preserve_runtime_quarantine(quarantine)
             _runtime_failed()
 

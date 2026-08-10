@@ -1955,6 +1955,127 @@ class InstallRuntimeTests(unittest.TestCase):
             identity,
         )
 
+    def test_discard_interrupted_staging_rechecks_marker_after_final_references(
+        self,
+    ) -> None:
+        """成功分支 final refs 期间替换 private marker 时必须报错并保留 tree。"""
+        identity = self._write_owned_staging()
+        original_marker = self.layout.staging / ".runtime-recovery.json"
+        marker_identity = (original_marker.lstat().st_dev, original_marker.lstat().st_ino)
+        lock = self._acquire_live_lock()
+        real_references = runtime_module._stable_runtime_reference_facts
+        calls = 0
+        replacement_identity: tuple[int, int] | None = None
+
+        def replace_private_marker(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """第 5 次 final facts 完成后原子发布 same-bytes/new-inode marker。"""
+            nonlocal calls, replacement_identity
+            references = real_references(layout, verify_links=verify_links)
+            calls += 1
+            if calls == 5:
+                entries = tuple(
+                    layout.runtimes_dir.glob("..0.7.0.staging.quarantine-*/entry")
+                )
+                self.assertEqual(len(entries), 1)
+                marker = entries[0] / ".runtime-recovery.json"
+                replacement = marker.with_name(".runtime-recovery.replacement")
+                self._write_private(replacement, marker.read_bytes())
+                os.replace(replacement, marker)
+                replacement_identity = (marker.lstat().st_dev, marker.lstat().st_ino)
+                self.assertNotEqual(replacement_identity, marker_identity)
+            return references
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=replace_private_marker,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertEqual(calls, 5)
+        self.assertIsNotNone(replacement_identity)
+        preserved = (
+            (self.layout.staging,)
+            if self.layout.staging.exists()
+            else tuple(
+                self.layout.runtimes_dir.glob("..0.7.0.staging.quarantine-*/entry")
+            )
+        )
+        self.assertEqual(len(preserved), 1)
+        self.assertEqual(
+            (preserved[0].lstat().st_dev, preserved[0].lstat().st_ino),
+            identity,
+        )
+        marker = preserved[0] / ".runtime-recovery.json"
+        self.assertEqual((marker.lstat().st_dev, marker.lstat().st_ino), replacement_identity)
+
+    def test_discard_interrupted_staging_restore_rechecks_marker_after_final_references(
+        self,
+    ) -> None:
+        """恢复分支 restored refs 期间替换 public marker 时必须报错而非 False。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        identity = self._write_owned_staging()
+        original_marker = self.layout.staging / ".runtime-recovery.json"
+        marker_identity = (original_marker.lstat().st_dev, original_marker.lstat().st_ino)
+        lock = self._acquire_live_lock()
+        real_references = runtime_module._stable_runtime_reference_facts
+        calls = 0
+        replacement_identity: tuple[int, int] | None = None
+
+        def publish_reference(layout: InstallLayout) -> None:
+            """在 durable quarantine 后发布 target Release current。"""
+            layout.current.symlink_to("runtimes/0.7.0")
+
+        def replace_restored_marker(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """第 6 次 restored facts 完成后原子发布 same-bytes/new-inode marker。"""
+            nonlocal calls, replacement_identity
+            references = real_references(layout, verify_links=verify_links)
+            calls += 1
+            if calls == 6:
+                marker = layout.staging / ".runtime-recovery.json"
+                replacement = marker.with_name(".runtime-recovery.replacement")
+                self._write_private(replacement, marker.read_bytes())
+                os.replace(replacement, marker)
+                replacement_identity = (marker.lstat().st_dev, marker.lstat().st_ino)
+                self.assertNotEqual(replacement_identity, marker_identity)
+            return references
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_commit_hook",
+                side_effect=publish_reference,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=replace_restored_marker,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertEqual(calls, 6)
+        self.assertIsNotNone(replacement_identity)
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+        marker = self.layout.staging / ".runtime-recovery.json"
+        self.assertEqual((marker.lstat().st_dev, marker.lstat().st_ino), replacement_identity)
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+
     def test_discard_interrupted_staging_fsync_failure_restores_exact_inode(self) -> None:
         """quarantine destination fsync 失败必须恢复 exact staging 并稳定报错。"""
         identity = self._write_owned_staging()
