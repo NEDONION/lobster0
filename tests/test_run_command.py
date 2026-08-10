@@ -222,6 +222,56 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((plan.memory_mib, plan.cpu_seconds, plan.pids_limit), (1024, 120, 256))
         self.assertNotIn("HOME", plan.environment_names)
 
+    def test_seatbelt_automation_plan_binds_env_shebang_chain(self) -> None:
+        """Seatbelt Automation plan 必须冻结 lark-cli、env 与 exact node。"""
+        executable_root = self.workspace / "seatbelt-bin"
+        executable_root.mkdir()
+        node = executable_root / "node"
+        node.write_bytes(b"native-node")
+        node.chmod(0o700)
+        lark_cli = executable_root / "lark-cli"
+        lark_cli.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+        lark_cli.chmod(0o700)
+        context = ToolContext(
+            user_id=1,
+            session_id=1,
+            turn_id=1,
+            state_home=self.context.state_home,
+            workspace=self.workspace,
+            read_only_roots=(),
+            source="automation",
+            task_run_id=1,
+        )
+        tool = RunCommandTool(
+            executable_path=str(executable_root),
+            automation_backend="seatbelt",
+        )
+
+        plan = tool.build_execution_plan(
+            context,
+            tool.validate({"program": "lark-cli", "args": ["--version"]}),
+        )
+
+        self.assertEqual(plan.backend, "seatbelt")
+        self.assertEqual(plan.schema_version, 2)
+        self.assertEqual(
+            tuple(ref.path.name for ref in plan.executables),
+            ("lark-cli", "env", "node"),
+        )
+
+    def test_interactive_host_plan_does_not_gain_unverified_refs(self) -> None:
+        """交互 Host path 继续使用 v1，不能持久化未消费的 executable refs。"""
+        tool = RunCommandTool()
+
+        plan = tool.build_execution_plan(
+            self.context,
+            tool.validate({"program": sys.executable, "args": ["--version"]}),
+        )
+
+        self.assertEqual(plan.backend, "host")
+        self.assertEqual(plan.schema_version, 1)
+        self.assertEqual(plan.executables, ())
+
     async def test_rootless_client_environment_is_host_only_and_not_persisted(self) -> None:
         """rootless client transport 只给引擎进程，不进入 container env/Plan/Receipt。"""
         executable_root = self.workspace / "bin"

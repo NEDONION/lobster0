@@ -10,7 +10,11 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from lobster0.evals.cases import EvalCaseError, load_cases  # noqa: E402
+from lobster0.evals.cases import (  # noqa: E402
+    EvalCaseError,
+    load_cases,
+    load_feishu_automation_live_cases,
+)
 
 
 def valid_case(case_id: str = "CORE-001") -> dict[str, object]:
@@ -69,6 +73,33 @@ def live_case(case_id: str = "FEISHU-LIVE-001") -> dict[str, object]:
         },
         "introduced_by": "phase-5.1",
         "tags": ["feishu", "live", "gateway"],
+    }
+
+
+def feishu_automation_live_case(
+    case_id: str = "FEISHU-AUTO-001",
+    fixture: str = "live_one_shot_delivery",
+) -> dict[str, object]:
+    """返回不携带脚本、平台身份或凭据的 Automation Live 场景。"""
+    return {
+        "schema_version": 1,
+        "id": case_id,
+        "title": "one shot delivery",
+        "status": "active",
+        "layers": ["live"],
+        "capability": "feishu_automation_e2e",
+        "query": "触发一次已注册的真实飞书自动任务。",
+        "turns": [],
+        "setup": {"files": {}},
+        "automation": {"schema": "automation.v1", "fixture": fixture},
+        "expected": {
+            "automation_status": "succeeded",
+            "delivery_count": 1,
+            "automation_evidence": ["one_slot_only", "delivery_once"],
+            "forbidden_automation": ["duplicate_run"],
+        },
+        "introduced_by": "phase6-production",
+        "tags": ["feishu", "automation", "live"],
     }
 
 
@@ -410,6 +441,58 @@ class EvalCaseLoaderTest(unittest.TestCase):
 
                 with self.assertRaisesRegex(EvalCaseError, expected):
                     load_cases(root)
+
+    def test_loads_exact_feishu_automation_live_suite(self) -> None:
+        """Automation Live loader 必须只接受固定十条 active 场景。"""
+        cases = load_feishu_automation_live_cases(PROJECT_ROOT / "evals" / "scenarios")
+
+        self.assertEqual(
+            tuple(case.id for case in cases),
+            tuple(f"FEISHU-AUTO-{index:03d}" for index in range(1, 11)),
+        )
+        self.assertTrue(
+            all(case.capability == "feishu_automation_e2e" for case in cases)
+        )
+        self.assertTrue(all(case.automation_fixture for case in cases))
+        self.assertTrue(all(case.expected.automation_evidence for case in cases))
+
+    def test_feishu_automation_live_schema_fails_closed(self) -> None:
+        """Live 数据不能缺号、携带脚本、未知 fixture 或空 Evidence。"""
+        fixtures = (
+            "live_one_shot_delivery",
+            "live_interval_two_slots",
+            "live_gateway_restart",
+            "live_interrupted_recovery",
+            "live_waiting_approval",
+            "live_approval_continuation",
+            "live_structured_silence",
+            "live_durable_estop",
+            "live_budget_stop",
+            "live_delivery_unknown_recovery",
+        )
+        valid_rows = [
+            feishu_automation_live_case(f"FEISHU-AUTO-{index:03d}", fixture)
+            for index, fixture in enumerate(fixtures, 1)
+        ]
+        mutations = (
+            lambda rows: rows.pop(),
+            lambda rows: rows[0]["automation"].update({"fixture": "arbitrary_script"}),
+            lambda rows: rows[0].update({"offline": valid_case()["offline"]}),
+            lambda rows: rows[0]["expected"].update({"automation_evidence": []}),
+            lambda rows: rows[0].update({"status": "planned"}),
+            lambda rows: rows[0].update({"token": "do-not-store"}),
+            lambda rows: rows[0]["setup"].update({"files": {"/tmp/private": "x"}}),
+            lambda rows: rows[0].update({"surprise": True}),
+        )
+        for mutate in mutations:
+            with self.subTest(mutation=mutate), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                rows = json.loads(json.dumps(valid_rows))
+                mutate(rows)
+                write_cases(root, "feishu-automation-live.v1.jsonl", rows)
+
+                with self.assertRaises(EvalCaseError):
+                    load_feishu_automation_live_cases(root)
 
 
 class RepositoryEvalSuiteTest(unittest.TestCase):

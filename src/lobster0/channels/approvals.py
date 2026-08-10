@@ -137,19 +137,7 @@ class ChannelApprovalController:
 
     def prompt(self, *, user_id: int, approval_id: int) -> ApprovalEnvelope:
         """从 Core presentation 构建平台中立、可持久化的 v2 envelope。"""
-        presentation = self._approvals.presentation(user_id, approval_id)
-        fallback = _fallback_text(presentation)
-        approval = presentation.approval
-        decisions = tuple(dict.fromkeys((*presentation.grant_modes, ApprovalDecision.DENY)))
-        return ApprovalEnvelope(
-            version=2,
-            approval_id=approval.id,
-            tool_name=approval.tool_name,
-            summary=approval.summary,
-            decisions=decisions,
-            expires_at=approval.expires_at.astimezone(UTC).isoformat(),
-            fallback_text=fallback,
-        )
+        return approval_envelope(self._approvals.presentation(user_id, approval_id))
 
     async def handle_text(
         self,
@@ -258,6 +246,23 @@ def approval_delivery_payload(envelope: ApprovalEnvelope) -> str:
         allow_nan=False,
         separators=(",", ":"),
         sort_keys=True,
+    )
+
+
+def approval_envelope(presentation: ApprovalPresentation) -> ApprovalEnvelope:
+    """把 Core presentation 转为可持久化 envelope；类型错误时拒绝。"""
+    if not isinstance(presentation, ApprovalPresentation):
+        raise TypeError("approval_envelope requires ApprovalPresentation")
+    approval = presentation.approval
+    decisions = tuple(dict.fromkeys((*presentation.grant_modes, ApprovalDecision.DENY)))
+    return ApprovalEnvelope(
+        version=2,
+        approval_id=approval.id,
+        tool_name=approval.tool_name,
+        summary=approval.summary,
+        decisions=decisions,
+        expires_at=approval.expires_at.astimezone(UTC).isoformat(),
+        fallback_text=_fallback_text(presentation),
     )
 
 

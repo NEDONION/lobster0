@@ -17,6 +17,7 @@ from lobster0.sandbox.base import (
     SandboxPlanError,
 )
 from lobster0.sandbox.docker import DockerSandbox, discover_rootless_client_transport
+from lobster0.sandbox.executables import capture_executable_chain
 from lobster0.sandbox.host import HostSandbox
 from lobster0.sandbox.seatbelt import SeatbeltSandbox
 from lobster0.tools.base import (
@@ -188,6 +189,14 @@ class RunCommandTool:
             if backend == "docker"
             else normalized.resolved_program
         )
+        executables = (
+            capture_executable_chain(
+                Path(normalized.resolved_program),
+                executable_path=self._executable_path,
+            )
+            if backend == "seatbelt"
+            else ()
+        )
         return ExecutionPlan(
             argv=(planned_program, *normalized.args),
             cwd=context.workspace,
@@ -200,6 +209,8 @@ class RunCommandTool:
             pids_limit=self._sandbox_pids_limit if automation else 64,
             network_mode="none",
             backend=backend,
+            executables=executables,
+            schema_version=2 if backend == "seatbelt" else 1,
         )
 
     async def execute_plan(

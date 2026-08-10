@@ -43,6 +43,25 @@ class SandboxAvailability:
 
 
 @dataclass(frozen=True, slots=True)
+class ExecutableRef:
+    """绑定一个 exact executable path 与审批时的内容摘要。"""
+
+    path: Path
+    sha256: str
+
+    def __post_init__(self) -> None:
+        """拒绝相对/控制字符路径和非标准 SHA-256。"""
+        path = _absolute_path(self.path)
+        if (
+            _has_control(str(path))
+            or not isinstance(self.sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", self.sha256) is None
+        ):
+            raise SandboxPlanError("execution_plan_invalid")
+        object.__setattr__(self, "path", path)
+
+
+@dataclass(frozen=True, slots=True)
 class ExecutionPlan:
     """描述一次不经 Shell、可 canonicalize 且可绑定审批的命令执行。"""
 
@@ -57,11 +76,12 @@ class ExecutionPlan:
     pids_limit: int
     network_mode: NetworkMode
     backend: SandboxBackendName
+    executables: tuple[ExecutableRef, ...] = ()
     schema_version: int = 1
 
     def __post_init__(self) -> None:
         """规范顺序和 Path，并拒绝歧义、控制字符与越界资源。"""
-        if self.schema_version != 1:
+        if type(self.schema_version) is not int or self.schema_version not in {1, 2}:
             raise SandboxPlanError("execution_plan_invalid", "unsupported schema version")
         if (
             not self.argv
@@ -102,6 +122,19 @@ class ExecutionPlan:
             raise SandboxPlanError("execution_plan_invalid", "network mode is invalid")
         if self.backend not in _BACKENDS:
             raise SandboxPlanError("execution_plan_invalid", "backend is invalid")
+        if not isinstance(self.executables, tuple) or any(
+            not isinstance(ref, ExecutableRef) for ref in self.executables
+        ):
+            raise SandboxPlanError("execution_plan_invalid")
+        if self.schema_version == 1:
+            if self.executables:
+                raise SandboxPlanError("execution_plan_invalid")
+        elif (
+            self.backend != "seatbelt"
+            or not 1 <= len(self.executables) <= 4
+            or len({ref.path for ref in self.executables}) != len(self.executables)
+        ):
+            raise SandboxPlanError("execution_plan_invalid")
         object.__setattr__(self, "cwd", cwd)
         object.__setattr__(self, "environment_names", environment_names)
         object.__setattr__(self, "read_roots", read_roots)
@@ -124,6 +157,11 @@ class ExecutionPlan:
             "timeout_seconds": self.timeout_seconds,
             "write_roots": [str(path) for path in self.write_roots],
         }
+        if self.schema_version == 2:
+            value["executables"] = [
+                {"path": str(ref.path), "sha256": ref.sha256}
+                for ref in self.executables
+            ]
         return json.dumps(
             value,
             ensure_ascii=False,
@@ -143,7 +181,7 @@ class ExecutionPlan:
             decoded = json.loads(value, parse_constant=_reject_json_constant)
         except (json.JSONDecodeError, ValueError):
             raise SandboxPlanError("execution_plan_invalid") from None
-        expected = {
+        common_fields = {
             "argv",
             "backend",
             "cpu_seconds",
@@ -157,6 +195,13 @@ class ExecutionPlan:
             "timeout_seconds",
             "write_roots",
         }
+        if not isinstance(decoded, dict):
+            raise SandboxPlanError("execution_plan_invalid")
+        try:
+            schema_version = _integer(decoded.get("schema_version"))
+        except TypeError:
+            raise SandboxPlanError("execution_plan_invalid") from None
+        expected = common_fields if schema_version == 1 else common_fields | {"executables"}
         if not isinstance(decoded, dict) or set(decoded) != expected:
             raise SandboxPlanError("execution_plan_invalid")
         try:
@@ -174,7 +219,12 @@ class ExecutionPlan:
                 pids_limit=_integer(decoded["pids_limit"]),
                 network_mode=cast(NetworkMode, _string(decoded["network_mode"])),
                 backend=cast(SandboxBackendName, _string(decoded["backend"])),
-                schema_version=_integer(decoded["schema_version"]),
+                executables=(
+                    _executable_refs(decoded["executables"])
+                    if schema_version == 2
+                    else ()
+                ),
+                schema_version=schema_version,
             )
         except (TypeError, SandboxPlanError):
             raise SandboxPlanError("execution_plan_invalid") from None
@@ -346,6 +396,23 @@ def _string_tuple(value: object) -> tuple[str, ...]:
     if not isinstance(value, list) or any(not isinstance(item, str) for item in value):
         raise TypeError("value is not a string array")
     return tuple(value)
+
+
+def _executable_refs(value: object) -> tuple[ExecutableRef, ...]:
+    """严格提取 v2 executable reference array。"""
+    if not isinstance(value, list):
+        raise TypeError("value is not an executable reference array")
+    refs: list[ExecutableRef] = []
+    for item in value:
+        if not isinstance(item, dict) or set(item) != {"path", "sha256"}:
+            raise TypeError("value is not an executable reference array")
+        refs.append(
+            ExecutableRef(
+                Path(_string(item["path"])),
+                _string(item["sha256"]),
+            )
+        )
+    return tuple(refs)
 
 
 def _integer(value: object) -> int:

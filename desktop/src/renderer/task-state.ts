@@ -3,6 +3,7 @@ import {
   appendUser,
   createInitialState,
   reduceFrame,
+  toggleItem,
   type AppState,
 } from "@lobster0/pi-tui/state";
 
@@ -95,11 +96,28 @@ export function hydrateSession(history: SessionHistory): DesktopTaskState {
   return { ...state, status: latest.status === "completed" ? "completed" : "idle" };
 }
 
+export function toggleDesktopItem(state: DesktopTaskState, id: number): DesktopTaskState {
+  return { ...state, run: toggleItem(state.run, id) };
+}
+
+// 共享 pi-tui 状态库把新增的 reasoning item 默认设为 expanded: true（适配 TUI 的展示习惯）。
+// Desktop 里“思考”内容通常很长，默认收起、按需展开，因此只对新增的 reasoning item 覆盖默认值，
+// 已存在的项（无论是用户手动展开的还是仍在流式追加内容的）保持原样。
+function collapseNewReasoning(previous: AppState, next: AppState): AppState {
+  const previousIds = new Set(previous.timeline.map((item) => item.id));
+  const timeline = next.timeline.map((item) =>
+    item.kind === "reasoning" && !previousIds.has(item.id)
+      ? { ...item, expanded: false }
+      : item,
+  );
+  return { ...next, timeline };
+}
+
 export function reduceDesktopFrame(
   state: DesktopTaskState,
   frame: ServerFrame,
 ): DesktopTaskState {
-  const reduced = reduceFrame(state.run, frame);
+  const reduced = collapseNewReasoning(state.run, reduceFrame(state.run, frame));
   if (frame.type === "event.turn_started") {
     return { ...state, status: "running", run: reduced, error: null };
   }

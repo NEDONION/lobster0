@@ -67,11 +67,17 @@ class _FakeDeliveryProjector:
     def __init__(self) -> None:
         """创建空投影记录。"""
         self.projected = []
+        self.projected_approvals = []
         self.recoveries = 0
 
     def project(self, run: TaskRun, response: TaskResponse) -> tuple[object, ...]:
         """记录完整终态对象，不制造真实 Outbox。"""
         self.projected.append((run, response))
+        return ()
+
+    def project_approval(self, run: TaskRun, approval_id: int) -> tuple[object, ...]:
+        """记录等待审批 Run 与绑定审批编号。"""
+        self.projected_approvals.append((run, approval_id))
         return ()
 
     def recover(self) -> int:
@@ -296,8 +302,10 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
             ttl_seconds=600,
             summary="read_file status.txt",
         )
+        delivery = _FakeDeliveryProjector()
         attempt = await self._runner(
-            _FakeAutomationTurns([self._result(approval_id=approval.id)])
+            _FakeAutomationTurns([self._result(approval_id=approval.id)]),
+            delivery=delivery,
         ).run_once("worker-a", self.now)
 
         stored = self.runs.get(attempt.run_id)
@@ -308,6 +316,7 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNone(stored.worker_id)
         self.assertIsNone(stored.lease_expires_at)
+        self.assertEqual(delivery.projected_approvals, [(stored, approval.id)])
 
     async def test_waiting_run_resumes_only_with_bound_approval_id(self) -> None:
         """审批 continuation 只能用当前 Run 绑定的 Approval 重新取得 lease。"""

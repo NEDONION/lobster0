@@ -970,6 +970,31 @@ class FeishuEvidenceReportTest(unittest.TestCase):
 class FeishuLiveHarnessSafetyTest(unittest.TestCase):
     """保证 Runner 先显式确认、再做静态 preflight，失败时零副作用。"""
 
+    def test_live_environment_honors_installed_secret_file(self) -> None:
+        """隔离 worktree 必须复用 Gateway 的绝对 LOBSTER0_ENV_FILE。"""
+        api = self._api("_load_live_environment")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            secret_file = root / "installed.env"
+            home = root / "state"
+            secret_file.write_text(
+                f"LOBSTER0_HOME={home}\nLOBSTER0_FEISHU_APP_ID=fake-app\n",
+                encoding="utf-8",
+            )
+            secret_file.chmod(0o600)
+            with patch.dict(
+                os.environ,
+                {"LOBSTER0_ENV_FILE": str(secret_file)},
+                clear=True,
+            ):
+                environment, paths = api._load_live_environment(
+                    project_root=root / "worktree",
+                    home=None,
+                )
+
+        self.assertEqual(paths.home, home.resolve())
+        self.assertEqual(environment["LOBSTER0_FEISHU_APP_ID"], "fake-app")
+
     def test_missing_confirmation_reads_nothing_and_creates_nothing(self) -> None:
         """未给 confirm 时不能解析状态、加载 case、启动 Gateway 或建输出目录。"""
         api = self._api("run_feishu_live_harness")

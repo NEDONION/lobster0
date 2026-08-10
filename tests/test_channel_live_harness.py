@@ -46,6 +46,32 @@ class ChannelLiveHarnessTest(unittest.TestCase):
                 self.assertFalse(home.exists())
                 self.assertFalse(output.exists())
 
+    def test_feishu_automation_script_requires_confirmation_before_state(self) -> None:
+        """Automation Live 脚本未确认时也必须零状态、零 Evidence。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            home = root / "must-not-exist-home"
+            output = root / "must-not-exist-evidence"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(PROJECT_ROOT / "scripts" / "feishu_automation_live.py"),
+                    "--home",
+                    str(home),
+                    "--output-dir",
+                    str(output),
+                ],
+                cwd=PROJECT_ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("--confirm-live is required", result.stderr)
+        self.assertFalse(home.exists())
+        self.assertFalse(output.exists())
+
     def test_harnesses_have_exact_fifteen_stable_checks_and_no_send_calls(self) -> None:
         """清单覆盖设计的 15 项，入口源码不得调用平台发送 API。"""
         self.assertEqual(len(CHECKLIST), 15)

@@ -477,6 +477,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
     task_delivery = TaskDeliveryService(
         DeliveryRepository(database),
         task_runs,
+        approvals=approvals,
         channel_max_chars={
             "feishu": config.channels.feishu.message_max_chars,
             "telegram": config.channels.telegram.message_max_chars,

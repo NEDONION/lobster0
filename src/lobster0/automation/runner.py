@@ -56,6 +56,10 @@ class TaskDeliveryProjector(Protocol):
         """幂等投影成功响应。"""
         ...
 
+    def project_approval(self, run: TaskRun, approval_id: int) -> tuple[object, ...]:
+        """幂等投影等待中的审批提示。"""
+        ...
+
     def recover(self) -> int:
         """补投影崩溃窗口中的既有成功 Run。"""
         ...
@@ -238,6 +242,11 @@ class TaskRunner:
                     "task_id": waiting.task_id,
                 },
             )
+            if self._delivery is not None:
+                try:
+                    self._delivery.project_approval(waiting, result.approval_id)
+                except Exception:  # noqa: BLE001 - Run 已持久化，Outbox 由 recovery 补投影
+                    _LOGGER.warning("task_approval_projection_failed", exc_info=False)
             return TaskRunAttempt(
                 waiting.id,
                 waiting.task_id,

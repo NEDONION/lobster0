@@ -143,6 +143,16 @@ _AUTOMATION_FIXTURES = frozenset(
         "checkpoint_quota",
         "rollback_conflict",
         "heartbeat_reconcile",
+        "live_one_shot_delivery",
+        "live_interval_two_slots",
+        "live_gateway_restart",
+        "live_interrupted_recovery",
+        "live_waiting_approval",
+        "live_approval_continuation",
+        "live_structured_silence",
+        "live_durable_estop",
+        "live_budget_stop",
+        "live_delivery_unknown_recovery",
     }
 )
 _BROWSER_FIXTURES = frozenset(
@@ -216,6 +226,7 @@ _AUTOMATION_EVIDENCE = frozenset(
         "stale_run_interrupted",
         "lease_released",
         "approval_id_bound",
+        "approval_delivery_once",
         "continuation_terminal",
         "original_budget_preserved",
         "delivery_once",
@@ -230,6 +241,13 @@ _AUTOMATION_EVIDENCE = frozenset(
         "concurrent_edit_preserved",
         "one_system_task",
         "active_hours_bounded",
+        "two_slots_once",
+        "task_identity_preserved",
+        "gateway_restart_recovered",
+        "structured_silence",
+        "budget_stopped",
+        "idempotency_key_reused",
+        "provider_request_observed",
     }
 )
 _MEMORY_EVIDENCE = frozenset(
@@ -450,6 +468,31 @@ def load_automation_cases(root: Path) -> tuple[EvalCase, ...]:
     return cases
 
 
+def load_feishu_automation_live_cases(root: Path) -> tuple[EvalCase, ...]:
+    """加载固定十条 active Feishu Automation Live 场景。
+
+    Args:
+        root: 版本化 JSONL 场景目录。
+
+    Returns:
+        按 ID 排序的十条真实飞书自动化场景。
+
+    Raises:
+        EvalCaseError: 数据集数量、ID 或通用场景字段不符合发布契约。
+    """
+    cases = tuple(
+        case
+        for case in load_cases(root)
+        if case.status == "active" and case.capability == "feishu_automation_e2e"
+    )
+    expected_ids = tuple(f"FEISHU-AUTO-{index:03d}" for index in range(1, 11))
+    if tuple(case.id for case in cases) != expected_ids:
+        raise EvalCaseError(
+            "feishu automation live suite must contain exactly FEISHU-AUTO-001..010"
+        )
+    return cases
+
+
 def load_browser_cases(root: Path) -> tuple[EvalCase, ...]:
     """加载固定十八条 active Browser v1 场景。"""
     cases = tuple(
@@ -520,13 +563,16 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         if responses or channel_fixture is not None or not expected.memory_evidence:
             raise EvalCaseError(f"memory fixture has invalid execution fields at {source}")
     if automation_fixture is not None:
-        if (
-            status != "active"
-            or layers != ("automation",)
-            or capability != "automation_runtime"
-        ):
+        valid_automation_case = (
+            status == "active"
+            and (
+                (layers == ("automation",) and capability == "automation_runtime")
+                or (layers == ("live",) and capability == "feishu_automation_e2e")
+            )
+        )
+        if not valid_automation_case:
             raise EvalCaseError(
-                f"automation fixture must be active automation_runtime at {source}"
+                f"automation fixture must be active automation runtime/live at {source}"
             )
         if responses or channel_fixture is not None or memory_fixture is not None:
             raise EvalCaseError(f"automation fixture has invalid execution fields at {source}")
@@ -544,7 +590,10 @@ def _parse_case(raw: object, source: str) -> EvalCase:
             raise EvalCaseError(f"browser fixture has invalid execution fields at {source}")
         if not expected.browser_evidence:
             raise EvalCaseError(f"browser fixture has no expected evidence at {source}")
-    if status == "active" and layers == ("live",) and capability != "feishu_e2e":
+    if status == "active" and layers == ("live",) and capability not in {
+        "feishu_e2e",
+        "feishu_automation_e2e",
+    }:
         raise EvalCaseError(f"active live case must use feishu_e2e capability at {source}")
     if capability == "feishu_e2e":
         if status == "active" and layers != ("live",):
@@ -557,6 +606,15 @@ def _parse_case(raw: object, source: str) -> EvalCase:
             expected.live_local_evidence or expected.live_human_evidence
         ):
             raise EvalCaseError(f"active Feishu Live case has no evidence at {source}")
+    if capability == "feishu_automation_e2e":
+        if status == "active" and layers != ("live",):
+            raise EvalCaseError(
+                f"active Feishu Automation Live case must use only live layer at {source}"
+            )
+        if automation_fixture is None or responses or channel_fixture is not None:
+            raise EvalCaseError(
+                f"Feishu Automation Live case has invalid execution fields at {source}"
+            )
     return EvalCase(
         schema_version=schema_version,
         id=case_id,

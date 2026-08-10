@@ -13,14 +13,21 @@ from lobster0.automation.models import (
     ScheduleSpec,
     TaskBudget,
     TaskResponse,
+    TaskRun,
 )
 from lobster0.automation.repository import ScheduledTaskRepository, TaskRunRepository
+from lobster0.channels.approvals import ApprovalEnvelope, parse_approval_delivery_payload
 from lobster0.channels.base import ChannelTransportError, SendReceipt
 from lobster0.channels.delivery import DeliveryWorker
+from lobster0.policy.engine import PolicyAction, PolicyDecision
+from lobster0.providers.base import ToolCall
 from lobster0.storage.channels import ChannelStateError, DeliveryRepository
+from lobster0.storage.conversations import SessionRepository, TurnRepository
 from lobster0.storage.database import Database
 from lobster0.storage.migrations import apply_migrations
 from lobster0.storage.repositories import OwnerRepository
+from lobster0.storage.tooling import ApprovalRepository
+from lobster0.tools.base import ToolContext
 from tests.fakes.fake_channel import FakeChannelTransport
 
 
@@ -38,10 +45,24 @@ class TaskDeliveryServiceTest(unittest.IsolatedAsyncioTestCase):
         self.tasks = ScheduledTaskRepository(self.database, clock=lambda: self.now)
         self.runs = TaskRunRepository(self.database, clock=lambda: self.now)
         self.deliveries = DeliveryRepository(self.database, clock=lambda: self.now)
+        self.approvals = ApprovalRepository(self.database, clock=lambda: self.now)
+        self.session = SessionRepository(self.database).get_or_create_cli(
+            self.owner.id,
+            "task-delivery-fixture",
+        )
+        turns = TurnRepository(self.database)
+        self.turn = turns.create_with_user_message(
+            self.session.id,
+            "task-delivery-event",
+            "test-model",
+            "write status",
+        )
+        turns.mark_running(self.turn.id)
         self.wakes = 0
         self.service = TaskDeliveryService(
             self.deliveries,
             self.runs,
+            approvals=self.approvals,
             channel_max_chars={"feishu": 18, "telegram": 16, "discord": 14},
             wake=self._wake,
         )
@@ -64,6 +85,7 @@ class TaskDeliveryServiceTest(unittest.IsolatedAsyncioTestCase):
         restarted = TaskDeliveryService(
             DeliveryRepository(self.database, clock=lambda: self.now),
             TaskRunRepository(self.database, clock=lambda: self.now),
+            approvals=ApprovalRepository(self.database, clock=lambda: self.now),
             channel_max_chars={"feishu": 18, "telegram": 16, "discord": 14},
         )
         self.assertEqual(restarted.recover(), 1)
@@ -129,6 +151,55 @@ class TaskDeliveryServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         with self.assertRaisesRegex(ValueError, "succeeded"):
             self.service.project(queued, TaskResponse(True, "queued"))
+
+    def test_waiting_approval_projects_durable_card_and_recovers_idempotently(self) -> None:
+        """等待审批必须持久化唯一 Approval Delivery，重启不能重复发卡。"""
+        run, approval_id = self._waiting_run()
+
+        first = self.service.project_approval(run, approval_id)
+        second = self.service.project_approval(run, approval_id)
+        parsed = parse_approval_delivery_payload(first[0].content)
+
+        self.assertIsInstance(parsed, ApprovalEnvelope)
+        assert isinstance(parsed, ApprovalEnvelope)
+        self.assertEqual(parsed.approval_id, approval_id)
+        self.assertEqual(first[0].delivery_kind, "approval")
+        self.assertEqual(first[0].task_run_id, run.id)
+        self.assertEqual([item.id for item in first], [item.id for item in second])
+        restarted = TaskDeliveryService(
+            DeliveryRepository(self.database, clock=lambda: self.now),
+            TaskRunRepository(self.database, clock=lambda: self.now),
+            approvals=ApprovalRepository(self.database, clock=lambda: self.now),
+            channel_max_chars={"feishu": 18, "telegram": 16, "discord": 14},
+        )
+        self.assertEqual(restarted.recover(), 1)
+
+    def test_approval_and_terminal_message_use_distinct_idempotency_keys(self) -> None:
+        """同一 Run 批准后可投递最终消息，不能与审批卡 UUID 冲突。"""
+        waiting, approval_id = self._waiting_run()
+        approval_delivery = self.service.project_approval(waiting, approval_id)[0]
+        running = self.runs.resume_waiting(
+            waiting.id,
+            approval_id,
+            worker_id="approval-continuation",
+            now=self.now,
+            lease_seconds=30,
+        )
+        response = TaskResponse(True, "finished")
+        completed = self.runs.finish(
+            running.id,
+            status=RunStatus.SUCCEEDED,
+            now=self.now,
+            worker_id="approval-continuation",
+            response=response,
+        )
+
+        message_delivery = self.service.project(completed, response)[0]
+
+        self.assertNotEqual(
+            approval_delivery.idempotency_key,
+            message_delivery.idempotency_key,
+        )
 
     async def test_unknown_crash_window_reuses_uuid_and_preserves_part_order(self) -> None:
         """远端结果不确定时重启只能复用首片 UUID，后续分片仍按顺序发送。"""
@@ -198,6 +269,56 @@ class TaskDeliveryServiceTest(unittest.IsolatedAsyncioTestCase):
             worker_id="delivery-worker",
             response=response,
         )
+
+    def _waiting_run(self) -> tuple[TaskRun, int]:
+        """创建绑定真实 pending Approval 的 waiting TaskRun。"""
+        task = self.tasks.create(
+            owner_id=self.owner.id,
+            name="approval delivery",
+            schedule=ScheduleSpec(
+                ScheduleKind.INTERVAL,
+                "3600",
+                "UTC",
+                self.now + timedelta(hours=1),
+            ),
+            prompt="write status",
+            skill_names=(),
+            delivery=DeliveryTarget("owner", "feishu", "default", "oc_owner"),
+            policy_profile="automation-default",
+            budget=TaskBudget(),
+        )
+        self.runs.enqueue(task, scheduled_for=self.now)
+        claimed = self.runs.claim_next("delivery-worker", now=self.now, lease_seconds=30)
+        assert claimed is not None
+        self.runs.mark_running(claimed.id, "delivery-worker", now=self.now)
+        context = ToolContext(
+            user_id=self.owner.id,
+            session_id=self.session.id,
+            turn_id=self.turn.id,
+            state_home=Path(self.temporary_directory.name),
+            workspace=Path(self.temporary_directory.name),
+            read_only_roots=(),
+        )
+        approval = self.approvals.create_waiting(
+            context,
+            ToolCall(
+                "call_write",
+                "write_file",
+                {"path": "status.txt", "content": "done"},
+            ),
+            {"path": "status.txt", "content": "done"},
+            PolicyDecision(PolicyAction.REQUIRE_APPROVAL, "approval_required"),
+            ttl_seconds=600,
+            summary="write_file status.txt",
+        )
+        waiting = self.runs.mark_waiting(
+            claimed.id,
+            "delivery-worker",
+            session_id=self.session.id,
+            turn_id=self.turn.id,
+            approval_id=approval.id,
+        )
+        return waiting, approval.id
 
     def _wake(self) -> None:
         """记录投影服务通知 DeliveryWorker 的次数。"""

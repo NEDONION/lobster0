@@ -23,7 +23,8 @@ from lobster0.automation.repository import (
     TaskRunRepository,
 )
 from lobster0.bootstrap import BootstrapError, initialize_state
-from lobster0.config import ConfigError
+from lobster0.channels.supervisor import collect_enabled_channels
+from lobster0.config import ConfigError, load_config
 from lobster0.doctor import CheckStatus, run_local_checks
 from lobster0.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from lobster0.evals.automation import run_automation_suite
@@ -42,12 +43,19 @@ from lobster0.gateway import (
     prepare_gateway_sdk_runtime,
     run_gateway,
 )
+from lobster0.gateway_service import (
+    LaunchdService,
+    ServiceError,
+    render_launchd_service,
+)
 from lobster0.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
 from lobster0.setup import SetupError, run_interactive_setup
 from lobster0.storage.database import Database, DatabaseError
 from lobster0.storage.migrations import MigrationError, apply_migrations
 from lobster0.storage.repositories import OwnerRepository
 from lobster0.tui_launcher import TuiLaunchError, run_default_tui
+
+_SERVICE_OPTIONAL_CHECKS = frozenset({"pi_tui", "browser"})
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -113,6 +121,21 @@ def build_parser() -> argparse.ArgumentParser:
     task_halt = task_subparsers.add_parser("halt", help="activate durable automation E-stop")
     task_halt.add_argument("--reason", required=True)
     task_subparsers.add_parser("unhalt", help="clear durable automation E-stop")
+    service_parser = subparsers.add_parser(
+        "service",
+        help="manage the owned macOS LaunchAgent",
+    )
+    service_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute Lobster0 state directory",
+    )
+    service_subparsers = service_parser.add_subparsers(
+        dest="service_command",
+        required=True,
+    )
+    for name in ("install", "status", "restart", "uninstall"):
+        service_subparsers.add_parser(name, help=f"{name} the Lobster0 LaunchAgent")
     eval_parser = subparsers.add_parser("eval", help="run deterministic agent regressions")
     eval_subparsers = eval_parser.add_subparsers(dest="eval_command", required=True)
     eval_list = eval_subparsers.add_parser("list", help="list versioned eval cases")
@@ -209,6 +232,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.command == "task":
         return _run_task(paths, arguments)
+
+    if arguments.command == "service":
+        return _run_service(paths, arguments)
 
     if arguments.command == "gateway":
         try:
@@ -379,6 +405,153 @@ def _run_task(paths: StatePaths, arguments: argparse.Namespace) -> int:
     except (DatabaseError, MigrationError, OSError, sqlite3.Error) as error:
         print(f"error: {type(error).__name__}", file=sys.stderr)
         return 5
+
+
+def _run_service(paths: StatePaths, arguments: argparse.Namespace) -> int:
+    """执行固定的 macOS LaunchAgent lifecycle，不公开 manager 原始输出。
+
+    Args:
+        paths: 已解析的 Lobster0 状态路径。
+        arguments: argparse 生成且只含四个固定动作的参数。
+
+    Returns:
+        成功为 0、配置/preflight 错误为 2、service lifecycle 错误为 5。
+    """
+    try:
+        service = _launchd_service(paths)
+        command = arguments.service_command
+        if command == "install":
+            _service_install_preflight(paths)
+            service.install()
+            print("service installed")
+        elif command == "status":
+            status = service.status()
+            print(
+                f"service installed={_service_bool(status.installed)} "
+                f"loaded={_service_bool(status.loaded)} "
+                f"running={_service_bool(status.running)}"
+            )
+        elif command == "restart":
+            service.restart()
+            print("service restarted")
+        elif command == "uninstall":
+            service.uninstall()
+            print("service uninstalled")
+        else:
+            raise ServiceError("service_command_invalid")
+        return 0
+    except (ConfigError, DotEnvError, GatewayConfigError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    except ServiceError as error:
+        print(f"error: {error.code}", file=sys.stderr)
+        return 5
+
+
+def _launchd_service(paths: StatePaths) -> LaunchdService:
+    """从当前 managed runtime 与固定用户路径构造唯一 LaunchAgent。
+
+    Args:
+        paths: Gateway 使用的状态路径。
+
+    Returns:
+        绑定当前 console launcher、cwd 与 dotenv path 的服务对象。
+
+    Raises:
+        ServiceError: 当前 Python runtime 中没有 exact ``lobster0`` launcher。
+    """
+    launcher = Path(sys.executable).parent / "lobster0"
+    if not launcher.is_file():
+        raise ServiceError("service_runtime_invalid")
+    spec = render_launchd_service(
+        launcher=launcher,
+        state_home=paths.home,
+        working_directory=Path.cwd().resolve(strict=True),
+        launch_agents=Path.home().resolve(strict=True) / "Library" / "LaunchAgents",
+        dotenv_path=resolve_dotenv_path(paths, os.environ),
+        commit=_service_repository_commit(Path.cwd()),
+    )
+    return LaunchdService(spec)
+
+
+def _service_repository_commit(root: Path) -> str:
+    """返回 LaunchAgent 必须绑定的 clean repository commit。
+
+    Args:
+        root: 调用 service install/status 时的仓库工作目录。
+
+    Returns:
+        当前 HEAD 的 lowercase 40-hex commit。
+
+    Raises:
+        ServiceError: root 不安全、Git 不可用、HEAD 无效或工作树不干净。
+    """
+    try:
+        resolved = root.resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise ServiceError("service_repository_invalid") from None
+    if resolved != root or not resolved.is_dir():
+        raise ServiceError("service_repository_invalid")
+    try:
+        head = subprocess.run(
+            ("/usr/bin/git", "rev-parse", "--verify", "HEAD"),
+            cwd=resolved,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        status = subprocess.run(
+            ("/usr/bin/git", "status", "--porcelain", "--untracked-files=normal"),
+            cwd=resolved,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        raise ServiceError("service_repository_invalid") from None
+    commit = head.stdout.strip().lower()
+    if (
+        head.returncode != 0
+        or status.returncode != 0
+        or status.stdout
+        or re.fullmatch(r"[0-9a-f]{40}", commit) is None
+    ):
+        raise ServiceError("service_repository_dirty")
+    return commit
+
+
+def _service_install_preflight(paths: StatePaths) -> None:
+    """在写 plist 前确认当前状态只启用飞书且本地 Doctor 全绿。
+
+    Args:
+        paths: 即将交给 LaunchAgent 的状态路径。
+
+    Returns:
+        配置与全部本地检查通过时返回 ``None``。
+
+    Raises:
+        ConfigError: 配置无法加载。
+        DotEnvError: dotenv 文件不安全。
+        GatewayConfigError: enabled Channel 不是唯一飞书。
+        ServiceError: 任一本地 Doctor check 失败。
+    """
+    environment = dict(os.environ)
+    load_dotenv(resolve_dotenv_path(paths, environment), environment)
+    config = load_config(paths, environment)
+    if collect_enabled_channels(config) != ("feishu",):
+        raise GatewayConfigError("service production target must be Feishu only")
+    if any(
+        result.status is CheckStatus.FAIL and result.name not in _SERVICE_OPTIONAL_CHECKS
+        for result in run_local_checks(paths, environment)
+    ):
+        raise ServiceError("service_preflight_failed")
+
+
+def _service_bool(value: bool) -> str:
+    """把 service 状态渲染为稳定的小写 boolean。"""
+    return "true" if value else "false"
 
 
 def _task_line(task: ScheduledTask) -> str:

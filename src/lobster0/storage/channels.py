@@ -573,7 +573,7 @@ class DeliveryRepository:
             now = self._clock().isoformat()
             for part_index, content in enumerate(contents):
                 content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
-                idempotency_key = _task_idempotency_key(task_run_id, part_index)
+                idempotency_key = _task_idempotency_key(task_run_id, kind, part_index)
                 connection.execute(
                     """
                     INSERT INTO deliveries (
@@ -922,11 +922,20 @@ def _idempotency_key(
     return hashlib.sha256(source.encode("utf-8")).hexdigest()[:32]
 
 
-def _task_idempotency_key(task_run_id: int, part_index: int) -> str:
+def _task_idempotency_key(
+    task_run_id: int,
+    kind: DeliveryKind,
+    part_index: int,
+) -> str:
     """生成不含目标/正文且可跨崩溃重建的主动投递 UUID。"""
     from uuid import NAMESPACE_URL, uuid5
 
-    return str(uuid5(NAMESPACE_URL, f"lobster0:task-run:{task_run_id}:part:{part_index}"))
+    return str(
+        uuid5(
+            NAMESPACE_URL,
+            f"lobster0:task-run:{task_run_id}:kind:{kind}:part:{part_index}",
+        )
+    )
 
 
 def _identity_from_row(row: sqlite3.Row) -> ChannelIdentity:
