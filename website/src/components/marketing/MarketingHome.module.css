@@ -16,78 +16,15 @@
   box-shadow: 0 1px 0 rgb(255 255 255 / 80%);
 }
 
-.root :global(.marketing-header__inner) {
-  min-height: 64px;
-}
-
-.root :global(.brand) {
-  gap: 9px;
-  font-size: 0.96rem;
-}
 
 .root :global([data-brand-mark]) {
-  color: var(--ink);
-  filter: drop-shadow(0 12px 20px rgb(18 23 34 / 14%));
-  overflow: visible;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.root :global(.brand__mark) {
-  width: 36px;
-  height: 36px;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.root :global(.brand-mark__arrow) {
-  fill: none;
-  stroke-dasharray: 54;
-  stroke-dashoffset: 0;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 6;
-  animation: arrowDraw 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.root :global(.brand-mark__arrow--blue) {
-  stroke: #5b72ff;
-}
-
-.root :global(.brand-mark__arrow--green) {
-  stroke: #70d6a8;
-  animation-delay: 90ms;
-}
-
-.root :global(.brand-mark__arrow--light) {
-  stroke: #eef2f7;
-  animation-delay: 180ms;
-}
-
-.root :global(.brand:hover .brand-mark__arrow) {
-  animation: arrowNudge 520ms ease both;
-}
-
-.root :global(.marketing-nav),
-.root :global(.marketing-header__actions) {
-  gap: 20px;
-}
-
-.root :global(.marketing-nav a),
-.root :global(.language-link) {
-  font-size: 0.84rem;
-  font-weight: 620;
-}
-
-.root :global(.header-github) {
-  min-height: 40px;
-  border-radius: 10px;
-  padding-inline: 16px;
-  transition: transform 160ms ease, box-shadow 160ms ease;
-}
-
-.root :global(.header-github:hover) {
-  box-shadow: 0 10px 24px rgb(18 23 34 / 18%);
-  transform: translateY(-1px);
+.root :global(.brand:hover [data-brand-mark]) {
+  animation: markNudge 520ms ease both;
 }
 
 .root :global(.marketing-section) {
@@ -481,44 +418,13 @@
 
 .root :global(.evidence-strip dl > div) {
   position: relative;
-  min-height: 78px;
-  border-right-color: rgb(18 23 34 / 8%);
-  padding: 16px 18px 12px;
-}
-
-.root :global(.evidence-strip dl > div::before) {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 2px;
-  background: var(--signal);
-  content: '';
-}
-
-.root :global(.evidence-strip dl > div[data-accent='coral']::before) {
-  background: var(--coral);
-}
-
-.root :global(.evidence-strip dl > div[data-accent='green']::before) {
-  background: var(--safe);
-}
-
-.root :global(.evidence-strip dl > div[data-accent='amber']::before) {
-  background: var(--warn);
-}
-
-.root :global(.evidence-strip dl > div[data-accent='violet']::before) {
-  background: var(--violet);
-}
-
-.root :global(.evidence-strip dt) {
-  font-family: var(--font-sans);
-  font-size: 0.68rem;
+  min-height: 74px;
+  border-right-color: rgb(18 23 34 / 7%);
+  padding: 14px 18px;
 }
 
 .root :global(.evidence-strip dd) {
-  font-size: 1.25rem;
+  font-size: 1.5rem;
 }
 
 .root :global(.section-frame h2) {
@@ -700,14 +606,9 @@
   background: #eef2f8;
 }
 
-@keyframes arrowDraw {
-  from { stroke-dashoffset: 54; }
-  to { stroke-dashoffset: 0; }
-}
-
-@keyframes arrowNudge {
-  0%, 100% { transform: translateX(0); }
-  50% { transform: translateX(2px); }
+@keyframes markNudge {
+  0%, 100% { transform: translateX(0) rotate(0deg); }
+  50% { transform: translateX(2px) rotate(-6deg); }
 }
 
 @keyframes heroEnter {
@@ -781,10 +682,6 @@
 
   .root :global(.marketing-header__actions) {
     grid-column: 2;
-  }
-
-  .root :global(.header-github) {
-    min-height: 38px;
   }
 
   .root :global(.marketing-section) {
@@ -955,7 +852,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .root :global(.brand-mark__arrow),
+  .root :global([data-brand-mark]),
   .root :global(.hero-runtime__copy),
   .root :global(.hero-runtime__mark),
   .root :global(.hero-network__route-pulse),

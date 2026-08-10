@@ -31,7 +31,7 @@
 | Phase 5 | Telegram / Discord Channel | v0.5.0 | `IMPLEMENTATION PASS / LIVE PENDING` | [Telegram 与 Discord](phase-5/20260808_telegram-discord-channels.md) |
 | Phase 6 | Autonomy、Sandbox、Checkpoint、production gate | v0.7.0+ | `IMPLEMENTATION PASS / PRODUCTION SOAK PENDING` | [macOS + 飞书生产验收](phase-6/20260810_macos-feishu-production-acceptance.md) |
 | Phase 6.5 | Isolated Browser Agent | v0.6.5 capability record | `IMPLEMENTATION PASS / CONTROLLED LIVE SMOKE PENDING` | [Browser Agent](phase-6/browser-agent.md) |
-| Phase 7 | Controlled Evolution | 未发布 | `IMPLEMENTATION IN PROGRESS`（Task 1/6 完成；Task 2、3 部分完成） | [Controlled Evolution 工程落地方案](phase-7/20260810_controlled-evolution.md) |
+| Phase 7 | Controlled Evolution | 未发布 | `IMPLEMENTATION IN PROGRESS`（Task 1/6 完成；Task 2、3、4 部分完成） | [Controlled Evolution 工程落地方案](phase-7/20260810_controlled-evolution.md) |
 
 当前全仓本地基线是 1005/1005 Python、41/41 TUI TypeScript、14/14 Browser Worker、39/39 Agent、
 33/33 Channel、20 轮 660/660 local Channel soak、15/15 Automation，以及 18/18 Browser 和 20 轮
@@ -191,7 +191,15 @@ Core。当前为 `TARGET CONFIRMED / D1-D5 IMPLEMENTATION PENDING`。
 | [LobsterAI-first 桌面多 Agent 设计](../architecture/20260810_LobsterAI-first桌面多Agent设计.md) | 打开即聊、Composer、Artifact 和 depth-1 Multi-Agent。 | 目标已确认；D1～D5 pending。 |
 | [能力对齐工程总方案](20260808_openclaw-hermes-alignment-engineering-roadmap.md) | Service、Automation、Sandbox、Browser、Evolution、Memory、Skills、MCP、Provider、Sub-agent、Media。 | `APPROVED ROADMAP`。 |
 | [Phase 6.5 计划](../superpowers/plans/2026-08-08-phase-6-5-browser-agent.md) | Browser Profile、snapshot/ref、Policy、Artifact。 | IMPLEMENTED；保留施工记录。 |
-| [Phase 7 工程落地方案](phase-7/20260810_controlled-evolution.md) | Feedback、受限 Prompt/Skill/Memory Proposal、Eval、Owner Approval、Apply/Rollback。 | `IMPLEMENTATION IN PROGRESS`；Owner 明确决定在 Phase 6 生产验收前提前开工。Task 1/6 完成；Task 2 的 CLI 与命令解析已实现，飞书 `/good`/`/bad` 尚未接入 ChannelManager（缺"回复目标平台消息 ID"字段）；Task 3 的 Prompt/Skill 校验器完成，Memory candidate 仅支持 forget。 |
+| [Phase 7 工程落地方案](phase-7/20260810_controlled-evolution.md) | Feedback、受限 Prompt/Skill/Memory Proposal、Eval、Owner Approval、Apply/Rollback。 | `IMPLEMENTATION IN PROGRESS`；Owner 明确决定在 Phase 6 生产验收前提前开工。Task 1/6 完成；Task 2 的 CLI 与命令解析已实现，飞书 `/good`/`/bad` 尚未接入 ChannelManager（缺"回复目标平台消息 ID"字段）；Task 3 的 Prompt/Skill 校验器完成，Memory candidate 仅支持 forget；Task 4 的确定性 Gate 与 receipt 绑定完成，但缺由反馈生成的 failure case 与 baseline/candidate 差分。 |
 | [Phase 7 计划](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md) | Feedback、Proposal、Eval、Apply/Rollback。 | 依赖 Memory A～E 与 Phase 6。 |
 | [Phase 8 计划](../superpowers/plans/2026-08-08-phase-8-skills-mcp-provider-resilience.md) | Skill trust、MCP、Provider fallback、预算。 | 依赖 Phase 7。 |
 | [Phase 9 计划](../superpowers/plans/2026-08-08-phase-9-subagents-and-multimodal.md) | depth-1 Sub-agent、附件、Vision、可选语音。 | 依赖 Phase 6 与 Phase 8。 |
+
+## 跨 Phase 的可用性修复
+
+真实使用后发现、不归属某个架构 Phase 的独立修复，按日期倒序：
+
+| 文档 | 修复内容 | 状态 |
+| --- | --- | --- |
+| [交互式 setup 补齐 Owner ID 获取指引](20260811_交互式setup补齐OwnerID获取指引.md) | 首次配置向导问飞书 open_id / Telegram / Discord user ID 却不说去哪找，用户卡在第一步；三处提问前补获取指引。 | `IMPLEMENTED`（2026-08-11） |

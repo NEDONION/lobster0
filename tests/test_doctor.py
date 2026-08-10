@@ -1,5 +1,6 @@
 """Lobster0 离线本地诊断的行为测试。"""
 
+import os
 import tempfile
 import unittest
 from datetime import UTC, datetime
@@ -8,6 +9,10 @@ from unittest import mock
 
 from lobster0.bootstrap import initialize_state
 from lobster0.doctor import CheckStatus, run_local_checks
+from lobster0.install.layout import InstallLayout, render_launcher
+from lobster0.install.models import PlatformKey
+from lobster0.install.receipt import InstallReceipt, managed_file_sha256
+from lobster0.install.runtime import RuntimeReceipt
 from lobster0.memory.markdown_store import MemoryMarkdownStore
 from lobster0.memory.models import DisclosureContext, SourceRef
 from lobster0.memory.repository import (
@@ -93,10 +98,18 @@ class DoctorTest(unittest.TestCase):
                 "channel_database",
                 "channel_workers",
                 "memory",
+                "install_method",
             },
         )
-        self.assertTrue(all(result.status is CheckStatus.PASS for result in results))
         by_name = {result.name: result for result in results}
+        self.assertTrue(
+            all(
+                result.status is CheckStatus.PASS
+                for result in results
+                if result.name != "install_method"
+            )
+        )
+        self.assertIs(by_name["install_method"].status, CheckStatus.WARN)
         self.assertIn("profile personal", by_name["personal_permissions"].message)
         self.assertIn("lark-cli available", by_name["executables"].message)
         self.assertNotIn(str(owner_home), by_name["executables"].message)
@@ -496,6 +509,153 @@ class DoctorTest(unittest.TestCase):
                 "LOBSTER0_TUI_ENTRY",
             }:
                 self.assertNotIn(value, repr(results))
+
+
+class InstallFactsDoctorTest(unittest.TestCase):
+    """验证安装事实检查在源码与受管两种模式下的安全行为。"""
+
+    def setUp(self) -> None:
+        """创建一个真实的受管安装树与已初始化状态。"""
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.home = Path(self.temporary.name).resolve()
+        self.home.chmod(0o700)
+        self.layout = InstallLayout.user(self.home, version="0.7.0")
+        self.paths = build_state_paths(self.layout.state_home)
+        initialize_state(self.paths)
+        self.node = self.home / "test-node"
+        self.node.write_text("#!/bin/sh\nprintf 'v22.22.3\\n'\n", encoding="utf-8")
+        self.node.chmod(0o700)
+        self.tui_entry = self.home / "main.js"
+        self.tui_entry.write_text("// test entry\n", encoding="utf-8")
+        self.environ = {
+            "LOBSTER0_NODE": str(self.node),
+            "LOBSTER0_TUI_ENTRY": str(self.tui_entry),
+        }
+
+    def _install_managed_tree(self) -> None:
+        """写入 launcher、command link、Runtime 与 install receipt。"""
+        self.layout.bin_dir.mkdir(mode=0o700, parents=True)
+        self.layout.runtimes_dir.mkdir(mode=0o700)
+        runtime = self.layout.runtime
+        runtime.mkdir(mode=0o700)
+        for relative in (
+            "venv/bin/python",
+            "node/bin/node",
+            "tui/dist/main.js",
+            "python/bin/python3.12",
+            "lobster0-installer.pyz",
+        ):
+            path = runtime / relative
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            path.write_text("#!/bin/sh\n", encoding="utf-8")
+            path.chmod(0o700)
+        runtime_receipt = RuntimeReceipt(
+            version="0.7.0",
+            git_commit="a" * 40,
+            runtime_relative="runtimes/0.7.0",
+            python_version="3.12.11",
+            node_version="24.18.0",
+            tui_version="0.7.0",
+            wheel_sha256="1" * 64,
+            requirements_sha256="2" * 64,
+            node_sha256="3" * 64,
+            tui_sha256="4" * 64,
+            installer_sha256="5" * 64,
+            executables_sha256=None,
+        )
+        metadata = runtime / "install-receipt.json"
+        metadata.write_bytes(runtime_receipt.to_bytes())
+        metadata.chmod(0o600)
+        self.layout.current.symlink_to("runtimes/0.7.0")
+        self.layout.launcher.write_bytes(render_launcher(self.layout))
+        self.layout.launcher.chmod(0o700)
+        self.layout.command_link.parent.mkdir(mode=0o755, parents=True)
+        self.layout.command_link.symlink_to(
+            os.path.relpath(self.layout.launcher, start=self.layout.command_link.parent)
+        )
+        InstallReceipt(
+            schema_version=1,
+            version="0.7.0",
+            git_commit="a" * 40,
+            platform=PlatformKey("macos", "arm64"),
+            installed_at="2026-08-10T00:00:00Z",
+            managed_files=(("bin/lobster0", managed_file_sha256(self.layout.launcher)),),
+            current_runtime="runtimes/0.7.0",
+            previous_runtime=None,
+            service_label=None,
+            service_file=None,
+            service_file_sha256=None,
+        ).write(self.layout.receipt)
+
+    def test_source_checkout_only_warns_and_stays_usable(self) -> None:
+        """源码 checkout 不得因缺少安装事实而 FAIL。"""
+        results = run_local_checks(self.paths, self.environ)
+        by_name = {result.name: result for result in results}
+
+        self.assertIn("install_method", by_name)
+        self.assertIs(by_name["install_method"].status, CheckStatus.WARN)
+        self.assertNotIn("managed_runtime", by_name)
+        self.assertNotIn("release_receipt", by_name)
+        self.assertFalse(any(result.status is CheckStatus.FAIL for result in results))
+
+    def test_managed_install_reports_receipt_runtime_node_tui_and_service(self) -> None:
+        """存在 receipt 时必须补齐六项安装事实并保持只读。"""
+        self._install_managed_tree()
+        environ = {**self.environ, "LOBSTER0_PREFIX": str(self.layout.program_prefix)}
+
+        results = run_local_checks(self.paths, environ)
+        by_name = {result.name: result for result in results}
+
+        for name in (
+            "install_method",
+            "release_receipt",
+            "managed_runtime",
+            "managed_node",
+            "managed_tui",
+            "managed_service",
+        ):
+            self.assertIn(name, by_name)
+        self.assertIs(by_name["install_method"].status, CheckStatus.PASS)
+        self.assertIn("0.7.0", by_name["install_method"].message)
+        self.assertIs(by_name["release_receipt"].status, CheckStatus.PASS)
+        self.assertIs(by_name["managed_runtime"].status, CheckStatus.PASS)
+        self.assertIs(by_name["managed_node"].status, CheckStatus.PASS)
+        self.assertIn("24.18.0", by_name["managed_node"].message)
+        self.assertIs(by_name["managed_tui"].status, CheckStatus.PASS)
+        self.assertIs(by_name["managed_service"].status, CheckStatus.WARN)
+        self.assertTrue(self.layout.receipt.is_file())
+
+    def test_install_checks_never_open_sockets_or_read_secret_values(self) -> None:
+        """安装事实检查不得发起网络调用或读取 Secret 值。"""
+        self._install_managed_tree()
+        secret = "install-doctor-secret"
+        secrets_file = self.paths.home / "secrets.env"
+        secrets_file.write_text(
+            f"LOBSTER0_MODEL_API_KEY={secret}\n", encoding="utf-8"
+        )
+        secrets_file.chmod(0o600)
+        environ = {**self.environ, "LOBSTER0_PREFIX": str(self.layout.program_prefix)}
+
+        with mock.patch(
+            "socket.socket",
+            side_effect=AssertionError("doctor must not open sockets"),
+        ):
+            results = run_local_checks(self.paths, environ)
+
+        self.assertNotIn(secret, repr(results))
+
+    def test_drifted_launcher_hash_fails_the_release_receipt_check(self) -> None:
+        """launcher 与 receipt 不一致时必须 FAIL 而不是静默通过。"""
+        self._install_managed_tree()
+        self.layout.launcher.write_bytes(b"#!/bin/sh\nexec /bin/false\n")
+        self.layout.launcher.chmod(0o700)
+        environ = {**self.environ, "LOBSTER0_PREFIX": str(self.layout.program_prefix)}
+
+        results = run_local_checks(self.paths, environ)
+        by_name = {result.name: result for result in results}
+
+        self.assertIs(by_name["release_receipt"].status, CheckStatus.FAIL)
 
 
 if __name__ == "__main__":

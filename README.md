@@ -1,6 +1,6 @@
 <div align="center">
 
-# Lobster0
+# 🦞 Lobster0
 
 **一个小而完整、私有自托管、默认受控的个人 Agent。**
 
@@ -12,7 +12,7 @@
 [![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
-[为什么是 Lobster0](#为什么是-lobster0) · [当前能力](#当前能力) · [快速开始](#快速开始) · [产品预览](#产品预览) · [架构](#工作原理) · [路线图](#路线图) · [文档](#文档)
+[官网](https://lobster0.jchu.tech) · [为什么是 Lobster0](#为什么是-lobster0) · [当前能力](#当前能力) · [快速开始](#快速开始) · [产品预览](#产品预览) · [架构](#工作原理) · [路线图](#路线图) · [文档](#文档)
 
 </div>
 
@@ -21,25 +21,8 @@
 Lobster0 把模型、Tool、权限、审批、持久化和多个消息渠道收进同一个本地 Core。你可以从 TUI、飞书、Telegram 或 Discord 与同一个 Agent 交互；所有本机动作仍要经过统一的 Policy、Workspace 边界和可审计执行链。
 
 > [!IMPORTANT]
-> 当前代码已完成 Phase 5 的本地实现门禁；Feishu/Telegram/Discord 的完整真实 Live Gate 仍按各自证据单独标记。
-> v0.5.3 Core 已加入 SDK 日志脱敏、Gateway lease/provenance、受管 Live Runner 与异常 Tool 历史恢复；
-> Feishu/Discord 严格 15/15 仍为 Live Pending。
-> 飞书 Card callback 现在绑定唯一 sent receipt、账号与 Approval ID；真实“仅本次”已完成 Tool、child Turn
-> 与结果 Delivery，状态为 **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**。
-> 飞书消息到达后立即创建一张蓝色 `Claw Trail` Agent Card，执行中持续原地更新，成功后同一卡片变为绿色并展示脱敏步骤、Tool、安全目标、状态、耗时、过程摘要和最终回答；最终回答保留标题、段落、列表、引用、链接和代码等 CommonMark 结构，只有真实 Markdown 表格会降级为可读条目。
-> Agent 默认采用 32 轮软预算、64 轮硬预算和连续 3 轮无进展保护：仍有新的成功 Tool 结果时可越过软预算；语义重复的 Tool 不会重复执行；到达收口轮时会移除 Tool schema，只根据已有证据给出最终答案。
-> 缺少 `tools.mode` 的配置默认使用 `autopilot`，但只对本地入口和经过验证的 Owner 私聊生效；硬安全边界不变。
-> Memory Autopilot A～E 已完成本地实现：四入口共享一个 Owner Memory Space，Markdown 保存语义真相，SQLite
-> 保存 durable buffer、来源、治理和可重建 FTS5 Projection；真实 IM 平台能力仍只按各自 Live evidence 标记。
-> Phase 6 自治运行与安全链路已完成本地实现：durable Task/Scheduler/Runner、E-stop、预算、Approval continuation、
-> 主动 Delivery、Docker/Seatbelt ExecutionPlan、Checkpoint/Rollback 和 15 条 Automation gate 已接通；Automation
-> 默认关闭；Docker 与当前 Mac 的 Seatbelt 真实 containment 已验证。Seatbelt 使用 v2 immutable Plan 绑定 exact
-> executable chain；更换机器、解释器或系统版本后必须重新运行 live probe。
-> Phase 6.5 Browser Agent 已完成本地实现：专用 Chromium Profile、snapshot/ref、八个受 Policy 管理的 Browser Tool、
-> Screenshot/Download Artifact 和 18 条版本化门禁已经接通；Browser 默认关闭，受控公网 Live smoke 尚未执行。
-> Phase 6 macOS + 飞书 production gate、受管重启、exact-duration checkpoint 与脱敏 aggregate 已实现；当前为
-> **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING**。只有同一 clean commit 的 Seatbelt 2/2、飞书 15/15、
-> Automation 10/10 和连续 24 小时全绿后，才能升级生产状态。
+> 当前所有能力为 **IMPLEMENTATION PASS**：本地门禁与离线场景全绿，但飞书 / Telegram / Discord 的
+> 真实平台 Live Gate 与 Phase 6 生产 soak 仍在进行中。详细逐项证据见[项目状态](#项目状态)。
 
 ## 为什么是 Lobster0
 

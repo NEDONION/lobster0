@@ -2,6 +2,8 @@
 
 import argparse
 import asyncio
+import importlib.metadata as importlib_metadata
+import importlib.util
 import json
 import os
 import re
@@ -50,12 +52,22 @@ from lobster0.gateway_service import (
     ServiceError,
     render_launchd_service,
 )
+from lobster0.install.orchestrator import resolve_install_facts, run_install_action
 from lobster0.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
 from lobster0.setup import SetupError, run_interactive_setup
 from lobster0.storage.database import Database, DatabaseError
-from lobster0.storage.migrations import MigrationError, apply_migrations
+from lobster0.storage.migrations import (
+    LATEST_SCHEMA_VERSION,
+    MigrationError,
+    apply_migrations,
+)
 from lobster0.storage.repositories import OwnerRepository
-from lobster0.tui_launcher import TuiLaunchError, run_default_tui
+from lobster0.tui_launcher import (
+    TuiLaunchError,
+    inspect_pi_tui,
+    is_supported_node_version,
+    run_default_tui,
+)
 
 _SERVICE_OPTIONAL_CHECKS = frozenset({"pi_tui", "browser"})
 
@@ -145,7 +157,7 @@ def build_parser() -> argparse.ArgumentParser:
     feedback_forget.add_argument("feedback_id", type=_positive_cli_id)
     service_parser = subparsers.add_parser(
         "service",
-        help="manage the owned macOS LaunchAgent",
+        help="manage the owned Lobster0 Gateway user service",
     )
     service_parser.add_argument(
         "--home",
@@ -156,8 +168,66 @@ def build_parser() -> argparse.ArgumentParser:
         dest="service_command",
         required=True,
     )
-    for name in ("install", "status", "restart", "uninstall"):
-        service_subparsers.add_parser(name, help=f"{name} the Lobster0 LaunchAgent")
+    for name in ("install", "status", "logs", "restart", "uninstall"):
+        service_subparsers.add_parser(name, help=f"{name} the Lobster0 Gateway service")
+    update_parser = subparsers.add_parser(
+        "update",
+        help="update a managed Lobster0 install to a newer Release",
+    )
+    update_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute Lobster0 state directory",
+    )
+    update_parser.add_argument("--version", dest="target_version", help="exact target SemVer")
+    update_parser.add_argument("--channel", choices=("stable", "dev"), default="stable")
+    update_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="emit one redacted machine-readable report",
+    )
+    uninstall_parser = subparsers.add_parser(
+        "uninstall",
+        help="remove the managed Lobster0 install and keep user data by default",
+    )
+    uninstall_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute Lobster0 state directory",
+    )
+    uninstall_parser.add_argument(
+        "--purge-data",
+        action="store_true",
+        help="also delete the enumerated Lobster0 state; the Workspace is always kept",
+    )
+    uninstall_parser.add_argument(
+        "--yes-i-understand-data-loss",
+        action="store_true",
+        dest="confirm_data_loss",
+        help="required exact confirmation for a noninteractive --purge-data run",
+    )
+    uninstall_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="emit one redacted machine-readable report",
+    )
+    smoke_parser = subparsers.add_parser(
+        "install-smoke",
+        help="internal offline install gate for a freshly built Runtime",
+    )
+    smoke_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute Lobster0 state directory",
+    )
+    smoke_parser.add_argument(
+        "--json",
+        action="store_true",
+        dest="json_output",
+        help="emit one machine-readable smoke document",
+    )
     eval_parser = subparsers.add_parser("eval", help="run deterministic agent regressions")
     eval_subparsers = eval_parser.add_subparsers(dest="eval_command", required=True)
     eval_list = eval_subparsers.add_parser("list", help="list versioned eval cases")
@@ -260,6 +330,27 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.command == "service":
         return _run_service(paths, arguments)
+
+    if arguments.command == "update":
+        return run_install_action(
+            "update",
+            state_home=paths.home,
+            version=arguments.target_version,
+            channel=arguments.channel,
+            json_output=bool(arguments.json_output),
+        )
+
+    if arguments.command == "uninstall":
+        return run_install_action(
+            "uninstall",
+            state_home=paths.home,
+            purge_data=bool(arguments.purge_data),
+            confirm_data_loss=bool(arguments.confirm_data_loss),
+            json_output=bool(arguments.json_output),
+        )
+
+    if arguments.command == "install-smoke":
+        return _run_install_smoke(paths, json_output=bool(arguments.json_output))
 
     if arguments.command == "gateway":
         try:
@@ -470,18 +561,27 @@ def _run_feedback(paths: StatePaths, arguments: argparse.Namespace) -> int:
 
 
 def _run_service(paths: StatePaths, arguments: argparse.Namespace) -> int:
-    """执行固定的 macOS LaunchAgent lifecycle，不公开 manager 原始输出。
+    """按 install receipt 分流受管 user service 与源码 checkout LaunchAgent。
+
+    受管安装（存在有效 install receipt）走 installer 的 systemd-user/launchd
+    service 层；源码 checkout 保持 Phase 6 的 macOS LaunchAgent 行为、输出与
+    退出码不变。`logs` 只对受管安装有意义，源码模式按既有约定干净失败。
 
     Args:
         paths: 已解析的 Lobster0 状态路径。
-        arguments: argparse 生成且只含四个固定动作的参数。
+        arguments: argparse 生成且只含五个固定动作的参数。
 
     Returns:
         成功为 0、配置/preflight 错误为 2、service lifecycle 错误为 5。
     """
+    command = arguments.service_command
+    if resolve_install_facts(paths.home).managed:
+        return run_install_action(f"service.{command}", state_home=paths.home)
+    if command == "logs":
+        print("error: service_logs_unavailable", file=sys.stderr)
+        return 2
     try:
         service = _launchd_service(paths)
-        command = arguments.service_command
         if command == "install":
             _service_install_preflight(paths)
             service.install()
@@ -508,6 +608,84 @@ def _run_service(paths: StatePaths, arguments: argparse.Namespace) -> int:
     except ServiceError as error:
         print(f"error: {error.code}", file=sys.stderr)
         return 5
+
+
+def _run_install_smoke(paths: StatePaths, *, json_output: bool) -> int:
+    """离线校验一个新建 Runtime 是否可用，不触碰 Provider、Channel 或网络。
+
+    只做 module discovery、包元数据读取、Node/TUI 入口检查和本地数据库
+    schema 只读比对；不实例化任何 SDK Client，也不发起认证或 HTTP。
+
+    Args:
+        paths: 已解析的 Lobster0 状态路径。
+        json_output: 为真时输出唯一 machine-readable 文档。
+
+    Returns:
+        全部检查通过为 0，否则为 2。
+    """
+    find_spec = importlib.util.find_spec
+    checks: dict[str, str] = {}
+    try:
+        distribution = importlib_metadata.version("lobster0-agent")
+    except importlib_metadata.PackageNotFoundError:
+        distribution = None
+    checks["metadata"] = "ok" if distribution == __version__ else "error"
+    console_scripts = {
+        entry.name for entry in importlib_metadata.entry_points(group="console_scripts")
+    }
+    checks["entry_point"] = "ok" if "lobster0" in console_scripts else "error"
+    for channel, module in (
+        ("feishu", "lark_channel"),
+        ("telegram", "telegram"),
+        ("discord", "discord"),
+    ):
+        checks[f"channel_{channel}"] = "ok" if find_spec(module) is not None else "error"
+    for name, module in (
+        ("automation", "lobster0.automation.repository"),
+        ("sandbox", "lobster0.sandbox.base"),
+        ("checkpoint", "lobster0.checkpoints"),
+    ):
+        checks[name] = "ok" if find_spec(module) is not None else "error"
+    inspection = inspect_pi_tui(os.environ)
+    checks["node"] = (
+        "ok"
+        if inspection.node_version is not None
+        and is_supported_node_version(inspection.node_version)
+        else "error"
+    )
+    checks["tui_entry"] = "ok" if inspection.entry is not None else "error"
+    checks["database"] = _install_smoke_database(paths)
+    status = "ok" if all(value == "ok" for value in checks.values()) else "error"
+    if json_output:
+        print(
+            json.dumps(
+                {"checks": checks, "status": status, "version": __version__},
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=True,
+            )
+        )
+    else:
+        for name, value in sorted(checks.items()):
+            print(f"[{value.upper()}] {name}")
+        print(f"install-smoke {status} version={__version__}")
+    return 0 if status == "ok" else 2
+
+
+def _install_smoke_database(paths: StatePaths) -> str:
+    """只读比对本地数据库 schema；状态尚未创建时视为无需校验。"""
+    if not paths.database.is_file() or paths.database.is_symlink():
+        return "ok"
+    try:
+        with Database(paths.database).connect_read_only() as connection:
+            version = int(
+                connection.execute(
+                    "SELECT COALESCE(MAX(version), 0) FROM schema_migrations"
+                ).fetchone()[0]
+            )
+    except (DatabaseError, sqlite3.Error, OSError):
+        return "error"
+    return "ok" if version == LATEST_SCHEMA_VERSION else "error"
 
 
 def _launchd_service(paths: StatePaths) -> LaunchdService:

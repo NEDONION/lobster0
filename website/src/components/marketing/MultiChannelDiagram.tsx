@@ -43,11 +43,6 @@ export function MultiChannelDiagram({ locale, workflow }: { locale: Locale; work
         <span>03 / {zh ? '共享核心 · 隔离入口' : 'SHARED CORE · ISOLATED EDGES'}</span>
         <h3>{workflow.title}</h3>
         <p>{workflow.summary}</p>
-        <dl>
-          <div><dt>{zh ? '运行时' : 'RUNTIME'}</dt><dd>01 {zh ? '共享' : 'shared'}</dd></div>
-          <div><dt>{zh ? '入口' : 'SURFACES'}</dt><dd>{String(siteFacts.counts.surfaces).padStart(2, '0')}</dd></div>
-          <div><dt>{zh ? '场景' : 'CASES'}</dt><dd>{siteFacts.counts.channelCases}</dd></div>
-        </dl>
       </div>
       <div
         aria-label={zh ? '共享 AgentRuntime 与隔离入口' : 'Shared AgentRuntime with isolated channel edges'}

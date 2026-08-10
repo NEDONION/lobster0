@@ -484,6 +484,250 @@ class ConversationRepositoryTest(unittest.TestCase):
             ],
         )
 
+    def test_compacted_context_window_never_starts_with_a_bare_tool_result(self) -> None:
+        """压缩过的会话里，窗口边界不得把 Assistant Tool Call 切在审批续跑的结果之外。
+
+        真实事故：审批 continuation 让 ``assistant(tool_calls)`` 和它的 Tool Result 落在
+        两个不同 Turn 里，而 compaction 分支只补齐 ``turn_id`` 相同的更早消息，于是发给
+        DeepSeek 的历史第一条就是裸 Tool Result 并被 400 拒绝，详见
+        docs/engineering/phase-4/20260811_approval-continuation-context-window-400-incident.md。
+        """
+        session = self.sessions.get_or_create_cli(self.owner.id, "compacted-window")
+        old = self.turns.create_with_user_message(
+            session.id,
+            "event-old",
+            "deepseek-v4-pro",
+            "早先的对话",
+        )
+        self.turns.mark_running(old.id)
+        old_assistant = self.turns.complete_with_assistant_message(
+            old.id,
+            session.id,
+            "早先的回答",
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-old",
+            iterations=1,
+            finish_reason="stop",
+        )
+        old_user = self.messages.list_recent(session.id, limit=2)[0]
+        self.messages.save_compaction(
+            session.id,
+            old_user.id,
+            old_assistant.id,
+            "早先对话的摘要",
+            "deepseek-v4-pro",
+            "a" * 64,
+        )
+        parent = self.turns.create_with_user_message(
+            session.id,
+            "event-parent",
+            "deepseek-v4-pro",
+            "查看项目进展",
+        )
+        self.turns.mark_running(parent.id)
+        self.turns.append_intermediate_messages(
+            parent.id,
+            session.id,
+            (
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(ToolCall("call_first", "run_command", {}),),
+                ),
+            ),
+        )
+        self.turns.wait_for_approval(
+            parent.id,
+            session.id,
+            1,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-parent",
+            iterations=1,
+        )
+        child = self.turns.create_continuation(
+            session.id,
+            approval_id=1,
+            parent_turn_id=parent.id,
+            model="deepseek-v4-pro",
+        )
+        self.turns.mark_running(child.id)
+        self.turns.append_intermediate_messages(
+            child.id,
+            session.id,
+            (
+                ModelMessage(role="tool", content="{}", tool_call_id="call_first"),
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(ToolCall("call_second", "edit_file", {}),),
+                ),
+            ),
+        )
+        self.turns.wait_for_approval(
+            child.id,
+            session.id,
+            2,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-child",
+            iterations=1,
+        )
+        grandchild = self.turns.create_continuation(
+            session.id,
+            approval_id=2,
+            parent_turn_id=child.id,
+            model="deepseek-v4-pro",
+        )
+        self.turns.mark_running(grandchild.id)
+        self.turns.append_intermediate_messages(
+            grandchild.id,
+            session.id,
+            (ModelMessage(role="tool", content="{}", tool_call_id="call_second"),),
+        )
+
+        context = self.messages.list_context(session.id, limit=1)
+
+        self.assertEqual(
+            [(message.role, message.tool_call_id) for message in context],
+            [
+                ("system", None),
+                ("user", None),
+                ("assistant", None),
+                ("tool", "call_first"),
+                ("assistant", None),
+                ("tool", "call_second"),
+            ],
+        )
+
+    def test_context_drops_tool_result_whose_call_was_swallowed_by_compaction(
+        self,
+    ) -> None:
+        """Assistant Tool Call 被摘要吃掉时，留下的 Tool Result 必须剔除而不是发给模型。"""
+        session = self.sessions.get_or_create_cli(self.owner.id, "swallowed-call")
+        parent = self.turns.create_with_user_message(
+            session.id,
+            "event-parent",
+            "deepseek-v4-pro",
+            "执行一个动作",
+        )
+        self.turns.mark_running(parent.id)
+        self.turns.append_intermediate_messages(
+            parent.id,
+            session.id,
+            (
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(ToolCall("call_swallowed", "run_command", {}),),
+                ),
+            ),
+        )
+        self.turns.wait_for_approval(
+            parent.id,
+            session.id,
+            1,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-parent",
+            iterations=1,
+        )
+        covered = self.messages.list_recent(session.id, limit=2)
+        self.messages.save_compaction(
+            session.id,
+            covered[0].id,
+            covered[1].id,
+            "已经压缩掉 Tool Call 的摘要",
+            "deepseek-v4-pro",
+            "b" * 64,
+        )
+        child = self.turns.create_continuation(
+            session.id,
+            approval_id=1,
+            parent_turn_id=parent.id,
+            model="deepseek-v4-pro",
+        )
+        self.turns.mark_running(child.id)
+        self.turns.append_intermediate_messages(
+            child.id,
+            session.id,
+            (ModelMessage(role="tool", content="{}", tool_call_id="call_swallowed"),),
+        )
+        self.turns.complete_with_assistant_message(
+            child.id,
+            session.id,
+            "动作已完成",
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-child",
+            iterations=1,
+            finish_reason="stop",
+        )
+
+        context = self.messages.list_context(session.id)
+
+        self.assertEqual(
+            [(message.role, message.content) for message in context],
+            [
+                ("system", "已经压缩掉 Tool Call 的摘要"),
+                ("assistant", "动作已完成"),
+            ],
+        )
+
+    def test_context_drops_answered_results_of_a_partially_answered_batch(self) -> None:
+        """一批 Tool Call 只有部分结果时，已配对的结果不能在 Assistant 被剔除后残留。"""
+        session = self.sessions.get_or_create_cli(self.owner.id, "partial-batch")
+        parent = self.turns.create_with_user_message(
+            session.id,
+            "event-parent",
+            "deepseek-v4-pro",
+            "并行做两件事",
+        )
+        self.turns.mark_running(parent.id)
+        self.turns.append_intermediate_messages(
+            parent.id,
+            session.id,
+            (
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(
+                        ToolCall("call_done", "glob", {}),
+                        ToolCall("call_waiting", "run_command", {}),
+                    ),
+                ),
+            ),
+        )
+        self.turns.append_intermediate_messages(
+            parent.id,
+            session.id,
+            (ModelMessage(role="tool", content="{}", tool_call_id="call_done"),),
+        )
+        self.turns.wait_for_approval(
+            parent.id,
+            session.id,
+            1,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-parent",
+            iterations=1,
+        )
+        current = self.turns.create_with_user_message(
+            session.id,
+            "event-current",
+            "deepseek-v4-pro",
+            "先回答这个",
+        )
+        self.turns.mark_running(current.id)
+
+        context = self.messages.list_context(session.id)
+
+        self.assertEqual(
+            [(message.role, message.content) for message in context],
+            [("user", "先回答这个")],
+        )
+
     def test_completion_writes_assistant_usage_and_snapshot_atomically(self) -> None:
         """Assistant Message 与 completed Turn 必须在同一事务中可见。"""
         session = self.sessions.get_or_create_cli(self.owner.id, "default")

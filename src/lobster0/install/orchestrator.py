@@ -31,6 +31,8 @@ from lobster0.install.artifacts import (
     extract_tar_gz,
 )
 from lobster0.install.layout import (
+    _SYSTEM_COMMAND,
+    _SYSTEM_PREFIX,
     InstallLayout,
     InstallLock,
     install_launcher,
@@ -70,6 +72,9 @@ from lobster0.install.service import (
     ServicePlatform,
     render_service_spec,
     service_install,
+    service_logs,
+    service_restart,
+    service_status,
     service_uninstall,
 )
 from lobster0.install.update import UpdateCoordinator, UpdateRequest
@@ -85,12 +90,43 @@ _ENV_NAME = re.compile(r"^[A-Z][A-Z0-9_]{0,127}$")
 _IMAGE = re.compile(r"^[a-z0-9][a-z0-9./_-]{0,255}@sha256:[0-9a-f]{64}$")
 _MAX_MANIFEST_BYTES = 1_048_576
 _MAX_SECRET_BYTES = 64 * 1024
+_MAX_PYZ_BYTES = 32 * 1024 * 1024
 _MAX_CONFIG_BYTES = 1024 * 1024
 _PATH = "/usr/local/bin:/usr/bin:/bin"
 _TIMEOUT = 300.0
 _OUTPUT_LIMIT = 64 * 1024
 _UPDATE_HEALTH_TIMEOUT = 30.0
 _INTERNAL_HOP = "LOBSTER0_INSTALLER_HOPS"
+_PREFIX_ENV = "LOBSTER0_PREFIX"
+_RECEIPT_NAME = "install-receipt.json"
+_INSTALLER_NAME = "lobster0-installer.pyz"
+_MANIFEST_NAME = "release-manifest.json"
+_PURGE_PHRASE = "DELETE ALL LOBSTER0 DATA"
+_UPDATE_BACKUP_PREFIX = ".lobster0.db.update-backup."
+_RUNTIME_RESIDUE = re.compile(r"^\.(?P<version>.+)\.(?:staging|downloads)$")
+_PURGE_FILES = (
+    "config.toml",
+    "secrets.env",
+    "lobster0.db",
+    "lobster0.db-wal",
+    "lobster0.db-shm",
+    "SOUL.md",
+    "USER.md",
+    "MEMORY.md",
+)
+_PURGE_DIRECTORIES = (
+    "memory",
+    "prompts",
+    "skills",
+    "evals",
+    "browser",
+    "artifacts",
+    "downloads",
+    "logs",
+    "run",
+    "checkpoints",
+)
+_SERVICE_ACTIONS = ("install", "status", "logs", "restart", "uninstall")
 _CHANNEL_FIELDS = {
     "feishu": ("app_id_env", "app_secret_env"),
     "telegram": ("bot_token_env",),
@@ -495,7 +531,18 @@ class Installer:
         hop = self._environ.get(_INTERNAL_HOP)
         if hop not in {None, "", "1"}:
             raise InstallError("request_invalid", "manifest")
-        if request.action == "uninstall" or request.action == "update" and request.dry_run:
+        if request.action == "uninstall":
+            # 只有已安装 CLI 发起、且已经带上 one-hop guard 的 uninstall 才
+            # 允许进入受 receipt 约束的删除路径；裸 bootstrap 没有 receipt
+            # 事实可依据，必须继续 fail closed。
+            if request.dry_run or hop != "1":
+                raise InstallError("request_invalid", "action")
+            return run_uninstall_request(
+                request,
+                environ=self._environ,
+                execve=self._execve,
+            )
+        if request.action == "update" and request.dry_run:
             raise InstallError("request_invalid", "action")
         plan = self._operations.preflight(request, self._bootstrap)
         self._emit(InstallEvent("install.preflight", "ok", None, "manifest"))
@@ -2309,3 +2356,782 @@ def _semver_key(value: str) -> tuple[int, int, int, int, tuple[tuple[int, object
 def _installer_error() -> Never:
     """抛出不含底层路径的稳定 installer error。"""
     raise InstallError("installer_error", "manifest")
+
+
+@dataclass(frozen=True, slots=True)
+class InstallFacts:
+    """描述当前进程面对的是受管安装还是源码 checkout。
+
+    Args:
+        managed: 解析到的 program prefix 是否持有有效 install receipt。
+        program_prefix: 已发现的受管程序根；源码模式为 ``None``。
+        state_home: 调用方选择的状态根。
+        receipt: 已通过 strict 校验的 install receipt。
+        layout: 与 receipt 版本绑定的受管 layout。
+        detail: 稳定、不含私有路径的判定原因。
+    """
+
+    managed: bool
+    program_prefix: Path | None
+    state_home: Path
+    receipt: InstallReceipt | None
+    layout: InstallLayout | None
+    detail: str
+
+
+def resolve_install_facts(
+    state_home: Path,
+    *,
+    environ: Mapping[str, str] | None = None,
+    executable: Path | None = None,
+    user_home: Path | None = None,
+) -> InstallFacts:
+    """判定当前状态根对应的是受管安装还是源码 checkout。
+
+    CLI 与 Doctor 共用这一个判定，避免两处各自实现 receipt 发现逻辑。
+
+    Args:
+        state_home: 已解析的绝对状态根。
+        environ: 读取 ``LOBSTER0_PREFIX`` 的环境；省略时使用当前进程环境。
+        executable: 当前解释器路径；省略时使用 ``sys.executable``。
+        user_home: 目标用户 Home；省略时按默认 `<home>/.lobster0` 布局或 passwd 解析。
+
+    Returns:
+        永不抛异常的安装事实；任何不可信 receipt 都降级为非受管并给出原因。
+    """
+    source = dict(os.environ if environ is None else environ)
+    if not _canonical_absolute(state_home):
+        return InstallFacts(False, None, Path(state_home), None, None, "state_home_invalid")
+    uid = os.geteuid()
+    account_home: Path | None = user_home
+    if account_home is None:
+        try:
+            account_home = Path(pwd.getpwuid(uid).pw_dir)
+        except (KeyError, OSError, TypeError):
+            return InstallFacts(False, None, state_home, None, None, "account_unavailable")
+    for prefix in _prefix_candidates(state_home, source, executable):
+        receipt_path = prefix / _RECEIPT_NAME
+        if not _lexists(receipt_path):
+            continue
+        home = (
+            prefix.parent
+            if user_home is None and prefix.name == ".lobster0"
+            else account_home
+        )
+        try:
+            receipt = InstallReceipt.load(receipt_path, expected_uid=uid)
+            layout = _installed_layout(prefix, state_home, receipt.version, uid=uid, user_home=home)
+        except (InstallError, OSError, ValueError):
+            return InstallFacts(False, prefix, state_home, None, None, "receipt_invalid")
+        return InstallFacts(True, prefix, state_home, receipt, layout, "managed")
+    return InstallFacts(False, None, state_home, None, None, "source")
+
+
+def _prefix_candidates(
+    state_home: Path,
+    environ: Mapping[str, str],
+    executable: Path | None,
+) -> tuple[Path, ...]:
+    """按可信度排序返回可能持有 install receipt 的 program prefix。"""
+    ordered: list[Path] = []
+    raw = environ.get(_PREFIX_ENV, "")
+    if type(raw) is str and raw:
+        candidate = Path(raw)
+        if _canonical_absolute(candidate):
+            ordered.append(candidate)
+    derived = _prefix_from_executable(
+        Path(sys.executable) if executable is None else Path(executable)
+    )
+    if derived is not None:
+        ordered.append(derived)
+    ordered.append(state_home)
+    unique: list[Path] = []
+    for item in ordered:
+        if item not in unique:
+            unique.append(item)
+    return tuple(unique)
+
+
+def _prefix_from_executable(executable: Path) -> Path | None:
+    """从受管 Runtime 中的解释器路径反推 program prefix。"""
+    if not _canonical_absolute(executable):
+        return None
+    parents = executable.parents
+    if len(executable.parts) < 6 or executable.parent.name != "bin":
+        return None
+    if parents[1].name != "venv":
+        return None
+    if parents[2].name == "current":
+        return parents[3]
+    if len(executable.parts) >= 7 and parents[3].name == "runtimes":
+        return parents[4]
+    return None
+
+
+def _installed_layout(
+    program_prefix: Path,
+    state_home: Path,
+    version: str,
+    *,
+    uid: int,
+    user_home: Path,
+) -> InstallLayout:
+    """按已安装 receipt 版本重建受管 layout 的全部固定路径。"""
+    command_link = (
+        _SYSTEM_COMMAND
+        if program_prefix == _SYSTEM_PREFIX
+        else user_home / ".local" / "bin" / "lobster0"
+    )
+    return InstallLayout._build(
+        program_prefix,
+        state_home,
+        command_link,
+        version,
+        owner_uid=uid,
+        user_home=user_home,
+    )
+
+
+def _lexists(path: Path) -> bool:
+    """不跟随 symlink 判断路径是否存在。"""
+    try:
+        path.lstat()
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _ownership_mismatch() -> Never:
+    """抛出不含私有路径的稳定受管文件所有权错误。"""
+    raise InstallError("uninstall_ownership_mismatch", "manifest")
+
+
+def _validate_purge_root(state_home: object, *, user_home: Path | None) -> None:
+    """拒绝把 `/`、Home 根、Workspace、symlink 或外部目录当作 purge 根。
+
+    Args:
+        state_home: 待删除状态根的候选路径。
+        user_home: 目标用户 Home；``None`` 表示跳过 Home 根比较。
+
+    Raises:
+        InstallError: 路径不是当前用户持有的、非 symlink 的专用状态目录。
+    """
+    if not isinstance(state_home, Path) or not _canonical_absolute(state_home):
+        raise InstallError("request_invalid", "state_home")
+    if state_home == Path("/") or state_home.name == "workspace":
+        raise InstallError("request_invalid", "state_home")
+    if user_home is not None and state_home == user_home:
+        raise InstallError("request_invalid", "state_home")
+    try:
+        metadata = state_home.lstat()
+    except OSError:
+        raise InstallError("request_invalid", "state_home") from None
+    if (
+        not stat.S_ISDIR(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or metadata.st_uid != os.geteuid()
+        or stat.S_IMODE(metadata.st_mode) & 0o022
+    ):
+        raise InstallError("request_invalid", "state_home")
+
+
+def _purge_targets(state_home: Path) -> tuple[Path, ...]:
+    """枚举 purge 允许删除的显式状态路径，绝不做递归通配删除。"""
+    targets: list[Path] = []
+    for name in (*_PURGE_FILES, *_PURGE_DIRECTORIES):
+        candidate = state_home / name
+        if _lexists(candidate):
+            targets.append(candidate)
+    try:
+        with os.scandir(state_home) as entries:
+            for entry in entries:
+                if entry.name.startswith(_UPDATE_BACKUP_PREFIX):
+                    targets.append(state_home / entry.name)
+    except OSError:
+        raise InstallError("request_invalid", "state_home") from None
+    return tuple(sorted(set(targets)))
+
+
+def _managed_runtime_entry(name: str) -> bool:
+    """判断 runtimes/ 条目是否为受管 Runtime 或受管事务残留。"""
+    if _VERSION.fullmatch(name) is not None:
+        return True
+    residue = _RUNTIME_RESIDUE.fullmatch(name)
+    return residue is not None and _VERSION.fullmatch(residue.group("version")) is not None
+
+
+class Uninstaller:
+    """在 install receipt 边界内移除受管程序文件并按显式确认删除状态。"""
+
+    def __init__(
+        self,
+        layout: InstallLayout,
+        *,
+        runner: object | None = None,
+        environ: Mapping[str, str] | None = None,
+        execve: Callable[[str, tuple[str, ...], dict[str, str]], object] = os.execve,
+        executable: Path | None = None,
+        isatty: bool = False,
+        confirm: Callable[[str], str] | None = None,
+        stdout: TextIO | None = None,
+        user_home: Path | None = None,
+    ) -> None:
+        """绑定受管 layout、可注入 runner/execve 与交互确认来源。"""
+        if type(layout) is not InstallLayout or not callable(execve):
+            raise InstallError("request_invalid", "manifest")
+        self._layout = layout
+        self._runner = _SubprocessRunner() if runner is None else runner
+        self._environ = dict(os.environ if environ is None else environ)
+        self._execve = execve
+        self._executable = Path(sys.executable if executable is None else executable)
+        self._isatty = bool(isatty)
+        self._confirm = confirm
+        self._stdout = sys.stdout if stdout is None else stdout
+        self._user_home = user_home
+        self._events: list[InstallEvent] = []
+
+    def run(self, request: InstallRequest) -> InstallResult:
+        """执行一次受 receipt 约束的卸载，默认保留全部用户数据。
+
+        Args:
+            request: 已通过 strict model 校验的 uninstall 请求。
+
+        Returns:
+            仅含脱敏事件的安全终态。
+
+        Raises:
+            InstallError: 请求、确认、受管文件所有权或删除过程失败。
+        """
+        if type(request) is not InstallRequest:
+            raise InstallError("request_invalid", "model")
+        if request.action != "uninstall" or request.dry_run:
+            raise InstallError("request_invalid", "action")
+        self._events = []
+        uid = os.geteuid()
+        layout = self._layout
+        receipt = InstallReceipt.load(layout.receipt, expected_uid=uid)
+        self._emit(InstallEvent("uninstall.preflight", "ok", None, "manifest"))
+        if self._needs_handoff():
+            self._hand_off(request, receipt, uid)
+            _installer_error()
+        with InstallLock.acquire(layout):
+            if request.purge_data:
+                self._authorize_purge(request)
+            receipt = self._remove_service(receipt, uid)
+            self._remove_program_files(receipt, uid)
+            if request.purge_data:
+                self._purge(uid)
+        self._report(request)
+        return InstallResult("uninstall", receipt.version, None, True, tuple(self._events))
+
+    def _needs_handoff(self) -> bool:
+        """判断当前进程是否仍在即将被删除的 Runtime 内运行。"""
+        if self._environ.get(_INTERNAL_HOP) == "1":
+            return False
+        return self._executable.is_relative_to(self._layout.program_prefix)
+
+    def _hand_off(self, request: InstallRequest, receipt: InstallReceipt, uid: int) -> None:
+        """把控制权交给复制到 0700 私有目录并重新校验 hash 的 installer。
+
+        受管 Runtime 会在删除自身之前退出：先把 receipt 匹配的
+        `current/lobster0-installer.pyz` 复制出去、按 Runtime receipt 再校验一次
+        SHA-256，再用同一 Runtime 的 managed Python exec 它，并通过
+        ``LOBSTER0_INSTALLER_HOPS`` 做一次性跳转保护。
+
+        卸载不需要 bootstrap 信任根（Installer 在 preflight 之前就分流），
+        因此四个 internal bootstrap flag 只用于满足 pyz CLI 的结构契约，
+        全部指向本次私有目录；任何真正读取它们的代码路径都会 fail closed。
+        """
+        layout = self._layout
+        runtime = layout.program_prefix / receipt.current_runtime
+        data_mode = 0o644 if request.system_prefix else 0o600
+        runtime_receipt = RuntimeReceipt.load(
+            runtime / _RECEIPT_NAME,
+            expected_uid=uid,
+            expected_mode=data_mode,
+        )
+        source = runtime / _INSTALLER_NAME
+        payload = _read_private_file(source, uid, expected_mode=None, maximum=_MAX_PYZ_BYTES)
+        if not hmac.compare_digest(
+            hashlib.sha256(payload).hexdigest(),
+            runtime_receipt.installer_sha256,
+        ):
+            _ownership_mismatch()
+        manifest = _read_private_file(
+            runtime / _MANIFEST_NAME,
+            uid,
+            expected_mode=data_mode,
+            maximum=_MAX_MANIFEST_BYTES,
+        )
+        python = runtime / "python" / "bin" / "python3.12"
+        _require_private_executable(python, uid)
+        root = Path(tempfile.mkdtemp(prefix="lobster0-uninstall-"))
+        os.chmod(root, 0o700)
+        _require_private_directory(root, uid)
+        installer = root / _INSTALLER_NAME
+        _write_exclusive(installer, payload, 0o700)
+        manifest_file = root / _MANIFEST_NAME
+        _write_exclusive(manifest_file, manifest, 0o600)
+        if not hmac.compare_digest(
+            hashlib.sha256(installer.read_bytes()).hexdigest(),
+            runtime_receipt.installer_sha256,
+        ):
+            _ownership_mismatch()
+        python_root = root / "python"
+        (python_root / "bin").mkdir(mode=0o700, parents=True)
+        argv = (
+            str(python),
+            "-I",
+            str(installer),
+            "uninstall",
+            *_public_uninstall_argv(request),
+            "--manifest-file",
+            str(manifest_file),
+            "--manifest-sha256",
+            hashlib.sha256(manifest).hexdigest(),
+            "--managed-uv",
+            str(root / "uv"),
+            "--managed-python-root",
+            str(python_root),
+            "--managed-python-executable",
+            str(python_root / "bin" / "python3.12"),
+        )
+        environment = {_INTERNAL_HOP: "1", "PATH": _PATH}
+        if self._user_home is not None:
+            environment["HOME"] = str(self._user_home)
+        self._emit(InstallEvent("uninstall.handoff", "ok", None, "program_prefix"))
+        self._execve(str(python), argv, environment)
+
+    def _remove_service(self, receipt: InstallReceipt, uid: int) -> InstallReceipt:
+        """先停止并移除 label/path/hash 都匹配 receipt 的受管服务。"""
+        del uid
+        if receipt.service_file_sha256 is None:
+            return receipt
+        platform = (
+            ServicePlatform.SYSTEMD_USER
+            if receipt.platform.os == "linux"
+            else ServicePlatform.LAUNCHD
+        )
+        service_uninstall(
+            render_service_spec(self._layout, platform),
+            self._runner,
+            expected_sha256=receipt.service_file_sha256,
+        )
+        cleared = replace(
+            receipt,
+            service_label=None,
+            service_file=None,
+            service_file_sha256=None,
+        )
+        cleared.write(self._layout.receipt)
+        self._emit(InstallEvent("service.uninstalled", "ok", None, "service"))
+        return cleared
+
+    def _remove_program_files(self, receipt: InstallReceipt, uid: int) -> None:
+        """先完整验证受管文件，再删除 launcher、link、current 与 Runtime。"""
+        layout = self._layout
+        command_link = _lexists(layout.command_link)
+        if command_link:
+            expected = os.path.relpath(layout.launcher, start=layout.command_link.parent)
+            metadata = layout.command_link.lstat()
+            if (
+                not stat.S_ISLNK(metadata.st_mode)
+                or metadata.st_uid != uid
+                or os.readlink(layout.command_link) != expected
+            ):
+                _ownership_mismatch()
+        launcher = _lexists(layout.launcher)
+        if launcher and managed_file_sha256(
+            layout.launcher,
+            expected_uid=uid,
+        ) != receipt.launcher_sha256:
+            _ownership_mismatch()
+        current = _lexists(layout.current)
+        if current and _read_current(layout) != receipt.current_runtime:
+            _ownership_mismatch()
+        runtimes = self._validated_runtimes(uid)
+        try:
+            if command_link:
+                layout.command_link.unlink()
+                _fsync_directory(layout.command_link.parent)
+            if launcher:
+                layout.launcher.unlink()
+                _fsync_directory(layout.launcher.parent)
+            if current:
+                layout.current.unlink()
+            for runtime in runtimes:
+                shutil.rmtree(runtime)
+            if _lexists(layout.runtimes_dir):
+                layout.runtimes_dir.rmdir()
+            layout.receipt.unlink()
+            _fsync_directory(layout.program_prefix)
+        except OSError:
+            raise InstallError("uninstall_ownership_mismatch", "program_prefix") from None
+        self._prune_empty_directory(layout.bin_dir)
+        self._emit(InstallEvent("uninstall.program.removed", "ok", None, "program_prefix"))
+
+    def _validated_runtimes(self, uid: int) -> tuple[Path, ...]:
+        """只接受受管 Runtime 与受管事务残留，拒绝任何外来条目。"""
+        layout = self._layout
+        if not _lexists(layout.runtimes_dir):
+            return ()
+        metadata = layout.runtimes_dir.lstat()
+        if not stat.S_ISDIR(metadata.st_mode) or metadata.st_uid != uid:
+            _ownership_mismatch()
+        selected: list[Path] = []
+        try:
+            with os.scandir(layout.runtimes_dir) as entries:
+                for entry in entries:
+                    child = entry.stat(follow_symlinks=False)
+                    if (
+                        not _managed_runtime_entry(entry.name)
+                        or not stat.S_ISDIR(child.st_mode)
+                        or child.st_uid != uid
+                    ):
+                        _ownership_mismatch()
+                    selected.append(layout.runtimes_dir / entry.name)
+        except OSError:
+            _ownership_mismatch()
+        return tuple(selected)
+
+    def _prune_empty_directory(self, path: Path) -> None:
+        """只在受管目录已为空时移除它，永不递归删除。"""
+        try:
+            path.rmdir()
+        except OSError:
+            return
+
+    def _authorize_purge(self, request: InstallRequest) -> None:
+        """在任何破坏性动作之前完成 purge 的确认闭合。"""
+        root = self._layout.state_home
+        _validate_purge_root(root, user_home=self._user_home)
+        targets = _purge_targets(root)
+        if not self._isatty:
+            if not request.confirm_data_loss:
+                raise InstallError("request_invalid", "confirm_data_loss")
+            return
+        if self._confirm is None:
+            raise InstallError("request_invalid", "confirm_data_loss")
+        print("These exact paths will be permanently deleted:", file=self._stdout)
+        for target in targets:
+            print(f"  {target}", file=self._stdout)
+        first = self._confirm(f"Type the exact state directory to confirm [{root}]: ")
+        if type(first) is not str or first.strip() != str(root):
+            raise InstallError("request_invalid", "confirm_data_loss")
+        second = self._confirm(f"Type {_PURGE_PHRASE} to confirm: ")
+        if type(second) is not str or second.strip() != _PURGE_PHRASE:
+            raise InstallError("request_invalid", "confirm_data_loss")
+
+    def _purge(self, uid: int) -> None:
+        """删除显式枚举的状态路径，保留 Workspace 与任何未知用户文件。"""
+        root = self._layout.state_home
+        _validate_purge_root(root, user_home=self._user_home)
+        workspace = root / "workspace"
+        targets = _purge_targets(root)
+        for target in targets:
+            metadata = target.lstat()
+            if (
+                target == workspace
+                or target.parent != root
+                or stat.S_ISLNK(metadata.st_mode)
+                or metadata.st_uid != uid
+            ):
+                _ownership_mismatch()
+        try:
+            for target in targets:
+                if target.is_dir():
+                    shutil.rmtree(target)
+                else:
+                    target.unlink()
+            _fsync_directory(root)
+        except OSError:
+            raise InstallError("uninstall_ownership_mismatch", "state_home") from None
+        self._emit(InstallEvent("uninstall.data.purged", "warn", None, "state_home"))
+
+    def _report(self, request: InstallRequest) -> None:
+        """输出精确的保留目录与重新安装提示，不回显任何 Secret 内容。"""
+        layout = self._layout
+        print(
+            f"Removed the managed Lobster0 install at {layout.program_prefix}.",
+            file=self._stdout,
+        )
+        if request.purge_data:
+            print(
+                f"Purged the enumerated Lobster0 state under {layout.state_home}.",
+                file=self._stdout,
+            )
+            print(
+                f"Retained the Workspace at {layout.state_home / 'workspace'}.",
+                file=self._stdout,
+            )
+            return
+        print(f"Retained all user data at {layout.state_home}.", file=self._stdout)
+        print(
+            "Re-run the pinned Lobster0 installer to reinstall against the same data.",
+            file=self._stdout,
+        )
+
+    def _emit(self, event: InstallEvent) -> None:
+        """把一个已脱敏事件追加到当前卸载事务。"""
+        self._events.append(event)
+
+
+def _public_uninstall_argv(request: InstallRequest) -> tuple[str, ...]:
+    """构造 handoff 需要透传、且不含任何 Secret 的 public installer flags。"""
+    argv: list[str] = ["--home", str(request.state_home)]
+    if request.system_prefix:
+        argv.append("--system-prefix")
+    elif request.prefix is not None:
+        argv.extend(("--prefix", str(request.prefix)))
+    if request.purge_data:
+        argv.append("--purge-data")
+    if request.confirm_data_loss:
+        argv.append("--confirm-data-loss")
+    if request.json_output:
+        argv.append("--json")
+    if request.verbose:
+        argv.append("--verbose")
+    return tuple(argv)
+
+
+def run_uninstall_request(
+    request: InstallRequest,
+    *,
+    environ: Mapping[str, str],
+    execve: Callable[[str, tuple[str, ...], dict[str, str]], object] = os.execve,
+) -> InstallResult:
+    """从 installer pyz 的 uninstall 跳转还原受管 layout 并执行删除。"""
+    facts = resolve_install_facts(request.state_home, environ=environ)
+    if not facts.managed or facts.layout is None:
+        raise InstallError("uninstall_ownership_mismatch", "program_prefix")
+    return Uninstaller(
+        facts.layout,
+        environ=environ,
+        execve=execve,
+        isatty=sys.stdin.isatty(),
+        confirm=_tty_confirm,
+        user_home=_user_home(),
+    ).run(request)
+
+
+def _tty_confirm(prompt: str) -> str:
+    """只从 controlling TTY 读取一行破坏性确认，不读取 stdin 管道。"""
+    with open("/dev/tty", "r+", encoding="utf-8") as tty:
+        tty.write(prompt)
+        tty.flush()
+        return tty.readline()
+
+
+def _user_home() -> Path | None:
+    """best-effort 解析当前用户 Home，失败时返回 None。"""
+    try:
+        return Path(pwd.getpwuid(os.geteuid()).pw_dir)
+    except (KeyError, OSError, TypeError):
+        return None
+
+
+def run_install_action(
+    action: str,
+    *,
+    state_home: Path,
+    version: str | None = None,
+    channel: Literal["stable", "dev"] = "stable",
+    purge_data: bool = False,
+    confirm_data_loss: bool = False,
+    json_output: bool = False,
+    verbose: bool = False,
+    environ: Mapping[str, str] | None = None,
+    executable: Path | None = None,
+    user_home: Path | None = None,
+    stdout: TextIO | None = None,
+    stderr: TextIO | None = None,
+    confirm: Callable[[str], str] | None = None,
+    isatty: bool | None = None,
+    runner: object | None = None,
+) -> int:
+    """执行受管安装的 service/update/uninstall 动作并返回稳定退出码。
+
+    Args:
+        action: `service.install|status|logs|restart|uninstall`、`update` 或 `uninstall`。
+        state_home: 已解析的绝对状态根。
+        version: update 的显式目标版本。
+        channel: update 的发布通道。
+        purge_data: 是否请求破坏性 purge。
+        confirm_data_loss: 非交互 purge 的精确长 flag。
+        json_output: 是否请求机器可读输出。
+        verbose: 是否请求更多脱敏诊断。
+        environ: 判定受管模式使用的环境。
+        executable: 当前解释器路径。
+        user_home: 目标用户 Home。
+        stdout: 可替换标准输出。
+        stderr: 可替换标准错误。
+        confirm: 破坏性确认读取器。
+        isatty: stdin 是否为 TTY。
+        runner: 可注入的 bounded exact runner。
+
+    Returns:
+        成功为 0、请求/确认错误为 2、lifecycle 错误为 5。
+    """
+    out = sys.stdout if stdout is None else stdout
+    error_stream = sys.stderr if stderr is None else stderr
+    facts = resolve_install_facts(
+        state_home,
+        environ=environ,
+        executable=executable,
+        user_home=user_home,
+    )
+    if not facts.managed or facts.layout is None or facts.receipt is None:
+        print(f"error: install_not_managed ({facts.detail})", file=error_stream)
+        return 2
+    tty = sys.stdin.isatty() if isatty is None else bool(isatty)
+    try:
+        if action.startswith("service."):
+            return _run_managed_service(
+                action.split(".", 1)[1],
+                facts.layout,
+                facts.receipt,
+                runner=runner,
+                stdout=out,
+            )
+        if action == "update":
+            return _run_managed_update(
+                facts.layout,
+                facts.receipt,
+                version=version,
+                channel=channel,
+                json_output=json_output,
+                verbose=verbose,
+                stderr=error_stream,
+            )
+        if action != "uninstall":
+            print("error: request_invalid", file=error_stream)
+            return 2
+        system_prefix = facts.program_prefix == _SYSTEM_PREFIX
+        custom_prefix = (
+            None
+            if system_prefix or facts.program_prefix == state_home
+            else facts.program_prefix
+        )
+        request = InstallRequest(
+            action="uninstall",
+            version=None,
+            channel="stable",
+            prefix=custom_prefix,
+            state_home=state_home,
+            system_prefix=system_prefix,
+            onboard=False,
+            config_file=None,
+            secrets_file=None,
+            service=None,
+            allow_system_packages=False,
+            dry_run=False,
+            json_output=json_output,
+            verbose=verbose,
+            purge_data=purge_data,
+            confirm_data_loss=confirm_data_loss,
+        )
+        Uninstaller(
+            facts.layout,
+            runner=runner,
+            environ=environ,
+            executable=executable,
+            isatty=tty,
+            confirm=_tty_confirm if confirm is None else confirm,
+            stdout=out,
+            user_home=user_home if user_home is not None else _user_home(),
+        ).run(request)
+    except InstallError as failure:
+        print(f"error: {failure.code}", file=error_stream)
+        return 2 if failure.code == "request_invalid" else 5
+    except OSError:
+        print("error: installer_error", file=error_stream)
+        return 5
+    return 0
+
+
+def _run_managed_service(
+    command: str,
+    layout: InstallLayout,
+    receipt: InstallReceipt,
+    *,
+    runner: object | None,
+    stdout: TextIO,
+) -> int:
+    """驱动受 receipt 绑定的 systemd-user/launchd 用户服务生命周期。"""
+    if command not in _SERVICE_ACTIONS:
+        raise InstallError("request_invalid", "action")
+    platform = (
+        ServicePlatform.SYSTEMD_USER
+        if receipt.platform.os == "linux"
+        else ServicePlatform.LAUNCHD
+    )
+    spec = render_service_spec(layout, platform)
+    if command == "install":
+        digest = service_install(spec, runner, expected_sha256=receipt.service_file_sha256)
+        relative = _service_relative(spec.path, _invoking_account())
+        replace(
+            receipt,
+            service_label=spec.label,
+            service_file=relative,
+            service_file_sha256=digest,
+        ).write(layout.receipt)
+        print("service installed", file=stdout)
+        return 0
+    if command == "status":
+        running = service_status(spec, runner)
+        installed = receipt.service_file_sha256 is not None
+        print(
+            f"service installed={'true' if installed else 'false'} "
+            f"running={'true' if running else 'false'}",
+            file=stdout,
+        )
+        return 0
+    if command == "logs":
+        result = service_logs(spec, runner)
+        print(result.stdout.decode("utf-8", errors="replace"), end="", file=stdout)
+        return 0
+    if command == "restart":
+        service_restart(spec, runner)
+        print("service restarted", file=stdout)
+        return 0
+    if receipt.service_file_sha256 is None:
+        print("service uninstalled", file=stdout)
+        return 0
+    service_uninstall(spec, runner, expected_sha256=receipt.service_file_sha256)
+    replace(
+        receipt,
+        service_label=None,
+        service_file=None,
+        service_file_sha256=None,
+    ).write(layout.receipt)
+    print("service uninstalled", file=stdout)
+    return 0
+
+
+def _run_managed_update(
+    layout: InstallLayout,
+    receipt: InstallReceipt,
+    *,
+    version: str | None,
+    channel: Literal["stable", "dev"],
+    json_output: bool,
+    verbose: bool,
+    stderr: TextIO,
+) -> int:
+    """把 update 交回 pinned bootstrap，绝不在本地退化出第二条升级路径。
+
+    Task 13 的 DB-guarded update pipeline 由 installer zipapp 驱动，而它需要
+    bootstrap 建立的信任根（pinned uv 与 managed Python）。受管 Runtime 在
+    激活时按设计删除 `.inputs`，因此已安装 CLI 手里没有可信 uv；这里 fail
+    closed 并给出精确指引，而不是退化到 PATH 上的不可信 uv 或第二套下载逻辑。
+    """
+    del layout, receipt, version, channel, json_output, verbose
+    print("error: update_requires_bootstrap", file=stderr)
+    print(
+        "Re-run the pinned Lobster0 installer to update; the installed Runtime "
+        "intentionally keeps no bootstrap trust root.",
+        file=stderr,
+    )
+    return 2
