@@ -55,7 +55,7 @@ class InstallBootstrapTest(unittest.TestCase):
             manifest_filename="release-manifest.json",
             manifest_sha256=hashlib.sha256(self.manifest_bytes).hexdigest(),
             manifest_size=len(self.manifest_bytes),
-            installer_filename="miniclaw-installer.pyz",
+            installer_filename="lobster0-installer.pyz",
             installer_sha256=hashlib.sha256(self.installer_bytes).hexdigest(),
             installer_size=len(self.installer_bytes),
         )
@@ -236,7 +236,7 @@ class InstallBootstrapTest(unittest.TestCase):
                 manifest_filename="release-manifest.json",
                 manifest_sha256=self.release_inputs.manifest_sha256,
                 manifest_size=1,
-                installer_filename="miniclaw-installer.pyz",
+                installer_filename="lobster0-installer.pyz",
                 installer_sha256=self.release_inputs.installer_sha256,
                 installer_size=1,
             )
@@ -363,7 +363,7 @@ class InstallBootstrapTest(unittest.TestCase):
         completed = self._run()
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(self._calls("uv"), [])
-        self.assertFalse((self.home / ".miniclaw").exists())
+        self.assertFalse((self.home / ".lobster0").exists())
 
     def test_installer_size_mismatch_is_rejected(self) -> None:
         """installer 字节数与 manifest 声明不一致时必须失败。"""
@@ -372,7 +372,7 @@ class InstallBootstrapTest(unittest.TestCase):
         )
         completed = self._run()
         self.assertNotEqual(completed.returncode, 0)
-        self.assertFalse((self.home / ".miniclaw").exists())
+        self.assertFalse((self.home / ".lobster0").exists())
 
     def test_manifest_size_mismatch_is_rejected(self) -> None:
         """manifest 字节数与渲染进脚本的 pinned size 不一致时必须失败。"""
@@ -382,7 +382,7 @@ class InstallBootstrapTest(unittest.TestCase):
         completed = self._run()
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(self._calls("uv"), [])
-        self.assertFalse((self.home / ".miniclaw").exists())
+        self.assertFalse((self.home / ".lobster0").exists())
 
     def test_oversized_manifest_download_is_rejected_before_full_write(self) -> None:
         """伪造的超大响应必须被 curl ``--max-filesize`` 挡在完整落盘之前。
@@ -399,7 +399,7 @@ class InstallBootstrapTest(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(self._calls("uv"), [])
         self.assertFalse(record.exists())
-        self.assertFalse((self.home / ".miniclaw").exists())
+        self.assertFalse((self.home / ".lobster0").exists())
         self.assertFalse(any(self.tmp_root.iterdir()))
 
         manifest_calls = [
@@ -548,10 +548,10 @@ class InstallBootstrapTest(unittest.TestCase):
         """bootstrap 绝不能读写 shell profile 或既有的 Secret 状态。"""
         for name in _PROFILE_NAMES:
             (self.home / name).write_bytes(f"sentinel:{name}\n".encode())
-        miniclaw_home = self.home / ".miniclaw"
-        miniclaw_home.mkdir()
-        secrets_file = miniclaw_home / "secrets.env"
-        secrets_file.write_bytes(b"MINICLAW_SECRET_TOKEN=do-not-touch\n")
+        lobster0_home = self.home / ".lobster0"
+        lobster0_home.mkdir()
+        secrets_file = lobster0_home / "secrets.env"
+        secrets_file.write_bytes(b"LOBSTER0_SECRET_TOKEN=do-not-touch\n")
         before = self._snapshot(self.home)
 
         record = self.root / "record.json"

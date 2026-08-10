@@ -1,8 +1,8 @@
-# MiniClaw Phase 2：Tool、权限与安全执行设计
+# Lobster0 Phase 2：Tool、权限与安全执行设计
 
 > 状态：已评审；P2.1-P2.3 已实现，P2.4 HTTPS 与 P2.5 最终门禁仍按目标描述
 >
-> 目标版本：MiniClaw Phase 2
+> 目标版本：Lobster0 Phase 2
 >
 > 文档日期：2026-08-07
 >
@@ -16,7 +16,7 @@
 
 ### 0.1 一句话解释 Phase 2
 
-Phase 1 的 MiniClaw 只有“嘴”和“大脑”：它能听懂问题，也能组织语言回答，但没有真正操作电脑的手。
+Phase 1 的 Lobster0 只有“嘴”和“大脑”：它能听懂问题，也能组织语言回答，但没有真正操作电脑的手。
 
 Phase 2 给它增加三样东西：
 
@@ -39,7 +39,7 @@ flowchart LR
     end
 ```
 
-### 0.2 把 MiniClaw 想成一个小团队
+### 0.2 把 Lobster0 想成一个小团队
 
 这些英文名第一次看会很抽象，可以先用下面的比喻理解：
 
@@ -73,7 +73,7 @@ flowchart LR
 
 ### 0.3 Phase 2 会给它哪些工具
 
-| 你可能说的话 | MiniClaw 使用的工具 | 默认怎么处理 |
+| 你可能说的话 | Lobster0 使用的工具 | 默认怎么处理 |
 | --- | --- | --- |
 | “看看我的电脑配置” | `system_info` | 只读，直接执行 |
 | “读一下 README.md” | `read_file` | 工作区内直接执行 |
@@ -90,7 +90,7 @@ Phase 2 不会给它“任意 Bash”。例如下面这些能力暂时明确不�
 - 删除文件和目录；
 - SSH、上传文件或 `git push`；
 - `bash -c "一长串命令"`；
-- 自动修改、提交并部署 MiniClaw 自己的源代码。
+- 自动修改、提交并部署 Lobster0 自己的源代码。
 
 这不是功能没做完，而是第一版先把边界缩小，确保我们知道它到底会做什么。
 
@@ -102,7 +102,7 @@ Hardware UUID、用户名、MAC 地址、环境变量等隐私字段。
 ```mermaid
 sequenceDiagram
     participant You as 你
-    participant Agent as MiniClaw
+    participant Agent as Lobster0
     participant Policy as 权限门卫
     participant Tool as system_info
     participant Model as DeepSeek
@@ -138,7 +138,7 @@ Agent 自己拿出来放进对话或命令输出。
 
 ### 0.6 示例三：运行命令时你会看到什么
 
-MiniClaw 不接收一整段 Shell 字符串，而是把命令拆成“程序 + 参数”：
+Lobster0 不接收一整段 Shell 字符串，而是把命令拆成“程序 + 参数”：
 
 ```text
 program = "git"
@@ -150,7 +150,7 @@ args = ["status", "--short"]
 ```mermaid
 sequenceDiagram
     participant You as 你
-    participant Agent as MiniClaw
+    participant Agent as Lobster0
     participant DB as SQLite
     participant Command as run_command
 
@@ -158,7 +158,7 @@ sequenceDiagram
     Agent->>Agent: 检查程序、参数、工作目录和禁止名单
     Agent->>DB: 保存待审批动作和参数指纹
     Agent-->>You: 需要批准，Approval ID = 42
-    You->>Agent: miniclaw approvals approve 42
+    You->>Agent: lobster0 approvals approve 42
     Agent->>DB: 确认 ID、有效期和参数都没变
     Agent->>Command: 只执行原来的 git status --short
     Command-->>Agent: 返回 stdout 和 stderr
@@ -252,7 +252,7 @@ flowchart LR
 
 ## 1. 结论先行
 
-Phase 2 要把 MiniClaw 从“能对话的模型客户端”升级成“能在本机安全做事的个人 Agent”。本阶段的
+Phase 2 要把 Lobster0 从“能对话的模型客户端”升级成“能在本机安全做事的个人 Agent”。本阶段的
 首个用户可见结果是：当用户说“帮我看看我的电脑是什么配置”时，模型能够调用只读的
 `system_info` Tool，读取经过脱敏的真实机器信息，再基于结果回答，而不是告诉用户自己手动打开
 “关于本机”。
@@ -265,7 +265,7 @@ Phase 2 要把 MiniClaw 从“能对话的模型客户端”升级成“能在�
 - 从 OpenClaw/openclaw-python 借鉴 `security × ask` 两轴策略、模型调用前过滤 Tool Schema、
   参数绑定审批与命令 allowlist；
 - 不整仓 Fork，不复制 WebUI、MCP、多 Agent、Cron、远程节点和复杂 Sandbox；
-- 不为每个上游概念建立一层抽象。MiniClaw 只有一个 Tool 执行入口和一个 Policy 真相来源。
+- 不为每个上游概念建立一层抽象。Lobster0 只有一个 Tool 执行入口和一个 Policy 真相来源。
 
 Phase 2 分五个可独立验收的纵向切片：
 
@@ -335,7 +335,7 @@ flowchart LR
 
 - 不在 Phase 2 引入 Docker/Seatbelt/bubblewrap 级 OS Sandbox；应用级 Policy 不是 OS Sandbox。
 - 不实现任意 Bash 字符串、管道、重定向、命令替换或交互式 TTY。
-- 不实现删除文件、安装软件、`sudo`、远程登录、Git push 或自动修改 MiniClaw 源码。
+- 不实现删除文件、安装软件、`sudo`、远程登录、Git push 或自动修改 Lobster0 源码。
 - 不实现后台进程、长任务管理、PTY、浏览器、MCP、Cron 或远程节点执行。
 - 不实现 Memory Tool、Skill 代码执行、Channel 内审批卡片。
 - 不引入 ORM、通用 JSON Schema 库、DI 容器、插件框架或策略 DSL。
@@ -369,17 +369,17 @@ Phase 2 完成必须同时满足：
 
 ### 4.1 逐项目“照搬什么”
 
-| 上游设计 | MiniClaw 处理 | 说明 |
+| 上游设计 | Lobster0 处理 | 说明 |
 | --- | --- | --- |
-| nanobot `Tool`、`ToolRegistry` | 借行为，按 MiniClaw 类型重写 | 保留名称、Schema、校验、执行；不复制完整插件元数据与动态发现 |
-| nanobot Workspace Guard | 移植测试思想与错误边界 | 解析逻辑结合 MiniClaw 的 Workspace/read-only roots |
+| nanobot `Tool`、`ToolRegistry` | 借行为，按 Lobster0 类型重写 | 保留名称、Schema、校验、执行；不复制完整插件元数据与动态发现 |
+| nanobot Workspace Guard | 移植测试思想与错误边界 | 解析逻辑结合 Lobster0 的 Workspace/read-only roots |
 | nanobot SSRF/DNS rebinding 测试 | 优先移植行为测试 | HTTP 实现可能重写，但安全断言保持 |
 | ZeroClaw supervised 默认值 | 直接采用产品语义 | 未知或有副作用的动作默认审批或拒绝 |
-| ZeroClaw Yes/No/Always 审批 | 采用状态机，不采用内存全局对象 | MiniClaw 使用 SQLite，支持重启恢复和未来 IM |
-| ZeroClaw Tool 名称级 session allowlist | 不直接照搬 | 只按 Tool 名永久允许过宽；MiniClaw 必须绑定参数或安全规则 |
+| ZeroClaw Yes/No/Always 审批 | 采用状态机，不采用内存全局对象 | Lobster0 使用 SQLite，支持重启恢复和未来 IM |
+| ZeroClaw Tool 名称级 session allowlist | 不直接照搬 | 只按 Tool 名永久允许过宽；Lobster0 必须绑定参数或安全规则 |
 | RayClaw Channel 共享 Tool | 直接采用架构思想 | Tool 不知道请求来自飞书、Telegram、Discord 还是 CLI |
 | RayClaw 敏感文件名单 | 采用并扩展 | `.env`、`.ssh`、云凭据、Token 文件默认硬禁止 |
-| RayClaw `shell -c` CommandRunner | 明确不复制 | 与 MiniClaw“程序名 + 参数数组”安全约束冲突 |
+| RayClaw `shell -c` CommandRunner | 明确不复制 | 与 Lobster0“程序名 + 参数数组”安全约束冲突 |
 | OpenClaw `security × ask` | 直接采用核心语义 | 能力上限与人工确认是两个维度 |
 | OpenClaw 多层 Tool Policy | 收敛为一个 PolicyEngine | 不复制 global/provider/group/subagent/sandbox 多套策略 |
 | openclaw-python 内存 ApprovalManager | 不复制实现 | busy-wait、全局单例、无持久化不适合跨 IM |
@@ -391,27 +391,27 @@ Phase 2 完成必须同时满足：
 - 同时更新 `THIRD_PARTY_NOTICES.md`，保留原版权声明。
 - ZeroClaw 代码如直接移植，默认按其 MIT 选项处理；若单文件另有声明则服从单文件。
 - 不复制上游测试凭据、生成文件、品牌资产、二进制和不明来源代码。
-- 实现顺序是先写 MiniClaw 行为测试，再移植通过测试的最小部分，不整目录复制。
+- 实现顺序是先写 Lobster0 行为测试，再移植通过测试的最小部分，不整目录复制。
 
 ## 5. 方案比较与推荐
 
 ### 5.1 方案 A：直接 Fork openclaw-python
 
 优点是功能数量多，缺点是会继承多 Provider、远程节点、复杂 Policy、兄弟仓库兼容层和大量非目标代码。
-它更适合“运行一个 OpenClaw Python 克隆”，不适合学习 MiniClaw 自己的 Agent Runtime。
+它更适合“运行一个 OpenClaw Python 克隆”，不适合学习 Lobster0 自己的 Agent Runtime。
 
 结论：不采用整仓 Fork，但把它作为行为参考和可移植代码源。
 
 ### 5.2 方案 B：直接包一层原版 OpenClaw
 
-优点是最快得到成熟能力，缺点是 MiniClaw 会变成配置/包装项目，Python 内核、Tool Loop、审批恢复和
+优点是最快得到成熟能力，缺点是 Lobster0 会变成配置/包装项目，Python 内核、Tool Loop、审批恢复和
 Policy 的学习价值很低，排障时还要跨语言和跨进程。
 
-结论：不作为 MiniClaw 主路线；未来可以做一个可选 OpenClaw Provider/Bridge，不属于 Phase 2。
+结论：不作为 Lobster0 主路线；未来可以做一个可选 OpenClaw Provider/Bridge，不属于 Phase 2。
 
 ### 5.3 方案 C：自有 Python 内核，选择性移植成熟边界
 
-它保留 MiniClaw 已完成的 Provider、Runner、Turn 和 SQLite，新增最少必要的 Tool/Policy 模块；安全难点
+它保留 Lobster0 已完成的 Provider、Runner、Turn 和 SQLite，新增最少必要的 Tool/Policy 模块；安全难点
 直接借上游测试和语义，不从零发明。
 
 结论：采用。它最符合“个人项目 + 学习 + 未来企业 Agent 工作方向”的目标。
@@ -477,7 +477,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Protocol
 
-from miniclaw.providers.base import JsonValue, ToolCall
+from lobster0.providers.base import JsonValue, ToolCall
 
 
 class ToolRisk(StrEnum):
@@ -579,7 +579,7 @@ class Tool(Protocol):
 5. 输出按 Tool 名排序，减少 Prompt 缓存抖动；
 6. Schema 过滤只是减少模型误调用，运行时 Policy 仍必须再次校验。
 
-这一点直接借鉴 OpenClaw“在模型调用前移除不可访问 Tool”的思想，但 MiniClaw 不复制其多级
+这一点直接借鉴 OpenClaw“在模型调用前移除不可访问 Tool”的思想，但 Lobster0 不复制其多级
 global/provider/group/subagent 策略合并器。
 
 ## 9. Tool 执行主流程
@@ -667,7 +667,7 @@ timeout_seconds = 30
 ```
 
 内置安全规则让 `system_info`、Workspace 内的 `read_file`、`glob`、`grep` 自动允许。写操作、网络域名
-和命令默认未命中，因此进入审批。用户可以显式增加窄规则；安装 MiniClaw 不会自动获得任意命令执行权。
+和命令默认未命中，因此进入审批。用户可以显式增加窄规则；安装 Lobster0 不会自动获得任意命令执行权。
 
 ### 10.4 决策优先级
 
@@ -690,7 +690,7 @@ timeout_seconds = 30
 
 ### 11.1 为什么不挂起协程
 
-审批可能持续数分钟，也可能发生在飞书等另一个进程生命周期中。MiniClaw 不像 ZeroClaw CLI 那样一直
+审批可能持续数分钟，也可能发生在飞书等另一个进程生命周期中。Lobster0 不像 ZeroClaw CLI 那样一直
 等待 stdin，也不采用 openclaw-python 内存 ApprovalManager 的 busy-wait。当前 Turn 持久化为
 `waiting_approval` 后结束；批准时创建新的续执行 Turn。
 
@@ -754,7 +754,7 @@ sequenceDiagram
     participant Executor as ToolExecutor
     participant Model as Model Provider
 
-    User->>CLI: miniclaw approvals approve 42
+    User->>CLI: lobster0 approvals approve 42
     CLI->>Approval: approve(user_id, 42)
     Approval->>DB: 校验 owner、pending、expires_at、arguments_hash
     Approval->>DB: pending -> approved
@@ -776,11 +776,11 @@ Tool 完成前退出，ToolRun 标记为 interrupted，并明确要求用户重�
 ### 11.5 CLI
 
 ```bash
-uv run miniclaw approvals list --status pending
-uv run miniclaw approvals show 42
-uv run miniclaw approvals approve 42
-uv run miniclaw approvals approve 42 --always
-uv run miniclaw approvals deny 42
+uv run lobster0 approvals list --status pending
+uv run lobster0 approvals show 42
+uv run lobster0 approvals approve 42
+uv run lobster0 approvals approve 42 --always
+uv run lobster0 approvals deny 42
 ```
 
 - 所有命令支持 `--json`，便于未来 Channel 和自动化复用。
@@ -828,18 +828,18 @@ flowchart TD
 - `id_rsa`、`id_ed25519` 等私钥；
 - `.netrc`、`.npmrc`、`credentials`、`credentials.json`、`token.json`；
 - `secrets.json`、`secrets.yaml`、常见密钥库文件；
-- MiniClaw 状态目录中的配置、数据库和日志，Workspace 子目录本身除外；
+- Lobster0 状态目录中的配置、数据库和日志，Workspace 子目录本身除外；
 - `/etc/shadow`、`/etc/gshadow`、`/etc/sudoers`；
 - Docker Socket 与常见容器运行时 Socket。
 
-该名单参考 RayClaw，并增加 MiniClaw 自身状态边界。大小写敏感性按所在文件系统处理；macOS 默认卷上
+该名单参考 RayClaw，并增加 Lobster0 自身状态边界。大小写敏感性按所在文件系统处理；macOS 默认卷上
 还需要用规范路径比较防止大小写变体绕过。
 
 ## 13. 内置 Tool 规格
 
 ### 13.1 `system_info`
 
-用途：读取当前 MiniClaw 所在机器的基础硬件与操作系统信息。
+用途：读取当前 Lobster0 所在机器的基础硬件与操作系统信息。
 
 参数：
 
@@ -908,7 +908,7 @@ flowchart TD
 - 新建文件为 medium，默认审批；
 - 覆盖文件为 high，每次审批；
 - 不创建多级缺失父目录；用户必须先明确创建目标目录或后续新增专用 Tool；
-- 不写敏感路径，不写 MiniClaw 源码后自动提交或部署。
+- 不写敏感路径，不写 Lobster0 源码后自动提交或部署。
 
 ### 13.4 `edit_file`
 
@@ -1031,7 +1031,7 @@ max_response_bytes = 2097152
 ```
 
 配置只表达用户稳定意图；一次性审批仍在 SQLite。环境变量只覆盖真正需要自动部署的字段，不为每个配置
-项都增加环境变量。Phase 2 默认不提供 `MINICLAW_TOOLS_FULL_ACCESS=1` 之类一键关闭安全门的开关。
+项都增加环境变量。Phase 2 默认不提供 `LOBSTER0_TOOLS_FULL_ACCESS=1` 之类一键关闭安全门的开关。
 
 ## 15. 持久化与事务
 
@@ -1077,7 +1077,7 @@ WHERE id = ? AND status = 'approved' AND expires_at > ?
 - `arguments_json` 保存本机数据库中的规范化完整参数，以便续执行；数据库和状态目录保持 0600/0700。
 - `arguments_hash` 用于参数绑定和审计。
 - `result_preview` 最多 2,000 字符；完整模型可见结果保存为 Tool Message。
-- 超大但允许的结果写入 Workspace `.miniclaw-results/<tool-run-id>.txt`，文件权限 0600。
+- 超大但允许的结果写入 Workspace `.lobster0-results/<tool-run-id>.txt`，文件权限 0600。
 - 日志只保存 Tool 名、ToolRun ID、哈希前缀、状态、耗时和脱敏摘要。
 - 不把 API Key、Authorization、Cookie、完整环境变量或敏感文件内容写入 Audit。
 
@@ -1124,7 +1124,7 @@ Assistant Tool Call、已绑定 ToolRun 和审批决定。这样 CLI 与未来 I
 ### 16.3 流式行为
 
 - 模型最终答案才发送 `on_text`；Tool JSON 不流给用户。
-- 进入审批时返回 MiniClaw 生成的确定性短消息，包含 Approval ID、Tool 名和脱敏摘要。
+- 进入审批时返回 Lobster0 生成的确定性短消息，包含 Approval ID、Tool 名和脱敏摘要。
 - Tool 执行期间 CLI 可显示单行状态，但不把 stdout 实时透传；Phase 2 无 PTY。
 - 审批续执行产生新的最终回答，作为子 Turn Assistant Message 保存。
 
@@ -1172,7 +1172,7 @@ basename、hostname、duration、error code。不得保存 write content、完�
 只在对应切片开始时创建文件，不先提交空目录。
 
 ```text
-src/miniclaw/
+src/lobster0/
 ├── agent/
 │   ├── runner.py              # 修改：ToolExecutor、待审批结果
 │   ├── turn.py                # 修改：ToolContext、waiting/continuation
@@ -1270,7 +1270,7 @@ tests/
 - 不存在 `command` 字符串入口；
 - Shell 包装器、inline eval、sudo、上传、删除、git push 硬拒绝；
 - cwd 永远是 Workspace；
-- 子进程看不到 `MINICLAW_MODEL_API_KEY` 和测试 Secret；
+- 子进程看不到 `LOBSTER0_MODEL_API_KEY` 和测试 Secret；
 - 超时终止整个子进程组；
 - stdout/stderr 分离、上限有效；
 - exact rule 不能匹配额外 argv；
@@ -1374,7 +1374,7 @@ flowchart LR
 ### 22.1 电脑配置
 
 ```bash
-uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
+uv run lobster0 chat --message "帮我看看我的电脑是什么配置"
 ```
 
 预期：模型调用 `system_info`，回答实际 OS、CPU、内存、存储和可获取的 GPU 信息；不包含序列号、UUID、
@@ -1383,7 +1383,7 @@ uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
 ### 22.2 Workspace 读取
 
 ```bash
-uv run miniclaw chat --message "读一下 workspace 里的 README.md 并总结"
+uv run lobster0 chat --message "读一下 workspace 里的 README.md 并总结"
 ```
 
 预期：自动调用 `read_file`；请求 `../.ssh/id_rsa` 或 `.env` 时被硬拒绝。
@@ -1391,9 +1391,9 @@ uv run miniclaw chat --message "读一下 workspace 里的 README.md 并总结"
 ### 22.3 命令审批
 
 ```bash
-uv run miniclaw chat --message "在 workspace 里运行 git status --short"
-uv run miniclaw approvals list --status pending
-uv run miniclaw approvals approve <ID>
+uv run lobster0 chat --message "在 workspace 里运行 git status --short"
+uv run lobster0 approvals list --status pending
+uv run lobster0 approvals approve <ID>
 ```
 
 预期：首次生成审批；批准后只执行原始 `git status --short`，任何新增参数都不能复用批准。
@@ -1433,7 +1433,7 @@ uv run miniclaw approvals approve <ID>
 
 ## 25. 明确推迟的能力
 
-- OS Sandbox：Phase 7 部署硬化时加入；当 MiniClaw 要执行任意用户脚本时提前。
+- OS Sandbox：Phase 7 部署硬化时加入；当 Lobster0 要执行任意用户脚本时提前。
 - `allow-always` 的路径前缀和命令前缀：只有出现真实重复审批痛点并能安全归纳时加入。
 - 删除/移动/目录管理 Tool：有真实文件管理需求后设计，不能借 `run_command` 绕过。
 - 交互式 PTY/后台进程：出现编译、服务器或长期任务需求后单独设计进程生命周期。

@@ -1,4 +1,4 @@
-# MiniClaw Phase 8 Skills, MCP and Provider Resilience Implementation Plan
+# Lobster0 Phase 8 Skills, MCP and Provider Resilience Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -24,8 +24,8 @@
 ### Task 1: Skill manifest v2 and compatibility loader
 
 **Files:**
-- Create: `src/miniclaw/skills/manifest.py`
-- Modify: `src/miniclaw/skills/loader.py`
+- Create: `src/lobster0/skills/manifest.py`
+- Modify: `src/lobster0/skills/loader.py`
 - Test: `tests/test_skill_manifest.py`
 - Test: `tests/test_skills.py`
 
@@ -61,18 +61,18 @@ Expected: current summarize Skill and Phase 3 cases remain green; symlink/size/p
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/skills/manifest.py src/miniclaw/skills/loader.py tests/test_skill_manifest.py tests/test_skills.py
+git add src/lobster0/skills/manifest.py src/lobster0/skills/loader.py tests/test_skill_manifest.py tests/test_skills.py
 git commit -m "feat(skills): parse permission-aware skill manifests"
 ```
 
 ### Task 2: Content-addressed Skill staging and trust approval
 
 **Files:**
-- Create: `src/miniclaw/skills/install.py`
-- Create: `src/miniclaw/skills/scanner.py`
-- Create: `src/miniclaw/skills/catalog.py`
-- Create: `src/miniclaw/storage/migrations/0007_skill_catalog.sql`
-- Modify: `src/miniclaw/storage/migrations.py`
+- Create: `src/lobster0/skills/install.py`
+- Create: `src/lobster0/skills/scanner.py`
+- Create: `src/lobster0/skills/catalog.py`
+- Create: `src/lobster0/storage/migrations/0007_skill_catalog.sql`
+- Modify: `src/lobster0/storage/migrations.py`
 - Test: `tests/test_skill_install.py`
 - Test: `tests/test_skill_scanner.py`
 
@@ -110,23 +110,23 @@ Install into content-addressed version directory and switch one active pointer a
 - [ ] **Step 5: Run install/scanner tests and commit**
 
 ```bash
-git add src/miniclaw/skills src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0007_skill_catalog.sql tests/test_skill_install.py tests/test_skill_scanner.py
+git add src/lobster0/skills src/lobster0/storage/migrations.py src/lobster0/storage/migrations/0007_skill_catalog.sql tests/test_skill_install.py tests/test_skill_scanner.py
 git commit -m "feat(skills): stage scan and verify installed skills"
 ```
 
 ### Task 3: Skill maintenance CLI and review UX
 
 **Files:**
-- Modify: `src/miniclaw/cli.py`
-- Modify: `src/miniclaw/doctor.py`
-- Modify: `src/miniclaw/bridge/protocol.py`
+- Modify: `src/lobster0/cli.py`
+- Modify: `src/lobster0/doctor.py`
+- Modify: `src/lobster0/bridge/protocol.py`
 - Modify: `tui/src/`
 - Test: `tests/test_cli.py`
 - Test: `tests/test_doctor.py`
 - Modify: `tui/test/`
 
 **Interfaces:**
-- Produces: `miniclaw skills list|inspect|stage|approve|install|verify|revoke` maintenance commands and TUI Skill Card.
+- Produces: `lobster0 skills list|inspect|stage|approve|install|verify|revoke` maintenance commands and TUI Skill Card.
 
 - [ ] **Step 1: Write failing CLI and redaction tests**
 
@@ -139,7 +139,7 @@ These commands do not create a second chat UI. TUI may show the same Core-genera
 - [ ] **Step 3: Run CLI/TUI/Doctor tests and commit**
 
 ```bash
-git add src/miniclaw/cli.py src/miniclaw/doctor.py src/miniclaw/bridge/protocol.py tui tests/test_cli.py tests/test_doctor.py
+git add src/lobster0/cli.py src/lobster0/doctor.py src/lobster0/bridge/protocol.py tui tests/test_cli.py tests/test_doctor.py
 git commit -m "feat(skills): review and manage trusted skills"
 ```
 
@@ -147,10 +147,10 @@ git commit -m "feat(skills): review and manage trusted skills"
 
 **Files:**
 - Modify: `pyproject.toml`
-- Modify: `src/miniclaw/config.py`
-- Create: `src/miniclaw/mcp/__init__.py`
-- Create: `src/miniclaw/mcp/models.py`
-- Create: `src/miniclaw/mcp/manager.py`
+- Modify: `src/lobster0/config.py`
+- Create: `src/lobster0/mcp/__init__.py`
+- Create: `src/lobster0/mcp/models.py`
+- Create: `src/lobster0/mcp/manager.py`
 - Test: `tests/test_mcp_config.py`
 - Test: `tests/test_mcp_manager.py`
 
@@ -167,7 +167,7 @@ def test_mcp_stdio_requires_exact_argv_and_named_env(self, config_loader):
 async def test_mcp_process_gets_only_explicit_environment(manager):
     await manager.start("files")
     assert fake_process.env == {"PATH": safe_path, "ALLOWED_TOKEN": "injected"}
-    assert "MINICLAW_MODEL_API_KEY" not in fake_process.env
+    assert "LOBSTER0_MODEL_API_KEY" not in fake_process.env
 ```
 
 - [ ] **Step 2: Verify RED**
@@ -182,16 +182,16 @@ Add MCP SDK dependency. stdio config uses program/args/cwd/env_names/tool_allowl
 - [ ] **Step 4: Run lifecycle tests and commit**
 
 ```bash
-git add pyproject.toml uv.lock src/miniclaw/config.py src/miniclaw/mcp tests/test_mcp_config.py tests/test_mcp_manager.py
+git add pyproject.toml uv.lock src/lobster0/config.py src/lobster0/mcp tests/test_mcp_config.py tests/test_mcp_manager.py
 git commit -m "feat(mcp): manage static bounded MCP servers"
 ```
 
 ### Task 5: MCP Tool adaptation through Core Policy
 
 **Files:**
-- Create: `src/miniclaw/mcp/tools.py`
-- Modify: `src/miniclaw/tools/registry.py`
-- Modify: `src/miniclaw/runtime.py`
+- Create: `src/lobster0/mcp/tools.py`
+- Modify: `src/lobster0/tools/registry.py`
+- Modify: `src/lobster0/runtime.py`
 - Test: `tests/test_mcp_tools.py`
 - Test: `tests/test_tool_executor.py`
 
@@ -222,16 +222,16 @@ Normalize MCP JSON Schema to the supported subset, reject recursive/ambiguous sc
 - [ ] **Step 4: Run Tool/Policy tests and commit**
 
 ```bash
-git add src/miniclaw/mcp/tools.py src/miniclaw/tools/registry.py src/miniclaw/runtime.py tests/test_mcp_tools.py tests/test_tool_executor.py
+git add src/lobster0/mcp/tools.py src/lobster0/tools/registry.py src/lobster0/runtime.py tests/test_mcp_tools.py tests/test_tool_executor.py
 git commit -m "feat(mcp): route MCP tools through core policy"
 ```
 
 ### Task 6: MCP approvals, audit and Doctor
 
 **Files:**
-- Modify: `src/miniclaw/policy/engine.py`
-- Modify: `src/miniclaw/doctor.py`
-- Modify: `src/miniclaw/channels/observability.py`
+- Modify: `src/lobster0/policy/engine.py`
+- Modify: `src/lobster0/doctor.py`
+- Modify: `src/lobster0/channels/observability.py`
 - Test: `tests/test_mcp_policy.py`
 - Test: `tests/test_doctor.py`
 
@@ -249,16 +249,16 @@ Doctor validates dependency, config, executable/loopback endpoint, schema cache 
 - [ ] **Step 3: Run focused tests and commit**
 
 ```bash
-git add src/miniclaw/policy/engine.py src/miniclaw/doctor.py src/miniclaw/channels/observability.py tests/test_mcp_policy.py tests/test_doctor.py
+git add src/lobster0/policy/engine.py src/lobster0/doctor.py src/lobster0/channels/observability.py tests/test_mcp_policy.py tests/test_doctor.py
 git commit -m "feat(mcp): bind approvals and audit MCP calls"
 ```
 
 ### Task 7: Provider routing contract and strict error policy
 
 **Files:**
-- Modify: `src/miniclaw/config.py`
-- Create: `src/miniclaw/providers/router.py`
-- Create: `src/miniclaw/providers/routing.py`
+- Modify: `src/lobster0/config.py`
+- Create: `src/lobster0/providers/router.py`
+- Create: `src/lobster0/providers/routing.py`
 - Test: `tests/test_provider_router.py`
 - Test: `tests/test_config.py`
 
@@ -296,18 +296,18 @@ Config defines provider id/model/auth profile env name/max attempts. Router stor
 - [ ] **Step 4: Run router tests and commit**
 
 ```bash
-git add src/miniclaw/config.py src/miniclaw/providers/router.py src/miniclaw/providers/routing.py tests/test_provider_router.py tests/test_config.py
+git add src/lobster0/config.py src/lobster0/providers/router.py src/lobster0/providers/routing.py tests/test_provider_router.py tests/test_config.py
 git commit -m "feat(provider): route explicit model fallback chains"
 ```
 
 ### Task 8: Provider usage and cost budgets
 
 **Files:**
-- Create: `src/miniclaw/providers/budget.py`
-- Create: `src/miniclaw/storage/migrations/0008_provider_usage.sql`
-- Modify: `src/miniclaw/storage/migrations.py`
-- Modify: `src/miniclaw/agent/runner.py`
-- Modify: `src/miniclaw/automation/runner.py`
+- Create: `src/lobster0/providers/budget.py`
+- Create: `src/lobster0/storage/migrations/0008_provider_usage.sql`
+- Modify: `src/lobster0/storage/migrations.py`
+- Modify: `src/lobster0/agent/runner.py`
+- Modify: `src/lobster0/automation/runner.py`
 - Test: `tests/test_provider_budget.py`
 
 **Interfaces:**
@@ -337,15 +337,15 @@ Use provider-reported usage only for tokens/cost. Always enforce request count, 
 - [ ] **Step 4: Run Agent/Task budget tests and commit**
 
 ```bash
-git add src/miniclaw/providers/budget.py src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0008_provider_usage.sql src/miniclaw/agent/runner.py src/miniclaw/automation/runner.py tests/test_provider_budget.py
+git add src/lobster0/providers/budget.py src/lobster0/storage/migrations.py src/lobster0/storage/migrations/0008_provider_usage.sql src/lobster0/agent/runner.py src/lobster0/automation/runner.py tests/test_provider_budget.py
 git commit -m "feat(provider): enforce observable usage budgets"
 ```
 
 ### Task 9: TUI observability, scenarios and v0.8.0
 
 **Files:**
-- Modify: `src/miniclaw/agent/events.py`
-- Modify: `src/miniclaw/bridge/protocol.py`
+- Modify: `src/lobster0/agent/events.py`
+- Modify: `src/lobster0/bridge/protocol.py`
 - Modify: `tui/src/`
 - Create: `evals/scenarios/ecosystem.v1.jsonl`
 - Create: `evals/scenarios/provider-routing.v1.jsonl`
@@ -370,10 +370,10 @@ uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 pnpm --dir tui build
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite ecosystem --root evals/scenarios
-uv run miniclaw eval run --suite provider --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite ecosystem --root evals/scenarios
+uv run lobster0 eval run --suite provider --root evals/scenarios
 uv run python scripts/validate_docs.py
 uv lock --check
 uv build
@@ -387,7 +387,7 @@ Install one audited local Skill, call one controlled MCP server, trigger one rea
 - [ ] **Step 4: Commit verified facts**
 
 ```bash
-git add src/miniclaw/agent/events.py src/miniclaw/bridge/protocol.py tui evals docs README.md tests/test_pi_tui_integration.py
+git add src/lobster0/agent/events.py src/lobster0/bridge/protocol.py tui evals docs README.md tests/test_pi_tui_integration.py
 git commit -m "release(v0.8.0): verify trusted extensions and provider routing"
 ```
 

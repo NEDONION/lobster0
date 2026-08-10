@@ -6,9 +6,9 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.store import MemoryError, MemoryStore
-from miniclaw.paths import build_state_paths
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.store import MemoryError, MemoryStore
+from lobster0.paths import build_state_paths
 
 
 class MemoryStoreTest(unittest.TestCase):

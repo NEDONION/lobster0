@@ -8,10 +8,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.channels.supervisor import GatewaySecrets
-from miniclaw.config import load_config
-from miniclaw.gateway import (
+from lobster0.bootstrap import initialize_state
+from lobster0.channels.supervisor import GatewaySecrets
+from lobster0.config import load_config
+from lobster0.gateway import (
     GatewayComponents,
     GatewayConfigError,
     GatewayRuntimeError,
@@ -20,7 +20,7 @@ from miniclaw.gateway import (
     run_gateway_components,
     validate_gateway_environment,
 )
-from miniclaw.paths import build_state_paths
+from lobster0.paths import build_state_paths
 
 
 @dataclass(slots=True)
@@ -111,13 +111,13 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         """缺 SDK/模型或飞书凭据使用稳定配置错误，不能回显已有 secret。"""
         secret = "feishu-secret-private"
         cases = (
-            ({}, "MINICLAW_MODEL_API_KEY"),
-            ({"MINICLAW_MODEL_API_KEY": "model-key"}, "MINICLAW_FEISHU_APP_ID"),
+            ({}, "LOBSTER0_MODEL_API_KEY"),
+            ({"LOBSTER0_MODEL_API_KEY": "model-key"}, "LOBSTER0_FEISHU_APP_ID"),
             (
                 {
-                    "MINICLAW_MODEL_API_KEY": "model-key",
-                    "MINICLAW_FEISHU_APP_ID": "cli_test",
-                    "MINICLAW_FEISHU_APP_SECRET": secret,
+                    "LOBSTER0_MODEL_API_KEY": "model-key",
+                    "LOBSTER0_FEISHU_APP_ID": "cli_test",
+                    "LOBSTER0_FEISHU_APP_SECRET": secret,
                 },
                 "official Feishu SDK",
             ),
@@ -150,7 +150,7 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         """Gateway 只从显式安装态 Secret 文件加载凭据，且不输出其内容。"""
         sentinel = "gateway-installed-secret"
         self.paths.secrets_file.write_text(
-            f"MINICLAW_MODEL_API_KEY={sentinel}\n",
+            f"LOBSTER0_MODEL_API_KEY={sentinel}\n",
             encoding="utf-8",
         )
         self.paths.secrets_file.chmod(0o600)
@@ -162,19 +162,19 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
 
         def validate(_config: object, environment: dict[str, str]) -> object:
             """确认真实 dotenv loader 已向当前环境写入安装态凭据。"""
-            self.assertEqual(environment["MINICLAW_MODEL_API_KEY"], sentinel)
+            self.assertEqual(environment["LOBSTER0_MODEL_API_KEY"], sentinel)
             return SimpleNamespace()
 
         with (
-            patch("miniclaw.gateway.load_config", return_value=self.config),
-            patch("miniclaw.gateway.validate_gateway_environment", side_effect=validate),
-            patch("miniclaw.gateway._configure_channel_logging"),
-            patch("miniclaw.channels.sdk_logging.install_feishu_sdk_log_filter"),
-            patch("miniclaw.gateway.create_gateway_supervisor", side_effect=create_supervisor),
+            patch("lobster0.gateway.load_config", return_value=self.config),
+            patch("lobster0.gateway.validate_gateway_environment", side_effect=validate),
+            patch("lobster0.gateway._configure_channel_logging"),
+            patch("lobster0.channels.sdk_logging.install_feishu_sdk_log_filter"),
+            patch("lobster0.gateway.create_gateway_supervisor", side_effect=create_supervisor),
         ):
             await run_gateway(
                 self.paths,
-                environ={"MINICLAW_ENV_FILE": str(self.paths.secrets_file)},
+                environ={"LOBSTER0_ENV_FILE": str(self.paths.secrets_file)},
                 ready=ready.append,
             )
 
@@ -196,13 +196,13 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
         experience = object()
         with (
             patch(
-                "miniclaw.gateway._channel_common",
+                "lobster0.gateway._channel_common",
                 return_value=(object(), object(), manager, object(), object()),
             ),
-            patch("miniclaw.gateway.DiscordTransport", return_value=object()),
-            patch("miniclaw.gateway.DeliveryWorker", return_value=object()),
+            patch("lobster0.gateway.DiscordTransport", return_value=object()),
+            patch("lobster0.gateway.DeliveryWorker", return_value=object()),
             patch(
-                "miniclaw.gateway.ChannelExperience",
+                "lobster0.gateway.ChannelExperience",
                 return_value=experience,
             ) as factory,
         ):
@@ -237,7 +237,7 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
             ready=ready.append,
         )
 
-        self.assertEqual(ready, ["MiniClaw gateway ready: feishu/default"])
+        self.assertEqual(ready, ["Lobster0 gateway ready: feishu/default"])
         self.assertEqual(
             log,
             [
@@ -267,22 +267,22 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
             return SimpleNamespace(run=run)
 
         with (
-            patch("miniclaw.gateway.load_dotenv"),
-            patch("miniclaw.gateway.load_config", return_value=self.config),
+            patch("lobster0.gateway.load_dotenv"),
+            patch("lobster0.gateway.load_config", return_value=self.config),
             patch(
-                "miniclaw.gateway.validate_gateway_environment",
+                "lobster0.gateway.validate_gateway_environment",
                 return_value=SimpleNamespace(),
             ),
             patch(
-                "miniclaw.gateway._configure_channel_logging",
+                "lobster0.gateway._configure_channel_logging",
                 side_effect=lambda: events.append("channel.logging"),
             ),
             patch(
-                "miniclaw.channels.sdk_logging.install_feishu_sdk_log_filter",
+                "lobster0.channels.sdk_logging.install_feishu_sdk_log_filter",
                 side_effect=lambda: events.append("sdk.filter"),
             ),
             patch(
-                "miniclaw.gateway.create_gateway_supervisor",
+                "lobster0.gateway.create_gateway_supervisor",
                 side_effect=create_supervisor,
             ),
         ):
@@ -331,20 +331,20 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
                     return SimpleNamespace(run=run)
 
                 with (
-                    patch("miniclaw.gateway.load_dotenv"),
-                    patch("miniclaw.gateway.load_config", return_value=self.config),
+                    patch("lobster0.gateway.load_dotenv"),
+                    patch("lobster0.gateway.load_config", return_value=self.config),
                     patch(
-                        "miniclaw.gateway.validate_gateway_environment",
+                        "lobster0.gateway.validate_gateway_environment",
                         return_value=SimpleNamespace(),
                     ),
-                    patch("miniclaw.gateway._configure_channel_logging"),
-                    patch("miniclaw.channels.sdk_logging.install_feishu_sdk_log_filter"),
+                    patch("lobster0.gateway._configure_channel_logging"),
+                    patch("lobster0.channels.sdk_logging.install_feishu_sdk_log_filter"),
                     patch(
-                        "miniclaw.gateway_lease.GatewayLease.acquire",
+                        "lobster0.gateway_lease.GatewayLease.acquire",
                         side_effect=acquire,
                     ),
                     patch(
-                        "miniclaw.gateway.create_gateway_supervisor",
+                        "lobster0.gateway.create_gateway_supervisor",
                         side_effect=create_supervisor,
                     ),
                 ):
@@ -352,13 +352,13 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
                         with self.assertRaises(GatewayRuntimeError) as raised:
                             await run_gateway(
                                 self.paths,
-                                environ={"MINICLAW_GATEWAY_COMMIT": "e" * 40},
+                                environ={"LOBSTER0_GATEWAY_COMMIT": "e" * 40},
                             )
                         self.assertNotIn("PRIVATE_RUNTIME_SENTINEL", str(raised.exception))
                     else:
                         await run_gateway(
                             self.paths,
-                            environ={"MINICLAW_GATEWAY_COMMIT": "e" * 40},
+                            environ={"LOBSTER0_GATEWAY_COMMIT": "e" * 40},
                         )
 
                 self.assertEqual(

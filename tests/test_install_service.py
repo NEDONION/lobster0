@@ -13,11 +13,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.install import receipt as receipt_module
-from miniclaw.install import service as service_module
-from miniclaw.install.layout import InstallLayout
-from miniclaw.install.models import InstallError
-from miniclaw.install.service import (
+from lobster0.install import receipt as receipt_module
+from lobster0.install import service as service_module
+from lobster0.install.layout import InstallLayout
+from lobster0.install.models import InstallError
+from lobster0.install.service import (
     ServicePlatform,
     ServiceSpec,
     render_service_spec,
@@ -57,20 +57,20 @@ class InstallServiceTests(unittest.TestCase):
     def test_systemd_unit_is_exact_user_service_without_secret_value(self) -> None:
         """加入 root/User/WorkingDirectory 或环境继承会破坏 user-only 边界。"""
         sentinel = "sentinel-service-secret"
-        with mock.patch.dict(os.environ, {"MINICLAW_MODEL_API_KEY": sentinel}):
+        with mock.patch.dict(os.environ, {"LOBSTER0_MODEL_API_KEY": sentinel}):
             spec = self.systemd()
         text = spec.content.decode("utf-8")
-        self.assertEqual(spec.label, "miniclaw-gateway.service")
+        self.assertEqual(spec.label, "lobster0-gateway.service")
         self.assertEqual(
             spec.path,
-            self.home / ".config/systemd/user/miniclaw-gateway.service",
+            self.home / ".config/systemd/user/lobster0-gateway.service",
         )
         self.assertIn(
             f"ExecStart={self.layout.launcher} gateway --home {self.layout.state_home}",
             text,
         )
         self.assertIn("Environment=PATH=/usr/local/bin:/usr/bin:/bin", text)
-        self.assertIn(f"Environment=MINICLAW_ENV_FILE={self.layout.secrets_file}", text)
+        self.assertIn(f"Environment=LOBSTER0_ENV_FILE={self.layout.secrets_file}", text)
         self.assertIn("Restart=on-failure", text)
         self.assertIn("RestartSec=5", text)
         self.assertIn("TimeoutStopSec=30", text)
@@ -106,8 +106,8 @@ class InstallServiceTests(unittest.TestCase):
         environment_value = next(
             line.removeprefix("Environment=")
             for line in text.splitlines()
-            if line.startswith("Environment=MINICLAW_ENV_FILE=")
-            or line.startswith('Environment="MINICLAW_ENV_FILE=')
+            if line.startswith("Environment=LOBSTER0_ENV_FILE=")
+            or line.startswith('Environment="LOBSTER0_ENV_FILE=')
         )
         arguments = (
             str(layout.launcher),
@@ -129,7 +129,7 @@ class InstallServiceTests(unittest.TestCase):
         self.assertIn("%%i", environment_value)
         self.assertEqual(
             service_module._parse_systemd_environment(environment_value),
-            (f"MINICLAW_ENV_FILE={layout.secrets_file}",),
+            (f"LOBSTER0_ENV_FILE={layout.secrets_file}",),
         )
 
     def test_systemd_apostrophe_only_paths_are_double_quoted_and_exact(self) -> None:
@@ -147,8 +147,8 @@ class InstallServiceTests(unittest.TestCase):
         environment_value = next(
             line.removeprefix("Environment=")
             for line in text.splitlines()
-            if line.startswith("Environment=MINICLAW_ENV_FILE=")
-            or line.startswith('Environment="MINICLAW_ENV_FILE=')
+            if line.startswith("Environment=LOBSTER0_ENV_FILE=")
+            or line.startswith('Environment="LOBSTER0_ENV_FILE=')
         )
 
         self.assertEqual(
@@ -157,7 +157,7 @@ class InstallServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             environment_value,
-            f'"MINICLAW_ENV_FILE={layout.secrets_file}"',
+            f'"LOBSTER0_ENV_FILE={layout.secrets_file}"',
         )
         self.assertEqual(
             service_module._parse_systemd_exec(exec_value),
@@ -165,7 +165,7 @@ class InstallServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             service_module._parse_systemd_environment(environment_value),
-            (f"MINICLAW_ENV_FILE={layout.secrets_file}",),
+            (f"LOBSTER0_ENV_FILE={layout.secrets_file}",),
         )
         with self.assertRaisesRegex(InstallError, "service_install_failed"):
             service_module._parse_systemd_exec("/tmp/owner'apostrophe")
@@ -175,7 +175,7 @@ class InstallServiceTests(unittest.TestCase):
     def test_launchd_plist_uses_exact_arguments_environment_and_owner_logs(self) -> None:
         """字符串命令或相对日志路径会重新引入 shell/工作目录依赖。"""
         sentinel = "sentinel-launchd-secret"
-        with mock.patch.dict(os.environ, {"MINICLAW_MODEL_API_KEY": sentinel}):
+        with mock.patch.dict(os.environ, {"LOBSTER0_MODEL_API_KEY": sentinel}):
             spec = self.launchd()
         document = plistlib.loads(spec.content)
         self.assertEqual(
@@ -192,7 +192,7 @@ class InstallServiceTests(unittest.TestCase):
                 "Umask",
             },
         )
-        self.assertEqual(document["Label"], "io.miniclaw.gateway")
+        self.assertEqual(document["Label"], "io.lobster0.gateway")
         self.assertEqual(
             document["ProgramArguments"],
             [str(self.layout.launcher), "gateway", "--home", str(self.layout.state_home)],
@@ -200,7 +200,7 @@ class InstallServiceTests(unittest.TestCase):
         self.assertEqual(
             document["EnvironmentVariables"],
             {
-                "MINICLAW_ENV_FILE": str(self.layout.secrets_file),
+                "LOBSTER0_ENV_FILE": str(self.layout.secrets_file),
                 "PATH": "/usr/local/bin:/usr/bin:/bin",
             },
         )
@@ -323,7 +323,7 @@ class InstallServiceTests(unittest.TestCase):
     def test_render_rejects_root_and_control_paths(self) -> None:
         """Gateway 不得由 UID 0 注册，控制字符也不得进入 unit/plist。"""
         with (
-            mock.patch("miniclaw.install.service.os.geteuid", return_value=0),
+            mock.patch("lobster0.install.service.os.geteuid", return_value=0),
             self.assertRaisesRegex(InstallError, "service_install_failed"),
         ):
             self.systemd()
@@ -338,7 +338,7 @@ class InstallServiceTests(unittest.TestCase):
         """shell、继承环境或命令乱序会偏离可审计 manager 契约。"""
         spec = self.systemd()
         runner = FakeSystemctlRunner()
-        with mock.patch("miniclaw.install.service._systemd_analyze_available", return_value=True):
+        with mock.patch("lobster0.install.service._systemd_analyze_available", return_value=True):
             digest = service_install(spec, runner)
         self.assertEqual(digest, hashlib.sha256(spec.content).hexdigest())
         self.assertEqual(stat.S_IMODE(spec.path.stat().st_mode), 0o600)
@@ -696,7 +696,7 @@ class InstallServiceTests(unittest.TestCase):
         runner = FakeLaunchctlRunner((0, 0, 0, 0, 0))
         with (
             mock.patch(
-                "miniclaw.install.receipt._fsync_directory",
+                "lobster0.install.receipt._fsync_directory",
                 side_effect=fail_first_quarantine_fsync,
             ),
             self.assertRaises(InstallError),
@@ -819,12 +819,12 @@ class InstallServiceTests(unittest.TestCase):
                         durable_fsync(path)
 
                     patched = mock.patch(
-                        "miniclaw.install.receipt._fsync_directory",
+                        "lobster0.install.receipt._fsync_directory",
                         side_effect=fail_first_quarantine_fsync,
                     )
                 else:
                     patched = mock.patch(
-                        "miniclaw.install.service._fsync_directory",
+                        "lobster0.install.service._fsync_directory",
                         side_effect=OSError("sentinel-publish-fsync"),
                     )
                 with patched, self.assertRaises(InstallError) as caught:
@@ -842,7 +842,7 @@ class InstallServiceTests(unittest.TestCase):
         spec.path.chmod(0o600)
 
         with mock.patch(
-            "miniclaw.install.service._service_private_gc_hook",
+            "lobster0.install.service._service_private_gc_hook",
             create=True,
             side_effect=OSError("sentinel-private-gc"),
         ):
@@ -870,13 +870,13 @@ class InstallServiceTests(unittest.TestCase):
                 runner = FakeSystemctlRunner((0, 1) if phase == "manager-reload" else ())
                 patcher = (
                     mock.patch(
-                        "miniclaw.install.service._service_private_gc_hook",
+                        "lobster0.install.service._service_private_gc_hook",
                         create=True,
                         side_effect=OSError("sentinel-private-gc"),
                     )
                     if phase == "private-gc"
                     else mock.patch(
-                        "miniclaw.install.service._service_private_gc_hook",
+                        "lobster0.install.service._service_private_gc_hook",
                         create=True,
                     )
                 )
@@ -1034,7 +1034,7 @@ class InstallServiceTests(unittest.TestCase):
         )
         with (
             mock.patch(
-                "miniclaw.install.receipt._fsync_directory",
+                "lobster0.install.receipt._fsync_directory",
                 side_effect=fail_first_quarantine_fsync,
             ),
             self.assertRaises(InstallError) as caught,
@@ -1083,7 +1083,7 @@ class InstallServiceTests(unittest.TestCase):
         runner = FakeSystemctlRunner()
         with (
             mock.patch(
-                "miniclaw.install.receipt._fsync_directory",
+                "lobster0.install.receipt._fsync_directory",
                 side_effect=fail_first_quarantine_fsync,
             ),
             self.assertRaises(InstallError) as caught,

@@ -28,25 +28,25 @@ fake SDK 通过不能写成“生产验证完成”。
 5. 取得 App ID、App Secret、Owner Open ID；
 6. 先只开放 Owner 私聊，确认稳定后再开群 mention。
 
-平台权限名称可能变化，以飞书后台当时显示为准。MiniClaw 不会自动修改飞书后台或邀请机器人入群。
+平台权限名称可能变化，以飞书后台当时显示为准。Lobster0 不会自动修改飞书后台或邀请机器人入群。
 
 ## 3. 安装与凭据
 
 ```bash
-cd /Users/nedonion/PycharmProjects/miniclaw
+cd /Users/nedonion/PycharmProjects/lobster0
 uv sync --extra dev --extra feishu
 corepack enable
 pnpm --dir tui install --frozen-lockfile
 pnpm --dir tui build
-uv run miniclaw init
+uv run lobster0 init
 ```
 
 仓库根目录 `.env`：
 
 ```dotenv
-MINICLAW_MODEL_API_KEY=your-model-key
-MINICLAW_FEISHU_APP_ID=cli_xxx
-MINICLAW_FEISHU_APP_SECRET=
+LOBSTER0_MODEL_API_KEY=your-model-key
+LOBSTER0_FEISHU_APP_ID=cli_xxx
+LOBSTER0_FEISHU_APP_SECRET=
 ```
 
 ```bash
@@ -57,14 +57,14 @@ chmod 600 .env
 
 ## 4. 开启 Channel
 
-在 `~/.miniclaw/config.toml` 增加：
+在 `~/.lobster0/config.toml` 增加：
 
 ```toml
 [channels.feishu]
 enabled = true
 account_id = "default"
-app_id_env = "MINICLAW_FEISHU_APP_ID"
-app_secret_env = "MINICLAW_FEISHU_APP_SECRET"
+app_id_env = "LOBSTER0_FEISHU_APP_ID"
+app_secret_env = "LOBSTER0_FEISHU_APP_SECRET"
 domain = "feishu"
 owner_open_id = "ou_replace_with_owner"
 allowed_open_ids = ["ou_replace_with_owner"]
@@ -82,7 +82,7 @@ streaming_card = true
 ## 5. Doctor：只查本地，不冒充联网
 
 ```bash
-uv run miniclaw doctor
+uv run lobster0 doctor
 ```
 
 `doctor` 会读取当前目录权限为 `0600` 的 `.env`，但不会连接飞书或模型。当前总计 13 项，飞书相关 4 项：
@@ -100,13 +100,13 @@ uv run miniclaw doctor
 ## 6. 启动与停止
 
 ```bash
-uv run miniclaw gateway
+uv run lobster0 gateway
 ```
 
 本地预检和 WebSocket 就绪后会输出：
 
 ```text
-MiniClaw gateway ready: feishu/default
+Lobster0 gateway ready: feishu/default
 ```
 
 这只表示进程 ready，仍要从 Owner 飞书发消息完成 E2E。第一次 `Ctrl+C` 会停止接收、有限 drain 并反向清理；
@@ -128,8 +128,8 @@ Gateway 的 stderr 每行都是独立 JSON。可以按 `correlation_id` 串起�
 Chat ID、Message ID、正文和原始异常不会出现。durable 副本保存在 SQLite `audit_events`：
 
 ```bash
-uv run miniclaw gateway 2> .local/miniclaw-channel.jsonl
-sqlite3 ~/.miniclaw/miniclaw.db \
+uv run lobster0 gateway 2> .local/lobster0-channel.jsonl
+sqlite3 ~/.lobster0/lobster0.db \
   "SELECT event_type, metadata_json FROM audit_events WHERE event_type LIKE 'channel.%' ORDER BY id DESC LIMIT 20;"
 ```
 
@@ -137,12 +137,12 @@ sqlite3 ~/.miniclaw/miniclaw.db \
 不能把它当作普通网络重试。
 
 ```bash
-MINICLAW_NODE=/absolute/path/to/node-22-or-newer \
+LOBSTER0_NODE=/absolute/path/to/node-22-or-newer \
   uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite all --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite all --root evals/scenarios
 uv build
 git diff --check
 ```
@@ -173,13 +173,13 @@ Repository、ChannelManager、Approval Controller、DeliveryWorker 和 Transport
 单独运行：
 
 ```bash
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 ```
 
 本地 endurance gate 可重复跑同一套真实纵切；`--repeat` 只接受 `1..1000`，遇到首轮失败即停止，避免无界任务：
 
 ```bash
-uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --root evals/scenarios
 ```
 
 当前证据是 `Channel local soak: 240/240 checks passed across 20/20 runs`。它反复覆盖 Adapter、SQLite
@@ -218,7 +218,7 @@ uv run python scripts/feishu_live_smoke.py --confirm-live
 
 只配置 `.env` 不够；按第 4 节显式开启 `[channels.feishu]`。
 
-### `MINICLAW_FEISHU_APP_ID is not configured`
+### `LOBSTER0_FEISHU_APP_ID is not configured`
 
 确认从包含 `.env` 的目录启动、变量名和 TOML 一致、文件权限为 `0600`。进程环境拥有更高优先级。
 

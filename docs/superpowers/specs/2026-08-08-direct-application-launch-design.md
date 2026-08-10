@@ -2,7 +2,7 @@
 
 ## 目标
 
-当 Owner 明确要求 MiniClaw 在本机执行一个可由现有 Tool 完成的动作时，Agent 不得直接声称“没有权限”。
+当 Owner 明确要求 Lobster0 在本机执行一个可由现有 Tool 完成的动作时，Agent 不得直接声称“没有权限”。
 以 macOS 的“打开飞书”为首个事故回归：模型先用现有 `system_info(applications)` 取得真实安装名，再通过
 现有 `run_command` 请求执行 `open -a <Exact Name>`，并在执行前进入参数绑定的 TUI Approval。本机实际安装名
 是 `Lark`；`Feishu` 和 `飞书` 都不能被 LaunchServices 解析。

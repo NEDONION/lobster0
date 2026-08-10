@@ -1,19 +1,19 @@
-# MiniClaw Phase 5.2 Production Hardening Implementation Plan
+# Lobster0 Phase 5.2 Production Hardening Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 把已验证的飞书 Owner DM 链路交付成可安装、可诊断、可恢复并有 15/15 与 24 小时证据的常驻服务。
 
-**Architecture:** 保持 `miniclaw gateway` 为唯一 Gateway Runtime，在它外面增加平台无关 Service Controller 和 macOS/Linux adapter。服务状态来自有界 health snapshot，不从进程列表猜测业务健康；真实验收继续复用现有 Feishu Live Harness 和脱敏 Evidence。
+**Architecture:** 保持 `lobster0 gateway` 为唯一 Gateway Runtime，在它外面增加平台无关 Service Controller 和 macOS/Linux adapter。服务状态来自有界 health snapshot，不从进程列表猜测业务健康；真实验收继续复用现有 Feishu Live Harness 和脱敏 Evidence。
 
 **Tech Stack:** Python 3.12、stdlib `plistlib`/`subprocess`/`signal`、SQLite、launchd、systemd user service、Docker Compose、现有 Feishu SDK 与 unittest。
 
 ## Global Constraints
 
-- 不新增人类聊天入口；`miniclaw service ...` 只是维护命令。
+- 不新增人类聊天入口；`lobster0 service ...` 只是维护命令。
 - Secret 不进入 plist、unit file、命令行、SQLite、日志或 Evidence。
 - 系统命令必须使用 exact argv，不经过 Shell。
-- 安装、重装和卸载必须幂等且只操作 MiniClaw 自己生成的文件。
+- 安装、重装和卸载必须幂等且只操作 Lobster0 自己生成的文件。
 - 服务管理失败不能删除已有可用配置。
 - `LIVE VERIFIED` 只能由真实平台 Evidence 得出。
 
@@ -22,8 +22,8 @@
 ### Task 1: Service contract and safe status model
 
 **Files:**
-- Create: `src/miniclaw/service.py`
-- Modify: `src/miniclaw/paths.py`
+- Create: `src/lobster0/service.py`
+- Modify: `src/lobster0/paths.py`
 - Test: `tests/test_service.py`
 
 **Interfaces:**
@@ -49,7 +49,7 @@ def test_uninstall_refuses_unowned_definition(self, tmp_path):
 - [ ] **Step 2: Run the focused tests and verify RED**
 
 Run: `uv run python -m unittest tests.test_service -v`
-Expected: import failure for `miniclaw.service`.
+Expected: import failure for `lobster0.service`.
 
 - [ ] **Step 3: Implement the minimal service contract**
 
@@ -72,7 +72,7 @@ class ServiceStatus:
     degraded_channels: tuple[str, ...]
 ```
 
-Add `StatePaths.logs`, `StatePaths.service`, and `StatePaths.health` under the existing private MiniClaw state directory.
+Add `StatePaths.logs`, `StatePaths.service`, and `StatePaths.health` under the existing private Lobster0 state directory.
 
 - [ ] **Step 4: Run focused and path tests**
 
@@ -82,19 +82,19 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/service.py src/miniclaw/paths.py tests/test_service.py tests/test_paths.py
+git add src/lobster0/service.py src/lobster0/paths.py tests/test_service.py tests/test_paths.py
 git commit -m "feat(service): define safe background service contract"
 ```
 
 ### Task 2: launchd adapter with ownership hash
 
 **Files:**
-- Create: `src/miniclaw/services/__init__.py`
-- Create: `src/miniclaw/services/launchd.py`
+- Create: `src/lobster0/services/__init__.py`
+- Create: `src/lobster0/services/launchd.py`
 - Test: `tests/test_launchd_service.py`
 
 **Interfaces:**
-- Consumes: absolute MiniClaw executable, project directory, `StatePaths`, exact `CommandRunner`.
+- Consumes: absolute Lobster0 executable, project directory, `StatePaths`, exact `CommandRunner`.
 - Produces: `LaunchdServiceAdapter.render() -> bytes`, `install()`, `status()`, `restart()`, `uninstall()`.
 
 - [ ] **Step 1: Write failing plist and ownership tests**
@@ -105,7 +105,7 @@ def test_plist_uses_exact_arguments_without_secrets(paths):
     plist = plistlib.loads(payload)
     assert plist["ProgramArguments"][-1] == "gateway"
     assert "EnvironmentVariables" not in plist
-    assert b"MINICLAW_MODEL_API_KEY" not in payload
+    assert b"LOBSTER0_MODEL_API_KEY" not in payload
 
 def test_install_is_idempotent_and_atomic(paths):
     adapter = LaunchdServiceAdapter(...)
@@ -118,7 +118,7 @@ def test_install_is_idempotent_and_atomic(paths):
 - [ ] **Step 2: Verify RED**
 
 Run: `uv run python -m unittest tests.test_launchd_service -v`
-Expected: import failure for `miniclaw.services.launchd`.
+Expected: import failure for `lobster0.services.launchd`.
 
 - [ ] **Step 3: Implement rendering and exact command execution**
 
@@ -140,16 +140,16 @@ Expected: PASS for spaces in paths, existing foreign plist, failed bootstrap, an
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/services tests/test_launchd_service.py
+git add src/lobster0/services tests/test_launchd_service.py
 git commit -m "feat(service): add owned launchd lifecycle"
 ```
 
 ### Task 3: Health snapshot and Gateway integration
 
 **Files:**
-- Create: `src/miniclaw/health.py`
-- Modify: `src/miniclaw/gateway.py`
-- Modify: `src/miniclaw/channels/supervisor.py`
+- Create: `src/lobster0/health.py`
+- Modify: `src/lobster0/gateway.py`
+- Modify: `src/lobster0/channels/supervisor.py`
 - Test: `tests/test_health.py`
 - Test: `tests/test_gateway.py`
 
@@ -186,21 +186,21 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/health.py src/miniclaw/gateway.py src/miniclaw/channels/supervisor.py tests/test_health.py tests/test_gateway.py tests/test_channel_supervisor.py
+git add src/lobster0/health.py src/lobster0/gateway.py src/lobster0/channels/supervisor.py tests/test_health.py tests/test_gateway.py tests/test_channel_supervisor.py
 git commit -m "feat(gateway): publish bounded runtime health"
 ```
 
 ### Task 4: Service CLI and doctor checks
 
 **Files:**
-- Modify: `src/miniclaw/cli.py`
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/cli.py`
+- Modify: `src/lobster0/doctor.py`
 - Test: `tests/test_cli.py`
 - Test: `tests/test_doctor.py`
 
 **Interfaces:**
 - Consumes: `ServiceController` and health snapshot.
-- Produces: `miniclaw service install|status|logs|restart|uninstall` with stable exit codes.
+- Produces: `lobster0 service install|status|logs|restart|uninstall` with stable exit codes.
 
 - [ ] **Step 1: Write failing CLI behavior tests**
 
@@ -232,8 +232,8 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/cli.py src/miniclaw/doctor.py tests/test_cli.py tests/test_doctor.py
-git commit -m "feat(cli): manage the MiniClaw background service"
+git add src/lobster0/cli.py src/lobster0/doctor.py tests/test_cli.py tests/test_doctor.py
+git commit -m "feat(cli): manage the Lobster0 background service"
 ```
 
 ### Task 5: Hardened Docker and Compose deployment
@@ -246,7 +246,7 @@ git commit -m "feat(cli): manage the MiniClaw background service"
 - Modify: `.dockerignore`
 
 **Interfaces:**
-- Consumes: packaged MiniClaw wheel and mounted state/config.
+- Consumes: packaged Lobster0 wheel and mounted state/config.
 - Produces: non-root runtime with no public port and explicit writable volume.
 
 - [ ] **Step 1: Write failing static deployment assertions**
@@ -254,7 +254,7 @@ git commit -m "feat(cli): manage the MiniClaw background service"
 ```python
 def test_compose_drops_privileges_and_does_not_mount_home():
     compose = load_yaml(PROJECT_ROOT / "deploy/compose.yaml")
-    service = compose["services"]["miniclaw"]
+    service = compose["services"]["lobster0"]
     assert service["read_only"] is True
     assert service["security_opt"] == ["no-new-privileges:true"]
     assert "ALL" in service["cap_drop"]
@@ -281,15 +281,15 @@ Expected: both PASS.
 
 ```bash
 git add deploy .dockerignore tests/test_deployment_assets.py
-git commit -m "build(deploy): add hardened MiniClaw container"
+git commit -m "build(deploy): add hardened Lobster0 container"
 ```
 
 ### Task 6: Feishu 15/15, soak and release evidence
 
 **Files:**
-- Create: `src/miniclaw/evals/soak.py`
+- Create: `src/lobster0/evals/soak.py`
 - Create: `tests/test_soak_harness.py`
-- Modify: `src/miniclaw/evals/feishu_live.py`
+- Modify: `src/lobster0/evals/feishu_live.py`
 - Modify: `docs/engineering/phase-5/20260808_feishu-live-e2e.md`
 - Modify: `docs/engineering/phase-5/20260808_feishu-gateway-runtime-and-macos-service.md`
 - Create: `docs/evals/releases/v0.5.2.md`
@@ -332,7 +332,7 @@ Run the documented Feishu 15-case command against a clean commit, then run a 24-
 - [ ] **Step 6: Commit the release facts only after the live evidence exists**
 
 ```bash
-git add src/miniclaw/evals/soak.py tests/test_soak_harness.py src/miniclaw/evals/feishu_live.py README.md docs
+git add src/lobster0/evals/soak.py tests/test_soak_harness.py src/lobster0/evals/feishu_live.py README.md docs
 git commit -m "release(v0.5.2): verify persistent Feishu operations"
 ```
 

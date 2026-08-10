@@ -6,21 +6,21 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from miniclaw.artifacts.store import ArtifactStore
-from miniclaw.bootstrap import initialize_state
-from miniclaw.browser.models import BrowserAction, BrowserProtocolError
-from miniclaw.config import load_config
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.engine import PolicyEngine
-from miniclaw.providers.base import ToolCall
-from miniclaw.runtime import create_runtime
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
-from miniclaw.tools.base import ToolContext, ToolValidationError
-from miniclaw.tools.browser import browser_tools
-from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.registry import ToolRegistry
+from lobster0.artifacts.store import ArtifactStore
+from lobster0.bootstrap import initialize_state
+from lobster0.browser.models import BrowserAction, BrowserProtocolError
+from lobster0.config import load_config
+from lobster0.paths import build_state_paths
+from lobster0.policy.engine import PolicyEngine
+from lobster0.providers.base import ToolCall
+from lobster0.runtime import create_runtime
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import ApprovalRepository, ToolRunRepository
+from lobster0.tools.base import ToolContext, ToolValidationError
+from lobster0.tools.browser import browser_tools
+from lobster0.tools.executor import ToolExecutor
+from lobster0.tools.registry import ToolRegistry
 
 
 class _Client:

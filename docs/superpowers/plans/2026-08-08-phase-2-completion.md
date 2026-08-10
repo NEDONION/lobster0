@@ -1,4 +1,4 @@
-# MiniClaw Phase 2 Completion Implementation Plan
+# Lobster0 Phase 2 Completion Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -24,22 +24,22 @@
 
 ## File Map
 
-- `src/miniclaw/config.py`：严格解析 `[tools]`、command/http 子配置。
-- `src/miniclaw/policy/workspace.py`：新增写路径解析，保持 read/write 授权分离。
-- `src/miniclaw/policy/engine.py`：硬禁止、内置低风险、exact rule、默认审批的唯一决策入口。
-- `src/miniclaw/policy/approvals.py`：Approval 业务状态、参数绑定、CLI 决策与续执行编排。
-- `src/miniclaw/policy/command.py`：程序解析、禁止项和 exact argv 规范化。
-- `src/miniclaw/policy/network.py`：HTTPS URL、DNS/IP、redirect 目标校验。
-- `src/miniclaw/tools/filesystem.py`：`write_file`、`edit_file` 原子写入。
-- `src/miniclaw/tools/command.py`：无 Shell 的受限子进程。
-- `src/miniclaw/tools/web.py`：固定 DNS/peer 的有限 HTTPS 文本读取。
-- `src/miniclaw/tools/executor.py`：创建 waiting Approval 或执行已允许/已消费调用。
-- `src/miniclaw/storage/tooling.py`：ToolRun、Approval、PolicyRule、Audit 的条件更新事务。
-- `src/miniclaw/storage/conversations.py`：waiting Turn 与 child continuation Turn。
-- `src/miniclaw/agent/runner.py`：遇到 Approval 后停止当前 loop，并返回业务状态。
-- `src/miniclaw/agent/turn.py`：保存 waiting Turn；批准/拒绝后恢复模型上下文。
-- `src/miniclaw/cli.py`：注册 8 个工具和 `approvals` CLI。
-- `src/miniclaw/doctor.py`：只读检查 Tool 配置和 pending Approval。
+- `src/lobster0/config.py`：严格解析 `[tools]`、command/http 子配置。
+- `src/lobster0/policy/workspace.py`：新增写路径解析，保持 read/write 授权分离。
+- `src/lobster0/policy/engine.py`：硬禁止、内置低风险、exact rule、默认审批的唯一决策入口。
+- `src/lobster0/policy/approvals.py`：Approval 业务状态、参数绑定、CLI 决策与续执行编排。
+- `src/lobster0/policy/command.py`：程序解析、禁止项和 exact argv 规范化。
+- `src/lobster0/policy/network.py`：HTTPS URL、DNS/IP、redirect 目标校验。
+- `src/lobster0/tools/filesystem.py`：`write_file`、`edit_file` 原子写入。
+- `src/lobster0/tools/command.py`：无 Shell 的受限子进程。
+- `src/lobster0/tools/web.py`：固定 DNS/peer 的有限 HTTPS 文本读取。
+- `src/lobster0/tools/executor.py`：创建 waiting Approval 或执行已允许/已消费调用。
+- `src/lobster0/storage/tooling.py`：ToolRun、Approval、PolicyRule、Audit 的条件更新事务。
+- `src/lobster0/storage/conversations.py`：waiting Turn 与 child continuation Turn。
+- `src/lobster0/agent/runner.py`：遇到 Approval 后停止当前 loop，并返回业务状态。
+- `src/lobster0/agent/turn.py`：保存 waiting Turn；批准/拒绝后恢复模型上下文。
+- `src/lobster0/cli.py`：注册 8 个工具和 `approvals` CLI。
+- `src/lobster0/doctor.py`：只读检查 Tool 配置和 pending Approval。
 - `tests/test_*`：按可观察行为覆盖安全矩阵。
 - `evals/scenarios/*.jsonl`：新增 write/approval/command/http 离线场景。
 - `docs/engineering/phase-2/*.md`、`README.md`、`docs/progress/index.html`：只记录测试证明过的事实。
@@ -49,9 +49,9 @@
 ### Task 1: P2.2 Write Boundary and Strict Tool Configuration
 
 **Files:**
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/policy/workspace.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/policy/workspace.py`
 - Test: `tests/test_config.py`
 - Test: `tests/test_workspace_policy.py`
 
@@ -125,7 +125,7 @@ Implementation rules: relative paths anchor to Workspace; absolute paths must re
 
 - [x] **Step 6: Verify and commit**
 
-Run: `uv run python -m unittest tests.test_config tests.test_workspace_policy -v && uv run ruff check src/miniclaw/config.py src/miniclaw/policy/workspace.py tests/test_config.py tests/test_workspace_policy.py`
+Run: `uv run python -m unittest tests.test_config tests.test_workspace_policy -v && uv run ruff check src/lobster0/config.py src/lobster0/policy/workspace.py tests/test_config.py tests/test_workspace_policy.py`
 
 Commit: `feat(config): 增加 supervised tools 配置与 write boundary`
 
@@ -134,9 +134,9 @@ Commit: `feat(config): 增加 supervised tools 配置与 write boundary`
 ### Task 2: P2.2 Atomic `write_file` and `edit_file`
 
 **Files:**
-- Modify: `src/miniclaw/tools/filesystem.py`
-- Modify: `src/miniclaw/policy/engine.py`
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/tools/filesystem.py`
+- Modify: `src/lobster0/policy/engine.py`
+- Modify: `src/lobster0/cli.py`
 - Modify: `tests/test_file_tools.py`
 - Modify: `tests/test_tool_contract.py`
 
@@ -194,9 +194,9 @@ Commit: `feat(files): 实现 atomic write_file 与 exact edit_file`
 ### Task 3: P2.2 Parameter-Bound Approval Storage
 
 **Files:**
-- Modify: `src/miniclaw/storage/tooling.py`
-- Create: `src/miniclaw/policy/approvals.py`
-- Modify: `src/miniclaw/tools/executor.py`
+- Modify: `src/lobster0/storage/tooling.py`
+- Create: `src/lobster0/policy/approvals.py`
+- Modify: `src/lobster0/tools/executor.py`
 - Create: `tests/test_approvals.py`
 - Modify: `tests/test_tool_executor.py`
 
@@ -228,7 +228,7 @@ Also test owner mismatch, TTL expiry, changed stored arguments, restart with a n
 
 Run: `uv run python -m unittest tests.test_approvals -v`
 
-Expected: ImportError for `miniclaw.policy.approvals`.
+Expected: ImportError for `lobster0.policy.approvals`.
 
 - [x] **Step 3: Implement SQLite conditional transitions**
 
@@ -256,10 +256,10 @@ Commit: `feat(approval): 增加 parameter-bound SQLite lifecycle`
 ### Task 4: P2.2 Waiting Turn, Continuation, and Approval CLI
 
 **Files:**
-- Modify: `src/miniclaw/agent/runner.py`
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/storage/conversations.py`
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/agent/runner.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/storage/conversations.py`
+- Modify: `src/lobster0/cli.py`
 - Modify: `tests/test_agent_runner.py`
 - Modify: `tests/test_turn.py`
 - Create: `tests/test_cli_approvals.py`
@@ -322,11 +322,11 @@ Commit: `feat(cli): 完成 approval continuation 与 list/show/approve/deny`
 ### Task 5: P2.3 Exact-Argv Command Execution
 
 **Files:**
-- Create: `src/miniclaw/policy/command.py`
-- Create: `src/miniclaw/tools/command.py`
-- Modify: `src/miniclaw/policy/engine.py`
-- Modify: `src/miniclaw/storage/tooling.py`
-- Modify: `src/miniclaw/cli.py`
+- Create: `src/lobster0/policy/command.py`
+- Create: `src/lobster0/tools/command.py`
+- Modify: `src/lobster0/policy/engine.py`
+- Modify: `src/lobster0/storage/tooling.py`
+- Modify: `src/lobster0/cli.py`
 - Create: `tests/test_command_policy.py`
 - Create: `tests/test_run_command.py`
 - Modify: `tests/test_cli_approvals.py`
@@ -387,10 +387,10 @@ Commit: `feat(command): 加入 exact argv policy 与 safe subprocess`
 ### Task 6: P2.4 HTTPS GET and SSRF Defense
 
 **Files:**
-- Create: `src/miniclaw/policy/network.py`
-- Create: `src/miniclaw/tools/web.py`
-- Modify: `src/miniclaw/policy/engine.py`
-- Modify: `src/miniclaw/cli.py`
+- Create: `src/lobster0/policy/network.py`
+- Create: `src/lobster0/tools/web.py`
+- Modify: `src/lobster0/policy/engine.py`
+- Modify: `src/lobster0/cli.py`
 - Create: `tests/test_network_policy.py`
 - Create: `tests/test_http_get.py`
 - Modify: `tests/test_cli_approvals.py`
@@ -439,8 +439,8 @@ Commit: `feat(http): 实现 pinned HTTPS 与 SSRF redirect 防护`
 ### Task 7: P2.5 Recovery, Doctor, Regression Gate, and Engineering Docs
 
 **Files:**
-- Modify: `src/miniclaw/doctor.py`
-- Modify: `src/miniclaw/storage/tooling.py`
+- Modify: `src/lobster0/doctor.py`
+- Modify: `src/lobster0/storage/tooling.py`
 - Modify: `tests/test_doctor.py`
 - Modify: `tests/test_eval_cases.py`
 - Modify: `tests/test_eval_runner.py`
@@ -491,8 +491,8 @@ Run:
 ```bash
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval validate
-uv run miniclaw eval run --suite offline
+uv run lobster0 eval validate
+uv run lobster0 eval run --suite offline
 git diff --check
 ```
 
@@ -501,11 +501,11 @@ Expected: zero failures; every active offline case passes.
 - [x] **Step 5: Run three explicit live DeepSeek smoke cases**
 
 ```bash
-uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
-uv run miniclaw chat --message "读一下 workspace 里的 README.md 并总结"
-uv run miniclaw chat --message "在 workspace 里运行 git status --short"
-uv run miniclaw approvals list --status pending
-uv run miniclaw approvals approve <ID>
+uv run lobster0 chat --message "帮我看看我的电脑是什么配置"
+uv run lobster0 chat --message "读一下 workspace 里的 README.md 并总结"
+uv run lobster0 chat --message "在 workspace 里运行 git status --short"
+uv run lobster0 approvals list --status pending
+uv run lobster0 approvals approve <ID>
 ```
 
 Record timestamp, model, commit, sanitized outcome, Approval ID/status and any provider limitation in `docs/evals/releases/v0.2.0.md`; never record the API key or raw secret-bearing environment.

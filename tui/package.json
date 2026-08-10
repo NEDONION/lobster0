@@ -1,5 +1,5 @@
 {
-  "name": "@miniclaw/pi-tui",
+  "name": "@lobster0/pi-tui",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -17,7 +17,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "release:deploy": "corepack pnpm --filter @miniclaw/pi-tui deploy --legacy --prod",
+    "release:deploy": "corepack pnpm --filter @lobster0/pi-tui deploy --legacy --prod",
     "test": "tsc -p tsconfig.json && node --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

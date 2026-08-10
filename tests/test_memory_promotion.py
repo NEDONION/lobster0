@@ -2,7 +2,7 @@
 
 import unittest
 
-from miniclaw.memory.promotion import MemoryPromotion, PromotionEvidence
+from lobster0.memory.promotion import MemoryPromotion, PromotionEvidence
 
 
 class MemoryPromotionTest(unittest.TestCase):

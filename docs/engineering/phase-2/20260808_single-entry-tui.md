@@ -1,49 +1,49 @@
 # Phase 2：单入口 TUI（pi-tui 默认，Textual fallback）
 
-> 状态：pi-tui 已成为裸 miniclaw 默认展示层；Textual 暂作首次 onboarding 和运行时 fallback。
+> 状态：pi-tui 已成为裸 lobster0 默认展示层；Textual 暂作首次 onboarding 和运行时 fallback。
 > 当前全仓门禁规模为 671 项 Python、35 项 TypeScript 测试、39/39 离线 Agent 场景与 32/32 Channel 场景。
 > 本文第 3–11 节保留 Textual fallback 的实现记录；当前跨语言架构见
 > [Python Core + pi-tui Bridge 工程文档](20260808_python-core-pi-tui-bridge.md)。
 
 ## 1. 当前解决了什么
 
-人类入口仍然只有裸 miniclaw，但入口内部会选择展示层：
+人类入口仍然只有裸 lobster0，但入口内部会选择展示层：
 
 ~~~mermaid
 flowchart LR
-    CLI["bare miniclaw"] --> CHECK{"已初始化 + Node >=22.19 + dist?"}
+    CLI["bare lobster0"] --> CHECK{"已初始化 + Node >=22.19 + dist?"}
     CHECK -->|yes| PI["pi-tui + Python Bridge"]
     CHECK -->|no| TEXTUAL["Textual onboarding/fallback"]
     PI --> CORE["同一个 AgentRuntime"]
     TEXTUAL --> CORE
 ~~~
 
-显式 MINICLAW_TUI=pi|textual 方便验收和排障；不会新增第二个人类命令。
+显式 LOBSTER0_TUI=pi|textual 方便验收和排障；不会新增第二个人类命令。
 
 ### 历史交付：Textual 单入口
 
-Phase 1 的 `miniclaw chat --message` 和 `input()` REPL 能证明 Agent Core 可用，但不像一个长期使用的
+Phase 1 的 `lobster0 chat --message` 和 `input()` REPL 能证明 Agent Core 可用，但不像一个长期使用的
 个人 Agent：流式内容、Tool 过程、取消和审批都只能退化成终端文本。Phase 2.2B 将本地人类交互统一为：
 
 ```bash
-uv run miniclaw
+uv run lobster0
 ```
 
 裸命令进入同一个 Textual App。项目不再提供：
 
-- `miniclaw chat`；
-- `miniclaw tui`；
+- `lobster0 chat`；
+- `lobster0 tui`；
 - `chat --message` 或 `--plain`；
-- `miniclaw approvals`；
+- `lobster0 approvals`；
 - 第二套 `input()` / `print()` 对话循环。
 
 `init`、`doctor` 和 `eval` 是维护/门禁命令，不是第二套聊天入口，因此继续保留。
 
 ## 2. 为什么选择 Textual
 
-参考项目的终端 UI 与 MiniClaw 的现实约束不同：
+参考项目的终端 UI 与 Lobster0 的现实约束不同：
 
-| 参照物 | 终端方案 | 适合它的原因 | MiniClaw 的结论 |
+| 参照物 | 终端方案 | 适合它的原因 | Lobster0 的结论 |
 | --- | --- | --- | --- |
 | OpenClaw | `@earendil-works/pi-tui` / pi-mono 生态 | OpenClaw 主体是 TypeScript，复用同语言组件和事件模型成本最低 | 学交互思想，不为 TUI 引入第二套 TS runtime |
 | Gemini CLI | React + Ink 风格组件模型 | Node/React 团队可共享前端心智 | Python 项目会增加 IPC、打包和双语言调试成本 |
@@ -52,7 +52,7 @@ uv run miniclaw
 | Rich Live | 输出渲染简单直接 | 适合 dashboard 或单向日志 | 缺少完整焦点、Screen、Modal 和输入事件模型 |
 | Textual | Python 原生 App/Widget/Worker/Modal/test pilot | 与异步 Agent 同进程，且提供可无头测试的完整 UI 生命周期 | 当前最佳匹配 |
 
-这里的“最佳实践”不是说 Textual 对所有 CLI 都最好，而是它在 MiniClaw 当前约束下总代价最低：
+这里的“最佳实践”不是说 Textual 对所有 CLI 都最好，而是它在 Lobster0 当前约束下总代价最低：
 
 1. Agent、Policy、SQLite 和 Provider 都是 Python；
 2. TUI 可直接 await `TurnService`，不需要 JSON-RPC 或子进程协议；
@@ -66,9 +66,9 @@ uv run miniclaw
 
 ```mermaid
 flowchart LR
-    USER["用户"] --> CLI["裸 miniclaw"]
+    USER["用户"] --> CLI["裸 lobster0"]
     CLI --> TTY["TTY / TERM guard"]
-    TTY --> APP["MiniClawApp"]
+    TTY --> APP["Lobster0App"]
     APP --> WORKER["exclusive Textual Worker"]
     WORKER --> RUNTIME["AgentRuntime"]
     RUNTIME --> TURN["TurnService"]
@@ -86,13 +86,13 @@ flowchart LR
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/miniclaw/cli.py` | 解析裸入口与维护命令；做 TTY guard；不装配 Agent |
-| `src/miniclaw/runtime.py` | 唯一装配 Owner、Provider、TurnService、Policy、Approval、Memory/Skills/Compaction 和十个 Tool |
-| `src/miniclaw/agent/events.py` | 定义进程内 `RunEvent` 与安全交付函数 |
-| `src/miniclaw/agent/turn.py` | 在 SQLite 状态迁移后发 Turn 事件，并负责审批 continuation |
-| `src/miniclaw/agent/runner.py` | 发模型增量、Provider reasoning 与带原始参数的 Tool requested 事件 |
-| `src/miniclaw/tools/executor.py` | 在 ToolRun/Approval 落库后发 Tool 与审批事件 |
-| `src/miniclaw/tui/app.py` | Widget、Worker、Tool 卡、审批 Modal、Slash Command 与本地状态投影 |
+| `src/lobster0/cli.py` | 解析裸入口与维护命令；做 TTY guard；不装配 Agent |
+| `src/lobster0/runtime.py` | 唯一装配 Owner、Provider、TurnService、Policy、Approval、Memory/Skills/Compaction 和十个 Tool |
+| `src/lobster0/agent/events.py` | 定义进程内 `RunEvent` 与安全交付函数 |
+| `src/lobster0/agent/turn.py` | 在 SQLite 状态迁移后发 Turn 事件，并负责审批 continuation |
+| `src/lobster0/agent/runner.py` | 发模型增量、Provider reasoning 与带原始参数的 Tool requested 事件 |
+| `src/lobster0/tools/executor.py` | 在 ToolRun/Approval 落库后发 Tool 与审批事件 |
+| `src/lobster0/tui/app.py` | Widget、Worker、Tool 卡、审批 Modal、Slash Command 与本地状态投影 |
 
 ## 4. AgentRuntime：为什么只保留一个装配点
 
@@ -197,7 +197,7 @@ flowchart TD
 
 ## 7. 对话层级、流式回答与可展开 Trace 卡
 
-- 用户与 Assistant 分别显示“你”/“MiniClaw”文字角色标签、不同边线和背景，不只靠颜色区分；
+- 用户与 Assistant 分别显示“你”/“Lobster0”文字角色标签、不同边线和背景，不只靠颜色区分；
 - 同一 Turn 的所有 `model_text_delta` 更新同一个临时 Markdown Widget；
 - `turn_finished` 用数据库最终正文固化该 Widget；
 - Markdown 禁止自动打开链接；
@@ -213,8 +213,8 @@ flowchart TD
 
 ### 7.1 “思考过程”的边界
 
-MiniClaw 只展示 Provider API 明确返回的 `reasoning_content`，中文 UI 标题为
-`思考（模型）· 第 N 轮`，英文 UI 为 `Reasoning (provider) · Turn N`。这是模型产品边界给出的可见 reasoning，不是 MiniClaw 内部隐藏思维链，
+Lobster0 只展示 Provider API 明确返回的 `reasoning_content`，中文 UI 标题为
+`思考（模型）· 第 N 轮`，英文 UI 为 `Reasoning (provider) · Turn N`。这是模型产品边界给出的可见 reasoning，不是 Lobster0 内部隐藏思维链，
 也不会从最终答案反推或伪造思考步骤。Provider 不返回该字段时，界面不显示空卡。
 
 System Prompt 要求回答和 provider-visible reasoning 跟随 Owner 最新消息的主要语言；`/lang` 只切换 UI 文案，
@@ -299,14 +299,14 @@ Slash Command 固定写在一个 `match` 中，没有命令注册框架：
 
 ```mermaid
 flowchart TD
-    START["uv run miniclaw"] --> GUARD{"stdin/stdout 是 TTY 且 TERM != dumb?"}
+    START["uv run lobster0"] --> GUARD{"stdin/stdout 是 TTY 且 TERM != dumb?"}
     GUARD -->|no| FAIL["exit 2 + 明确错误"]
     GUARD -->|yes| STATE{"状态已初始化?"}
     STATE -->|no| ONBOARD["同一 App 显示 Initialize"]
     ONBOARD --> INIT["initialize_state"]
     INIT --> LOAD["读取 .env + config，create_runtime"]
     STATE -->|yes| LOAD
-    LOAD --> CHAT["同一 MiniClawApp 聊天界面"]
+    LOAD --> CHAT["同一 Lobster0App 聊天界面"]
 ```
 
 当前 `.env` 仍从启动命令的工作目录读取。若状态已存在但 Key 缺失，启动返回配置错误；若在 Onboarding 中
@@ -336,8 +336,8 @@ flowchart TD
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ruff check --no-cache .
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 git diff --check
 ```
 

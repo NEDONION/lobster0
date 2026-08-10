@@ -1,4 +1,4 @@
-# MiniClaw v0.5.3 Stabilization Feishu / Discord Live Gate Implementation Plan
+# Lobster0 v0.5.3 Stabilization Feishu / Discord Live Gate Implementation Plan
 
 > 编号说明：历史路线称“Phase 5.3”；它是架构 Phase 5 之后的稳定化交付版本。
 
@@ -13,7 +13,7 @@
 
 **Architecture:** 保留现有共享 `AgentRuntime` 与三条独立 Channel pipeline；新增一个只作用于上游 SDK handler 的安全日志 Filter、一个状态目录级单实例 lease，以及一个供 Live Runner 复用的受管 Gateway 子进程。Feishu 继续使用 versioned `FEISHU-LIVE-001..015`，Discord 继续使用现有 15-check 人工 Harness；两者只增加运行来源证明和 fail-closed evidence，不重写 Transport 或 Agent Loop。
 
-**Tech Stack:** Python 3.12+、标准库 `logging`/`fcntl`/`asyncio`/`subprocess`/`json`、SQLite、`unittest`、Ruff、official `lark-channel-sdk`、`discord.py`、现有 MiniClaw Eval/Channel 基础设施。
+**Tech Stack:** Python 3.12+、标准库 `logging`/`fcntl`/`asyncio`/`subprocess`/`json`、SQLite、`unittest`、Ruff、official `lark-channel-sdk`、`discord.py`、现有 Lobster0 Eval/Channel 基础设施。
 
 ## Global Constraints
 
@@ -22,7 +22,7 @@
 - 测试只能使用 sentinel Secret，不能读取、打印或提交真实 `.env`、Token、Ticket、平台 ID 或消息正文。
 - `Feishu LIVE PASS` 和 `Discord LIVE PASS` 只能来自各自真实 15 项全部通过；fake SDK、offline case 和 640 soak 只能写 `IMPLEMENTATION PASS`。
 - Live Runner 必须绑定 clean 40 位 commit，并由自己持有 Gateway 子进程；旧进程、重复进程、dirty worktree、skip 或 secret match 均 fail closed。
-- Discord 只使用私有 `MiniClaw Test` Server、Owner 和 Bot；不授予 Administrator，不使用真实社区或工作群。
+- Discord 只使用私有 `Lobster0 Test` Server、Owner 和 Bot；不授予 Administrator，不使用真实社区或工作群。
 - Discord Bot Token 只能由用户在本机安全写入 `.env`；计划与终端输出只检查“是否存在”，不读取或回显值。
 - Telegram 本阶段保持 `IMPLEMENTATION PASS / LIVE PENDING`。
 - 每个代码任务执行 RED→GREEN，公共函数/类带准确类型和中文 docstring。
@@ -34,14 +34,14 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/miniclaw/channels/sdk_logging.py` | 复制并脱敏交给 Feishu SDK handler 的 `LogRecord` |
+| `src/lobster0/channels/sdk_logging.py` | 复制并脱敏交给 Feishu SDK handler 的 `LogRecord` |
 | `tests/test_channel_sdk_logging.py` | Sentinel URL、参数、异常、幂等安装与原记录不变回归 |
-| `src/miniclaw/gateway_lease.py` | 状态目录级 non-blocking 单实例锁与本地运行来源元数据 |
+| `src/lobster0/gateway_lease.py` | 状态目录级 non-blocking 单实例锁与本地运行来源元数据 |
 | `tests/test_gateway_lease.py` | 重复进程、stale 文件、权限、元数据与释放回归 |
-| `src/miniclaw/gateway.py` | 启动时安装 SDK Filter、获取 lease，并在所有退出路径释放 |
-| `src/miniclaw/evals/gateway_process.py` | 平台无关的受管 Gateway 子进程、精确 ready、输出排空与有界 SIGTERM |
-| `src/miniclaw/evals/feishu_live.py` | 复用受管进程并把 provenance 纳入严格 evidence |
-| `src/miniclaw/evals/live.py` | Discord/Telegram Harness 自己管理 Gateway、验证 clean commit 与证据 schema |
+| `src/lobster0/gateway.py` | 启动时安装 SDK Filter、获取 lease，并在所有退出路径释放 |
+| `src/lobster0/evals/gateway_process.py` | 平台无关的受管 Gateway 子进程、精确 ready、输出排空与有界 SIGTERM |
+| `src/lobster0/evals/feishu_live.py` | 复用受管进程并把 provenance 纳入严格 evidence |
+| `src/lobster0/evals/live.py` | Discord/Telegram Harness 自己管理 Gateway、验证 clean commit 与证据 schema |
 | `tests/test_feishu_live_e2e.py` | Feishu 进程迁移、provenance、report 与失败关闭测试 |
 | `tests/test_channel_live_harness.py` | Discord 受管 Gateway、dirty/peer/skip/secret 与 report 测试 |
 | `docs/evals/releases/v0.5.3.md` | 只写已实际通过的 release gate 事实 |
@@ -52,8 +52,8 @@
 ### Task 1: Feishu SDK LogRecord 脱敏边界
 
 **Files:**
-- Create: `src/miniclaw/channels/sdk_logging.py`
-- Modify: `src/miniclaw/gateway.py`
+- Create: `src/lobster0/channels/sdk_logging.py`
+- Modify: `src/lobster0/gateway.py`
 - Create: `tests/test_channel_sdk_logging.py`
 - Modify: `tests/test_gateway.py`
 
@@ -97,7 +97,7 @@ def test_filter_redacts_websocket_query_and_exception_without_mutating_source() 
 
 Run: `uv run python -m unittest tests.test_channel_sdk_logging -v`
 
-Expected: `ModuleNotFoundError: miniclaw.channels.sdk_logging`。
+Expected: `ModuleNotFoundError: lobster0.channels.sdk_logging`。
 
 - [ ] **Step 3: 实现最小 Filter**
 
@@ -121,7 +121,7 @@ class SafeSdkLogFilter(logging.Filter):
         return clone
 ```
 
-`redact_sdk_text()` 先把 `wss?://...?...` 的 query 整体替换为 `?<redacted>`，再处理独立敏感键和值以及 Bearer；所有路径均返回有限字符串且不抛异常。`install_feishu_sdk_log_filter()` 只给当前 handlers 增加一次带 `_miniclaw_feishu_safe_log` 标记的 Filter，并返回新安装数量。
+`redact_sdk_text()` 先把 `wss?://...?...` 的 query 整体替换为 `?<redacted>`，再处理独立敏感键和值以及 Bearer；所有路径均返回有限字符串且不抛异常。`install_feishu_sdk_log_filter()` 只给当前 handlers 增加一次带 `_lobster0_feishu_safe_log` 标记的 Filter，并返回新安装数量。
 
 - [ ] **Step 4: 在 Gateway 中按正确顺序安装**
 
@@ -138,22 +138,22 @@ Expected: 全部 PASS；captured stream 中 sentinel 命中数为 0。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/channels/sdk_logging.py src/miniclaw/gateway.py tests/test_channel_sdk_logging.py tests/test_gateway.py
+git add src/lobster0/channels/sdk_logging.py src/lobster0/gateway.py tests/test_channel_sdk_logging.py tests/test_gateway.py
 git commit -m "fix(logging): 脱敏 Feishu SDK connection query"
 ```
 
 ### Task 2: 单 Gateway Lease 与本地运行来源
 
 **Files:**
-- Create: `src/miniclaw/gateway_lease.py`
-- Modify: `src/miniclaw/gateway.py`
+- Create: `src/lobster0/gateway_lease.py`
+- Modify: `src/lobster0/gateway.py`
 - Create: `tests/test_gateway_lease.py`
 - Modify: `tests/test_gateway.py`
 
 **Interfaces:**
-- Consumes: `paths.run / "gateway.lock"`、环境中的非秘密 `MINICLAW_GATEWAY_COMMIT`。
+- Consumes: `paths.run / "gateway.lock"`、环境中的非秘密 `LOBSTER0_GATEWAY_COMMIT`。
 - Produces: `GatewayProvenance(pid: int, started_at: str, commit: str)`、`GatewayLease.acquire(path: Path, *, commit: str) -> GatewayLease`、`GatewayLease.close() -> None`。
-- Invariant: 同一 `MINICLAW_HOME` 只有一个持锁 Gateway；lock 文件残留不等于锁仍被占用。
+- Invariant: 同一 `LOBSTER0_HOME` 只有一个持锁 Gateway；lock 文件残留不等于锁仍被占用。
 
 - [ ] **Step 1: 写重复实例和 stale 文件 RED**
 
@@ -174,7 +174,7 @@ def test_second_lease_fails_closed_until_first_releases(self) -> None:
 
 Run: `uv run python -m unittest tests.test_gateway_lease -v`
 
-Expected: 缺少 `miniclaw.gateway_lease`。
+Expected: 缺少 `lobster0.gateway_lease`。
 
 - [ ] **Step 3: 用 `fcntl.flock` 实现 lease**
 
@@ -201,16 +201,16 @@ lock path、PID 或原始 `OSError`。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/gateway_lease.py src/miniclaw/gateway.py tests/test_gateway_lease.py tests/test_gateway.py
+git add src/lobster0/gateway_lease.py src/lobster0/gateway.py tests/test_gateway_lease.py tests/test_gateway.py
 git commit -m "feat(gateway): 增加 single-instance lease 与 provenance"
 ```
 
 ### Task 3: 平台无关 Managed Gateway 与 Live Evidence
 
 **Files:**
-- Create: `src/miniclaw/evals/gateway_process.py`
-- Modify: `src/miniclaw/evals/feishu_live.py`
-- Modify: `src/miniclaw/evals/live.py`
+- Create: `src/lobster0/evals/gateway_process.py`
+- Modify: `src/lobster0/evals/feishu_live.py`
+- Modify: `src/lobster0/evals/live.py`
 - Modify: `tests/test_feishu_live_e2e.py`
 - Modify: `tests/test_channel_live_harness.py`
 
@@ -225,7 +225,7 @@ git commit -m "feat(gateway): 增加 single-instance lease 与 provenance"
 gateway = await ManagedGateway.start(
     project_root=PROJECT_ROOT,
     home=self.home,
-    ready_line="MiniClaw gateway ready: discord/default",
+    ready_line="Lobster0 gateway ready: discord/default",
     commit="c" * 40,
     ready_timeout=1.0,
     command=(sys.executable, str(fake_gateway)),
@@ -237,7 +237,7 @@ self.assertRegex(gateway.provenance.started_at, UTC_PATTERN)
 self.assertEqual(await gateway.stop(), 0)
 ```
 
-覆盖 exact marker、substring 不算 ready、提前退出、timeout、双 SIGTERM 后仍不退出、stdout/stderr 持续排空、每行/总诊断上界，以及子进程环境只增加 `MINICLAW_GATEWAY_COMMIT` 而不序列化 Secret。
+覆盖 exact marker、substring 不算 ready、提前退出、timeout、双 SIGTERM 后仍不退出、stdout/stderr 持续排空、每行/总诊断上界，以及子进程环境只增加 `LOBSTER0_GATEWAY_COMMIT` 而不序列化 Secret。
 
 - [ ] **Step 2: 确认 RED**
 
@@ -272,7 +272,7 @@ PID/时间只存在 ignored Evidence，不进入 release 文档。commit 与顶�
 ready line 从 typed config 生成：
 
 ```python
-ready_line = f"MiniClaw gateway ready: {channel}/{selected.account_id}"
+ready_line = f"Lobster0 gateway ready: {channel}/{selected.account_id}"
 ```
 
 Evidence 新增与 Feishu 同结构的 `gateway`；任意 skip/fail、Gateway 非优雅退出、commit mismatch 或 repository 变化均返回 1。确认门前仍不能读取 state、Secret 或创建目录。
@@ -286,7 +286,7 @@ Expected: 全部 PASS，两个 report schema 都拒绝正文、完整平台 ID�
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/miniclaw/evals/gateway_process.py src/miniclaw/evals/feishu_live.py src/miniclaw/evals/live.py tests/test_feishu_live_e2e.py tests/test_channel_live_harness.py
+git add src/lobster0/evals/gateway_process.py src/lobster0/evals/feishu_live.py src/lobster0/evals/live.py tests/test_feishu_live_e2e.py tests/test_channel_live_harness.py
 git commit -m "test(live): 绑定 managed Gateway commit 与运行来源"
 ```
 
@@ -315,11 +315,11 @@ Expected: 0 failures，Ruff `All checks passed!`。
 
 - [ ] **Step 3: Agent / Channel regression**
 
-Run: `uv run miniclaw eval run --suite offline --root evals/scenarios`
+Run: `uv run lobster0 eval run --suite offline --root evals/scenarios`
 
-Run: `uv run miniclaw eval run --suite channel --root evals/scenarios`
+Run: `uv run lobster0 eval run --suite channel --root evals/scenarios`
 
-Run: `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios`
+Run: `uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios`
 
 Expected: offline 29/29、versioned Channel 32/32、soak 640/640；若当前 versioned 场景数因已提交变更增加，以报告中的全部 case 为准且不得 skip。
 
@@ -361,7 +361,7 @@ git commit -m "fix(gate): 修复 Phase 5.3 release regression"
 
 - [ ] **Step 1: 停止旧 Gateway 并核验配置存在性**
 
-优雅停止当前 MiniClaw Gateway；不要 `kill -9`。只运行布尔检查确认模型 Key、Feishu App ID/Secret 已配置，不输出值。运行 `uv run miniclaw doctor`，确认 Feishu locally ready。
+优雅停止当前 Lobster0 Gateway；不要 `kill -9`。只运行布尔检查确认模型 Key、Feishu App ID/Secret 已配置，不输出值。运行 `uv run lobster0 doctor`，确认 Feishu locally ready。
 
 - [ ] **Step 2: 在 clean commit 启动 strict Runner**
 
@@ -385,12 +385,12 @@ Expected: Runner 自己启动唯一 Gateway，显示 typed config 中 `account_i
 
 **Files:**
 - Local only: `.env`
-- Local only: selected `MINICLAW_HOME/config.toml`
+- Local only: selected `LOBSTER0_HOME/config.toml`
 - No Secret or numeric platform ID in tracked files
 
 **Interfaces:**
 - Consumes: 用户已登录的 Discord Developer Portal。
-- Produces: Application/Bot `Lucas 的 MiniClaw`、私有 `MiniClaw Test`、`#miniclaw-live`、`#miniclaw-thread-lab` 和 `validation-thread`。
+- Produces: Application/Bot `Lucas 的 Lobster0`、私有 `Lobster0 Test`、`#lobster0-live`、`#lobster0-thread-lab` 和 `validation-thread`。
 
 - [ ] **Step 1: 创建或复用专用 Application/Bot**
 
@@ -398,11 +398,11 @@ Expected: Runner 自己启动唯一 Gateway，显示 typed config 中 `account_i
 
 - [ ] **Step 2: 用户本机安全保存 Token**
 
-由用户把 Token 写入 `.env` 的 `MINICLAW_DISCORD_BOT_TOKEN`。Codex 只运行不回显值的布尔/长度下限检查；不读取 `.env` 文本，不把 Token 放进 argv、patch、clipboard 输出或 Evidence。
+由用户把 Token 写入 `.env` 的 `LOBSTER0_DISCORD_BOT_TOKEN`。Codex 只运行不回显值的布尔/长度下限检查；不读取 `.env` 文本，不把 Token 放进 argv、patch、clipboard 输出或 Evidence。
 
 - [ ] **Step 3: 创建隔离 Server 与频道**
 
-创建私有 `MiniClaw Test`，再创建 `#miniclaw-live`、`#miniclaw-thread-lab` 和 `validation-thread`。Server 初始只有 Owner 与 Bot。
+创建私有 `Lobster0 Test`，再创建 `#lobster0-live`、`#lobster0-thread-lab` 和 `validation-thread`。Server 初始只有 Owner 与 Bot。
 
 - [ ] **Step 4: 最小 OAuth2 权限**
 
@@ -414,7 +414,7 @@ Expected: Runner 自己启动唯一 Gateway，显示 typed config 中 `account_i
 
 - [ ] **Step 6: Preflight**
 
-Run: `uv run miniclaw doctor`
+Run: `uv run lobster0 doctor`
 
 Expected: Discord config/runtime locally ready；缺 Token、Owner 不在 allowlist、guild mention 无 guild/channel allowlist 或 SDK 缺失必须 FAIL。
 
@@ -436,7 +436,7 @@ Expected: Harness 自己启动并持有唯一 Gateway，exact ready 后才显示
 
 - [ ] **Step 2: 完成 15 项而不跳过**
 
-按 `auth_ready` 到 `secret_scan_zero` 的顺序在 Owner DM、`#miniclaw-live` 与 `validation-thread` 操作。`dm_twenty_rounds` 必须真实 20 轮；Approval 的 allow once 只执行一次，deny 不执行；未寻址 guild 消息静默；long text 分片拼接无损；restart/reconnect 不重复 Turn。
+按 `auth_ready` 到 `secret_scan_zero` 的顺序在 Owner DM、`#lobster0-live` 与 `validation-thread` 操作。`dm_twenty_rounds` 必须真实 20 轮；Approval 的 allow once 只执行一次，deny 不执行；未寻址 guild 消息静默；long text 分片拼接无损；restart/reconnect 不重复 Turn。
 
 - [ ] **Step 3: 非 Owner 场景**
 
@@ -469,7 +469,7 @@ Expected: Harness 自己启动并持有唯一 Gateway，exact ready 后才显示
 - Modify: `docs/engineering/phase-5/20260808_troubleshooting.md`
 - Modify: `docs/engineering/phase-5/20260808_completion-audit.md`
 - Modify: `docs/progress/index.html`
-- Modify outside repo with explicit approval: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
+- Modify outside repo with explicit approval: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`
 
 **Interfaces:**
 - Consumes: Tasks 4–7 的真实命令输出和 ignored evidence 匿名结论。
@@ -481,7 +481,7 @@ Release Record 固定列：Gate、Command、Commit、Result、Evidence schema、
 
 - [ ] **Step 2: 更新架构与工程数据流**
 
-增加 SDK LogRecord Filter、Gateway Lease、Managed Live Process 与 evidence 流程图；明确 Filter 不改 SDK 请求、lease 按 `MINICLAW_HOME` 隔离、Live Runner 自己持有进程、Telegram 仍 pending。
+增加 SDK LogRecord Filter、Gateway Lease、Managed Live Process 与 evidence 流程图；明确 Filter 不改 SDK 请求、lease 按 `LOBSTER0_HOME` 隔离、Live Runner 自己持有进程、Telegram 仍 pending。
 
 - [ ] **Step 3: 更新 README / PRD / Completion Audit**
 
@@ -497,7 +497,7 @@ Run: `uv run python scripts/validate_docs.py`
 
 Run: `git diff --check`
 
-Run: `rg -n "ACCESS_SENTINEL|TICKET_SENTINEL|DEVICE_SENTINEL|MINICLAW_DISCORD_BOT_TOKEN=" README.md docs src tests`
+Run: `rg -n "ACCESS_SENTINEL|TICKET_SENTINEL|DEVICE_SENTINEL|LOBSTER0_DISCORD_BOT_TOKEN=" README.md docs src tests`
 
 Expected: docs validation PASS、diff check 0；最后一条只允许测试中的 sentinel 和文档中的空变量名示例，不允许真实值或 private ID。
 
@@ -523,9 +523,9 @@ git commit -m "docs(phase5): 同步 Feishu/Discord Live evidence 与进度"
 uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 pnpm --dir tui build
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run ruff check .
 uv run python scripts/validate_docs.py
 uv lock --check

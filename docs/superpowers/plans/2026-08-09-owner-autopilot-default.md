@@ -22,8 +22,8 @@
 
 **Files:**
 - Modify: `tests/test_config.py:20-55`
-- Modify: `src/miniclaw/config.py:151-160`
-- Modify: `src/miniclaw/config.py:410-418`
+- Modify: `src/lobster0/config.py:151-160`
+- Modify: `src/lobster0/config.py:410-418`
 
 **Interfaces:**
 - Consumes: `load_config(paths: StatePaths, environ: Mapping[str, str] | None, overrides: Mapping[str, OverrideValue] | None) -> AppConfig`
@@ -38,7 +38,7 @@ def test_missing_file_uses_predictable_defaults(self) -> None:
     """尚未生成配置文件时应返回可预测且不含密钥值的默认配置。"""
     config = load_config(
         self.paths,
-        {"MINICLAW_MODEL_API_KEY": "secret-must-stay-outside-config"},
+        {"LOBSTER0_MODEL_API_KEY": "secret-must-stay-outside-config"},
         {},
     )
     # existing assertions stay unchanged
@@ -97,7 +97,7 @@ Expected: all tests pass. Existing permission tests continue proving that Autopi
 - [ ] **Step 5: Commit the behavior change**
 
 ```bash
-git add src/miniclaw/config.py tests/test_config.py
+git add src/lobster0/config.py tests/test_config.py
 git commit -m "fix(policy): 统一 legacy config 的 autopilot 默认值"
 ```
 
@@ -110,7 +110,7 @@ git commit -m "fix(policy): 统一 legacy config 的 autopilot 默认值"
 - Modify: `docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md:105-121`
 - Modify: `docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md:217-228`
 - Modify: `docs/superpowers/specs/2026-08-08-autopilot-permissions-and-approval-ui-design.md:70-78`
-- Modify outside repository, never stage: `~/.miniclaw/config.toml`
+- Modify outside repository, never stage: `~/.lobster0/config.toml`
 
 **Interfaces:**
 - Consumes: the confirmed design in `docs/superpowers/specs/2026-08-09-owner-autopilot-default-design.md`.
@@ -129,7 +129,7 @@ Mark the earlier “legacy defaults to safe” design statement as superseded by
 
 - [ ] **Step 2: Persist the current Owner choice explicitly**
 
-Patch only the `[tools]` section in `~/.miniclaw/config.toml`:
+Patch only the `[tools]` section in `~/.lobster0/config.toml`:
 
 ```toml
 [tools]
@@ -146,7 +146,7 @@ Run:
 
 ```bash
 uv run python scripts/validate_docs.py
-sed -n '/^\[tools\]/,/^\[/p' ~/.miniclaw/config.toml
+sed -n '/^\[tools\]/,/^\[/p' ~/.lobster0/config.toml
 ```
 
 Expected: documentation reports `PASS`; the displayed `[tools]` section contains `mode = "autopilot"` and no secret values.
@@ -186,8 +186,8 @@ Expected: `All checks passed!`
 - [ ] **Step 3: Run the versioned Channel gate and 20-round soak**
 
 ```bash
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 ```
 
 Expected: single run passes all versioned Channel cases and soak exits 0 with all checks passing.

@@ -15,7 +15,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _UV_URL_PREFIX = "https://github.com/astral-sh/uv/releases/download/"
 _PLATFORM_KEYS = ("linux-x86_64", "linux-arm64", "macos-x86_64", "macos-arm64")
-_REPO_BASE_URL = "https://github.com/NEDONION/mini-claw/releases/download"
+_REPO_BASE_URL = "https://github.com/NEDONION/lobster0/releases/download"
 _DEFAULT_TEMPLATE = Path("release/install.sh.tmpl")
 _DEFAULT_RUNTIME_VERSIONS = Path("release/runtime-versions.json")
 
@@ -189,7 +189,7 @@ def _load_release_inputs(path: Path) -> ReleaseInputs:
 
 def main(argv: list[str] | None = None) -> int:
     """解析 CLI 参数并把渲染结果写到 output 路径。"""
-    parser = argparse.ArgumentParser(description="Render the MiniClaw install.sh bootstrap")
+    parser = argparse.ArgumentParser(description="Render the Lobster0 install.sh bootstrap")
     parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--runtime-versions", type=Path, default=_DEFAULT_RUNTIME_VERSIONS)
     parser.add_argument("--template", type=Path, default=_DEFAULT_TEMPLATE)

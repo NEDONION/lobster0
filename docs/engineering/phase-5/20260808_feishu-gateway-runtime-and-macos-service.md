@@ -20,7 +20,7 @@ sequenceDiagram
     participant U as "Lucas"
     participant F as "飞书开放平台"
     participant W as "lark-channel WebSocket"
-    participant M as "MiniClaw ChannelManager"
+    participant M as "Lobster0 ChannelManager"
     participant A as "AgentRuntime"
     participant D as "DeliveryWorker"
 
@@ -33,7 +33,7 @@ sequenceDiagram
     A-->>M: "公开回答；reasoning 不发到 IM"
     M->>M: "写 durable Outbox"
     D->>F: "回复原消息"
-    F-->>U: "MiniClaw 最终回复"
+    F-->>U: "Lobster0 最终回复"
     M->>F: "移除 Typing reaction"
 ```
 
@@ -57,7 +57,7 @@ This event loop is already running
 
 ```mermaid
 flowchart LR
-    C["miniclaw gateway"] --> P["在 asyncio.run 前预加载 Feishu SDK"]
+    C["lobster0 gateway"] --> P["在 asyncio.run 前预加载 Feishu SDK"]
     P --> L["asyncio.run 创建 Core loop"]
     L --> G["GatewaySupervisor"]
     G --> W["SDK 自有线程 / loop"]
@@ -68,7 +68,7 @@ flowchart LR
 
 ### 2.2 错用了前台阻塞连接入口
 
-SDK 的 `connect()` 是前台生命周期入口，正常连接期间不会返回。MiniClaw 需要在 WebSocket ready 后继续启动
+SDK 的 `connect()` 是前台生命周期入口，正常连接期间不会返回。Lobster0 需要在 WebSocket ready 后继续启动
 Inbox Worker 和 Delivery Worker，所以 Transport 优先调用 `connect_until_ready()`；只有旧版 SDK 不提供该方法时
 才回退到 `connect()`。
 
@@ -85,8 +85,8 @@ Inbox Worker 和 Delivery Worker，所以 Transport 优先调用 `connect_until_
 仓库根目录执行：
 
 ```bash
-uv run miniclaw doctor
-uv run miniclaw gateway
+uv run lobster0 doctor
+uv run lobster0 gateway
 ```
 
 正常启动至少应看到以下稳定事件：
@@ -94,7 +94,7 @@ uv run miniclaw gateway
 ```text
 channel.transport.connected
 channel.supervisor.ready
-MiniClaw gateway ready: feishu/default
+Lobster0 gateway ready: feishu/default
 ```
 
 收到一条 Owner 私聊后，判断顺序是：
@@ -126,33 +126,33 @@ Message ID。
 
 ## 5. macOS 后台常驻
 
-Mac 上使用 MiniClaw 自己管理的用户级 `launchd`，不要手写 plist、使用 `nohup`，也不要让生产服务复用仓库开发
+Mac 上使用 Lobster0 自己管理的用户级 `launchd`，不要手写 plist、使用 `nohup`，也不要让生产服务复用仓库开发
 `.venv`。先将项目安装到独立的 uv tool runtime；当前生产门禁要求 managed CPython 3.12：
 
 ```bash
 uv tool install --force --no-cache --python 3.12 --managed-python '.[feishu]'
-miniclaw service install
-miniclaw service status
-miniclaw service restart
-miniclaw service status
+lobster0 service install
+lobster0 service status
+lobster0 service restart
+lobster0 service status
 ```
 
 `service install` 先运行 Gateway/Storage/Sandbox/Feishu Doctor，并要求只启用 Feishu；检查失败时不写 plist。受管服务固定
-使用 label `io.miniclaw.gateway`、exact `gateway --home <state-home>` argv 与独立 launcher。plist 和 ownership receipt 均为
+使用 label `io.lobster0.gateway`、exact `gateway --home <state-home>` argv 与独立 launcher。plist 和 ownership receipt 均为
 owner-only；只有 receipt hash 匹配的文件才能覆盖或删除，遇到手工/外部 plist 会 fail closed。
 
 ```mermaid
 flowchart LR
-    CLI["miniclaw service install"] --> PRE["Feishu-only preflight"]
+    CLI["lobster0 service install"] --> PRE["Feishu-only preflight"]
     PRE --> PLIST["owner-only plist + clean commit"]
     PLIST --> LAUNCHD["launchd bootstrap"]
     LAUNCHD --> G["managed Python 3.12 Gateway"]
     G --> F["Feishu WebSocket"]
 ```
 
-Secret 值只由 `MINICLAW_ENV_FILE` 指向的 owner-only dotenv 在进程启动时读取；plist 不复制 App Secret、Token 或模型
+Secret 值只由 `LOBSTER0_ENV_FILE` 指向的 owner-only dotenv 在进程启动时读取；plist 不复制 App Secret、Token 或模型
 API Key。plist 只记录 clean 40-hex commit provenance，状态目录和日志目录保持 owner-only。`service restart` 使用固定
-`launchctl kickstart -k`，`service uninstall` 仅删除 MiniClaw 自己的文件。
+`launchctl kickstart -k`，`service uninstall` 仅删除 Lobster0 自己的文件。
 
 升级流程必须保持 runtime 与 commit 一致：代码和门禁完成并形成 clean commit 后，用 `--no-cache` 重装 tool runtime，
 再执行 `service install` 更新 provenance。不要在服务运行时让它 import 未提交或半更新的源码。
@@ -165,12 +165,12 @@ LaunchAgent 只能在 Mac 已开机、用户已登录且系统没有阻断网络
 ```mermaid
 flowchart LR
     F["飞书云"] <-->|"出站 WebSocket"| V["Linux VPS"]
-    V --> G["MiniClaw Gateway"]
+    V --> G["Lobster0 Gateway"]
     G --> S["持久化 state volume"]
     G --> M["模型 HTTPS API"]
 ```
 
-VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy、持久化 `~/.miniclaw`、只读 Secret 注入和
+VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy、持久化 `~/.lobster0`、只读 Secret 注入和
 日志轮转；不要挂载宿主机 SSH、浏览器 Profile、Keychain 或 Docker socket。
 
 ## 7. 验证矩阵

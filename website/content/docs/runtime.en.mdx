@@ -5,7 +5,7 @@ description: Understand how one AgentRuntime serves the TUI and three messaging 
 
 ## One core, multiple surfaces
 
-The MiniClaw Agent Core does not know which platform produced a message. TUI, Feishu, Telegram, and
+The Lobster0 Agent Core does not know which platform produced a message. TUI, Feishu, Telegram, and
 Discord convert external messages into an internal form before handing them to the same AgentRuntime.
 The model and Tool Loop therefore keep one mental model.
 
@@ -38,4 +38,4 @@ not own Channel identity, Workspace authorization, or Tool safety policy.
 4. When required, Approval binds the exact parameters.
 5. The Tool acts and returns the result to the original conversation.
 
-See the [system architecture](https://github.com/NEDONION/mini-claw/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md) for module responsibilities.
+See the [system architecture](https://github.com/NEDONION/lobster0/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md) for module responsibilities.

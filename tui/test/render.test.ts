@@ -55,7 +55,7 @@ test("dense Chinese transcript renders roles and activity without oversized card
     assert.equal(lines.every((line) => visibleWidth(line) <= width), true);
     const output = lines.join("\n");
     assert.match(output, /你/);
-    assert.match(output, /MiniClaw/);
+    assert.match(output, /Lobster0/);
     assert.match(output, /思考/);
     assert.match(output, /run_command/);
     assert.match(output, /42 ms/);

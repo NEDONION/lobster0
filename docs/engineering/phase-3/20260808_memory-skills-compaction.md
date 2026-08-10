@@ -13,7 +13,7 @@
 
 ## 1. 这阶段解决什么
 
-Phase 2 让 MiniClaw 能安全地使用本机 Tool。Phase 3 让它在对话变长或进程重启后，仍能记住稳定信息、
+Phase 2 让 Lobster0 能安全地使用本机 Tool。Phase 3 让它在对话变长或进程重启后，仍能记住稳定信息、
 按需加载做事方法，并且不会因为历史越来越长而撞上模型上下文上限。
 
 用大白话说：
@@ -36,9 +36,9 @@ flowchart LR
 
 ## 2. 从 Claw-like 项目借鉴什么
 
-MiniClaw 不照搬大系统的全部复杂度，只复用已经被验证的核心原则：
+Lobster0 不照搬大系统的全部复杂度，只复用已经被验证的核心原则：
 
-| 项目 | 借鉴点 | MiniClaw Phase 3 的取舍 |
+| 项目 | 借鉴点 | Lobster0 Phase 3 的取舍 |
 | --- | --- | --- |
 | [OpenClaw Memory](https://github.com/openclaw/openclaw/blob/main/docs/concepts/memory.md) | Markdown 是可审阅的记忆真相源；长期记忆与 daily notes 分层 | 使用 `MEMORY.md`、今日和昨日文件；暂不上向量库 |
 | [OpenClaw Compaction](https://github.com/openclaw/openclaw/blob/main/docs/concepts/compaction.md) | 摘要替代旧消息进入下一次上下文，最近消息保留，完整历史仍在磁盘 | 摘要写回 SQLite；不删除 `messages` 原记录 |
@@ -52,8 +52,8 @@ MiniClaw 不照搬大系统的全部复杂度，只复用已经被验证的核�
 | 层 | 路径/存储 | 保存内容 | 谁能写 |
 | --- | --- | --- | --- |
 | 原始会话 | SQLite `messages` | 用户、助手和 Tool 的完整轨迹 | TurnService |
-| 长期记忆 | `~/.miniclaw/MEMORY.md` | 稳定偏好、事实、长期目标 | Owner 手工整理；后续 Evolution 合并 |
-| 每日记忆 | `~/.miniclaw/memory/YYYY-MM-DD.md` | 当天明确要求记住的事实和来源 | `propose_memory` 经审批后追加 |
+| 长期记忆 | `~/.lobster0/MEMORY.md` | 稳定偏好、事实、长期目标 | Owner 手工整理；后续 Evolution 合并 |
+| 每日记忆 | `~/.lobster0/memory/YYYY-MM-DD.md` | 当天明确要求记住的事实和来源 | `propose_memory` 经审批后追加 |
 
 `ContextBuilder` 自动注入长期记忆、今天和昨天的 daily memory。更老的 daily 文件不自动塞进每个请求，
 需要时由 `read_memory` 读取，避免记忆越多 prompt 越大。
@@ -91,7 +91,7 @@ sequenceDiagram
 Skill 目录格式：
 
 ```text
-~/.miniclaw/skills/
+~/.lobster0/skills/
 └── summarize/
     └── SKILL.md
 ```
@@ -133,7 +133,7 @@ flowchart TD
 
 ## 5. Context budget 与 Compaction
 
-默认 `context_budget_tokens = 32000`。MiniClaw 用确定性的字符估算做本地预判，达到预算的 80% 时才调用
+默认 `context_budget_tokens = 32000`。Lobster0 用确定性的字符估算做本地预判，达到预算的 80% 时才调用
 当前 Provider 生成摘要。摘要固定要求保留：目标、完成动作、重要结果、失败、未完成事项和安全决定。
 
 ```mermaid
@@ -159,7 +159,7 @@ flowchart TD
 
 ## 6. 稳定上下文顺序
 
-1. MiniClaw 安全 System Prompt。
+1. Lobster0 安全 System Prompt。
 2. `SOUL.md` 与 `USER.md`。
 3. `MEMORY.md`、今日和昨日 daily memory。
 4. 当前 Query 命中的 Skills。
@@ -233,12 +233,12 @@ flowchart LR
 
 | 边界 | 生产代码 | 主要测试/场景 |
 | --- | --- | --- |
-| Markdown Memory | `src/miniclaw/memory/store.py` | `tests/test_memory_store.py`、`MEMORY-READ-001` |
-| Memory Tool + Approval | `src/miniclaw/tools/memory.py` | `tests/test_memory_tools.py`、`MEMORY-PROPOSE-001` |
-| Skills 惰性加载 | `src/miniclaw/skills/loader.py` | `tests/test_skills.py`、`SKILL-ACTIVATE-001` |
-| Context 注入与 snapshot | `src/miniclaw/agent/context.py` | `tests/test_context.py`、`tests/test_turn.py` |
-| Persistent compaction | `src/miniclaw/agent/compaction.py` | `tests/test_compaction.py`、`tests/test_turn.py` |
-| 唯一生产装配 | `src/miniclaw/runtime.py` | `tests/test_runtime.py`、全量 offline eval |
+| Markdown Memory | `src/lobster0/memory/store.py` | `tests/test_memory_store.py`、`MEMORY-READ-001` |
+| Memory Tool + Approval | `src/lobster0/tools/memory.py` | `tests/test_memory_tools.py`、`MEMORY-PROPOSE-001` |
+| Skills 惰性加载 | `src/lobster0/skills/loader.py` | `tests/test_skills.py`、`SKILL-ACTIVATE-001` |
+| Context 注入与 snapshot | `src/lobster0/agent/context.py` | `tests/test_context.py`、`tests/test_turn.py` |
+| Persistent compaction | `src/lobster0/agent/compaction.py` | `tests/test_compaction.py`、`tests/test_turn.py` |
+| 唯一生产装配 | `src/lobster0/runtime.py` | `tests/test_runtime.py`、全量 offline eval |
 
 Phase 3 没有新增第三方运行时依赖，也没有新增数据库表。Compaction summary 复用 `messages` 表中的 system
 message，并用 metadata 保存覆盖范围、模型和哈希；这让旧数据库可以直接升级，同时保留完整回放能力。

@@ -2,9 +2,9 @@
 
 import unittest
 
-from miniclaw.memory.extractor import MemoryExtractionError, MemoryExtractor
-from miniclaw.memory.flush import FlushSourceMessage
-from miniclaw.providers.base import ModelResponse
+from lobster0.memory.extractor import MemoryExtractionError, MemoryExtractor
+from lobster0.memory.flush import FlushSourceMessage
+from lobster0.providers.base import ModelResponse
 from tests.fakes.fake_provider import FakeProvider
 
 

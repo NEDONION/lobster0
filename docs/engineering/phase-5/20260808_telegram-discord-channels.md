@@ -14,7 +14,7 @@
 
 ## 1. 大白话说明
 
-Phase 4 已经让 MiniClaw 能把飞书消息安全地送进 Agent。Phase 5 已把同一条生产管线扩展到 Telegram 和
+Phase 4 已经让 Lobster0 能把飞书消息安全地送进 Agent。Phase 5 已把同一条生产管线扩展到 Telegram 和
 Discord；它没有再复制两个聊天机器人：
 
 ```text
@@ -26,7 +26,7 @@ Discord；它没有再复制两个聊天机器人：
   → 对应平台发送、限流、失败重试
 ```
 
-三个入口看到的是同一个 MiniClaw：它们共享长期 Memory、Skills、Tool、Policy 和 Owner。不同入口的临时聊天
+三个入口看到的是同一个 Lobster0：它们共享长期 Memory、Skills、Tool、Policy 和 Owner。不同入口的临时聊天
 历史仍分开，避免 Telegram 的上下文突然出现在 Discord 群里。
 
 ```mermaid
@@ -57,11 +57,11 @@ flowchart LR
 | Delivery 默认错误码带 `feishu_*` | concrete Transport 负责平台码，Worker 只看稳定属性 |
 
 如果不先处理这些边界，新平台就会复制 Agent、审批或重试逻辑。那看起来功能很多，实际会形成三套难以维护的
-机器人，不符合 MiniClaw 的产品目标。
+机器人，不符合 Lobster0 的产品目标。
 
 ## 3. 三个平台如何共存
 
-`miniclaw gateway` 将从“飞书专用命令”升级为“全部已启用 Channel 的统一守护进程”。
+`lobster0 gateway` 将从“飞书专用命令”升级为“全部已启用 Channel 的统一守护进程”。
 
 ```mermaid
 flowchart TB
@@ -106,17 +106,17 @@ Discord 的 wake-up；Discord 重连时飞书仍可以继续处理消息。
 Token 只能写入项目根目录的私密 `.env`：
 
 ```dotenv
-MINICLAW_TELEGRAM_BOT_TOKEN=
-MINICLAW_DISCORD_BOT_TOKEN=
+LOBSTER0_TELEGRAM_BOT_TOKEN=
+LOBSTER0_DISCORD_BOT_TOKEN=
 ```
 
-`.env` 必须保持 `0600`，不得提交 Git。非秘密配置放在 `~/.miniclaw/config.toml`：
+`.env` 必须保持 `0600`，不得提交 Git。非秘密配置放在 `~/.lobster0/config.toml`：
 
 ```toml
 [channels.telegram]
 enabled = false
 account_id = "default"
-bot_token_env = "MINICLAW_TELEGRAM_BOT_TOKEN"
+bot_token_env = "LOBSTER0_TELEGRAM_BOT_TOKEN"
 owner_user_id = 0
 allowed_user_ids = []
 allowed_chat_ids = []
@@ -129,7 +129,7 @@ progress_update_interval = 0.8
 [channels.discord]
 enabled = false
 account_id = "default"
-bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"
+bot_token_env = "LOBSTER0_DISCORD_BOT_TOKEN"
 owner_user_id = 0
 allowed_user_ids = []
 allowed_guild_ids = []
@@ -174,7 +174,7 @@ sequenceDiagram
     end
 ```
 
-Telegram message ID 只在一个 chat 内唯一，因此 MiniClaw 必须用 `chat_id + message_id` 组合业务 key。私聊要求
+Telegram message ID 只在一个 chat 内唯一，因此 Lobster0 必须用 `chat_id + message_id` 组合业务 key。私聊要求
 user allowlist；群聊还要求 chat allowlist，并且明确 @Bot 或 reply Bot。forum topic 会成为独立 Conversation。
 
 首版最终消息不启用 MarkdownV2 parse mode。这样模型输出中的 `_`、`[`、反斜杠等字符不会导致整条发送失败。
@@ -328,7 +328,7 @@ uv sync --extra channels
 Doctor 仍然完全离线：
 
 ```bash
-uv run miniclaw doctor
+uv run lobster0 doctor
 ```
 
 它会区分 disabled、配置错误、SDK 缺失、Token 变量缺失和 locally ready，但不会调用平台认证接口。只有 live smoke
@@ -355,7 +355,7 @@ Phase 5 已新增 20 条版本化场景：Telegram 10 条、Discord 10 条。已
 Local soak：
 
 ```bash
-uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --root evals/scenarios
 ```
 
 当前结果是 `640/640` checks。这个数字只证明本地状态机，不证明真实 Token、平台权限和网络。

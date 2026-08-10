@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Goal:** 为 MiniClaw 增加 safe/smart/autopilot/yolo 四档权限、可信 Owner 入口传播、动态切换与紧凑可滚动审批框。
+**Goal:** 为 Lobster0 增加 safe/smart/autopilot/yolo 四档权限、可信 Owner 入口传播、动态切换与紧凑可滚动审批框。
 
 **Architecture:** Python Core 持有唯一 `PermissionState`，PolicyEngine 在硬路径/命令/网络校验之后结合 `ToolContext.trusted_owner` 决定自动执行或审批。Bridge 与 Channel 控制命令只负责经过身份校验地切换这份状态；pi-tui 从握手读取状态并渲染紧凑 Header 和高度有界的 ApprovalDialog。
 
@@ -26,13 +26,13 @@
 ### Task 1: PermissionMode、配置与 Policy 状态表
 
 **Files:**
-- Create: `src/miniclaw/policy/modes.py`
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/tools/base.py`
-- Modify: `src/miniclaw/policy/engine.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/storage/tooling.py`
+- Create: `src/lobster0/policy/modes.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/tools/base.py`
+- Modify: `src/lobster0/policy/engine.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/storage/tooling.py`
 - Test: `tests/test_config.py`
 - Test: `tests/test_bootstrap.py`
 - Test: `tests/test_command_policy.py`
@@ -82,17 +82,17 @@
 - [x] **Step 6: 提交 Task 1**
 
   ```bash
-  git add src/miniclaw/policy/modes.py src/miniclaw/config.py src/miniclaw/bootstrap.py src/miniclaw/tools/base.py src/miniclaw/policy/engine.py src/miniclaw/runtime.py src/miniclaw/storage/tooling.py tests/test_config.py tests/test_bootstrap.py tests/test_command_policy.py tests/test_network_policy.py tests/test_tool_executor.py
+  git add src/lobster0/policy/modes.py src/lobster0/config.py src/lobster0/bootstrap.py src/lobster0/tools/base.py src/lobster0/policy/engine.py src/lobster0/runtime.py src/lobster0/storage/tooling.py tests/test_config.py tests/test_bootstrap.py tests/test_command_policy.py tests/test_network_policy.py tests/test_tool_executor.py
   git commit -m "feat(policy): 增加 Autopilot 四档权限状态"
   ```
 
 ### Task 2: Owner 私聊信任传播与 Channel 控制命令
 
 **Files:**
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/channels/manager.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/gateway.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/channels/manager.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/gateway.py`
 - Test: `tests/test_turn.py`
 - Test: `tests/test_channel_manager.py`
 - Test: `tests/test_gateway.py`
@@ -130,15 +130,15 @@
 - [x] **Step 6: 提交 Task 2**
 
   ```bash
-  git add src/miniclaw/agent/turn.py src/miniclaw/channels/manager.py src/miniclaw/runtime.py src/miniclaw/gateway.py tests/test_turn.py tests/test_channel_manager.py tests/test_gateway.py tests/test_channel_approvals.py
+  git add src/lobster0/agent/turn.py src/lobster0/channels/manager.py src/lobster0/runtime.py src/lobster0/gateway.py tests/test_turn.py tests/test_channel_manager.py tests/test_gateway.py tests/test_channel_approvals.py
   git commit -m "feat(channels): 仅为 Owner 私聊传播 Autopilot 信任"
   ```
 
 ### Task 3: Bridge 动态切换与 TUI 权限状态
 
 **Files:**
-- Modify: `src/miniclaw/bridge/protocol.py`
-- Modify: `src/miniclaw/bridge/server.py`
+- Modify: `src/lobster0/bridge/protocol.py`
+- Modify: `src/lobster0/bridge/server.py`
 - Modify: `tui/src/protocol.ts`
 - Modify: `tui/src/bridge-client.ts`
 - Modify: `tui/src/app.ts`
@@ -181,7 +181,7 @@
 
 - [x] **Step 6: 实现 TypeScript GREEN**
 
-  扩展 RequestType、BridgeClient 和 MiniClawTui；Header 对 autopilot/yolo 使用永久可见的高对比徽标，其他信息保持单行。
+  扩展 RequestType、BridgeClient 和 Lobster0Tui；Header 对 autopilot/yolo 使用永久可见的高对比徽标，其他信息保持单行。
 
 - [x] **Step 7: 运行两端 GREEN**
 
@@ -194,7 +194,7 @@
 - [x] **Step 8: 提交 Task 3**
 
   ```bash
-  git add src/miniclaw/bridge/protocol.py src/miniclaw/bridge/server.py tui/src/protocol.ts tui/src/bridge-client.ts tui/src/app.ts tui/src/components/conversation.ts tests/test_bridge_protocol.py tests/test_bridge_server.py tui/test/protocol.test.ts tui/test/bridge-client.test.ts tui/test/input.test.ts tui/test/render.test.ts
+  git add src/lobster0/bridge/protocol.py src/lobster0/bridge/server.py tui/src/protocol.ts tui/src/bridge-client.ts tui/src/app.ts tui/src/components/conversation.ts tests/test_bridge_protocol.py tests/test_bridge_server.py tui/test/protocol.test.ts tui/test/bridge-client.test.ts tui/test/input.test.ts tui/test/render.test.ts
   git commit -m "feat(tui): 支持动态权限模式与常驻状态徽标"
   ```
 
@@ -268,9 +268,9 @@
 
   Run: `corepack pnpm --dir tui test`
 
-  Run: `.venv/bin/miniclaw eval run --suite channel --root evals/scenarios`
+  Run: `.venv/bin/lobster0 eval run --suite channel --root evals/scenarios`
 
-  Run: `.venv/bin/miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios`
+  Run: `.venv/bin/lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios`
 
   Run: `git diff --check main...HEAD`
 
@@ -285,10 +285,10 @@
 
 - [x] **Step 5: 更新本机 Owner 配置并做真实 doctor smoke**
 
-  在不打印配置正文和密钥的前提下，把 `~/.miniclaw/config.toml` 的 `[tools].mode` 设为 `autopilot`，保持 0600；运行 `uv run miniclaw doctor` 和本地 pi-tui 启动检查。
+  在不打印配置正文和密钥的前提下，把 `~/.lobster0/config.toml` 的 `[tools].mode` 设为 `autopilot`，保持 0600；运行 `uv run lobster0 doctor` 和本地 pi-tui 启动检查。
 
   Expected: doctor 全部 PASS，Header 显示 `⚡ AUTOPILOT`。
 
 - [x] **Step 6: 完成分支交付**
 
-  按 `superpowers:finishing-a-development-branch` 复验、合并并推送；最后保证 `/Users/nedonion/PycharmProjects/miniclaw` 位于最新 `main` 且与 `origin/main` 一致。
+  按 `superpowers:finishing-a-development-branch` 复验、合并并推送；最后保证 `/Users/nedonion/PycharmProjects/lobster0` 位于最新 `main` 且与 `origin/main` 一致。

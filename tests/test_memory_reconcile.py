@@ -5,21 +5,21 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.markdown_store import MemoryMarkdownStore
-from miniclaw.memory.models import DisclosureContext, SourceRef
-from miniclaw.memory.reconcile import MemoryReconciler
-from miniclaw.memory.repository import (
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.markdown_store import MemoryMarkdownStore
+from lobster0.memory.models import DisclosureContext, SourceRef
+from lobster0.memory.reconcile import MemoryReconciler
+from lobster0.memory.repository import (
     MemoryManifestRepository,
     MemoryReviewRepository,
     MemoryUnitRepository,
 )
-from miniclaw.memory.retrieval import MemoryRetrieval, SearchRequest
-from miniclaw.memory.service import ExplicitMemoryRequest, MemoryService
-from miniclaw.memory.store import MemoryStore
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
+from lobster0.memory.retrieval import MemoryRetrieval, SearchRequest
+from lobster0.memory.service import ExplicitMemoryRequest, MemoryService
+from lobster0.memory.store import MemoryStore
+from lobster0.paths import build_state_paths
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
 
 
 class MemoryReconcileTest(unittest.TestCase):
@@ -109,7 +109,7 @@ class MemoryReconcileTest(unittest.TestCase):
         """缺失结束 marker 时只记录安全错误，不能覆盖文件或 Unit。"""
         path = self.markdown.path_for_owner(self.owner.id)
         malformed = path.read_text(encoding="utf-8").replace(
-            f"<!-- miniclaw:end {self.unit_id} -->",
+            f"<!-- lobster0:end {self.unit_id} -->",
             "<!-- broken -->",
         )
         path.write_text(malformed, encoding="utf-8")

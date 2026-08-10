@@ -8,12 +8,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.evals.feishu_automation_live import (
+from lobster0.evals.feishu_automation_live import (
     AutomationLiveCaseResult,
     build_automation_evidence_report,
 )
-from miniclaw.evals.feishu_live import FeishuCaseResult, build_evidence_report
-from miniclaw.evals.phase6_production import (
+from lobster0.evals.feishu_live import FeishuCaseResult, build_evidence_report
+from lobster0.evals.phase6_production import (
     GateEvidence,
     GatewayLeaseFact,
     ProductionPreflightFacts,
@@ -24,13 +24,13 @@ from miniclaw.evals.phase6_production import (
     run_managed_recovery,
     run_phase6_production_gate,
 )
-from miniclaw.evals.phase6_soak import SoakCheckpoint
-from miniclaw.evals.production_evidence import (
+from lobster0.evals.phase6_soak import SoakCheckpoint
+from lobster0.evals.production_evidence import (
     build_seatbelt_evidence_report,
     write_private_json,
 )
-from miniclaw.gateway_lease import GatewayProvenance
-from miniclaw.gateway_service import ServiceStatus
+from lobster0.gateway_lease import GatewayProvenance
+from lobster0.gateway_service import ServiceStatus
 
 
 class Phase6ProductionPreflightTest(unittest.TestCase):
@@ -94,7 +94,7 @@ class Phase6ProductionPreflightTest(unittest.TestCase):
     def test_cli_requires_subcommand_and_confirmation_before_confirmed_loader(self) -> None:
         """无 subcommand/confirm 时不读取 Secret、不创建目录也不启动服务。"""
         with mock.patch(
-            "miniclaw.evals.phase6_production._run_confirmed_command"
+            "lobster0.evals.phase6_production._run_confirmed_command"
         ) as confirmed:
             self.assertEqual(run_phase6_production_gate([]), 2)
             self.assertEqual(

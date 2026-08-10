@@ -6,8 +6,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from miniclaw.agent.turn import TurnResult
-from miniclaw.channels.approvals import (
+from lobster0.agent.turn import TurnResult
+from lobster0.channels.approvals import (
     ApprovalEnvelope,
     ApprovalPrompt,
     ChannelApprovalController,
@@ -17,8 +17,8 @@ from miniclaw.channels.approvals import (
     parse_approval_delivery_payload,
     text_approval_prompt,
 )
-from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
-from miniclaw.storage.tooling import ApprovalPresentation, StoredApproval
+from lobster0.policy.approvals import ApprovalDecision, ApprovalError
+from lobster0.storage.tooling import ApprovalPresentation, StoredApproval
 
 
 @dataclass(slots=True)
@@ -178,7 +178,7 @@ class ChannelApprovalTest(unittest.IsolatedAsyncioTestCase):
         controller, service = self._controller(service=service)
         value: dict[str, Any] = {
             "version": 2,
-            "miniclaw_action": "approval",
+            "lobster0_action": "approval",
             "approval_id": 7,
             "decision": "once",
         }
@@ -262,7 +262,7 @@ class ApprovalEnvelopeV2Test(unittest.TestCase):
         self.assertNotIn(envelope.summary, repr(envelope))
         self.assertNotIn(envelope.fallback_text, repr(envelope))
         text_prompt = text_approval_prompt(envelope)
-        self.assertIn("MiniClaw 审批 #7", text_prompt)
+        self.assertIn("Lobster0 审批 #7", text_prompt)
         self.assertIn("/approve 7 once", text_prompt)
 
     def test_v1_payload_remains_readable_but_is_not_written(self) -> None:

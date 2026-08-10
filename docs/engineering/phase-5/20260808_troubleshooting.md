@@ -10,9 +10,9 @@
 
 ```mermaid
 flowchart TD
-    A["miniclaw doctor"] --> B{"有 FAIL?"}
+    A["lobster0 doctor"] --> B{"有 FAIL?"}
     B -->|"Yes"| C["修配置 / SDK / Token / state"]
-    B -->|"No"| D["miniclaw gateway"]
+    B -->|"No"| D["lobster0 gateway"]
     D --> E{"启动前失败?"}
     E -->|"Yes"| F["查看稳定错误码"]
     E -->|"No"| G["发一条 allowlisted test message"]
@@ -42,7 +42,7 @@ security = "allowlist"
 ask = "on-miss"
 ```
 
-然后重新运行 `uv run miniclaw doctor`。`allowlist + on-miss` 的含义是：精确规则可以放行，未命中进入 Owner 审批，
+然后重新运行 `uv run lobster0 doctor`。`allowlist + on-miss` 的含义是：精确规则可以放行，未命中进入 Owner 审批，
 危险命令仍 fail closed。不要为恢复启动而把旧 `autopilot` 迁移成无审批执行。
 
 ## 3. Doctor 显示 SDK missing
@@ -61,7 +61,7 @@ uv sync --extra telegram
 uv sync --extra discord
 # 或三个平台一次安装
 uv sync --extra channels
-uv run miniclaw doctor
+uv run lobster0 doctor
 ```
 
 未启用的平台不要求安装 extra。普通 TUI import 也不会因为缺少 Telegram/Discord SDK 失败。
@@ -71,15 +71,15 @@ uv run miniclaw doctor
 检查变量名，不要打印变量值：
 
 ```dotenv
-MINICLAW_TELEGRAM_BOT_TOKEN=
-MINICLAW_DISCORD_BOT_TOKEN=
+LOBSTER0_TELEGRAM_BOT_TOKEN=
+LOBSTER0_DISCORD_BOT_TOKEN=
 ```
 
 `config.toml` 中 `bot_token_env` 必须指向对应变量名。`.env` 必须是 owner-only regular file：
 
 ```bash
 chmod 600 .env
-uv run miniclaw doctor
+uv run lobster0 doctor
 ```
 
 符号链接、目录、group/world-readable 文件都会在读取 Secret 前失败。不要把 Token 写进 TOML、命令行、日志或 issue。
@@ -90,13 +90,13 @@ uv run miniclaw doctor
 
 排查：
 
-1. 确认只有一个 `uv run miniclaw gateway`；
+1. 确认只有一个 `uv run lobster0 gateway`；
 2. 停止旧本机进程、VPS service 或另一个开发终端；
 3. 如果此前配置过 webhook，在 Bot 管理侧按官方方式移除；
 4. 等旧 polling 请求结束后再启动；
 5. 不要通过创建第二个 Manager 来“绕过”冲突。
 
-MiniClaw 会把平台错误映射成稳定短码；错误正文和 Token 不进入日志。
+Lobster0 会把平台错误映射成稳定短码；错误正文和 Token 不进入日志。
 
 ## 6. Telegram 私聊没有响应
 
@@ -124,7 +124,7 @@ MiniClaw 会把平台错误映射成稳定短码；错误正文和 Token 不进�
 
 ## 8. Discord READY 不到 / intent denied
 
-MiniClaw 只启用：
+Lobster0 只启用：
 
 - guilds；
 - guild messages；
@@ -143,7 +143,7 @@ Bot 开启 Message Content Intent，并确认邀请权限允许查看频道与�
 - Thread：Send Messages in Threads；
 - DM：用户隐私设置或 Bot 与用户无共同 Guild 也可能阻止。
 
-MiniClaw 始终使用 `AllowedMentions.none()`；模型生成 `<@...>` 不会真的 ping 用户。不要为了通过测试打开管理员权限。
+Lobster0 始终使用 `AllowedMentions.none()`；模型生成 `<@...>` 不会真的 ping 用户。不要为了通过测试打开管理员权限。
 
 ## 10. Guild/Thread 消息被静默忽略
 
@@ -214,7 +214,7 @@ degraded；Discord/飞书保持 ready。启动前静态配置错误则是 all-or
 立即停止发布。live harness 只报告命中数量，不显示内容。处理步骤：
 
 1. 旋转可能泄露的模型 Key 和平台 Token；
-2. 检查 `.local/eval-results/`、`~/.miniclaw/logs/` 和 shell history；
+2. 检查 `.local/eval-results/`、`~/.lobster0/logs/` 和 shell history；
 3. 从未推送 commit 中移除敏感内容；已推送则按平台和 Git 托管方的事故流程处理；
 4. 增加回归测试，确保 `repr`、异常、Observer、evidence 不含值；
 5. 重新执行 live 15 项，`secret_matches` 必须为 0。
@@ -229,7 +229,7 @@ Feishu Runner 只输出稳定错误码：
 | `peer_channel_enabled` | 本轮只允许 Feishu；暂时关闭 Telegram/Discord |
 | `repository_commit_unavailable` | 是否在 Git worktree 内、HEAD 是否完整 |
 | `repository_dirty` | 先检查并提交本轮代码/文档，不要盲目丢弃用户修改 |
-| `doctor_preflight_failed` | 先单独运行 `miniclaw doctor` |
+| `doctor_preflight_failed` | 先单独运行 `lobster0 doctor` |
 | `pending_approval_exists` | 明确处理上一轮遗留审批，Runner 不自动批准/拒绝 |
 | `live_case_count_invalid` | 必须保留 `FEISHU-LIVE-001..015` 恰好 15 条 |
 | `feishu_live_preflight_failed` | `.env`、SDK、Owner/App 关系或配置失败 |
@@ -244,7 +244,7 @@ Feishu Runner 只输出稳定错误码：
 2. 机器人能力已启用；
 3. 长连接订阅了 `im.message.receive_v1`；
 4. 私聊 read Scope 与 `send_as_bot` Scope 已审批生效；
-5. Owner Open ID 是使用同一 Bot App 的 `miniclaw-e2e` profile 发现的；
+5. Owner Open ID 是使用同一 Bot App 的 `lobster0-e2e` profile 发现的；
 6. `owner_open_id` 同时在 `allowed_open_ids`；
 7. 群聊还需要唯一测试 Chat allowlist、`allow_group_mentions=true` 和明确 mention。
 
@@ -252,7 +252,7 @@ Feishu Runner 只输出稳定错误码：
 
 ### 日志出现 `This event loop is already running`
 
-这是 `lark-channel-sdk 1.2.0` 的导入时 loop 绑定与 MiniClaw `asyncio.run()` 顺序冲突。当前 CLI 会在启动 Core loop
+这是 `lark-channel-sdk 1.2.0` 的导入时 loop 绑定与 Lobster0 `asyncio.run()` 顺序冲突。当前 CLI 会在启动 Core loop
 前预加载 SDK，Transport 再调用 `connect_until_ready()`，让 Supervisor 能继续启动 Worker。不要在已运行的 coroutine
 里重新惰性 import SDK，也不要把前台阻塞 `connect()` 当 ready signal。
 
@@ -287,7 +287,7 @@ Case 007 消费 Case 006 已创建的 pending Approval。Runner checkpoint 会�
 Evidence 只报告稳定错误码和命中数。它不会告诉你 Secret 或文件路径。如果 `secret_matches > 0`：
 
 1. 停止发布并轮换可能泄露的模型 Key/App Secret；
-2. 检查本机 ignored evidence、MiniClaw 日志和 shell history；
+2. 检查本机 ignored evidence、Lobster0 日志和 shell history；
 3. 确认 App Secret 从 stdin 输入，而不在 argv；
 4. 确认日志没有完整 Open ID/Chat ID/Message ID、消息正文或 Home 路径；
 5. 修复后重新完成 15 条，人工不能覆盖 `FEISHU-LIVE-015` 自动失败。
@@ -295,9 +295,9 @@ Evidence 只报告稳定错误码和命中数。它不会告诉你 Secret 或文
 ## 21. 标准诊断命令
 
 ```bash
-uv run miniclaw doctor
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 doctor
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run python -m unittest tests.test_telegram_transport tests.test_discord_transport -v
 uv run python -m unittest tests.test_channel_supervisor tests.test_channel_live_harness -v
 uv run python -m unittest tests.test_feishu_live_e2e tests.test_feishu_evals -v

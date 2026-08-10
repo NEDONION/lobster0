@@ -12,7 +12,7 @@
 
 ## 1. 这一小阶段解决了什么
 
-Phase 1 的 MiniClaw 可以聊天，但它只能依赖模型已有知识。用户问“帮我看看我的电脑是什么配置”时，模型
+Phase 1 的 Lobster0 可以聊天，但它只能依赖模型已有知识。用户问“帮我看看我的电脑是什么配置”时，模型
 没有真实本机数据，只能拒绝或给出查看教程。
 
 Phase 2.1A 把第一把真实工具 `system_info` 接进完整 Agent 链路。现在模型可以：
@@ -20,14 +20,14 @@ Phase 2.1A 把第一把真实工具 `system_info` 接进完整 Agent 链路。�
 1. 在请求中看到 `system_info` 的结构化说明；
 2. 判断问题需要读取本机状态；
 3. 返回一个原生 Tool Call，而不是编造配置；
-4. 由 MiniClaw 校验参数、判断权限、留下审计后执行；
+4. 由 Lobster0 校验参数、判断权限、留下审计后执行；
 5. 把脱敏结果作为 Tool Message 交回模型；
 6. 由模型把结构化结果整理成自然语言；
 7. 把调用、结果和最终回答完整保存到 SQLite。
 
 ```mermaid
 flowchart LR
-    USER["用户：查看电脑配置"] --> CLI["bare miniclaw TUI"]
+    USER["用户：查看电脑配置"] --> CLI["bare lobster0 TUI"]
     CLI --> CONTEXT["Context + Tool Schema"]
     CONTEXT --> MODEL1["模型第 1 轮"]
     MODEL1 -->|"ToolCall: system_info"| EXECUTOR["ToolExecutor"]
@@ -102,7 +102,7 @@ medium/high 现在只返回稳定的 `approval_required` Tool Result，不创建
 ## 4. 文件地图
 
 ```text
-src/miniclaw/
+src/lobster0/
 ├── agent/
 │   ├── context.py          # Tool Schema 和工具使用规则进入模型请求
 │   ├── runner.py           # 模型 ↔ ToolExecutor 循环及中间消息
@@ -132,7 +132,7 @@ tests/
 
 ## 5. Tool Contract
 
-代码位置：`src/miniclaw/tools/base.py`
+代码位置：`src/lobster0/tools/base.py`
 
 ### 5.1 ToolDefinition
 
@@ -185,7 +185,7 @@ ToolDefinition(
 ```mermaid
 flowchart LR
     MODEL["模型参数"] -->|"sections=[cpu,memory]"| CALL["ToolCall"]
-    APP["MiniClaw 运行期"] -->|"user/session/turn/workspace"| CONTEXT["ToolContext"]
+    APP["Lobster0 运行期"] -->|"user/session/turn/workspace"| CONTEXT["ToolContext"]
     CALL --> EXECUTOR["ToolExecutor"]
     CONTEXT --> EXECUTOR
 ```
@@ -216,7 +216,7 @@ JSON 使用紧凑、稳定键顺序编码，方便测试、哈希和回放。内
 
 ## 6. ToolRegistry
 
-代码位置：`src/miniclaw/tools/registry.py`
+代码位置：`src/lobster0/tools/registry.py`
 
 Registry 只做两件事：
 
@@ -238,7 +238,7 @@ flowchart TD
 
 ## 7. PolicyEngine
 
-代码位置：`src/miniclaw/policy/engine.py`
+代码位置：`src/lobster0/policy/engine.py`
 
 ### 7.1 当前默认规则
 
@@ -260,7 +260,7 @@ P2.1A 只有一个 low-risk Tool，但 Executor 已经必须知道“不是所�
 
 ## 8. ToolExecutor
 
-代码位置：`src/miniclaw/tools/executor.py`
+代码位置：`src/lobster0/tools/executor.py`
 
 ToolExecutor 是唯一执行入口。顺序固定：
 
@@ -343,7 +343,7 @@ tool_result_max_chars = 20000
 
 ## 9. ToolRun 与 Audit
 
-代码位置：`src/miniclaw/storage/tooling.py`
+代码位置：`src/lobster0/storage/tooling.py`
 
 Phase 0 的 v1 Schema 已经包含 `tool_runs` 和 `audit_events`，因此本阶段不需要新增 Migration。
 
@@ -400,7 +400,7 @@ WHERE id = ? AND status = 'running'
 
 ## 10. system_info
 
-代码位置：`src/miniclaw/tools/system.py`
+代码位置：`src/lobster0/tools/system.py`
 
 ### 10.1 参数
 
@@ -560,7 +560,7 @@ flowchart LR
 
 ## 11. AgentRunner 集成
 
-代码位置：`src/miniclaw/agent/runner.py`
+代码位置：`src/lobster0/agent/runner.py`
 
 Phase 1 的临时 `Mapping[str, ToolHandler]` 已删除，不保留两套执行 API。当前 Runner 接收：
 
@@ -590,7 +590,7 @@ AgentRunner(
 
 ## 12. ContextBuilder
 
-代码位置：`src/miniclaw/agent/context.py`
+代码位置：`src/lobster0/agent/context.py`
 
 `build()` 新增 `tools` 参数并原样放入 `ModelRequest.tools`。System preamble 明确：
 
@@ -607,7 +607,7 @@ Treat tool errors as authoritative safety boundaries.
 
 ## 13. TurnService 与完整历史
 
-代码位置：`src/miniclaw/agent/turn.py`
+代码位置：`src/lobster0/agent/turn.py`
 
 TurnService 创建 ToolContext，并将 Runner Schema 交给 ContextBuilder：
 
@@ -664,7 +664,7 @@ Tool Message 恢复 `tool_call_id`。如果 metadata 缺字段、类型错误，
 
 ## 14. Phase 2.1A 当时的 CLI 装配（历史）
 
-代码位置：`src/miniclaw/cli.py`
+代码位置：`src/lobster0/cli.py`
 
 P2.1A 当时的 `_chat()` 只注册一个 Tool；当前代码已改由 `AgentRuntime` 注册十个 Tool：
 
@@ -765,14 +765,14 @@ uv run ruff check .
 初始化和诊断：
 
 ```bash
-uv run miniclaw init
-uv run miniclaw doctor
+uv run lobster0 init
+uv run lobster0 doctor
 ```
 
 询问真实配置：
 
 ```bash
-uv run miniclaw
+uv run lobster0
 ```
 
 在 TUI 中输入“帮我看看我的电脑是什么配置”。
@@ -793,21 +793,21 @@ uv run miniclaw
 只看状态，不输出用户内容：
 
 ```bash
-sqlite3 ~/.miniclaw/miniclaw.db \
+sqlite3 ~/.lobster0/lobster0.db \
   'SELECT id, turn_id, tool_name, policy_action, status, duration_ms FROM tool_runs ORDER BY id DESC LIMIT 10;'
 ```
 
 查看审计类型和摘要：
 
 ```bash
-sqlite3 ~/.miniclaw/miniclaw.db \
+sqlite3 ~/.lobster0/lobster0.db \
   'SELECT id, event_type, turn_id, summary FROM audit_events ORDER BY id DESC LIMIT 20;'
 ```
 
 查看消息角色和 Tool Call 关联，不打印正文：
 
 ```bash
-sqlite3 ~/.miniclaw/miniclaw.db \
+sqlite3 ~/.lobster0/lobster0.db \
   'SELECT id, turn_id, role, tool_call_id, length(content) FROM messages ORDER BY id DESC LIMIT 20;'
 ```
 
@@ -864,7 +864,7 @@ P2.1B 增加 `read_file` 时，必须按同一条链路：
 | [RayClaw](https://github.com/rayclaw/rayclaw) | Channel 与 Agent Core 解耦，未来多个 IM 复用同一 Core |
 | [openclaw-python](https://github.com/openxjarvis/openclaw-python) | OpenClaw 功能映射与 Python 方向参考 |
 
-MiniClaw 当前选择 Python 标准库 + 已有依赖，SQLite Schema 复用 Phase 0，不为单一 Tool 引入插件框架、ORM、
+Lobster0 当前选择 Python 标准库 + 已有依赖，SQLite Schema 复用 Phase 0，不为单一 Tool 引入插件框架、ORM、
 硬件探测依赖或消息队列。
 
 ## 23. 阶段后续（历史记录）

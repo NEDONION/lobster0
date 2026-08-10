@@ -4,7 +4,7 @@ import test from "node:test";
 import { TuiAltScreen } from "@earendil-works/pi-tui";
 
 import {
-  MiniClawTui,
+  Lobster0Tui,
   type BridgePort,
   type ClipboardPort,
 } from "../dist/app.js";
@@ -93,7 +93,7 @@ class FakeClipboard implements ClipboardPort {
 }
 
 async function createApp(): Promise<{
-  app: MiniClawTui;
+  app: Lobster0Tui;
   bridge: FakeBridge;
   terminal: MemoryTerminal;
   clipboard: FakeClipboard;
@@ -101,7 +101,7 @@ async function createApp(): Promise<{
   const bridge = new FakeBridge();
   const terminal = new MemoryTerminal(80, 24);
   const clipboard = new FakeClipboard();
-  const app = new MiniClawTui({
+  const app = new Lobster0Tui({
     tui: new TuiAltScreen(terminal, false, undefined, { mouse: true }),
     bridge,
     clipboard,

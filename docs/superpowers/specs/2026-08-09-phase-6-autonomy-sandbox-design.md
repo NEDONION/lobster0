@@ -1,4 +1,4 @@
-# MiniClaw Phase 6：自治任务、Sandbox 与 Checkpoint 设计
+# Lobster0 Phase 6：自治任务、Sandbox 与 Checkpoint 设计
 
 > 发布目标：`v0.7.0`。仓库现有 `v0.6.0`/`v0.6.1` 已用于 Memory Autopilot，Phase 6 不覆盖旧 release record。
 
@@ -18,7 +18,7 @@
 
 ## 1. 一句话目标
 
-让 MiniClaw 可以安全地完成“明早九点提醒我”“每周五整理工作区报告并发到飞书”“每半小时检查一次，
+让 Lobster0 可以安全地完成“明早九点提醒我”“每周五整理工作区报告并发到飞书”“每半小时检查一次，
 没有变化就保持安静”这类长期任务，并保证任务在重启后仍存在、不会重复执行、不会绕过 Policy，且文件修改
 可以在发生冲突前预览和回滚。
 
@@ -30,10 +30,10 @@ Phase 6 不是再造一套 Agent。它只增加三层能力：
 
 ## 2. 大白话解释
 
-当前 MiniClaw 像一个“你叫它才开始干活”的个人助手。Phase 6 要让它像一个有工作台账的值班助手：
+当前 Lobster0 像一个“你叫它才开始干活”的个人助手。Phase 6 要让它像一个有工作台账的值班助手：
 
 - 你先交代任务和时间；
-- MiniClaw 把任务保存进 SQLite；
+- Lobster0 把任务保存进 SQLite；
 - 到时间后 Scheduler 只生成一张“待办执行单”；
 - TaskRunner 拿执行单进入现有 Agent Loop；
 - 每次 Tool 仍先过 Policy，危险操作仍需审批；
@@ -66,7 +66,7 @@ flowchart LR
 3. SQLite `scheduled_tasks`、`task_runs`、执行 lease、不可变 run snapshot；
 4. create/list/show/update/pause/resume/cancel/run-now 完整生命周期；
 5. 一个对模型公开的 action-style `manage_task` Tool；
-6. 面向用户的 `miniclaw task` 子命令族；
+6. 面向用户的 `lobster0 task` 子命令族；
 7. Scheduler 与 TaskRunner 独立，Scheduler 不调用 Provider 或 Tool；
 8. 每个 Run 使用独立 automation Session，并复用唯一 `TurnService`；
 9. wall-clock、Turn、Tool、Token、输出、并发预算；
@@ -110,7 +110,7 @@ flowchart LR
 [Heartbeat](https://docs.openclaw.ai/gateway/heartbeat)、
 [Sandboxing](https://docs.openclaw.ai/gateway/sandboxing)。
 
-| OpenClaw 做法 | MiniClaw 采用 | MiniClaw 不照搬 |
+| OpenClaw 做法 | Lobster0 采用 | Lobster0 不照搬 |
 | --- | --- | --- |
 | Cron 与 Task Ledger 分开 | Schedule 和 Run 使用两个 Repository | 不实现 TaskFlow/DAG |
 | isolated run 使用新 Session | 每个 TaskRun 固定独立 Session | 不提供 main/current/custom 四种 Session |
@@ -129,7 +129,7 @@ OpenClaw 的重要教训是：Cron 是 Scheduler，Task 是执行账本，两者
 [Security](https://hermes-agent.nousresearch.com/docs/user-guide/security/)、
 [Features Overview](https://hermes-agent.nousresearch.com/docs/user-guide/features/overview/)。
 
-| Hermes 做法 | MiniClaw 采用 | MiniClaw 改进 |
+| Hermes 做法 | Lobster0 采用 | Lobster0 改进 |
 | --- | --- | --- |
 | 一个 action-style `cronjob` Tool | 一个 action-style `manage_task` Tool | Tool 参数绑定 Core Policy 与 owner identity |
 | Fresh agent session | automation Session 不继承聊天的临时上下文 | 明确复用 Owner Memory Disclosure，不复制历史正文 |
@@ -151,7 +151,7 @@ OpenClaw 的重要教训是：Cron 是 Scheduler，Task 是执行账本，两者
 - retry 必须依据结构化错误类型，不能只用错误文本正则；
 - proactive delivery 必须有 origin message / idempotency key。
 
-MiniClaw 使用 SQLite transaction、stable idempotency key 和结构化错误码解决这些问题，不复制 JSON job store。
+Lobster0 使用 SQLite transaction、stable idempotency key 和结构化错误码解决这些问题，不复制 JSON job store。
 
 ### 4.4 ZeroClaw、RayClaw、PicoClaw、NanoClaw、IronClaw
 
@@ -164,7 +164,7 @@ MiniClaw 使用 SQLite transaction、stable idempotency key 和结构化错误�
 - [IronClaw Jobs](https://docs.ironclaw.com/capabilities/jobs)：统一 Job、队列顺序、per-job sandbox token；
 - [IronClaw](https://github.com/nearai/ironclaw)：orchestrator/worker 与 per-project sandbox。
 
-MiniClaw 采用“能力预算、紧急停止、Job 与 Channel 解耦、container-first”的共识，但保留 Python/SQLite 单机内核，
+Lobster0 采用“能力预算、紧急停止、Job 与 Channel 解耦、container-first”的共识，但保留 Python/SQLite 单机内核，
 不因参考 Rust/Go 项目而重写语言或引入分布式基础设施。
 
 ## 5. 方案选择
@@ -175,9 +175,9 @@ SQLite 保存调度与运行真相；Scheduler、Runner、Delivery、Sandbox 各
 
 优点：最适合学习可靠 Agent runtime；可审计、可恢复、可测试。缺点：实现量最大，需要迁移、状态机和故障测试。
 
-### 5.2 方案 B：APScheduler + MiniClaw Adapter（不采用）
+### 5.2 方案 B：APScheduler + Lobster0 Adapter（不采用）
 
-APScheduler 可以快速获得 cron 和持久化，但会形成 APScheduler job store 与 MiniClaw TaskRun 两套事实源；审批、
+APScheduler 可以快速获得 cron 和持久化，但会形成 APScheduler job store 与 Lobster0 TaskRun 两套事实源；审批、
 Delivery 和 recovery 仍需自建，最终边界更难理解。
 
 ### 5.3 方案 C：系统 cron/launchd（不采用）
@@ -190,7 +190,7 @@ Delivery 和 recovery 仍需自建，最终边界更难理解。
 ### 6.1 IM / TUI Query
 
 ```text
-明天上午九点提醒我检查 MiniClaw 的 GitHub Actions。
+明天上午九点提醒我检查 Lobster0 的 GitHub Actions。
 每周五下午五点，整理本周工作区里的 Markdown 变更并发到飞书。
 每半小时检查一次项目测试状态；没有变化就不要发消息。
 暂停“每周项目摘要”。
@@ -204,15 +204,15 @@ Delivery 和 recovery 仍需自建，最终边界更难理解。
 ### 6.2 CLI
 
 ```bash
-uv run miniclaw task list
-uv run miniclaw task show 12
-uv run miniclaw task pause 12
-uv run miniclaw task resume 12
-uv run miniclaw task run 12
-uv run miniclaw task cancel 12
-uv run miniclaw task runs 12 --limit 20
-uv run miniclaw task halt --reason "unexpected automation behavior"
-uv run miniclaw task unhalt
+uv run lobster0 task list
+uv run lobster0 task show 12
+uv run lobster0 task pause 12
+uv run lobster0 task resume 12
+uv run lobster0 task run 12
+uv run lobster0 task cancel 12
+uv run lobster0 task runs 12 --limit 20
+uv run lobster0 task halt --reason "unexpected automation behavior"
+uv run lobster0 task unhalt
 ```
 
 CLI 不接受任意 Python callback、shell string 或 Secret。创建和编辑仍主要通过 Agent Tool；CLI 提供可审计的运维与
@@ -256,7 +256,7 @@ manage_task(
 
 - 拒绝 private key、Bearer token、常见 API key/secret 赋值和不可见 Unicode 控制字符；
 - 允许引用环境变量名，例如 `GITHUB_TOKEN`，但不允许把值写入 prompt；
-- 拒绝要求修改 MiniClaw Policy、配置、Task Ledger、系统 Prompt 或再次创建 Cron 的正文；
+- 拒绝要求修改 Lobster0 Policy、配置、Task Ledger、系统 Prompt 或再次创建 Cron 的正文；
 - Skill 只能引用当前已加载、已通过 metadata 校验的本地 Skill name；
 - Guard 只负责明显控制面/Secret 风险，不能把普通网页内容误报为“已安全”；
 - 被拒绝的正文不写入普通日志，Audit 只保存错误码与有界 hash。
@@ -556,7 +556,7 @@ stateDiagram-v2
 - `croniter>=6.2,<7` 只负责五字段 cron occurrence；
 - 禁止 seconds/year 字段、`@reboot`、locale alias 和嵌入式命令；
 - 输入规范化后保存原表达式与 UTC `next_run_at`；
-- `croniter` 的输出必须再经过 MiniClaw 的 DST 和单调性检查；
+- `croniter` 的输出必须再经过 Lobster0 的 DST 和单调性检查；
 - 测试固定时钟，不依赖机器本地 timezone。
 
 ### 10.3 DST
@@ -809,7 +809,7 @@ docker run --rm
 - `write_file`/`edit_file` 在副作用前 capture 精确目标；
 - 自动 `run_command` 若拥有写权限，在执行前 capture 有界 Workspace manifest；
 - 只处理 regular files；symlink fail closed；
-- 排除 `.git`、MiniClaw state、DB/WAL/SHM、socket、日志、credentials；
+- 排除 `.git`、Lobster0 state、DB/WAL/SHM、socket、日志、credentials；
 - 默认最多 2,000 entries、64 MiB snapshot、单文件 8 MiB；
 - 超限的自动写任务 fail closed `checkpoint_budget_exceeded`；
 - 已不存在的文件记录 tombstone；
@@ -853,7 +853,7 @@ active_hours_end = "23:00"
 
 [sandbox]
 backend = "docker"
-image = "miniclaw-sandbox:phase6"
+image = "lobster0-sandbox:phase6"
 network = "none"
 memory_mib = 512
 cpu_seconds = 60
@@ -890,7 +890,7 @@ stop Scheduler → stop new claims → bounded TaskRunner drain/cancel
 
 ## 21. Doctor 与运维
 
-`miniclaw doctor` 新增只读检查：
+`lobster0 doctor` 新增只读检查：
 
 - schema version；
 - automation enabled/disabled；
@@ -923,23 +923,23 @@ stop Scheduler → stop new claims → bounded TaskRunner drain/cancel
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/miniclaw/automation/models.py` | Schedule、Task、Run、Budget、Delivery 强类型模型 |
-| `src/miniclaw/automation/parser.py` | cron/interval/once/timezone 规范化 |
-| `src/miniclaw/automation/guard.py` | Task Prompt、Secret 与递归控制面扫描 |
-| `src/miniclaw/automation/repository.py` | Task/Run transaction 与状态机 |
-| `src/miniclaw/automation/scheduler.py` | due scan、enqueue、next wake |
-| `src/miniclaw/automation/runner.py` | claim、lease、TurnService、预算 |
-| `src/miniclaw/automation/delivery.py` | TaskResponse 到 durable Delivery |
-| `src/miniclaw/automation/heartbeat.py` | system-owned heartbeat reconcile |
-| `src/miniclaw/tools/automation.py` | `manage_task` Tool |
-| `src/miniclaw/tools/task_completion.py` | automation-only terminal `complete_task` Tool |
-| `src/miniclaw/sandbox/base.py` | ExecutionPlan、Receipt、Backend Protocol |
-| `src/miniclaw/sandbox/host.py` | 现有 host execution 适配 |
-| `src/miniclaw/sandbox/docker.py` | deterministic Docker argv |
-| `src/miniclaw/sandbox/seatbelt.py` | deterministic Seatbelt profile |
-| `src/miniclaw/checkpoints/store.py` | CAS blob、manifest、retention |
-| `src/miniclaw/checkpoints/rollback.py` | preview、conflict、atomic restore |
-| `src/miniclaw/storage/migrations/0005_autonomy.sql` | Phase 6 schema |
+| `src/lobster0/automation/models.py` | Schedule、Task、Run、Budget、Delivery 强类型模型 |
+| `src/lobster0/automation/parser.py` | cron/interval/once/timezone 规范化 |
+| `src/lobster0/automation/guard.py` | Task Prompt、Secret 与递归控制面扫描 |
+| `src/lobster0/automation/repository.py` | Task/Run transaction 与状态机 |
+| `src/lobster0/automation/scheduler.py` | due scan、enqueue、next wake |
+| `src/lobster0/automation/runner.py` | claim、lease、TurnService、预算 |
+| `src/lobster0/automation/delivery.py` | TaskResponse 到 durable Delivery |
+| `src/lobster0/automation/heartbeat.py` | system-owned heartbeat reconcile |
+| `src/lobster0/tools/automation.py` | `manage_task` Tool |
+| `src/lobster0/tools/task_completion.py` | automation-only terminal `complete_task` Tool |
+| `src/lobster0/sandbox/base.py` | ExecutionPlan、Receipt、Backend Protocol |
+| `src/lobster0/sandbox/host.py` | 现有 host execution 适配 |
+| `src/lobster0/sandbox/docker.py` | deterministic Docker argv |
+| `src/lobster0/sandbox/seatbelt.py` | deterministic Seatbelt profile |
+| `src/lobster0/checkpoints/store.py` | CAS blob、manifest、retention |
+| `src/lobster0/checkpoints/rollback.py` | preview、conflict、atomic restore |
+| `src/lobster0/storage/migrations/0005_autonomy.sql` | Phase 6 schema |
 
 不提前创建 Phase 6.5、Evolution、MCP 或 Sub-agent 包。
 

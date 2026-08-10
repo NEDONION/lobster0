@@ -5,18 +5,18 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.models import SourceRef
-from miniclaw.memory.repository import (
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.models import SourceRef
+from lobster0.memory.repository import (
     MemoryDataError,
     MemoryReviewRepository,
     MemoryRunRepository,
     MemoryStateError,
     MemoryUnitRepository,
 )
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
+from lobster0.paths import build_state_paths
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
 
 NOW = datetime(2026, 8, 9, 8, 0, tzinfo=UTC)
 

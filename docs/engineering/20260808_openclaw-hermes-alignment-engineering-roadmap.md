@@ -4,7 +4,7 @@
 > 未实现范围：Memory A～E 与 Phase 6～9 仍为 **APPROVED ROADMAP / NOT IMPLEMENTED**
 > 日期：2026-08-08
 > 事实基线：`main@54db7b0`
-> 配套 Gap：[MiniClaw 与 OpenClaw / Hermes 的能力 Gap 与演进路线](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)
+> 配套 Gap：[Lobster0 与 OpenClaw / Hermes 的能力 Gap 与演进路线](../architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md)
 > 适用范围：Phase 5.3、Memory Autopilot A～E、Phase 6、6.5、7、8、9。
 > Memory 施工入口：[Memory Autopilot A～E TDD 实施计划](../superpowers/plans/2026-08-09-memory-autopilot.md)
 
@@ -83,7 +83,7 @@ flowchart TB
 
 ### 4.1 用户结果
 
-用户只需要执行一次安装，MiniClaw 就会在 macOS 登录后自动运行。用户可以查看状态、日志、重启和卸载；飞书 15 条真实场景和 24 小时稳定性得到证据。
+用户只需要执行一次安装，Lobster0 就会在 macOS 登录后自动运行。用户可以查看状态、日志、重启和卸载；飞书 15 条真实场景和 24 小时稳定性得到证据。
 
 ### 4.2 模块边界
 
@@ -91,22 +91,22 @@ flowchart TB
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/miniclaw/service.py` | 平台无关的 install/status/logs/restart/uninstall 契约 |
-| `src/miniclaw/services/launchd.py` | macOS LaunchAgent plist 生成、验证和 `launchctl` exact argv |
-| `src/miniclaw/services/systemd.py` | Linux user service 文件生成和 `systemctl --user` exact argv |
-| `src/miniclaw/health.py` | 不暴露 Secret 的 runtime health snapshot |
+| `src/lobster0/service.py` | 平台无关的 install/status/logs/restart/uninstall 契约 |
+| `src/lobster0/services/launchd.py` | macOS LaunchAgent plist 生成、验证和 `launchctl` exact argv |
+| `src/lobster0/services/systemd.py` | Linux user service 文件生成和 `systemctl --user` exact argv |
+| `src/lobster0/health.py` | 不暴露 Secret 的 runtime health snapshot |
 | `deploy/Dockerfile` | 非 root、只读 rootfs 兼容的运行镜像 |
 | `deploy/compose.yaml` | 单容器、持久化 state volume、只读 config |
-| `src/miniclaw/evals/soak.py` | 24h/7d soak、故障注入、脱敏报告 |
+| `src/lobster0/evals/soak.py` | 24h/7d soak、故障注入、脱敏报告 |
 
 计划修改：
 
 | 文件 | 修改 |
 | --- | --- |
-| `src/miniclaw/cli.py` | 增加 `service` 维护命令，不增加第二个人类聊天入口 |
-| `src/miniclaw/gateway.py` | 写入健康状态、ready 时间和 shutdown 原因 |
-| `src/miniclaw/doctor.py` | 检查服务定义、进程、日志目录和 health age |
-| `src/miniclaw/evals/feishu_live.py` | 完成 15/15 和 restart/soak evidence |
+| `src/lobster0/cli.py` | 增加 `service` 维护命令，不增加第二个人类聊天入口 |
+| `src/lobster0/gateway.py` | 写入健康状态、ready 时间和 shutdown 原因 |
+| `src/lobster0/doctor.py` | 检查服务定义、进程、日志目录和 health age |
+| `src/lobster0/evals/feishu_live.py` | 完成 15/15 和 restart/soak evidence |
 
 ### 4.3 Service 状态
 
@@ -137,13 +137,13 @@ class ServiceStatus:
 ### 4.4 launchd 最小原则
 
 - plist 不保存 API Key；
-- `ProgramArguments` 使用绝对解释器与 `miniclaw gateway` exact argv；
+- `ProgramArguments` 使用绝对解释器与 `lobster0 gateway` exact argv；
 - `WorkingDirectory` 指向项目或安装目录；
-- stdout/stderr 指向 `~/.miniclaw/logs/`；
+- stdout/stderr 指向 `~/.lobster0/logs/`；
 - `KeepAlive` 持续恢复正常和异常退出；Gateway lease 阻止重启竞争形成双实例；
 - 添加退避和最大频率；
 - 安装前写临时文件、解析验证后原子替换；
-- 卸载只删除 MiniClaw 自己生成并且 hash 匹配的文件。
+- 卸载只删除 Lobster0 自己生成并且 hash 匹配的文件。
 
 ### 4.5 验收
 
@@ -237,15 +237,15 @@ ON task_runs(status, id);
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/miniclaw/automation/models.py` | `ScheduleSpec`、`TaskBudget`、`DeliveryTarget`、状态枚举 |
-| `src/miniclaw/automation/parser.py` | once/interval/cron/IANA timezone 规范化 |
-| `src/miniclaw/automation/repository.py` | Task 与 Run 原子状态机、claim、恢复 |
-| `src/miniclaw/automation/scheduler.py` | 找 due task、只创建 run、不调用模型 |
-| `src/miniclaw/automation/runner.py` | 用现有 TurnService 执行 immutable run snapshot |
-| `src/miniclaw/automation/heartbeat.py` | 合并检查、active hours、静默结果 |
-| `src/miniclaw/automation/hooks.py` | 受限生命周期事件到 Task 的映射 |
-| `src/miniclaw/tools/automation.py` | `manage_task` 单一 action-style Tool |
-| `src/miniclaw/storage/migrations/0004_autonomy.sql` | durable task schema |
+| `src/lobster0/automation/models.py` | `ScheduleSpec`、`TaskBudget`、`DeliveryTarget`、状态枚举 |
+| `src/lobster0/automation/parser.py` | once/interval/cron/IANA timezone 规范化 |
+| `src/lobster0/automation/repository.py` | Task 与 Run 原子状态机、claim、恢复 |
+| `src/lobster0/automation/scheduler.py` | 找 due task、只创建 run、不调用模型 |
+| `src/lobster0/automation/runner.py` | 用现有 TurnService 执行 immutable run snapshot |
+| `src/lobster0/automation/heartbeat.py` | 合并检查、active hours、静默结果 |
+| `src/lobster0/automation/hooks.py` | 受限生命周期事件到 Task 的映射 |
+| `src/lobster0/tools/automation.py` | `manage_task` 单一 action-style Tool |
+| `src/lobster0/storage/migrations/0004_autonomy.sql` | durable task schema |
 
 ### 5.4 对模型公开的 Tool
 
@@ -311,7 +311,7 @@ class TaskBudget:
 
 ```mermaid
 flowchart LR
-    CALL["Tool Call"] --> POLICY["MiniClaw Policy"]
+    CALL["Tool Call"] --> POLICY["Lobster0 Policy"]
     POLICY --> PLAN["Canonical Execution Plan"]
     PLAN --> APPROVAL["Approval / Autopilot"]
     APPROVAL --> BACKEND{"Execution Backend"}
@@ -327,12 +327,12 @@ flowchart LR
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/miniclaw/sandbox/base.py` | `ExecutionPlan`、`ExecutionReceipt`、`SandboxBackend` Protocol |
-| `src/miniclaw/sandbox/host.py` | 现有 exact-argv host backend 适配 |
-| `src/miniclaw/sandbox/docker.py` | 非 root、只读 rootfs、限资源、显式 mount |
-| `src/miniclaw/sandbox/seatbelt.py` | macOS `sandbox-exec` 可用性探测和 profile |
-| `src/miniclaw/checkpoints/store.py` | 工作区文件 manifest、content-addressed snapshot |
-| `src/miniclaw/checkpoints/rollback.py` | preview、冲突检查和显式恢复 |
+| `src/lobster0/sandbox/base.py` | `ExecutionPlan`、`ExecutionReceipt`、`SandboxBackend` Protocol |
+| `src/lobster0/sandbox/host.py` | 现有 exact-argv host backend 适配 |
+| `src/lobster0/sandbox/docker.py` | 非 root、只读 rootfs、限资源、显式 mount |
+| `src/lobster0/sandbox/seatbelt.py` | macOS `sandbox-exec` 可用性探测和 profile |
+| `src/lobster0/checkpoints/store.py` | 工作区文件 manifest、content-addressed snapshot |
+| `src/lobster0/checkpoints/rollback.py` | preview、冲突检查和显式恢复 |
 
 ### 6.3 Sandbox 契约
 
@@ -411,13 +411,13 @@ sequenceDiagram
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/miniclaw/browser/models.py` | Browser session/action/result 类型 |
-| `src/miniclaw/browser/policy.py` | URL、下载、上传、提交、JS 能力分级 |
-| `src/miniclaw/browser/client.py` | Python Runtime 到 Worker 的有界 RPC |
+| `src/lobster0/browser/models.py` | Browser session/action/result 类型 |
+| `src/lobster0/browser/policy.py` | URL、下载、上传、提交、JS 能力分级 |
+| `src/lobster0/browser/client.py` | Python Runtime 到 Worker 的有界 RPC |
 | `browser-worker/src/server.ts` | Playwright/CDP worker |
 | `browser-worker/src/snapshot.ts` | accessibility tree 和稳定 ref |
 | `browser-worker/src/profile.ts` | 专用 Profile 生命周期和锁 |
-| `src/miniclaw/tools/browser.py` | 模型可见 Browser Tool |
+| `src/lobster0/tools/browser.py` | 模型可见 Browser Tool |
 | `tests/fixtures/browser-site/` | 完全本地的表单、下载、重定向、注入测试站点 |
 
 ### 7.4 Tool 面
@@ -485,14 +485,14 @@ stateDiagram-v2
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/miniclaw/evolution/feedback.py` | feedback 写入与来源校验 |
-| `src/miniclaw/evolution/proposals.py` | candidate 版本、diff、状态机 |
-| `src/miniclaw/evolution/scanner.py` | Secret、注入、权限扩大和危险指令扫描 |
-| `src/miniclaw/evolution/evaluator.py` | 固定 suite + incident case + candidate overlay |
-| `src/miniclaw/evolution/reviewer.py` | TUI/Channel review projection |
-| `src/miniclaw/evolution/apply.py` | 原子应用、hash 校验、版本账本 |
-| `src/miniclaw/evolution/rollback.py` | previous version 恢复和 Audit |
-| `src/miniclaw/tools/evolution.py` | propose/list/show；不提供模型自批工具 |
+| `src/lobster0/evolution/feedback.py` | feedback 写入与来源校验 |
+| `src/lobster0/evolution/proposals.py` | candidate 版本、diff、状态机 |
+| `src/lobster0/evolution/scanner.py` | Secret、注入、权限扩大和危险指令扫描 |
+| `src/lobster0/evolution/evaluator.py` | 固定 suite + incident case + candidate overlay |
+| `src/lobster0/evolution/reviewer.py` | TUI/Channel review projection |
+| `src/lobster0/evolution/apply.py` | 原子应用、hash 校验、版本账本 |
+| `src/lobster0/evolution/rollback.py` | previous version 恢复和 Audit |
+| `src/lobster0/tools/evolution.py` | propose/list/show；不提供模型自批工具 |
 
 ### 8.3 Feedback
 
@@ -732,7 +732,7 @@ cpu_seconds = 60
 [browser]
 enabled = false
 backend = "local"
-profile = "miniclaw"
+profile = "lobster0"
 headed = true
 
 [evolution]
@@ -804,10 +804,10 @@ uv lock --check
 每次合并：
 
 ```bash
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --root evals/scenarios
 ```
 
 Release candidate 额外执行当前 Phase 的 live/soak/sandbox/browser gate。任何硬安全断言失败都直接阻止发布，不计算加权平均分。
@@ -875,6 +875,6 @@ flowchart TD
 - 每项能力都有 unit、contract、integration、scenario 和必要 live evidence；
 - 文档、进度页和 release record 与实际 commit 一致。
 
-完成这些后，MiniClaw 才可以准确描述为：
+完成这些后，Lobster0 才可以准确描述为：
 
 > 一个长期在线、跨 IM、可操作本机与浏览器、具备受控自我改进能力，并且每次行动和演进都可审计、评测与回滚的个人 Agent。

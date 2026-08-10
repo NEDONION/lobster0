@@ -6,7 +6,7 @@ from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.evals.phase6_soak import (
+from lobster0.evals.phase6_soak import (
     SoakMonitorError,
     SoakSnapshot,
     collect_soak_snapshot,
@@ -20,9 +20,9 @@ from miniclaw.evals.phase6_soak import (
     start_soak,
     write_progress,
 )
-from miniclaw.gateway_service import ServiceStatus
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
+from lobster0.gateway_service import ServiceStatus
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
 
 
 class Phase6SoakSnapshotTest(unittest.TestCase):
@@ -35,7 +35,7 @@ class Phase6SoakSnapshotTest(unittest.TestCase):
         self.root.chmod(0o700)
         self.evidence = self.root / "evidence"
         self.evidence.mkdir(mode=0o700)
-        self.database = Database(self.root / "miniclaw.db")
+        self.database = Database(self.root / "lobster0.db")
         apply_migrations(self.database)
         self.database.path.chmod(0o600)
         self.now = datetime(2026, 8, 10, tzinfo=UTC)

@@ -1,4 +1,4 @@
-"""MiniClaw owned macOS LaunchAgent 生命周期测试。"""
+"""Lobster0 owned macOS LaunchAgent 生命周期测试。"""
 
 import hashlib
 import os
@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.gateway_service import (
+from lobster0.gateway_service import (
     LaunchdService,
     ServiceError,
     render_launchd_service,
@@ -54,7 +54,7 @@ class LaunchdServiceTest(unittest.TestCase):
         self.launch_agents.mkdir()
         self.working_directory = self.root / "project"
         self.working_directory.mkdir()
-        self.launcher = self.root / "runtime" / "bin" / "miniclaw"
+        self.launcher = self.root / "runtime" / "bin" / "lobster0"
         self.launcher.parent.mkdir(parents=True)
         self.launcher.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         self.launcher.chmod(0o700)
@@ -81,7 +81,7 @@ class LaunchdServiceTest(unittest.TestCase):
         """plist 只能保存固定 argv 与 dotenv path，不能复制 Secret 内容。"""
         value = plistlib.loads(self.spec.content)
 
-        self.assertEqual(value["Label"], "io.miniclaw.gateway")
+        self.assertEqual(value["Label"], "io.lobster0.gateway")
         self.assertEqual(
             value["ProgramArguments"],
             [str(self.launcher), "gateway", "--home", str(self.state_home)],
@@ -91,8 +91,8 @@ class LaunchdServiceTest(unittest.TestCase):
         self.assertEqual(
             value["EnvironmentVariables"],
             {
-                "MINICLAW_ENV_FILE": str(self.dotenv),
-                "MINICLAW_GATEWAY_COMMIT": "a" * 40,
+                "LOBSTER0_ENV_FILE": str(self.dotenv),
+                "LOBSTER0_GATEWAY_COMMIT": "a" * 40,
             },
         )
         self.assertNotIn(b"SECRET_SENTINEL", self.spec.content)
@@ -142,7 +142,7 @@ class LaunchdServiceTest(unittest.TestCase):
         self.assertTrue(status.loaded)
         self.assertTrue(status.running)
         self.assertIn(
-            ("/bin/launchctl", "print", f"gui/{os.getuid()}/io.miniclaw.gateway"),
+            ("/bin/launchctl", "print", f"gui/{os.getuid()}/io.lobster0.gateway"),
             self.runner.argvs,
         )
         self.assertEqual(
@@ -151,7 +151,7 @@ class LaunchdServiceTest(unittest.TestCase):
                 "/bin/launchctl",
                 "kickstart",
                 "-k",
-                f"gui/{os.getuid()}/io.miniclaw.gateway",
+                f"gui/{os.getuid()}/io.lobster0.gateway",
             ),
         )
 

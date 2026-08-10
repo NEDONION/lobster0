@@ -10,7 +10,7 @@ class MemoryRecoveryTest(MemoryFlushTest):
         """进程重建后不重跑 Markdown，只继续 Projection 并结算 buffer。"""
         await self.complete_turn()
         first_handler = RecordingFlushHandler(fail_projection_once=True)
-        from miniclaw.memory.flush import FlushCoordinator
+        from lobster0.memory.flush import FlushCoordinator
 
         first = FlushCoordinator(
             self.database,

@@ -76,7 +76,7 @@ export function SafetyPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             </motion.p>
             <motion.div className="chat-card chat-card--pending" {...beat(2)}>
               <span className="chat-card__label">POLICY_CHECK · {zh ? '等待确认' : 'awaiting confirm'}</span>
-              <code>rm -rf /tmp/miniclaw-cache-2026</code>
+              <code>rm -rf /tmp/lobster0-cache-2026</code>
               <div className="chat-modes">
                 {siteFacts.permissionModes.map((mode, index) => (
                   <button data-picked={index === 0 ? 'true' : undefined} key={mode} type="button">

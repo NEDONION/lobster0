@@ -8,16 +8,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.agent.context import ContextBuilder
-from miniclaw.agent.events import RunEvent
-from miniclaw.agent.runner import AgentNoProgressError, AgentRunBudget, AgentRunner
-from miniclaw.agent.turn import TurnExecutionProfile, TurnService, _model_message
-from miniclaw.bootstrap import initialize_state
-from miniclaw.config import WorkspaceConfig, load_config
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
-from miniclaw.policy.engine import PolicyEngine
-from miniclaw.providers.base import (
+from lobster0.agent.context import ContextBuilder
+from lobster0.agent.events import RunEvent
+from lobster0.agent.runner import AgentNoProgressError, AgentRunBudget, AgentRunner
+from lobster0.agent.turn import TurnExecutionProfile, TurnService, _model_message
+from lobster0.bootstrap import initialize_state
+from lobster0.config import WorkspaceConfig, load_config
+from lobster0.paths import build_state_paths
+from lobster0.policy.approvals import ApprovalDecision, ApprovalError
+from lobster0.policy.engine import PolicyEngine
+from lobster0.providers.base import (
     ModelRequest,
     ModelResponse,
     ProviderAuthenticationError,
@@ -25,22 +25,22 @@ from miniclaw.providers.base import (
     StreamHandler,
     ToolCall,
 )
-from miniclaw.runtime import create_runtime
-from miniclaw.storage.conversations import (
+from lobster0.runtime import create_runtime
+from lobster0.storage.conversations import (
     ConversationDataError,
     MessageRepository,
     SessionRepository,
     StoredMessage,
     TurnRepository,
 )
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
-from miniclaw.tools.base import ToolContext, ToolDefinition, ToolResult, ToolRisk
-from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.filesystem import WriteFileTool
-from miniclaw.tools.registry import ToolRegistry
-from miniclaw.tools.system import SystemInfoTool
-from miniclaw.tools.task_completion import CompleteTaskTool
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import ApprovalRepository, ToolRunRepository
+from lobster0.tools.base import ToolContext, ToolDefinition, ToolResult, ToolRisk
+from lobster0.tools.executor import ToolExecutor
+from lobster0.tools.filesystem import WriteFileTool
+from lobster0.tools.registry import ToolRegistry
+from lobster0.tools.system import SystemInfoTool
+from lobster0.tools.task_completion import CompleteTaskTool
 from tests.fakes.fake_provider import FakeProvider
 
 
@@ -592,7 +592,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.turns.get(event.turn_id).status, "completed")
 
         with mock.patch(
-            "miniclaw.tools.system._collect_system_info",
+            "lobster0.tools.system._collect_system_info",
             return_value={"unavailable_sections": []},
         ):
             await self.service(provider, AgentRunner(provider, executor)).handle(
@@ -761,7 +761,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             events.append(event)
 
         with mock.patch(
-            "miniclaw.tools.system._collect_system_info",
+            "lobster0.tools.system._collect_system_info",
             return_value={"cpu": {"model": "Test CPU"}, "unavailable_sections": []},
         ):
             with self.assertRaises(AgentNoProgressError):
@@ -829,7 +829,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         service = self.service(provider, AgentRunner(provider, executor))
 
         with mock.patch(
-            "miniclaw.tools.system._collect_system_info",
+            "lobster0.tools.system._collect_system_info",
             return_value={
                 "cpu": {"model": "Test CPU", "logical_cores": 8},
                 "unavailable_sections": [],
@@ -1258,7 +1258,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_runtime_executes_read_file_and_persists_full_trace(self) -> None:
         """共享 Runtime 必须暴露 read_file，并持久化完整的两轮 Tool 轨迹。"""
         (self.paths.workspace / "README.md").write_text(
-            "MiniClaw workspace README\nSecond line\n",
+            "Lobster0 workspace README\nSecond line\n",
             encoding="utf-8",
         )
         call = ToolCall("call_readme", "read_file", {"path": "README.md"})
@@ -1273,7 +1273,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                     output_tokens=2,
                     provider_request_id="req_readme",
                 ),
-                final_response("README says MiniClaw workspace README"),
+                final_response("README says Lobster0 workspace README"),
             )
         )
         complete = provider.complete
@@ -1293,7 +1293,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         provider.aclose = mock.AsyncMock()  # type: ignore[attr-defined]
 
         with mock.patch(
-            "miniclaw.runtime.OpenAICompatibleProvider",
+            "lobster0.runtime.OpenAICompatibleProvider",
             return_value=provider,
         ):
             runtime = create_runtime(
@@ -1322,7 +1322,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 "SELECT event_type FROM audit_events ORDER BY id"
             ).fetchall()
 
-        self.assertEqual(result.content, "README says MiniClaw workspace README")
+        self.assertEqual(result.content, "README says Lobster0 workspace README")
         self.assertEqual(
             [schema["function"]["name"] for schema in provider.requests[0].tools],
             [
@@ -1355,7 +1355,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 "tool": "read_file",
                 "data": {
                     "path": "README.md",
-                    "content": "MiniClaw workspace README\nSecond line\n",
+                    "content": "Lobster0 workspace README\nSecond line\n",
                     "offset": 1,
                     "lines": 2,
                     "truncated": False,
@@ -1369,7 +1369,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 ("user", "read the README"),
                 ("assistant", ""),
                 ("tool", tool_message.content),
-                ("assistant", "README says MiniClaw workspace README"),
+                ("assistant", "README says Lobster0 workspace README"),
             ],
         )
         self.assertEqual(tuple(tool_run), ("read_file", "succeeded", "allow"))
@@ -1421,7 +1421,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with (
             mock.patch(
-                "miniclaw.tools.system._collect_system_info",
+                "lobster0.tools.system._collect_system_info",
                 return_value={"cpu": {"model": "Test CPU"}, "unavailable_sections": []},
             ),
             self.assertRaises(ProviderServerError),

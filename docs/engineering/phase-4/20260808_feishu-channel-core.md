@@ -1,6 +1,6 @@
 # Phase 4：飞书 Channel 与 Gateway 工程文档
 
-> 状态：核心链路与 `miniclaw gateway` 已实现；真实 WebSocket 和 Owner DM Delivery 已验证，15-case、部署与 soak 尚未完成
+> 状态：核心链路与 `lobster0 gateway` 已实现；真实 WebSocket 和 Owner DM Delivery 已验证，15-case、部署与 soak 尚未完成
 > 当前全仓门禁：671/671 Python tests、35/35 TypeScript tests、39/39 offline Agent cases、32/32 Channel cases、Ruff PASS
 
 ## 1. 现在完成到了哪里
@@ -24,19 +24,19 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/miniclaw/channels/base.py` | `InboundMessage`、`OutboundMessage`、Transport 和稳定错误契约 |
-| `src/miniclaw/channels/feishu.py` | 飞书 Adapter、官方 WebSocket SDK Transport、strict security/policy 配置 |
-| `src/miniclaw/channels/manager.py` | durable Inbox、有限 Worker、按 Conversation 串行、Turn 与 Delivery 编排 |
-| `src/miniclaw/channels/delivery.py` | Unicode-safe 分片、Outbox claim、退避重试和 unknown 恢复 |
-| `src/miniclaw/channels/capabilities.py` | typing、streaming card 与普通文本降级 |
-| `src/miniclaw/channels/observability.py` | correlation、短哈希、结构化 JSON 日志和 durable Audit |
-| `src/miniclaw/channels/approvals.py` | 审批文本/卡片解析，只调用 Core continuation |
-| `src/miniclaw/storage/channels.py` | Identity、Inbound、Delivery Repository 与原子状态迁移 |
-| `src/miniclaw/storage/migrations/0002_feishu_channel.sql` | Channel Identity、Inbox、Outbox 和幂等约束 |
-| `src/miniclaw/runtime.py` | `create_channel_manager()`，复用唯一 `AgentRuntime` |
-| `src/miniclaw/gateway.py` | 凭据/SDK 预检、Transport 就绪后启 Worker、SIGTERM drain 与安全关闭 |
-| `src/miniclaw/cli.py` | 暴露非 TTY 的 `miniclaw gateway` 维护入口 |
-| `src/miniclaw/doctor.py` | 离线检查 TUI 与飞书配置、SDK、表结构和环境变量存在性 |
+| `src/lobster0/channels/base.py` | `InboundMessage`、`OutboundMessage`、Transport 和稳定错误契约 |
+| `src/lobster0/channels/feishu.py` | 飞书 Adapter、官方 WebSocket SDK Transport、strict security/policy 配置 |
+| `src/lobster0/channels/manager.py` | durable Inbox、有限 Worker、按 Conversation 串行、Turn 与 Delivery 编排 |
+| `src/lobster0/channels/delivery.py` | Unicode-safe 分片、Outbox claim、退避重试和 unknown 恢复 |
+| `src/lobster0/channels/capabilities.py` | typing、streaming card 与普通文本降级 |
+| `src/lobster0/channels/observability.py` | correlation、短哈希、结构化 JSON 日志和 durable Audit |
+| `src/lobster0/channels/approvals.py` | 审批文本/卡片解析，只调用 Core continuation |
+| `src/lobster0/storage/channels.py` | Identity、Inbound、Delivery Repository 与原子状态迁移 |
+| `src/lobster0/storage/migrations/0002_feishu_channel.sql` | Channel Identity、Inbox、Outbox 和幂等约束 |
+| `src/lobster0/runtime.py` | `create_channel_manager()`，复用唯一 `AgentRuntime` |
+| `src/lobster0/gateway.py` | 凭据/SDK 预检、Transport 就绪后启 Worker、SIGTERM drain 与安全关闭 |
+| `src/lobster0/cli.py` | 暴露非 TTY 的 `lobster0 gateway` 维护入口 |
+| `src/lobster0/doctor.py` | 离线检查 TUI 与飞书配置、SDK、表结构和环境变量存在性 |
 
 ## 3. 端到端数据流
 
@@ -163,12 +163,12 @@ Inbox 同时约束 event ID 和 message ID，但 `InboundEventRepository.record(
 发布前门禁：
 
 ```bash
-MINICLAW_NODE=/absolute/node-22-or-newer \
+LOBSTER0_NODE=/absolute/node-22-or-newer \
   uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --root evals/scenarios
 uv run ruff check .
 uv build
 git diff --check

@@ -1,4 +1,4 @@
-# MiniClaw Phase 6 Autonomy Runtime and Sandbox Implementation Plan
+# Lobster0 Phase 6 Autonomy Runtime and Sandbox Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -33,23 +33,23 @@
 
 | 文件 | 单一职责 |
 | --- | --- |
-| `src/miniclaw/automation/models.py` | 不可变 Schedule/Task/Run/Budget/Delivery/Response 类型 |
-| `src/miniclaw/automation/parser.py` | once/interval/cron/IANA timezone 与 next occurrence |
-| `src/miniclaw/automation/guard.py` | Task Prompt、Secret、Unicode、Skill 与递归控制面扫描 |
-| `src/miniclaw/automation/repository.py` | Task/Run/E-stop transaction、claim、lease、状态机 |
-| `src/miniclaw/automation/scheduler.py` | due scan、幂等 enqueue、bounded catch-up、wake loop |
-| `src/miniclaw/automation/runner.py` | claim、lease、隔离 Turn、预算、终态与恢复 |
-| `src/miniclaw/automation/delivery.py` | terminal TaskResponse 投影为现有 durable Delivery |
-| `src/miniclaw/automation/heartbeat.py` | system-owned Heartbeat reconcile 与 active hours |
-| `src/miniclaw/tools/automation.py` | 对普通 Agent 公开的 action-style `manage_task` |
-| `src/miniclaw/tools/task_completion.py` | 只对 automation Agent 公开的 terminal `complete_task` |
-| `src/miniclaw/sandbox/base.py` | ExecutionPlan、Receipt、canonical hash、Backend Protocol |
-| `src/miniclaw/sandbox/host.py` | 现有 exact-argv host 执行适配 |
-| `src/miniclaw/sandbox/docker.py` | deterministic hardened Docker argv |
-| `src/miniclaw/sandbox/seatbelt.py` | deterministic macOS Seatbelt profile |
-| `src/miniclaw/checkpoints/store.py` | CAS blob、manifest、quota、retention |
-| `src/miniclaw/checkpoints/rollback.py` | preview hash、conflict detection、atomic restore |
-| `src/miniclaw/storage/migrations/0005_autonomy.sql` | Phase 6 表、索引与 Approval plan column |
+| `src/lobster0/automation/models.py` | 不可变 Schedule/Task/Run/Budget/Delivery/Response 类型 |
+| `src/lobster0/automation/parser.py` | once/interval/cron/IANA timezone 与 next occurrence |
+| `src/lobster0/automation/guard.py` | Task Prompt、Secret、Unicode、Skill 与递归控制面扫描 |
+| `src/lobster0/automation/repository.py` | Task/Run/E-stop transaction、claim、lease、状态机 |
+| `src/lobster0/automation/scheduler.py` | due scan、幂等 enqueue、bounded catch-up、wake loop |
+| `src/lobster0/automation/runner.py` | claim、lease、隔离 Turn、预算、终态与恢复 |
+| `src/lobster0/automation/delivery.py` | terminal TaskResponse 投影为现有 durable Delivery |
+| `src/lobster0/automation/heartbeat.py` | system-owned Heartbeat reconcile 与 active hours |
+| `src/lobster0/tools/automation.py` | 对普通 Agent 公开的 action-style `manage_task` |
+| `src/lobster0/tools/task_completion.py` | 只对 automation Agent 公开的 terminal `complete_task` |
+| `src/lobster0/sandbox/base.py` | ExecutionPlan、Receipt、canonical hash、Backend Protocol |
+| `src/lobster0/sandbox/host.py` | 现有 exact-argv host 执行适配 |
+| `src/lobster0/sandbox/docker.py` | deterministic hardened Docker argv |
+| `src/lobster0/sandbox/seatbelt.py` | deterministic macOS Seatbelt profile |
+| `src/lobster0/checkpoints/store.py` | CAS blob、manifest、quota、retention |
+| `src/lobster0/checkpoints/rollback.py` | preview hash、conflict detection、atomic restore |
+| `src/lobster0/storage/migrations/0005_autonomy.sql` | Phase 6 表、索引与 Approval plan column |
 | `evals/scenarios/automation.v1.jsonl` | 15 条 versioned Agent behavior cases |
 | `docs/engineering/phase-6/20260809_autonomy-runtime.md` | Automation 用户流、状态机、恢复与运维 |
 | `docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md` | Sandbox、plan binding、containment 与 rollback |
@@ -130,8 +130,8 @@ git commit -m "test(phase5): 收口 Feishu/Discord strict Live evidence"
 **Files:**
 - Modify: `pyproject.toml`
 - Modify: `uv.lock`
-- Modify: `src/miniclaw/config.py:20-820`
-- Modify: `src/miniclaw/bootstrap.py`
+- Modify: `src/lobster0/config.py:20-820`
+- Modify: `src/lobster0/bootstrap.py`
 - Test: `tests/test_config.py`
 - Test: `tests/test_bootstrap.py`
 
@@ -189,7 +189,7 @@ class HeartbeatConfig:
 @dataclass(frozen=True, slots=True)
 class SandboxConfig:
     backend: str = "docker"
-    image: str = "miniclaw-sandbox:phase6"
+    image: str = "lobster0-sandbox:phase6"
     network: str = "none"
     memory_mib: int = 512
     cpu_seconds: int = 60
@@ -227,7 +227,7 @@ Expected: defaults, bounds, unknown keys, timezone and bootstrap permissions all
 - [ ] **Step 6: Commit**
 
 ```bash
-git add pyproject.toml uv.lock src/miniclaw/config.py src/miniclaw/bootstrap.py tests/test_config.py tests/test_bootstrap.py
+git add pyproject.toml uv.lock src/lobster0/config.py src/lobster0/bootstrap.py tests/test_config.py tests/test_bootstrap.py
 git commit -m "feat(config): 增加 strict Phase 6 runtime limits"
 ```
 
@@ -236,10 +236,10 @@ git commit -m "feat(config): 增加 strict Phase 6 runtime limits"
 ### Task 2: Schema v5 and immutable automation models
 
 **Files:**
-- Create: `src/miniclaw/storage/migrations/0005_autonomy.sql`
-- Modify: `src/miniclaw/storage/migrations.py:8-18`
-- Create: `src/miniclaw/automation/__init__.py`
-- Create: `src/miniclaw/automation/models.py`
+- Create: `src/lobster0/storage/migrations/0005_autonomy.sql`
+- Modify: `src/lobster0/storage/migrations.py:8-18`
+- Create: `src/lobster0/automation/__init__.py`
+- Create: `src/lobster0/automation/models.py`
 - Test: `tests/test_storage.py`
 - Create: `tests/test_automation_models.py`
 
@@ -340,7 +340,7 @@ Expected: fresh and v4 upgrade both reach v5; migration resource ships in wheel/
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0005_autonomy.sql src/miniclaw/automation tests/test_storage.py tests/test_automation_models.py
+git add src/lobster0/storage/migrations.py src/lobster0/storage/migrations/0005_autonomy.sql src/lobster0/automation tests/test_storage.py tests/test_automation_models.py
 git commit -m "feat(storage): 增加 v5 Task Ledger 与 control schema"
 ```
 
@@ -349,7 +349,7 @@ git commit -m "feat(storage): 增加 v5 Task Ledger 与 control schema"
 ### Task 3: Transactional Task/Run repositories and durable E-stop
 
 **Files:**
-- Create: `src/miniclaw/automation/repository.py`
+- Create: `src/lobster0/automation/repository.py`
 - Create: `tests/test_automation_repository.py`
 
 **Interfaces:**
@@ -421,7 +421,7 @@ Expected: all state and concurrency tests PASS without sleeps.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/automation/repository.py tests/test_automation_repository.py
+git add src/lobster0/automation/repository.py tests/test_automation_repository.py
 git commit -m "feat(automation): 实现 transactional Task/Run state machine"
 ```
 
@@ -430,7 +430,7 @@ git commit -m "feat(automation): 实现 transactional Task/Run state machine"
 ### Task 4: Deterministic Schedule parser, timezone, DST and misfire
 
 **Files:**
-- Create: `src/miniclaw/automation/parser.py`
+- Create: `src/lobster0/automation/parser.py`
 - Create: `tests/test_schedule_parser.py`
 
 **Interfaces:**
@@ -490,7 +490,7 @@ Expected: identical outcomes.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/automation/parser.py tests/test_schedule_parser.py
+git add src/lobster0/automation/parser.py tests/test_schedule_parser.py
 git commit -m "feat(schedule): 规范化 cron timezone 与 DST semantics"
 ```
 
@@ -499,7 +499,7 @@ git commit -m "feat(schedule): 规范化 cron timezone 与 DST semantics"
 ### Task 5: Scheduler enqueue loop and bounded catch-up
 
 **Files:**
-- Create: `src/miniclaw/automation/scheduler.py`
+- Create: `src/lobster0/automation/scheduler.py`
 - Create: `tests/test_scheduler.py`
 
 **Interfaces:**
@@ -557,7 +557,7 @@ Expected: deterministic PASS with fake clock/event.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/automation/scheduler.py tests/test_scheduler.py
+git add src/lobster0/automation/scheduler.py tests/test_scheduler.py
 git commit -m "feat(scheduler): 幂等 enqueue due TaskRuns"
 ```
 
@@ -566,7 +566,7 @@ git commit -m "feat(scheduler): 幂等 enqueue due TaskRuns"
 ### Task 6: Task Prompt Guard and delivery route resolution
 
 **Files:**
-- Create: `src/miniclaw/automation/guard.py`
+- Create: `src/lobster0/automation/guard.py`
 - Create: `tests/test_automation_guard.py`
 
 **Interfaces:**
@@ -628,7 +628,7 @@ Expected: secret/control cases fail with stable codes; valid paths/env names/rou
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/automation/guard.py tests/test_automation_guard.py
+git add src/lobster0/automation/guard.py tests/test_automation_guard.py
 git commit -m "feat(automation): 拒绝 secret 与 recursive Task prompts"
 ```
 
@@ -637,10 +637,10 @@ git commit -m "feat(automation): 拒绝 secret 与 recursive Task prompts"
 ### Task 7: Automation Agent profile, hard budget and terminal response
 
 **Files:**
-- Modify: `src/miniclaw/tools/base.py`
-- Modify: `src/miniclaw/tools/executor.py`
-- Modify: `src/miniclaw/agent/runner.py`
-- Create: `src/miniclaw/tools/task_completion.py`
+- Modify: `src/lobster0/tools/base.py`
+- Modify: `src/lobster0/tools/executor.py`
+- Modify: `src/lobster0/agent/runner.py`
+- Create: `src/lobster0/tools/task_completion.py`
 - Modify: `tests/test_tool_executor.py`
 - Modify: `tests/test_agent_runner.py`
 - Create: `tests/test_task_completion_tool.py`
@@ -725,7 +725,7 @@ Expected: terminal and both budget boundary tests PASS; interactive Agent behavi
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/tools/base.py src/miniclaw/tools/executor.py src/miniclaw/tools/task_completion.py src/miniclaw/agent/runner.py tests/test_tool_executor.py tests/test_agent_runner.py tests/test_task_completion_tool.py
+git add src/lobster0/tools/base.py src/lobster0/tools/executor.py src/lobster0/tools/task_completion.py src/lobster0/agent/runner.py tests/test_tool_executor.py tests/test_agent_runner.py tests/test_task_completion_tool.py
 git commit -m "feat(agent): 增加 Automation budget 与 terminal Tool"
 ```
 
@@ -734,11 +734,11 @@ git commit -m "feat(agent): 增加 Automation budget 与 terminal Tool"
 ### Task 8: User-facing `manage_task` Tool and effective risk
 
 **Files:**
-- Create: `src/miniclaw/tools/automation.py`
-- Modify: `src/miniclaw/tools/base.py`
-- Modify: `src/miniclaw/tools/executor.py`
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/runtime.py`
+- Create: `src/lobster0/tools/automation.py`
+- Modify: `src/lobster0/tools/base.py`
+- Modify: `src/lobster0/tools/executor.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/runtime.py`
 - Create: `tests/test_automation_tool.py`
 - Modify: `tests/test_tool_executor.py`
 - Modify: `tests/test_runtime.py`
@@ -802,7 +802,7 @@ Expected: action semantics, risk binding and recursive denial PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/tools/automation.py src/miniclaw/tools/base.py src/miniclaw/tools/executor.py src/miniclaw/config.py src/miniclaw/runtime.py tests/test_automation_tool.py tests/test_tool_executor.py tests/test_runtime.py
+git add src/lobster0/tools/automation.py src/lobster0/tools/base.py src/lobster0/tools/executor.py src/lobster0/config.py src/lobster0/runtime.py tests/test_automation_tool.py tests/test_tool_executor.py tests/test_runtime.py
 git commit -m "feat(tools): 增加 action-style manage_task control"
 ```
 
@@ -811,9 +811,9 @@ git commit -m "feat(tools): 增加 action-style manage_task control"
 ### Task 9: Isolated TaskRunner and background Turn profile
 
 **Files:**
-- Create: `src/miniclaw/automation/runner.py`
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/runtime.py`
+- Create: `src/lobster0/automation/runner.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/runtime.py`
 - Create: `tests/test_task_runner.py`
 - Modify: `tests/test_turn.py`
 - Modify: `tests/test_runtime.py`
@@ -872,7 +872,7 @@ Expected: no pending-task warnings; all transitions and isolated session asserti
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/automation/runner.py src/miniclaw/agent/turn.py src/miniclaw/runtime.py tests/test_task_runner.py tests/test_turn.py tests/test_runtime.py
+git add src/lobster0/automation/runner.py src/lobster0/agent/turn.py src/lobster0/runtime.py tests/test_task_runner.py tests/test_turn.py tests/test_runtime.py
 git commit -m "feat(automation): 执行 isolated durable TaskRun"
 ```
 
@@ -881,9 +881,9 @@ git commit -m "feat(automation): 执行 isolated durable TaskRun"
 ### Task 10: Durable proactive Channel delivery
 
 **Files:**
-- Create: `src/miniclaw/automation/delivery.py`
-- Modify: `src/miniclaw/storage/channels.py`
-- Modify: `src/miniclaw/channels/manager.py`
+- Create: `src/lobster0/automation/delivery.py`
+- Modify: `src/lobster0/storage/channels.py`
+- Modify: `src/lobster0/channels/manager.py`
 - Create: `tests/test_task_delivery.py`
 - Modify: `tests/test_delivery.py`
 - Modify: `tests/test_channel_manager.py`
@@ -916,7 +916,7 @@ Expected: projection service and task-run uniqueness are absent.
 
 - [ ] **Step 3: Implement deterministic projection**
 
-Use `uuid5(NAMESPACE_URL, f"miniclaw:task-run:{run.id}:part:{index}")`; split once using the destination Channel limit and persist only safe response text plus immutable destination. Existing Manager claims/sends/marks the rows; it does not run the Agent again.
+Use `uuid5(NAMESPACE_URL, f"lobster0:task-run:{run.id}:part:{index}")`; split once using the destination Channel limit and persist only safe response text plus immutable destination. Existing Manager claims/sends/marks the rows; it does not run the Agent again.
 
 - [ ] **Step 4: Prove crash-window recovery**
 
@@ -931,7 +931,7 @@ Expected: exact-once local projection and at-least-once safe remote retry semant
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/automation/delivery.py src/miniclaw/storage/channels.py src/miniclaw/channels/manager.py tests/test_task_delivery.py tests/test_delivery.py tests/test_channel_manager.py
+git add src/lobster0/automation/delivery.py src/lobster0/storage/channels.py src/lobster0/channels/manager.py tests/test_task_delivery.py tests/test_delivery.py tests/test_channel_manager.py
 git commit -m "feat(delivery): 投递 durable proactive Task results"
 ```
 
@@ -940,7 +940,7 @@ git commit -m "feat(delivery): 投递 durable proactive Task results"
 ### Task 11: System-owned Heartbeat reconciliation
 
 **Files:**
-- Create: `src/miniclaw/automation/heartbeat.py`
+- Create: `src/lobster0/automation/heartbeat.py`
 - Create: `tests/test_heartbeat.py`
 
 **Interfaces:**
@@ -983,7 +983,7 @@ Expected: ownership, hours, busy delay and silent completion PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/automation/heartbeat.py tests/test_heartbeat.py
+git add src/lobster0/automation/heartbeat.py tests/test_heartbeat.py
 git commit -m "feat(heartbeat): reconcile system-owned background Task"
 ```
 
@@ -992,13 +992,13 @@ git commit -m "feat(heartbeat): reconcile system-owned background Task"
 ### Task 12: Local Task CLI and Doctor operations
 
 **Files:**
-- Modify: `src/miniclaw/cli.py`
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/cli.py`
+- Modify: `src/lobster0/doctor.py`
 - Modify: `tests/test_cli.py`
 - Modify: `tests/test_doctor.py`
 
 **Interfaces:**
-- Produces CLI: `miniclaw task list|show|pause|resume|run|cancel|runs|halt|unhalt`.
+- Produces CLI: `lobster0 task list|show|pause|resume|run|cancel|runs|halt|unhalt`.
 - Invariant: commands operate on SQLite repositories and never initialize Provider or Channel transports.
 
 - [ ] **Step 1: Write failing CLI output and E-stop tests**
@@ -1036,14 +1036,14 @@ Doctor reports schema v5, automation enabled/disabled, halted state, stale lease
 
 Run: `uv run python -m unittest tests.test_cli tests.test_doctor -v`
 
-Run: `uv run miniclaw task list`
+Run: `uv run lobster0 task list`
 
 Expected: tests PASS and smoke returns without Provider/network access.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/cli.py src/miniclaw/doctor.py tests/test_cli.py tests/test_doctor.py
+git add src/lobster0/cli.py src/lobster0/doctor.py tests/test_cli.py tests/test_doctor.py
 git commit -m "feat(cli): 增加 Task ledger 与 durable E-stop commands"
 ```
 
@@ -1052,12 +1052,12 @@ git commit -m "feat(cli): 增加 Task ledger 与 durable E-stop commands"
 ### Task 13: ExecutionPlan persistence and Host backend adapter
 
 **Files:**
-- Create: `src/miniclaw/sandbox/__init__.py`
-- Create: `src/miniclaw/sandbox/base.py`
-- Create: `src/miniclaw/sandbox/host.py`
-- Create: `src/miniclaw/sandbox/repository.py`
-- Modify: `src/miniclaw/tools/command.py`
-- Modify: `src/miniclaw/tools/executor.py`
+- Create: `src/lobster0/sandbox/__init__.py`
+- Create: `src/lobster0/sandbox/base.py`
+- Create: `src/lobster0/sandbox/host.py`
+- Create: `src/lobster0/sandbox/repository.py`
+- Modify: `src/lobster0/tools/command.py`
+- Modify: `src/lobster0/tools/executor.py`
 - Create: `tests/test_sandbox_contract.py`
 - Modify: `tests/test_run_command.py`
 - Modify: `tests/test_tool_executor.py`
@@ -1116,7 +1116,7 @@ Expected: canonical plan, immutable resume and backward-compatible host behavior
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/miniclaw/sandbox src/miniclaw/tools/command.py src/miniclaw/tools/executor.py tests/test_sandbox_contract.py tests/test_run_command.py tests/test_tool_executor.py
+git add src/lobster0/sandbox src/lobster0/tools/command.py src/lobster0/tools/executor.py tests/test_sandbox_contract.py tests/test_run_command.py tests/test_tool_executor.py
 git commit -m "feat(sandbox): 绑定 immutable ExecutionPlan 与 Approval"
 ```
 
@@ -1125,8 +1125,8 @@ git commit -m "feat(sandbox): 绑定 immutable ExecutionPlan 与 Approval"
 ### Task 14: Hardened Docker and macOS Seatbelt backends
 
 **Files:**
-- Create: `src/miniclaw/sandbox/docker.py`
-- Create: `src/miniclaw/sandbox/seatbelt.py`
+- Create: `src/lobster0/sandbox/docker.py`
+- Create: `src/lobster0/sandbox/seatbelt.py`
 - Create: `tests/test_docker_sandbox.py`
 - Create: `tests/test_seatbelt_sandbox.py`
 - Create: `scripts/sandbox_live_smoke.py`
@@ -1179,7 +1179,7 @@ Expected live: workspace read succeeds, declared write succeeds, network/home/st
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/sandbox/docker.py src/miniclaw/sandbox/seatbelt.py tests/test_docker_sandbox.py tests/test_seatbelt_sandbox.py scripts/sandbox_live_smoke.py
+git add src/lobster0/sandbox/docker.py src/lobster0/sandbox/seatbelt.py tests/test_docker_sandbox.py tests/test_seatbelt_sandbox.py scripts/sandbox_live_smoke.py
 git commit -m "feat(sandbox): 增加 hardened Docker 与 Seatbelt backends"
 ```
 
@@ -1188,9 +1188,9 @@ git commit -m "feat(sandbox): 增加 hardened Docker 与 Seatbelt backends"
 ### Task 15: Content-addressed Checkpoint and conflict-aware rollback
 
 **Files:**
-- Create: `src/miniclaw/checkpoints/__init__.py`
-- Create: `src/miniclaw/checkpoints/store.py`
-- Create: `src/miniclaw/checkpoints/rollback.py`
+- Create: `src/lobster0/checkpoints/__init__.py`
+- Create: `src/lobster0/checkpoints/store.py`
+- Create: `src/lobster0/checkpoints/rollback.py`
 - Create: `tests/test_checkpoint_store.py`
 - Create: `tests/test_rollback.py`
 
@@ -1241,7 +1241,7 @@ Expected: all safety, conflict and recovery cases PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/checkpoints tests/test_checkpoint_store.py tests/test_rollback.py
+git add src/lobster0/checkpoints tests/test_checkpoint_store.py tests/test_rollback.py
 git commit -m "feat(checkpoint): 增加 bounded CAS 与 conflict-aware rollback"
 ```
 
@@ -1250,10 +1250,10 @@ git commit -m "feat(checkpoint): 增加 bounded CAS 与 conflict-aware rollback"
 ### Task 16: Bind Checkpoint and Sandbox to mutating Tools
 
 **Files:**
-- Modify: `src/miniclaw/tools/executor.py`
-- Modify: `src/miniclaw/tools/filesystem.py`
-- Modify: `src/miniclaw/tools/command.py`
-- Modify: `src/miniclaw/policy/engine.py`
+- Modify: `src/lobster0/tools/executor.py`
+- Modify: `src/lobster0/tools/filesystem.py`
+- Modify: `src/lobster0/tools/command.py`
+- Modify: `src/lobster0/policy/engine.py`
 - Modify: `tests/test_tool_executor.py`
 - Modify: `tests/test_file_mutation_tools.py`
 - Modify: `tests/test_run_command.py`
@@ -1304,7 +1304,7 @@ Expected: stage ordering, immutable resume, checkpoint and audit tests PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/tools src/miniclaw/policy/engine.py tests/test_tool_executor.py tests/test_file_mutation_tools.py tests/test_run_command.py tests/test_approvals.py
+git add src/lobster0/tools src/lobster0/policy/engine.py tests/test_tool_executor.py tests/test_file_mutation_tools.py tests/test_run_command.py tests/test_approvals.py
 git commit -m "feat(policy): 串联 Checkpoint Sandbox 与 exact Approval"
 ```
 
@@ -1313,9 +1313,9 @@ git commit -m "feat(policy): 串联 Checkpoint Sandbox 与 exact Approval"
 ### Task 17: Gateway lifecycle, startup recovery and graceful stop
 
 **Files:**
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/channels/supervisor.py`
-- Modify: `src/miniclaw/gateway.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/channels/supervisor.py`
+- Modify: `src/lobster0/gateway.py`
 - Modify: `tests/test_runtime.py`
 - Modify: `tests/test_channel_supervisor.py`
 - Modify: `tests/test_gateway.py`
@@ -1362,14 +1362,14 @@ Emit codes and IDs only: `automation.started`, `task_run.claimed`, `task_run.wai
 
 Run: `uv run python -m unittest tests.test_runtime tests.test_channel_supervisor tests.test_gateway -v`
 
-Run: `uv run miniclaw gateway start`
+Run: `uv run lobster0 gateway start`
 
 Send Ctrl-C once. Expected: bounded graceful shutdown, no orphan process/task and no duplicate recovery Delivery.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/runtime.py src/miniclaw/channels/supervisor.py src/miniclaw/gateway.py tests/test_runtime.py tests/test_channel_supervisor.py tests/test_gateway.py
+git add src/lobster0/runtime.py src/lobster0/channels/supervisor.py src/lobster0/gateway.py tests/test_runtime.py tests/test_channel_supervisor.py tests/test_gateway.py
 git commit -m "feat(gateway): 托管 Scheduler Runner 与 recovery lifecycle"
 ```
 
@@ -1379,10 +1379,10 @@ git commit -m "feat(gateway): 托管 Scheduler Runner 与 recovery lifecycle"
 
 **Files:**
 - Create: `evals/scenarios/automation.v1.jsonl`
-- Modify: `src/miniclaw/evals/cases.py`
-- Modify: `src/miniclaw/evals/runner.py`
-- Create: `src/miniclaw/evals/automation.py`
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/evals/cases.py`
+- Modify: `src/lobster0/evals/runner.py`
+- Create: `src/lobster0/evals/automation.py`
+- Modify: `src/lobster0/cli.py`
 - Create: `tests/test_automation_eval.py`
 - Modify: `tests/test_cli_eval.py`
 - Create: `docs/engineering/phase-6/20260809_autonomy-runtime.md`
@@ -1439,9 +1439,9 @@ Document commands, config, state diagrams, Scheduler/Runner/Delivery flow, failu
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
 uv build
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 git status --short
@@ -1456,8 +1456,8 @@ Run Docker/Seatbelt containment smoke from Task 14. Run Phase 5.3 Feishu and Dis
 - [ ] **Step 7: Sync the external progress page safely**
 
 ```bash
-cp docs/progress/index.html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html
-cmp docs/progress/index.html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html
+cp docs/progress/index.html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html
+cmp docs/progress/index.html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html
 ```
 
 This write requires explicit filesystem approval if the path is outside the workspace. Do not copy ignored evidence or secrets.

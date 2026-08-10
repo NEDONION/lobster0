@@ -1,4 +1,4 @@
-/** Compact terminal palette and safe ANSI helpers for MiniClaw. */
+/** Compact terminal palette and safe ANSI helpers for Lobster0. */
 
 import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@earendil-works/pi-tui";
 

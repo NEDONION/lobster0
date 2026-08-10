@@ -1,4 +1,4 @@
-# MiniClaw Agent 回归场景集
+# Lobster0 Agent 回归场景集
 
 Active offline gate: 39 cases
 Active channel gate: 12 cases
@@ -32,14 +32,14 @@ Active channel gate: 12 cases
 ## 常用命令
 
 ```bash
-uv run miniclaw eval list --root evals/scenarios
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite all --root evals/scenarios
+uv run lobster0 eval list --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite all --root evals/scenarios
 ```
 
-在 `miniclaw eval` 完成前，可以先运行契约测试：
+在 `lobster0 eval` 完成前，可以先运行契约测试：
 
 ```bash
 uv run python -m unittest tests.test_eval_cases -v

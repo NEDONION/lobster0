@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { ServerFrame } from "@miniclaw/pi-tui/protocol";
+import type { ServerFrame } from "@lobster0/pi-tui/protocol";
 
 import type { SessionHistory } from "../src/common/api";
 import {

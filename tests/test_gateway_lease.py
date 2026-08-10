@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.gateway_lease import GatewayLease, GatewayLeaseError
+from lobster0.gateway_lease import GatewayLease, GatewayLeaseError
 
 
 class GatewayLeaseTest(unittest.TestCase):

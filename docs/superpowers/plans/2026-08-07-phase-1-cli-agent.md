@@ -1,8 +1,8 @@
-# MiniClaw Phase 1 CLI Agent Implementation Plan
+# Lobster0 Phase 1 CLI Agent Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Deliver a real `miniclaw chat` path backed by DeepSeek V4 Pro, with safe local `.env` credentials, an async OpenAI-compatible provider, an eight-iteration Agent loop, and transactional SQLite conversation history.
+**Goal:** Deliver a real `lobster0 chat` path backed by DeepSeek V4 Pro, with safe local `.env` credentials, an async OpenAI-compatible provider, an eight-iteration Agent loop, and transactional SQLite conversation history.
 
 **Architecture:** The CLI loads local configuration and creates one application-scoped Provider, ContextBuilder, AgentRunner, and TurnService. Provider-specific HTTP and response parsing remain below the Agent contract; conversation persistence remains below TurnService. Phase 1 deliberately does not create a Message Bus, Channel interface, Policy Engine, or built-in tools because no second channel or executable tool exists yet.
 
@@ -10,9 +10,9 @@
 
 ## Global Constraints
 
-- Product, package, import package, and CLI names remain `MiniClaw` / `miniclaw`.
+- Product, package, import package, and CLI names remain `Lobster0` / `lobster0`.
 - Default model is exactly `deepseek-v4-pro`; default base URL is exactly `https://api.deepseek.com`.
-- The only credential variable used by the model path is `MINICLAW_MODEL_API_KEY`.
+- The only credential variable used by the model path is `LOBSTER0_MODEL_API_KEY`.
 - `.env` is local-only, ignored by Git, owner-readable (`0600`), and its values never enter logs, errors, tests, docs, or commits.
 - Provider calls are async, use OpenAI Chat Completions, and retry connection failures, timeouts, 429, and 5xx at most once.
 - Agent model/tool iterations are capped at 8; tool execution remains sequential.
@@ -26,14 +26,14 @@
 
 | File | Responsibility |
 | --- | --- |
-| `src/miniclaw/env.py` | Strict, non-executing local `.env` parser |
-| `src/miniclaw/providers/base.py` | Stable model request/response contracts and provider errors |
-| `src/miniclaw/providers/openai_compatible.py` | HTTPX request, SSE/JSON parsing, retry, DeepSeek-compatible reasoning/tool fragments |
-| `src/miniclaw/agent/context.py` | Deterministic System/SOUL/USER/history context construction |
-| `src/miniclaw/agent/runner.py` | Model/tool loop, empty response and eight-iteration guard |
-| `src/miniclaw/storage/conversations.py` | Session, Turn, Message repositories and completion transaction |
-| `src/miniclaw/agent/turn.py` | One CLI turn orchestration and error-state persistence |
-| `src/miniclaw/cli.py` | `chat` parser, dependency assembly, one-shot and interactive output |
+| `src/lobster0/env.py` | Strict, non-executing local `.env` parser |
+| `src/lobster0/providers/base.py` | Stable model request/response contracts and provider errors |
+| `src/lobster0/providers/openai_compatible.py` | HTTPX request, SSE/JSON parsing, retry, DeepSeek-compatible reasoning/tool fragments |
+| `src/lobster0/agent/context.py` | Deterministic System/SOUL/USER/history context construction |
+| `src/lobster0/agent/runner.py` | Model/tool loop, empty response and eight-iteration guard |
+| `src/lobster0/storage/conversations.py` | Session, Turn, Message repositories and completion transaction |
+| `src/lobster0/agent/turn.py` | One CLI turn orchestration and error-state persistence |
+| `src/lobster0/cli.py` | `chat` parser, dependency assembly, one-shot and interactive output |
 | `docs/engineering/phase-1/*.md` | Module-level engineering records kept with each implementation commit |
 
 ---
@@ -41,17 +41,17 @@
 ### Task 1: Local `.env` boundary and DeepSeek defaults
 
 **Files:**
-- Create: `src/miniclaw/env.py`
+- Create: `src/lobster0/env.py`
 - Create: `tests/test_env.py`
 - Create: `docs/engineering/phase-1/20260807_environment.md`
-- Modify: `src/miniclaw/bootstrap.py`
+- Modify: `src/lobster0/bootstrap.py`
 - Modify: `.env.example`
 - Modify: `tests/test_bootstrap.py`
 
 **Interfaces:**
 - Produces: `load_dotenv(path: Path, environ: MutableMapping[str, str] | None = None) -> tuple[str, ...]`
 - Produces: `DotEnvError(ValueError)` with path and line number only
-- Changes defaults to model `deepseek-v4-pro`, base URL `https://api.deepseek.com`, key name `MINICLAW_MODEL_API_KEY`
+- Changes defaults to model `deepseek-v4-pro`, base URL `https://api.deepseek.com`, key name `LOBSTER0_MODEL_API_KEY`
 
 - [ ] **Step 1: Write failing `.env` tests**
 
@@ -59,21 +59,21 @@
 def test_load_dotenv_sets_missing_values_without_overriding_environment(self) -> None:
     path = self.root / ".env"
     path.write_text(
-        "# local model\nMINICLAW_MODEL_API_KEY='from-file'\nMINICLAW_MODEL_NAME=deepseek-v4-pro\n",
+        "# local model\nLOBSTER0_MODEL_API_KEY='from-file'\nLOBSTER0_MODEL_NAME=deepseek-v4-pro\n",
         encoding="utf-8",
     )
-    environ = {"MINICLAW_MODEL_NAME": "from-shell"}
+    environ = {"LOBSTER0_MODEL_NAME": "from-shell"}
 
     loaded = load_dotenv(path, environ)
 
-    self.assertEqual(loaded, ("MINICLAW_MODEL_API_KEY",))
-    self.assertEqual(environ["MINICLAW_MODEL_API_KEY"], "from-file")
-    self.assertEqual(environ["MINICLAW_MODEL_NAME"], "from-shell")
+    self.assertEqual(loaded, ("LOBSTER0_MODEL_API_KEY",))
+    self.assertEqual(environ["LOBSTER0_MODEL_API_KEY"], "from-file")
+    self.assertEqual(environ["LOBSTER0_MODEL_NAME"], "from-shell")
 
 
 def test_invalid_dotenv_reports_line_without_secret_value(self) -> None:
     path = self.root / ".env"
-    path.write_text("export MINICLAW_MODEL_API_KEY=never-print-this\n", encoding="utf-8")
+    path.write_text("export LOBSTER0_MODEL_API_KEY=never-print-this\n", encoding="utf-8")
 
     with self.assertRaises(DotEnvError) as caught:
         load_dotenv(path, {})
@@ -85,7 +85,7 @@ def test_invalid_dotenv_reports_line_without_secret_value(self) -> None:
 - [ ] **Step 2: Run the focused test and verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_env -v`<br>
-Expected: import failure because `miniclaw.env` does not exist.
+Expected: import failure because `lobster0.env` does not exist.
 
 - [ ] **Step 3: Implement the strict parser with the standard library**
 
@@ -123,7 +123,7 @@ model = "deepseek-v4-pro"
 
 [provider]
 base_url = "https://api.deepseek.com"
-api_key_env = "MINICLAW_MODEL_API_KEY"
+api_key_env = "LOBSTER0_MODEL_API_KEY"
 ```
 
 Add a bootstrap assertion that a new state loads these exact values.
@@ -136,13 +136,13 @@ Add a bootstrap assertion that a new state loads these exact values.
 
 Run: `.venv/bin/python -m unittest tests.test_env tests.test_bootstrap tests.test_config -v`<br>
 Expected: PASS.<br>
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/env.py tests/test_env.py src/miniclaw/bootstrap.py tests/test_bootstrap.py`<br>
+Run: `.venv/bin/ruff check --no-cache src/lobster0/env.py tests/test_env.py src/lobster0/bootstrap.py tests/test_bootstrap.py`<br>
 Expected: `All checks passed!`
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add .env.example src/miniclaw/env.py src/miniclaw/bootstrap.py tests/test_env.py tests/test_bootstrap.py docs/engineering/phase-1/20260807_environment.md
+git add .env.example src/lobster0/env.py src/lobster0/bootstrap.py tests/test_env.py tests/test_bootstrap.py docs/engineering/phase-1/20260807_environment.md
 git commit -m "feat: add safe local environment loading"
 ```
 
@@ -151,8 +151,8 @@ git commit -m "feat: add safe local environment loading"
 ### Task 2: Provider contracts and response parser
 
 **Files:**
-- Create: `src/miniclaw/providers/__init__.py`
-- Create: `src/miniclaw/providers/base.py`
+- Create: `src/lobster0/providers/__init__.py`
+- Create: `src/lobster0/providers/base.py`
 - Create: `tests/test_provider_contracts.py`
 - Create: `docs/engineering/phase-1/20260807_provider-contract.md`
 
@@ -181,7 +181,7 @@ def test_model_contract_keeps_reasoning_for_tool_continuation(self) -> None:
 - [ ] **Step 2: Run the focused test and verify RED**
 
 Run: `.venv/bin/python -m unittest tests.test_provider_contracts -v`<br>
-Expected: import failure because `miniclaw.providers` does not exist.
+Expected: import failure because `lobster0.providers` does not exist.
 
 - [ ] **Step 3: Implement immutable contracts and narrow error hierarchy**
 
@@ -211,11 +211,11 @@ Validate only at the remote-data parser boundary; the dataclasses remain transpa
 
 Run: `.venv/bin/python -m unittest tests.test_provider_contracts -v`<br>
 Expected: PASS.<br>
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/providers tests/test_provider_contracts.py`<br>
+Run: `.venv/bin/ruff check --no-cache src/lobster0/providers tests/test_provider_contracts.py`<br>
 Expected: PASS.
 
 ```bash
-git add src/miniclaw/providers tests/test_provider_contracts.py docs/engineering/phase-1/20260807_provider-contract.md
+git add src/lobster0/providers tests/test_provider_contracts.py docs/engineering/phase-1/20260807_provider-contract.md
 git commit -m "feat: define model provider contracts"
 ```
 
@@ -224,7 +224,7 @@ git commit -m "feat: define model provider contracts"
 ### Task 3: Async OpenAI-compatible transport, SSE, and retry
 
 **Files:**
-- Create: `src/miniclaw/providers/openai_compatible.py`
+- Create: `src/lobster0/providers/openai_compatible.py`
 - Create: `tests/test_openai_compatible_provider.py`
 - Create: `docs/engineering/phase-1/20260807_openai-compatible-provider.md`
 - Modify: `pyproject.toml`
@@ -332,11 +332,11 @@ Map 401/403, 429, 5xx, timeout/connect, and other invalid responses to the exact
 
 Run: `.venv/bin/python -m unittest tests.test_provider_contracts tests.test_openai_compatible_provider -v`<br>
 Expected: PASS.<br>
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/providers tests/test_provider_contracts.py tests/test_openai_compatible_provider.py`<br>
+Run: `.venv/bin/ruff check --no-cache src/lobster0/providers tests/test_provider_contracts.py tests/test_openai_compatible_provider.py`<br>
 Expected: PASS.
 
 ```bash
-git add pyproject.toml uv.lock src/miniclaw/providers tests/test_openai_compatible_provider.py docs/engineering/phase-1/20260807_openai-compatible-provider.md
+git add pyproject.toml uv.lock src/lobster0/providers tests/test_openai_compatible_provider.py docs/engineering/phase-1/20260807_openai-compatible-provider.md
 git commit -m "feat: add openai compatible model provider"
 ```
 
@@ -345,9 +345,9 @@ git commit -m "feat: add openai compatible model provider"
 ### Task 4: ContextBuilder and AgentRunner
 
 **Files:**
-- Create: `src/miniclaw/agent/__init__.py`
-- Create: `src/miniclaw/agent/context.py`
-- Create: `src/miniclaw/agent/runner.py`
+- Create: `src/lobster0/agent/__init__.py`
+- Create: `src/lobster0/agent/context.py`
+- Create: `src/lobster0/agent/runner.py`
 - Create: `tests/fakes/__init__.py`
 - Create: `tests/fakes/fake_provider.py`
 - Create: `tests/test_context.py`
@@ -385,7 +385,7 @@ def test_context_orders_identity_files_before_history(self) -> None:
 
 Run: `.venv/bin/python -m unittest tests.test_context -v`<br>
 Expected: import failure.<br>
-Implementation reads UTF-8 `SOUL.md` and `USER.md`, uses one built-in MiniClaw system preamble, preserves history order, and raises `ContextError` with paths but no file content on I/O errors.
+Implementation reads UTF-8 `SOUL.md` and `USER.md`, uses one built-in Lobster0 system preamble, preserves history order, and raises `ContextError` with paths but no file content on I/O errors.
 
 - [ ] **Step 3: Write AgentRunner failing tests**
 
@@ -418,11 +418,11 @@ The runner appends one Assistant `ModelMessage` per Provider response, awaits ha
 
 Run: `.venv/bin/python -m unittest tests.test_context tests.test_agent_runner -v`<br>
 Expected: PASS.<br>
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/agent tests/fakes tests/test_context.py tests/test_agent_runner.py`<br>
+Run: `.venv/bin/ruff check --no-cache src/lobster0/agent tests/fakes tests/test_context.py tests/test_agent_runner.py`<br>
 Expected: PASS.
 
 ```bash
-git add src/miniclaw/agent tests/fakes tests/test_context.py tests/test_agent_runner.py docs/engineering/phase-1/20260807_context-builder.md docs/engineering/phase-1/20260807_agent-runner.md
+git add src/lobster0/agent tests/fakes tests/test_context.py tests/test_agent_runner.py docs/engineering/phase-1/20260807_context-builder.md docs/engineering/phase-1/20260807_agent-runner.md
 git commit -m "feat: add bounded agent runner"
 ```
 
@@ -431,8 +431,8 @@ git commit -m "feat: add bounded agent runner"
 ### Task 5: Conversation repositories and TurnService
 
 **Files:**
-- Create: `src/miniclaw/storage/conversations.py`
-- Create: `src/miniclaw/agent/turn.py`
+- Create: `src/lobster0/storage/conversations.py`
+- Create: `src/lobster0/agent/turn.py`
 - Create: `tests/test_conversations.py`
 - Create: `tests/test_turn.py`
 - Create: `docs/engineering/phase-1/20260807_conversation-storage.md`
@@ -504,11 +504,11 @@ Flow: session → queued Turn/user Message → running → recent history → Co
 
 Run: `.venv/bin/python -m unittest tests.test_conversations tests.test_turn -v`<br>
 Expected: PASS.<br>
-Run: `.venv/bin/ruff check --no-cache src/miniclaw/storage/conversations.py src/miniclaw/agent/turn.py tests/test_conversations.py tests/test_turn.py`<br>
+Run: `.venv/bin/ruff check --no-cache src/lobster0/storage/conversations.py src/lobster0/agent/turn.py tests/test_conversations.py tests/test_turn.py`<br>
 Expected: PASS.
 
 ```bash
-git add src/miniclaw/storage/conversations.py src/miniclaw/agent/turn.py tests/test_conversations.py tests/test_turn.py docs/engineering/phase-1/20260807_conversation-storage.md docs/engineering/phase-1/20260807_turn-service.md
+git add src/lobster0/storage/conversations.py src/lobster0/agent/turn.py tests/test_conversations.py tests/test_turn.py docs/engineering/phase-1/20260807_conversation-storage.md docs/engineering/phase-1/20260807_turn-service.md
 git commit -m "feat: persist cli agent turns"
 ```
 
@@ -517,7 +517,7 @@ git commit -m "feat: persist cli agent turns"
 ### Task 6: CLI chat, offline E2E, local secret, and live DeepSeek proof
 
 **Files:**
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/cli.py`
 - Modify: `tests/test_cli.py`
 - Create: `tests/test_cli_chat.py`
 - Create: `docs/engineering/phase-1/20260807_cli-chat.md`
@@ -528,7 +528,7 @@ git commit -m "feat: persist cli agent turns"
 - Modify: `docs/progress/index.html`
 
 **Interfaces:**
-- Produces: `miniclaw chat --message TEXT [--session ID] [--home PATH]`
+- Produces: `lobster0 chat --message TEXT [--session ID] [--home PATH]`
 - Produces: interactive prompt when `--message` is omitted
 - Consumes: `.env`, `AppConfig`, initialized SQLite, Owner, Provider, ContextBuilder, AgentRunner, TurnService
 
@@ -542,12 +542,12 @@ def test_chat_requires_configured_model_key_without_leaking_environment(self) ->
 
     self.assertEqual(code, 2)
     self.assertEqual(output, "")
-    self.assertIn("MINICLAW_MODEL_API_KEY is not configured", error)
+    self.assertIn("LOBSTER0_MODEL_API_KEY is not configured", error)
 ```
 
 - [ ] **Step 2: Write failing offline HTTP E2E**
 
-Start a standard-library loopback `ThreadingHTTPServer` that validates Bearer presence without storing it and returns one SSE completion. Initialize a temporary MiniClaw home, rewrite only `provider.base_url` to the loopback URL, write a test `.env`, and run the real CLI.
+Start a standard-library loopback `ThreadingHTTPServer` that validates Bearer presence without storing it and returns one SSE completion. Initialize a temporary Lobster0 home, rewrite only `provider.base_url` to the loopback URL, write a test `.env`, and run the real CLI.
 
 Assertions: exit 0, stdout is the model answer, SQLite has one completed Turn and user/assistant Messages, model is `deepseek-v4-pro`, and stderr is empty.
 
@@ -559,7 +559,7 @@ Implementation loads `.env` only for chat, validates initialized state and key, 
 
 - [ ] **Step 4: Add the minimal interactive loop**
 
-When `--message` is omitted, require stdin TTY, repeatedly read `You> `, use one stable session ID, print `MiniClaw> ...`, and exit on EOF, empty `/exit`, or `/quit`. Non-TTY without `--message` returns code 2 with a scripting hint.
+When `--message` is omitted, require stdin TTY, repeatedly read `You> `, use one stable session ID, print `Lobster0> ...`, and exit on EOF, empty `/exit`, or `/quit`. Non-TTY without `--message` returns code 2 with a scripting hint.
 
 - [ ] **Step 5: Write CLI and test/debug engineering documents**
 
@@ -574,10 +574,10 @@ README and local guide show exact `.env`, init, doctor, one-shot chat, and test 
 Use EvalHub's `default_model_provider_repository().resolve_api_key("deepseek")` inside one local Python process that writes:
 
 ```text
-MINICLAW_MODEL_API_KEY=<resolved value>
+LOBSTER0_MODEL_API_KEY=<resolved value>
 ```
 
-to `/Users/nedonion/PycharmProjects/miniclaw/.env` with mode `0600`. Do not print the value. For worktree live verification, create a separate ignored `.env` with the same mode, then remove it when the worktree is cleaned.
+to `/Users/nedonion/PycharmProjects/lobster0/.env` with mode `0600`. Do not print the value. For worktree live verification, create a separate ignored `.env` with the same mode, then remove it when the worktree is cleaned.
 
 - [ ] **Step 8: Run offline completion gate**
 
@@ -599,7 +599,7 @@ Initialize a fresh temporary home and run a one-shot prompt requesting a short f
 - [ ] **Step 10: Commit**
 
 ```bash
-git add src/miniclaw/cli.py tests/test_cli.py tests/test_cli_chat.py README.md docs/getting-started/20260807_本地运行指南.md docs/architecture/20260807_系统架构.md docs/progress/index.html docs/engineering/phase-1/20260807_cli-chat.md docs/engineering/phase-1/20260807_testing-and-debugging.md
+git add src/lobster0/cli.py tests/test_cli.py tests/test_cli_chat.py README.md docs/getting-started/20260807_本地运行指南.md docs/architecture/20260807_系统架构.md docs/progress/index.html docs/engineering/phase-1/20260807_cli-chat.md docs/engineering/phase-1/20260807_testing-and-debugging.md
 git commit -m "feat: complete cli agent loop"
 ```
 

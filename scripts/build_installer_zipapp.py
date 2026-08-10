@@ -58,10 +58,10 @@ _SAFE_DUNDER_ATTRIBUTES = {
 
 
 def validate_imports(source: Path) -> None:
-    """拒绝 install package 中的第三方或跨 MiniClaw package import。
+    """拒绝 install package 中的第三方或跨 Lobster0 package import。
 
     Args:
-        source: `src/miniclaw/install` 或同结构测试目录。
+        source: `src/lobster0/install` 或同结构测试目录。
 
     Raises:
         ValueError: source 不安全、Python 无法解析或 import 超出 boundary。
@@ -183,7 +183,7 @@ def build_zipapp(source: Path, output: Path) -> Path:
     """只复制 install package 并生成 byte-reproducible stdlib-only pyz。
 
     Args:
-        source: 已校验的 `src/miniclaw/install`。
+        source: 已校验的 `src/lobster0/install`。
         output: 尚未存在或可原子替换的 `.pyz` 路径。
 
     Returns:
@@ -198,10 +198,10 @@ def build_zipapp(source: Path, output: Path) -> Path:
         output = Path.cwd() / output
     output = Path(os.path.normpath(str(output)))
     output.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="miniclaw-installer-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="lobster0-installer-") as temporary:
         root = Path(temporary)
         application = root / "app"
-        package = application / "miniclaw" / "install"
+        package = application / "lobster0" / "install"
         package.mkdir(parents=True)
         namespace_marker = package.parent / "__init__.py"
         namespace_marker.write_bytes(b"")
@@ -220,7 +220,7 @@ def build_zipapp(source: Path, output: Path) -> Path:
             application,
             target=raw,
             interpreter="/usr/bin/env python3",
-            main="miniclaw.install.__main__:main",
+            main="lobster0.install.__main__:main",
             compressed=True,
         )
         canonical = root / "canonical.pyz"
@@ -236,8 +236,8 @@ def build_zipapp(source: Path, output: Path) -> Path:
 
 def main(argv: list[str] | None = None) -> int:
     """解析 builder CLI 并构建仓库 install package。"""
-    parser = argparse.ArgumentParser(description="Build the MiniClaw installer zipapp")
-    parser.add_argument("--source", type=Path, default=Path("src/miniclaw/install"))
+    parser = argparse.ArgumentParser(description="Build the Lobster0 installer zipapp")
+    parser.add_argument("--source", type=Path, default=Path("src/lobster0/install"))
     parser.add_argument("--output", type=Path, required=True)
     arguments = parser.parse_args(argv)
     build_zipapp(arguments.source, arguments.output)
@@ -245,9 +245,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _require_import(name: str, allowed: set[str], path: Path) -> None:
-    """允许 stdlib root 或 exact miniclaw.install package。"""
+    """允许 stdlib root 或 exact lobster0.install package。"""
     root = name.split(".", 1)[0]
-    if root in allowed or name == "miniclaw.install" or name.startswith("miniclaw.install."):
+    if root in allowed or name == "lobster0.install" or name.startswith("lobster0.install."):
         return
     raise ValueError(f"unsafe import {name} in {path.name}")
 

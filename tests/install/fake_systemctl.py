@@ -1,6 +1,6 @@
 """提供 systemd user lifecycle 的离线 exact runner。"""
 
-from miniclaw.install.runtime import CommandResult
+from lobster0.install.runtime import CommandResult
 
 
 class FakeSystemctlRunner:

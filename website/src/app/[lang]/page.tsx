@@ -5,7 +5,7 @@ import { MarketingHome } from '@/components/marketing/MarketingHome';
 import { marketingCopy } from '@/content/site';
 import { getLocale, localizedPath } from '@/lib/i18n';
 
-const siteUrl = 'https://miniclaw.vercel.app';
+const siteUrl = 'https://lobster0.vercel.app';
 
 export async function generateMetadata({
   params,

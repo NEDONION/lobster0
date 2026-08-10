@@ -5,13 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.sandbox.base import (
+from lobster0.sandbox.base import (
     ExecutionPlan,
     SandboxPlanError,
     SandboxUnavailableError,
 )
-from miniclaw.sandbox.executables import capture_executable_chain
-from miniclaw.sandbox.seatbelt import SeatbeltSandbox
+from lobster0.sandbox.executables import capture_executable_chain
+from lobster0.sandbox.seatbelt import SeatbeltSandbox
 from scripts import sandbox_live_smoke
 
 

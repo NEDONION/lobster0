@@ -7,13 +7,13 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 
-from miniclaw.sandbox import docker as docker_module
-from miniclaw.sandbox.base import (
+from lobster0.sandbox import docker as docker_module
+from lobster0.sandbox.base import (
     ExecutionPlan,
     SandboxPlanError,
     SandboxUnavailableError,
 )
-from miniclaw.sandbox.docker import DockerSandbox
+from lobster0.sandbox.docker import DockerSandbox
 
 
 class DockerSandboxTest(unittest.IsolatedAsyncioTestCase):
@@ -37,7 +37,7 @@ class DockerSandboxTest(unittest.IsolatedAsyncioTestCase):
             network_mode="none",
             backend="docker",
         )
-        self.image = "example/miniclaw@sha256:" + "a" * 64
+        self.image = "example/lobster0@sha256:" + "a" * 64
 
     def test_argv_has_required_hardening_and_exact_command_boundary(self) -> None:
         """固定 flags、non-root、mount 与 `--` 必须先于 exact command。"""

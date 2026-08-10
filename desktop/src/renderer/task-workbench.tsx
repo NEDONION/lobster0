@@ -65,7 +65,7 @@ export function TaskWorkbench({
   const [actionError, setActionError] = useState<string | null>(null);
   const timelineRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => window.miniclaw.onFrame((frame) => {
+  useEffect(() => window.lobster0.onFrame((frame) => {
     setTask((current) => reduceDesktopFrame(current, frame));
   }), []);
 
@@ -96,7 +96,7 @@ export function TaskWorkbench({
     setSubmitting(true);
     setActionError(null);
     try {
-      await window.miniclaw.startTurn({ sessionKey, text });
+      await window.lobster0.startTurn({ sessionKey, text });
       setTask((current) => ({
         ...appendDesktopUser(current, text),
         status: "running",
@@ -124,7 +124,7 @@ export function TaskWorkbench({
   async function cancel(): Promise<void> {
     setActionError(null);
     try {
-      await window.miniclaw.cancelTurn();
+      await window.lobster0.cancelTurn();
       setTask((current) => cancelDesktopTask(current));
     } catch {
       setActionError("取消请求未完成，请重试。");
@@ -138,7 +138,7 @@ export function TaskWorkbench({
     setResolvingApproval(true);
     setActionError(null);
     try {
-      await window.miniclaw.resolveApproval(pendingApproval.approvalId, decision);
+      await window.lobster0.resolveApproval(pendingApproval.approvalId, decision);
       setTask((current) => continueDesktopApproval(current));
     } catch {
       setActionError("审批未提交，当前任务仍在等待处理。");
@@ -168,7 +168,7 @@ export function TaskWorkbench({
         disabled={disabled || bootstrap === null}
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={onComposerKeyDown}
-        placeholder={bootstrap ? "描述目标、背景和期望产物…" : "正在连接 MiniClaw Core…"}
+        placeholder={bootstrap ? "描述目标、背景和期望产物…" : "正在连接 Lobster0 Core…"}
         rows={emptyTask ? 5 : 3}
         value={draft}
       />
@@ -208,7 +208,7 @@ export function TaskWorkbench({
         {emptyTask ? (
           <div className="conversation-invite">
             <h2>今天想完成什么？</h2>
-            <p>说明目标和期望结果，MiniClaw 会在需要操作本地资源时请求审批。</p>
+            <p>说明目标和期望结果，Lobster0 会在需要操作本地资源时请求审批。</p>
             {composer}
           </div>
         ) : (
@@ -218,7 +218,7 @@ export function TaskWorkbench({
             if (item.kind === "user" || item.kind === "assistant") {
               return (
                 <article className={`message message-${item.kind}`} key={item.id}>
-                  <span>{item.kind === "user" ? "你" : "MiniClaw"}</span>
+                  <span>{item.kind === "user" ? "你" : "Lobster0"}</span>
                   {item.content ? <Markdown content={item.content} /> : <p>…</p>}
                 </article>
               );

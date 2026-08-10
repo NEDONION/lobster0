@@ -9,7 +9,7 @@ import tempfile
 from pathlib import Path
 from typing import cast
 
-from miniclaw.evals.production_evidence import (
+from lobster0.evals.production_evidence import (
     ProductionEvidenceError,
     build_seatbelt_evidence_report,
     clean_repository_commit,
@@ -17,12 +17,12 @@ from miniclaw.evals.production_evidence import (
     utc_timestamp,
     write_private_json,
 )
-from miniclaw.policy.command import SAFE_EXECUTABLE_PATH
-from miniclaw.policy.executables import discover_executables
-from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxBackendName
-from miniclaw.sandbox.docker import DockerSandbox, discover_rootless_client_transport
-from miniclaw.sandbox.executables import capture_executable_chain
-from miniclaw.sandbox.seatbelt import SeatbeltSandbox
+from lobster0.policy.command import SAFE_EXECUTABLE_PATH
+from lobster0.policy.executables import discover_executables
+from lobster0.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxBackendName
+from lobster0.sandbox.docker import DockerSandbox, discover_rootless_client_transport
+from lobster0.sandbox.executables import capture_executable_chain
+from lobster0.sandbox.seatbelt import SeatbeltSandbox
 
 
 def _arguments() -> argparse.Namespace:
@@ -75,14 +75,14 @@ async def _run(args: argparse.Namespace) -> int:
         except (OSError, ProductionEvidenceError):
             print("production evidence preflight failed", file=sys.stderr)
             return 2
-    with tempfile.TemporaryDirectory(prefix="miniclaw-sandbox-smoke-") as directory:
+    with tempfile.TemporaryDirectory(prefix="lobster0-sandbox-smoke-") as directory:
         root = Path(directory).resolve()
         workspace = root / "workspace"
         workspace.mkdir()
         if args.backend == "docker":
             workspace.chmod(0o703)
         secret = root / "outside-secret"
-        secret.write_text("MINICLAW_SMOKE_SECRET", encoding="utf-8")
+        secret.write_text("LOBSTER0_SMOKE_SECRET", encoding="utf-8")
         probe = workspace / "probe.py"
         result = workspace / "result.txt"
         if args.backend == "docker":
@@ -150,7 +150,7 @@ async def _run(args: argparse.Namespace) -> int:
             and result.read_text(encoding="utf-8") == "workspace-write-ok"
             and "outside-secret-denied" in receipt.stdout
             and "network-denied" in receipt.stdout
-            and "MINICLAW_SMOKE_SECRET" not in receipt.canonical_json
+            and "LOBSTER0_SMOKE_SECRET" not in receipt.canonical_json
         )
         print(
             _stable_status(

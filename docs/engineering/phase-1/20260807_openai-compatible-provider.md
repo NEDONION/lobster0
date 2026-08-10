@@ -7,7 +7,7 @@
 
 ## 1. 模块目的
 
-`src/miniclaw/providers/openai_compatible.py` 把 MiniClaw 的稳定 `ModelRequest` 转换成 OpenAI Chat
+`src/lobster0/providers/openai_compatible.py` 把 Lobster0 的稳定 `ModelRequest` 转换成 OpenAI Chat
 Completions 请求，并把 DeepSeek 或其他兼容端点的 SSE/JSON 响应收窄为 `ModelResponse`。
 
 Phase 1 生产配置固定使用：
@@ -84,7 +84,7 @@ finally:
 
 可选字段映射：
 
-| MiniClaw | Chat Completions |
+| Lobster0 | Chat Completions |
 | --- | --- |
 | `request.tools` | `tools` |
 | `request.temperature` | `temperature` |
@@ -174,7 +174,7 @@ DeepSeek/OpenAI 流会把同一调用拆成多个片段：
 `[PROTO-001]` 固化在 Provider 回归测试中。
 
 OpenAI 规范要求 `arguments` 是 JSON 字符串，但部分 DeepSeek/OpenAI-compatible 网关会直接返回完整 JSON
-object。MiniClaw 对这种已经结构化的完整值做兼容：先编码为紧凑 JSON，再进入同一聚合和最终 object 校验。
+object。Lobster0 对这种已经结构化的完整值做兼容：先编码为紧凑 JSON，再进入同一聚合和最终 object 校验。
 object 只能作为完整值出现，不能与字符串分片混用；数组、数字、布尔值和 `null` 仍然 fail closed。这样既解决
 真实端点的 `ProviderProtocolError`，也不放宽 Tool 参数必须为 JSON object 的内部契约。
 
@@ -326,15 +326,15 @@ uv run python -m unittest \
 静态检查：
 
 ```bash
-uv run ruff check src/miniclaw/providers tests/test_openai_compatible_provider.py
+uv run ruff check src/lobster0/providers tests/test_openai_compatible_provider.py
 ```
 
-真实调用只能通过裸 `miniclaw` 的唯一 TUI 做显式 Live Smoke，不在 Provider 模块临时加入 `print()`、示例
+真实调用只能通过裸 `lobster0` 的唯一 TUI 做显式 Live Smoke，不在 Provider 模块临时加入 `print()`、示例
 Key 或调试 main。自动化协议复现优先使用 MockTransport 和离线 Agent cases。
 
 排障顺序：
 
-1. `miniclaw doctor` 确认配置与凭据变量存在；
+1. `lobster0 doctor` 确认配置与凭据变量存在；
 2. 根据稳定错误类型判断认证、限速、超时、5xx 或协议；
 3. 使用持久化的 Provider request ID 联系服务商；
 4. 仅在本地受控测试中构造相同状态或 SSE，不保存真实响应。
@@ -353,7 +353,7 @@ Key 或调试 main。自动化协议复现优先使用 MockTransport 和离线 A
 ## 14. 已知限制与升级条件
 
 - 只支持 Chat Completions，不支持 Responses API 或 Anthropic Messages。
-- 只消费首个 choice；MiniClaw 不请求多候选。
+- 只消费首个 choice；Lobster0 不请求多候选。
 - SSE 只接受 `data:` 事件和注释，不实现通用浏览器 EventSource 重连。
 - `Retry-After` 只支持数值秒数。
 - Provider 不实现上下文预算和输出截断；分别属于 ContextBuilder 与 AgentRunner。

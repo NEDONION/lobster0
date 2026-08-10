@@ -4,31 +4,31 @@ import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { BridgeClient } from "@miniclaw/pi-tui/bridge-client";
+import { BridgeClient } from "@lobster0/pi-tui/bridge-client";
 import { expect, it } from "vitest";
 
 const projectRoot = fileURLToPath(new URL("../../", import.meta.url));
 const localPython = process.platform === "win32"
   ? join(projectRoot, ".venv", "Scripts", "python.exe")
   : join(projectRoot, ".venv", "bin", "python");
-const python = process.env.MINICLAW_PYTHON
-  ? resolve(projectRoot, process.env.MINICLAW_PYTHON)
+const python = process.env.LOBSTER0_PYTHON
+  ? resolve(projectRoot, process.env.LOBSTER0_PYTHON)
   : (existsSync(localPython) ? localPython : "");
 
 it.skipIf(!python)("handshakes with the real Python Bridge as Desktop", async () => {
-  const temporaryRoot = mkdtempSync(join(tmpdir(), "miniclaw-desktop-"));
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "lobster0-desktop-"));
   const home = join(temporaryRoot, "home");
   const workspace = join(temporaryRoot, "workspace");
   mkdirSync(workspace);
   const environment = {
     ...process.env,
-    MINICLAW_HOME: home,
-    MINICLAW_PYTHON: python,
-    MINICLAW_MODEL_API_KEY: "offline-smoke-key",
-    MINICLAW_WORKSPACE: workspace,
+    LOBSTER0_HOME: home,
+    LOBSTER0_PYTHON: python,
+    LOBSTER0_MODEL_API_KEY: "offline-smoke-key",
+    LOBSTER0_WORKSPACE: workspace,
     PYTHONPATH: join(projectRoot, "src"),
   };
-  const initialized = spawnSync(python, ["-m", "miniclaw", "init", "--home", home], {
+  const initialized = spawnSync(python, ["-m", "lobster0", "init", "--home", home], {
     cwd: projectRoot,
     encoding: "utf8",
     env: environment,
@@ -39,7 +39,7 @@ it.skipIf(!python)("handshakes with the real Python Bridge as Desktop", async ()
 
   const client = BridgeClient.spawnFromEnvironment(environment);
   try {
-    const hello = await client.hello("miniclaw-desktop", "0.1.0");
+    const hello = await client.hello("lobster0-desktop", "0.1.0");
     expect(hello.protocol).toBe(1);
     expect(hello.workspace).toBe(basename(workspace));
     expect(Array.isArray(hello.capabilities)).toBe(true);

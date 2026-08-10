@@ -1,4 +1,4 @@
-# MiniClaw Desktop D1～D5 分 Phase 落地方案
+# Lobster0 Desktop D1～D5 分 Phase 落地方案
 
 > 日期：2026-08-10
 > 文档类型：工程落地路线
@@ -319,7 +319,7 @@ D1～D5 全部退出后，才能将本路线标记为 `IMPLEMENTATION PASS`：
 - 附件、模型、Workspace、Agent 控件真实可用；
 - Artifact 共享和安全预览真实可用；
 - depth-1 Multi-Agent 真实可用且安全门禁通过；
-- MiniClaw Core、Policy、Approval、SQLite 和 ArtifactStore 仍然唯一；
+- Lobster0 Core、Policy、Approval、SQLite 和 ArtifactStore 仍然唯一；
 - 一键启动、自动化测试、全量构建、手工 Electron 和受控 live smoke 有证据；
 - 文档、实现和开源归属一致。
 

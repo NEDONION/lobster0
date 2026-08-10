@@ -22,7 +22,7 @@ test(
   "executes snapshot, click and non-sensitive type with untrusted provenance",
   { skip: executable === undefined },
   async (t) => {
-    const profile = await mkdtemp(join(tmpdir(), "miniclaw-browser-actions-"));
+    const profile = await mkdtemp(join(tmpdir(), "lobster0-browser-actions-"));
     t.after(() => rm(profile, { recursive: true, force: true }));
     const manager = new SessionManager({
       profileRoot: profile,
@@ -67,11 +67,11 @@ test(
         ref: search.ref,
         role: search.role,
         input_kind: "text",
-        text: "MiniClaw query",
+        text: "Lobster0 query",
       }),
     );
     assert.equal(typed.provenance, "untrusted_web_content");
-    assert.equal(await page.locator("#search").inputValue(), "MiniClaw query");
+    assert.equal(await page.locator("#search").inputValue(), "Lobster0 query");
 
     await assert.rejects(
       actions.execute(
@@ -105,7 +105,7 @@ test(
   "rejects stale refs and closes the exact session",
   { skip: executable === undefined },
   async (t) => {
-    const profile = await mkdtemp(join(tmpdir(), "miniclaw-browser-stale-action-"));
+    const profile = await mkdtemp(join(tmpdir(), "lobster0-browser-stale-action-"));
     t.after(() => rm(profile, { recursive: true, force: true }));
     const manager = new SessionManager({
       profileRoot: profile,
@@ -152,7 +152,7 @@ test("open accepts only HTTPS and returns before/after URLs", async () => {
   const page = new FakePage();
   const actions = new ActionExecutor(new FakeSessions(page), {
     maxSnapshotChars: 20_000,
-    stagingRoot: join(tmpdir(), "miniclaw-browser-unused-staging"),
+    stagingRoot: join(tmpdir(), "lobster0-browser-unused-staging"),
     maxArtifactBytes: 5 * 1024 * 1024,
   });
 
@@ -173,7 +173,7 @@ test("open accepts only HTTPS and returns before/after URLs", async () => {
 });
 
 test("versioned server dispatches close through ActionExecutor", async (t) => {
-  const profile = await mkdtemp(join(tmpdir(), "miniclaw-browser-server-"));
+  const profile = await mkdtemp(join(tmpdir(), "lobster0-browser-server-"));
   t.after(() => rm(profile, { recursive: true, force: true }));
   const child = spawn(
     process.execPath,
@@ -194,12 +194,12 @@ test("versioned server dispatches close through ActionExecutor", async (t) => {
   assert.ok(child.stdout && child.stdin);
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator]();
   assert.deepEqual(JSON.parse(String((await lines.next()).value)), {
-    protocol: "miniclaw.browser.v1",
+    protocol: "lobster0.browser.v1",
     type: "ready",
   });
   child.stdin.write(
     `${JSON.stringify({
-      protocol: "miniclaw.browser.v1",
+      protocol: "lobster0.browser.v1",
       id: "close-1",
       session_id: "session-1",
       action: "close",
@@ -214,7 +214,7 @@ test("versioned server dispatches close through ActionExecutor", async (t) => {
 
 function request(action: string, params: Record<string, unknown>) {
   return {
-    protocol: "miniclaw.browser.v1" as const,
+    protocol: "lobster0.browser.v1" as const,
     id: `request-${action}`,
     session_id: "session-1",
     action,

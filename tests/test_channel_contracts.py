@@ -4,7 +4,7 @@ import unittest
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 
-from miniclaw.channels.base import (
+from lobster0.channels.base import (
     ChannelLimits,
     ChannelTransport,
     InboundMessage,

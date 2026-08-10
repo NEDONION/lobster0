@@ -7,9 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
-from miniclaw.tui_launcher import is_supported_node_version
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
+from lobster0.tui_launcher import is_supported_node_version
 
 
 class PiTuiIntegrationTest(unittest.TestCase):
@@ -18,7 +18,7 @@ class PiTuiIntegrationTest(unittest.TestCase):
     def test_node_client_handshakes_with_real_python_bridge(self) -> None:
         """受支持 Node LTS 和已构建 TUI 可用时必须通过真实子进程往返。"""
         project = Path(__file__).resolve().parent.parent
-        node = os.environ.get("MINICLAW_NODE") or shutil.which("node")
+        node = os.environ.get("LOBSTER0_NODE") or shutil.which("node")
         if not node:
             self.skipTest("Node.js is not installed")
         version = subprocess.run(
@@ -45,10 +45,10 @@ class PiTuiIntegrationTest(unittest.TestCase):
             initialize_state(build_state_paths(home))
             environment = {
                 **os.environ,
-                "MINICLAW_NODE": node,
-                "MINICLAW_PYTHON": os.sys.executable,
-                "MINICLAW_BRIDGE_SMOKE_HOME": str(home),
-                "MINICLAW_MODEL_API_KEY": "offline-smoke-key",
+                "LOBSTER0_NODE": node,
+                "LOBSTER0_PYTHON": os.sys.executable,
+                "LOBSTER0_BRIDGE_SMOKE_HOME": str(home),
+                "LOBSTER0_MODEL_API_KEY": "offline-smoke-key",
                 "PYTHONPATH": str(project / "src"),
             }
             completed = subprocess.run(

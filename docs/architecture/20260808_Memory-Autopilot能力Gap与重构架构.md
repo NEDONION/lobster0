@@ -1,4 +1,4 @@
-# MiniClaw Memory Autopilot 能力 Gap 与重构架构
+# Lobster0 Memory Autopilot 能力 Gap 与重构架构
 
 > 日期：2026-08-08
 > 状态：**APPROVED DESIGN / PLANNED / NOT IMPLEMENTED**
@@ -7,7 +7,7 @@
 
 ## 1. 先说结论
 
-当前 MiniClaw **不是完全没有 Memory**。它已经有：
+当前 Lobster0 **不是完全没有 Memory**。它已经有：
 
 - 全渠道共享的 `MEMORY.md`；
 - 今日/昨日 `memory/YYYY-MM-DD.md`；
@@ -68,13 +68,13 @@ sequenceDiagram
 
 | 位置 | 当前行为 | 结果 |
 | --- | --- | --- |
-| `src/miniclaw/agent/context.py` | 每个 Turn 注入同一 `MemoryStore.snapshot()` | 已落盘 Memory 跨渠道共享 |
-| `src/miniclaw/agent/context.py` | System Prompt 要求只有 Owner 明确要求时才 `propose_memory` | 普通对话不会形成记忆 |
-| `src/miniclaw/memory/store.py` | 只读取 `MEMORY.md`、今日和昨日 | 更老内容无法自动检索 |
-| `src/miniclaw/tools/memory.py` | `read_memory` 只有三个固定 scope | 不能按问题搜索所有 Memory Unit |
-| `src/miniclaw/storage/conversations.py` | Message 按 `session_id` 查询 | 飞书 Session 看不到 CLI Session 历史 |
-| `src/miniclaw/storage/channels.py` | Channel Identity 已稳定映射 `user_id` | 已有跨渠道 Owner 主键，可作为重构基础 |
-| `src/miniclaw/agent/context.py` | 没有 requester trust/context 参数 | 当前 Memory 注入无法按私聊、群聊、非 Owner 精确隔离 |
+| `src/lobster0/agent/context.py` | 每个 Turn 注入同一 `MemoryStore.snapshot()` | 已落盘 Memory 跨渠道共享 |
+| `src/lobster0/agent/context.py` | System Prompt 要求只有 Owner 明确要求时才 `propose_memory` | 普通对话不会形成记忆 |
+| `src/lobster0/memory/store.py` | 只读取 `MEMORY.md`、今日和昨日 | 更老内容无法自动检索 |
+| `src/lobster0/tools/memory.py` | `read_memory` 只有三个固定 scope | 不能按问题搜索所有 Memory Unit |
+| `src/lobster0/storage/conversations.py` | Message 按 `session_id` 查询 | 飞书 Session 看不到 CLI Session 历史 |
+| `src/lobster0/storage/channels.py` | Channel Identity 已稳定映射 `user_id` | 已有跨渠道 Owner 主键，可作为重构基础 |
+| `src/lobster0/agent/context.py` | 没有 requester trust/context 参数 | 当前 Memory 注入无法按私聊、群聊、非 Owner 精确隔离 |
 
 最后一项是安全 Gap：即使 Tool Policy 已区分可信 Owner 私聊与其他场景，ContextBuilder 仍缺少同样的 Memory Disclosure 决策。重构必须把“是否允许注入私人记忆”变成 Core 的显式输入，不能只靠 Prompt 提醒模型不要泄露。
 
@@ -99,7 +99,7 @@ sequenceDiagram
 - [Storage Layout](https://github.com/EverMind-AI/EverOS/blob/main/docs/storage_layout.md)
 - [Reflection](https://github.com/EverMind-AI/EverOS/blob/main/docs/reflection.md)
 
-MiniClaw 借鉴 Markdown-first、可重建索引、后台 flush 和来源追溯；首版不照搬独立 HTTP Server、LanceDB、多模型 Parser 和完整 Offline Memory Engine。
+Lobster0 借鉴 Markdown-first、可重建索引、后台 flush 和来源追溯；首版不照搬独立 HTTP Server、LanceDB、多模型 Parser 和完整 Offline Memory Engine。
 
 ### 3.2 TencentDB Agent Memory
 
@@ -117,13 +117,13 @@ flowchart BT
 
 同时，它把长任务的工具输出卸载为 `refs/*.md`，用 JSONL 和 Mermaid 画布保存中高层结构，通过 `node_id` / `result_ref` 回到原始证据。其 OpenClaw 集成默认使用本地 SQLite + sqlite-vec，并提供 Keyword、Embedding、Hybrid 检索。
 
-MiniClaw 借鉴 L0→L3、渐进披露、混合检索方向和白盒调试；首版不把 Mermaid 当作唯一机器状态，也不直接引入外部 Gateway 服务。
+Lobster0 借鉴 L0→L3、渐进披露、混合检索方向和白盒调试；首版不把 Mermaid 当作唯一机器状态，也不直接引入外部 Gateway 服务。
 
 ### 3.3 OpenClaw
 
 [OpenClaw Memory](https://github.com/openclaw/openclaw/blob/main/docs/concepts/memory.md) 同样使用 `MEMORY.md` 和 daily Markdown，并在 compaction 前执行 silent memory flush。其内置检索将 Markdown 切块后写入 per-agent SQLite，支持 FTS5、可选向量和 Hybrid Search。
 
-MiniClaw 已有同类文件，但缺少自动 flush、搜索索引、晋升、Dreaming/Reflection 和 Disclosure Policy。
+Lobster0 已有同类文件，但缺少自动 flush、搜索索引、晋升、Dreaming/Reflection 和 Disclosure Policy。
 
 ## 4. 能力 Gap 总表
 
@@ -205,7 +205,7 @@ classDiagram
 
 ### 5.3 L2 Scenario：场景叙事
 
-把多个相关 Unit 组织成可读场景，例如“MiniClaw 开源项目”“飞书机器人接入”“CLI 体验偏好”。Scenario 只保存摘要和 Unit 引用，不能成为无法回到证据的黑盒摘要。
+把多个相关 Unit 组织成可读场景，例如“Lobster0 开源项目”“飞书机器人接入”“CLI 体验偏好”。Scenario 只保存摘要和 Unit 引用，不能成为无法回到证据的黑盒摘要。
 
 ### 5.4 L3 Profile：长期画像
 
@@ -345,7 +345,7 @@ sequenceDiagram
 ## 9. Markdown 布局
 
 ```text
-~/.miniclaw/memory/
+~/.lobster0/memory/
 ├── owners/
 │   └── 1/
 │       ├── profile.md
@@ -366,7 +366,7 @@ sequenceDiagram
 └── .tmp/
 ```
 
-现有 `~/.miniclaw/MEMORY.md` 在迁移期保留，只读并导入为 `source=legacy_manual` 的 confirmed Unit；完成校验前不删除或覆盖。
+现有 `~/.lobster0/MEMORY.md` 在迁移期保留，只读并导入为 `source=legacy_manual` 的 confirmed Unit；完成校验前不删除或覆盖。
 
 ## 10. 检索与上下文注入
 
@@ -472,7 +472,7 @@ flowchart LR
 1. 在 TUI 说“我主要使用 Python 开发 Agent”，不说“记住”；完成 flush 后，在飞书私聊提问能召回并给出来源。
 2. 在飞书明确说“记住我希望默认用中文”，立即形成 confirmed Unit；下一次 TUI Turn 自动使用。
 3. 在 Discord 说一次临时偏好，不立即改写长期 Profile；跨 Session 重复后才自动晋升。
-4. 在群聊询问个人偏好，MiniClaw 不注入或泄露 Owner 私人 Memory。
+4. 在群聊询问个人偏好，Lobster0 不注入或泄露 Owner 私人 Memory。
 5. 白名单非 Owner 私聊不能读取 Owner Memory。
 6. 新事实与旧事实冲突时不静默覆盖，进入 review。
 7. Gateway 在 Markdown 写入后、索引前崩溃；重启能重建且不重复 Unit。

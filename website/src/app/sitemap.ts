@@ -1,6 +1,6 @@
 import type { MetadataRoute } from 'next';
 
-const siteUrl = 'https://miniclaw.vercel.app';
+const siteUrl = 'https://lobster0.vercel.app';
 const docsSlugs = ['', 'getting-started', 'runtime', 'security', 'channels', 'memory'];
 
 function absolute(path: string) {

@@ -29,7 +29,7 @@
 
 **Files:**
 - Create: `evals/scenarios/feishu-automation-live.v1.jsonl`
-- Modify: `src/miniclaw/evals/cases.py`
+- Modify: `src/lobster0/evals/cases.py`
 - Modify: `tests/test_eval_cases.py`
 
 **Interfaces:**
@@ -84,7 +84,7 @@ Expected: 所有通用、Feishu、Automation、Browser loader 测试 PASS。
 - [ ] **Step 5: Commit**
 
 ```bash
-git add evals/scenarios/feishu-automation-live.v1.jsonl src/miniclaw/evals/cases.py tests/test_eval_cases.py
+git add evals/scenarios/feishu-automation-live.v1.jsonl src/lobster0/evals/cases.py tests/test_eval_cases.py
 git commit -m "test(feishu): 固定 Phase 6 Automation live cases"
 ```
 
@@ -93,9 +93,9 @@ git commit -m "test(feishu): 固定 Phase 6 Automation live cases"
 ### Task B2: Redacted production Evidence contract
 
 **Files:**
-- Create: `src/miniclaw/evals/production_evidence.py`
+- Create: `src/lobster0/evals/production_evidence.py`
 - Create: `tests/test_production_evidence.py`
-- Modify: `src/miniclaw/evals/feishu_live.py`
+- Modify: `src/lobster0/evals/feishu_live.py`
 - Modify: `tests/test_feishu_live_e2e.py`
 
 **Interfaces:**
@@ -127,7 +127,7 @@ Expected: permissions/redaction PASS；15-case Evidence schema、status 与 exis
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/evals/production_evidence.py src/miniclaw/evals/feishu_live.py tests/test_production_evidence.py tests/test_feishu_live_e2e.py
+git add src/lobster0/evals/production_evidence.py src/lobster0/evals/feishu_live.py tests/test_production_evidence.py tests/test_feishu_live_e2e.py
 git commit -m "refactor(eval): 复用 private production evidence boundary"
 ```
 
@@ -136,7 +136,7 @@ git commit -m "refactor(eval): 复用 private production evidence boundary"
 ### Task B3: Feishu Automation live evaluator
 
 **Files:**
-- Create: `src/miniclaw/evals/feishu_automation_live.py`
+- Create: `src/lobster0/evals/feishu_automation_live.py`
 - Create: `tests/test_feishu_automation_live.py`
 
 **Interfaces:**
@@ -195,7 +195,7 @@ Expected: 10 条 positive fixture 和所有 corruption fixture PASS。
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/evals/feishu_automation_live.py tests/test_feishu_automation_live.py
+git add src/lobster0/evals/feishu_automation_live.py tests/test_feishu_automation_live.py
 git commit -m "feat(eval): 增加 Feishu Automation durable evaluator"
 ```
 
@@ -204,7 +204,7 @@ git commit -m "feat(eval): 增加 Feishu Automation durable evaluator"
 ### Task B4: Confirmed live harness and DeepSeek paths
 
 **Files:**
-- Modify: `src/miniclaw/evals/feishu_automation_live.py`
+- Modify: `src/lobster0/evals/feishu_automation_live.py`
 - Create: `scripts/feishu_automation_live.py`
 - Modify: `tests/test_feishu_automation_live.py`
 - Modify: `tests/test_channel_live_harness.py`
@@ -242,7 +242,7 @@ Expected: no-network harness contract PASS；中断可恢复且 Evidence 不泄�
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/evals/feishu_automation_live.py scripts/feishu_automation_live.py tests/test_feishu_automation_live.py tests/test_channel_live_harness.py
+git add src/lobster0/evals/feishu_automation_live.py scripts/feishu_automation_live.py tests/test_feishu_automation_live.py tests/test_channel_live_harness.py
 git commit -m "feat(feishu): 打通 confirmed Automation live harness"
 ```
 
@@ -251,15 +251,15 @@ git commit -m "feat(feishu): 打通 confirmed Automation live harness"
 ### Task B5: Execute both real Feishu gates
 
 **Files:**
-- Runtime-only: ignored Evidence under `~/.miniclaw/evidence/phase6-production/<run-id>/`
+- Runtime-only: ignored Evidence under `~/.lobster0/evidence/phase6-production/<run-id>/`
 - Modify after PASS: `docs/evals/releases/20260810_phase6-macos-feishu-production.md`
 
 - [ ] **Step 1: 跑 deterministic pre-gates**
 
 ```bash
 uv run python -m unittest tests.test_eval_cases tests.test_feishu_live_e2e tests.test_feishu_automation_live -v
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
 uv run ruff check .
 git diff --check
 ```
@@ -269,7 +269,7 @@ git diff --check
 ```bash
 uv run python scripts/feishu_live_smoke.py \
   --confirm-live \
-  --output-dir ~/.miniclaw/evidence/phase6-production/<run-id>/feishu-channel
+  --output-dir ~/.lobster0/evidence/phase6-production/<run-id>/feishu-channel
 ```
 
 Expected: `FEISHU_E2E_VERIFIED`, 15/15 PASS, zero Secret matches；任何 skip 都不通过生产 Gate。
@@ -279,7 +279,7 @@ Expected: `FEISHU_E2E_VERIFIED`, 15/15 PASS, zero Secret matches；任何 skip �
 ```bash
 uv run python scripts/feishu_automation_live.py \
   --confirm-live \
-  --output-dir ~/.miniclaw/evidence/phase6-production/<run-id>/feishu-automation
+  --output-dir ~/.lobster0/evidence/phase6-production/<run-id>/feishu-automation
 ```
 
 Expected: `FEISHU_AUTOMATION_VERIFIED`, 10/10 PASS, zero duplicates/pending leaks/Secret matches。

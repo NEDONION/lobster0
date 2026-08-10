@@ -1,5 +1,5 @@
 {
-  "name": "@miniclaw/desktop",
+  "name": "@lobster0/desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -16,7 +16,7 @@
     "smoke": "electron scripts/smoke-electron.mjs"
   },
   "dependencies": {
-    "@miniclaw/pi-tui": "file:../tui",
+    "@lobster0/pi-tui": "file:../tui",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-markdown": "^10.1.0",

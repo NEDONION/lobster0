@@ -1,4 +1,4 @@
-# MiniClaw Desktop 一键启动设计
+# Lobster0 Desktop 一键启动设计
 
 > 状态：`IMPLEMENTATION PASS / ELECTRON MANUAL PENDING`
 
@@ -6,7 +6,7 @@
 
 ## 1. 目标
 
-在仓库根目录提供 `start-desktop.command`。macOS 用户既可在 Finder 双击，也可在终端执行同一个文件，完成项目依赖准备、MiniClaw 状态初始化和 Desktop development build 启动。
+在仓库根目录提供 `start-desktop.command`。macOS 用户既可在 Finder 双击，也可在终端执行同一个文件，完成项目依赖准备、Lobster0 状态初始化和 Desktop development build 启动。
 
 脚本解决的是 W0/W1 开发版的启动易用性，不把开发构建描述成已签名安装包。
 
@@ -18,11 +18,11 @@
 2. 检查 macOS、`uv`、Node.js `>=22.19.0` 和 Corepack；
 3. 缺少 Python 虚拟环境时执行 `uv sync --extra dev`；
 4. 缺少 TUI 的 `node_modules` 时按锁文件安装依赖；
-5. 构建共享的 `@miniclaw/pi-tui`，确保 Desktop 安装能包含真实 `dist`；
+5. 构建共享的 `@lobster0/pi-tui`，确保 Desktop 安装能包含真实 `dist`；
 6. 缺少 Desktop 的 `node_modules` 时按锁文件安装依赖；若本地 TUI 快照残缺，则强制刷新一次；
 7. 调用 Electron 43 的官方 resolver；二进制缺失或残缺时由包内懒安装自动补齐；
-8. 首次使用默认状态目录时运行现有 `miniclaw setup`；
-9. 已有状态目录时运行幂等 `miniclaw init`；
+8. 首次使用默认状态目录时运行现有 `lobster0 setup`；
+9. 已有状态目录时运行幂等 `lobster0 init`；
 10. 选择现有 owner-only Secret 文件并启动 Electron development build；
 11. 任一步失败时停止，显示可操作的短错误并保留终端窗口供用户查看。
 
@@ -31,17 +31,17 @@
 - 安装 Homebrew、`uv`、Node.js 或操作系统组件；
 - 把 API Key 写进脚本、命令行参数、日志或仓库 `.env`；
 - 打包、签名、公证、自动更新或生成 `.dmg`；
-- 启动 Gateway、修改 Channel 配置或绕过 `miniclaw setup`；
+- 启动 Gateway、修改 Channel 配置或绕过 `lobster0 setup`；
 - 自动修复损坏配置、放宽文件权限或删除现有状态。
 
 ## 3. 入口与默认值
 
 - 文件名固定为仓库根目录的 `start-desktop.command`；
-- 默认状态目录沿用 Core 约定：`${MINICLAW_HOME:-$HOME/.miniclaw}`；
-- `MINICLAW_HOME` 必须是绝对路径，具体校验继续由 MiniClaw Core 完成；
+- 默认状态目录沿用 Core 约定：`${LOBSTER0_HOME:-$HOME/.lobster0}`；
+- `LOBSTER0_HOME` 必须是绝对路径，具体校验继续由 Lobster0 Core 完成；
 - Python 固定使用仓库 `.venv/bin/python`；
 - 包管理固定通过 `corepack pnpm` 调用仓库锁定的 pnpm；
-- 用户已显式设置的 `MINICLAW_ENV_FILE` 保持最高优先级；否则存在 `$MINICLAW_HOME/secrets.env` 时使用该文件；若两者都不存在，Bridge 仍保留仓库私密 `.env` 的现有开发语义。
+- 用户已显式设置的 `LOBSTER0_ENV_FILE` 保持最高优先级；否则存在 `$LOBSTER0_HOME/secrets.env` 时使用该文件；若两者都不存在，Bridge 仍保留仓库私密 `.env` 的现有开发语义。
 
 ## 4. 用户流程
 
@@ -51,7 +51,7 @@
 2. 脚本检查系统运行时，安装缺失的 TUI 依赖并构建共享 Client；
 3. 共享 Client 构建完成后，脚本才安装缺失的 Desktop 依赖；
 4. 脚本调用 Electron 包的官方 resolver，确保 electron-vite 可读取并启动真实 executable；
-5. 脚本调用 `miniclaw setup --home "$MINICLAW_HOME"`；
+5. 脚本调用 `lobster0 setup --home "$LOBSTER0_HOME"`；
 6. 现有 setup 从 `/dev/tty` 收集模型 API Key，并允许用户选择是否启用三个 Channel；
 7. setup 以 `0700` 状态目录和 `0600` Secret 文件保存配置；
 8. 脚本设置 Desktop 需要的进程环境并执行 `corepack pnpm --dir desktop dev`。
@@ -60,7 +60,7 @@
 
 1. 依赖目录存在时不重复联网安装，但始终快速构建共享 TUI；若 Desktop 中的本地 TUI 快照残缺，则自动刷新；
 2. 已存在 `config.toml` 时不再调用 fresh-only setup；
-3. 脚本调用 `miniclaw init --home "$MINICLAW_HOME"` 补齐迁移和缺失的非 Secret 状态；
+3. 脚本调用 `lobster0 init --home "$LOBSTER0_HOME"` 补齐迁移和缺失的非 Secret 状态；
 4. Electron 继承当前 shell 环境和选定的 Secret 文件路径后启动。
 
 ## 5. 安全边界
@@ -90,7 +90,7 @@
 
 ## 7. 测试与验收
 
-新增离线 Shell 合约测试，通过临时目录和 fake `uv`、`node`、`corepack`、`miniclaw` 命令验证：
+新增离线 Shell 合约测试，通过临时目录和 fake `uv`、`node`、`corepack`、`lobster0` 命令验证：
 
 - 从任意当前目录启动仍能定位仓库；
 - 缺少系统运行时会在任何项目写入前失败；
@@ -106,7 +106,7 @@
 ```bash
 uv run python -m unittest tests.test_desktop_launcher -v
 corepack pnpm --dir tui test
-MINICLAW_PYTHON=.venv/bin/python corepack pnpm --dir desktop test
+LOBSTER0_PYTHON=.venv/bin/python corepack pnpm --dir desktop test
 corepack pnpm --dir desktop typecheck
 corepack pnpm --dir desktop build
 uv run ruff check .

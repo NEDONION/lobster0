@@ -1,4 +1,4 @@
-# MiniClaw Python Core + pi-tui 终端架构设计
+# Lobster0 Python Core + pi-tui 终端架构设计
 
 > 状态：已由 Owner 于 2026-08-08 确认并完成实施
 > 范围：Provider 历史修复、版本化 NDJSON Bridge、TypeScript pi-tui、Textual fallback、终端回归测试  
@@ -11,14 +11,14 @@
 1. 流式增量反复重建 Markdown 子节点，终端选区引用的节点消失；
 2. 每个 `RunEvent` 都强制滚到底部，用户向上阅读或跨屏拖选时视口被抢走。
 
-这两个缺陷必须先在 Textual fallback 中修复，避免迁移期间现有入口不可用。但 MiniClaw 追求的是 Codex 风格的高密度活动流、稳定大段输入、可展开工具过程和审批 Overlay；继续把这些行为全部定制在 Textual 中，会让 UI 与 Python Agent Core 再次耦合。
+这两个缺陷必须先在 Textual fallback 中修复，避免迁移期间现有入口不可用。但 Lobster0 追求的是 Codex 风格的高密度活动流、稳定大段输入、可展开工具过程和审批 Overlay；继续把这些行为全部定制在 Textual 中，会让 UI 与 Python Agent Core 再次耦合。
 
 因此采用异构前端：Python 继续负责模型、记忆、Tool Loop、Policy、Approval、SQLite 和审计；TypeScript 只消费一个受版本约束的事件协议并渲染终端。
 
 ## 2. 产品不变量
 
-- 人类入口只有 `miniclaw`；不新增面向用户的 `chat`、`tui` 或 `bridge` 子命令。
-- 默认启动 pi-tui；`MINICLAW_TUI=textual` 可显式进入迁移期 fallback。
+- 人类入口只有 `lobster0`；不新增面向用户的 `chat`、`tui` 或 `bridge` 子命令。
+- 默认启动 pi-tui；`LOBSTER0_TUI=textual` 可显式进入迁移期 fallback。
 - Node.js、构建产物或 TTY 不满足要求时，给出可操作诊断并安全回退 Textual。
 - TUI 不能直接访问 Provider Key、SQLite、文件系统 Tool 或 Shell；所有动作都必须经过 Python Core。
 - Python Bridge stdout 只允许 NDJSON；日志和诊断只能写 stderr。
@@ -27,13 +27,13 @@
 - Reasoning 默认展开，但使用弱化样式；正文、用户消息和审批始终拥有更高视觉权重。
 - 中文问题由 Core System Prompt 要求 Provider 使用中文 reasoning；TUI 不伪造或二次翻译模型思考。
 - Token、上下文、工具次数、迭代和耗时只显示 Core 发布的真实值；缺失显示 `N/A`。
-- 终端真实字号由 Terminal/iTerm/IDE 控制；MiniClaw 通过零卡片边距、单行状态和紧凑树形活动流提高信息密度。
+- 终端真实字号由 Terminal/iTerm/IDE 控制；Lobster0 通过零卡片边距、单行状态和紧凑树形活动流提高信息密度。
 
 ## 3. 总体架构
 
 ```mermaid
 flowchart LR
-    U["Owner"] --> C["miniclaw 唯一命令"]
+    U["Owner"] --> C["lobster0 唯一命令"]
     C -->|"默认"| N["Node.js + pi-tui"]
     C -->|"显式 fallback"| X["Textual TUI"]
     N -->|"启动受控子进程"| B["Python Bridge"]
@@ -49,13 +49,13 @@ flowchart LR
 进程关系：
 
 ```text
-uv run miniclaw
+uv run lobster0
 └─ Python launcher
    └─ node tui/dist/main.js        # 继承真实终端
-      └─ python -m miniclaw.bridge # stdin/stdout 仅传 NDJSON
+      └─ python -m lobster0.bridge # stdin/stdout 仅传 NDJSON
 ```
 
-Python launcher 通过环境变量把当前 `sys.executable`、MiniClaw home 和 UI language 传给 Node。Node 使用 argv 启动 Bridge，禁止 `shell: true`。Node 或 Bridge 退出时，父进程转发退出码并回收子进程。
+Python launcher 通过环境变量把当前 `sys.executable`、Lobster0 home 和 UI language 传给 Node。Node 使用 argv 启动 Bridge，禁止 `shell: true`。Node 或 Bridge 退出时，父进程转发退出码并回收子进程。
 
 ## 4. NDJSON 协议 v1
 
@@ -125,12 +125,12 @@ Bridge 只透传 RunEvent 已定义的安全字段。未识别事件可被新客
 视觉主题是“本机运行日志”，不是聊天气泡：正文留白，活动过程用一条弱化树线串起来，状态只占一行。
 
 ```text
- MiniClaw 0.1.0 · deepseek-v4-pro · 会话 default · workspace
+ Lobster0 0.1.0 · deepseek-v4-pro · 会话 default · workspace
 ────────────────────────────────────────────────────────────────
  你
    帮我统计本周飞书文档
 
- MiniClaw
+ Lobster0
    我先确认可用的飞书 CLI，再查询本周创建记录。
 
  · 思考  #32  展开
@@ -215,8 +215,8 @@ uv run python -m unittest discover -s tests -v
 uv run ruff check .
 pnpm --dir tui test
 pnpm --dir tui build
-uv run miniclaw eval validate
-uv run miniclaw eval run --offline
+uv run lobster0 eval validate
+uv run lobster0 eval run --offline
 git diff --check
 ```
 
@@ -226,8 +226,8 @@ git diff --check
 
 - `@earendil-works/pi-tui 0.84.1` 要求 Node.js `>=22.19.0`。
 - 开发期使用 `pnpm`；Python 项目仍使用 `uv`。
-- `miniclaw doctor` 检查 Node 版本、`tui/dist/main.js` 和 Bridge 握手。
-- `MINICLAW_TUI=textual` 强制 fallback；`MINICLAW_TUI=pi` 在缺依赖时失败并输出安装指导。
+- `lobster0 doctor` 检查 Node 版本、`tui/dist/main.js` 和 Bridge 握手。
+- `LOBSTER0_TUI=textual` 强制 fallback；`LOBSTER0_TUI=pi` 在缺依赖时失败并输出安装指导。
 - 无 TTY 的 `init/doctor/eval/--version` 维护命令不启动 Node。
 
 ## 10. 非目标

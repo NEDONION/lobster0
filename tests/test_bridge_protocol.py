@@ -3,7 +3,7 @@
 import json
 import unittest
 
-from miniclaw.bridge.protocol import (
+from lobster0.bridge.protocol import (
     MAX_FRAME_BYTES,
     BridgeFrame,
     ProtocolError,
@@ -19,13 +19,13 @@ class BridgeProtocolTest(unittest.TestCase):
         """合法中文 Turn 必须保留请求 ID、Session 和原始多行文本。"""
         request = decode_request(
             b'{"v":1,"id":"req-1","type":"turn.start",'
-            b'"payload":{"session_key":"default","text":"\xe4\xbd\xa0\xe5\xa5\xbd\\nMiniClaw"}}\n'
+            b'"payload":{"session_key":"default","text":"\xe4\xbd\xa0\xe5\xa5\xbd\\nLobster0"}}\n'
         )
 
         self.assertEqual(request.version, 1)
         self.assertEqual(request.request_id, "req-1")
         self.assertEqual(request.type, "turn.start")
-        self.assertEqual(request.payload, {"session_key": "default", "text": "你好\nMiniClaw"})
+        self.assertEqual(request.payload, {"session_key": "default", "text": "你好\nLobster0"})
 
     def test_invalid_frames_return_stable_codes_without_parser_details(self) -> None:
         """版本、UTF-8、结构和长度错误必须使用稳定安全码。"""

@@ -6,7 +6,7 @@
 
 ## 1. Problem
 
-MiniClaw currently injects `MEMORY.md` and recent daily files into every Turn, but it only writes a daily entry after the Owner explicitly requests memory and approves `propose_memory`. Raw messages are stored per Session and are not searched across Sessions. A new Feishu Session therefore cannot recall a fact mentioned only in a CLI Session.
+Lobster0 currently injects `MEMORY.md` and recent daily files into every Turn, but it only writes a daily entry after the Owner explicitly requests memory and approves `propose_memory`. Raw messages are stored per Session and are not searched across Sessions. A new Feishu Session therefore cannot recall a fact mentioned only in a CLI Session.
 
 The design must give one verified Owner a continuous identity across local TUI, Feishu, Telegram and Discord without exposing private memory in groups or to other users.
 

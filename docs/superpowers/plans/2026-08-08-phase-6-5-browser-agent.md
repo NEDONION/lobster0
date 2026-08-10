@@ -1,10 +1,10 @@
-# MiniClaw Phase 6.5 Browser Agent Implementation Plan
+# Lobster0 Phase 6.5 Browser Agent Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 使用独立 Chromium Profile 交付可审计、可审批、可回归的网页导航、快照、点击、输入、截图和下载能力。
 
-**Architecture:** Python Core 继续负责 Tool、Policy、Approval、Artifact 和 Audit；独立 TypeScript Browser Worker 使用 Playwright/CDP 控制 Chromium。两者通过版本化 NDJSON RPC 通信，Browser Worker 不读取 MiniClaw config、API Key 或 SQLite。
+**Architecture:** Python Core 继续负责 Tool、Policy、Approval、Artifact 和 Audit；独立 TypeScript Browser Worker 使用 Playwright/CDP 控制 Chromium。两者通过版本化 NDJSON RPC 通信，Browser Worker 不读取 Lobster0 config、API Key 或 SQLite。
 
 **Tech Stack:** Python 3.12、TypeScript、Node.js 22.19+、Playwright、Chromium/CDP、NDJSON、SQLite、现有 `NetworkPolicy`/`WorkspaceGuard`/`ToolExecutor`。
 
@@ -17,7 +17,7 @@
 
 ## Global Constraints
 
-- 默认只使用 MiniClaw 专用 Profile，不读取用户日常浏览器 Profile。
+- 默认只使用 Lobster0 专用 Profile，不读取用户日常浏览器 Profile。
 - 用户手工登录；Agent 不收集、保存或自动输入密码和验证码。
 - 网页文本统一标记为不可信外部输入。
 - 不提供任意 JavaScript eval。
@@ -32,9 +32,9 @@
 
 **Files:**
 - Modify: `pyproject.toml`
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/paths.py`
-- Modify: `src/miniclaw/bootstrap.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/paths.py`
+- Modify: `src/lobster0/bootstrap.py`
 - Test: `tests/test_config.py`
 - Test: `tests/test_paths.py`
 
@@ -46,7 +46,7 @@
 ```python
 def test_browser_is_disabled_and_uses_agent_profile_by_default(config):
     assert config.browser.enabled is False
-    assert config.browser.profile == "miniclaw"
+    assert config.browser.profile == "lobster0"
     assert config.browser.allow_personal_profile is False
 
 def test_browser_roots_are_private_and_outside_workspace(paths):
@@ -67,7 +67,7 @@ Expected: missing Browser config/paths.
 class BrowserConfig:
     enabled: bool = False
     backend: str = "local"
-    profile: str = "miniclaw"
+    profile: str = "lobster0"
     headed: bool = True
     allow_personal_profile: bool = False
     max_tabs: int = 8
@@ -84,7 +84,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/config.py src/miniclaw/paths.py src/miniclaw/bootstrap.py tests/test_config.py tests/test_paths.py tests/test_bootstrap.py
+git add src/lobster0/config.py src/lobster0/paths.py src/lobster0/bootstrap.py tests/test_config.py tests/test_paths.py tests/test_bootstrap.py
 git commit -m "feat(browser): define isolated browser configuration"
 ```
 
@@ -96,26 +96,26 @@ git commit -m "feat(browser): define isolated browser configuration"
 - Create: `browser-worker/src/protocol.ts`
 - Create: `browser-worker/src/server.ts`
 - Create: `browser-worker/test/protocol.test.ts`
-- Create: `src/miniclaw/browser/__init__.py`
-- Create: `src/miniclaw/browser/models.py`
-- Create: `src/miniclaw/browser/client.py`
+- Create: `src/lobster0/browser/__init__.py`
+- Create: `src/lobster0/browser/models.py`
+- Create: `src/lobster0/browser/client.py`
 - Test: `tests/test_browser_protocol.py`
 
 **Interfaces:**
-- Produces: NDJSON protocol `miniclaw.browser.v1`, `BrowserClient.request(action)`, request/response correlation and bounded safe errors.
+- Produces: NDJSON protocol `lobster0.browser.v1`, `BrowserClient.request(action)`, request/response correlation and bounded safe errors.
 
 - [ ] **Step 1: Write failing Python and TypeScript protocol tests**
 
 ```python
 async def test_client_rejects_wrong_protocol_version(self, fake_worker):
-    fake_worker.reply({"protocol": "miniclaw.browser.v2", "id": "1", "ok": True})
+    fake_worker.reply({"protocol": "lobster0.browser.v2", "id": "1", "ok": True})
     with self.assertRaisesRegex(BrowserProtocolError, "unsupported browser protocol"):
         await client.request(action)
 ```
 
 ```typescript
 it("rejects oversized and unknown action payloads", () => {
-  expect(() => parseRequest({ protocol: "miniclaw.browser.v1", id: "1", action: "eval" })).toThrow();
+  expect(() => parseRequest({ protocol: "lobster0.browser.v1", id: "1", action: "eval" })).toThrow();
 });
 ```
 
@@ -138,7 +138,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add browser-worker src/miniclaw/browser tests/test_browser_protocol.py
+git add browser-worker src/lobster0/browser tests/test_browser_protocol.py
 git commit -m "feat(browser): add versioned browser worker protocol"
 ```
 
@@ -148,7 +148,7 @@ git commit -m "feat(browser): add versioned browser worker protocol"
 - Create: `browser-worker/src/profile.ts`
 - Create: `browser-worker/src/sessions.ts`
 - Create: `browser-worker/test/sessions.test.ts`
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/doctor.py`
 - Test: `tests/test_doctor.py`
 
 **Interfaces:**
@@ -186,7 +186,7 @@ Doctor checks Node floor, Browser Worker build, Playwright package, Chromium exe
 - [ ] **Step 5: Commit**
 
 ```bash
-git add browser-worker/src/profile.ts browser-worker/src/sessions.ts browser-worker/test/sessions.test.ts src/miniclaw/doctor.py tests/test_doctor.py
+git add browser-worker/src/profile.ts browser-worker/src/sessions.ts browser-worker/test/sessions.test.ts src/lobster0/doctor.py tests/test_doctor.py
 git commit -m "feat(browser): isolate profile and session lifecycle"
 ```
 
@@ -241,10 +241,10 @@ git commit -m "feat(browser): expose bounded accessibility snapshots"
 ### Task 5: Browser policy and action Tools
 
 **Files:**
-- Create: `src/miniclaw/browser/policy.py`
-- Create: `src/miniclaw/tools/browser.py`
-- Modify: `src/miniclaw/policy/engine.py`
-- Modify: `src/miniclaw/runtime.py`
+- Create: `src/lobster0/browser/policy.py`
+- Create: `src/lobster0/tools/browser.py`
+- Modify: `src/lobster0/policy/engine.py`
+- Modify: `src/lobster0/runtime.py`
 - Test: `tests/test_browser_policy.py`
 - Test: `tests/test_browser_tools.py`
 
@@ -281,7 +281,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/browser/policy.py src/miniclaw/tools/browser.py src/miniclaw/policy/engine.py src/miniclaw/runtime.py tests/test_browser_policy.py tests/test_browser_tools.py
+git add src/lobster0/browser/policy.py src/lobster0/tools/browser.py src/lobster0/policy/engine.py src/lobster0/runtime.py tests/test_browser_policy.py tests/test_browser_tools.py
 git commit -m "feat(browser): gate browser actions through core policy"
 ```
 
@@ -290,8 +290,8 @@ git commit -m "feat(browser): gate browser actions through core policy"
 **Files:**
 - Create: `browser-worker/src/actions.ts`
 - Create: `browser-worker/test/actions.test.ts`
-- Modify: `src/miniclaw/browser/models.py`
-- Modify: `src/miniclaw/agent/context.py`
+- Modify: `src/lobster0/browser/models.py`
+- Modify: `src/lobster0/agent/context.py`
 - Test: `tests/test_context.py`
 
 **Interfaces:**
@@ -322,17 +322,17 @@ The fixture contains fake system prompts, Tool JSON, hidden text and oversized D
 - [ ] **Step 5: Commit**
 
 ```bash
-git add browser-worker/src/actions.ts browser-worker/test/actions.test.ts src/miniclaw/browser/models.py src/miniclaw/agent/context.py tests/test_context.py
+git add browser-worker/src/actions.ts browser-worker/test/actions.test.ts src/lobster0/browser/models.py src/lobster0/agent/context.py tests/test_context.py
 git commit -m "feat(browser): execute actions with untrusted provenance"
 ```
 
 ### Task 7: Screenshots, downloads and artifact store
 
 **Files:**
-- Create: `src/miniclaw/artifacts/__init__.py`
-- Create: `src/miniclaw/artifacts/store.py`
-- Create: `src/miniclaw/storage/migrations/0005_artifacts.sql`
-- Modify: `src/miniclaw/storage/migrations.py`
+- Create: `src/lobster0/artifacts/__init__.py`
+- Create: `src/lobster0/artifacts/store.py`
+- Create: `src/lobster0/storage/migrations/0005_artifacts.sql`
+- Modify: `src/lobster0/storage/migrations.py`
 - Modify: `browser-worker/src/actions.ts`
 - Test: `tests/test_artifact_store.py`
 - Create: `browser-worker/test/downloads.test.ts`
@@ -369,17 +369,17 @@ Run Python tests and `pnpm --dir browser-worker test`. Cover oversized download,
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/artifacts src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0005_artifacts.sql browser-worker/src/actions.ts browser-worker/test/downloads.test.ts tests/test_artifact_store.py
+git add src/lobster0/artifacts src/lobster0/storage/migrations.py src/lobster0/storage/migrations/0005_artifacts.sql browser-worker/src/actions.ts browser-worker/test/downloads.test.ts tests/test_artifact_store.py
 git commit -m "feat(browser): persist bounded browser artifacts"
 ```
 
 ### Task 8: Runtime, TUI activity and cleanup
 
 **Files:**
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/gateway.py`
-- Modify: `src/miniclaw/agent/events.py`
-- Modify: `src/miniclaw/bridge/protocol.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/gateway.py`
+- Modify: `src/lobster0/agent/events.py`
+- Modify: `src/lobster0/bridge/protocol.py`
 - Modify: `tui/src/`
 - Test: `tests/test_runtime.py`
 - Test: `tests/test_pi_tui_integration.py`
@@ -405,7 +405,7 @@ Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/runtime.py src/miniclaw/gateway.py src/miniclaw/agent/events.py src/miniclaw/bridge/protocol.py tui tests/test_runtime.py tests/test_pi_tui_integration.py
+git add src/lobster0/runtime.py src/lobster0/gateway.py src/lobster0/agent/events.py src/lobster0/bridge/protocol.py tui tests/test_runtime.py tests/test_pi_tui_integration.py
 git commit -m "feat(tui): surface browser activity and lifecycle"
 ```
 
@@ -413,7 +413,7 @@ git commit -m "feat(tui): surface browser activity and lifecycle"
 
 **Files:**
 - Create: `evals/scenarios/browser.v1.jsonl`
-- Create: `src/miniclaw/evals/browser.py`
+- Create: `src/lobster0/evals/browser.py`
 - Test: `tests/test_browser_evals.py`
 - Create: `docs/engineering/phase-6/browser-agent.md`
 - Create: `docs/evals/releases/v0.6.5.md`
@@ -437,8 +437,8 @@ pnpm --dir browser-worker build
 pnpm --dir tui test
 pnpm --dir tui build
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite browser --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite browser --root evals/scenarios
 uv run python scripts/validate_docs.py
 uv lock --check
 uv build
@@ -452,7 +452,7 @@ Use the dedicated Profile against a controlled public test page. Manually log in
 - [ ] **Step 4: Commit only verified facts**
 
 ```bash
-git add evals src/miniclaw/evals/browser.py tests/test_browser_evals.py docs README.md
+git add evals src/lobster0/evals/browser.py tests/test_browser_evals.py docs README.md
 git commit -m "release(v0.6.5): verify isolated browser automation"
 ```
 

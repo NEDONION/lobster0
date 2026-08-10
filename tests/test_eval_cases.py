@@ -10,7 +10,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from miniclaw.evals.cases import (  # noqa: E402
+from lobster0.evals.cases import (  # noqa: E402
     EvalCaseError,
     load_cases,
     load_feishu_automation_live_cases,
@@ -27,11 +27,11 @@ def valid_case(case_id: str = "CORE-001") -> dict[str, object]:
         "layers": ["offline"],
         "capability": "core",
         "query": "你好，你是谁？",
-        "setup": {"files": {"notes/hello.txt": "MINICLAW_SENTINEL"}},
+        "setup": {"files": {"notes/hello.txt": "LOBSTER0_SENTINEL"}},
         "offline": {
             "responses": [
                 {
-                    "content": "我是 MiniClaw。",
+                    "content": "我是 Lobster0。",
                     "tool_calls": [],
                     "reasoning_content": None,
                     "finish_reason": "stop",
@@ -42,7 +42,7 @@ def valid_case(case_id: str = "CORE-001") -> dict[str, object]:
             ]
         },
         "expected": {
-            "answer_contains": ["MiniClaw"],
+            "answer_contains": ["Lobster0"],
             "answer_excludes": [],
             "tool_runs": [],
             "tool_statuses": {},
@@ -127,8 +127,8 @@ class EvalCaseLoaderTest(unittest.TestCase):
 
         self.assertEqual([case.id for case in cases], ["CORE-001", "CORE-002", "CORE-003"])
         self.assertEqual(cases[0].source, "b.jsonl:1")
-        self.assertEqual(cases[0].setup_files, (("notes/hello.txt", "MINICLAW_SENTINEL"),))
-        self.assertEqual(cases[0].responses[0].content, "我是 MiniClaw。")
+        self.assertEqual(cases[0].setup_files, (("notes/hello.txt", "LOBSTER0_SENTINEL"),))
+        self.assertEqual(cases[0].responses[0].content, "我是 Lobster0。")
 
     def test_rejects_duplicate_case_ids_across_files(self) -> None:
         """重复 ID 必须在执行前失败并报告两个安全来源位置。"""

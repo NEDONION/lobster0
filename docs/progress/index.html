@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="MiniClaw 开源个人 Agent 的开发进度与当前验证状态。">
-  <title>MiniClaw · Build Signal</title>
+  <meta name="description" content="Lobster0 开源个人 Agent 的开发进度与当前验证状态。">
+  <title>Lobster0 · Build Signal</title>
   <style>
     :root {
       --ink: #10243a;
@@ -350,7 +350,7 @@
       <div>
         <p class="eyebrow">Open-source personal agent · Python 3.12 Core + TypeScript pi-tui</p>
         <h1 id="page-title">让一条消息，真正穿过 <em>Agent</em>。</h1>
-        <p class="lede">裸 miniclaw 默认进入 pi-tui；Personal Profile 与四档权限已贯通 TUI 和三个 IM。飞书、Telegram 与 Discord 三条隔离 pipeline 共享一个 AgentRuntime、Policy、Approval、Skills 和 SQLite durable truth。Memory Autopilot A～E、Phase 6 Autonomy/Sandbox 与 Phase 6.5 Browser Agent 已落地。Phase 6 的 managed recovery、exact 24h checkpoint 和 production aggregate 已实现，但严格飞书 25-case 与真实 24h 尚未完成。</p>
+        <p class="lede">裸 lobster0 默认进入 pi-tui；Personal Profile 与四档权限已贯通 TUI 和三个 IM。飞书、Telegram 与 Discord 三条隔离 pipeline 共享一个 AgentRuntime、Policy、Approval、Skills 和 SQLite durable truth。Memory Autopilot A～E、Phase 6 Autonomy/Sandbox 与 Phase 6.5 Browser Agent 已落地。Phase 6 的 managed recovery、exact 24h checkpoint 和 production aggregate 已实现，但严格飞书 25-case 与真实 24h 尚未完成。</p>
       </div>
       <aside class="status-card" aria-label="当前开发状态">
         <span class="tag">Phase 6.5 implementation pass</span>
@@ -500,7 +500,7 @@
           <li class="complete">ACTION-OPEN-APP-001：direct open -a 与 Approval 事故回归</li>
           <li class="complete">严格 JSONL Schema 与 29 条 Claw-like query（含 Personal/CLI 与飞书文档事故）</li>
           <li class="complete">真实 Agent / Policy / Tool / SQLite offline runner</li>
-          <li class="complete">miniclaw eval list / validate / run</li>
+          <li class="complete">lobster0 eval list / validate / run</li>
           <li class="complete">严格 [tools] / command / HTTP 配置边界</li>
           <li class="complete">Workspace resolve_write：只写根、父目录、symlink、敏感路径</li>
           <li class="complete">write_file：256 KiB、no-clobber、原子覆盖与权限保持</li>
@@ -511,7 +511,7 @@
           <li class="complete">BEGIN IMMEDIATE 并发单次消费</li>
           <li class="complete">AgentRunner 遇到 Approval 立即暂停后续调用</li>
           <li class="complete">waiting Turn + 无假 User Message 的 child Turn</li>
-          <li class="complete">裸 miniclaw 默认进入 pi-tui；Textual onboarding/fallback</li>
+          <li class="complete">裸 lobster0 默认进入 pi-tui；Textual onboarding/fallback</li>
           <li class="complete">Python Core ↔ TUI versioned NDJSON protocol v1</li>
           <li class="complete">真实 Node BridgeClient ↔ Python Bridge 跨进程握手</li>
           <li class="complete">鼠标选区/OSC52、人工上滚、bottom-follow 与 Shift+Enter 回归</li>
@@ -525,7 +525,7 @@
           <li class="complete">84×18 紧凑审批框：参数滚动、风险提示与决策按钮常驻</li>
           <li class="complete">Session 当前 Runtime exact rule；Always 成功后持久化 exact rule</li>
           <li class="complete">inline AppleScript、文件写入与失败动作不能持久授权</li>
-          <li class="complete">默认中文、/lang zh|en、你 / MiniClaw 角色分区</li>
+          <li class="complete">默认中文、/lang zh|en、你 / Lobster0 角色分区</li>
           <li class="complete">弱色少留白且默认展开的 reasoning；中文提问使用中文 System Prompt</li>
           <li class="complete">失败/取消恢复 250,000 字符长文本草稿</li>
           <li class="complete">跨 Approval 子 Turn 的 Tool 历史完整，不再触发孤立 Tool Result 400</li>
@@ -553,7 +553,7 @@
           <li class="complete">有限 Worker、同会话串行、crash recovery 与幂等 Delivery</li>
           <li class="complete">官方 WebSocket Transport、Unicode 分片、重试与 unknown 恢复</li>
           <li class="complete">typing、streaming card、审批卡片与文本 fallback</li>
-          <li class="complete">miniclaw gateway 生命周期、双信号关闭与离线飞书 Doctor</li>
+          <li class="complete">lobster0 gateway 生命周期、双信号关闭与离线飞书 Doctor</li>
           <li class="complete">Channel correlation、外部 ID 短哈希、JSON 日志与 SQLite Audit</li>
           <li class="complete">WebSocket reconnect、Inbox/Turn/Delivery/Typing/Card 可观测状态</li>
           <li class="complete">Telegram numeric allowlist、DM/group/topic、official long polling 与 safe delivery</li>
@@ -606,7 +606,7 @@
         <div class="decision"><code>phase 7</code><p><a href="../engineering/phase-7/20260810_controlled-evolution.md">Controlled Evolution 工程落地方案</a>已发布；当前仅是 ENGINEERING PLAN / NOT IMPLEMENTED，不代表自我进化代码已经存在。</p></div>
         <div class="decision"><code>live truth</code><p>Phase 6 PRODUCTION SOAK PENDING · Browser CONTROLLED LIVE SMOKE PENDING · Feishu TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING · Telegram live pending · Discord live pending · 本地 Chrome、fixture 和 soak 不冒充 Live Gate。</p></div>
         <div class="decision"><code>lark-cli</code><p>Channel 负责收发消息；业务查询由 Skill 生成 lark-cli argv 并经过 run_command / Policy / Approval。私有标题和 URL 进入模型前必须得到 Owner 授权。</p></div>
-        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/mini-claw/commit/c5f5e5b">c5f5e5b Worker + provenance</a> · <a href="https://github.com/NEDONION/mini-claw/commit/cc31b74">cc31b74 Artifact CAS</a> · <a href="https://github.com/NEDONION/mini-claw/commit/3cf3fe7">3cf3fe7 Browser gate</a></p></div>
+        <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/lobster0/commit/c5f5e5b">c5f5e5b Worker + provenance</a> · <a href="https://github.com/NEDONION/lobster0/commit/cc31b74">cc31b74 Artifact CAS</a> · <a href="https://github.com/NEDONION/lobster0/commit/3cf3fe7">3cf3fe7 Browser gate</a></p></div>
       </article>
     </section>
 

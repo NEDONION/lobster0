@@ -6,7 +6,7 @@
 >
 > 当前非目标：持久规则的 TUI 查看/撤销；飞书卡片审批不在本阶段
 
-Phase 2.2B 已移除独立 `miniclaw approvals` 命令。Owner 现在在同一个 TUI 中查看完整归一化参数，并选择
+Phase 2.2B 已移除独立 `lobster0 approvals` 命令。Owner 现在在同一个 TUI 中查看完整归一化参数，并选择
 Allow once、受限的 Allow this session / Always allow 或 Deny；底层 SQLite 生命周期和本文安全约束不变。
 
 ## 1. 大白话解释
@@ -213,8 +213,8 @@ metadata 只包含：Approval ID、ToolRun ID、Tool 名、12 位 hash 前缀。
 
 ```bash
 uv run python -m unittest tests.test_approvals tests.test_tool_executor tests.test_agent_runner -v
-uv run ruff check src/miniclaw/policy/approvals.py src/miniclaw/policy/engine.py \
-  src/miniclaw/storage/tooling.py src/miniclaw/tools/executor.py src/miniclaw/agent/runner.py \
+uv run ruff check src/lobster0/policy/approvals.py src/lobster0/policy/engine.py \
+  src/lobster0/storage/tooling.py src/lobster0/tools/executor.py src/lobster0/agent/runner.py \
   tests/test_approvals.py tests/test_tool_executor.py
 ```
 

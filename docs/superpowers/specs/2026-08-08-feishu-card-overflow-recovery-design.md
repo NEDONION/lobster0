@@ -2,7 +2,7 @@
 
 ## 1. 目标
 
-MiniClaw 在飞书中的正常成功回答以一张最终卡片为主。卡片正文采用飞书 Card JSON 2.0 支持的
+Lobster0 在飞书中的正常成功回答以一张最终卡片为主。卡片正文采用飞书 Card JSON 2.0 支持的
 `small`（12px）字号；当完整回答超过配置的 `message_max_chars` 时，卡片保存前缀，只有尚未展示的后缀进入
 durable Outbox，并回复到机器人自己的卡片消息下方。
 

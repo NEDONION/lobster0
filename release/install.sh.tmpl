@@ -1,5 +1,5 @@
 #!/bin/sh
-# MiniClaw one-line install bootstrap.
+# Lobster0 one-line install bootstrap.
 #
 # This script is intentionally minimal. It never parses the release
 # manifest, never edits configuration or shell profiles, never invokes
@@ -37,7 +37,7 @@ UV_MACOS_ARM64_URL='{{UV_MACOS_ARM64_URL}}'
 UV_MACOS_ARM64_SHA256='{{UV_MACOS_ARM64_SHA256}}'
 
 fail() {
-  printf 'miniclaw-install: error: %s\n' "$1" >&2
+  printf 'lobster0-install: error: %s\n' "$1" >&2
   exit 1
 }
 
@@ -95,7 +95,7 @@ case "$platform_key" in
 esac
 
 # 3. Create an owner-only private working tree for this run only.
-work_dir=$(mktemp -d "${TMPDIR:-/tmp}/miniclaw-install.XXXXXX") || fail "could not create a private temporary directory"
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/lobster0-install.XXXXXX") || fail "could not create a private temporary directory"
 chmod 700 "$work_dir"
 
 cleanup() {

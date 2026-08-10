@@ -3,18 +3,18 @@
 > 状态：**IMPLEMENTATION PASS / TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Autopilot 已通过离线发布门禁，完整真实 IM 验收仍需独立完成。
 > 当前门禁：671 Python、35 TypeScript、39/39 Agent、32/32 Channel、640/640 local soak。
 > 日期：2026-08-08  
-> 适用版本：MiniClaw 0.1.0 之后的当前 `main`  
+> 适用版本：Lobster0 0.1.0 之后的当前 `main`  
 > 相关代码：`policy/modes.py`、`policy/engine.py`、`channels/manager.py`、`bridge/`、`tui/src/app.ts`
 
 ## 1. 先用大白话说明
 
-以前 MiniClaw 即使确认了“这是我的电脑、这是我本人”，写文件、运行本机 CLI、访问网络时仍可能反复弹审批。
+以前 Lobster0 即使确认了“这是我的电脑、这是我本人”，写文件、运行本机 CLI、访问网络时仍可能反复弹审批。
 现在增加了四档权限模式。个人使用推荐 `autopilot`：只要消息来自本地 TUI 或经过验证的 Owner 私聊，已经通过
 路径、命令和网络硬校验的动作可以自动执行。
 
 “自动执行”不等于“关掉安全系统”。下面这些边界在 `yolo` 中也不能绕过：
 
-- 不能读取 Keychain、浏览器登录库、私钥、`.env`、应用凭据和 MiniClaw 自身数据库；
+- 不能读取 Keychain、浏览器登录库、私钥、`.env`、应用凭据和 Lobster0 自身数据库；
 - 不能用 `..`、符号链接或路径大小写技巧逃出允许根；
 - 不能把一整段 Shell 字符串交给终端解释，`run_command` 仍只接受 `program + args[]`；
 - 不能执行提权、硬禁止命令或访问内网、回环、云元数据等危险网络目标；
@@ -113,7 +113,7 @@ mode = "autopilot"
 
 旧配置如果没有 `mode`，会按 `autopilot` 加载，与新安装默认值一致；显式配置的 `safe`/`smart` 不变。Autopilot
 仍只对本地入口和经过验证的 Owner 私聊生效，群聊、其他用户、敏感路径和硬拒绝不会扩权。要让每次新进程都以某模式
-启动，应编辑私密状态目录中的 `config.toml`，然后重启 MiniClaw。有效值只能是：
+启动，应编辑私密状态目录中的 `config.toml`，然后重启 Lobster0。有效值只能是：
 
 ```text
 safe  smart  autopilot  yolo
@@ -153,7 +153,7 @@ Core 是唯一真相源。TUI 不会只改一个颜色假装切换成功；它�
 Bridge 握手返回 `permission_mode`。pi-tui 顶栏常驻显示：
 
 ```text
-MiniClaw 0.1.0 · deepseek-v4-pro · 会话 default · 工作区 workspace · [AUTOPILOT]
+Lobster0 0.1.0 · deepseek-v4-pro · 会话 default · 工作区 workspace · [AUTOPILOT]
 ```
 
 颜色含义：
@@ -213,7 +213,7 @@ SQLite 的单次 consume 条件安全拒绝。
 不会写平台用户 ID、消息正文、完整参数或凭据。可以只读查询最近记录：
 
 ```bash
-sqlite3 ~/.miniclaw/miniclaw.db \
+sqlite3 ~/.lobster0/lobster0.db \
   "SELECT created_at, event_type, metadata_json FROM audit_events WHERE event_type = 'policy.mode_changed' ORDER BY id DESC LIMIT 20;"
 ```
 
@@ -267,8 +267,8 @@ mode = "safe"
 .venv/bin/python -m unittest discover -s tests -v
 pnpm --dir tui test
 .venv/bin/ruff check --no-cache .
-.venv/bin/miniclaw eval run --suite channel --root evals/scenarios
-.venv/bin/miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+.venv/bin/lobster0 eval run --suite channel --root evals/scenarios
+.venv/bin/lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 .venv/bin/python scripts/validate_docs.py
 git diff --check
 ```

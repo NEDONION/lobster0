@@ -11,9 +11,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.install import receipt as receipt_module
-from miniclaw.install.models import InstallError, PlatformKey
-from miniclaw.install.receipt import (
+from lobster0.install import receipt as receipt_module
+from lobster0.install.models import InstallError, PlatformKey
+from lobster0.install.receipt import (
     InstallReceipt,
     managed_file_sha256,
     verify_managed_file,
@@ -42,7 +42,7 @@ class InstallReceiptTests(unittest.TestCase):
             "git_commit": "a" * 40,
             "platform": PlatformKey("linux", "x86_64"),
             "installed_at": "2026-08-10T01:02:03Z",
-            "managed_files": (("bin/miniclaw", "b" * 64),),
+            "managed_files": (("bin/lobster0", "b" * 64),),
             "current_runtime": "runtimes/0.7.0",
             "previous_runtime": None,
             "service_label": None,
@@ -124,16 +124,16 @@ class InstallReceiptTests(unittest.TestCase):
             InstallReceipt.load(self.path)
 
         with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
-            self.receipt(managed_files=(("bin/miniclaw", "A" * 64),))
+            self.receipt(managed_files=(("bin/lobster0", "A" * 64),))
 
     def test_receipt_allows_only_relative_nonsensitive_managed_paths(self) -> None:
         """绝对/逃逸路径或用户数据路径进入 receipt 会让 uninstall 可删除用户数据。"""
         unsafe = (
-            "/usr/local/bin/miniclaw",
-            "../bin/miniclaw",
+            "/usr/local/bin/lobster0",
+            "../bin/lobster0",
             "config.toml",
             "secrets.env",
-            "miniclaw.db",
+            "lobster0.db",
             "memory/MEMORY.md",
             "skills/tool/SKILL.md",
             "workspace/file",
@@ -149,13 +149,13 @@ class InstallReceiptTests(unittest.TestCase):
     def test_service_receipt_fields_are_all_or_none_and_relative(self) -> None:
         """未绑定 label/path/hash 的 service 文件不得获得 managed ownership。"""
         with self.assertRaisesRegex(InstallError, "uninstall_ownership_mismatch"):
-            self.receipt(service_label="io.miniclaw.gateway")
+            self.receipt(service_label="io.lobster0.gateway")
         service = self.receipt(
-            service_label="io.miniclaw.gateway",
-            service_file="services/io.miniclaw.gateway.plist",
+            service_label="io.lobster0.gateway",
+            service_file="services/io.lobster0.gateway.plist",
             service_file_sha256="c" * 64,
         )
-        self.assertEqual(service.service_label, "io.miniclaw.gateway")
+        self.assertEqual(service.service_label, "io.lobster0.gateway")
 
     def test_managed_hash_is_no_follow_for_regular_and_relative_symlink(self) -> None:
         """跟随 symlink 会把目标内容而非受管 link identity 当作 ownership。"""

@@ -4,9 +4,9 @@ import unittest
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
-from miniclaw.channels.base import IgnoredInbound, InboundMessage
-from miniclaw.channels.telegram import TelegramAdapter
-from miniclaw.config import TelegramConfig
+from lobster0.channels.base import IgnoredInbound, InboundMessage
+from lobster0.channels.telegram import TelegramAdapter
+from lobster0.config import TelegramConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,7 +74,7 @@ class TelegramAdapterTest(unittest.TestCase):
             user_id=301,
             chat_id=-100123,
             chat_type="supergroup",
-            text="@miniclaw_bot 帮我总结",
+            text="@lobster0_bot 帮我总结",
             mentioned_bot=True,
             bot_mention_spans=((0, 13),),
         )
@@ -129,8 +129,8 @@ class TelegramAdapterTest(unittest.TestCase):
 
     def test_only_the_bot_mention_span_is_removed(self) -> None:
         """普通 @name 和正文必须保留，只移除 Transport 确认属于自己的 entity。"""
-        text = "问 @alice，@miniclaw_bot 帮我整理"
-        start = text.index("@miniclaw_bot")
+        text = "问 @alice，@lobster0_bot 帮我整理"
+        start = text.index("@lobster0_bot")
         result = self.adapter.normalize(
             FakeTelegramMessage(
                 user_id=301,
@@ -138,7 +138,7 @@ class TelegramAdapterTest(unittest.TestCase):
                 chat_type="group",
                 text=text,
                 mentioned_bot=True,
-                bot_mention_spans=((start, start + len("@miniclaw_bot")),),
+                bot_mention_spans=((start, start + len("@lobster0_bot")),),
             )
         )
 

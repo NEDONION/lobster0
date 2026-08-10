@@ -5,9 +5,9 @@ import unittest
 from collections.abc import Callable
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
-from miniclaw.skills.loader import SkillError, SkillLoader
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
+from lobster0.skills.loader import SkillError, SkillLoader
 
 
 class SkillLoaderTest(unittest.TestCase):

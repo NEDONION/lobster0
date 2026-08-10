@@ -1,10 +1,10 @@
-# MiniClaw P2.2B Single-Entry Textual TUI Implementation Plan
+# Lobster0 P2.2B Single-Entry Textual TUI Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (- [ ]) syntax for tracking.
 
-**Goal:** 交付唯一的人类对话入口 uv run miniclaw：它在正常 TTY 中进入简洁的 Textual 全屏 TUI，复用同一 TurnService、AgentRunner、ToolExecutor 和 SQLite；支持流式回答、Tool 状态、取消、持久化审批 Allow once / Deny、少量 Slash Commands 与同界面初始化。
+**Goal:** 交付唯一的人类对话入口 uv run lobster0：它在正常 TTY 中进入简洁的 Textual 全屏 TUI，复用同一 TurnService、AgentRunner、ToolExecutor 和 SQLite；支持流式回答、Tool 状态、取消、持久化审批 Allow once / Deny、少量 Slash Commands 与同界面初始化。
 
-**Architecture:** 在现有 Core 上只增加一个进程内 RunEvent 回调，不引入 Event Bus。TUI 通过一个共享 AgentRuntime 调用 TurnService，不直接调用 Provider、Tool 或 SQLite。裸 miniclaw 启动 TUI；init、doctor、eval 保持非对话维护命令。原 P2.2 Approval Core 负责参数绑定、过期和单次消费，TUI 只展示并提交决定。
+**Architecture:** 在现有 Core 上只增加一个进程内 RunEvent 回调，不引入 Event Bus。TUI 通过一个共享 AgentRuntime 调用 TurnService，不直接调用 Provider、Tool 或 SQLite。裸 lobster0 启动 TUI；init、doctor、eval 保持非对话维护命令。原 P2.2 Approval Core 负责参数绑定、过期和单次消费，TUI 只展示并提交决定。
 
 **Tech Stack:** Python 3.12+、Textual 8.x、现有 httpx、SQLite、argparse、unittest、Ruff；只新增 textual>=8.2,<9 一个直接运行依赖。
 
@@ -12,7 +12,7 @@
 
 - 本计划依赖 docs/superpowers/plans/2026-08-08-phase-2-completion.md 的 P2.2 Approval Core 已完成并全绿。
 - 本计划覆盖旧 Phase 2 总计划中面向人的 approvals list/show/approve/deny CLI。审批仍保留 Python Service API，但用户只在同一个 TUI 中 Allow once / Deny。
-- 不存在 miniclaw chat、miniclaw tui、--plain、chat --message 或 input()/print() REPL。
+- 不存在 lobster0 chat、lobster0 tui、--plain、chat --message 或 input()/print() REPL。
 - init、doctor、eval 是维护和 CI 命令，不是第二套 Agent 对话入口。
 - TUI 不直接调用 Provider、Tool、Policy、Repository；所有动作仍走 TurnService → AgentRunner → ToolExecutor。
 - 不新增 Rich、prompt_toolkit、Click、Typer、前端运行时、WebSocket、Gateway、Event Bus 或通用 Presenter 框架。
@@ -55,14 +55,14 @@ Approval 必须已经满足：
 
 ## File Map
 
-- Create: src/miniclaw/agent/events.py — 最小 RunEvent 与异步回调类型。
-- Modify: src/miniclaw/agent/runner.py — 模型增量、Tool 请求和审批事件。
-- Modify: src/miniclaw/agent/turn.py — Turn 开始、完成、失败、取消事件；把回调传入 continuation。
-- Modify: src/miniclaw/tools/executor.py — Tool started/finished 事件，不改变 Policy/持久化语义。
-- Create: src/miniclaw/runtime.py — 现有运行期装配和资源关闭的唯一位置。
-- Create: src/miniclaw/tui/__init__.py — 导出 run_tui。
-- Create: src/miniclaw/tui/app.py — App、聊天 Widget、ToolCard、ApprovalModal、Onboarding。
-- Modify: src/miniclaw/cli.py — 裸命令进入 TUI，删除旧 chat/REPL。
+- Create: src/lobster0/agent/events.py — 最小 RunEvent 与异步回调类型。
+- Modify: src/lobster0/agent/runner.py — 模型增量、Tool 请求和审批事件。
+- Modify: src/lobster0/agent/turn.py — Turn 开始、完成、失败、取消事件；把回调传入 continuation。
+- Modify: src/lobster0/tools/executor.py — Tool started/finished 事件，不改变 Policy/持久化语义。
+- Create: src/lobster0/runtime.py — 现有运行期装配和资源关闭的唯一位置。
+- Create: src/lobster0/tui/__init__.py — 导出 run_tui。
+- Create: src/lobster0/tui/app.py — App、聊天 Widget、ToolCard、ApprovalModal、Onboarding。
+- Modify: src/lobster0/cli.py — 裸命令进入 TUI，删除旧 chat/REPL。
 - Modify: pyproject.toml — 添加 Textual 8.x。
 - Modify: uv.lock — 由 uv 同步锁文件。
 - Create: tests/test_run_events.py — Core 事件顺序与兼容性。
@@ -137,10 +137,10 @@ docs(plan): 统一 Approval 与 single-entry TUI 路线
 
 **Files:**
 
-- Create: src/miniclaw/agent/events.py
-- Modify: src/miniclaw/agent/runner.py
-- Modify: src/miniclaw/agent/turn.py
-- Modify: src/miniclaw/tools/executor.py
+- Create: src/lobster0/agent/events.py
+- Modify: src/lobster0/agent/runner.py
+- Modify: src/lobster0/agent/turn.py
+- Modify: src/lobster0/tools/executor.py
 - Create: tests/test_run_events.py
 - Modify: tests/test_agent_runner.py
 - Modify: tests/test_tool_executor.py
@@ -203,7 +203,7 @@ Run:
 uv run python -m unittest tests.test_run_events tests.test_agent_runner tests.test_tool_executor tests.test_turn -v
 ~~~
 
-Expected: ImportError for miniclaw.agent.events or unexpected keyword on_event.
+Expected: ImportError for lobster0.agent.events or unexpected keyword on_event.
 
 - [ ] **Step 3: Add one event dataclass, not an event framework**
 
@@ -217,7 +217,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Literal
 
-from miniclaw.providers.base import JsonValue
+from lobster0.providers.base import JsonValue
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +293,7 @@ Run:
 
 ~~~bash
 uv run python -m unittest tests.test_run_events tests.test_agent_runner tests.test_tool_executor tests.test_turn -v
-uv run ruff check src/miniclaw/agent/events.py src/miniclaw/agent/runner.py src/miniclaw/agent/turn.py src/miniclaw/tools/executor.py tests/test_run_events.py
+uv run ruff check src/lobster0/agent/events.py src/lobster0/agent/runner.py src/lobster0/agent/turn.py src/lobster0/tools/executor.py tests/test_run_events.py
 git diff --check
 ~~~
 
@@ -311,8 +311,8 @@ feat(runtime): 增加 in-process RunEvent 边界
 
 **Files:**
 
-- Create: src/miniclaw/runtime.py
-- Modify: src/miniclaw/cli.py
+- Create: src/lobster0/runtime.py
+- Modify: src/lobster0/cli.py
 - Create: tests/test_runtime.py
 - Modify: tests/test_turn.py
 
@@ -332,14 +332,14 @@ Tests must use a FakeProvider or patched OpenAICompatibleProvider and assert:
 - owner ID is the initialized local Owner;
 - aclose closes Provider exactly once;
 - no API key appears in repr(runtime), exception text, Tool schema or database;
-- importing miniclaw.runtime performs no I/O.
+- importing lobster0.runtime performs no I/O.
 
 Example:
 
 ~~~python
 async def test_runtime_owns_one_provider_and_one_turn_service(self) -> None:
     with mock.patch(
-        "miniclaw.runtime.OpenAICompatibleProvider",
+        "lobster0.runtime.OpenAICompatibleProvider",
         return_value=provider,
     ):
         runtime = open_runtime(config, paths, "private-key")
@@ -359,7 +359,7 @@ Run:
 uv run python -m unittest tests.test_runtime -v
 ~~~
 
-Expected: ImportError for miniclaw.runtime.
+Expected: ImportError for lobster0.runtime.
 
 - [ ] **Step 3: Move existing assembly without redesign**
 
@@ -410,7 +410,7 @@ Run:
 
 ~~~bash
 uv run python -m unittest tests.test_runtime tests.test_turn tests.test_cli_chat -v
-uv run ruff check src/miniclaw/runtime.py src/miniclaw/cli.py tests/test_runtime.py
+uv run ruff check src/lobster0/runtime.py src/lobster0/cli.py tests/test_runtime.py
 git diff --check
 ~~~
 
@@ -428,13 +428,13 @@ refactor(runtime): 复用唯一 AgentRuntime 装配
 
 - Modify: pyproject.toml
 - Modify: uv.lock
-- Create: src/miniclaw/tui/__init__.py
-- Create: src/miniclaw/tui/app.py
+- Create: src/lobster0/tui/__init__.py
+- Create: src/lobster0/tui/app.py
 - Create: tests/test_tui.py
 
 **Interfaces:**
 
-- Produces: MiniClawApp(paths, runtime=None).
+- Produces: Lobster0App(paths, runtime=None).
 - Produces: run_tui(paths) -> int.
 - Internal only: MessageCard, ToolCard, ApprovalModal, Onboarding.
 
@@ -461,7 +461,7 @@ Tests use unittest.IsolatedAsyncioTestCase and Textual Pilot:
 
 ~~~python
 async def test_app_starts_at_80_by_24_with_focused_composer(self) -> None:
-    app = MiniClawApp(self.paths, runtime=self.runtime)
+    app = Lobster0App(self.paths, runtime=self.runtime)
 
     async with app.run_test(size=(80, 24)) as pilot:
         await pilot.pause()
@@ -473,7 +473,7 @@ async def test_app_starts_at_80_by_24_with_focused_composer(self) -> None:
 Also assert:
 
 - exactly one status area, transcript and composer;
-- labels You and MiniClaw exist, so state is not color-only;
+- labels You and Lobster0 exist, so state is not color-only;
 - 80×24 keeps composer visible;
 - no network or real personal state is touched;
 - exit restores app lifecycle without leaked worker.
@@ -486,7 +486,7 @@ Run:
 uv run python -m unittest tests.test_tui -v
 ~~~
 
-Expected: ImportError for miniclaw.tui.
+Expected: ImportError for lobster0.tui.
 
 - [ ] **Step 4: Implement one app module**
 
@@ -503,8 +503,8 @@ Use built-in Textual widgets only:
 Initial layout:
 
 ~~~python
-class MiniClawApp(App[int]):
-    """运行 MiniClaw 唯一的本地全屏对话界面。"""
+class Lobster0App(App[int]):
+    """运行 Lobster0 唯一的本地全屏对话界面。"""
 
     CSS = """
     Screen { layout: vertical; }
@@ -553,7 +553,7 @@ Run:
 
 ~~~bash
 uv run python -m unittest tests.test_tui -v
-uv run ruff check src/miniclaw/tui tests/test_tui.py
+uv run ruff check src/lobster0/tui tests/test_tui.py
 git diff --check
 ~~~
 
@@ -569,7 +569,7 @@ feat(tui): 建立 Textual full-screen shell
 
 **Files:**
 
-- Modify: src/miniclaw/tui/app.py
+- Modify: src/lobster0/tui/app.py
 - Modify: tests/test_tui.py
 - Modify: tests/test_run_events.py
 
@@ -660,7 +660,7 @@ Run:
 
 ~~~bash
 uv run python -m unittest tests.test_tui tests.test_run_events tests.test_turn tests.test_tool_executor -v
-uv run ruff check src/miniclaw/tui/app.py tests/test_tui.py
+uv run ruff check src/lobster0/tui/app.py tests/test_tui.py
 git diff --check
 ~~~
 
@@ -678,7 +678,7 @@ feat(tui): 接通 streaming Tool cards 与 cancel
 
 **Files:**
 
-- Modify: src/miniclaw/tui/app.py
+- Modify: src/lobster0/tui/app.py
 - Modify: tests/test_tui.py
 - Modify: tests/test_turn.py
 - Modify: tests/test_approvals.py
@@ -698,7 +698,7 @@ Allow test:
 
 ~~~python
 async def test_allow_once_executes_bound_action_only_once(self) -> None:
-    app = MiniClawApp(self.paths, runtime=self.runtime)
+    app = Lobster0App(self.paths, runtime=self.runtime)
 
     async with app.run_test() as pilot:
         await self.send(pilot, "创建 note.txt")
@@ -800,7 +800,7 @@ Run:
 
 ~~~bash
 uv run python -m unittest tests.test_tui tests.test_approvals tests.test_turn -v
-uv run ruff check src/miniclaw/tui/app.py tests/test_tui.py
+uv run ruff check src/lobster0/tui/app.py tests/test_tui.py
 git diff --check
 ~~~
 
@@ -812,11 +812,11 @@ feat(tui): 完成 bound Approval 与 slash commands
 
 ---
 
-### Task 6: Make Bare miniclaw the Only Human Chat Entry
+### Task 6: Make Bare lobster0 the Only Human Chat Entry
 
 **Files:**
 
-- Modify: src/miniclaw/cli.py
+- Modify: src/lobster0/cli.py
 - Modify: tests/test_cli.py
 - Delete: tests/test_cli_chat.py
 - Modify: tests/test_runtime.py
@@ -825,20 +825,20 @@ feat(tui): 完成 bound Approval 与 slash commands
 **CLI Contract:**
 
 ~~~text
-uv run miniclaw              -> Textual TUI
-uv run miniclaw init         -> initialize only
-uv run miniclaw doctor       -> diagnostics only
-uv run miniclaw eval list|validate|run -> regression only
-uv run miniclaw --version    -> version only
+uv run lobster0              -> Textual TUI
+uv run lobster0 init         -> initialize only
+uv run lobster0 doctor       -> diagnostics only
+uv run lobster0 eval list|validate|run -> regression only
+uv run lobster0 --version    -> version only
 ~~~
 
 Rejected:
 
 ~~~text
-miniclaw chat
-miniclaw tui
-miniclaw chat --message "TEXT"
-miniclaw --plain
+lobster0 chat
+lobster0 tui
+lobster0 chat --message "TEXT"
+lobster0 --plain
 ~~~
 
 - [ ] **Step 1: Write RED single-entry and non-TTY tests**
@@ -851,7 +851,7 @@ def test_bare_command_starts_the_only_tui(self) -> None:
         mock.patch.object(sys.stdin, "isatty", return_value=True),
         mock.patch.object(sys.stdout, "isatty", return_value=True),
         mock.patch.dict(os.environ, {"TERM": "xterm-256color"}),
-        mock.patch("miniclaw.cli.run_tui", return_value=0) as run_tui,
+        mock.patch("lobster0.cli.run_tui", return_value=0) as run_tui,
     ):
         self.assertEqual(main([]), 0)
 
@@ -899,7 +899,7 @@ if arguments.command is None:
         or os.environ.get("TERM", "").casefold() in {"", "dumb"}
     ):
         print(
-            "error: MiniClaw requires an interactive terminal; allocate a PTY",
+            "error: Lobster0 requires an interactive terminal; allocate a PTY",
             file=sys.stderr,
         )
         return 2
@@ -928,7 +928,7 @@ Then delete tests/test_cli_chat.py.
 
 - [ ] **Step 5: Add same-app onboarding**
 
-When state is missing, MiniClawApp shows Onboarding in the same App:
+When state is missing, Lobster0App shows Onboarding in the same App:
 
 - resolved state path;
 - what files will be created;
@@ -946,14 +946,14 @@ Run:
 
 ~~~bash
 uv run python -m unittest tests.test_cli tests.test_tui tests.test_runtime tests.test_turn -v
-uv run ruff check src/miniclaw/cli.py src/miniclaw/tui src/miniclaw/runtime.py tests/test_cli.py tests/test_tui.py tests/test_runtime.py
+uv run ruff check src/lobster0/cli.py src/lobster0/tui src/lobster0/runtime.py tests/test_cli.py tests/test_tui.py tests/test_runtime.py
 git diff --check
 ~~~
 
 Commit:
 
 ~~~text
-feat(cli): 裸 miniclaw 统一进入 single TUI
+feat(cli): 裸 lobster0 统一进入 single TUI
 ~~~
 
 ---
@@ -1002,8 +1002,8 @@ Expected: every named case maps to at least one passing assertion.
 Run:
 
 ~~~bash
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 ~~~
 
 Record:
@@ -1031,7 +1031,7 @@ git status --short
 Then scan for removed alternate chat entry outside historical planning records:
 
 ~~~bash
-rg -n "miniclaw (chat|tui)|chat --message|--plain|input\\(" README.md docs/getting-started docs/engineering src/miniclaw tests
+rg -n "lobster0 (chat|tui)|chat --message|--plain|input\\(" README.md docs/getting-started docs/engineering src/lobster0 tests
 ~~~
 
 Expected: no production/user-guide alternate chat entry and no input() REPL.
@@ -1057,7 +1057,7 @@ Include these diagrams:
 
 ~~~mermaid
 flowchart LR
-    CLI["bare miniclaw"] --> TUI["Textual MiniClawApp"]
+    CLI["bare lobster0"] --> TUI["Textual Lobster0App"]
     TUI --> RUNTIME["AgentRuntime"]
     RUNTIME --> TURN["TurnService"]
     TURN --> RUNNER["AgentRunner"]
@@ -1087,7 +1087,7 @@ sequenceDiagram
 
 Only after all gates pass:
 
-- README quick start uses uv run miniclaw for chat;
+- README quick start uses uv run lobster0 for chat;
 - local guide removes chat --message and line REPL examples;
 - architecture shows TUI as Channel/view over one Runtime;
 - progress HTML marks P2.2B complete with exact test/eval counts and commit;
@@ -1106,7 +1106,7 @@ Use a temporary state directory and fake/local Provider. Verify:
 - Allow once and Deny both work;
 - terminal title, cursor and echo state are restored after exit.
 
-Do not read the real ~/.miniclaw or execute a real external side effect for this smoke.
+Do not read the real ~/.lobster0 or execute a real external side effect for this smoke.
 
 - [ ] **Step 7: Final commit**
 
@@ -1120,8 +1120,8 @@ docs(tui): 同步 single-entry 使用与 regression evidence
 
 ## Final Acceptance Checklist
 
-- [ ] Bare uv run miniclaw enters the Textual TUI in a supported TTY.
-- [ ] miniclaw chat, miniclaw tui, --plain and chat --message do not exist.
+- [ ] Bare uv run lobster0 enters the Textual TUI in a supported TTY.
+- [ ] lobster0 chat, lobster0 tui, --plain and chat --message do not exist.
 - [ ] init, doctor, eval and --version remain non-chat commands.
 - [ ] Missing local state is initialized inside the same App.
 - [ ] Plain model answers visibly stream and persist once.

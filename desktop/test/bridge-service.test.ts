@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { JsonValue, RequestType, ServerFrame } from "@miniclaw/pi-tui/protocol";
+import type { JsonValue, RequestType, ServerFrame } from "@lobster0/pi-tui/protocol";
 
 import { BridgeService } from "../src/main/bridge-service";
 
@@ -115,7 +115,7 @@ describe("BridgeService", () => {
 
     const bootstrap = await service.start();
 
-    expect(client.helloCalls).toEqual([["miniclaw-desktop", "0.1.0"]]);
+    expect(client.helloCalls).toEqual([["lobster0-desktop", "0.1.0"]]);
     expect(bootstrap).toEqual({
       coreVersion: "0.1.0",
       model: "provider/model",
@@ -217,19 +217,19 @@ describe("BridgeService", () => {
     const environments: NodeJS.ProcessEnv[] = [];
     const service = new BridgeService((environment) => {
       environments.push({ ...environment });
-      const workspace = environment.MINICLAW_WORKSPACE?.split("/").at(-1) ?? "report";
+      const workspace = environment.LOBSTER0_WORKSPACE?.split("/").at(-1) ?? "report";
       const client = new FakeClient({ ...HELLO, workspace });
       clients.push(client);
       return client;
-    }, { MINICLAW_HOME: "/state/miniclaw" });
+    }, { LOBSTER0_HOME: "/state/lobster0" });
     await service.start();
 
     const bootstrap = await service.restartWorkspace("/work/quarterly");
 
     expect(bootstrap.workspace).toBe("quarterly");
     expect(environments).toEqual([
-      { MINICLAW_HOME: "/state/miniclaw" },
-      { MINICLAW_HOME: "/state/miniclaw", MINICLAW_WORKSPACE: "/work/quarterly" },
+      { LOBSTER0_HOME: "/state/lobster0" },
+      { LOBSTER0_HOME: "/state/lobster0", LOBSTER0_WORKSPACE: "/work/quarterly" },
     ]);
     expect(clients[0]?.shutdownCalls).toBe(1);
   });
@@ -254,16 +254,16 @@ describe("BridgeService", () => {
       return call === 2
         ? new FakeClient(HELLO, new Error("new bridge failed"))
         : new FakeClient();
-    }, { MINICLAW_HOME: "/state/miniclaw" });
+    }, { LOBSTER0_HOME: "/state/lobster0" });
     await service.start();
 
     await expect(service.restartWorkspace("/work/broken")).rejects.toThrow("new bridge failed");
 
     expect(service.status).toBe("idle");
     expect(environments).toEqual([
-      { MINICLAW_HOME: "/state/miniclaw" },
-      { MINICLAW_HOME: "/state/miniclaw", MINICLAW_WORKSPACE: "/work/broken" },
-      { MINICLAW_HOME: "/state/miniclaw" },
+      { LOBSTER0_HOME: "/state/lobster0" },
+      { LOBSTER0_HOME: "/state/lobster0", LOBSTER0_WORKSPACE: "/work/broken" },
+      { LOBSTER0_HOME: "/state/lobster0" },
     ]);
   });
 });

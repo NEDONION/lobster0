@@ -1,6 +1,6 @@
-# MiniClaw 文档中心
+# Lobster0 文档中心
 
-这里是 MiniClaw 的产品、架构、运行和开发记录入口。项目简介与当前可执行命令先看仓库根目录的
+这里是 Lobster0 的产品、架构、运行和开发记录入口。项目简介与当前可执行命令先看仓库根目录的
 [README](../README.md)。
 
 ## 文件命名约定
@@ -26,7 +26,7 @@
    Identity/Disclosure 到 Reconcile/Migration 的 RED→GREEN 施工记录。
 8. 阅读 [OpenClaw / Hermes 能力对齐工程落地总方案](engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md)，
    查看自治任务、Sandbox、Browser、自我进化、MCP、Provider、Sub-agent 与多模态的模块和测试边界。
-9. 阅读 [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)，确认 v1.0
+9. 阅读 [完整工程落地设计](superpowers/specs/2026-08-07-lobster0-complete-engineering-design.md)，确认 v1.0
    的范围、契约、安全边界、数据模型和分阶段交付标准。
 10. 阅读 [Phase 2：Tool、权限与安全执行设计](superpowers/specs/2026-08-07-phase-2-tools-security-design.md)，
    了解本机 Tool、Workspace、审批、命令和 SSRF 的落地方案。
@@ -89,7 +89,7 @@
 
 ## Phase 1 模块工程文档
 
-> Phase 1 文档保留当时的实现快照。`miniclaw chat` 已在 Phase 2.2B 移除；涉及当前入口时以
+> Phase 1 文档保留当时的实现快照。`lobster0 chat` 已在 Phase 2.2B 移除；涉及当前入口时以
 > [Python Core + pi-tui Bridge](engineering/phase-2/20260808_python-core-pi-tui-bridge.md) 为准。
 
 | 模块 | 文档 |
@@ -188,7 +188,7 @@
   `system_info`、文件与搜索 Tool、参数绑定审批、受限命令、SSRF、防逃逸和测试矩阵。
 - [Phase 1：CLI Agent 闭环设计](superpowers/specs/2026-08-07-phase-1-cli-agent-design.md)：DeepSeek
   V4 Pro、Provider、Runner、Turn 持久化、`.env` 安全边界和验收标准。
-- [完整工程落地设计](superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)：Python
+- [完整工程落地设计](superpowers/specs/2026-08-07-lobster0-complete-engineering-design.md)：Python
   版个人 Claw v1.0 的工程规格、参考来源、模块契约、部署、测试和交付阶段。
 - [Agent 回归与 Benchmark 设计](superpowers/specs/2026-08-08-agent-regression-benchmark-design.md)：
   Claw-like query、四层测试、版本记录、live 采样与安全 gate 方法论。

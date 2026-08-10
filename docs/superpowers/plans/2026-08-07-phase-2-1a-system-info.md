@@ -1,8 +1,8 @@
-# MiniClaw Phase 2.1A System Info Vertical Slice Implementation Plan
+# Lobster0 Phase 2.1A System Info Vertical Slice Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让 MiniClaw 在真实 CLI 对话中向模型暴露 `system_info`，经过统一 Policy 和 ToolExecutor 执行，保存 ToolRun 与完整消息轨迹，再基于真实、脱敏的本机信息回答。
+**Goal:** 让 Lobster0 在真实 CLI 对话中向模型暴露 `system_info`，经过统一 Policy 和 ToolExecutor 执行，保存 ToolRun 与完整消息轨迹，再基于真实、脱敏的本机信息回答。
 
 **Architecture:** 保留现有 Provider、AgentRunner、TurnService 和 SQLite。新增最小 Tool Contract、Registry、低风险 Policy、ToolExecutor、ToolRun Repository 与 `SystemInfoTool`；AgentRunner 只通过 ToolExecutor 执行真实工具，TurnService 为每轮提供 ToolContext，并把中间 Assistant Tool Call 与 Tool Result 和最终回答一起持久化。
 
@@ -27,17 +27,17 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `src/miniclaw/tools/base.py` | ToolDefinition、ToolContext、ToolResult、ValidationError 与 Tool Protocol |
-| `src/miniclaw/tools/registry.py` | 唯一名称注册、查询和稳定 OpenAI Tool Schema |
-| `src/miniclaw/policy/engine.py` | low/medium/high 风险映射为 allow/require_approval/deny 的单一决策点 |
-| `src/miniclaw/storage/tooling.py` | ToolRun 开始、成功、失败、中断及脱敏 Audit 的事务写入 |
-| `src/miniclaw/tools/executor.py` | 参数校验、Policy、Repository、Tool 调用与稳定 JSON 结果的唯一入口 |
-| `src/miniclaw/tools/system.py` | macOS/Linux/通用平台的脱敏 System Info 收集 |
-| `src/miniclaw/agent/runner.py` | 使用 ToolExecutor，并返回中间 Tool 消息轨迹 |
-| `src/miniclaw/agent/context.py` | 把 Registry Schema 放入 ModelRequest，并补充工具使用提示 |
-| `src/miniclaw/agent/turn.py` | 构造 ToolContext、恢复历史 Tool Call、传递并持久化中间消息 |
-| `src/miniclaw/storage/conversations.py` | 同一事务保存中间 Assistant/Tool 与最终 Assistant Message |
-| `src/miniclaw/cli.py` | 组装 Registry、Policy、Repository、Executor 和 SystemInfoTool |
+| `src/lobster0/tools/base.py` | ToolDefinition、ToolContext、ToolResult、ValidationError 与 Tool Protocol |
+| `src/lobster0/tools/registry.py` | 唯一名称注册、查询和稳定 OpenAI Tool Schema |
+| `src/lobster0/policy/engine.py` | low/medium/high 风险映射为 allow/require_approval/deny 的单一决策点 |
+| `src/lobster0/storage/tooling.py` | ToolRun 开始、成功、失败、中断及脱敏 Audit 的事务写入 |
+| `src/lobster0/tools/executor.py` | 参数校验、Policy、Repository、Tool 调用与稳定 JSON 结果的唯一入口 |
+| `src/lobster0/tools/system.py` | macOS/Linux/通用平台的脱敏 System Info 收集 |
+| `src/lobster0/agent/runner.py` | 使用 ToolExecutor，并返回中间 Tool 消息轨迹 |
+| `src/lobster0/agent/context.py` | 把 Registry Schema 放入 ModelRequest，并补充工具使用提示 |
+| `src/lobster0/agent/turn.py` | 构造 ToolContext、恢复历史 Tool Call、传递并持久化中间消息 |
+| `src/lobster0/storage/conversations.py` | 同一事务保存中间 Assistant/Tool 与最终 Assistant Message |
+| `src/lobster0/cli.py` | 组装 Registry、Policy、Repository、Executor 和 SystemInfoTool |
 | `tests/test_tool_contract.py` | Tool Result JSON 与 Registry 契约 |
 | `tests/test_system_info.py` | 字段、平台 fallback、固定命令和隐私过滤 |
 | `tests/test_tool_executor.py` | Policy、ToolRun、Audit、错误与取消 |
@@ -52,13 +52,13 @@
 ### Task 1: Tool Contract 与 Registry
 
 **Files:**
-- Create: `src/miniclaw/tools/__init__.py`
-- Create: `src/miniclaw/tools/base.py`
-- Create: `src/miniclaw/tools/registry.py`
+- Create: `src/lobster0/tools/__init__.py`
+- Create: `src/lobster0/tools/base.py`
+- Create: `src/lobster0/tools/registry.py`
 - Test: `tests/test_tool_contract.py`
 
 **Interfaces:**
-- Consumes: `miniclaw.providers.base.JsonValue`。
+- Consumes: `lobster0.providers.base.JsonValue`。
 - Produces: `ToolRisk`、`ToolDefinition.to_model_schema()`、`ToolContext`、`ToolResult.to_model_text()`、`ToolValidationError`、`Tool`、`ToolRegistry.get()`、`ToolRegistry.schemas`。
 
 - [ ] **Step 1: 写 Registry 稳定 Schema 与重复名称的失败测试**
@@ -114,7 +114,7 @@ class ToolContractTest(unittest.TestCase):
 
 Run: `uv run python -m unittest tests.test_tool_contract.ToolContractTest.test_registry_emits_stable_openai_schema_and_rejects_duplicate_names -v`
 
-Expected: `ModuleNotFoundError: No module named 'miniclaw.tools'`。
+Expected: `ModuleNotFoundError: No module named 'lobster0.tools'`。
 
 - [ ] **Step 3: 实现最小 Contract 与 Registry**
 
@@ -267,8 +267,8 @@ Expected: 2 tests PASS。
 - [ ] **Step 5: Ruff 并提交**
 
 ```bash
-uv run ruff check src/miniclaw/tools tests/test_tool_contract.py
-git add src/miniclaw/tools tests/test_tool_contract.py
+uv run ruff check src/lobster0/tools tests/test_tool_contract.py
+git add src/lobster0/tools tests/test_tool_contract.py
 git commit -m "feat: add tool contract and registry"
 ```
 
@@ -277,7 +277,7 @@ git commit -m "feat: add tool contract and registry"
 ### Task 2: `system_info` 脱敏收集器
 
 **Files:**
-- Create: `src/miniclaw/tools/system.py`
+- Create: `src/lobster0/tools/system.py`
 - Test: `tests/test_system_info.py`
 
 **Interfaces:**
@@ -298,12 +298,12 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
             read_only_roots=(),
         )
         with (
-            mock.patch("miniclaw.tools.system.platform.system", return_value="Darwin"),
-            mock.patch("miniclaw.tools.system.platform.mac_ver", return_value=(("15.1"), ("", "", ""), "arm64")),
-            mock.patch("miniclaw.tools.system.platform.machine", return_value="arm64"),
-            mock.patch("miniclaw.tools.system.os.cpu_count", return_value=10),
+            mock.patch("lobster0.tools.system.platform.system", return_value="Darwin"),
+            mock.patch("lobster0.tools.system.platform.mac_ver", return_value=(("15.1"), ("", "", ""), "arm64")),
+            mock.patch("lobster0.tools.system.platform.machine", return_value="arm64"),
+            mock.patch("lobster0.tools.system.os.cpu_count", return_value=10),
             mock.patch(
-                "miniclaw.tools.system._mac_hardware",
+                "lobster0.tools.system._mac_hardware",
                 return_value={
                     "chip": "Apple M4",
                     "memory_bytes": 17179869184,
@@ -311,7 +311,7 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
                 },
             ),
             mock.patch(
-                "miniclaw.tools.system.shutil.disk_usage",
+                "lobster0.tools.system.shutil.disk_usage",
                 return_value=SimpleNamespace(total=1000, used=400, free=600),
             ),
         ):
@@ -330,7 +330,7 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
 
 Run: `uv run python -m unittest tests.test_system_info.SystemInfoToolTest.test_returns_whitelisted_sections_without_device_identifiers -v`
 
-Expected: import failure for `miniclaw.tools.system`。
+Expected: import failure for `lobster0.tools.system`。
 
 - [ ] **Step 3: 实现参数白名单与通用收集路径**
 
@@ -415,7 +415,7 @@ def test_validate_rejects_unknown_sections_and_arguments(self) -> None:
 
 
 async def test_platform_collector_failure_marks_section_unavailable(self) -> None:
-    with mock.patch("miniclaw.tools.system._mac_hardware", side_effect=OSError("blocked")):
+    with mock.patch("lobster0.tools.system._mac_hardware", side_effect=OSError("blocked")):
         result = await SystemInfoTool().execute(self.context, {"sections": ["cpu", "gpu"]})
     self.assertTrue(result.ok)
     assert isinstance(result.data, dict)
@@ -429,8 +429,8 @@ Expected: all SystemInfo tests PASS；测试输出不得包含本机实际序列
 - [ ] **Step 6: Ruff 并提交**
 
 ```bash
-uv run ruff check src/miniclaw/tools/system.py tests/test_system_info.py
-git add src/miniclaw/tools/system.py tests/test_system_info.py
+uv run ruff check src/lobster0/tools/system.py tests/test_system_info.py
+git add src/lobster0/tools/system.py tests/test_system_info.py
 git commit -m "feat: add privacy-safe system info tool"
 ```
 
@@ -439,10 +439,10 @@ git commit -m "feat: add privacy-safe system info tool"
 ### Task 3: Policy、ToolRun Repository 与唯一 ToolExecutor
 
 **Files:**
-- Create: `src/miniclaw/policy/__init__.py`
-- Create: `src/miniclaw/policy/engine.py`
-- Create: `src/miniclaw/storage/tooling.py`
-- Create: `src/miniclaw/tools/executor.py`
+- Create: `src/lobster0/policy/__init__.py`
+- Create: `src/lobster0/policy/engine.py`
+- Create: `src/lobster0/storage/tooling.py`
+- Create: `src/lobster0/tools/executor.py`
 - Test: `tests/test_tool_executor.py`
 
 **Interfaces:**
@@ -476,7 +476,7 @@ async def test_low_risk_tool_executes_and_persists_succeeded_run(self) -> None:
 
 Run: `uv run python -m unittest tests.test_tool_executor.ToolExecutorTest.test_low_risk_tool_executes_and_persists_succeeded_run -v`
 
-Expected: import failure for `miniclaw.policy` 或 `miniclaw.tools.executor`。
+Expected: import failure for `lobster0.policy` 或 `lobster0.tools.executor`。
 
 - [ ] **Step 3: 实现最小 PolicyEngine**
 
@@ -633,8 +633,8 @@ Expected: Policy、持久化、错误和取消测试全部 PASS。
 - [ ] **Step 7: Ruff 并提交**
 
 ```bash
-uv run ruff check src/miniclaw/policy src/miniclaw/storage/tooling.py src/miniclaw/tools/executor.py tests/test_tool_executor.py
-git add src/miniclaw/policy src/miniclaw/storage/tooling.py src/miniclaw/tools/executor.py tests/test_tool_executor.py
+uv run ruff check src/lobster0/policy src/lobster0/storage/tooling.py src/lobster0/tools/executor.py tests/test_tool_executor.py
+git add src/lobster0/policy src/lobster0/storage/tooling.py src/lobster0/tools/executor.py tests/test_tool_executor.py
 git commit -m "feat: enforce policy for persisted tool execution"
 ```
 
@@ -643,7 +643,7 @@ git commit -m "feat: enforce policy for persisted tool execution"
 ### Task 4: AgentRunner ToolExecutor 集成与中间消息轨迹
 
 **Files:**
-- Modify: `src/miniclaw/agent/runner.py`
+- Modify: `src/lobster0/agent/runner.py`
 - Modify: `tests/test_agent_runner.py`
 
 **Interfaces:**
@@ -707,8 +707,8 @@ Expected: AgentRunner 全部测试 PASS。
 - [ ] **Step 5: Ruff 并提交**
 
 ```bash
-uv run ruff check src/miniclaw/agent/runner.py tests/test_agent_runner.py
-git add src/miniclaw/agent/runner.py tests/test_agent_runner.py
+uv run ruff check src/lobster0/agent/runner.py tests/test_agent_runner.py
+git add src/lobster0/agent/runner.py tests/test_agent_runner.py
 git commit -m "feat: route agent tool calls through executor"
 ```
 
@@ -717,9 +717,9 @@ git commit -m "feat: route agent tool calls through executor"
 ### Task 5: Context、Turn 与消息事务集成
 
 **Files:**
-- Modify: `src/miniclaw/agent/context.py`
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/storage/conversations.py`
+- Modify: `src/lobster0/agent/context.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/storage/conversations.py`
 - Modify: `tests/test_context.py`
 - Modify: `tests/test_conversations.py`
 - Modify: `tests/test_turn.py`
@@ -877,8 +877,8 @@ Expected: Context、Conversation、Turn 测试全部 PASS。
 - [ ] **Step 7: Ruff 并提交**
 
 ```bash
-uv run ruff check src/miniclaw/agent src/miniclaw/storage/conversations.py tests/test_context.py tests/test_conversations.py tests/test_turn.py
-git add src/miniclaw/agent src/miniclaw/storage/conversations.py tests/test_context.py tests/test_conversations.py tests/test_turn.py
+uv run ruff check src/lobster0/agent src/lobster0/storage/conversations.py tests/test_context.py tests/test_conversations.py tests/test_turn.py
+git add src/lobster0/agent src/lobster0/storage/conversations.py tests/test_context.py tests/test_conversations.py tests/test_turn.py
 git commit -m "feat: persist tool conversations in agent turns"
 ```
 
@@ -887,7 +887,7 @@ git commit -m "feat: persist tool conversations in agent turns"
 ### Task 6: CLI 生产装配、工程文档与验收
 
 **Files:**
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/cli.py`
 - Modify: `tests/test_cli_chat.py`
 - Create: `docs/engineering/phase-2/20260807_tool-runtime-and-system-info.md`
 - Modify: `docs/README.md`
@@ -896,7 +896,7 @@ git commit -m "feat: persist tool conversations in agent turns"
 
 **Interfaces:**
 - Consumes: 前五个 Task 的全部稳定接口。
-- Produces: `uv run miniclaw chat --message "帮我看看我的电脑是什么配置"` 的真实 Tool Loop。
+- Produces: `uv run lobster0 chat --message "帮我看看我的电脑是什么配置"` 的真实 Tool Loop。
 
 - [ ] **Step 1: 写 CLI 模型请求包含 system_info Schema 的离线失败测试**
 
@@ -910,7 +910,7 @@ git commit -m "feat: persist tool conversations in agent turns"
 ```python
 self.assertEqual((code, output, error), (0, "offline system answer\n", ""))
 self.assertEqual(server.observations[0]["tools"][0]["function"]["name"], "system_info")
-with sqlite3.connect(home / "miniclaw.db") as connection:
+with sqlite3.connect(home / "lobster0.db") as connection:
     tool_run = connection.execute(
         "SELECT tool_name, status, policy_action FROM tool_runs"
     ).fetchone()
@@ -951,7 +951,7 @@ service = TurnService(
 )
 ```
 
-不增加第二套调试执行入口，不增加 `miniclaw tools run`，避免 CLI 绕过正常 Turn、Policy 和审计。
+不增加第二套调试执行入口，不增加 `lobster0 tools run`，避免 CLI 绕过正常 Turn、Policy 和审计。
 
 - [ ] **Step 4: 运行 CLI、Provider 与全量离线测试**
 
@@ -982,8 +982,8 @@ Expected: 全部测试 PASS；Ruff 和 diff check 无输出；离线测试不访
 - [ ] **Step 6: 使用本地真实配置做显式冒烟**
 
 ```bash
-uv run miniclaw doctor
-uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
+uv run lobster0 doctor
+uv run lobster0 chat --message "帮我看看我的电脑是什么配置"
 ```
 
 Expected: `doctor` 继续 PASS；回答包含本机可获取的 OS/CPU/内存/存储信息，不出现“我无法访问你的电脑”，不出现序列号、UUID、用户名或 API Key。若模型没有调用 Tool，先保存脱敏请求观察值并修正 System Prompt/Schema 描述，不能在回答中硬编码机器配置。
@@ -996,7 +996,7 @@ uv run ruff check .
 git diff --check
 git status --short
 git add README.md docs src tests
-git commit -m "feat: let miniclaw inspect system information"
+git commit -m "feat: let lobster0 inspect system information"
 ```
 
 Expected: 工作区只有计划内文件；提交不包含 `.env`、数据库、真实 Tool 输出、日志或结果文件。

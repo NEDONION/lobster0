@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from miniclaw.evals.production_evidence import (
+from lobster0.evals.production_evidence import (
     ProductionEvidenceError,
     scan_secret_matches,
     utc_timestamp,
@@ -58,7 +58,7 @@ class ProductionEvidenceTest(unittest.TestCase):
             write_private_json(link, {"schema_version": 1})
 
         failed = self.root / "failed.json"
-        with patch("miniclaw.evals.production_evidence.os.fsync", side_effect=OSError):
+        with patch("lobster0.evals.production_evidence.os.fsync", side_effect=OSError):
             with self.assertRaisesRegex(ProductionEvidenceError, "evidence_write_failed"):
                 write_private_json(failed, {"schema_version": 1})
         self.assertFalse(failed.exists())

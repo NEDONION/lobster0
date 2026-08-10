@@ -3,7 +3,7 @@
 import asyncio
 import unittest
 
-from miniclaw.agent.events import RunEvent, display_tool_arguments, emit
+from lobster0.agent.events import RunEvent, display_tool_arguments, emit
 
 
 class RunEventTest(unittest.IsolatedAsyncioTestCase):
@@ -27,7 +27,7 @@ class RunEventTest(unittest.IsolatedAsyncioTestCase):
         async def fail(_: RunEvent) -> None:
             raise RuntimeError("private-render-value")
 
-        with self.assertLogs("miniclaw.agent.events", level="ERROR") as logs:
+        with self.assertLogs("lobster0.agent.events", level="ERROR") as logs:
             await emit(fail, RunEvent("model_text_delta", 42, {"text": "secret"}))
 
         output = "\n".join(logs.output)

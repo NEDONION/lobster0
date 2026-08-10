@@ -1,4 +1,4 @@
-# MiniClaw Phase 6：macOS + 飞书生产验收设计
+# Lobster0 Phase 6：macOS + 飞书生产验收设计
 
 > 状态：**DESIGN APPROVED / IMPLEMENTATION PLANS COMPLETE**
 >
@@ -48,7 +48,7 @@ versioned JSONL 和脱敏 Evidence，只补足真实部署证据和确有必要�
 ```text
 macOS 当前用户会话
   └── user LaunchAgent
-      └── miniclaw gateway
+      └── lobster0 gateway
           ├── DeepSeek OpenAI-compatible Provider
           ├── Feishu WebSocket + Card callback
           ├── SQLite / Markdown durable state
@@ -64,7 +64,7 @@ macOS 当前用户会话
 - 一个已发布且 allowlist 正确的飞书 App/Bot；
 - DeepSeek OpenAI-compatible Provider；
 - `sandbox.backend="seatbelt"` 的 macOS command 路径；
-- MiniClaw 自有 Workspace、State Home 和私有 Evidence 目录。
+- Lobster0 自有 Workspace、State Home 和私有 Evidence 目录。
 
 ### 3.2 验收通过后允许写出的结论
 
@@ -110,7 +110,7 @@ Seatbelt 更小或更可靠，个人单机项目暂不增加这层复杂度。
 ```mermaid
 flowchart TB
     OWNER["Owner / 飞书客户端"] --> CLOUD["飞书云"]
-    CLOUD <-->|"WebSocket + HTTPS callback"| GATEWAY["launchd 管理的 MiniClaw Gateway"]
+    CLOUD <-->|"WebSocket + HTTPS callback"| GATEWAY["launchd 管理的 Lobster0 Gateway"]
     GATEWAY --> INBOX["Durable Inbox"]
     INBOX --> TURN["TurnService / AgentRunner"]
     TURN <-->|"OpenAI-compatible API"| PROVIDER["DeepSeek Provider"]
@@ -181,7 +181,7 @@ executables: tuple[ExecutableRef, ...]
 4. `/usr/bin/env <program>` shebang，其中 `<program>` 必须通过现有 allowlisted executable discovery 解析为 exact path。
 
 无法安全确定 chain、脚本内容或解释器在批准后发生变化、解释器不在 allowlist 或 chain 超出上限时，命令返回稳定
-拒绝码，不回退 Host。同一当前用户仍能在校验与系统 `exec` 之间制造极短 TOCTOU；MiniClaw 的防护假设是模型与 Tool
+拒绝码，不回退 Host。同一当前用户仍能在校验与系统 `exec` 之间制造极短 TOCTOU；Lobster0 的防护假设是模型与 Tool
 不能写安装目录，恶意本机 Owner 不在威胁模型内。这一剩余边界必须写入安全评审，不能宣称防御已控制 Owner 的本地篡改。
 
 ### 6.4 Seatbelt Live 必须证明
@@ -203,7 +203,7 @@ executables: tuple[ExecutableRef, ...]
 继续使用：
 
 - `evals/scenarios/feishu-live.v1.jsonl`；
-- `src/miniclaw/evals/feishu_live.py`；
+- `src/lobster0/evals/feishu_live.py`；
 - `scripts/feishu_live_smoke.py --confirm-live`；
 - Owner-only Evidence、checkpoint resume、clean-commit binding 和 Secret scan。
 
@@ -263,7 +263,7 @@ Live Evidence 只记录 Provider profile 名、请求计数、Tool 名和稳定�
 
 ### 8.2 恢复测试
 
-Harness 允许的故障注入只针对它启动并拥有的 MiniClaw Gateway 进程，不杀死飞书客户端、系统服务或其他用户进程。
+Harness 允许的故障注入只针对它启动并拥有的 Lobster0 Gateway 进程，不杀死飞书客户端、系统服务或其他用户进程。
 
 必须验证：
 
@@ -305,7 +305,7 @@ Approval continuation。任何 invariant 失败都会使本轮 Gate 失败；停
 真实 Evidence 保存到 State Home 下的 owner-only 目录，不进入 Git：
 
 ```text
-~/.miniclaw/evidence/phase6-production/<run-id>/
+~/.lobster0/evidence/phase6-production/<run-id>/
 ```
 
 目录和文件权限分别为 `0700`、`0600`；使用 `O_EXCL`、原子 rename 和 `fsync`。内容可以包含内部 UUID 的哈希、单机运行
@@ -320,7 +320,7 @@ Approval continuation。任何 invariant 失败都会使本轮 Gate 失败；停
 - Gate 名和 case IDs；
 - passed/failed/skipped 数量；
 - UTC 起止时间与 duration；
-- Python/MiniClaw major-minor version；
+- Python/Lobster0 major-minor version；
 - Seatbelt/launchd/Feishu/Provider 的稳定能力结果；
 - private Evidence 的 SHA-256 aggregate，不记录路径；
 - Secret scan 结果。
@@ -463,10 +463,10 @@ stateDiagram-v2
 - 不把真实消息、截图、平台 ID 或凭据提交到仓库；
 - 不新增 Web 管理后台、远程 Worker 或分布式 Scheduler；
 - 不开始 Phase 7 Controlled Evolution；
-- 不允许 MiniClaw 自动修改、批准或部署 Python 源码。
+- 不允许 Lobster0 自动修改、批准或部署 Python 源码。
 
 ## 17. 后续阶段
 
-本 Gate 完成后，MiniClaw 才进入 Phase 7 Controlled Evolution：`/good`、`/bad`、失败案例沉淀、Prompt/Skill Proposal、
+本 Gate 完成后，Lobster0 才进入 Phase 7 Controlled Evolution：`/good`、`/bad`、失败案例沉淀、Prompt/Skill Proposal、
 全量评测、Owner 批准、版本化应用和回滚。Phase 7 必须复用本 Gate 建立的 Evidence、回归和审批纪律，不能削弱任何
 生产安全边界。

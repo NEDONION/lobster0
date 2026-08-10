@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from typing import BinaryIO
 
-from miniclaw.tui_launcher import is_supported_node_version
+from lobster0.tui_launcher import is_supported_node_version
 
 if __package__:
     from scripts.build_node_bundle import NodeBundleError, write_deterministic_tar
@@ -58,11 +58,11 @@ def build_tui_bundle(
         project: 包含 TUI-local workspace、package 与 frozen lock 的目录。
         output_directory: 新 artifact 的父目录。
         platform: Tier 1 `os-arch` key。
-        version: 与 MiniClaw Release 相同的三段版本。
+        version: 与 Lobster0 Release 相同的三段版本。
         managed_node: 已验证且位于受支持 LTS 区间的显式 Node executable。
 
     Returns:
-        已生成的 `miniclaw-tui-<version>-<platform>.tar.gz`。
+        已生成的 `lobster0-tui-<version>-<platform>.tar.gz`。
 
     Raises:
         TuiBundleError: 工具链、production tree、link 或输出不满足契约。
@@ -85,7 +85,7 @@ def build_tui_bundle(
     _run((*_PNPM, "--dir", str(root), "test"))
     _run((*_PNPM, "--dir", str(root), "build"))
     licenses = _production_licenses(root)
-    with tempfile.TemporaryDirectory(prefix="miniclaw-tui-bundle-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="lobster0-tui-bundle-") as temporary:
         staging = Path(temporary)
         deployed = staging / "deployed"
         _run(
@@ -107,7 +107,7 @@ def build_tui_bundle(
         _strip_deploy_metadata(materialized)
         _validate_materialized_tui(materialized)
         _smoke_materialized_tui(materialized, node, version)
-        destination = Path(output_directory) / f"miniclaw-tui-{version}-{platform}.tar.gz"
+        destination = Path(output_directory) / f"lobster0-tui-{version}-{platform}.tar.gz"
         try:
             return write_deterministic_tar(materialized.parent, destination)
         except NodeBundleError as error:
@@ -496,8 +496,8 @@ def _smoke_materialized_tui(root: Path, node: Path, version: str) -> None:
         (str(node), str(entry), "--smoke"),
         cwd=root.parent,
         environment={
-            "MINICLAW_NODE": str(node),
-            "MINICLAW_TUI_ENTRY": str(entry),
+            "LOBSTER0_NODE": str(node),
+            "LOBSTER0_TUI_ENTRY": str(entry),
         },
     )
     expected = {"component": "pi-tui", "version": version, "status": "ok"}

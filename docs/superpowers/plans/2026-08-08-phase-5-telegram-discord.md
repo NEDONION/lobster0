@@ -54,8 +54,8 @@
 
 **Files:**
 
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
 - Modify: `.env.example`
 - Modify: `pyproject.toml`
 - Modify: `uv.lock`
@@ -73,7 +73,7 @@
 class TelegramConfig:
     enabled: bool = False
     account_id: str = "default"
-    bot_token_env: str = "MINICLAW_TELEGRAM_BOT_TOKEN"
+    bot_token_env: str = "LOBSTER0_TELEGRAM_BOT_TOKEN"
     owner_user_id: int = 0
     allowed_user_ids: tuple[int, ...] = ()
     allowed_chat_ids: tuple[int, ...] = ()
@@ -88,7 +88,7 @@ class TelegramConfig:
 class DiscordConfig:
     enabled: bool = False
     account_id: str = "default"
-    bot_token_env: str = "MINICLAW_DISCORD_BOT_TOKEN"
+    bot_token_env: str = "LOBSTER0_DISCORD_BOT_TOKEN"
     owner_user_id: int = 0
     allowed_user_ids: tuple[int, ...] = ()
     allowed_guild_ids: tuple[int, ...] = ()
@@ -139,7 +139,7 @@ channels=ChannelConfig(
 ### Step 1.3 — Add safe bootstrap and environment examples
 
 - [x] `config.toml` bootstrap template 增加两个注释 section，默认 disabled、Owner 为 0、allowlist 为空。
-- [x] `.env.example` 只增加空的 `MINICLAW_TELEGRAM_BOT_TOKEN=` 与 `MINICLAW_DISCORD_BOT_TOKEN=`，不写示例 Token。
+- [x] `.env.example` 只增加空的 `LOBSTER0_TELEGRAM_BOT_TOKEN=` 与 `LOBSTER0_DISCORD_BOT_TOKEN=`，不写示例 Token。
 - [x] 新增测试保证 bootstrap 结果不包含形似 Telegram bot token 或 Discord token 的值。
 
 ### Step 1.4 — Add optional extras and lazy-import tests
@@ -156,7 +156,7 @@ channels = [
 ]
 ```
 
-- [x] 普通 `import miniclaw.runtime`、TUI 和只启用飞书时不得在 `sys.modules` 中加载 `telegram`/`discord`。
+- [x] 普通 `import lobster0.runtime`、TUI 和只启用飞书时不得在 `sys.modules` 中加载 `telegram`/`discord`。
 - [x] 更新 lock，安装 dev + channels 以便本地跑全量，但 runtime 代码继续 lazy import。
 
 Run GREEN:
@@ -165,7 +165,7 @@ Run GREEN:
 uv lock
 uv sync --extra dev --extra channels
 uv run python -m unittest tests.test_config tests.test_bootstrap tests.test_runtime -v
-uv run ruff check src/miniclaw/config.py src/miniclaw/bootstrap.py \
+uv run ruff check src/lobster0/config.py src/lobster0/bootstrap.py \
   tests/test_config.py tests/test_bootstrap.py tests/test_runtime.py
 uv build
 ```
@@ -173,8 +173,8 @@ uv build
 ### Step 1.5 — Commit
 
 ```bash
-git add .env.example pyproject.toml uv.lock src/miniclaw/config.py \
-  src/miniclaw/bootstrap.py tests/test_config.py tests/test_bootstrap.py tests/test_runtime.py
+git add .env.example pyproject.toml uv.lock src/lobster0/config.py \
+  src/lobster0/bootstrap.py tests/test_config.py tests/test_bootstrap.py tests/test_runtime.py
 git commit -m "feat(config): 增加 Telegram/Discord typed settings 与 optional extras"
 ```
 
@@ -186,9 +186,9 @@ git commit -m "feat(config): 增加 Telegram/Discord typed settings 与 optional
 
 **Files:**
 
-- Modify: `src/miniclaw/channels/base.py`
-- Modify: `src/miniclaw/channels/delivery.py`
-- Modify: `src/miniclaw/runtime.py`
+- Modify: `src/lobster0/channels/base.py`
+- Modify: `src/lobster0/channels/delivery.py`
+- Modify: `src/lobster0/runtime.py`
 - Modify: `tests/test_channel_contracts.py`
 - Modify: `tests/test_delivery.py`
 - Modify: `tests/test_runtime.py`
@@ -275,16 +275,16 @@ Run GREEN:
 
 ```bash
 uv run python -m unittest tests.test_channel_contracts tests.test_delivery tests.test_runtime -v
-uv run ruff check src/miniclaw/channels/base.py src/miniclaw/channels/delivery.py \
-  src/miniclaw/runtime.py tests/test_channel_contracts.py tests/test_delivery.py \
+uv run ruff check src/lobster0/channels/base.py src/lobster0/channels/delivery.py \
+  src/lobster0/runtime.py tests/test_channel_contracts.py tests/test_delivery.py \
   tests/test_runtime.py
 ```
 
 ### Step 2.4 — Commit
 
 ```bash
-git add src/miniclaw/channels/base.py src/miniclaw/channels/delivery.py \
-  src/miniclaw/runtime.py tests/test_channel_contracts.py tests/test_delivery.py \
+git add src/lobster0/channels/base.py src/lobster0/channels/delivery.py \
+  src/lobster0/runtime.py tests/test_channel_contracts.py tests/test_delivery.py \
   tests/test_runtime.py
 git commit -m "refactor(channel): 抽取 shared limits、manager factory 与 delivery errors"
 ```
@@ -297,8 +297,8 @@ git commit -m "refactor(channel): 抽取 shared limits、manager factory 与 del
 
 **Files:**
 
-- Modify: `src/miniclaw/channels/approvals.py`
-- Modify: `src/miniclaw/channels/delivery.py`
+- Modify: `src/lobster0/channels/approvals.py`
+- Modify: `src/lobster0/channels/delivery.py`
 - Modify: `tests/test_channel_approvals.py`
 - Modify: `tests/test_delivery.py`
 
@@ -349,14 +349,14 @@ Run GREEN:
 ```bash
 uv run python -m unittest tests.test_channel_approvals tests.test_delivery \
   tests.test_feishu_transport -v
-uv run ruff check src/miniclaw/channels/approvals.py \
-  src/miniclaw/channels/delivery.py tests/test_channel_approvals.py tests/test_delivery.py
+uv run ruff check src/lobster0/channels/approvals.py \
+  src/lobster0/channels/delivery.py tests/test_channel_approvals.py tests/test_delivery.py
 ```
 
 ### Step 3.4 — Commit
 
 ```bash
-git add src/miniclaw/channels/approvals.py src/miniclaw/channels/delivery.py \
+git add src/lobster0/channels/approvals.py src/lobster0/channels/delivery.py \
   tests/test_channel_approvals.py tests/test_delivery.py tests/test_feishu_transport.py
 git commit -m "feat(approval): 引入 neutral v2 envelope 并兼容 Feishu v1"
 ```
@@ -369,10 +369,10 @@ git commit -m "feat(approval): 引入 neutral v2 envelope 并兼容 Feishu v1"
 
 **Files:**
 
-- Create: `src/miniclaw/channels/experience.py`
-- Modify: `src/miniclaw/channels/capabilities.py`
-- Modify: `src/miniclaw/channels/manager.py`
-- Modify: `src/miniclaw/gateway.py`
+- Create: `src/lobster0/channels/experience.py`
+- Modify: `src/lobster0/channels/capabilities.py`
+- Modify: `src/lobster0/channels/manager.py`
+- Modify: `src/lobster0/gateway.py`
 - Create: `tests/test_channel_experience.py`
 - Modify: `tests/test_channel_capabilities.py`
 - Modify: `tests/test_channel_manager.py`
@@ -413,7 +413,7 @@ Run RED:
 uv run python -m unittest tests.test_channel_experience -v
 ```
 
-Expected RED: `miniclaw.channels.experience` 不存在。
+Expected RED: `lobster0.channels.experience` 不存在。
 
 ### Step 4.2 — Implement shared activity state
 
@@ -432,16 +432,16 @@ Run GREEN:
 uv run python -m unittest tests.test_channel_experience \
   tests.test_channel_capabilities tests.test_channel_manager \
   tests.test_feishu_transport tests.test_gateway -v
-uv run ruff check src/miniclaw/channels/experience.py \
-  src/miniclaw/channels/capabilities.py src/miniclaw/channels/manager.py \
-  src/miniclaw/gateway.py tests/test_channel_experience.py
+uv run ruff check src/lobster0/channels/experience.py \
+  src/lobster0/channels/capabilities.py src/lobster0/channels/manager.py \
+  src/lobster0/gateway.py tests/test_channel_experience.py
 ```
 
 ### Step 4.4 — Commit
 
 ```bash
-git add src/miniclaw/channels/experience.py src/miniclaw/channels/capabilities.py \
-  src/miniclaw/channels/manager.py src/miniclaw/gateway.py \
+git add src/lobster0/channels/experience.py src/lobster0/channels/capabilities.py \
+  src/lobster0/channels/manager.py src/lobster0/gateway.py \
   tests/test_channel_experience.py tests/test_channel_capabilities.py \
   tests/test_channel_manager.py tests/test_feishu_transport.py tests/test_gateway.py
 git commit -m "refactor(experience): 平台无关化 Typing 与 progress preview"
@@ -451,11 +451,11 @@ git commit -m "refactor(experience): 平台无关化 Typing 与 progress preview
 
 ## Task 5: Implement the pure Telegram Adapter
 
-**Purpose:** 先把 Telegram Update 转成 MiniClaw `InboundMessage`，不碰网络。Adapter 是 admission/security 边界，不把 SDK object 传进 Core。
+**Purpose:** 先把 Telegram Update 转成 Lobster0 `InboundMessage`，不碰网络。Adapter 是 admission/security 边界，不把 SDK object 传进 Core。
 
 **Files:**
 
-- Create: `src/miniclaw/channels/telegram.py`
+- Create: `src/lobster0/channels/telegram.py`
 - Create: `tests/test_telegram_adapter.py`
 
 ### Step 5.1 — Define a narrow update view and RED matrix
@@ -508,13 +508,13 @@ Run GREEN:
 
 ```bash
 uv run python -m unittest tests.test_telegram_adapter -v
-uv run ruff check src/miniclaw/channels/telegram.py tests/test_telegram_adapter.py
+uv run ruff check src/lobster0/channels/telegram.py tests/test_telegram_adapter.py
 ```
 
 ### Step 5.3 — Commit
 
 ```bash
-git add src/miniclaw/channels/telegram.py tests/test_telegram_adapter.py
+git add src/lobster0/channels/telegram.py tests/test_telegram_adapter.py
 git commit -m "feat(telegram): 增加 allowlisted inbound Adapter 与 topic identity"
 ```
 
@@ -526,7 +526,7 @@ git commit -m "feat(telegram): 增加 allowlisted inbound Adapter 与 topic iden
 
 **Files:**
 
-- Modify: `src/miniclaw/channels/telegram.py`
+- Modify: `src/lobster0/channels/telegram.py`
 - Create: `tests/fakes/fake_telegram.py`
 - Create: `tests/test_telegram_transport.py`
 - Modify: `tests/test_delivery.py`
@@ -576,14 +576,14 @@ Run GREEN:
 ```bash
 uv run python -m unittest tests.test_telegram_transport tests.test_delivery \
   tests.test_channel_experience -v
-uv run ruff check src/miniclaw/channels/telegram.py tests/fakes/fake_telegram.py \
+uv run ruff check src/lobster0/channels/telegram.py tests/fakes/fake_telegram.py \
   tests/test_telegram_transport.py tests/test_delivery.py tests/test_channel_experience.py
 ```
 
 ### Step 6.5 — Commit
 
 ```bash
-git add src/miniclaw/channels/telegram.py tests/fakes/fake_telegram.py \
+git add src/lobster0/channels/telegram.py tests/fakes/fake_telegram.py \
   tests/test_telegram_transport.py tests/test_delivery.py tests/test_channel_experience.py
 git commit -m "feat(telegram): 打通 long polling、delivery 与 progress experience"
 ```
@@ -596,7 +596,7 @@ git commit -m "feat(telegram): 打通 long polling、delivery 与 progress exper
 
 **Files:**
 
-- Create: `src/miniclaw/channels/discord.py`
+- Create: `src/lobster0/channels/discord.py`
 - Create: `tests/test_discord_adapter.py`
 
 ### Step 7.1 — RED the Discord admission matrix
@@ -645,13 +645,13 @@ Run GREEN:
 
 ```bash
 uv run python -m unittest tests.test_discord_adapter -v
-uv run ruff check src/miniclaw/channels/discord.py tests/test_discord_adapter.py
+uv run ruff check src/lobster0/channels/discord.py tests/test_discord_adapter.py
 ```
 
 ### Step 7.3 — Commit
 
 ```bash
-git add src/miniclaw/channels/discord.py tests/test_discord_adapter.py
+git add src/lobster0/channels/discord.py tests/test_discord_adapter.py
 git commit -m "feat(discord): 增加 DM/Guild/Thread inbound Adapter"
 ```
 
@@ -663,7 +663,7 @@ git commit -m "feat(discord): 增加 DM/Guild/Thread inbound Adapter"
 
 **Files:**
 
-- Modify: `src/miniclaw/channels/discord.py`
+- Modify: `src/lobster0/channels/discord.py`
 - Create: `tests/fakes/fake_discord.py`
 - Create: `tests/test_discord_transport.py`
 - Modify: `tests/test_delivery.py`
@@ -688,7 +688,7 @@ Expected RED: Transport lifecycle 尚未实现。
 
 ### Step 8.2 — RED safe send and error mapping
 
-- [x] 所有 send/reply/edit 使用 `AllowedMentions.none()`；MiniClaw 回复不能 ping 用户、角色或 everyone。
+- [x] 所有 send/reply/edit 使用 `AllowedMentions.none()`；Lobster0 回复不能 ping 用户、角色或 everyone。
 - [x] 2000 char 分片每 part 不超预算，emoji/中文/code fence 不丢字符。
 - [x] 429/retry-after → retryable `discord_rate_limited`；5xx/network → retryable；403 → `discord_forbidden`；404 → `discord_target_not_found`；不确定 receipt → unknown。
 - [x] SDK exception 的正文和 response body 不进入稳定错误。
@@ -710,14 +710,14 @@ Run GREEN:
 ```bash
 uv run python -m unittest tests.test_discord_transport tests.test_delivery \
   tests.test_channel_experience -v
-uv run ruff check src/miniclaw/channels/discord.py tests/fakes/fake_discord.py \
+uv run ruff check src/lobster0/channels/discord.py tests/fakes/fake_discord.py \
   tests/test_discord_transport.py tests/test_delivery.py tests/test_channel_experience.py
 ```
 
 ### Step 8.5 — Commit
 
 ```bash
-git add src/miniclaw/channels/discord.py tests/fakes/fake_discord.py \
+git add src/lobster0/channels/discord.py tests/fakes/fake_discord.py \
   tests/test_discord_transport.py tests/test_delivery.py tests/test_channel_experience.py
 git commit -m "feat(discord): 打通 Gateway、safe delivery 与 typing experience"
 ```
@@ -730,9 +730,9 @@ git commit -m "feat(discord): 打通 Gateway、safe delivery 与 typing experien
 
 **Files:**
 
-- Create: `src/miniclaw/channels/supervisor.py`
-- Modify: `src/miniclaw/gateway.py`
-- Modify: `src/miniclaw/runtime.py`
+- Create: `src/lobster0/channels/supervisor.py`
+- Modify: `src/lobster0/gateway.py`
+- Modify: `src/lobster0/runtime.py`
 - Modify: `tests/test_gateway.py`
 - Create: `tests/test_channel_supervisor.py`
 - Modify: `tests/test_channel_observability.py`
@@ -808,16 +808,16 @@ Run GREEN:
 ```bash
 uv run python -m unittest tests.test_channel_supervisor tests.test_gateway \
   tests.test_runtime tests.test_channel_observability -v
-uv run ruff check src/miniclaw/channels/supervisor.py src/miniclaw/gateway.py \
-  src/miniclaw/runtime.py tests/test_channel_supervisor.py tests/test_gateway.py \
+uv run ruff check src/lobster0/channels/supervisor.py src/lobster0/gateway.py \
+  src/lobster0/runtime.py tests/test_channel_supervisor.py tests/test_gateway.py \
   tests/test_channel_observability.py
 ```
 
 ### Step 9.4 — Commit
 
 ```bash
-git add src/miniclaw/channels/supervisor.py src/miniclaw/gateway.py \
-  src/miniclaw/runtime.py tests/test_channel_supervisor.py tests/test_gateway.py \
+git add src/lobster0/channels/supervisor.py src/lobster0/gateway.py \
+  src/lobster0/runtime.py tests/test_channel_supervisor.py tests/test_gateway.py \
   tests/test_channel_observability.py
 git commit -m "feat(gateway): 增加 single-runtime multi-pipeline Supervisor"
 ```
@@ -830,9 +830,9 @@ git commit -m "feat(gateway): 增加 single-runtime multi-pipeline Supervisor"
 
 **Files:**
 
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/doctor.py`
 - Modify: `tests/test_doctor.py`
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/cli.py`
 - Modify: `tests/test_cli.py`
 
 ### Step 10.1 — RED the result matrix
@@ -861,14 +861,14 @@ Run GREEN:
 
 ```bash
 uv run python -m unittest tests.test_doctor tests.test_cli -v
-uv run ruff check src/miniclaw/doctor.py src/miniclaw/cli.py \
+uv run ruff check src/lobster0/doctor.py src/lobster0/cli.py \
   tests/test_doctor.py tests/test_cli.py
 ```
 
 ### Step 10.3 — Commit
 
 ```bash
-git add src/miniclaw/doctor.py src/miniclaw/cli.py \
+git add src/lobster0/doctor.py src/lobster0/cli.py \
   tests/test_doctor.py tests/test_cli.py
 git commit -m "feat(doctor): 增加 Telegram/Discord offline readiness diagnostics"
 ```
@@ -883,10 +883,10 @@ git commit -m "feat(doctor): 增加 Telegram/Discord offline readiness diagnosti
 
 - Create: `evals/scenarios/telegram-channel.v1.jsonl`
 - Create: `evals/scenarios/discord-channel.v1.jsonl`
-- Create: `src/miniclaw/evals/multi_channel.py`
-- Modify: `src/miniclaw/evals/cases.py`
-- Modify: `src/miniclaw/evals/channel.py`
-- Modify: `src/miniclaw/cli.py`
+- Create: `src/lobster0/evals/multi_channel.py`
+- Modify: `src/lobster0/evals/cases.py`
+- Modify: `src/lobster0/evals/channel.py`
+- Modify: `src/lobster0/cli.py`
 - Create: `tests/test_multi_channel_evals.py`
 - Modify: `tests/test_eval_cases.py`
 - Modify: `tests/test_feishu_evals.py`
@@ -954,8 +954,8 @@ Run GREEN and soak:
 ```bash
 uv run python -m unittest tests.test_multi_channel_evals \
   tests.test_eval_cases tests.test_eval_runner -v
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --root evals/scenarios
 ```
 
 Expected GREEN: 至少 `32/32`，soak 至少 `640/640`。
@@ -964,8 +964,8 @@ Expected GREEN: 至少 `32/32`，soak 至少 `640/640`。
 
 ```bash
 git add evals/scenarios/telegram-channel.v1.jsonl \
-  evals/scenarios/discord-channel.v1.jsonl src/miniclaw/evals/multi_channel.py \
-  src/miniclaw/evals/cases.py src/miniclaw/evals/channel.py src/miniclaw/cli.py \
+  evals/scenarios/discord-channel.v1.jsonl src/lobster0/evals/multi_channel.py \
+  src/lobster0/evals/cases.py src/lobster0/evals/channel.py src/lobster0/cli.py \
   tests/test_multi_channel_evals.py tests/test_eval_cases.py \
   tests/test_feishu_evals.py tests/test_cli_eval.py
 git commit -m "test(channel): 固化 20 个 Telegram/Discord regression scenarios"
@@ -981,7 +981,7 @@ git commit -m "test(channel): 固化 20 个 Telegram/Discord regression scenario
 
 - Create: `scripts/telegram_live_smoke.py`
 - Create: `scripts/discord_live_smoke.py`
-- Create: `src/miniclaw/evals/live.py`
+- Create: `src/lobster0/evals/live.py`
 - Create: `tests/test_channel_live_harness.py`
 - Verify: `.gitignore` already ignores `.local/`
 
@@ -1020,7 +1020,7 @@ uv run ruff check scripts/telegram_live_smoke.py scripts/discord_live_smoke.py \
 ### Step 12.3 — Commit
 
 ```bash
-git add src/miniclaw/evals/live.py scripts/telegram_live_smoke.py \
+git add src/lobster0/evals/live.py scripts/telegram_live_smoke.py \
   scripts/discord_live_smoke.py tests/test_channel_live_harness.py
 git commit -m "test(live): 增加 secret-free Telegram/Discord acceptance harness"
 ```
@@ -1047,7 +1047,7 @@ git commit -m "test(live): 增加 secret-free Telegram/Discord acceptance harnes
 - Modify: `docs/progress/index.html`
 - Create: `scripts/validate_docs.py`
 - Create: `tests/test_documentation.py`
-- Modify: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
+- Modify: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`
 - Modify: `AGENTS.md`
 
 ### Step 13.1 — RED documentation fact scan
@@ -1084,14 +1084,14 @@ Expected RED: 至少命中 Phase 5 尚未实现的进度文本。
 uv run python -m unittest tests.test_documentation -v
 uv run python scripts/validate_docs.py --root . \
   --html docs/progress/index.html \
-  --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html \
+  --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html \
   --forbid-draft-markers
 ```
 
 Expected: link、fence、Mermaid、HTML 和草稿标记检查全 PASS。
 
 Actual (2026-08-08): repository + external HTML validation PASS，documentation focused tests `6/6`，Ruff PASS；
-外部进度页更新于 `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`。
+外部进度页更新于 `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`。
 
 ### Step 13.4 — Commit repo docs, then external progress separately
 
@@ -1121,7 +1121,7 @@ git commit -m "docs(phase5): 同步 multi-channel 架构、运维与真实进度
 - Modify: `docs/superpowers/plans/2026-08-08-phase-5-telegram-discord.md`
 - Modify: `docs/evals/releases/v0.5.0.md`
 - Modify: `docs/progress/index.html`
-- Modify: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
+- Modify: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`
 
 ### Step 14.1 — Focused platform gates
 
@@ -1163,9 +1163,9 @@ pnpm --dir tui test
 - [x] Agent and Channel regression：28/28、32/32、20 runs / 640/640 PASS：
 
 ```bash
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --root evals/scenarios
 ```
 
 - [x] Static/build/docs：Ruff、sdist/wheel、documentation 6/6、仓库与外部 HTML validation PASS：
@@ -1176,7 +1176,7 @@ uv build
 uv run python -m unittest tests.test_documentation -v
 uv run python scripts/validate_docs.py --root . \
   --html docs/progress/index.html \
-  --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html
+  --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html
 ```
 
 ### Step 14.3 — Security and clean-diff gates
@@ -1185,7 +1185,7 @@ uv run python scripts/validate_docs.py --root . \
 
 ```bash
 git grep -l -E \
-  '([0-9]{6,}:[A-Za-z0-9_-]{30,}|MINICLAW_(TELEGRAM|DISCORD)_BOT_TOKEN=[^[:space:]]+|MINICLAW_FEISHU_APP_SECRET=[^[:space:]]+)' \
+  '([0-9]{6,}:[A-Za-z0-9_-]{30,}|LOBSTER0_(TELEGRAM|DISCORD)_BOT_TOKEN=[^[:space:]]+|LOBSTER0_FEISHU_APP_SECRET=[^[:space:]]+)' \
   -- . ':!tests/**' ':!docs/superpowers/plans/**' ':!uv.lock'
 ```
 

@@ -5,8 +5,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.sandbox.base import SandboxPlanError
-from miniclaw.sandbox.executables import (
+from lobster0.sandbox.base import SandboxPlanError
+from lobster0.sandbox.executables import (
     capture_executable_chain,
     verify_executable_chain,
 )

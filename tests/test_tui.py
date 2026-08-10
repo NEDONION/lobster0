@@ -1,4 +1,4 @@
-"""MiniClaw Textual TUI 的无头交互测试。"""
+"""Lobster0 Textual TUI 的无头交互测试。"""
 
 import asyncio
 import contextlib
@@ -14,14 +14,14 @@ from textual.containers import VerticalScroll
 from textual.events import Paste
 from textual.widgets import Button, Collapsible, Static, TextArea
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import ApprovalDecision
-from miniclaw.tools.base import ToolDefinition, ToolRisk
-from miniclaw.tui.app import (
+from lobster0.agent.events import RunEvent
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
+from lobster0.policy.approvals import ApprovalDecision
+from lobster0.tools.base import ToolDefinition, ToolRisk
+from lobster0.tui.app import (
     ApprovalModal,
-    MiniClawApp,
+    Lobster0App,
     ReasoningCard,
     ToolCard,
     _load_runtime,
@@ -29,7 +29,7 @@ from miniclaw.tui.app import (
 )
 
 if TYPE_CHECKING:
-    from miniclaw.runtime import AgentRuntime
+    from lobster0.runtime import AgentRuntime
 
 
 class FakeTurnService:
@@ -191,7 +191,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
     """验证唯一 TUI 的最小布局、焦点与安全渲染边界。"""
 
     def setUp(self) -> None:
-        """创建不接触真实 MiniClaw 状态的临时路径。"""
+        """创建不接触真实 Lobster0 状态的临时路径。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())
@@ -220,7 +220,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
         initialize_state(self.paths)
         sentinel = "tui-installed-secret"
         self.paths.secrets_file.write_text(
-            f"MINICLAW_MODEL_API_KEY={sentinel}\n",
+            f"LOBSTER0_MODEL_API_KEY={sentinel}\n",
             encoding="utf-8",
         )
         self.paths.secrets_file.chmod(0o600)
@@ -231,11 +231,11 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
             mock.patch.dict(
-                "miniclaw.tui.app.os.environ",
-                {"MINICLAW_ENV_FILE": str(self.paths.secrets_file)},
+                "lobster0.tui.app.os.environ",
+                {"LOBSTER0_ENV_FILE": str(self.paths.secrets_file)},
                 clear=True,
             ),
-            mock.patch("miniclaw.tui.app.create_runtime", return_value=self.runtime) as factory,
+            mock.patch("lobster0.tui.app.create_runtime", return_value=self.runtime) as factory,
         ):
             runtime = _load_runtime(self.paths)
 
@@ -245,7 +245,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_enter_runs_one_turn_and_shift_enter_keeps_a_newline(self) -> None:
         """Enter 发送并清空输入；Shift+Enter 只在同一输入框内换行。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test() as pilot:
             composer = app.query_one("#composer", TextArea)
@@ -278,7 +278,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             assistant_output = "\n".join(
                 str(message.render()) for message in app.query(".assistant-message .role")
             )
-            self.assertIn("MiniClaw", assistant_output)
+            self.assertIn("Lobster0", assistant_output)
             self.assertEqual(len(app.query(".conversation-message")), 2)
             telemetry = str(app.query_one("#telemetry", Static).render())
             self.assertIn("1.2k/128k", telemetry)
@@ -303,7 +303,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 tool_definitions=(),
             ),
         )
-        app = MiniClawApp(self.paths, runtime=runtime)
+        app = Lobster0App(self.paths, runtime=runtime)
 
         async with app.run_test() as pilot:
             composer = app.query_one("#composer", TextArea)
@@ -340,7 +340,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 tool_definitions=(),
             ),
         )
-        app = MiniClawApp(self.paths, runtime=runtime)
+        app = Lobster0App(self.paths, runtime=runtime)
 
         async with app.run_test() as pilot:
             composer = app.query_one("#composer", TextArea)
@@ -367,7 +367,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 tool_definitions=(),
             ),
         )
-        app = MiniClawApp(self.paths, runtime=runtime)
+        app = Lobster0App(self.paths, runtime=runtime)
 
         async with app.run_test() as pilot:
             composer = app.query_one("#composer", TextArea)
@@ -400,7 +400,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 tool_definitions=(),
             ),
         )
-        app = MiniClawApp(self.paths, runtime=runtime)
+        app = Lobster0App(self.paths, runtime=runtime)
 
         async with app.run_test() as pilot:
             app.query_one("#composer", TextArea).load_text("write")
@@ -443,7 +443,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
                 tool_definitions=(),
             ),
         )
-        app = MiniClawApp(self.paths, runtime=runtime)
+        app = Lobster0App(self.paths, runtime=runtime)
 
         async with app.run_test() as pilot:
             app.query_one("#composer", TextArea).load_text("write")
@@ -458,7 +458,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_approval_modal_only_shows_core_session_and_always_modes(self) -> None:
         """TUI 必须按 Core grant_modes 展示 Session/Always，不能自行放宽。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
         decisions: list[ApprovalDecision | None] = []
         event = RunEvent(
             "approval_required",
@@ -496,7 +496,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_eighty_by_twenty_four_starts_with_one_focused_composer(self) -> None:
         """小终端仍应显示三块主区域，并把键盘焦点放在唯一输入框。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test(size=(80, 24)) as pilot:
             await pilot.pause()
@@ -511,7 +511,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(app.query("#transcript")), 1)
             self.assertGreater(transcript.size.height, 0)
             self.assertGreater(composer.size.height, 0)
-            self.assertIn("MiniClaw", rendered_status)
+            self.assertIn("Lobster0", rendered_status)
             self.assertIn("deepseek-v4-pro", rendered_status)
             self.assertIn("会话:default", rendered_status)
             self.assertNotIn(str(self.paths.home.parent), rendered_status)
@@ -519,7 +519,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
     def test_terminal_safe_removes_ansi_and_controls_but_keeps_text_layout(self) -> None:
         """模型或 Tool 输出不能用 ANSI、OSC、C0/C1 改写终端状态。"""
         unsafe = (
-            "你好\n\t**MiniClaw**"
+            "你好\n\t**Lobster0**"
             "\x1b[2J"
             "\x1b]8;;https://evil.example\x07link\x1b]8;;\x07"
             "\x00\x08\x7f\x85"
@@ -527,7 +527,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
         cleaned = _terminal_safe(unsafe)
 
-        self.assertEqual(cleaned, "你好\n\t**MiniClaw**[2J]8;;https://evil.examplelink]8;;")
+        self.assertEqual(cleaned, "你好\n\t**Lobster0**[2J]8;;https://evil.examplelink]8;;")
         for character in cleaned:
             self.assertTrue(
                 character in "\n\t"
@@ -537,7 +537,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_model_deltas_update_one_temporary_message_then_finalize_it(self) -> None:
         """每个 Turn 只能有一个流式 Assistant 卡片，完成后保留完整正文。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test() as pilot:
             await app.on_run_event(RunEvent("model_text_delta", 9, {"text": "你"}))
@@ -564,7 +564,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_stream_event_keeps_scroll_position_when_user_left_bottom(self) -> None:
         """用户向上查看或拖选时，后台增量不能把 transcript 抢回底部。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test(size=(80, 24)) as pilot:
             for index in range(40):
@@ -584,7 +584,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_tool_events_update_one_text_labelled_safe_card(self) -> None:
         """调用概要始终可见，参数与结果可以单独展开且不解释 ANSI。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
         call_id = "call/with unsafe css id"
 
         async with app.run_test() as pilot:
@@ -645,7 +645,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_reasoning_and_tool_traces_remain_visible_and_toggle_together(self) -> None:
         """Provider reasoning 与 Tool 摘要都保留，Ctrl+O 只折叠详情而不隐藏卡片。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test() as pilot:
             await app.on_run_event(
@@ -693,7 +693,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_local_slash_commands_render_without_contacting_the_agent(self) -> None:
         """help/status/tools/unknown 都应只更新本地 transcript。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test() as pilot:
             for command in ("/help", "/status", "/tools", "/missing"):
@@ -713,7 +713,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_language_defaults_to_chinese_and_can_switch_to_english(self) -> None:
         """UI 默认中文，/lang en 只切换界面文案且不调用 Agent。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test() as pilot:
             self.assertIn("会话:default", str(app.query_one("#status", Static).render()))
@@ -728,7 +728,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_provider_usage_stays_na_and_status_exposes_request_id(self) -> None:
         """Provider 未上报 usage 时不能估算；/status 应保留诊断 request ID。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test() as pilot:
             initial = str(app.query_one("#telemetry", Static).render())
@@ -762,7 +762,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_command_clears_visible_transcript_and_changes_session(self) -> None:
         """新 Session 应清空界面投影，但不创建第二个 App 或 Runtime。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test() as pilot:
             await app.handle_local_command("/help")
@@ -777,7 +777,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_quit_command_exits_the_same_app(self) -> None:
         """exit/quit 必须结束唯一 TUI，而不是跳转到另一套界面。"""
-        app = MiniClawApp(self.paths, runtime=self.runtime)
+        app = Lobster0App(self.paths, runtime=self.runtime)
 
         async with app.run_test():
             self.assertTrue(await app.handle_local_command("/quit"))
@@ -786,7 +786,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_missing_state_initializes_inside_the_same_app(self) -> None:
         """裸入口缺少状态时应原地初始化，再聚焦同一个聊天输入框。"""
-        app = MiniClawApp(self.paths)
+        app = Lobster0App(self.paths)
         original_app_id = id(app)
 
         async with app.run_test() as pilot:
@@ -794,7 +794,7 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(len(app.query("#onboarding")), 1)
             self.assertIsInstance(app.query_one("#initialize"), Button)
 
-            with mock.patch("miniclaw.tui.app._load_runtime", return_value=self.runtime):
+            with mock.patch("lobster0.tui.app._load_runtime", return_value=self.runtime):
                 await pilot.click("#initialize")
                 await pilot.pause()
 

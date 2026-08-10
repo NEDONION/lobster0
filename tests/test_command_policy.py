@@ -5,14 +5,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.policy.command import (
+from lobster0.policy.command import (
     CommandPolicyError,
     command_rule_is_persistable,
     normalize_command,
 )
-from miniclaw.policy.engine import PolicyAction, PolicyEngine
-from miniclaw.tools.base import ToolContext
-from miniclaw.tools.command import RunCommandTool
+from lobster0.policy.engine import PolicyAction, PolicyEngine
+from lobster0.tools.base import ToolContext
+from lobster0.tools.command import RunCommandTool
 
 
 class CommandPolicyTest(unittest.TestCase):
@@ -58,7 +58,7 @@ class CommandPolicyTest(unittest.TestCase):
     def test_unknown_executable_and_control_characters_fail_closed(self) -> None:
         """找不到程序或 argv 含控制字符时不得猜测或交给 Shell。"""
         cases = (
-            ("definitely-not-a-miniclaw-command", ()),
+            ("definitely-not-a-lobster0-command", ()),
             (sys.executable, ("bad\0arg",)),
             (sys.executable, ("bad\narg",)),
         )

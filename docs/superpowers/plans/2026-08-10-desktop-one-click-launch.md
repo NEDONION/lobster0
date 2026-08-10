@@ -1,10 +1,10 @@
-# MiniClaw Desktop One-Click Launch Implementation Plan
+# Lobster0 Desktop One-Click Launch Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 提供一个可在 macOS Finder 双击或从终端运行的 `start-desktop.command`，自动准备项目依赖、安全初始化 MiniClaw 并启动 Desktop development build。
+**Goal:** 提供一个可在 macOS Finder 双击或从终端运行的 `start-desktop.command`，自动准备项目依赖、安全初始化 Lobster0 并启动 Desktop development build。
 
-**Architecture:** 单个 zsh 入口只编排已有 `uv`、Corepack/pnpm、`miniclaw setup/init` 和 Electron dev 命令，不实现第二套安装器或 Secret 写入逻辑。Python `unittest` 在临时伪仓库中执行真实脚本，用窄 fake executable 隔离系统依赖并断言可观察的命令顺序、环境传递和退出码。
+**Architecture:** 单个 zsh 入口只编排已有 `uv`、Corepack/pnpm、`lobster0 setup/init` 和 Electron dev 命令，不实现第二套安装器或 Secret 写入逻辑。Python `unittest` 在临时伪仓库中执行真实脚本，用窄 fake executable 隔离系统依赖并断言可观察的命令顺序、环境传递和退出码。
 
 **Tech Stack:** zsh、Python 3.12+ 标准库 `unittest`、uv、Node.js `>=22.19.0`、Corepack/pnpm、Electron Vite。
 
@@ -13,14 +13,14 @@
 > 对应回归测试覆盖“包和 path 存在、executable 缺失”。
 >
 > 同日兼容修正：pnpm `--dir desktop` 会改变 Bridge 的 cwd；旧状态没有 `secrets.env` 时，launcher
-> 必须把仓库根 owner-only `.env` 的绝对路径写入 `MINICLAW_ENV_FILE`，不能依赖 cwd 隐式发现。
+> 必须把仓库根 owner-only `.env` 的绝对路径写入 `LOBSTER0_ENV_FILE`，不能依赖 cwd 隐式发现。
 
 ## Global Constraints
 
 - 设计规格以 `docs/superpowers/specs/2026-08-10-desktop-one-click-launch-design.md` 为准。
 - 入口固定为仓库根目录 `start-desktop.command`，文件必须具有 owner executable bit。
 - 系统级 `uv`、Node.js 和 Corepack 只检查，不自动安装，不使用 `sudo` 或 `curl | sh`。
-- Secret 只由已有 `miniclaw setup` 收集；Shell 不读取、不打印、不写入 Secret 值。
+- Secret 只由已有 `lobster0 setup` 收集；Shell 不读取、不打印、不写入 Secret 值。
 - 所有依赖安装使用已提交 lockfile 和 `--frozen-lockfile`。
 - 不新增第三方 Python、Node 或 Shell 依赖。
 - 当前产品状态保持 `W0/W1 DEVELOPMENT BUILD`，不宣称 installer/signing 或 W2 已完成。
@@ -34,8 +34,8 @@
 - Create: `start-desktop.command`
 
 **Interfaces:**
-- Consumes: `MINICLAW_HOME`、可选 `MINICLAW_ENV_FILE`、`.venv/bin/python`、`.venv/bin/miniclaw`、`corepack pnpm`。
-- Produces: `start-desktop.command`；成功路径依次执行 Core home 解析、`miniclaw init`、TUI build 和 Desktop dev，并返回 Desktop 退出码。
+- Consumes: `LOBSTER0_HOME`、可选 `LOBSTER0_ENV_FILE`、`.venv/bin/python`、`.venv/bin/lobster0`、`corepack pnpm`。
+- Produces: `start-desktop.command`；成功路径依次执行 Core home 解析、`lobster0 init`、TUI build 和 Desktop dev，并返回 Desktop 退出码。
 
 - [ ] **Step 1: 写已初始化状态的失败测试**
 
@@ -55,7 +55,7 @@ class DesktopLauncherTest(unittest.TestCase):
         self.assertEqual(
             sandbox.log_lines(),
             [
-                f"miniclaw init --home {sandbox.state_home}",
+                f"lobster0 init --home {sandbox.state_home}",
                 "corepack pnpm --dir tui build",
                 (
                     "corepack pnpm --dir desktop dev "
@@ -65,7 +65,7 @@ class DesktopLauncherTest(unittest.TestCase):
         )
 ```
 
-`LauncherSandbox` 必须使用 `tempfile.TemporaryDirectory`，在临时根创建 `tui/`、`desktop/`、`.venv/bin/`、fake `uname`、`uv`、`node` 和 `corepack`。fake 命令只把调用写到 `MINICLAW_TEST_LOG`；`subprocess.run` 使用 pipe，因此失败路径不会等待交互输入。
+`LauncherSandbox` 必须使用 `tempfile.TemporaryDirectory`，在临时根创建 `tui/`、`desktop/`、`.venv/bin/`、fake `uname`、`uv`、`node` 和 `corepack`。fake 命令只把调用写到 `LOBSTER0_TEST_LOG`；`subprocess.run` 使用 pipe，因此失败路径不会等待交互输入。
 
 - [ ] **Step 2: 运行测试并确认 RED**
 
@@ -93,14 +93,14 @@ command -v node >/dev/null 2>&1 || exit 2
 command -v corepack >/dev/null 2>&1 || exit 2
 node -e 'const [a,b]=process.versions.node.split(".").map(Number); process.exit(a>22||(a===22&&b>=19)?0:1)'
 
-readonly STATE_HOME="$("$REPOSITORY_ROOT/.venv/bin/python" -c 'from miniclaw.paths import resolve_home; print(resolve_home())')"
-export MINICLAW_HOME="$STATE_HOME"
-export MINICLAW_PYTHON="$REPOSITORY_ROOT/.venv/bin/python"
+readonly STATE_HOME="$("$REPOSITORY_ROOT/.venv/bin/python" -c 'from lobster0.paths import resolve_home; print(resolve_home())')"
+export LOBSTER0_HOME="$STATE_HOME"
+export LOBSTER0_PYTHON="$REPOSITORY_ROOT/.venv/bin/python"
 
 corepack pnpm --dir tui build
-"$REPOSITORY_ROOT/.venv/bin/miniclaw" init --home "$STATE_HOME"
-if [[ -z "${MINICLAW_ENV_FILE:-}" && -f "$STATE_HOME/secrets.env" ]]; then
-  export MINICLAW_ENV_FILE="$STATE_HOME/secrets.env"
+"$REPOSITORY_ROOT/.venv/bin/lobster0" init --home "$STATE_HOME"
+if [[ -z "${LOBSTER0_ENV_FILE:-}" && -f "$STATE_HOME/secrets.env" ]]; then
+  export LOBSTER0_ENV_FILE="$STATE_HOME/secrets.env"
 fi
 corepack pnpm --dir desktop dev
 ```
@@ -137,7 +137,7 @@ git commit -m "feat(desktop): 增加 one-click launch 基础入口"
 - Modify: `start-desktop.command`
 
 **Interfaces:**
-- Consumes: Task 1 的 `LauncherSandbox.run()`、fake uv/corepack/miniclaw 和启动脚本。
+- Consumes: Task 1 的 `LauncherSandbox.run()`、fake uv/corepack/lobster0 和启动脚本。
 - Produces: 缺失 `.venv` 时执行 `uv sync --extra dev`；缺失 Node 依赖目录时分别安装；无 `config.toml` 时调用 fresh-only setup。
 
 - [ ] **Step 1: 写首次启动的失败测试**
@@ -157,7 +157,7 @@ def test_first_run_prepares_missing_dependencies_then_uses_setup(self) -> None:
             "corepack pnpm --dir tui install --frozen-lockfile",
             "corepack pnpm --dir tui build",
             "corepack pnpm --dir desktop install --frozen-lockfile",
-            f"miniclaw setup --home {sandbox.state_home}",
+            f"lobster0 setup --home {sandbox.state_home}",
             (
                 "corepack pnpm --dir desktop dev "
                 f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
@@ -166,7 +166,7 @@ def test_first_run_prepares_missing_dependencies_then_uses_setup(self) -> None:
     )
 ```
 
-fake `uv` 在当前临时根创建 `.venv/bin/python` 与 `.venv/bin/miniclaw`；fake setup 创建 `config.toml` 和 mode `0600` 的 `secrets.env`，但日志只记录路径和 action，不记录 Secret 内容。
+fake `uv` 在当前临时根创建 `.venv/bin/python` 与 `.venv/bin/lobster0`；fake setup 创建 `config.toml` 和 mode `0600` 的 `secrets.env`，但日志只记录路径和 action，不记录 Secret 内容。
 
 - [ ] **Step 2: 运行测试并确认 RED**
 
@@ -183,7 +183,7 @@ Expected: FAIL；Task 1 脚本在缺少 `.venv` 时提前失败，未执行依�
 在系统运行时检查之后、Core home 解析之前加入：
 
 ```zsh
-if [[ ! -x "$REPOSITORY_ROOT/.venv/bin/python" || ! -x "$REPOSITORY_ROOT/.venv/bin/miniclaw" ]]; then
+if [[ ! -x "$REPOSITORY_ROOT/.venv/bin/python" || ! -x "$REPOSITORY_ROOT/.venv/bin/lobster0" ]]; then
   uv sync --extra dev
 fi
 if [[ ! -d "$REPOSITORY_ROOT/tui/node_modules" ]]; then
@@ -192,7 +192,7 @@ fi
 corepack pnpm --dir tui build
 if [[ ! -d "$REPOSITORY_ROOT/desktop/node_modules" ]]; then
   corepack pnpm --dir desktop install --frozen-lockfile
-elif [[ ! -f "$REPOSITORY_ROOT/desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js" ]]; then
+elif [[ ! -f "$REPOSITORY_ROOT/desktop/node_modules/@lobster0/pi-tui/dist/bridge-client.js" ]]; then
   corepack pnpm --dir desktop install --force --frozen-lockfile
 fi
 ```
@@ -201,9 +201,9 @@ fi
 
 ```zsh
 if [[ -f "$STATE_HOME/config.toml" ]]; then
-  "$REPOSITORY_ROOT/.venv/bin/miniclaw" init --home "$STATE_HOME"
+  "$REPOSITORY_ROOT/.venv/bin/lobster0" init --home "$STATE_HOME"
 else
-  "$REPOSITORY_ROOT/.venv/bin/miniclaw" setup --home "$STATE_HOME"
+  "$REPOSITORY_ROOT/.venv/bin/lobster0" setup --home "$STATE_HOME"
 fi
 ```
 
@@ -261,9 +261,9 @@ def test_explicit_secret_file_wins_without_exposing_its_contents(self) -> None:
     """显式 Secret 路径应透传，文件内容不得进入 stdout、stderr 或调用日志。"""
     sandbox = self._sandbox(initialized=True, dependencies=True)
     selected = sandbox.root / "private.env"
-    selected.write_text("MINICLAW_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
+    selected.write_text("LOBSTER0_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
     selected.chmod(0o600)
-    result = sandbox.run(extra_env={"MINICLAW_ENV_FILE": str(selected)})
+    result = sandbox.run(extra_env={"LOBSTER0_ENV_FILE": str(selected)})
     output = result.stdout + result.stderr + "\n".join(sandbox.log_lines())
     self.assertEqual(result.returncode, 0, result.stderr)
     self.assertIn(f"env={selected}", output)
@@ -290,7 +290,7 @@ Expected: FAIL；脚本当前只裸退出，缺少稳定错误文字和中途失
 fail() {
   local message="$1"
   local status="${2:-2}"
-  print -u2 -- "MiniClaw Desktop: $message"
+  print -u2 -- "Lobster0 Desktop: $message"
   exit "$status"
 }
 
@@ -298,7 +298,7 @@ on_error() {
   local status="$?"
   trap - ZERR
   set +e
-  print -u2 -- "MiniClaw Desktop 启动失败（exit $status），请查看上方输出。"
+  print -u2 -- "Lobster0 Desktop 启动失败（exit $status），请查看上方输出。"
   if [[ -t 0 ]]; then
     read -r "?按回车关闭窗口..." _
   fi
@@ -358,7 +358,7 @@ git commit -m "fix(desktop): 收紧 launcher runtime 与错误边界"
 ./start-desktop.command
 ```
 
-明确 Finder 可双击；保留 `uv sync`、TUI/Desktop install/build、`miniclaw setup/init` 和环境变量命令作为“脚本失败时的手工排障”，不删除安全说明或 development build 限制。
+明确 Finder 可双击；保留 `uv sync`、TUI/Desktop install/build、`lobster0 setup/init` 和环境变量命令作为“脚本失败时的手工排障”，不删除安全说明或 development build 限制。
 
 - [ ] **Step 2: 运行 focused 与产品门禁**
 
@@ -367,7 +367,7 @@ Run:
 ```bash
 .venv/bin/python -m unittest tests.test_desktop_launcher -v
 corepack pnpm --dir tui test
-MINICLAW_PYTHON=.venv/bin/python corepack pnpm --dir desktop test
+LOBSTER0_PYTHON=.venv/bin/python corepack pnpm --dir desktop test
 corepack pnpm --dir desktop typecheck
 corepack pnpm --dir desktop build
 .venv/bin/ruff check .
@@ -416,5 +416,5 @@ git commit -m "docs(desktop): 发布 one-click launcher 使用说明"
 
 - Spec coverage: 启动入口、系统运行时、依赖准备、setup/init、Secret 路径、失败退出、测试和文档状态分别由 Tasks 1～4 覆盖。
 - Scope: 只交付 W0/W1 development launcher；未加入 installer、签名、更新器、Artifact、Sub-agent 或系统运行时安装器。
-- Type/name consistency: `LauncherSandbox`、`MINICLAW_TEST_LOG`、`start-desktop.command`、`MINICLAW_HOME` 与 `MINICLAW_ENV_FILE` 在所有任务中保持一致。
+- Type/name consistency: `LauncherSandbox`、`LOBSTER0_TEST_LOG`、`start-desktop.command`、`LOBSTER0_HOME` 与 `LOBSTER0_ENV_FILE` 在所有任务中保持一致。
 - Mutation coverage: 错分 setup/init、跳过某个依赖、重复 Desktop dev、吞掉失败码、忽略显式 Secret 路径或打印 Secret 内容均会让至少一个测试失败。

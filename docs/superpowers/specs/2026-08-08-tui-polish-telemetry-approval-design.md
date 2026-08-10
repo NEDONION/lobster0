@@ -1,4 +1,4 @@
-# MiniClaw TUI 对话层级与长文本可靠性设计
+# Lobster0 TUI 对话层级与长文本可靠性设计
 
 > 状态：已实现；270/270 tests、20/20 offline Agent cases 验证通过
 > 日期：2026-08-08
@@ -8,7 +8,7 @@
 
 本次采用“轻量消息卡片”方案，不做左右聊天气泡，也不增加新的 TUI 框架：
 
-1. 用户消息和 MiniClaw 消息使用不同标签、边线、底色和间距；
+1. 用户消息和 Lobster0 消息使用不同标签、边线、底色和间距；
 2. Provider reasoning 默认折叠，改成低对比度、紧凑的一行概要；
 3. reasoning 内容应跟随当前用户提问语言，不固定为中文；
 4. 长文本在发送失败或取消后必须完整恢复到输入框；
@@ -33,7 +33,7 @@
                 完整              完整            完整
 ```
 
-Textual 8.2.8 和 MiniClaw 当前提交链路没有字符数截断。已确认的数据完整性缺口是：提交处理会先清空 Composer；Turn 之后若失败或取消，原始草稿不会恢复。
+Textual 8.2.8 和 Lobster0 当前提交链路没有字符数截断。已确认的数据完整性缺口是：提交处理会先清空 Composer；Turn 之后若失败或取消，原始草稿不会恢复。
 
 本次修复这个已证实的根因。输入框仍可滚动查看超出可见高度的文本，不额外引入草稿数据库或剪贴板依赖。
 
@@ -46,7 +46,7 @@ Textual 8.2.8 和 MiniClaw 当前提交链路没有字符数截断。已确认�
 │                                                              │
 │ ▸ 推理（Provider） · Turn 15          弱色、dim、默认折叠 │
 │                                                              │
-│ MiniClaw                                      Agent 强调色 │
+│ Lobster0                                      Agent 强调色 │
 │ 我是你的私人自托管个人代理。                                 │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -54,7 +54,7 @@ Textual 8.2.8 和 MiniClaw 当前提交链路没有字符数截断。已确认�
 ### 3.1 用户与 Agent
 
 - 用户标签固定显示“你”；
-- Agent 标签固定显示“MiniClaw”；
+- Agent 标签固定显示“Lobster0”；
 - 两种消息使用不同的 CSS class、边线方向和低饱和背景；
 - 不只依赖颜色，角色文字标签必须始终存在；
 - Assistant 正文仍由现有 Markdown Widget 渲染，流式更新逻辑不变。
@@ -149,11 +149,11 @@ Core 使用现有 `AgentRunResult`、Tool 事件和 `RunEvent` 传递数据；�
 
 | 文件 | 改动 |
 |---|---|
-| `src/miniclaw/tui/app.py` | 消息角色/CSS、紧凑 Reasoning、审计栏、语言切换、Approval 选项、失败恢复 |
-| `src/miniclaw/agent/context.py` | 可见 reasoning 跟随用户语言的 Prompt 规则 |
-| `src/miniclaw/agent/runner.py`、`src/miniclaw/agent/turn.py` | 补齐真实用量、调用计数和耗时事件 |
-| `src/miniclaw/config.py`、`src/miniclaw/bootstrap.py` | 默认中文和受限 UI language 配置 |
-| `src/miniclaw/policy/engine.py`、`src/miniclaw/storage/tooling.py`、`src/miniclaw/runtime.py` | 受限 Session/Always scope 与现有规则落库 |
+| `src/lobster0/tui/app.py` | 消息角色/CSS、紧凑 Reasoning、审计栏、语言切换、Approval 选项、失败恢复 |
+| `src/lobster0/agent/context.py` | 可见 reasoning 跟随用户语言的 Prompt 规则 |
+| `src/lobster0/agent/runner.py`、`src/lobster0/agent/turn.py` | 补齐真实用量、调用计数和耗时事件 |
+| `src/lobster0/config.py`、`src/lobster0/bootstrap.py` | 默认中文和受限 UI language 配置 |
+| `src/lobster0/policy/engine.py`、`src/lobster0/storage/tooling.py`、`src/lobster0/runtime.py` | 受限 Session/Always scope 与现有规则落库 |
 | `tests/test_tui.py` | 角色、Reasoning、审计、双语、Approval、长粘贴和草稿恢复回归 |
 | `tests/test_context.py` | 语言跟随 Prompt 契约 |
 | `tests/test_agent_runner.py`、`tests/test_turn.py` | 运行指标事件契约 |

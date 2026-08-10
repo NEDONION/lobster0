@@ -1,4 +1,4 @@
-# MiniClaw Phase 2 收尾：lark-cli 与 Live Eval 设计
+# Lobster0 Phase 2 收尾：lark-cli 与 Live Eval 设计
 
 > 状态：方案已确认，待书面评审后进入实施计划  
 > 目标阶段：P2.3B + P2.5 exit gate  
@@ -6,7 +6,7 @@
 
 ## 1. 一句话目标
 
-让 MiniClaw 在不放开 Shell、不复制飞书凭据、不实现飞书 Channel 的前提下，安全发现 NVM 中的
+让 Lobster0 在不放开 Shell、不复制飞书凭据、不实现飞书 Channel 的前提下，安全发现 NVM 中的
 `lark-cli`，执行精确只读命令，对其他动作继续使用参数绑定 Approval，并用真实 DeepSeek live eval
 证明完整链路。
 
@@ -24,7 +24,7 @@
 - `lark-cli` 版本为 1.0.83；
 - 可执行入口位于 `~/.config/nvm/versions/node/v20.19.0/bin/lark-cli`；
 - 入口是指向 `@larksuite/cli/scripts/run.js` 的 symlink，shebang 为 `/usr/bin/env node`；
-- MiniClaw 的固定 `SAFE_EXECUTABLE_PATH` 不包含 NVM 目录，因此模型传入 `program="lark-cli"` 时会得到
+- Lobster0 的固定 `SAFE_EXECUTABLE_PATH` 不包含 NVM 目录，因此模型传入 `program="lark-cli"` 时会得到
   `command_not_found`；
 - 当前 `eval run` 只有确定性 offline runner，`layers=["live"]` 只是场景标签，不是可执行门禁。
 
@@ -46,7 +46,7 @@
 ### 方案 B：新增专用 `lark_cli` Tool（不采用）
 
 它能提供更强的结构化参数，但会复制 `lark-cli` 已经提供的命令路由，并提前把 200 多个飞书命令映射成
-MiniClaw API。Phase 3 才会加载官方 Skills，Phase 2 不需要这层重复封装。
+Lobster0 API。Phase 3 才会加载官方 Skills，Phase 2 不需要这层重复封装。
 
 ### 方案 C：要求用户在 config.toml 填绝对路径（不采用）
 
@@ -57,12 +57,12 @@ Doctor 和回归契约。
 
 ### 4.1 Phase 2 收尾交付
 
-1. MiniClaw 能发现可信目录中的 `lark-cli`；
+1. Lobster0 能发现可信目录中的 `lark-cli`；
 2. `doctor` 只读报告 CLI 是否可用，不读取登录身份、Token 或 scope；
 3. Agent 能调用 `lark-cli --version`、`--help`、`auth status --json`；
 4. 上述三条精确命令可自动执行，不能用前缀或 substring 放宽；
 5. 其他 `lark-cli` argv 创建现有参数绑定 Approval；
-6. 交互认证、注销、升级和重新配置在 MiniClaw 内硬拒绝；
+6. 交互认证、注销、升级和重新配置在 Lobster0 内硬拒绝；
 7. 新增可执行的真实 Provider live runner，默认不运行且不进入普通离线测试；
 8. 完成不执行写操作的真实 `lark-cli auth status --json` smoke；
 9. 同步 README、架构、工程文档、发布记录和两份进度 HTML；
@@ -82,7 +82,7 @@ Doctor 和回归契约。
 
 ```mermaid
 flowchart LR
-    U["Owner 在 MiniClaw TUI 输入请求"] --> A["Agent / Provider"]
+    U["Owner 在 Lobster0 TUI 输入请求"] --> A["Agent / Provider"]
     A -->|"run_command: lark-cli + exact argv"| E["ToolExecutor"]
     E --> R["Trusted lark-cli resolver"]
     R --> P["Command Policy"]
@@ -171,17 +171,17 @@ lark-cli config init ...
 - Approval 绑定 Owner、Tool、真实 executable、完整参数和 TTL；
 - Allow once 只消费一次；
 - Deny、过期、篡改和重放不执行；
-- MiniClaw 不静默修改 argv。
+- Lobster0 不静默修改 argv。
 
 如果 lark-cli 自身返回 exit 10 `confirmation_required`，Agent 可以根据结构化结果再次提出包含 `--yes` 的
-新 Tool Call；这会创建一条新的、绑定新 argv 的 MiniClaw Approval。禁止自动追加或自动重试。
+新 Tool Call；这会创建一条新的、绑定新 argv 的 Lobster0 Approval。禁止自动追加或自动重试。
 
 ## 8. Doctor
 
 `doctor` 增加 `lark_cli` 检查项：
 
 - 可信路径可解析：PASS，消息只说明可用，不显示完整用户路径；
-- 未安装或路径不可信：WARN，因为 MiniClaw 其他本地能力仍可使用；
+- 未安装或路径不可信：WARN，因为 Lobster0 其他本地能力仍可使用；
 - 检查不运行认证 API、不读取 auth status、不触发 Token refresh；
 - `tools` 原有配置检查保持不变。
 
@@ -195,7 +195,7 @@ lark-cli config init ...
 - 不声称没有权限，先发出 Tool Call；
 - 不通过 Shell、Node wrapper 或绝对 `run.js` 路径绕过；
 - 认证变更请提示 Owner 在普通终端操作；
-- 其他动作会进入 MiniClaw Approval。
+- 其他动作会进入 Lobster0 Approval。
 
 不把 lark-cli 的全部命令帮助塞进系统 Prompt；Phase 3 用 Skills 惰性加载解决长指令问题。
 
@@ -206,7 +206,7 @@ lark-cli config init ...
 新增显式入口：
 
 ```bash
-uv run miniclaw eval run --suite live --root evals/scenarios --samples 3 --confirm-live
+uv run lobster0 eval run --suite live --root evals/scenarios --samples 3 --confirm-live
 ```
 
 约束：
@@ -216,7 +216,7 @@ uv run miniclaw eval run --suite live --root evals/scenarios --samples 3 --confi
 - `--samples` 取值 1–5，默认 1；
 - 缺少 `.env`、API Key、真实 Provider 或 live case 时返回退出码 2；
 - CLI 只打印 case ID、PASS/FAIL、耗时与稳定短码；不打印 Prompt、reasoning、身份、scope、stdout 或 Token；
-- 每个 sample 使用独立临时 MiniClaw state 和 SQLite；
+- 每个 sample 使用独立临时 Lobster0 state 和 SQLite；
 - pending Approval 不消费，结束后临时状态删除。
 
 ### 10.2 场景 Schema
@@ -286,7 +286,7 @@ Phase 2 收尾时更新：
 - `docs/engineering/phase-2/20260808_testing-and-debugging.md`；
 - `docs/evals/README.md` 与新发布记录；
 - `docs/progress/index.html`；
-- `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`。
+- `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`。
 
 两份进度页都必须显示真实测试数、offline/live 结果、Phase 2 完成状态和 Phase 3 下一步。独立 HTML 不进入
 Git，但必须经过 HTML parser、可访问性基础和链接检查。

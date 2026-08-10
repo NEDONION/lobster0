@@ -1,4 +1,4 @@
-"""MiniClaw service CLI 的固定命令与脱敏错误测试。"""
+"""Lobster0 service CLI 的固定命令与脱敏错误测试。"""
 
 import contextlib
 import io
@@ -8,17 +8,17 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from miniclaw.cli import (
+from lobster0.cli import (
     _launchd_service,
     _service_install_preflight,
     _service_repository_commit,
     build_parser,
     main,
 )
-from miniclaw.doctor import CheckResult, CheckStatus
-from miniclaw.gateway import GatewayConfigError
-from miniclaw.gateway_service import ServiceError, ServiceSpec, ServiceStatus
-from miniclaw.paths import build_state_paths
+from lobster0.doctor import CheckResult, CheckStatus
+from lobster0.gateway import GatewayConfigError
+from lobster0.gateway_service import ServiceError, ServiceSpec, ServiceStatus
+from lobster0.paths import build_state_paths
 
 
 class _Service:
@@ -87,8 +87,8 @@ class ServiceCliTest(unittest.TestCase):
                 service = _Service()
                 with (
                     self.subTest(action=action),
-                    mock.patch("miniclaw.cli._launchd_service", return_value=service),
-                    mock.patch("miniclaw.cli._service_install_preflight"),
+                    mock.patch("lobster0.cli._launchd_service", return_value=service),
+                    mock.patch("lobster0.cli._service_install_preflight"),
                 ):
                     result = _run(["service", "--home", directory, action])
 
@@ -107,7 +107,7 @@ class ServiceCliTest(unittest.TestCase):
         service.restart = mock.Mock(side_effect=ServiceError("service_manager_failed", private))
         with (
             tempfile.TemporaryDirectory() as directory,
-            mock.patch("miniclaw.cli._launchd_service", return_value=service),
+            mock.patch("lobster0.cli._launchd_service", return_value=service),
         ):
             code, output, error = _run(
                 ["service", "--home", directory, "restart"]
@@ -119,19 +119,19 @@ class ServiceCliTest(unittest.TestCase):
         self.assertNotIn(private, error)
 
     def test_service_uses_console_launcher_beside_current_venv_python(self) -> None:
-        """venv Python 可为 symlink，但 service 必须选择同一 env 的 miniclaw launcher。"""
+        """venv Python 可为 symlink，但 service 必须选择同一 env 的 lobster0 launcher。"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             runtime_bin = root / "runtime" / "bin"
             runtime_bin.mkdir(parents=True)
             python = runtime_bin / "python"
             python.symlink_to(Path("/usr/bin/python3"))
-            launcher = runtime_bin / "miniclaw"
+            launcher = runtime_bin / "lobster0"
             launcher.write_text("#!/usr/bin/python3\n", encoding="utf-8")
             launcher.chmod(0o700)
             paths = build_state_paths(root / "state")
             spec = ServiceSpec(
-                label="io.miniclaw.gateway",
+                label="io.lobster0.gateway",
                 path=root / "agent.plist",
                 receipt_path=root / "receipt.json",
                 content=b"plist",
@@ -140,16 +140,16 @@ class ServiceCliTest(unittest.TestCase):
             sentinel = object()
 
             with (
-                mock.patch("miniclaw.cli.sys.executable", str(python)),
+                mock.patch("lobster0.cli.sys.executable", str(python)),
                 mock.patch(
-                    "miniclaw.cli.render_launchd_service",
+                    "lobster0.cli.render_launchd_service",
                     return_value=spec,
                 ) as render,
                 mock.patch(
-                    "miniclaw.cli._service_repository_commit",
+                    "lobster0.cli._service_repository_commit",
                     return_value="a" * 40,
                 ),
-                mock.patch("miniclaw.cli.LaunchdService", return_value=sentinel),
+                mock.patch("lobster0.cli.LaunchdService", return_value=sentinel),
             ):
                 service = _launchd_service(paths)
 
@@ -166,13 +166,13 @@ class ServiceCliTest(unittest.TestCase):
                 CheckResult("browser", CheckStatus.FAIL, "disabled"),
             )
             with (
-                mock.patch("miniclaw.cli.load_dotenv"),
-                mock.patch("miniclaw.cli.load_config", return_value=SimpleNamespace()),
+                mock.patch("lobster0.cli.load_dotenv"),
+                mock.patch("lobster0.cli.load_config", return_value=SimpleNamespace()),
                 mock.patch(
-                    "miniclaw.cli.collect_enabled_channels",
+                    "lobster0.cli.collect_enabled_channels",
                     return_value=("feishu",),
                 ),
-                mock.patch("miniclaw.cli.run_local_checks", return_value=checks),
+                mock.patch("lobster0.cli.run_local_checks", return_value=checks),
             ):
                 _service_install_preflight(paths)
 
@@ -181,24 +181,24 @@ class ServiceCliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             paths = build_state_paths(Path(directory).resolve())
             with (
-                mock.patch("miniclaw.cli.load_dotenv"),
-                mock.patch("miniclaw.cli.load_config", return_value=SimpleNamespace()),
+                mock.patch("lobster0.cli.load_dotenv"),
+                mock.patch("lobster0.cli.load_config", return_value=SimpleNamespace()),
                 mock.patch(
-                    "miniclaw.cli.collect_enabled_channels",
+                    "lobster0.cli.collect_enabled_channels",
                     return_value=("feishu", "discord"),
                 ),
             ):
                 with self.assertRaises(GatewayConfigError):
                     _service_install_preflight(paths)
             with (
-                mock.patch("miniclaw.cli.load_dotenv"),
-                mock.patch("miniclaw.cli.load_config", return_value=SimpleNamespace()),
+                mock.patch("lobster0.cli.load_dotenv"),
+                mock.patch("lobster0.cli.load_config", return_value=SimpleNamespace()),
                 mock.patch(
-                    "miniclaw.cli.collect_enabled_channels",
+                    "lobster0.cli.collect_enabled_channels",
                     return_value=("feishu",),
                 ),
                 mock.patch(
-                    "miniclaw.cli.run_local_checks",
+                    "lobster0.cli.run_local_checks",
                     return_value=(
                         CheckResult("workspace", CheckStatus.FAIL, "private detail"),
                     ),
@@ -215,14 +215,14 @@ class ServiceCliTest(unittest.TestCase):
                 mock.Mock(returncode=0, stdout="a" * 40 + "\n"),
                 mock.Mock(returncode=0, stdout=""),
             )
-            with mock.patch("miniclaw.cli.subprocess.run", side_effect=clean):
+            with mock.patch("lobster0.cli.subprocess.run", side_effect=clean):
                 self.assertEqual(_service_repository_commit(root), "a" * 40)
             dirty = (
                 mock.Mock(returncode=0, stdout="a" * 40 + "\n"),
                 mock.Mock(returncode=0, stdout=" M private-file\n"),
             )
             with (
-                mock.patch("miniclaw.cli.subprocess.run", side_effect=dirty),
+                mock.patch("lobster0.cli.subprocess.run", side_effect=dirty),
                 self.assertRaisesRegex(ServiceError, "service_repository_dirty"),
             ):
                 _service_repository_commit(root)

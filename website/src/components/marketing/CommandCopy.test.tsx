@@ -37,7 +37,7 @@ describe('CommandCopy', () => {
       value: execCommand,
     });
 
-    render(<CommandCopy command="uv run miniclaw" label="Copy" copiedLabel="Copied" title="Run" />);
+    render(<CommandCopy command="uv run lobster0" label="Copy" copiedLabel="Copied" title="Run" />);
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
 
     await waitFor(() => expect(execCommand).toHaveBeenCalledWith('copy'));

@@ -25,7 +25,7 @@
 ### Task A1: ExecutionPlan v2 exact executable model
 
 **Files:**
-- Modify: `src/miniclaw/sandbox/base.py`
+- Modify: `src/lobster0/sandbox/base.py`
 - Modify: `tests/test_sandbox_contract.py`
 
 **Interfaces:**
@@ -96,7 +96,7 @@ Expected: all sandbox contract/repository tests PASS；现有 v1 hash assertion 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/sandbox/base.py tests/test_sandbox_contract.py
+git add src/lobster0/sandbox/base.py tests/test_sandbox_contract.py
 git commit -m "feat(sandbox): 增加 v2 exact executable binding"
 ```
 
@@ -105,9 +105,9 @@ git commit -m "feat(sandbox): 增加 v2 exact executable binding"
 ### Task A2: Freeze and verify executable chains
 
 **Files:**
-- Create: `src/miniclaw/sandbox/executables.py`
+- Create: `src/lobster0/sandbox/executables.py`
 - Create: `tests/test_sandbox_executables.py`
-- Modify: `src/miniclaw/tools/command.py`
+- Modify: `src/lobster0/tools/command.py`
 - Modify: `tests/test_run_command.py`
 
 **Interfaces:**
@@ -144,7 +144,7 @@ shebang 稳定拒绝，不在异常中回显路径。
 
 Run: `uv run python -m unittest tests.test_sandbox_executables -v`
 
-Expected: import failure for `miniclaw.sandbox.executables`.
+Expected: import failure for `lobster0.sandbox.executables`.
 
 - [ ] **Step 3: 实现 no-follow capture 与 verification**
 
@@ -200,7 +200,7 @@ Expected: chain tests PASS；Host/Docker 既有 plan 行为不变；Seatbelt pla
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/sandbox/executables.py src/miniclaw/tools/command.py tests/test_sandbox_executables.py tests/test_run_command.py
+git add src/lobster0/sandbox/executables.py src/lobster0/tools/command.py tests/test_sandbox_executables.py tests/test_run_command.py
 git commit -m "feat(policy): 冻结 Seatbelt executable chain"
 ```
 
@@ -209,7 +209,7 @@ git commit -m "feat(policy): 冻结 Seatbelt executable chain"
 ### Task A3: Seatbelt v2 profile and live probes
 
 **Files:**
-- Modify: `src/miniclaw/sandbox/seatbelt.py`
+- Modify: `src/lobster0/sandbox/seatbelt.py`
 - Modify: `scripts/sandbox_live_smoke.py`
 - Modify: `tests/test_seatbelt_sandbox.py`
 - Modify: `tests/test_sandbox_live_smoke.py`
@@ -275,7 +275,7 @@ Expected: focused tests PASS；真实状态为 `containment=PASS`，无路径和
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/sandbox/seatbelt.py scripts/sandbox_live_smoke.py tests/test_seatbelt_sandbox.py tests/test_sandbox_live_smoke.py
+git add src/lobster0/sandbox/seatbelt.py scripts/sandbox_live_smoke.py tests/test_seatbelt_sandbox.py tests/test_sandbox_live_smoke.py
 git commit -m "fix(seatbelt): 绑定 exact chain 并完成 live probe"
 ```
 
@@ -284,14 +284,14 @@ git commit -m "fix(seatbelt): 绑定 exact chain 并完成 live probe"
 ### Task A4: Managed macOS LaunchAgent lifecycle
 
 **Files:**
-- Create: `src/miniclaw/install/service.py`
+- Create: `src/lobster0/install/service.py`
 - Create: `tests/test_install_service.py`
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/cli.py`
 - Create: `tests/test_cli_service.py`
 
 **Interfaces:**
 - Consumes: installed launcher absolute path、State Home、owner-only env/log paths。
-- Produces: `ServiceSpec`、`render_launchd_service()`、`LaunchdService.install/status/restart/uninstall()`；`miniclaw service ...`。
+- Produces: `ServiceSpec`、`render_launchd_service()`、`LaunchdService.install/status/restart/uninstall()`；`lobster0 service ...`。
 
 - [ ] **Step 1: 写 plist 与 exact lifecycle RED 测试**
 
@@ -299,7 +299,7 @@ git commit -m "fix(seatbelt): 绑定 exact chain 并完成 live probe"
 def test_launchd_plist_uses_managed_launcher_without_secret(self) -> None:
     spec = render_launchd_service(self.layout)
     value = plistlib.loads(spec.content)
-    self.assertEqual(value["Label"], "io.miniclaw.gateway")
+    self.assertEqual(value["Label"], "io.lobster0.gateway")
     self.assertEqual(
         value["ProgramArguments"],
         [str(self.layout.launcher), "gateway", "--home", str(self.layout.state_home)],
@@ -312,7 +312,7 @@ def test_restart_uses_exact_gui_domain_and_label(self) -> None:
     service.restart()
     self.assertEqual(
         self.runner.argvs,
-        [("/bin/launchctl", "kickstart", "-k", "gui/501/io.miniclaw.gateway")],
+        [("/bin/launchctl", "kickstart", "-k", "gui/501/io.lobster0.gateway")],
     )
 ```
 
@@ -323,7 +323,7 @@ install/uninstall、foreign content hash 拒绝、manager 失败回滚、Linux/n
 
 Run: `uv run python -m unittest tests.test_install_service -v`
 
-Expected: import failure for `miniclaw.install.service`.
+Expected: import failure for `lobster0.install.service`.
 
 - [ ] **Step 3: 实现最小 LaunchAgent adapter**
 
@@ -339,7 +339,7 @@ class ServiceSpec:
 
 
 class LaunchdService:
-    """只管理 MiniClaw 自己拥有的用户级 LaunchAgent。"""
+    """只管理 Lobster0 自己拥有的用户级 LaunchAgent。"""
 
     def install(self) -> None: ...
     def status(self) -> str: ...
@@ -355,10 +355,10 @@ class LaunchdService:
 新增：
 
 ```text
-miniclaw service install
-miniclaw service status
-miniclaw service restart
-miniclaw service uninstall
+lobster0 service install
+lobster0 service status
+lobster0 service restart
+lobster0 service uninstall
 ```
 
 CLI 不接受 label、plist path、launchctl path 或任意 argv。`install` 先运行本地 Doctor 并确认只有飞书启用、Secret env names
@@ -373,7 +373,7 @@ Expected: exact lifecycle、幂等、ownership 和 CLI 稳定码全部 PASS。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/install/service.py src/miniclaw/cli.py tests/test_install_service.py tests/test_cli_service.py
+git add src/lobster0/install/service.py src/lobster0/cli.py tests/test_install_service.py tests/test_cli_service.py
 git commit -m "feat(service): 增加 owned LaunchAgent lifecycle"
 ```
 
@@ -419,10 +419,10 @@ Expected: all PASS；tracked diff 中无 `.env`、绝对 Home、完整 runtime p
 ```bash
 uv run python scripts/sandbox_live_smoke.py --backend seatbelt --confirm-live --probe python
 uv run python scripts/sandbox_live_smoke.py --backend seatbelt --confirm-live --probe node-chain
-uv run miniclaw service install
-uv run miniclaw service status
-uv run miniclaw service restart
-uv run miniclaw service status
+uv run lobster0 service install
+uv run lobster0 service status
+uv run lobster0 service restart
+uv run lobster0 service status
 ```
 
 Expected: 两个 containment probe PASS；service 两次 status healthy；若 node chain 暂不可用则 A Gate FAIL，不得跳过。

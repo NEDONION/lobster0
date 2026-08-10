@@ -18,7 +18,7 @@
 | 操作系统 | 当前这台 macOS |
 | IM | 飞书，且只启用一个 Feishu Channel |
 | 模型 | 当前配置的 DeepSeek OpenAI-compatible Provider |
-| 常驻方式 | MiniClaw 自己管理的用户级 LaunchAgent |
+| 常驻方式 | Lobster0 自己管理的用户级 LaunchAgent |
 | Python | 项目目录外的 managed CPython 3.12 |
 | Tool 权限 | `safe` |
 | Automation | 开启，用于真实 10-case 验收 |
@@ -59,7 +59,7 @@ flowchart LR
 
 ```bash
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)"
-EVIDENCE_HOME="$HOME/.miniclaw/evidence/phase6-production/$RUN_ID"
+EVIDENCE_HOME="$HOME/.lobster0/evidence/phase6-production/$RUN_ID"
 install -d -m 700 \
   "$EVIDENCE_HOME" \
   "$EVIDENCE_HOME/seatbelt" \
@@ -88,9 +88,9 @@ Evidence，不进入 Git：
 git status --short
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios
 pnpm --dir browser-worker test
 uv run python scripts/validate_docs.py
 git diff --check
@@ -105,22 +105,22 @@ git diff --check
 
 ```bash
 uv tool install --force --no-cache --python 3.12 --managed-python '.[feishu]'
-MINICLAW_ENV_FILE="$PWD/.env" miniclaw service install
-MINICLAW_ENV_FILE="$PWD/.env" miniclaw service status
+LOBSTER0_ENV_FILE="$PWD/.env" lobster0 service install
+LOBSTER0_ENV_FILE="$PWD/.env" lobster0 service status
 ```
 
-`service install` 同时完成安装和启动。MiniClaw 当前没有单独的 `service stop`：
+`service install` 同时完成安装和启动。Lobster0 当前没有单独的 `service stop`：
 
-- 重启：`miniclaw service restart`；
-- 查看：`miniclaw service status`；
-- 停止并删除受管服务：`miniclaw service uninstall`。
+- 重启：`lobster0 service restart`；
+- 查看：`lobster0 service status`；
+- 停止并删除受管服务：`lobster0 service uninstall`。
 
-不要手改 `~/Library/LaunchAgents/io.miniclaw.gateway.plist`。Production preflight 会校验 label、固定 argv、工作目录、
+不要手改 `~/Library/LaunchAgents/io.lobster0.gateway.plist`。Production preflight 会校验 label、固定 argv、工作目录、
 commit、owner-only receipt 和 managed Python 3.12；手写或被替换的 plist 会 fail closed。
 
 ```mermaid
 flowchart TD
-    I["uv tool install: managed CPython 3.12"] --> L["miniclaw service install"]
+    I["uv tool install: managed CPython 3.12"] --> L["lobster0 service install"]
     L --> D["Doctor + Feishu-only config"]
     D --> P["owner-only plist + receipt"]
     P --> G["launchd 管理 Gateway"]
@@ -154,9 +154,9 @@ uv run python scripts/sandbox_live_smoke.py \
 先确认没有另一个 Gateway 或 live harness 抢占同一个 lease，然后运行：
 
 ```bash
-MINICLAW_ENV_FILE="$PWD/.env" uv run python scripts/feishu_live_smoke.py \
+LOBSTER0_ENV_FILE="$PWD/.env" uv run python scripts/feishu_live_smoke.py \
   --confirm-live \
-  --home "$HOME/.miniclaw" \
+  --home "$HOME/.lobster0" \
   --root evals/scenarios \
   --output-dir "$EVIDENCE_HOME/feishu-channel"
 ```
@@ -179,9 +179,9 @@ secret_matches=0
 ## 8. 完成飞书 Automation 10-case
 
 ```bash
-MINICLAW_ENV_FILE="$PWD/.env" uv run python scripts/feishu_automation_live.py \
+LOBSTER0_ENV_FILE="$PWD/.env" uv run python scripts/feishu_automation_live.py \
   --confirm-live \
-  --home "$HOME/.miniclaw" \
+  --home "$HOME/.lobster0" \
   --root evals/scenarios \
   --output-dir "$EVIDENCE_HOME/feishu-automation"
 ```
@@ -197,9 +197,9 @@ Approval、claimed/running TaskRun 或重复 Delivery。
 四组 Evidence 准备好、受管 Gateway 正常后执行：
 
 ```bash
-MINICLAW_ENV_FILE="$PWD/.env" uv run python scripts/phase6_production_gate.py preflight \
+LOBSTER0_ENV_FILE="$PWD/.env" uv run python scripts/phase6_production_gate.py preflight \
   --confirm-live \
-  --home "$HOME/.miniclaw" \
+  --home "$HOME/.lobster0" \
   --evidence-dir "$EVIDENCE_HOME"
 ```
 
@@ -249,9 +249,9 @@ sequenceDiagram
 ```bash
 caffeinate -dimsu uv run python scripts/phase6_production_gate.py start \
   --confirm-live \
-  --home "$HOME/.miniclaw" \
+  --home "$HOME/.lobster0" \
   --evidence-dir "$EVIDENCE_HOME" \
-  --progress-output "/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-production-soak.txt"
+  --progress-output "/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-production-soak.txt"
 ```
 
 输出只包含：
@@ -281,9 +281,9 @@ Running 状态返回非零是为了防止 CI 把“还没结束”误认为 PASS
 ```bash
 caffeinate -dimsu uv run python scripts/phase6_production_gate.py resume \
   --confirm-live \
-  --home "$HOME/.miniclaw" \
+  --home "$HOME/.lobster0" \
   --evidence-dir "$EVIDENCE_HOME" \
-  --progress-output "/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-production-soak.txt"
+  --progress-output "/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-production-soak.txt"
 ```
 
 Resume 会重新绑定 commit、run token、state home 和要求时长。任一不一致、checkpoint 已 failed 或 gap 超界都不能续算。
@@ -293,9 +293,9 @@ Resume 会重新绑定 commit、run token、state home 和要求时长。任一�
 Monitor 达到精确 86,400 健康秒后先显示 `status=passed`。然后执行：
 
 ```bash
-MINICLAW_ENV_FILE="$PWD/.env" uv run python scripts/phase6_production_gate.py finalize \
+LOBSTER0_ENV_FILE="$PWD/.env" uv run python scripts/phase6_production_gate.py finalize \
   --confirm-live \
-  --home "$HOME/.miniclaw" \
+  --home "$HOME/.lobster0" \
   --evidence-dir "$EVIDENCE_HOME"
 ```
 
@@ -314,7 +314,7 @@ VERIFIED。Tracked release record 只能根据这个 aggregate 更新，不能�
 | --- | --- | --- |
 | `repository_dirty` | 代码不是冻结版本 | 提交或移除本轮相关改动；生成新 run 并重跑全部 live Evidence |
 | `evidence_commit_mismatch` | 报告来自另一个 commit | 不复制改名；重跑 Seatbelt、15-case、10-case |
-| `service_unowned` | plist/receipt/argv/commit 不属于 MiniClaw | 卸载外部冲突，重新 `uv tool install` 和 `service install` |
+| `service_unowned` | plist/receipt/argv/commit 不属于 Lobster0 | 卸载外部冲突，重新 `uv tool install` 和 `service install` |
 | `gateway_lease_unhealthy` | 服务存在但不是当前活跃 Gateway | 查看受管状态和脱敏日志，修复后新 run |
 | `recovery_delivery_duplicate` | 重启 probe 可见投递超过一次 | 停止验收，修复幂等根因并全部重跑 |
 | `approval_recovery_failed` | 重启前的审批丢失或改变 | 停止验收，修复 durable Approval 恢复 |
@@ -344,12 +344,12 @@ Git 中只允许脱敏 aggregate 和 hash；真实 `.env`、SQLite、日志、�
 如果不再让当前 Mac 常驻：
 
 ```bash
-MINICLAW_ENV_FILE="$PWD/.env" miniclaw service status
-MINICLAW_ENV_FILE="$PWD/.env" miniclaw service uninstall
-MINICLAW_ENV_FILE="$PWD/.env" miniclaw service status
+LOBSTER0_ENV_FILE="$PWD/.env" lobster0 service status
+LOBSTER0_ENV_FILE="$PWD/.env" lobster0 service uninstall
+LOBSTER0_ENV_FILE="$PWD/.env" lobster0 service status
 ```
 
-`uninstall` 只移除 ownership receipt 匹配的 MiniClaw plist；遇到外部或被篡改文件会拒绝删除。Evidence 目录不会随
+`uninstall` 只移除 ownership receipt 匹配的 Lobster0 plist；遇到外部或被篡改文件会拒绝删除。Evidence 目录不会随
 服务卸载自动删除。
 
 ## 15. 最终逐项 Checklist
@@ -383,8 +383,8 @@ MINICLAW_ENV_FILE="$PWD/.env" miniclaw service status
 
 | 入口 | 职责 |
 | --- | --- |
-| `src/miniclaw/evals/phase6_soak.py` | 只读 invariant、exact-duration checkpoint、progress |
-| `src/miniclaw/evals/phase6_production.py` | Evidence 聚合、preflight、recovery、soak/finalize 编排 |
+| `src/lobster0/evals/phase6_soak.py` | 只读 invariant、exact-duration checkpoint、progress |
+| `src/lobster0/evals/phase6_production.py` | Evidence 聚合、preflight、recovery、soak/finalize 编排 |
 | `scripts/phase6_production_gate.py` | 人工显式执行的薄 CLI |
 | `scripts/sandbox_live_smoke.py` | Seatbelt 真实探针和 commit-bound Evidence |
 | `tests/test_phase6_soak.py` | 时间、gap、权限、恢复和失败终态 |

@@ -3,12 +3,12 @@
 import unittest
 from datetime import UTC, datetime
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
-from miniclaw.channels.discord import DiscordIntents, DiscordTransport
-from miniclaw.channels.progress import AgentProgress, ProgressProjector
-from miniclaw.config import DiscordConfig
-from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
+from lobster0.agent.events import RunEvent
+from lobster0.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
+from lobster0.channels.discord import DiscordIntents, DiscordTransport
+from lobster0.channels.progress import AgentProgress, ProgressProjector
+from lobster0.config import DiscordConfig
+from lobster0.storage.channels import InboundEventKey, StoredInboundEvent
 from tests.fakes.fake_discord import (
     ConnectionClosed,
     FakeDiscordClient,
@@ -224,7 +224,7 @@ class DiscordTransportTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.typing_stopped, ["typing-handle"])
         self.assertEqual(
             client.sent[0]["text"],
-            "⏳ **MiniClaw 正在处理**\n正在理解请求",
+            "⏳ **Lobster0 正在处理**\n正在理解请求",
         )
         self.assertEqual(client.edited[0]["text"], "**完整回答**\n\n- 第一项")
         self.assertEqual(completed.visible_answer_chars, len(final))

@@ -7,16 +7,16 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Barrier
 
-from miniclaw.channels.base import InboundMessage
-from miniclaw.storage.channels import (
+from lobster0.channels.base import InboundMessage
+from lobster0.storage.channels import (
     ChannelIdentityRepository,
     ChannelStateError,
     DeliveryRepository,
     InboundEventRepository,
 )
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 
 
 class ChannelStorageTest(unittest.TestCase):
@@ -27,7 +27,7 @@ class ChannelStorageTest(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.database = Database(
-            Path(self.temporary_directory.name).resolve() / "miniclaw.db"
+            Path(self.temporary_directory.name).resolve() / "lobster0.db"
         )
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()

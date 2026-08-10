@@ -9,7 +9,7 @@
 
 这轮不是再造一套 TUI，而是把现有单入口补成适合长期调试的个人 Agent 界面：
 
-- 用户消息和 MiniClaw 回答不再挤成一团；
+- 用户消息和 Lobster0 回答不再挤成一团；
 - Provider 返回的 reasoning 仍可看，默认展开但弱色、少留白、低视觉权重；
 - 长文本发送失败或取消时，原文完整回到输入框；
 - 底部直接显示真实上下文、Token、Tool 次数、模型迭代和耗时；
@@ -34,7 +34,7 @@ flowchart LR
     P -. "text / reasoning / usage" .-> EV["RunEvent"]
     E -. "tool / approval" .-> EV
     T -. "terminal duration" .-> EV
-    EV --> UI["MiniClawApp 投影"]
+    EV --> UI["Lobster0App 投影"]
 ```
 
 TUI 不查询 Provider、Policy 或数据库内部瞬时对象，也不自己计算权限。它只投影 Core 已确认的事件。
@@ -50,7 +50,7 @@ TUI 不查询 Provider、Policy 或数据库内部瞬时对象，也不自己计
 
   ▾ 思考（模型）· 第 1 轮       默认展开、弱色
 
-┌─ MiniClaw ─────────────────────────────────┐
+┌─ Lobster0 ─────────────────────────────────┐
 │ 你的系统是……                               │
 └────────────────────────────────────────────┘
 ```
@@ -164,14 +164,14 @@ flowchart TD
 
 | 文件 | 责任 |
 | --- | --- |
-| `src/miniclaw/tui/app.py` | 双语消息、reasoning、草稿恢复、审计栏、审批按钮 |
-| `src/miniclaw/agent/context.py` | 按最新 User 消息选择中英文 System Prompt，约束回答/reasoning 语言 |
-| `src/miniclaw/agent/runner.py` | 每次 Provider 响应的真实 usage 与 Tool 计数 |
-| `src/miniclaw/agent/turn.py` | 终态耗时、Approval decision 预检与续跑 |
-| `src/miniclaw/policy/approvals.py` | `ApprovalDecision` 与可用授权范围 |
-| `src/miniclaw/policy/engine.py` | Session exact rule |
-| `src/miniclaw/storage/tooling.py` | 参数 hash 预检与 Always 规则持久化 |
-| `src/miniclaw/tools/executor.py` | 成功后应用 Session/Always |
+| `src/lobster0/tui/app.py` | 双语消息、reasoning、草稿恢复、审计栏、审批按钮 |
+| `src/lobster0/agent/context.py` | 按最新 User 消息选择中英文 System Prompt，约束回答/reasoning 语言 |
+| `src/lobster0/agent/runner.py` | 每次 Provider 响应的真实 usage 与 Tool 计数 |
+| `src/lobster0/agent/turn.py` | 终态耗时、Approval decision 预检与续跑 |
+| `src/lobster0/policy/approvals.py` | `ApprovalDecision` 与可用授权范围 |
+| `src/lobster0/policy/engine.py` | Session exact rule |
+| `src/lobster0/storage/tooling.py` | 参数 hash 预检与 Always 规则持久化 |
+| `src/lobster0/tools/executor.py` | 成功后应用 Session/Always |
 | `tests/test_tui.py` | 角色、长文本、双语、N/A、审批按钮、键盘交互 |
 
 ## 9. 回归证据
@@ -180,7 +180,7 @@ flowchart TD
 
 - 250,000 字符中文输入失败后逐字恢复；
 - Esc 取消后原草稿恢复且焦点回到 Composer；
-- 用户和 MiniClaw 都有可见角色标签与不同结构；
+- 用户和 Lobster0 都有可见角色标签与不同结构；
 - reasoning 默认展开、可用 `Ctrl+O` 批量折叠或恢复展开；
 - 中文默认与 `/lang zh|en` 原地切换；
 - usage 缺失持续显示 `N/A`；
@@ -195,8 +195,8 @@ flowchart TD
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ruff check --no-cache .
-.venv/bin/python -m miniclaw eval validate --root evals/scenarios
-.venv/bin/python -m miniclaw eval run --suite offline --root evals/scenarios
+.venv/bin/python -m lobster0 eval validate --root evals/scenarios
+.venv/bin/python -m lobster0 eval run --suite offline --root evals/scenarios
 git diff --check
 ```
 

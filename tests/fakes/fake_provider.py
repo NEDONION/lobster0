@@ -1,6 +1,6 @@
 """按预设顺序返回完整响应或异常的确定性模型 Fake。"""
 
-from miniclaw.providers.base import ModelRequest, ModelResponse, StreamHandler
+from lobster0.providers.base import ModelRequest, ModelResponse, StreamHandler
 
 
 class FakeProvider:

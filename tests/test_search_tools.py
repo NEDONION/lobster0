@@ -6,9 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from miniclaw.providers.base import JsonValue
-from miniclaw.tools.base import ToolContext, ToolResult, ToolValidationError
-from miniclaw.tools.search import GlobTool, GrepTool
+from lobster0.providers.base import JsonValue
+from lobster0.tools.base import ToolContext, ToolResult, ToolValidationError
+from lobster0.tools.search import GlobTool, GrepTool
 
 
 class GlobToolTest(unittest.IsolatedAsyncioTestCase):
@@ -422,7 +422,7 @@ class GrepToolTest(unittest.IsolatedAsyncioTestCase):
                 after.st_size = after_size
                 after.st_mtime_ns = after_mtime
                 with patch(
-                    "miniclaw.tools.search.os.fstat",
+                    "lobster0.tools.search.os.fstat",
                     side_effect=(before, after),
                 ):
                     result = await self._grep({"pattern": "needle"})
@@ -449,8 +449,8 @@ class GrepToolTest(unittest.IsolatedAsyncioTestCase):
         after.st_mtime_ns += 1
 
         with (
-            patch("miniclaw.tools.search.os.fstat", side_effect=(before, after)),
-            patch("miniclaw.tools.search._MAX_GREP_TOTAL_BYTES", 6),
+            patch("lobster0.tools.search.os.fstat", side_effect=(before, after)),
+            patch("lobster0.tools.search._MAX_GREP_TOTAL_BYTES", 6),
         ):
             result = await self._grep({"pattern": "needle"})
 

@@ -9,16 +9,16 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from miniclaw.automation.models import (
+from lobster0.automation.models import (
     DeliveryTarget,
     ScheduleKind,
     ScheduleSpec,
     TaskBudget,
 )
-from miniclaw.automation.repository import ScheduledTaskRepository, TaskRunRepository
-from miniclaw.doctor import CheckResult, CheckStatus
-from miniclaw.evals.cases import load_feishu_automation_live_cases
-from miniclaw.evals.feishu_automation_live import (
+from lobster0.automation.repository import ScheduledTaskRepository, TaskRunRepository
+from lobster0.doctor import CheckResult, CheckStatus
+from lobster0.evals.cases import load_feishu_automation_live_cases
+from lobster0.evals.feishu_automation_live import (
     AutomationLiveCaseResult,
     AutomationLiveExecution,
     FeishuAutomationLiveError,
@@ -30,9 +30,9 @@ from miniclaw.evals.feishu_automation_live import (
     evaluate_automation_case,
     run_feishu_automation_live_harness,
 )
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,7 +44,7 @@ class FeishuAutomationLiveEvaluatorTest(unittest.TestCase):
         """创建隔离 SQLite、Owner 与一个目标飞书任务。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.database = Database(Path(self.temporary_directory.name) / "miniclaw.db")
+        self.database = Database(Path(self.temporary_directory.name) / "lobster0.db")
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()
         self.now = datetime(2026, 8, 10, 8, tzinfo=UTC)
@@ -550,7 +550,7 @@ class FeishuAutomationLiveHarnessTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "evidence"
             with patch(
-                "miniclaw.evals.feishu_automation_live._load_automation_preflight",
+                "lobster0.evals.feishu_automation_live._load_automation_preflight",
                 side_effect=FeishuAutomationLiveError("automation_disabled"),
             ) as preflight:
                 code = run_feishu_automation_live_harness(
@@ -564,7 +564,7 @@ class FeishuAutomationLiveHarnessTest(unittest.TestCase):
     def test_preflight_rejects_existing_due_automation_work(self) -> None:
         """Gate 不能在 Owner 已有即将执行的 Task 上启停 Gateway 制造干扰。"""
         with tempfile.TemporaryDirectory() as directory:
-            database = Database(Path(directory) / "miniclaw.db")
+            database = Database(Path(directory) / "lobster0.db")
             apply_migrations(database)
             owner = OwnerRepository(database).get_or_create()
             now = datetime.now(UTC)
@@ -594,7 +594,7 @@ class FeishuAutomationLiveHarnessTest(unittest.TestCase):
         )
         preflight = SimpleNamespace(cases=())
         with patch(
-            "miniclaw.evals.feishu_automation_live._start_automation_gateway",
+            "lobster0.evals.feishu_automation_live._start_automation_gateway",
             new=AsyncMock(return_value=gateway),
         ) as start:
             execution = asyncio.run(
@@ -657,19 +657,19 @@ class FeishuAutomationLiveHarnessTest(unittest.TestCase):
             output = root / "evidence"
             with (
                 patch(
-                    "miniclaw.evals.feishu_automation_live._load_automation_preflight",
+                    "lobster0.evals.feishu_automation_live._load_automation_preflight",
                     return_value=preflight,
                 ),
                 patch(
-                    "miniclaw.evals.feishu_automation_live._execute_automation_live_cases",
+                    "lobster0.evals.feishu_automation_live._execute_automation_live_cases",
                     new=AsyncMock(return_value=execution),
                 ),
                 patch(
-                    "miniclaw.evals.feishu_automation_live._repository_state",
+                    "lobster0.evals.feishu_automation_live._repository_state",
                     return_value=("b" * 40, False),
                 ),
                 patch(
-                    "miniclaw.evals.feishu_automation_live.scan_secret_matches",
+                    "lobster0.evals.feishu_automation_live.scan_secret_matches",
                     return_value=0,
                 ),
             ):

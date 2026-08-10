@@ -50,13 +50,13 @@ export interface BridgeSpawnSpec {
 }
 
 export function buildBridgeSpawnSpec(environment: NodeJS.ProcessEnv): BridgeSpawnSpec {
-  const python = environment.MINICLAW_PYTHON?.trim();
-  const home = environment.MINICLAW_HOME?.trim();
+  const python = environment.LOBSTER0_PYTHON?.trim();
+  const home = environment.LOBSTER0_HOME?.trim();
   if (!python || !home) {
     throw new BridgeRequestError("bridge_configuration", "缺少 Python Bridge 启动配置");
   }
-  const args = ["-m", "miniclaw.bridge", "--home", home];
-  const workspace = environment.MINICLAW_WORKSPACE?.trim();
+  const args = ["-m", "lobster0.bridge", "--home", home];
+  const workspace = environment.LOBSTER0_WORKSPACE?.trim();
   if (workspace) {
     if (!isAbsolute(workspace)) {
       throw new BridgeRequestError("bridge_configuration", "Workspace 必须是绝对路径");
@@ -92,7 +92,7 @@ export class BridgeClient {
     process.stderr.resume();
     process.on("exit", (code, signal) => {
       const suffix = signal ? ` (${signal})` : code === null ? "" : ` (${code})`;
-      this.failAll("bridge_exited", `MiniClaw Core 已退出${suffix}`);
+      this.failAll("bridge_exited", `Lobster0 Core 已退出${suffix}`);
     });
   }
 
@@ -122,7 +122,7 @@ export class BridgeClient {
   ): Promise<Record<string, JsonValue>> {
     if (this.closed) {
       return Promise.reject(
-        new BridgeRequestError("bridge_closed", "MiniClaw Core 已关闭", true),
+        new BridgeRequestError("bridge_closed", "Lobster0 Core 已关闭", true),
       );
     }
     this.sequence += 1;
@@ -145,13 +145,13 @@ export class BridgeClient {
         }
         const pending = this.pending.get(id);
         this.pending.delete(id);
-        pending?.reject(new BridgeRequestError("bridge_stream", "无法写入 MiniClaw Core"));
+        pending?.reject(new BridgeRequestError("bridge_stream", "无法写入 Lobster0 Core"));
       });
     });
   }
 
   public async hello(
-    clientName = "miniclaw-pi-tui",
+    clientName = "lobster0-pi-tui",
     clientVersion = "0.1.0",
   ): Promise<Record<string, JsonValue>> {
     return this.request("client.hello", {
@@ -192,7 +192,7 @@ export class BridgeClient {
     if (!isPermissionMode(selected)) {
       throw new BridgeRequestError(
         "invalid_permission_mode",
-        "MiniClaw Core 返回了无效权限模式",
+        "Lobster0 Core 返回了无效权限模式",
       );
     }
     return selected;

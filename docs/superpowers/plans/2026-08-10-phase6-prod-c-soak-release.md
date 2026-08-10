@@ -28,7 +28,7 @@
 ### Task C1: Read-only production invariant snapshot
 
 **Files:**
-- Create: `src/miniclaw/evals/phase6_soak.py`
+- Create: `src/lobster0/evals/phase6_soak.py`
 - Create: `tests/test_phase6_soak.py`
 
 **Interfaces:**
@@ -90,7 +90,7 @@ Expected: healthy/violation/error matrix PASS；测试不调用真实 launchctl/
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/evals/phase6_soak.py tests/test_phase6_soak.py
+git add src/lobster0/evals/phase6_soak.py tests/test_phase6_soak.py
 git commit -m "feat(eval): 增加 Phase 6 production invariant monitor"
 ```
 
@@ -99,7 +99,7 @@ git commit -m "feat(eval): 增加 Phase 6 production invariant monitor"
 ### Task C2: Durable exact-duration soak session
 
 **Files:**
-- Modify: `src/miniclaw/evals/phase6_soak.py`
+- Modify: `src/lobster0/evals/phase6_soak.py`
 - Modify: `tests/test_phase6_soak.py`
 
 **Interfaces:**
@@ -150,7 +150,7 @@ Expected: exact-duration、resume、permissions、gap/clock/invariant matrix PAS
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/evals/phase6_soak.py tests/test_phase6_soak.py
+git add src/lobster0/evals/phase6_soak.py tests/test_phase6_soak.py
 git commit -m "feat(eval): 持久化 exact 24-hour soak checkpoint"
 ```
 
@@ -159,7 +159,7 @@ git commit -m "feat(eval): 持久化 exact 24-hour soak checkpoint"
 ### Task C3: Phase 6 production gate orchestrator
 
 **Files:**
-- Create: `src/miniclaw/evals/phase6_production.py`
+- Create: `src/lobster0/evals/phase6_production.py`
 - Create: `scripts/phase6_production_gate.py`
 - Create: `tests/test_phase6_production.py`
 
@@ -230,7 +230,7 @@ Expected: orchestration/recovery/report/side-effect boundary PASS。
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/miniclaw/evals/phase6_production.py scripts/phase6_production_gate.py tests/test_phase6_production.py
+git add src/lobster0/evals/phase6_production.py scripts/phase6_production_gate.py tests/test_phase6_production.py
 git commit -m "feat(release): 编排 macOS Feishu production gate"
 ```
 
@@ -349,9 +349,9 @@ git commit -m "docs(phase7): 规划评测驱动的 Controlled Evolution"
 ```bash
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios
 pnpm --dir browser-worker test
 uv run python scripts/validate_docs.py
 git diff --check
@@ -370,7 +370,7 @@ Seatbelt Python/Node-chain、LaunchAgent lifecycle、Feishu strict 15 与 Automa
 ```bash
 uv run python scripts/phase6_production_gate.py start \
   --confirm-live \
-  --evidence-dir ~/.miniclaw/evidence/phase6-production/<run-id> \
+  --evidence-dir ~/.lobster0/evidence/phase6-production/<run-id> \
   --progress-output <owner-selected-external-file>
 ```
 
@@ -381,7 +381,7 @@ uv run python scripts/phase6_production_gate.py start \
 ```bash
 uv run python scripts/phase6_production_gate.py finalize \
   --confirm-live \
-  --evidence-dir ~/.miniclaw/evidence/phase6-production/<run-id>
+  --evidence-dir ~/.lobster0/evidence/phase6-production/<run-id>
 ```
 
 Expected: `PHASE6_MACOS_FEISHU_PRODUCTION_VERIFIED` and zero secret matches。没有达到精确时长时返回 pending/non-zero，不修改发布文档。

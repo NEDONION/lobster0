@@ -4,7 +4,7 @@
 
 ## 1. 这次解决了什么
 
-以前 MiniClaw 只认识一个 Workspace，也只在一条固定系统 `PATH` 里找命令。因此即使 Mac 上已经安装
+以前 Lobster0 只认识一个 Workspace，也只在一条固定系统 `PATH` 里找命令。因此即使 Mac 上已经安装
 `lark-cli`，只要它位于 NVM 目录，Agent 仍会说“找不到”；即使 Owner 想读取自己的普通文档，文件 Tool
 也会返回 `workspace_escape`。
 
@@ -14,10 +14,10 @@ Phase 2.3B 增加了一个显式的 `personal` 权限 Profile：
 - Documents、Downloads、Desktop 和常见项目目录可在审批后写入；
 - NVM、uv、pnpm、`~/.local/bin` 等用户 CLI 可以被确定性发现；
 - `run_command` 仍不经过 Shell，仍使用 exact argv 和参数绑定审批；
-- Keychain、浏览器登录数据、1Password、云凭据、私钥和 MiniClaw 状态仍硬拒绝；
+- Keychain、浏览器登录数据、1Password、云凭据、私钥和 Lobster0 状态仍硬拒绝；
 - 旧配置没有 `[permissions]` 时继续保持 `workspace`，升级不会静默扩大权限。
 
-一句大白话：MiniClaw 现在更像真正的个人 Agent，但不是“把整台电脑无条件交给模型”。读取范围扩大了，
+一句大白话：Lobster0 现在更像真正的个人 Agent，但不是“把整台电脑无条件交给模型”。读取范围扩大了，
 写入与执行仍由 Owner 看过参数后决定。
 
 ## 2. 当前状态
@@ -43,7 +43,7 @@ Phase 2.3B 增加了一个显式的 `personal` 权限 Profile：
 | `workspace` | CI、容器、旧配置、最小权限 | Workspace + 旧 `[workspace].read_only_roots` | 仅 Workspace | 仅系统最小 PATH |
 | `personal` | Owner 自己的 Mac、本地个人 Agent | Workspace + Home + 存在的公共应用/工具根 | Workspace + 明确写根 | 系统根 + 显式根 + 已知用户安装器目录 |
 
-`personal` 是新初始化配置的默认值。旧的 `~/.miniclaw/config.toml` 不会被 `init` 覆盖，所以必须由 Owner
+`personal` 是新初始化配置的默认值。旧的 `~/.lobster0/config.toml` 不会被 `init` 覆盖，所以必须由 Owner
 手工加入 `[permissions]` 才会启用。
 
 ## 4. 权限矩阵
@@ -146,7 +146,7 @@ macOS `personal` Profile 在目录真实存在时使用：
 - Safari、Chrome、Chromium、Firefox 用户档案；
 - 1Password、Slack、Discord、Lark/Feishu Application Support 数据；
 - `.local/share/keyrings`、`.config/gcloud`、`.config/lark-cli`；
-- MiniClaw config、SQLite、WAL/SHM/journal 和日志；
+- Lobster0 config、SQLite、WAL/SHM/journal 和日志；
 - `/etc/shadow`、sudoers、Docker/container runtime socket。
 
 Guard 会对模型给出的逻辑路径和 symlink 解析后的真实路径各检查一次。模型 Prompt 也明确规定：收到
@@ -206,11 +206,11 @@ executable_roots = []
 discover_user_executables = true
 ```
 
-旧配置想启用 Personal，手工把上述 section 加到 `~/.miniclaw/config.toml`，然后运行：
+旧配置想启用 Personal，手工把上述 section 加到 `~/.lobster0/config.toml`，然后运行：
 
 ```bash
-chmod 600 ~/.miniclaw/config.toml
-uv run miniclaw doctor
+chmod 600 ~/.lobster0/config.toml
+uv run lobster0 doctor
 ```
 
 想恢复最小权限：
@@ -224,11 +224,11 @@ executable_roots = []
 discover_user_executables = false
 ```
 
-修改后必须完全退出并重启 MiniClaw；Session 授权也会随 Runtime 结束而清空。
+修改后必须完全退出并重启 Lobster0；Session 授权也会随 Runtime 结束而清空。
 
 ## 13. Doctor
 
-`miniclaw doctor` 现在固定 15 项，新增：
+`lobster0 doctor` 现在固定 15 项，新增：
 
 - `personal_permissions`：只显示 Profile、read root 数和 write root 数；
 - `executables`：只显示 executable root 数和 `lark-cli available/unavailable`。
@@ -296,14 +296,14 @@ Doctor 不输出 Home、完整 PATH、Token 或认证内容，也不执行 `lark
 ## 18. 调试清单
 
 ```bash
-uv run miniclaw doctor
-uv run miniclaw
+uv run lobster0 doctor
+uv run lobster0
 # TUI 中输入：调用本机 lark-cli 查看版本
 
 uv run python -m unittest tests.test_executable_discovery tests.test_run_command -v
 uv run python -m unittest tests.test_workspace_policy tests.test_tool_executor -v
 corepack pnpm --dir tui test
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 ```
 
 如果 Doctor 显示 `lark-cli unavailable`：
@@ -312,4 +312,4 @@ uv run miniclaw eval run --suite offline --root evals/scenarios
 2. 确认安装目录属于上述发现规则；
 3. 特殊目录写入 `[permissions].executable_roots`；
 4. 确认 Root 不是 symlink，且目录真实存在；
-5. 完全重启 MiniClaw，再运行 Doctor。
+5. 完全重启 Lobster0，再运行 Doctor。

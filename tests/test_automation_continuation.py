@@ -5,10 +5,10 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.agent.runner import AgentRunBudget
-from miniclaw.agent.turn import TurnExecutionProfile, TurnResult
-from miniclaw.automation.continuation import TaskApprovalContinuation
-from miniclaw.automation.models import (
+from lobster0.agent.runner import AgentRunBudget
+from lobster0.agent.turn import TurnExecutionProfile, TurnResult
+from lobster0.automation.continuation import TaskApprovalContinuation
+from lobster0.automation.models import (
     DeliveryTarget,
     RunStatus,
     ScheduleKind,
@@ -16,15 +16,15 @@ from miniclaw.automation.models import (
     TaskBudget,
     TaskResponse,
 )
-from miniclaw.automation.repository import ScheduledTaskRepository, TaskRunRepository
-from miniclaw.policy.engine import PolicyAction, PolicyDecision
-from miniclaw.providers.base import ToolCall
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
-from miniclaw.storage.tooling import ApprovalRepository
-from miniclaw.tools.base import ToolContext
+from lobster0.automation.repository import ScheduledTaskRepository, TaskRunRepository
+from lobster0.policy.engine import PolicyAction, PolicyDecision
+from lobster0.providers.base import ToolCall
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
+from lobster0.storage.tooling import ApprovalRepository
+from lobster0.tools.base import ToolContext
 
 
 class _DeliveryProbe:
@@ -48,7 +48,7 @@ class TaskApprovalContinuationTest(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         root = Path(self.temporary_directory.name)
-        self.database = Database(root / "miniclaw.db")
+        self.database = Database(root / "lobster0.db")
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()
         self.now = datetime(2026, 8, 9, 10, tzinfo=UTC)

@@ -7,7 +7,7 @@ from collections.abc import Awaitable, Callable
 
 import httpx
 
-from miniclaw.providers.base import (
+from lobster0.providers.base import (
     ModelMessage,
     ModelRequest,
     ProviderAuthenticationError,
@@ -16,7 +16,7 @@ from miniclaw.providers.base import (
     ProviderServerError,
     ProviderTimeoutError,
 )
-from miniclaw.providers.openai_compatible import OpenAICompatibleProvider
+from lobster0.providers.openai_compatible import OpenAICompatibleProvider
 
 
 def sse(*events: object) -> str:

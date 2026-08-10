@@ -7,17 +7,17 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
-from miniclaw.sandbox.base import (
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
+from lobster0.sandbox.base import (
     ExecutableRef,
     ExecutionPlan,
     ExecutionReceipt,
     SandboxPlanError,
 )
-from miniclaw.sandbox.host import HostSandbox
-from miniclaw.sandbox.repository import ExecutionPlanRepository
-from miniclaw.storage.database import Database
+from lobster0.sandbox.host import HostSandbox
+from lobster0.sandbox.repository import ExecutionPlanRepository
+from lobster0.storage.database import Database
 
 
 class ExecutionPlanContractTest(unittest.TestCase):
@@ -207,12 +207,12 @@ class HostSandboxTest(unittest.IsolatedAsyncioTestCase):
         helper.write_text(
             "import os, sys\n"
             "print(repr(sys.argv[1:]))\n"
-            "print(os.environ.get('MINICLAW_TEST_SECRET', 'missing'))\n",
+            "print(os.environ.get('LOBSTER0_TEST_SECRET', 'missing'))\n",
             encoding="utf-8",
         )
         plan = self.plan((sys.executable, str(helper), "a; echo injected"))
         with mock.patch.dict(
-            os.environ, {"MINICLAW_TEST_SECRET": "secret-value"}, clear=False
+            os.environ, {"LOBSTER0_TEST_SECRET": "secret-value"}, clear=False
         ):
             receipt = await self.backend.execute(plan)
 

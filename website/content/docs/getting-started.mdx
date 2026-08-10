@@ -1,6 +1,6 @@
 ---
 title: 安装与启动
-description: 从源码安装 MiniClaw，完成初始化、Doctor 检查并启动 TUI。
+description: 从源码安装 Lobster0，完成初始化、Doctor 检查并启动 TUI。
 ---
 
 ## 环境要求
@@ -13,15 +13,15 @@ description: 从源码安装 MiniClaw，完成初始化、Doctor 检查并启动
 ## 从源码运行
 
 ```bash
-git clone https://github.com/NEDONION/mini-claw.git
-cd miniclaw
+git clone https://github.com/NEDONION/lobster0.git
+cd lobster0
 uv sync --extra dev --extra channels
 pnpm --dir tui install
 pnpm --dir tui build
 cp .env.example .env
-uv run miniclaw init
-uv run miniclaw doctor
-uv run miniclaw
+uv run lobster0 init
+uv run lobster0 doctor
+uv run lobster0
 ```
 
 `cp .env.example .env` 只创建本地配置文件。按模板填写 Provider 和可选 Channel 配置；不要把真实
@@ -29,8 +29,8 @@ API Key、App Secret 或 Token 提交到 Git。
 
 ## 初始化与自检
 
-`miniclaw init` 创建本地所需结构；`miniclaw doctor` 检查运行环境和配置。Doctor 通过后，
-`uv run miniclaw` 启动主 TUI。
+`lobster0 init` 创建本地所需结构；`lobster0 doctor` 检查运行环境和配置。Doctor 通过后，
+`uv run lobster0` 启动主 TUI。
 
 > **建议先从 TUI 开始**
 >
@@ -38,4 +38,4 @@ API Key、App Secret 或 Token 提交到 Git。
 > Agent Core、Provider 还是某个 Channel Transport。
 
 继续阅读[运行时](/docs/runtime)和[安全边界](/docs/security)。开发、测试与发布命令以仓库
-[README](https://github.com/NEDONION/mini-claw#readme) 和 `pyproject.toml` 为准。
+[README](https://github.com/NEDONION/lobster0#readme) 和 `pyproject.toml` 为准。

@@ -8,7 +8,7 @@ importers:
 
   .:
     dependencies:
-      '@miniclaw/pi-tui':
+      '@lobster0/pi-tui':
         specifier: file:../tui
         version: file:../tui
       react:
@@ -493,7 +493,7 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@miniclaw/pi-tui@file:../tui':
+  '@lobster0/pi-tui@file:../tui':
     resolution: {directory: ../tui, type: directory}
     engines: {node: '>=22.22.3 <23 || >=24.15.0 <25'}
 
@@ -1921,7 +1921,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@miniclaw/pi-tui@file:../tui':
+  '@lobster0/pi-tui@file:../tui':
     dependencies:
       '@earendil-works/pi-tui': 0.84.1
 

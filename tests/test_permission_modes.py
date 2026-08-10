@@ -5,18 +5,18 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import miniclaw.storage.tooling as tooling
-from miniclaw.bootstrap import initialize_state
-from miniclaw.config import load_config
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.engine import PolicyAction, PolicyEngine
-from miniclaw.policy.modes import PermissionMode, PermissionState
-from miniclaw.runtime import create_runtime
-from miniclaw.storage.database import Database
-from miniclaw.tools.base import ToolContext
-from miniclaw.tools.command import RunCommandTool
-from miniclaw.tools.filesystem import WriteFileTool
-from miniclaw.tools.web import HttpGetTool
+import lobster0.storage.tooling as tooling
+from lobster0.bootstrap import initialize_state
+from lobster0.config import load_config
+from lobster0.paths import build_state_paths
+from lobster0.policy.engine import PolicyAction, PolicyEngine
+from lobster0.policy.modes import PermissionMode, PermissionState
+from lobster0.runtime import create_runtime
+from lobster0.storage.database import Database
+from lobster0.tools.base import ToolContext
+from lobster0.tools.command import RunCommandTool
+from lobster0.tools.filesystem import WriteFileTool
+from lobster0.tools.web import HttpGetTool
 
 
 class PermissionModePolicyTest(unittest.TestCase):

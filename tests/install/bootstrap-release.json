@@ -3,7 +3,7 @@
   "manifest_filename": "release-manifest.json",
   "manifest_sha256": "111111111111111111111111111111111111111111111111111111111111111a",
   "manifest_size": 4096,
-  "installer_filename": "miniclaw-installer.pyz",
+  "installer_filename": "lobster0-installer.pyz",
   "installer_sha256": "222222222222222222222222222222222222222222222222222222222222222b",
   "installer_size": 262144
 }

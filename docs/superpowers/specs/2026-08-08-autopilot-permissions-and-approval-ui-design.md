@@ -1,4 +1,4 @@
-# MiniClaw Autopilot 权限模式与紧凑审批 UI 设计
+# Lobster0 Autopilot 权限模式与紧凑审批 UI 设计
 
 > 状态：已确认，进入实现  
 > 日期：2026-08-08  
@@ -6,7 +6,7 @@
 
 ## 1. 目标
 
-MiniClaw 要让唯一 Owner 在本地 TUI、飞书私聊、Telegram 私聊和 Discord 私聊中使用同一个长期在线 Agent，并显著减少重复审批。
+Lobster0 要让唯一 Owner 在本地 TUI、飞书私聊、Telegram 私聊和 Discord 私聊中使用同一个长期在线 Agent，并显著减少重复审批。
 
 本设计同时解决两个问题：
 
@@ -73,7 +73,7 @@ approval_ttl_seconds = 600
 
 - 此条已被 2026-08-09 Owner 默认值决策取代：旧配置未写 `mode` 时按 `autopilot` 加载；显式 `safe`/`smart`
   继续保留审批，且群聊、其他用户与硬拒绝规则不变。
-- `miniclaw init` 新生成的 Personal Profile 明确写入 `mode = "autopilot"`。
+- `lobster0 init` 新生成的 Personal Profile 明确写入 `mode = "autopilot"`。
 - 本机现有 Owner 配置只在这次用户明确授权后单独更新。
 
 ## 4. 动态切换与审计
@@ -132,7 +132,7 @@ Python Core 持有唯一进程级 `PermissionState`。TUI 和三个 Channel 共�
 握手响应增加 `permission_mode`。Header 保持单行紧凑：
 
 ```text
-MiniClaw 0.1.0 · deepseek-v4-pro · 会话 default · 工作区 workspace · ⚡ AUTOPILOT
+Lobster0 0.1.0 · deepseek-v4-pro · 会话 default · 工作区 workspace · ⚡ AUTOPILOT
 ```
 
 - `safe`：灰色 `SAFE`

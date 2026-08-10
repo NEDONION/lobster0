@@ -56,7 +56,7 @@ describe('ClawTrace', () => {
       />,
     );
 
-    expect(screen.getByRole('list', { name: 'MiniClaw 运行轨迹' })).toHaveTextContent(
+    expect(screen.getByRole('list', { name: 'Lobster0 运行轨迹' })).toHaveTextContent(
       'POLICY_CHECK',
     );
     expect(screen.getAllByRole('listitem')).toHaveLength(10);

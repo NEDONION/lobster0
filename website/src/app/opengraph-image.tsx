@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og';
 
-export const alt = 'MiniClaw — Your local agent, ready to act.';
+export const alt = 'Lobster0 — Your local agent, ready to act.';
 export const size = { height: 630, width: 1200 };
 export const contentType = 'image/png';
 
@@ -57,7 +57,7 @@ export default function OpenGraphImage() {
         <div style={{ alignItems: 'center', display: 'flex', justifyContent: 'space-between' }}>
           <div style={{ alignItems: 'center', display: 'flex', fontSize: 24, fontWeight: 750, gap: 12 }}>
             <ArrowMark size={42} />
-            <span>MiniClaw</span>
+            <span>Lobster0</span>
           </div>
           <div style={{ color: '#4267F5', display: 'flex', fontSize: 14, fontWeight: 700, letterSpacing: 1.5 }}>
             LOCAL-FIRST · OPEN SOURCE · INSPECTABLE

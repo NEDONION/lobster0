@@ -1,4 +1,4 @@
-# MiniClaw 版本回归记录
+# Lobster0 版本回归记录
 
 这个目录保存“某个代码版本通过了哪些 Agent 场景”的脱敏发布记录。可执行场景数据在
 [`evals/scenarios/`](../../evals/scenarios/)，详细工程实现见
@@ -11,7 +11,7 @@
 | `evals/scenarios/*.jsonl` | 版本化 query、合成 Workspace、脚本模型响应和确定性断言 | 是 |
 | `evals/baselines/vX.Y.Z.json` | 某个 source commit 的脱敏机器可读基线 | 是 |
 | `docs/evals/releases/vX.Y.Z.md` | 人可以直接阅读的版本结论、限制和复现命令 | 是 |
-| `~/.miniclaw/evals/runs/` | 未来 live 运行的原始本地记录 | 否 |
+| `~/.lobster0/evals/runs/` | 未来 live 运行的原始本地记录 | 否 |
 
 ## 当前 gate
 

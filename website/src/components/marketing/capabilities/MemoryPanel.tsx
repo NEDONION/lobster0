@@ -52,7 +52,7 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
         ref={rootRef}
       >
         <div className="memory-scene__bar">
-          <span>~/.miniclaw/memory</span>
+          <span>~/.lobster0/memory</span>
           <em>{zh ? '所有者边界 · 本地工作区' : 'owner boundary · local workspace'}</em>
         </div>
         <div className="memory-scene__panes">

@@ -3,9 +3,9 @@
 import unittest
 from dataclasses import replace
 
-from miniclaw.channels.base import IgnoredInbound, InboundMessage
-from miniclaw.channels.feishu import FeishuAdapter
-from miniclaw.config import FeishuConfig
+from lobster0.channels.base import IgnoredInbound, InboundMessage
+from lobster0.channels.feishu import FeishuAdapter
+from lobster0.config import FeishuConfig
 from tests.fakes.fake_channel import FakeFeishuMessage
 
 
@@ -46,13 +46,13 @@ class FeishuAdapterTest(unittest.TestCase):
         result = self.adapter.normalize(
             FakeFeishuMessage(
                 raw_content_type="post",
-                body_text="你好，请回复 MiniClaw 飞书链路已打通",
+                body_text="你好，请回复 Lobster0 飞书链路已打通",
             )
         )
 
         self.assertIsInstance(result, InboundMessage)
         assert isinstance(result, InboundMessage)
-        self.assertEqual(result.text, "你好，请回复 MiniClaw 飞书链路已打通")
+        self.assertEqual(result.text, "你好，请回复 Lobster0 飞书链路已打通")
 
     def test_group_requires_allowlisted_chat_sender_and_bot_mention(self) -> None:
         """群聊只有 Chat、发送者和明确 mention 三道门同时通过才可进入。"""

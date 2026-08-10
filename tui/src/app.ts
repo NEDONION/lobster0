@@ -1,4 +1,4 @@
-/** MiniClaw's default pi-tui application shell. */
+/** Lobster0's default pi-tui application shell. */
 
 import { spawnSync } from "node:child_process";
 
@@ -60,7 +60,7 @@ export interface ClipboardPort {
   copy(text: string): boolean;
 }
 
-export interface MiniClawTuiOptions {
+export interface Lobster0TuiOptions {
   tui: TUI;
   bridge: BridgePort;
   clipboard?: ClipboardPort;
@@ -68,7 +68,7 @@ export interface MiniClawTuiOptions {
   sessionKey?: string;
 }
 
-export class MiniClawTui {
+export class Lobster0Tui {
   public readonly tui: TUI;
   public readonly editor: Editor;
   public readonly timeline: TimelineView;
@@ -94,7 +94,7 @@ export class MiniClawTui {
   private readonly exitPromise: Promise<number>;
   private stopped = false;
 
-  public constructor(options: MiniClawTuiOptions) {
+  public constructor(options: Lobster0TuiOptions) {
     this.tui = options.tui;
     this.bridge = options.bridge;
     this.currentLanguage = options.language ?? "zh-CN";
@@ -124,7 +124,7 @@ export class MiniClawTui {
       { gap: 0 },
     );
     if (!isViewportTUI(this.tui)) {
-      throw new BridgeRequestError("tui_mode", "MiniClaw pi-tui 需要 Alt Screen renderer");
+      throw new BridgeRequestError("tui_mode", "Lobster0 pi-tui 需要 Alt Screen renderer");
     }
     this.tui.setLayoutRoot(this.root);
     this.exitPromise = new Promise((resolve) => {

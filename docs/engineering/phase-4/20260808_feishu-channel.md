@@ -2,11 +2,11 @@
 
 > 状态：`IMPLEMENTATION PASS / TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING`
 > 基线：SQLite schema v2，Agent 回归 29/29，Channel 回归 12/12
-> 入口：`miniclaw gateway`
+> 入口：`lobster0 gateway`
 
 ## 1. 大白话说明
 
-Phase 4 做的不是“收到飞书消息就临时请求一次模型”的 Demo，而是给 MiniClaw 增加一条可以重启、重试、
+Phase 4 做的不是“收到飞书消息就临时请求一次模型”的 Demo，而是给 Lobster0 增加一条可以重启、重试、
 去重和审批的长期在线消息通道。飞书负责把消息送到本机；SQLite 先把消息记下来；后台 Worker 再调用与
 TUI 相同的 Agent Core；最后回复先写 Outbox，再发回飞书。
 

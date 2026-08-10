@@ -14,8 +14,8 @@
 
 **Files:**
 
-- Create: `src/miniclaw/memory/__init__.py`
-- Create: `src/miniclaw/memory/store.py`
+- Create: `src/lobster0/memory/__init__.py`
+- Create: `src/lobster0/memory/store.py`
 - Create: `tests/test_memory_store.py`
 
 **RED：** 写入长期/今日/昨日读取、重复事实、64 KiB、symlink、非法 UTF-8 与凭据过滤契约测试。
@@ -28,10 +28,10 @@
 
 **Files:**
 
-- Create: `src/miniclaw/tools/memory.py`
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/agent/context.py`
+- Create: `src/lobster0/tools/memory.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/agent/context.py`
 - Modify: `tests/test_tool_contract.py`
 - Modify: `tests/test_tool_executor.py`
 - Modify: `tests/test_runtime.py`
@@ -47,11 +47,11 @@
 
 **Files:**
 
-- Create: `src/miniclaw/skills/__init__.py`
-- Create: `src/miniclaw/skills/loader.py`
+- Create: `src/lobster0/skills/__init__.py`
+- Create: `src/lobster0/skills/loader.py`
 - Create: `tests/test_skills.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/agent/context.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/agent/context.py`
 - Modify: `tests/test_bootstrap.py`
 - Modify: `tests/test_context.py`
 
@@ -65,13 +65,13 @@
 
 **Files:**
 
-- Create: `src/miniclaw/agent/compaction.py`
+- Create: `src/lobster0/agent/compaction.py`
 - Create: `tests/test_compaction.py`
-- Modify: `src/miniclaw/storage/conversations.py`
-- Modify: `src/miniclaw/agent/context.py`
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/providers/base.py`
-- Modify: `src/miniclaw/runtime.py`
+- Modify: `src/lobster0/storage/conversations.py`
+- Modify: `src/lobster0/agent/context.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/providers/base.py`
+- Modify: `src/lobster0/runtime.py`
 - Modify: `tests/test_conversations.py`
 - Modify: `tests/test_context.py`
 - Modify: `tests/test_turn.py`
@@ -92,14 +92,14 @@
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `README.md`
 - Modify: `docs/progress/index.html`
-- Modify: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
+- Modify: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`
 
 **验证：**
 
 ```bash
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval run --suite regression
+uv run lobster0 eval run --suite regression
 uv build
 git diff --check
 ```

@@ -73,7 +73,7 @@ class LauncherSandbox:
         if self._dependencies:
             (self.root / "tui" / "node_modules").mkdir()
             (self.root / "desktop" / "node_modules").mkdir()
-            shared_dist = self.root / "desktop/node_modules/@miniclaw/pi-tui/dist"
+            shared_dist = self.root / "desktop/node_modules/@lobster0/pi-tui/dist"
             shared_dist.mkdir(parents=True)
             (shared_dist / "bridge-client.js").touch()
             electron_package = self.root / "desktop/node_modules/electron"
@@ -87,11 +87,11 @@ class LauncherSandbox:
             (self.state_home / "config.toml").write_text("[provider]\n", encoding="utf-8")
         if self._initialized and self._state_secret:
             secret = self.state_home / "secrets.env"
-            secret.write_text("MINICLAW_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
+            secret.write_text("LOBSTER0_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
             secret.chmod(0o600)
         if self._repository_dotenv:
             dotenv = self.root / ".env"
-            dotenv.write_text("MINICLAW_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
+            dotenv.write_text("LOBSTER0_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
             dotenv.chmod(0o600)
         self._write_executable("uname", f"print -r -- {self._platform}\n")
         self._write_executable(
@@ -99,12 +99,12 @@ class LauncherSandbox:
             """
 if [[ "$*" == '-e require("./desktop/node_modules/electron")' ]]; then
   if [[ ! -f desktop/node_modules/electron/dist/Electron ]]; then
-    print -r -- "node $*" >> "$MINICLAW_TEST_LOG"
+    print -r -- "node $*" >> "$LOBSTER0_TEST_LOG"
     mkdir -p desktop/node_modules/electron/dist
     touch desktop/node_modules/electron/path.txt desktop/node_modules/electron/dist/Electron
   fi
 else
-  [[ "${MINICLAW_TEST_NODE_OK:-1}" == "1" ]]
+  [[ "${LOBSTER0_TEST_NODE_OK:-1}" == "1" ]]
 fi
 """,
         )
@@ -113,26 +113,26 @@ fi
             """
 if [[ "$*" == "pnpm --dir desktop dev" ]]; then
   print -r -- \
-    "corepack $* home=${MINICLAW_HOME:-} env=${MINICLAW_ENV_FILE:-}" \
-    >> "$MINICLAW_TEST_LOG"
+    "corepack $* home=${LOBSTER0_HOME:-} env=${LOBSTER0_ENV_FILE:-}" \
+    >> "$LOBSTER0_TEST_LOG"
 else
-  print -r -- "corepack $*" >> "$MINICLAW_TEST_LOG"
+  print -r -- "corepack $*" >> "$LOBSTER0_TEST_LOG"
 fi
-if [[ -n "${MINICLAW_TEST_FAIL_MATCH:-}" && "$*" == "$MINICLAW_TEST_FAIL_MATCH" ]]; then
-  exit "${MINICLAW_TEST_FAIL_CODE:-1}"
+if [[ -n "${LOBSTER0_TEST_FAIL_MATCH:-}" && "$*" == "$LOBSTER0_TEST_FAIL_MATCH" ]]; then
+  exit "${LOBSTER0_TEST_FAIL_CODE:-1}"
 fi
 if [[ "$*" == "pnpm --dir tui build" ]]; then
   mkdir -p tui/dist
   touch tui/dist/bridge-client.js
 elif [[ "$*" == "pnpm --dir desktop install --frozen-lockfile" \
   || "$*" == "pnpm --dir desktop install --force --frozen-lockfile" ]]; then
-  mkdir -p desktop/node_modules/@miniclaw/pi-tui desktop/node_modules/electron
+  mkdir -p desktop/node_modules/@lobster0/pi-tui desktop/node_modules/electron
   if [[ -f tui/dist/bridge-client.js ]]; then
-    mkdir -p desktop/node_modules/@miniclaw/pi-tui/dist
-    touch desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js
+    mkdir -p desktop/node_modules/@lobster0/pi-tui/dist
+    touch desktop/node_modules/@lobster0/pi-tui/dist/bridge-client.js
   fi
 elif [[ "$*" == "pnpm --dir desktop dev" \
-  && ! -f desktop/node_modules/@miniclaw/pi-tui/dist/bridge-client.js ]]; then
+  && ! -f desktop/node_modules/@lobster0/pi-tui/dist/bridge-client.js ]]; then
   exit 19
 elif [[ "$*" == "pnpm --dir desktop dev" \
   && ! -f desktop/node_modules/electron/dist/Electron ]]; then
@@ -142,17 +142,17 @@ fi
         )
         self._write_executable(
             "fake-assets/python",
-            'print -r -- "${MINICLAW_HOME:-$HOME/.miniclaw}"\n',
+            'print -r -- "${LOBSTER0_HOME:-$HOME/.lobster0}"\n',
             root_relative=True,
         )
         self._write_executable(
-            "fake-assets/miniclaw",
+            "fake-assets/lobster0",
             """
-print -r -- "miniclaw $*" >> "$MINICLAW_TEST_LOG"
+print -r -- "lobster0 $*" >> "$LOBSTER0_TEST_LOG"
 if [[ "${1:-}" == "setup" ]]; then
-  print -r -- "[provider]" > "$MINICLAW_HOME/config.toml"
-  print -r -- "MINICLAW_MODEL_API_KEY=SECRET_SENTINEL" > "$MINICLAW_HOME/secrets.env"
-  chmod 600 "$MINICLAW_HOME/secrets.env"
+  print -r -- "[provider]" > "$LOBSTER0_HOME/config.toml"
+  print -r -- "LOBSTER0_MODEL_API_KEY=SECRET_SENTINEL" > "$LOBSTER0_HOME/secrets.env"
+  chmod 600 "$LOBSTER0_HOME/secrets.env"
 fi
 """,
             root_relative=True,
@@ -161,17 +161,17 @@ fi
             self._write_executable(
                 "uv",
                 """
-print -r -- "uv $*" >> "$MINICLAW_TEST_LOG"
-cp "$MINICLAW_TEST_PYTHON" .venv/bin/python
-cp "$MINICLAW_TEST_MINICLAW" .venv/bin/miniclaw
-chmod 755 .venv/bin/python .venv/bin/miniclaw
+print -r -- "uv $*" >> "$LOBSTER0_TEST_LOG"
+cp "$LOBSTER0_TEST_PYTHON" .venv/bin/python
+cp "$LOBSTER0_TEST_LOBSTER0" .venv/bin/lobster0
+chmod 755 .venv/bin/python .venv/bin/lobster0
 """,
             )
         if self._dependencies:
             shutil.copy2(self.root / "fake-assets/python", self.root / ".venv/bin/python")
             shutil.copy2(
-                self.root / "fake-assets/miniclaw",
-                self.root / ".venv/bin/miniclaw",
+                self.root / "fake-assets/lobster0",
+                self.root / ".venv/bin/lobster0",
             )
         return self
 
@@ -211,24 +211,24 @@ chmod 755 .venv/bin/python .venv/bin/miniclaw
             extra_env: 调用方额外传入的非 Secret 测试环境。
         """
         environment = {
-            key: value for key, value in os.environ.items() if not key.startswith("MINICLAW_")
+            key: value for key, value in os.environ.items() if not key.startswith("LOBSTER0_")
         }
         environment.update(
             {
                 "HOME": str(self.root / "home"),
-                "MINICLAW_HOME": str(self.state_home),
-                "MINICLAW_TEST_LOG": str(self.log),
-                "MINICLAW_TEST_MINICLAW": str(self.root / "fake-assets/miniclaw"),
-                "MINICLAW_TEST_NODE_OK": "1" if node_ok else "0",
-                "MINICLAW_TEST_PYTHON": str(self.root / "fake-assets/python"),
+                "LOBSTER0_HOME": str(self.state_home),
+                "LOBSTER0_TEST_LOG": str(self.log),
+                "LOBSTER0_TEST_LOBSTER0": str(self.root / "fake-assets/lobster0"),
+                "LOBSTER0_TEST_NODE_OK": "1" if node_ok else "0",
+                "LOBSTER0_TEST_PYTHON": str(self.root / "fake-assets/python"),
                 "PATH": f"{self.root / 'fake-bin'}:/usr/bin:/bin",
             }
         )
         if fail_match is not None:
             environment.update(
                 {
-                    "MINICLAW_TEST_FAIL_CODE": str(fail_code),
-                    "MINICLAW_TEST_FAIL_MATCH": fail_match,
+                    "LOBSTER0_TEST_FAIL_CODE": str(fail_code),
+                    "LOBSTER0_TEST_FAIL_MATCH": fail_match,
                 }
             )
         if extra_env is not None:
@@ -286,7 +286,7 @@ class DesktopLauncherTest(unittest.TestCase):
                 sandbox.log_lines(),
                 [
                     "corepack pnpm --dir tui build",
-                    f"miniclaw init --home {sandbox.state_home}",
+                    f"lobster0 init --home {sandbox.state_home}",
                     (
                         "corepack pnpm --dir desktop dev "
                         f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
@@ -308,7 +308,7 @@ class DesktopLauncherTest(unittest.TestCase):
                     "corepack pnpm --dir tui build",
                     "corepack pnpm --dir desktop install --frozen-lockfile",
                     'node -e require("./desktop/node_modules/electron")',
-                    f"miniclaw setup --home {sandbox.state_home}",
+                    f"lobster0 setup --home {sandbox.state_home}",
                     (
                         "corepack pnpm --dir desktop dev "
                         f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
@@ -369,7 +369,7 @@ class DesktopLauncherTest(unittest.TestCase):
     def test_incomplete_desktop_dependency_is_reinstalled_after_tui_build(self) -> None:
         """残缺的本地 TUI 快照必须在构建共享 Client 后自动刷新。"""
         with LauncherSandbox(initialized=True, dependencies=True) as sandbox:
-            shutil.rmtree(sandbox.root / "desktop/node_modules/@miniclaw/pi-tui/dist")
+            shutil.rmtree(sandbox.root / "desktop/node_modules/@lobster0/pi-tui/dist")
 
             result = sandbox.run()
 
@@ -379,7 +379,7 @@ class DesktopLauncherTest(unittest.TestCase):
                 [
                     "corepack pnpm --dir tui build",
                     "corepack pnpm --dir desktop install --force --frozen-lockfile",
-                    f"miniclaw init --home {sandbox.state_home}",
+                    f"lobster0 init --home {sandbox.state_home}",
                     (
                         "corepack pnpm --dir desktop dev "
                         f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
@@ -403,7 +403,7 @@ class DesktopLauncherTest(unittest.TestCase):
                 [
                     "corepack pnpm --dir tui build",
                     'node -e require("./desktop/node_modules/electron")',
-                    f"miniclaw init --home {sandbox.state_home}",
+                    f"lobster0 init --home {sandbox.state_home}",
                     (
                         "corepack pnpm --dir desktop dev "
                         f"home={sandbox.state_home} env={sandbox.state_home / 'secrets.env'}"
@@ -426,7 +426,7 @@ class DesktopLauncherTest(unittest.TestCase):
                 sandbox.log_lines(),
                 [
                     "corepack pnpm --dir tui build",
-                    f"miniclaw init --home {sandbox.state_home}",
+                    f"lobster0 init --home {sandbox.state_home}",
                     (
                         "corepack pnpm --dir desktop dev "
                         f"home={sandbox.state_home} env={sandbox.root / '.env'}"

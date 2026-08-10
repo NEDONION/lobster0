@@ -1,4 +1,4 @@
-# MiniClaw Personal Machine 权限与本机 CLI 发现设计
+# Lobster0 Personal Machine 权限与本机 CLI 发现设计
 
 > 状态：Design approved，等待实现计划与 TDD 落地
 >
@@ -8,16 +8,16 @@
 
 ## 1. 为什么要做这一阶段
 
-当前 MiniClaw 的文件工具只能读取 Workspace，`run_command` 又只在固定系统 PATH 中查找程序。这套边界适合
+当前 Lobster0 的文件工具只能读取 Workspace，`run_command` 又只在固定系统 PATH 中查找程序。这套边界适合
 最早期 Demo，却不符合 personal agent 的产品定位：Agent 看不到 Owner 的普通项目、文档和通过 NVM、uv、pnpm
 安装的本机 CLI，也无法在 Owner 明确确认后修改 Workspace 外的普通文件。
 
-本阶段把 MiniClaw 从“Workspace 聊天 Demo”升级为“当前 macOS 用户下的受控 Personal Agent”：
+本阶段把 Lobster0 从“Workspace 聊天 Demo”升级为“当前 macOS 用户下的受控 Personal Agent”：
 
 - 普通个人文件可以全局搜索和读取；
 - `lark-cli` 等用户安装的可信 CLI 可以被稳定发现和执行；
 - Workspace 外写入仍须参数绑定 Approval；
-- 凭据、密钥、MiniClaw 状态和系统高敏感文件仍然拒绝；
+- 凭据、密钥、Lobster0 状态和系统高敏感文件仍然拒绝；
 - 不引入 `root`、`sudo`、任意 Shell 字符串或静默写入；
 - 文件工具和命令工具共享可解释、可审计的权限事实。
 
@@ -42,7 +42,7 @@
 用我已经安装的 CLI 查询本周创建的飞书文档。
 ```
 
-验收结果：MiniClaw 能发现 NVM 中的 `lark-cli`，Approval 展示解析后的真实 executable 与完整 argv；批准后使用
+验收结果：Lobster0 能发现 NVM 中的 `lark-cli`，Approval 展示解析后的真实 executable 与完整 argv；批准后使用
 最小环境执行，不需要模型用 `find /` 猜路径。
 
 ### 2.3 Workspace 外受控写入
@@ -60,7 +60,7 @@
 ```text
 读取 ~/.ssh/id_ed25519。
 读取任意 .env 文件。
-读取 MiniClaw SQLite 数据库。
+读取 Lobster0 SQLite 数据库。
 直接运行 sudo、bash -c、rm 或 git push。
 ```
 
@@ -185,7 +185,7 @@ applications/Lark.app
 - `~/.config` 下已知云凭据与认证目录；
 - `~/.local/share` 下已知凭据存储；
 - 密码管理器、VPN、即时通讯应用的私密数据目录；
-- MiniClaw `.env`、状态数据库、日志和配置；
+- Lobster0 `.env`、状态数据库、日志和配置；
 - socket、设备文件和非普通文件。
 
 敏感读取在 Phase 2.3B 仍是硬拒绝，不提供 Approval。未来若引入 `sensitive-read-once`，必须使用独立设计和数据
@@ -378,7 +378,7 @@ CLI-SENSITIVE-DENY-001
 ```bash
 uv run python -m unittest discover -s tests -v
 corepack pnpm --dir tui test
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 uv run ruff check .
 git diff --check
 ```
@@ -401,7 +401,7 @@ Phase 2.3B。
 
 - `personal` Profile 能读取普通 Home 文件且继续拒绝全部敏感回归集；
 - Workspace 外写入只能在显式 Write Roots 内通过 Allow once 执行；
-- MiniClaw 能确定性发现临时 NVM 与当前开发机的 `lark-cli`；
+- Lobster0 能确定性发现临时 NVM 与当前开发机的 `lark-cli`；
 - 子进程环境不含模型 Key、代理、Cookie、Token、`PYTHONPATH`；
 - 旧安装缺少新配置时仍保持 workspace-only；
 - TUI/Doctor 能解释当前 Profile、根数量、命令来源和审批含义；

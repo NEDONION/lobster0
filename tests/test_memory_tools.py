@@ -7,20 +7,20 @@ from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.models import DisclosureContext
-from miniclaw.memory.store import MemoryStore
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import ApprovalDecision
-from miniclaw.policy.engine import PolicyEngine
-from miniclaw.providers.base import ToolCall
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
-from miniclaw.tools.base import ToolContext, ToolValidationError
-from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
-from miniclaw.tools.registry import ToolRegistry
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.models import DisclosureContext
+from lobster0.memory.store import MemoryStore
+from lobster0.paths import build_state_paths
+from lobster0.policy.approvals import ApprovalDecision
+from lobster0.policy.engine import PolicyEngine
+from lobster0.providers.base import ToolCall
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import ApprovalRepository, ToolRunRepository
+from lobster0.tools.base import ToolContext, ToolValidationError
+from lobster0.tools.executor import ToolExecutor
+from lobster0.tools.memory import ProposeMemoryTool, ReadMemoryTool
+from lobster0.tools.registry import ToolRegistry
 
 
 class MemoryToolTest(unittest.IsolatedAsyncioTestCase):

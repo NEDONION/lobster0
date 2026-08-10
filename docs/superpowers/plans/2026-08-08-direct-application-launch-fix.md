@@ -26,8 +26,8 @@ Tool 数量，也不进入默认硬件查询。修订后的 live 目标是 `syst
 **Files:**
 - Modify: `tests/test_context.py`
 - Modify: `tests/test_tool_contract.py`
-- Modify: `src/miniclaw/agent/context.py`
-- Modify: `src/miniclaw/tools/command.py`
+- Modify: `src/lobster0/agent/context.py`
+- Modify: `src/lobster0/tools/command.py`
 
 **Interfaces:**
 - Consumes: `ContextBuilder.build(...)` 和 `RunCommandTool.definition`。
@@ -70,7 +70,7 @@ Expected: PASS。
 - [x] **Step 6: 提交契约修复**
 
 ```bash
-git add tests/test_context.py tests/test_tool_contract.py src/miniclaw/agent/context.py src/miniclaw/tools/command.py
+git add tests/test_context.py tests/test_tool_contract.py src/lobster0/agent/context.py src/lobster0/tools/command.py
 git commit -m "fix(agent): 引导 direct Tool action 与安全审批"
 ```
 
@@ -79,8 +79,8 @@ git commit -m "fix(agent): 引导 direct Tool action 与安全审批"
 **Files:**
 - Modify: `tests/test_system_info.py`
 - Modify: `tests/test_tool_contract.py`
-- Modify: `src/miniclaw/tools/system.py`
-- Modify: `src/miniclaw/tools/command.py`
+- Modify: `src/lobster0/tools/system.py`
+- Modify: `src/lobster0/tools/command.py`
 
 - [x] **Step 1: RED** — 断言 `applications` 显式分区、默认不枚举、固定根名称过滤，以及
   `run_command` description 要求不确定名称时先调用 `system_info applications`。
@@ -129,8 +129,8 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_eval_cases tests.test_cli_eval -v
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 ```
 
 Expected: 21 cases validated，21/21 passed。

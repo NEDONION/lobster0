@@ -1,4 +1,4 @@
-"""MiniClaw stdio Bridge 的异步请求、事件和生命周期测试。"""
+"""Lobster0 stdio Bridge 的异步请求、事件和生命周期测试。"""
 
 import asyncio
 import json
@@ -11,14 +11,14 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.bootstrap import initialize_state
-from miniclaw.bridge.__main__ import build_parser
-from miniclaw.bridge.conversations import ConversationQueryError
-from miniclaw.bridge.server import BridgeServer
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import ApprovalDecision
-from miniclaw.policy.modes import PermissionMode, PermissionState
+from lobster0.agent.events import RunEvent
+from lobster0.bootstrap import initialize_state
+from lobster0.bridge.__main__ import build_parser
+from lobster0.bridge.conversations import ConversationQueryError
+from lobster0.bridge.server import BridgeServer
+from lobster0.paths import build_state_paths
+from lobster0.policy.approvals import ApprovalDecision
+from lobster0.policy.modes import PermissionMode, PermissionState
 
 
 def _request(request_id: str, request_type: str, payload: dict) -> bytes:
@@ -215,10 +215,10 @@ async def _run_bridge_process(
     environment = {
         key: value
         for key, value in os.environ.items()
-        if key not in {"MINICLAW_ENV_FILE", "MINICLAW_MODEL_API_KEY"}
+        if key not in {"LOBSTER0_ENV_FILE", "LOBSTER0_MODEL_API_KEY"}
     }
     environment.update({"PYTHONPATH": str(project / "src"), **environ})
-    arguments = ["-m", "miniclaw.bridge", "--home", str(home)]
+    arguments = ["-m", "lobster0.bridge", "--home", str(home)]
     if workspace is not None:
         arguments.extend(("--workspace", str(workspace)))
     process = await asyncio.create_subprocess_exec(
@@ -255,7 +255,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
     def test_parser_accepts_absolute_workspace_override(self) -> None:
         """Desktop 可用独立参数绑定绝对 Workspace。"""
         arguments = build_parser().parse_args(
-            ["--home", "/state/miniclaw", "--workspace", "/work/report"]
+            ["--home", "/state/lobster0", "--workspace", "/work/report"]
         )
 
         self.assertEqual(arguments.workspace, Path("/work/report"))
@@ -272,7 +272,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             _request(
                 "hello-1",
                 "client.hello",
-                {"client_name": "miniclaw-pi-tui", "client_version": "0.1.0", "protocols": [1]},
+                {"client_name": "lobster0-pi-tui", "client_version": "0.1.0", "protocols": [1]},
             )
         )
         hello = await writer.wait_for_type("response.ok")
@@ -407,7 +407,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             ))
         )
         with patch(
-            "miniclaw.bridge.server.ScheduledTaskRepository",
+            "lobster0.bridge.server.ScheduledTaskRepository",
             return_value=repository,
         ):
             server = BridgeServer(runtime, reader, writer)
@@ -520,7 +520,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             returncode, stdout, stderr = await _run_bridge_process(
                 home,
                 Path(__file__).resolve().parent.parent,
-                {"MINICLAW_MODEL_API_KEY": "offline-test-key"},
+                {"LOBSTER0_MODEL_API_KEY": "offline-test-key"},
                 workspace=workspace,
             )
 
@@ -543,12 +543,12 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             installed_secret = "BRIDGE_INSTALLED_SECRET_SENTINEL"
             cwd_secret = "BRIDGE_CWD_SECRET_SENTINEL"
             paths.secrets_file.write_text(
-                f"MINICLAW_MODEL_API_KEY={installed_secret}\n",
+                f"LOBSTER0_MODEL_API_KEY={installed_secret}\n",
                 encoding="utf-8",
             )
             paths.secrets_file.chmod(0o600)
             (cwd / ".env").write_text(
-                f"export MINICLAW_MODEL_API_KEY={cwd_secret}\n",
+                f"export LOBSTER0_MODEL_API_KEY={cwd_secret}\n",
                 encoding="utf-8",
             )
             (cwd / ".env").chmod(0o600)
@@ -556,7 +556,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             returncode, stdout, stderr = await _run_bridge_process(
                 home,
                 cwd,
-                {"MINICLAW_ENV_FILE": str(paths.secrets_file)},
+                {"LOBSTER0_ENV_FILE": str(paths.secrets_file)},
             )
 
         output = stdout + stderr
@@ -574,7 +574,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             initialize_state(build_state_paths(home))
             cwd_secret = "BRIDGE_RELATIVE_PATH_SECRET_SENTINEL"
             (cwd / ".env").write_text(
-                f"MINICLAW_MODEL_API_KEY={cwd_secret}\n",
+                f"LOBSTER0_MODEL_API_KEY={cwd_secret}\n",
                 encoding="utf-8",
             )
             (cwd / ".env").chmod(0o600)
@@ -582,13 +582,13 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             returncode, stdout, stderr = await _run_bridge_process(
                 home,
                 cwd,
-                {"MINICLAW_ENV_FILE": "relative.env"},
+                {"LOBSTER0_ENV_FILE": "relative.env"},
             )
 
         output = stdout + stderr
         self.assertEqual(returncode, 2)
         self.assertEqual(stdout, b"")
-        self.assertEqual(stderr, b"error: MiniClaw Bridge startup failed\n")
+        self.assertEqual(stderr, b"error: Lobster0 Bridge startup failed\n")
         self.assertNotIn(cwd_secret.encode(), output)
 
     async def test_module_process_keeps_development_cwd_dotenv(self) -> None:
@@ -600,7 +600,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             cwd.mkdir()
             initialize_state(build_state_paths(home))
             (cwd / ".env").write_text(
-                "MINICLAW_MODEL_API_KEY=offline-development-key\n",
+                "LOBSTER0_MODEL_API_KEY=offline-development-key\n",
                 encoding="utf-8",
             )
             (cwd / ".env").chmod(0o600)

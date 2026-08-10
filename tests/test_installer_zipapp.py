@@ -45,14 +45,14 @@ class InstallerZipappTests(unittest.TestCase):
             (source / "__init__.py").write_text(
                 "import json\nimport os\nimport sys\nprint(sys.argv[0])\n"
                 "print(getattr(os, 'O_NOFOLLOW', 0))\n"
-                "from . import models\nfrom miniclaw.install import models\n",
+                "from . import models\nfrom lobster0.install import models\n",
                 encoding="utf-8",
             )
             (source / "models.py").write_text("from pathlib import Path\n", encoding="utf-8")
             builder.validate_imports(source)
 
     def test_ast_boundary_rejects_relative_import_that_escapes_install_package(self) -> None:
-        """两级 relative import 不得逃出 bundled miniclaw.install package。"""
+        """两级 relative import 不得逃出 bundled lobster0.install package。"""
         builder = _load_builder()
         with tempfile.TemporaryDirectory() as temporary:
             source = Path(temporary) / "install"
@@ -232,20 +232,20 @@ class InstallerZipappTests(unittest.TestCase):
         builder = _load_builder()
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "installer.pyz"
-            builder.build_zipapp(Path("src/miniclaw/install"), output)
+            builder.build_zipapp(Path("src/lobster0/install"), output)
             with zipfile.ZipFile(output) as archive:
                 infos = archive.infolist()
                 names = {info.filename for info in infos}
-            self.assertIn("miniclaw/install/orchestrator.py", names)
+            self.assertIn("lobster0/install/orchestrator.py", names)
             self.assertIn("__main__.py", names)
             self.assertFalse(any("__pycache__" in name for name in names))
             self.assertEqual(
                 {
                     name
                     for name in names
-                    if name.startswith("miniclaw/") and not name.startswith("miniclaw/install/")
+                    if name.startswith("lobster0/") and not name.startswith("lobster0/install/")
                 },
-                {"miniclaw/__init__.py"},
+                {"lobster0/__init__.py"},
             )
             self.assertEqual({info.date_time for info in infos}, {(1980, 1, 1, 0, 0, 0)})
 
@@ -255,8 +255,8 @@ class InstallerZipappTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             first = Path(temporary) / "first.pyz"
             second = Path(temporary) / "second.pyz"
-            builder.build_zipapp(Path("src/miniclaw/install"), first)
-            builder.build_zipapp(Path("src/miniclaw/install"), second)
+            builder.build_zipapp(Path("src/lobster0/install"), first)
+            builder.build_zipapp(Path("src/lobster0/install"), second)
             self.assertEqual(
                 hashlib.sha256(first.read_bytes()).digest(),
                 hashlib.sha256(second.read_bytes()).digest(),
@@ -270,7 +270,7 @@ class InstallerZipappTests(unittest.TestCase):
             output = root / "installer.pyz"
             empty = root / "empty"
             empty.mkdir()
-            builder.build_zipapp(Path("src/miniclaw/install"), output)
+            builder.build_zipapp(Path("src/lobster0/install"), output)
             completed = subprocess.run(
                 ("python3", "-I", str(output), "--help"),
                 cwd=empty,
@@ -281,7 +281,7 @@ class InstallerZipappTests(unittest.TestCase):
                 timeout=15,
             )
             self.assertEqual(completed.returncode, 0, completed.stderr.decode(errors="replace"))
-            self.assertIn(b"MiniClaw", completed.stdout)
+            self.assertIn(b"Lobster0", completed.stdout)
 
 
 if __name__ == "__main__":

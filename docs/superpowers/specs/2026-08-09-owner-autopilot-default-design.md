@@ -1,4 +1,4 @@
-# MiniClaw Owner Autopilot 默认值设计
+# Lobster0 Owner Autopilot 默认值设计
 
 > 状态：已确认，等待规格复核
 > 日期：2026-08-09
@@ -8,7 +8,7 @@
 
 当前新安装配置会显式生成 `[tools].mode = "autopilot"`，但配置加载器对缺少
 `tools.mode` 的旧配置仍回退到 `safe`。因此旧状态目录升级后，即使消息来自已验证的飞书
-Owner 私聊，安全的 `run_command` 仍会创建 pending Approval，并发送“MiniClaw 审批”卡片。
+Owner 私聊，安全的 `run_command` 仍会创建 pending Approval，并发送“Lobster0 审批”卡片。
 
 现场只读核对确认：审批 #97 来自 `chat_type=p2p` 且发送者与已绑定 Owner 身份匹配；问题不在
 飞书身份识别，而在旧配置的默认模式。
@@ -21,7 +21,7 @@ Owner 私聊，安全的 `run_command` 仍会创建 pending Approval，并发送
   `waiting_approval` ToolRun 或飞书审批卡片。
 - 群聊、其他白名单用户和非 Owner 私聊继续视为不可信入口，不获得自动执行权限。
 - 敏感路径、危险命令、Workspace 逃逸、SSRF、超时和结果预算等硬拒绝规则保持不变。
-- 当前 Owner 的 `~/.miniclaw/config.toml` 显式补入 `mode = "autopilot"`，使重启后的意图可见且稳定。
+- 当前 Owner 的 `~/.lobster0/config.toml` 显式补入 `mode = "autopilot"`，使重启后的意图可见且稳定。
 
 ## 3. 实现边界
 

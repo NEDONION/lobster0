@@ -1,4 +1,4 @@
-# MiniClaw Phase 2 lark-cli and Live Eval Implementation Plan
+# Lobster0 Phase 2 lark-cli and Live Eval Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -19,20 +19,20 @@
 - live eval 必须显式确认，不进入默认 offline gate，不输出 Prompt/reasoning/stdout/身份。
 - live smoke 不打开 Lark、不发消息、不修改飞书数据。
 - 每个生产行为先看到对应 unittest RED，再写最小 GREEN。
-- 保护未跟踪的 `docs/miniclaw-tui-stability-and-desktop-design.md` 与 `docs/superpowers/plans/2026-08-08-tui-polish-telemetry-approval.md`。
+- 保护未跟踪的 `docs/lobster0-tui-stability-and-desktop-design.md` 与 `docs/superpowers/plans/2026-08-08-tui-polish-telemetry-approval.md`。
 - 用户已明确授权在 `main` 上继续并最终 push；提交标题中英文各约一半。
 
 ---
 
 ## File Map
 
-- `src/miniclaw/policy/command.py`：可信 lark-cli/NVM 发现、目标识别、Node runtime bin 和硬禁止。
-- `src/miniclaw/tools/command.py`：为可信 lark-cli 构造最小 PATH，并提供 Provider 可见用法。
-- `src/miniclaw/runtime.py`：把三条 lark-cli 内置只读规则合并进现有 PolicyEngine。
-- `src/miniclaw/doctor.py`：增加不读取认证信息的 `lark_cli` PASS/WARN 检查。
-- `src/miniclaw/evals/cases.py`：解析独立 `live.expected`，不改变 offline responses。
-- `src/miniclaw/evals/runner.py`：运行真实 Provider、临时 State、结构 verifier 与 samples。
-- `src/miniclaw/cli.py`：增加显式 `--suite live --confirm-live --samples`。
+- `src/lobster0/policy/command.py`：可信 lark-cli/NVM 发现、目标识别、Node runtime bin 和硬禁止。
+- `src/lobster0/tools/command.py`：为可信 lark-cli 构造最小 PATH，并提供 Provider 可见用法。
+- `src/lobster0/runtime.py`：把三条 lark-cli 内置只读规则合并进现有 PolicyEngine。
+- `src/lobster0/doctor.py`：增加不读取认证信息的 `lark_cli` PASS/WARN 检查。
+- `src/lobster0/evals/cases.py`：解析独立 `live.expected`，不改变 offline responses。
+- `src/lobster0/evals/runner.py`：运行真实 Provider、临时 State、结构 verifier 与 samples。
+- `src/lobster0/cli.py`：增加显式 `--suite live --confirm-live --samples`。
 - `evals/scenarios/phase2.v1.jsonl`：更新打开应用 live expectation，增加只读 lark status case。
 - `tests/test_command_policy.py`：可信根、symlink、精确规则与硬拒绝。
 - `tests/test_run_command.py`：可信 Node PATH 与环境秘密隔离。
@@ -46,15 +46,15 @@
 - `docs/engineering/phase-3/phase-3-engineering-plan.md`：Phase 3 Memory/Skills/Compaction 工程落地文档。
 - `README.md`、架构、运行指南、工程索引、eval 文档和发布记录：同步真实门禁。
 - `docs/progress/index.html`：仓库进度页。
-- `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`：独立可点击进度页，不进入 Git。
+- `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`：独立可点击进度页，不进入 Git。
 
 ---
 
 ### Task 1: Trusted lark-cli Resolver and Runtime PATH
 
 **Files:**
-- Modify: `src/miniclaw/policy/command.py`
-- Modify: `src/miniclaw/tools/command.py`
+- Modify: `src/lobster0/policy/command.py`
+- Modify: `src/lobster0/tools/command.py`
 - Modify: `tests/test_command_policy.py`
 - Modify: `tests/test_run_command.py`
 
@@ -141,7 +141,7 @@ Expected before implementation: `lark-cli` 仍为 `command_not_found`，认证�
 - 执行成功；
 - PATH 第一项是同 Node version 的 `bin`；
 - PATH 其余部分等于 `SAFE_EXECUTABLE_PATH`；
-- `MINICLAW_TEST_SECRET`、`HTTPS_PROXY`、`MINICLAW_MODEL_API_KEY` 均不存在；
+- `LOBSTER0_TEST_SECRET`、`HTTPS_PROXY`、`LOBSTER0_MODEL_API_KEY` 均不存在；
 - 普通 Python command 的 PATH 不包含 NVM bin。
 
 - [ ] **Step 7: 运行 RED，再实现 `_safe_environment(resolved_program)`**
@@ -158,8 +158,8 @@ Expected before implementation: lark shebang 找不到同版本 Node 或 PATH �
 
 ```bash
 uv run python -m unittest tests.test_command_policy tests.test_run_command -v
-uv run ruff check src/miniclaw/policy/command.py src/miniclaw/tools/command.py tests/test_command_policy.py tests/test_run_command.py
-git add src/miniclaw/policy/command.py src/miniclaw/tools/command.py tests/test_command_policy.py tests/test_run_command.py
+uv run ruff check src/lobster0/policy/command.py src/lobster0/tools/command.py tests/test_command_policy.py tests/test_run_command.py
+git add src/lobster0/policy/command.py src/lobster0/tools/command.py tests/test_command_policy.py tests/test_run_command.py
 git commit -m "feat(command): 支持 trusted NVM lark-cli 执行"
 ```
 
@@ -168,10 +168,10 @@ git commit -m "feat(command): 支持 trusted NVM lark-cli 执行"
 ### Task 2: Exact Read-only Rules, Doctor, and Provider Contract
 
 **Files:**
-- Modify: `src/miniclaw/policy/command.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/doctor.py`
-- Modify: `src/miniclaw/tools/command.py`
+- Modify: `src/lobster0/policy/command.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/doctor.py`
+- Modify: `src/lobster0/tools/command.py`
 - Modify: `tests/test_command_policy.py`
 - Modify: `tests/test_doctor.py`
 - Modify: `tests/test_tool_contract.py`
@@ -246,8 +246,8 @@ Run: `uv run python -m unittest tests.test_doctor -v`
 
 ```bash
 uv run python -m unittest tests.test_command_policy tests.test_runtime tests.test_doctor tests.test_tool_contract -v
-uv run ruff check src/miniclaw/policy/command.py src/miniclaw/runtime.py src/miniclaw/doctor.py src/miniclaw/tools/command.py tests/test_command_policy.py tests/test_doctor.py tests/test_tool_contract.py
-git add src/miniclaw/policy/command.py src/miniclaw/runtime.py src/miniclaw/doctor.py src/miniclaw/tools/command.py tests/test_command_policy.py tests/test_doctor.py tests/test_tool_contract.py
+uv run ruff check src/lobster0/policy/command.py src/lobster0/runtime.py src/lobster0/doctor.py src/lobster0/tools/command.py tests/test_command_policy.py tests/test_doctor.py tests/test_tool_contract.py
+git add src/lobster0/policy/command.py src/lobster0/runtime.py src/lobster0/doctor.py src/lobster0/tools/command.py tests/test_command_policy.py tests/test_doctor.py tests/test_tool_contract.py
 git commit -m "feat(policy): 增加 lark-cli exact rules 与 Doctor"
 ```
 
@@ -256,8 +256,8 @@ git commit -m "feat(policy): 增加 lark-cli exact rules 与 Doctor"
 ### Task 3: Live Case Schema and Isolated Runner
 
 **Files:**
-- Modify: `src/miniclaw/evals/cases.py`
-- Modify: `src/miniclaw/evals/runner.py`
+- Modify: `src/lobster0/evals/cases.py`
+- Modify: `src/lobster0/evals/runner.py`
 - Modify: `tests/test_eval_cases.py`
 - Modify: `tests/test_eval_runner.py`
 
@@ -321,7 +321,7 @@ Run: `uv run python -m unittest tests.test_eval_runner -v`
 
 Expected: 缺少 `run_live_case/run_live_suite`。
 
-`run_live_case()` 创建 `TemporaryDirectory(prefix="miniclaw-live-eval-")`，初始化默认 state，使用传入 environ
+`run_live_case()` 创建 `TemporaryDirectory(prefix="lobster0-live-eval-")`，初始化默认 state，使用传入 environ
 加载 config/API key，构建 Runtime，执行一次 query，读取 ToolRun/Audit/Approval，最终 `await runtime.aclose()`。
 live verifier 对 `expected.tool_runs` 使用 exact tuple equality；不检查 Provider 内部请求文本。
 
@@ -329,8 +329,8 @@ live verifier 对 `expected.tool_runs` 使用 exact tuple equality；不检查 P
 
 ```bash
 uv run python -m unittest tests.test_eval_cases tests.test_eval_runner -v
-uv run ruff check src/miniclaw/evals/cases.py src/miniclaw/evals/runner.py tests/test_eval_cases.py tests/test_eval_runner.py
-git add src/miniclaw/evals/cases.py src/miniclaw/evals/runner.py tests/test_eval_cases.py tests/test_eval_runner.py
+uv run ruff check src/lobster0/evals/cases.py src/lobster0/evals/runner.py tests/test_eval_cases.py tests/test_eval_runner.py
+git add src/lobster0/evals/cases.py src/lobster0/evals/runner.py tests/test_eval_cases.py tests/test_eval_runner.py
 git commit -m "feat(eval): 增加 isolated live Provider runner"
 ```
 
@@ -339,7 +339,7 @@ git commit -m "feat(eval): 增加 isolated live Provider runner"
 ### Task 4: Live CLI, Lark Scenarios, and Output Redaction
 
 **Files:**
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/cli.py`
 - Modify: `evals/scenarios/phase2.v1.jsonl`
 - Modify: `evals/README.md`
 - Modify: `tests/test_cli_eval.py`
@@ -347,7 +347,7 @@ git commit -m "feat(eval): 增加 isolated live Provider runner"
 - Modify: `tests/test_eval_runner.py`
 
 **Interfaces:**
-- Produces: `miniclaw eval run --suite live --samples 1..5 --confirm-live`。
+- Produces: `lobster0 eval run --suite live --samples 1..5 --confirm-live`。
 - Produces: live cases `ACTION-OPEN-APP-001` 与 `LARK-STATUS-001`。
 - Consumes: Task 3 `run_live_suite()`。
 
@@ -391,8 +391,8 @@ live case 计入默认离线门禁。
 - [ ] **Step 5: 运行完整离线门禁，证明 live 没污染默认路径**
 
 ```bash
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 ```
 
 Expected: 22 cases validated；Offline eval 21/21 passed。
@@ -401,8 +401,8 @@ Expected: 22 cases validated；Offline eval 21/21 passed。
 
 ```bash
 uv run python -m unittest tests.test_cli_eval tests.test_eval_cases tests.test_eval_runner -v
-uv run ruff check src/miniclaw/cli.py src/miniclaw/evals tests/test_cli_eval.py tests/test_eval_cases.py tests/test_eval_runner.py
-git add src/miniclaw/cli.py evals/scenarios/phase2.v1.jsonl evals/README.md tests/test_cli_eval.py tests/test_eval_cases.py tests/test_eval_runner.py
+uv run ruff check src/lobster0/cli.py src/lobster0/evals tests/test_cli_eval.py tests/test_eval_cases.py tests/test_eval_runner.py
+git add src/lobster0/cli.py evals/scenarios/phase2.v1.jsonl evals/README.md tests/test_cli_eval.py tests/test_eval_cases.py tests/test_eval_runner.py
 git commit -m "feat(eval): 接通 explicit live gate 与 lark 场景"
 ```
 
@@ -433,7 +433,7 @@ Expected: resolver trusted，Policy `allow`，ToolResult ok，exit 0。
 - [ ] **Step 2: 运行真实 live gate**
 
 ```bash
-uv run miniclaw eval run --suite live --root evals/scenarios --samples 3 --confirm-live
+uv run lobster0 eval run --suite live --root evals/scenarios --samples 3 --confirm-live
 ```
 
 Expected: `ACTION-OPEN-APP-001` 与 `LARK-STATUS-001` 各 3 次，共 6/6。该命令不得消费 pending Approval 或
@@ -448,7 +448,7 @@ Policy、自动批准、删除断言或把 case 改成接受口头回答。
 - [ ] **Step 4: 提交仅由真实 smoke 证明必要的修复**
 
 ```bash
-git add src/miniclaw/policy/command.py src/miniclaw/tools/command.py src/miniclaw/runtime.py src/miniclaw/evals/runner.py src/miniclaw/agent/context.py tests/test_command_policy.py tests/test_run_command.py tests/test_runtime.py tests/test_eval_runner.py tests/test_context.py
+git add src/lobster0/policy/command.py src/lobster0/tools/command.py src/lobster0/runtime.py src/lobster0/evals/runner.py src/lobster0/agent/context.py tests/test_command_policy.py tests/test_run_command.py tests/test_runtime.py tests/test_eval_runner.py tests/test_context.py
 git commit -m "fix(live): 修复真实 lark-cli Agent 闭环"
 ```
 
@@ -492,7 +492,7 @@ Task 5 的事实。
 - 凭据过滤、Prompt injection、Skill hash/version、最多激活 3 个 Skill；
 - compaction 触发阈值、保留最近两轮与 pending Approval、原消息不删除；
 - 数据 schema/migration、错误码、模块职责、TDD 任务顺序、回归 query、调试、恢复、回滚和完成定义；
-- 参考 nanobot、ZeroClaw、RayClaw、openclaw-python 时区分“借鉴思想”和“MiniClaw 已实现事实”；
+- 参考 nanobot、ZeroClaw、RayClaw、openclaw-python 时区分“借鉴思想”和“Lobster0 已实现事实”；
 - 明确 Phase 3 不实现 Feishu/Telegram/Discord Channel 与自动改源码。
 
 文档不得包含未决占位符，也不能把 Phase 3 规划写成当前能力。
@@ -518,7 +518,7 @@ git commit -m "docs(phase3): 完成 Phase 2 事实与 Memory 落地方案"
 
 **Files:**
 - Modify: `docs/progress/index.html`
-- Modify outside Git: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
+- Modify outside Git: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`
 - Modify: `docs/superpowers/plans/2026-08-08-phase-2-lark-cli-live-eval.md`（只更新 checkbox/result）
 
 **Interfaces:**
@@ -533,7 +533,7 @@ Memory/Skills/Compaction next。不得再显示 P2.1B/153 tests 或“lark-cli p
 
 - [ ] **Step 2: 同步独立 HTML**
 
-把仓库页内容同步到用户指定文件；外部页的文档链接使用 GitHub `NEDONION/mini-claw` 地址，保证从
+把仓库页内容同步到用户指定文件；外部页的文档链接使用 GitHub `NEDONION/lobster0` 地址，保证从
 `file://` 打开仍可点击。该文件不执行 `git add`。
 
 - [ ] **Step 3: HTML 与可访问性门禁**
@@ -546,8 +546,8 @@ Memory/Skills/Compaction next。不得再显示 P2.1B/153 tests 或“lark-cli p
 ```bash
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 uv build
 git diff --check
 ```

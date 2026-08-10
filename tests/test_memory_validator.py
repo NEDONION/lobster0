@@ -2,9 +2,9 @@
 
 import unittest
 
-from miniclaw.memory.extractor import ExtractedCandidate
-from miniclaw.memory.flush import FlushSourceMessage
-from miniclaw.memory.validator import MemoryCandidateValidator
+from lobster0.memory.extractor import ExtractedCandidate
+from lobster0.memory.flush import FlushSourceMessage
+from lobster0.memory.validator import MemoryCandidateValidator
 
 
 class MemoryCandidateValidatorTest(unittest.TestCase):

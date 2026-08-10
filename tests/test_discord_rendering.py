@@ -2,11 +2,11 @@
 
 import unittest
 
-from miniclaw.channels.discord_rendering import (
+from lobster0.channels.discord_rendering import (
     render_discord_progress,
     render_discord_text,
 )
-from miniclaw.channels.progress import ProgressProjector
+from lobster0.channels.progress import ProgressProjector
 
 
 class DiscordRenderingTest(unittest.TestCase):
@@ -52,7 +52,7 @@ class DiscordRenderingTest(unittest.TestCase):
 
         rendered = render_discord_progress(progress, max_chars=2000)
 
-        self.assertEqual(rendered, "⏳ **MiniClaw 正在处理**\n正在理解请求")
+        self.assertEqual(rendered, "⏳ **Lobster0 正在处理**\n正在理解请求")
         self.assertNotIn("Claw Trail", rendered)
         self.assertNotIn("个工具", rendered)
 

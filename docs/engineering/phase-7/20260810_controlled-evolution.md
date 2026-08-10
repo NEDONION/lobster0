@@ -3,12 +3,12 @@
 > 文档日期：2026-08-10  
 > 状态：**ENGINEERING PLAN / NOT IMPLEMENTED**  
 > 前置条件：Phase 6 生产验收通过；Memory Autopilot A～E 已实现  
-> 核心原则：MiniClaw 可以提出改进，但不能自己批准、应用或部署改进
+> 核心原则：Lobster0 可以提出改进，但不能自己批准、应用或部署改进
 
 ## 1. 一句话解释
 
 Phase 7 要做的不是“让 Agent 随意改自己的源码”，而是建立一条受控流水线：Owner 对某条回答点好评或差评，
-MiniClaw 把反馈整理成脱敏测试案例，提出一个范围很小、可审查的 Prompt、Skill 或 Memory 候选版本，先跑完回归评测，
+Lobster0 把反馈整理成脱敏测试案例，提出一个范围很小、可审查的 Prompt、Skill 或 Memory 候选版本，先跑完回归评测，
 再由 Owner 批准精确哈希，最后由 Core 原子切换；发现问题时能切回上一版。
 
 ```mermaid
@@ -32,7 +32,7 @@ flowchart LR
 
 ### 2.1 飞书
 
-Owner 回复某条 MiniClaw 消息：
+Owner 回复某条 Lobster0 消息：
 
 ```text
 /good
@@ -44,7 +44,7 @@ Owner 回复某条 MiniClaw 消息：
 /bad 没有真正调用工具，只给了操作说明
 ```
 
-MiniClaw 只返回一张确认卡，包含反馈编号、目标回答的时间/摘要、rating 和是否记录成功。卡片不展示完整上下文、Token、
+Lobster0 只返回一张确认卡，包含反馈编号、目标回答的时间/摘要、rating 和是否记录成功。卡片不展示完整上下文、Token、
 Prompt、个人 Memory 或 Secret。`/bad` 只收集反馈，不会当场修改行为。
 
 当 Proposal 已评测完毕，Owner 可以在飞书看到摘要卡：目标类型、目标名称、变更摘要、评测结果、风险、candidate hash。
@@ -53,13 +53,13 @@ Prompt、个人 Memory 或 Secret。`/bad` 只收集反馈，不会当场修改�
 ### 2.2 CLI
 
 ```bash
-uv run miniclaw feedback list
-uv run miniclaw feedback show 42
-uv run miniclaw evolve propose --feedback 42
-uv run miniclaw evolve show 9
-uv run miniclaw evolve eval 9
-uv run miniclaw evolve apply 9
-uv run miniclaw evolve rollback 9
+uv run lobster0 feedback list
+uv run lobster0 feedback show 42
+uv run lobster0 evolve propose --feedback 42
+uv run lobster0 evolve show 9
+uv run lobster0 evolve eval 9
+uv run lobster0 evolve apply 9
+uv run lobster0 evolve rollback 9
 ```
 
 CLI 是首版完整管理入口。每条命令只做一个动作，不把 propose、eval、approve、apply 串成不可中断的“魔法命令”。
@@ -82,7 +82,7 @@ conflict、forget、promotion 和 reconcile 规则。
 
 下列目标即使 Owner 在聊天中要求，也不能通过 Evolution apply：
 
-- `src/miniclaw/` 中除受限 Skill staging 外的 Python Core；
+- `src/lobster0/` 中除受限 Skill staging 外的 Python Core；
 - `config.toml`、`.env`、Secret、Provider 凭据；
 - Policy、Approval、WorkspaceGuard、Sandbox、E-stop；
 - `tests/`、`evals/` 的既有 versioned case、基准答案和判定器；
@@ -109,7 +109,7 @@ approve、apply、rollback 权限。
 | Core Approval | 已有 Owner、TTL、参数绑定 hash、durable 状态和 Audit | **REUSE**，新增 evolution action kind |
 | Checkpoint rollback | 已有 workspace before-image rollback | **REUSE pattern**，不直接复用 workspace checkpoint 语义 |
 | Atomic file replace | Memory/Checkpoint 已有 tempfile、fsync、`os.replace` 模式 | **REUSE pattern** |
-| `src/miniclaw/evolution/` | 不存在 | **NEW**，实施时才创建 |
+| `src/lobster0/evolution/` | 不存在 | **NEW**，实施时才创建 |
 
 当前最新 SQLite migration 是 **v6 artifacts**。所以 Phase 7 应新增 `0007_controlled_evolution.sql`，不能沿用旧施工计划中
 过时的 `0006` 编号。占位表存在不等于功能已经实现；本文件发布后 Phase 7 仍是 NOT IMPLEMENTED。
@@ -428,7 +428,7 @@ Owner Approval、current hash binding 和 Audit。已回滚 Proposal 不可直�
 
 ### 13.2 Feishu
 
-- `/good`、`/bad <原因>` 只在回复 MiniClaw 消息时有效；
+- `/good`、`/bad <原因>` 只在回复 Lobster0 消息时有效；
 - 仅 Owner DM 或 Owner 在白名单群中的操作有效；
 - 普通自然语言中的“good/bad”不当作命令；
 - 重复 event 使用 source event ID 幂等；
@@ -442,21 +442,21 @@ Owner Approval、current hash binding 和 Audit。已回滚 Proposal 不可直�
 
 | 文件 | 职责 | 类型 |
 | --- | --- | --- |
-| `src/miniclaw/storage/migrations/0007_controlled_evolution.sql` | v7 schema 与数据迁移 | NEW |
-| `src/miniclaw/evolution/models.py` | immutable 数据对象和状态枚举 | NEW |
-| `src/miniclaw/evolution/repository.py` | Feedback/Proposal/Eval/ActiveRevision CAS | NEW |
-| `src/miniclaw/evolution/redaction.py` | 复用现有脱敏并生成 bounded case | NEW/REUSE |
-| `src/miniclaw/evolution/proposals.py` | 三类 candidate 的确定性编排 | NEW |
-| `src/miniclaw/evolution/evaluator.py` | 调用现有 Eval Runner 并生成 receipt | NEW/REUSE |
-| `src/miniclaw/evolution/revisions.py` | owner-only immutable artifacts、apply/rollback | NEW |
-| `src/miniclaw/evolution/service.py` | 唯一业务 Facade | NEW |
-| `src/miniclaw/cli.py` | feedback/evolve 子命令 | EXTEND |
-| `src/miniclaw/channels/manager.py` | IM 命令路由和卡片投递 | EXTEND |
-| `src/miniclaw/agent/runtime.py` | 每 Turn 读取 active snapshot | EXTEND |
-| `src/miniclaw/skills/loader.py` | staging validation/overlay | EXTEND |
-| `src/miniclaw/memory/service.py` | 应用 Memory review candidate | REUSE |
-| `src/miniclaw/storage/tooling.py` | evolution Approval kind | EXTEND |
-| `src/miniclaw/evals/`、`evals/scenarios/` | versioned evolution suites | EXTEND |
+| `src/lobster0/storage/migrations/0007_controlled_evolution.sql` | v7 schema 与数据迁移 | NEW |
+| `src/lobster0/evolution/models.py` | immutable 数据对象和状态枚举 | NEW |
+| `src/lobster0/evolution/repository.py` | Feedback/Proposal/Eval/ActiveRevision CAS | NEW |
+| `src/lobster0/evolution/redaction.py` | 复用现有脱敏并生成 bounded case | NEW/REUSE |
+| `src/lobster0/evolution/proposals.py` | 三类 candidate 的确定性编排 | NEW |
+| `src/lobster0/evolution/evaluator.py` | 调用现有 Eval Runner 并生成 receipt | NEW/REUSE |
+| `src/lobster0/evolution/revisions.py` | owner-only immutable artifacts、apply/rollback | NEW |
+| `src/lobster0/evolution/service.py` | 唯一业务 Facade | NEW |
+| `src/lobster0/cli.py` | feedback/evolve 子命令 | EXTEND |
+| `src/lobster0/channels/manager.py` | IM 命令路由和卡片投递 | EXTEND |
+| `src/lobster0/agent/runtime.py` | 每 Turn 读取 active snapshot | EXTEND |
+| `src/lobster0/skills/loader.py` | staging validation/overlay | EXTEND |
+| `src/lobster0/memory/service.py` | 应用 Memory review candidate | REUSE |
+| `src/lobster0/storage/tooling.py` | evolution Approval kind | EXTEND |
+| `src/lobster0/evals/`、`evals/scenarios/` | versioned evolution suites | EXTEND |
 
 最小公共接口：
 
@@ -599,16 +599,16 @@ Phase 7 只有同时满足以下条件才能从 NOT IMPLEMENTED 改为 IMPLEMENT
 ```bash
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval run --suite evolution --root evals/scenarios
-uv run miniclaw eval run --suite evolution --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite evolution --root evals/scenarios
+uv run lobster0 eval run --suite evolution --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 ```
 
 ## 20. 当前结论
 
-截至 2026-08-10，MiniClaw 已有 Memory、Skill Loader、Eval、Approval、Audit 和原子替换等可复用地基，但没有 Evolution
+截至 2026-08-10，Lobster0 已有 Memory、Skill Loader、Eval、Approval、Audit 和原子替换等可复用地基，但没有 Evolution
 Repository、Proposal workflow、Eval receipt、ActiveRevision、反馈 CLI/IM 或 apply/rollback 实现。因此本文件只是可施工的
 工程方案，**不是 Phase 7 已开发完成的证明**。必须先完成 Phase 6 生产验收，再按上面的 Task 顺序实施。

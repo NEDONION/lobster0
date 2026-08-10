@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace MiniClaw's abrupt eight-round stop with a 32→64 adaptive model budget and render structured Markdown correctly inside the single Feishu progress card.
+**Goal:** Replace Lobster0's abrupt eight-round stop with a 32→64 adaptive model budget and render structured Markdown correctly inside the single Feishu progress card.
 
 **Architecture:** Keep the existing `AgentRunner` and Feishu Card 2.0 boundaries. Add typed soft/hard/no-progress budgets to config, make Runner suppress exact repeated Tool requests and reserve a tool-free finalization request, then replace the answer-wide bullet flattener with a fence-aware Markdown normalizer that only degrades tables.
 
@@ -23,17 +23,17 @@
 ### Task 1: Typed adaptive budget configuration
 
 **Files:**
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/evals/runner.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/evals/runner.py`
 - Test: `tests/test_config.py`
 - Test: `tests/test_bootstrap.py`
 - Test: `tests/test_runtime.py`
 
 **Interfaces:**
 - Produces: `AgentConfig.max_tool_iterations: int`, `AgentConfig.max_tool_iterations_hard: int`, and `AgentConfig.max_no_progress_iterations: int`.
-- Produces: environment overrides `MINICLAW_MAX_TOOL_ITERATIONS_HARD` and `MINICLAW_MAX_NO_PROGRESS_ITERATIONS`.
+- Produces: environment overrides `LOBSTER0_MAX_TOOL_ITERATIONS_HARD` and `LOBSTER0_MAX_NO_PROGRESS_ITERATIONS`.
 - Consumes: existing `AgentRunner(..., max_iterations=...)` construction points, expanded in Task 2.
 
 - [ ] **Step 1: Write failing config tests**
@@ -99,7 +99,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit Task 1**
 
 ```bash
-git add src/miniclaw/config.py src/miniclaw/bootstrap.py src/miniclaw/runtime.py src/miniclaw/evals/runner.py tests/test_config.py tests/test_bootstrap.py tests/test_runtime.py
+git add src/lobster0/config.py src/lobster0/bootstrap.py src/lobster0/runtime.py src/lobster0/evals/runner.py tests/test_config.py tests/test_bootstrap.py tests/test_runtime.py
 git commit -m "feat(config): 增加 adaptive Agent loop budgets"
 ```
 
@@ -108,10 +108,10 @@ git commit -m "feat(config): 增加 adaptive Agent loop budgets"
 ### Task 2: Adaptive Runner, repeated-call guard and actionable diagnostics
 
 **Files:**
-- Modify: `src/miniclaw/agent/runner.py`
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/channels/manager.py`
-- Modify: `src/miniclaw/tui/app.py`
+- Modify: `src/lobster0/agent/runner.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/channels/manager.py`
+- Modify: `src/lobster0/tui/app.py`
 - Test: `tests/test_agent_runner.py`
 - Test: `tests/test_turn.py`
 - Test: `tests/test_channel_manager.py`
@@ -213,7 +213,7 @@ Expected: PASS, including existing Approval, cancellation and `loop_limit` tests
 - [ ] **Step 6: Commit Task 2**
 
 ```bash
-git add src/miniclaw/agent/runner.py src/miniclaw/agent/turn.py src/miniclaw/channels/manager.py src/miniclaw/tui/app.py tests/test_agent_runner.py tests/test_turn.py tests/test_channel_manager.py
+git add src/lobster0/agent/runner.py src/lobster0/agent/turn.py src/lobster0/channels/manager.py src/lobster0/tui/app.py tests/test_agent_runner.py tests/test_turn.py tests/test_channel_manager.py
 git commit -m "feat(agent): 自适应扩展 Tool Loop 并阻止重复调用"
 ```
 
@@ -222,7 +222,7 @@ git commit -m "feat(agent): 自适应扩展 Tool Loop 并阻止重复调用"
 ### Task 3: Structure-preserving Feishu Markdown renderer
 
 **Files:**
-- Modify: `src/miniclaw/channels/feishu_cards.py`
+- Modify: `src/lobster0/channels/feishu_cards.py`
 - Test: `tests/test_feishu_agent_card.py`
 - Test: `tests/test_channel_experience.py`
 
@@ -294,7 +294,7 @@ Expected: PASS, including exact tail-delivery assertions.
 - [ ] **Step 6: Commit Task 3**
 
 ```bash
-git add src/miniclaw/channels/feishu_cards.py tests/test_feishu_agent_card.py tests/test_channel_experience.py
+git add src/lobster0/channels/feishu_cards.py tests/test_feishu_agent_card.py tests/test_channel_experience.py
 git commit -m "fix(feishu): 保留 Markdown 结构并安全降级 tables"
 ```
 
@@ -306,7 +306,7 @@ git commit -m "fix(feishu): 保留 Markdown 结构并安全降级 tables"
 - Modify: `README.md`
 - Modify: `docs/getting-started/20260807_本地运行指南.md`
 - Modify: `docs/engineering/phase-1/20260807_agent-runner.md`
-- Modify: local untracked `/Users/nedonion/.miniclaw/config.toml` after Git merge
+- Modify: local untracked `/Users/nedonion/.lobster0/config.toml` after Git merge
 
 **Interfaces:**
 - Consumes: verified 32/64/3 config and Feishu Markdown behavior from Tasks 1–3.
@@ -324,7 +324,7 @@ PYTHONPATH=src ../../.venv/bin/python -m unittest tests.test_agent_runner tests.
 PYTHONPATH=src ../../.venv/bin/python -m unittest discover -s tests -v
 ../../.venv/bin/ruff check .
 PYTHONPATH=src ../../.venv/bin/python scripts/validate_docs.py
-PYTHONPATH=src ../../.venv/bin/python -m miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+PYTHONPATH=src ../../.venv/bin/python -m lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 git diff --check
 ```
 

@@ -1,4 +1,4 @@
-"""MiniClaw 离线本地诊断的行为测试。"""
+"""Lobster0 离线本地诊断的行为测试。"""
 
 import tempfile
 import unittest
@@ -6,26 +6,26 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.doctor import CheckStatus, run_local_checks
-from miniclaw.memory.markdown_store import MemoryMarkdownStore
-from miniclaw.memory.models import DisclosureContext, SourceRef
-from miniclaw.memory.repository import (
+from lobster0.bootstrap import initialize_state
+from lobster0.doctor import CheckStatus, run_local_checks
+from lobster0.memory.markdown_store import MemoryMarkdownStore
+from lobster0.memory.models import DisclosureContext, SourceRef
+from lobster0.memory.repository import (
     MemoryManifestRepository,
     MemoryReviewRepository,
     MemoryUnitRepository,
 )
-from miniclaw.memory.service import ExplicitMemoryRequest, MemoryService
-from miniclaw.memory.store import MemoryStore
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.engine import PolicyAction, PolicyDecision
-from miniclaw.providers.base import ToolCall
-from miniclaw.sandbox.base import SandboxUnavailableError
-from miniclaw.sandbox.docker import RootlessClientTransport
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ApprovalRepository
-from miniclaw.tools.base import ToolContext
+from lobster0.memory.service import ExplicitMemoryRequest, MemoryService
+from lobster0.memory.store import MemoryStore
+from lobster0.paths import build_state_paths
+from lobster0.policy.engine import PolicyAction, PolicyDecision
+from lobster0.providers.base import ToolCall
+from lobster0.sandbox.base import SandboxUnavailableError
+from lobster0.sandbox.docker import RootlessClientTransport
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import ApprovalRepository
+from lobster0.tools.base import ToolContext
 
 
 class DoctorTest(unittest.TestCase):
@@ -44,8 +44,8 @@ class DoctorTest(unittest.TestCase):
         self.tui_entry = self.paths.home / "main.js"
         self.tui_entry.write_text("// test entry\n", encoding="utf-8")
         self.tui_environ = {
-            "MINICLAW_NODE": str(self.node),
-            "MINICLAW_TUI_ENTRY": str(self.tui_entry),
+            "LOBSTER0_NODE": str(self.node),
+            "LOBSTER0_TUI_ENTRY": str(self.tui_entry),
         }
 
     def test_initialized_state_passes_all_local_checks(self) -> None:
@@ -59,7 +59,7 @@ class DoctorTest(unittest.TestCase):
         lark_cli.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         lark_cli.chmod(0o700)
 
-        with mock.patch("miniclaw.doctor.Path.home", return_value=owner_home):
+        with mock.patch("lobster0.doctor.Path.home", return_value=owner_home):
             results = run_local_checks(self.paths, self.tui_environ)
 
         self.assertEqual(
@@ -114,10 +114,10 @@ class DoctorTest(unittest.TestCase):
 
         with (
             mock.patch(
-                "miniclaw.doctor._browser_worker_root",
+                "lobster0.doctor._browser_worker_root",
                 return_value=self.root / "missing-worker",
             ),
-            mock.patch("miniclaw.doctor.shutil.which", return_value=None),
+            mock.patch("lobster0.doctor.shutil.which", return_value=None),
         ):
             results = run_local_checks(self.paths, self.tui_environ)
 
@@ -142,7 +142,7 @@ class DoctorTest(unittest.TestCase):
         chromium = self.root / "chromium"
         chromium.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         chromium.chmod(0o700)
-        lock = self.paths.browser / ".miniclaw-browser.lock"
+        lock = self.paths.browser / ".lobster0-browser.lock"
         lock.write_text('{"pid":999999,"token":"stale"}\n', encoding="utf-8")
 
         def discovered(command: str, *, path: str | None = None) -> str | None:
@@ -150,8 +150,8 @@ class DoctorTest(unittest.TestCase):
             return str(chromium) if command == "chromium" else None
 
         with (
-            mock.patch("miniclaw.doctor._browser_worker_root", return_value=worker),
-            mock.patch("miniclaw.doctor.shutil.which", side_effect=discovered),
+            mock.patch("lobster0.doctor._browser_worker_root", return_value=worker),
+            mock.patch("lobster0.doctor.shutil.which", side_effect=discovered),
         ):
             results = run_local_checks(self.paths, self.tui_environ)
 
@@ -166,14 +166,14 @@ class DoctorTest(unittest.TestCase):
         """启用 Automation 后缺失 Docker 必须 FAIL；默认关闭时不阻塞 Doctor。"""
         initialize_state(self.paths)
         config_text = self.paths.config.read_text(encoding="utf-8")
-        pinned_image = "example/miniclaw@sha256:" + "a" * 64
+        pinned_image = "example/lobster0@sha256:" + "a" * 64
         self.paths.config.write_text(
             config_text.replace("[automation]\nenabled = false", "[automation]\nenabled = true")
-            .replace('image = "miniclaw-sandbox:phase6"', f'image = "{pinned_image}"'),
+            .replace('image = "lobster0-sandbox:phase6"', f'image = "{pinned_image}"'),
             encoding="utf-8",
         )
 
-        with mock.patch("miniclaw.doctor.shutil.which", return_value=None):
+        with mock.patch("lobster0.doctor.shutil.which", return_value=None):
             results = run_local_checks(self.paths, self.tui_environ)
 
         sandbox = next(result for result in results if result.name == "sandbox_checkpoint")
@@ -184,10 +184,10 @@ class DoctorTest(unittest.TestCase):
         """Doctor 复用 rootless 边界且不打印 UID、Home 或 socket path。"""
         initialize_state(self.paths)
         config_text = self.paths.config.read_text(encoding="utf-8")
-        pinned_image = "example/miniclaw@sha256:" + "a" * 64
+        pinned_image = "example/lobster0@sha256:" + "a" * 64
         self.paths.config.write_text(
             config_text.replace("[automation]\nenabled = false", "[automation]\nenabled = true")
-            .replace('image = "miniclaw-sandbox:phase6"', f'image = "{pinned_image}"')
+            .replace('image = "lobster0-sandbox:phase6"', f'image = "{pinned_image}"')
             .replace('container_engine = "docker-rootless"',
                      'container_engine = "podman-rootless"'),
             encoding="utf-8",
@@ -205,7 +205,7 @@ class DoctorTest(unittest.TestCase):
         )
 
         with mock.patch(
-            "miniclaw.doctor.discover_rootless_client_transport",
+            "lobster0.doctor.discover_rootless_client_transport",
             return_value=transport,
         ):
             results = run_local_checks(self.paths, self.tui_environ)
@@ -219,7 +219,7 @@ class DoctorTest(unittest.TestCase):
         self.assertNotIn(str(private_socket), sandbox.message)
 
         with mock.patch(
-            "miniclaw.doctor.discover_rootless_client_transport",
+            "lobster0.doctor.discover_rootless_client_transport",
             side_effect=SandboxUnavailableError(),
         ):
             failed = run_local_checks(self.paths, self.tui_environ)
@@ -411,8 +411,8 @@ class DoctorTest(unittest.TestCase):
             )
         secret = "doctor-secret-private"
         environment = {
-            "MINICLAW_FEISHU_APP_ID": "cli_test",
-            "MINICLAW_FEISHU_APP_SECRET": secret,
+            "LOBSTER0_FEISHU_APP_ID": "cli_test",
+            "LOBSTER0_FEISHU_APP_SECRET": secret,
         }
         owner_home = self.root / "feishu-owner"
         nvm_bin = owner_home / ".config/nvm/versions/node/v20.19.0/bin"
@@ -427,9 +427,9 @@ class DoctorTest(unittest.TestCase):
             return None
 
         with (
-            mock.patch("miniclaw.doctor.Path.home", return_value=owner_home),
-            mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()),
-            mock.patch("miniclaw.doctor.shutil.which", side_effect=discovered_which),
+            mock.patch("lobster0.doctor.Path.home", return_value=owner_home),
+            mock.patch("lobster0.doctor.importlib.util.find_spec", return_value=object()),
+            mock.patch("lobster0.doctor.shutil.which", side_effect=discovered_which),
         ):
             results = run_local_checks(self.paths, environment)
 
@@ -464,10 +464,10 @@ class DoctorTest(unittest.TestCase):
             )
         environment = {
             **self.tui_environ,
-            "MINICLAW_FEISHU_APP_ID": "cli_private",
-            "MINICLAW_FEISHU_APP_SECRET": "feishu-private",
-            "MINICLAW_TELEGRAM_BOT_TOKEN": "telegram-private",
-            "MINICLAW_DISCORD_BOT_TOKEN": "discord-private",
+            "LOBSTER0_FEISHU_APP_ID": "cli_private",
+            "LOBSTER0_FEISHU_APP_SECRET": "feishu-private",
+            "LOBSTER0_TELEGRAM_BOT_TOKEN": "telegram-private",
+            "LOBSTER0_DISCORD_BOT_TOKEN": "discord-private",
         }
         spec_calls: list[str] = []
 
@@ -491,9 +491,9 @@ class DoctorTest(unittest.TestCase):
         self.assertIs(by_name["channel_workers"].status, CheckStatus.WARN)
         self.assertIn("9", by_name["channel_workers"].message)
         for name, value in environment.items():
-            if name.startswith("MINICLAW_") and name not in {
-                "MINICLAW_NODE",
-                "MINICLAW_TUI_ENTRY",
+            if name.startswith("LOBSTER0_") and name not in {
+                "LOBSTER0_NODE",
+                "LOBSTER0_TUI_ENTRY",
             }:
                 self.assertNotIn(value, repr(results))
 

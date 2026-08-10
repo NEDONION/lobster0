@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.evals.browser import run_browser_suite
-from miniclaw.evals.cases import EvalCaseError, load_browser_cases
+from lobster0.evals.browser import run_browser_suite
+from lobster0.evals.cases import EvalCaseError, load_browser_cases
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIO_ROOT = PROJECT_ROOT / "evals" / "scenarios"

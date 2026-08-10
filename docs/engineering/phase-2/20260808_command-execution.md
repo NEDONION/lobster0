@@ -6,7 +6,7 @@
 
 ## 1. 大白话解释
 
-MiniClaw 没有“运行一段 Shell 文本”这个入口。模型必须把动作拆成程序和参数数组：
+Lobster0 没有“运行一段 Shell 文本”这个入口。模型必须把动作拆成程序和参数数组：
 
 ```json
 {
@@ -47,7 +47,7 @@ flowchart TD
 | `timeout_seconds` | 默认 30，配置上限不超过 120，模型不能放大 |
 | 完整 argv | UTF-8 大小最多 32 KiB；控制字符与 NUL 拒绝 |
 
-不存在 `command`、`cwd`、`env`、stdin、PTY 或 background 参数。`cwd` 永远是当前 MiniClaw Workspace。
+不存在 `command`、`cwd`、`env`、stdin、PTY 或 background 参数。`cwd` 永远是当前 Lobster0 Workspace。
 
 ## 4. executable 规范化
 

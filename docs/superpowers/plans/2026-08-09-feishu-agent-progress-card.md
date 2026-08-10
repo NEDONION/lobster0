@@ -24,7 +24,7 @@
 ### Task 1: Build the bounded RunEvent projector
 
 **Files:**
-- Create: `src/miniclaw/channels/progress.py`
+- Create: `src/lobster0/channels/progress.py`
 - Create: `tests/test_channel_progress.py`
 
 **Interfaces:**
@@ -76,7 +76,7 @@ Add table-driven tests for file/search/HTTP/Memory/unknown Tool summaries, 17-st
 uv run python -m unittest tests.test_channel_progress -v
 ```
 
-Expected: import failure for `miniclaw.channels.progress`.
+Expected: import failure for `lobster0.channels.progress`.
 
 - [ ] **Step 3: Implement the minimal typed projector and redaction policy**
 
@@ -126,14 +126,14 @@ Expected: all projector tests pass with no warnings.
 - [ ] **Step 5: Commit the projector**
 
 ```bash
-git add src/miniclaw/channels/progress.py tests/test_channel_progress.py
+git add src/lobster0/channels/progress.py tests/test_channel_progress.py
 git commit -m "feat(channel): 增加 safe Agent progress projector"
 ```
 
 ### Task 2: Render the Feishu Claw Trail card
 
 **Files:**
-- Create: `src/miniclaw/channels/feishu_cards.py`
+- Create: `src/lobster0/channels/feishu_cards.py`
 - Create: `tests/test_feishu_agent_card.py`
 
 **Interfaces:**
@@ -150,7 +150,7 @@ card = rendered_card.card
 
 self.assertEqual(card["schema"], "2.0")
 self.assertEqual(card["header"]["template"], "green")
-self.assertEqual(card["header"]["title"]["content"], "MiniClaw · 已完成")
+self.assertEqual(card["header"]["title"]["content"], "Lobster0 · 已完成")
 rendered = json.dumps(card, ensure_ascii=False)
 self.assertIn("Claw Trail", rendered)
 self.assertIn("查询飞书云空间", rendered)
@@ -169,7 +169,7 @@ Add status cases mapping `running/completed/incomplete/waiting` to `blue/green/r
 uv run python -m unittest tests.test_feishu_agent_card -v
 ```
 
-Expected: import failure for `miniclaw.channels.feishu_cards`.
+Expected: import failure for `lobster0.channels.feishu_cards`.
 
 - [ ] **Step 3: Implement the Feishu and compact renderers**
 
@@ -207,18 +207,18 @@ uv run python -m unittest tests.test_feishu_agent_card -v
 - [ ] **Step 5: Commit the renderer**
 
 ```bash
-git add src/miniclaw/channels/feishu_cards.py tests/test_feishu_agent_card.py
+git add src/lobster0/channels/feishu_cards.py tests/test_feishu_agent_card.py
 git commit -m "feat(feishu): 渲染 Claw Trail rich card"
 ```
 
 ### Task 3: Feed structured progress through ChannelExperience
 
 **Files:**
-- Modify: `src/miniclaw/channels/experience.py`
-- Modify: `src/miniclaw/channels/feishu.py`
-- Modify: `src/miniclaw/channels/telegram.py`
-- Modify: `src/miniclaw/channels/discord.py`
-- Modify: `src/miniclaw/channels/capabilities.py`
+- Modify: `src/lobster0/channels/experience.py`
+- Modify: `src/lobster0/channels/feishu.py`
+- Modify: `src/lobster0/channels/telegram.py`
+- Modify: `src/lobster0/channels/discord.py`
+- Modify: `src/lobster0/channels/capabilities.py`
 - Modify: `tests/test_channel_experience.py`
 - Modify: `tests/test_channel_capabilities.py`
 - Modify: `tests/test_feishu_transport.py`
@@ -276,15 +276,15 @@ uv run python -m unittest tests.test_channel_experience tests.test_channel_capab
 - [ ] **Step 6: Commit the structured Experience integration**
 
 ```bash
-git add src/miniclaw/channels/experience.py src/miniclaw/channels/feishu.py src/miniclaw/channels/telegram.py src/miniclaw/channels/discord.py src/miniclaw/channels/capabilities.py tests/test_channel_experience.py tests/test_channel_capabilities.py tests/test_feishu_transport.py tests/test_telegram_transport.py tests/test_discord_transport.py
+git add src/lobster0/channels/experience.py src/lobster0/channels/feishu.py src/lobster0/channels/telegram.py src/lobster0/channels/discord.py src/lobster0/channels/capabilities.py tests/test_channel_experience.py tests/test_channel_capabilities.py tests/test_feishu_transport.py tests/test_telegram_transport.py tests/test_discord_transport.py
 git commit -m "feat(channel): stream structured Agent progress"
 ```
 
 ### Task 4: Persist the redacted trace and recover completed cards
 
 **Files:**
-- Modify: `src/miniclaw/storage/conversations.py`
-- Modify: `src/miniclaw/channels/manager.py`
+- Modify: `src/lobster0/storage/conversations.py`
+- Modify: `src/lobster0/channels/manager.py`
 - Modify: `tests/test_conversations.py`
 - Modify: `tests/test_channel_manager.py`
 
@@ -339,7 +339,7 @@ uv run python -m unittest tests.test_conversations tests.test_channel_manager -v
 - [ ] **Step 6: Commit durability support**
 
 ```bash
-git add src/miniclaw/storage/conversations.py src/miniclaw/channels/manager.py tests/test_conversations.py tests/test_channel_manager.py
+git add src/lobster0/storage/conversations.py src/lobster0/channels/manager.py tests/test_conversations.py tests/test_channel_manager.py
 git commit -m "feat(feishu): 持久化并恢复 progress trace"
 ```
 
@@ -404,8 +404,8 @@ Expected: Ruff and documentation validation pass.
 - [ ] **Step 3: Run Channel versioned and stability gates**
 
 ```bash
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 ```
 
 Expected: all versioned Channel cases and all 640 repeated checks pass. These remain `IMPLEMENTATION PASS`, not live Feishu evidence.

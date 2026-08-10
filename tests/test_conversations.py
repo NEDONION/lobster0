@@ -6,16 +6,16 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
-from miniclaw.providers.base import ModelMessage, ToolCall
-from miniclaw.storage.conversations import (
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
+from lobster0.providers.base import ModelMessage, ToolCall
+from lobster0.storage.conversations import (
     ConversationStateError,
     MessageRepository,
     SessionRepository,
     TurnRepository,
 )
-from miniclaw.storage.database import Database
+from lobster0.storage.database import Database
 
 
 class ConversationRepositoryTest(unittest.TestCase):

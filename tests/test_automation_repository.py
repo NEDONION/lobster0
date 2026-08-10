@@ -5,7 +5,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.automation.models import (
+from lobster0.automation.models import (
     DeliveryTarget,
     RunStatus,
     ScheduleKind,
@@ -13,16 +13,16 @@ from miniclaw.automation.models import (
     TaskBudget,
     TaskStatus,
 )
-from miniclaw.automation.repository import (
+from lobster0.automation.repository import (
     AutomationControlRepository,
     AutomationDataError,
     AutomationStateError,
     ScheduledTaskRepository,
     TaskRunRepository,
 )
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 
 
 class AutomationRepositoryTest(unittest.TestCase):
@@ -32,7 +32,7 @@ class AutomationRepositoryTest(unittest.TestCase):
         """创建带 Owner 和 v5 schema 的独立 SQLite。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        database_path = Path(self.temporary_directory.name) / "miniclaw.db"
+        database_path = Path(self.temporary_directory.name) / "lobster0.db"
         self.database = Database(database_path)
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()

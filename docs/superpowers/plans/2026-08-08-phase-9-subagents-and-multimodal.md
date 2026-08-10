@@ -1,4 +1,4 @@
-# MiniClaw Phase 9 Sub-agents and Multimodal Implementation Plan
+# Lobster0 Phase 9 Sub-agents and Multimodal Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -25,11 +25,11 @@
 ### Task 1: Subtask schema and strict configuration
 
 **Files:**
-- Modify: `src/miniclaw/config.py`
-- Create: `src/miniclaw/storage/migrations/0009_subtasks.sql`
-- Modify: `src/miniclaw/storage/migrations.py`
-- Create: `src/miniclaw/subagents/__init__.py`
-- Create: `src/miniclaw/subagents/models.py`
+- Modify: `src/lobster0/config.py`
+- Create: `src/lobster0/storage/migrations/0009_subtasks.sql`
+- Modify: `src/lobster0/storage/migrations.py`
+- Create: `src/lobster0/subagents/__init__.py`
+- Create: `src/lobster0/subagents/models.py`
 - Test: `tests/test_subagent_config.py`
 - Test: `tests/test_storage.py`
 
@@ -71,14 +71,14 @@ Persist parent task/session/turn, child session/task run, context mode/hash, all
 - [ ] **Step 4: Run config/storage tests and commit**
 
 ```bash
-git add src/miniclaw/config.py src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0009_subtasks.sql src/miniclaw/subagents tests/test_subagent_config.py tests/test_storage.py
+git add src/lobster0/config.py src/lobster0/storage/migrations.py src/lobster0/storage/migrations/0009_subtasks.sql src/lobster0/subagents tests/test_subagent_config.py tests/test_storage.py
 git commit -m "feat(subagents): persist bounded child tasks"
 ```
 
 ### Task 2: Permission-subset calculator
 
 **Files:**
-- Create: `src/miniclaw/subagents/policy.py`
+- Create: `src/lobster0/subagents/policy.py`
 - Test: `tests/test_subagent_policy.py`
 
 **Interfaces:**
@@ -108,15 +108,15 @@ Intersect tools, read/write roots, command/network rules, MCP servers, browser a
 - [ ] **Step 4: Run policy matrix tests and commit**
 
 ```bash
-git add src/miniclaw/subagents/policy.py tests/test_subagent_policy.py
+git add src/lobster0/subagents/policy.py tests/test_subagent_policy.py
 git commit -m "feat(subagents): prevent child permission escalation"
 ```
 
 ### Task 3: Isolated and bounded fork context
 
 **Files:**
-- Create: `src/miniclaw/subagents/context.py`
-- Modify: `src/miniclaw/agent/context.py`
+- Create: `src/lobster0/subagents/context.py`
+- Modify: `src/lobster0/agent/context.py`
 - Test: `tests/test_subagent_context.py`
 
 **Interfaces:**
@@ -148,17 +148,17 @@ Expected: module missing.
 - [ ] **Step 4: Run context tests and commit**
 
 ```bash
-git add src/miniclaw/subagents/context.py src/miniclaw/agent/context.py tests/test_subagent_context.py
+git add src/lobster0/subagents/context.py src/lobster0/agent/context.py tests/test_subagent_context.py
 git commit -m "feat(subagents): build isolated and bounded fork context"
 ```
 
 ### Task 4: Subagent runner and push-based completion
 
 **Files:**
-- Create: `src/miniclaw/subagents/runner.py`
-- Create: `src/miniclaw/subagents/announce.py`
-- Modify: `src/miniclaw/automation/runner.py`
-- Modify: `src/miniclaw/agent/turn.py`
+- Create: `src/lobster0/subagents/runner.py`
+- Create: `src/lobster0/subagents/announce.py`
+- Modify: `src/lobster0/automation/runner.py`
+- Modify: `src/lobster0/agent/turn.py`
 - Test: `tests/test_subagent_runner.py`
 - Test: `tests/test_subagent_announce.py`
 
@@ -192,17 +192,17 @@ Child receives a derived immutable Runtime snapshot. Completion stores a bounded
 - [ ] **Step 4: Run focused tests and commit**
 
 ```bash
-git add src/miniclaw/subagents/runner.py src/miniclaw/subagents/announce.py src/miniclaw/automation/runner.py src/miniclaw/agent/turn.py tests/test_subagent_runner.py tests/test_subagent_announce.py
+git add src/lobster0/subagents/runner.py src/lobster0/subagents/announce.py src/lobster0/automation/runner.py src/lobster0/agent/turn.py tests/test_subagent_runner.py tests/test_subagent_announce.py
 git commit -m "feat(subagents): execute and announce isolated child tasks"
 ```
 
 ### Task 5: spawn_subtask Tool and activity visibility
 
 **Files:**
-- Create: `src/miniclaw/tools/subagents.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/agent/events.py`
-- Modify: `src/miniclaw/bridge/protocol.py`
+- Create: `src/lobster0/tools/subagents.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/agent/events.py`
+- Modify: `src/lobster0/bridge/protocol.py`
 - Modify: `tui/src/`
 - Test: `tests/test_subagent_tool.py`
 - Test: `tests/test_pi_tui_integration.py`
@@ -222,18 +222,18 @@ Spawn returns immediately with subtask id. Parent can continue or wait through r
 - [ ] **Step 3: Run Tool/TUI tests and commit**
 
 ```bash
-git add src/miniclaw/tools/subagents.py src/miniclaw/runtime.py src/miniclaw/agent/events.py src/miniclaw/bridge/protocol.py tui tests/test_subagent_tool.py tests/test_pi_tui_integration.py
+git add src/lobster0/tools/subagents.py src/lobster0/runtime.py src/lobster0/agent/events.py src/lobster0/bridge/protocol.py tui tests/test_subagent_tool.py tests/test_pi_tui_integration.py
 git commit -m "feat(subagents): spawn and inspect bounded child work"
 ```
 
 ### Task 6: Unified inbound Attachment contract
 
 **Files:**
-- Modify: `src/miniclaw/channels/base.py`
-- Modify: `src/miniclaw/artifacts/store.py`
-- Create: `src/miniclaw/media/__init__.py`
-- Create: `src/miniclaw/media/models.py`
-- Create: `src/miniclaw/media/ingest.py`
+- Modify: `src/lobster0/channels/base.py`
+- Modify: `src/lobster0/artifacts/store.py`
+- Create: `src/lobster0/media/__init__.py`
+- Create: `src/lobster0/media/models.py`
+- Create: `src/lobster0/media/ingest.py`
 - Test: `tests/test_media_ingest.py`
 - Test: `tests/test_channel_contracts.py`
 
@@ -264,16 +264,16 @@ Stream to private temporary file with byte limit, hash while writing, validate m
 - [ ] **Step 4: Run media/contract tests and commit**
 
 ```bash
-git add src/miniclaw/channels/base.py src/miniclaw/artifacts/store.py src/miniclaw/media tests/test_media_ingest.py tests/test_channel_contracts.py
+git add src/lobster0/channels/base.py src/lobster0/artifacts/store.py src/lobster0/media tests/test_media_ingest.py tests/test_channel_contracts.py
 git commit -m "feat(media): validate unified inbound attachments"
 ```
 
 ### Task 7: Feishu, Telegram and Discord attachment adapters
 
 **Files:**
-- Modify: `src/miniclaw/channels/feishu.py`
-- Modify: `src/miniclaw/channels/telegram.py`
-- Modify: `src/miniclaw/channels/discord.py`
+- Modify: `src/lobster0/channels/feishu.py`
+- Modify: `src/lobster0/channels/telegram.py`
+- Modify: `src/lobster0/channels/discord.py`
 - Test: `tests/test_feishu_transport.py`
 - Test: `tests/test_telegram_transport.py`
 - Test: `tests/test_discord_transport.py`
@@ -292,17 +292,17 @@ DM/group admission and allowlists run before bytes download. Adapters emit typin
 - [ ] **Step 3: Run all channel adapter/transport tests and commit**
 
 ```bash
-git add src/miniclaw/channels/feishu.py src/miniclaw/channels/telegram.py src/miniclaw/channels/discord.py tests/test_feishu_transport.py tests/test_telegram_transport.py tests/test_discord_transport.py
+git add src/lobster0/channels/feishu.py src/lobster0/channels/telegram.py src/lobster0/channels/discord.py tests/test_feishu_transport.py tests/test_telegram_transport.py tests/test_discord_transport.py
 git commit -m "feat(channels): ingest safe cross-platform attachments"
 ```
 
 ### Task 8: Vision request support
 
 **Files:**
-- Modify: `src/miniclaw/providers/base.py`
-- Modify: `src/miniclaw/providers/openai_compatible.py`
-- Create: `src/miniclaw/media/router.py`
-- Modify: `src/miniclaw/agent/context.py`
+- Modify: `src/lobster0/providers/base.py`
+- Modify: `src/lobster0/providers/openai_compatible.py`
+- Create: `src/lobster0/media/router.py`
+- Modify: `src/lobster0/agent/context.py`
 - Test: `tests/test_vision_provider.py`
 - Test: `tests/test_media_router.py`
 
@@ -333,15 +333,15 @@ Read bounded image bytes only at Provider boundary, verify artifact hash again, 
 - [ ] **Step 4: Run Provider/media tests and commit**
 
 ```bash
-git add src/miniclaw/providers/base.py src/miniclaw/providers/openai_compatible.py src/miniclaw/media/router.py src/miniclaw/agent/context.py tests/test_vision_provider.py tests/test_media_router.py
+git add src/lobster0/providers/base.py src/lobster0/providers/openai_compatible.py src/lobster0/media/router.py src/lobster0/agent/context.py tests/test_vision_provider.py tests/test_media_router.py
 git commit -m "feat(media): route verified images to vision models"
 ```
 
 ### Task 9: Optional transcription and TTS providers
 
 **Files:**
-- Create: `src/miniclaw/media/speech.py`
-- Modify: `src/miniclaw/config.py`
+- Create: `src/lobster0/media/speech.py`
+- Modify: `src/lobster0/config.py`
 - Modify: `pyproject.toml`
 - Test: `tests/test_speech_providers.py`
 
@@ -359,15 +359,15 @@ Keep Core interfaces independent of vendor. STT transcript is `untrusted_media_c
 - [ ] **Step 3: Run speech tests and commit**
 
 ```bash
-git add src/miniclaw/media/speech.py src/miniclaw/config.py pyproject.toml uv.lock tests/test_speech_providers.py
+git add src/lobster0/media/speech.py src/lobster0/config.py pyproject.toml uv.lock tests/test_speech_providers.py
 git commit -m "feat(media): add optional bounded speech providers"
 ```
 
 ### Task 10: Cleanup, scenarios and v0.9.0
 
 **Files:**
-- Modify: `src/miniclaw/gateway.py`
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/gateway.py`
+- Modify: `src/lobster0/doctor.py`
 - Create: `evals/scenarios/subagents.v1.jsonl`
 - Create: `evals/scenarios/media.v1.jsonl`
 - Create: `docs/engineering/phase-9/subagents-and-multimodal.md`
@@ -391,10 +391,10 @@ uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 pnpm --dir tui build
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite subagents --root evals/scenarios
-uv run miniclaw eval run --suite media --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite subagents --root evals/scenarios
+uv run lobster0 eval run --suite media --root evals/scenarios
 uv run python scripts/validate_docs.py
 uv lock --check
 uv build
@@ -408,7 +408,7 @@ Spawn two bounded research subtasks and verify one-time parent completion; send 
 - [ ] **Step 4: Commit verified facts**
 
 ```bash
-git add src/miniclaw/gateway.py src/miniclaw/doctor.py evals docs README.md tests/test_documentation.py
+git add src/lobster0/gateway.py src/lobster0/doctor.py evals docs README.md tests/test_documentation.py
 git commit -m "release(v0.9.0): verify bounded subagents and media"
 ```
 

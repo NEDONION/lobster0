@@ -5,12 +5,12 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
-from miniclaw.channels.feishu import FeishuTransport
-from miniclaw.channels.progress import AgentProgress, ProgressProjector
-from miniclaw.config import FeishuConfig
-from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
+from lobster0.agent.events import RunEvent
+from lobster0.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
+from lobster0.channels.feishu import FeishuTransport
+from lobster0.channels.progress import AgentProgress, ProgressProjector
+from lobster0.config import FeishuConfig
+from lobster0.storage.channels import InboundEventKey, StoredInboundEvent
 from tests.fakes.fake_channel import (
     FakeOfficialSdk,
     FakeSdkSendResult,
@@ -260,7 +260,7 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         transport = self._transport(sdk)
         await transport.connect()
         value = {
-            "miniclaw_action": "approval",
+            "lobster0_action": "approval",
             "approval_id": 7,
             "decision": "once",
         }
@@ -374,7 +374,7 @@ class FeishuTransportTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("private question", repr(transport))
 
     async def test_sdk_failures_map_to_stable_redacted_errors(self) -> None:
-        """SDK 失败只暴露 MiniClaw 稳定码、重试属性和不确定发送属性。"""
+        """SDK 失败只暴露 Lobster0 稳定码、重试属性和不确定发送属性。"""
         cases = (
             (
                 FakeSdkSendResult(

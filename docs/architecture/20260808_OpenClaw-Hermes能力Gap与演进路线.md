@@ -1,14 +1,14 @@
-# MiniClaw 与 OpenClaw / Hermes 的能力 Gap 与演进路线
+# Lobster0 与 OpenClaw / Hermes 的能力 Gap 与演进路线
 
 > 日期：2026-08-08
 > 文档类型：产品与工程 Gap 分析
 > 当前事实基线：`main@729a801`
 > 当前状态：Phase 5 + Memory A～E **IMPLEMENTATION PASS**；Feishu **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**；Telegram / Discord **LIVE PENDING**
-> 目的：回答“MiniClaw 下一步究竟该学什么”，并把开源参考转成可测试、可回滚的工程边界。
+> 目的：回答“Lobster0 下一步究竟该学什么”，并把开源参考转成可测试、可回滚的工程边界。
 
 ## 1. 先用大白话说明
 
-MiniClaw 现在已经像一个“你叫它，它就能干活的新员工”：
+Lobster0 现在已经像一个“你叫它，它就能干活的新员工”：
 
 - 可以从 TUI、飞书、Telegram、Discord 接收消息；
 - 可以调用模型、文件、命令、HTTPS 和 Memory Tool；
@@ -17,7 +17,7 @@ MiniClaw 现在已经像一个“你叫它，它就能干活的新员工”：
 - 有 Markdown Memory、按需 Skills 和上下文压缩；
 - 有离线回归、Channel 回归、真实飞书验收 Runner。
 
-但 OpenClaw 和 Hermes 更像“长期在线、会主动跟进、会整理经验的私人管家”。MiniClaw 当前主要还缺五种能力：
+但 OpenClaw 和 Hermes 更像“长期在线、会主动跟进、会整理经验的私人管家”。Lobster0 当前主要还缺五种能力：
 
 1. **长期自治**：定时任务、Heartbeat、后台任务、主动通知；
 2. **现实世界操作**：浏览器点击、输入、截图和视觉验证；
@@ -25,7 +25,7 @@ MiniClaw 现在已经像一个“你叫它，它就能干活的新员工”：
 4. **更强安全与恢复**：OS Sandbox、资源预算、文件快照、回滚和 24×7 运维；
 5. **扩展与韧性**：MCP、标准 Skills、Provider fallback、Sub-agent 和多模态。
 
-这份路线不追求把 OpenClaw 和 Hermes 的功能数量全部复制过来。MiniClaw 的差异化目标是：
+这份路线不追求把 OpenClaw 和 Hermes 的功能数量全部复制过来。Lobster0 的差异化目标是：
 
 > 用更小、更容易读懂的 Python Core，证明一个个人 Agent 的每次行动和每次“进化”都可以被审计、评测、批准和回滚。
 
@@ -33,17 +33,17 @@ MiniClaw 现在已经像一个“你叫它，它就能干活的新员工”：
 
 以下只计算已经进入 `main` 且有测试证据的能力，不把本地未提交内容、假 SDK 或规划文档当成完成。
 
-| 能力域 | MiniClaw 当前状态 | 代码或证据入口 |
+| 能力域 | Lobster0 当前状态 | 代码或证据入口 |
 | --- | --- | --- |
-| Agent Core | OpenAI-compatible Provider、原生 Tool Calling、32 轮软预算 / 64 轮硬预算 / 连续 3 轮无进展保护；收口轮无 Tool schema，重复语义 Tool 不重执行 | `src/miniclaw/agent/`、`src/miniclaw/providers/` |
-| TUI | Python Core + TypeScript pi-tui、NDJSON v1、流式回答、Trace、审批、真实遥测 | `src/miniclaw/bridge/`、`tui/` |
-| Tool | 系统信息、文件读写、搜索、HTTPS GET、exact-argv 命令、Memory | `src/miniclaw/tools/` |
-| 安全 | Workspace/Personal Guard、敏感路径硬拒绝、四档权限、参数绑定审批 | `src/miniclaw/policy/` |
-| Memory | `MEMORY.md`、daily memory、审批写入、凭据过滤 | `src/miniclaw/memory/` |
-| Skills | `SKILL.md` metadata 扫描、确定性匹配、最多加载 3 个正文 | `src/miniclaw/skills/` |
-| 长上下文 | 80% 阈值压缩、保留原消息、最近 Turn 和 Approval 保护 | `src/miniclaw/agent/compaction.py` |
-| Channel | 飞书、Telegram、Discord 独立 Transport，共享 Agent Runtime | `src/miniclaw/channels/` |
-| 消息可靠性 | SQLite Inbox/Outbox、幂等、重试、恢复、Delivery 状态 | `src/miniclaw/storage/channels.py` |
+| Agent Core | OpenAI-compatible Provider、原生 Tool Calling、32 轮软预算 / 64 轮硬预算 / 连续 3 轮无进展保护；收口轮无 Tool schema，重复语义 Tool 不重执行 | `src/lobster0/agent/`、`src/lobster0/providers/` |
+| TUI | Python Core + TypeScript pi-tui、NDJSON v1、流式回答、Trace、审批、真实遥测 | `src/lobster0/bridge/`、`tui/` |
+| Tool | 系统信息、文件读写、搜索、HTTPS GET、exact-argv 命令、Memory | `src/lobster0/tools/` |
+| 安全 | Workspace/Personal Guard、敏感路径硬拒绝、四档权限、参数绑定审批 | `src/lobster0/policy/` |
+| Memory | `MEMORY.md`、daily memory、审批写入、凭据过滤 | `src/lobster0/memory/` |
+| Skills | `SKILL.md` metadata 扫描、确定性匹配、最多加载 3 个正文 | `src/lobster0/skills/` |
+| 长上下文 | 80% 阈值压缩、保留原消息、最近 Turn 和 Approval 保护 | `src/lobster0/agent/compaction.py` |
+| Channel | 飞书、Telegram、Discord 独立 Transport，共享 Agent Runtime | `src/lobster0/channels/` |
+| 消息可靠性 | SQLite Inbox/Outbox、幂等、重试、恢复、Delivery 状态 | `src/lobster0/storage/channels.py` |
 | 评测 | 520 Python、30 TypeScript、28 Agent、32 Channel、640 soak | `evals/`、`tests/` |
 | 真实平台 | 飞书 App/Bot/WebSocket 和两条 Owner DM Delivery 已验证 | `docs/engineering/phase-5/20260808_feishu-gateway-runtime-and-macos-service.md` |
 
@@ -53,7 +53,7 @@ MiniClaw 现在已经像一个“你叫它，它就能干活的新员工”：
 
 OpenClaw 最值得学习的不是某个按钮，而是它把个人 Agent 拆成清晰的运行机制：
 
-| OpenClaw 能力 | MiniClaw 应吸收的工程思想 | 不直接照搬的部分 |
+| OpenClaw 能力 | Lobster0 应吸收的工程思想 | 不直接照搬的部分 |
 | --- | --- | --- |
 | [Automation](https://docs.openclaw.ai/automation) | Cron、Heartbeat、Background Task、Hooks 使用不同语义，不用一个万能定时器 | 不一次实现所有 Task Flow 语法 |
 | [Browser](https://docs.openclaw.ai/browser) | Agent 专用浏览器 Profile、稳定 snapshot/ref、可见截图和人工登录 | 不控制用户日常浏览器 Profile |
@@ -68,7 +68,7 @@ OpenClaw 最值得学习的不是某个按钮，而是它把个人 Agent 拆成�
 
 Hermes 最值得学习的是把记忆、历史检索和 Skills 连成一个学习闭环：
 
-| Hermes 能力 | MiniClaw 应吸收的工程思想 | 不直接照搬的部分 |
+| Hermes 能力 | Lobster0 应吸收的工程思想 | 不直接照搬的部分 |
 | --- | --- | --- |
 | [Persistent Memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory/) | 小而稳定的核心记忆 + 大而按需的 Session Search | 不把所有历史都塞进 Prompt |
 | [Skills System](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills) | 复杂任务、纠错和成功路径可形成 Skill 提案 | Agent 不能直接无审批改生产 Skill |
@@ -80,7 +80,7 @@ Hermes 最值得学习的是把记忆、历史检索和 Skills 连成一个学�
 
 ### 3.3 其他 Claw-like 项目：辅助参考
 
-| 项目 | 重点参考 | MiniClaw 的取舍 |
+| 项目 | 重点参考 | Lobster0 的取舍 |
 | --- | --- | --- |
 | [nanobot](https://github.com/HKUDS/nanobot) | 小 Agent Loop、Python 可读性、轻量 Memory/MCP/部署 | 保持 Python Core 小而清楚 |
 | [ZeroClaw](https://github.com/zeroclaw-labs/zeroclaw) | OS Sandbox、风险档位、Tool receipt、单二进制部署 | 学安全分层，不为追求单二进制重写 Rust |
@@ -157,11 +157,11 @@ Phase 5.2 的退出条件不是“代码能启动”，而是：
 
 ### 5.3 浏览器必须使用独立 Profile
 
-浏览器包含登录态、Cookie、下载文件和现实世界副作用。首版只允许 MiniClaw 管理自己的 Chromium Profile：
+浏览器包含登录态、Cookie、下载文件和现实世界副作用。首版只允许 Lobster0 管理自己的 Chromium Profile：
 
 ```mermaid
 flowchart LR
-    USER["用户"] -->|"手工登录"| PROFILE["MiniClaw 专用 Profile"]
+    USER["用户"] -->|"手工登录"| PROFILE["Lobster0 专用 Profile"]
     AGENT["Agent"] --> POLICY["Browser Policy"]
     POLICY -->|"允许"| DRIVER["Browser Driver"]
     DRIVER --> PROFILE
@@ -172,7 +172,7 @@ flowchart LR
 
 ### 5.4 自我改进必须经过固定闸门
 
-MiniClaw 不能把“模型说自己变好了”当作进化成功。唯一允许的生产路径是：
+Lobster0 不能把“模型说自己变好了”当作进化成功。唯一允许的生产路径是：
 
 ```mermaid
 flowchart TD
@@ -202,12 +202,12 @@ flowchart LR
 
 ### Phase 5.2：生产稳定化
 
-**用户能感受到的结果**：MiniClaw 在 Mac 后台一直运行，飞书消息稳定有回复，断网和重启后不会重复执行。
+**用户能感受到的结果**：Lobster0 在 Mac 后台一直运行，飞书消息稳定有回复，断网和重启后不会重复执行。
 
 **范围**：
 
 - 飞书 15/15 live gate；
-- `miniclaw service install|status|logs|restart|uninstall`；
+- `lobster0 service install|status|logs|restart|uninstall`；
 - launchd 与 Docker Compose；
 - `/healthz` 只绑定 loopback，或使用本地 status socket；
 - 24h soak 和故障注入；
@@ -248,7 +248,7 @@ Agent Case 与 Skill 进化仍留在 Phase 7。
 
 ### Phase 6.5：Browser Agent
 
-**用户能感受到的结果**：MiniClaw 能打开专用浏览器，查页面、点击、填写、截图并验证结果。
+**用户能感受到的结果**：Lobster0 能打开专用浏览器，查页面、点击、填写、截图并验证结果。
 
 **范围**：
 
@@ -263,7 +263,7 @@ Agent Case 与 Skill 进化仍留在 Phase 7。
 
 ### Phase 7：受控学习与 Memory Reflection
 
-**用户能感受到的结果**：当你纠正 MiniClaw 后，它可以提出改进方案；只有测试通过并经你批准才会生效。
+**用户能感受到的结果**：当你纠正 Lobster0 后，它可以提出改进方案；只有测试通过并经你批准才会生效。
 
 **范围**：
 
@@ -357,7 +357,7 @@ flowchart TB
 
 ## 10. 成功标准
 
-完成这条路线后，MiniClaw 应能通过下面这段真实场景：
+完成这条路线后，Lobster0 应能通过下面这段真实场景：
 
 > 用户在飞书说：“每周五下午 5 点，统计我这周创建的飞书文档，打开管理页面核对数量，生成中文总结。如果失败就告诉我原因；如果你发现有更稳定的做法，先提出 Skill 修改并跑完回归，等我批准后再应用。”
 
@@ -374,4 +374,4 @@ flowchart TB
 9. 用户批准后版本化生效；
 10. 新版本退化时可以回滚。
 
-达到这个标准时，MiniClaw 才真正从“会执行工具的聊天 Agent”变成“长期在线、可控进化的个人 Agent”。
+达到这个标准时，Lobster0 才真正从“会执行工具的聊天 Agent”变成“长期在线、可控进化的个人 Agent”。

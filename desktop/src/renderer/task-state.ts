@@ -1,11 +1,11 @@
-import type { ServerFrame } from "@miniclaw/pi-tui/protocol";
+import type { ServerFrame } from "@lobster0/pi-tui/protocol";
 import {
   appendUser,
   createInitialState,
   reduceFrame,
   toggleItem,
   type AppState,
-} from "@miniclaw/pi-tui/state";
+} from "@lobster0/pi-tui/state";
 
 import type { SessionHistory } from "../common/api";
 

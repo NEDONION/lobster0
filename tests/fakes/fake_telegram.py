@@ -54,7 +54,7 @@ class FakeTelegramApplication:
         self.typing_outcomes = list(typing_outcomes)
         self.get_me_outcome = get_me_outcome or SimpleNamespace(
             id=999,
-            username="miniclaw_bot",
+            username="lobster0_bot",
         )
         self.during_start_update = during_start_update
         self.sent: list[dict[str, Any]] = []

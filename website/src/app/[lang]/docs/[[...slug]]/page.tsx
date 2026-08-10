@@ -11,7 +11,7 @@ import { getMDXComponents } from '@/components/docs/mdx-components';
 import { getLocale, localizedPath } from '@/lib/i18n';
 import { source } from '@/lib/source';
 
-const siteUrl = 'https://miniclaw.vercel.app';
+const siteUrl = 'https://lobster0.vercel.app';
 
 interface PageProps {
   params: Promise<{ lang: string; slug?: string[] }>;

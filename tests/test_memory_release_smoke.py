@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.evals.memory import run_memory_fixture
+from lobster0.evals.memory import run_memory_fixture
 
 
 class MemoryReleaseSmokeTest(unittest.IsolatedAsyncioTestCase):
@@ -12,7 +12,7 @@ class MemoryReleaseSmokeTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_cross_channel_restart_forget_smoke_is_sanitized(self) -> None:
         """四个私人入口跨重启召回，遗忘重建后同时停止召回。"""
-        with tempfile.TemporaryDirectory(prefix="miniclaw-memory-smoke-") as directory:
+        with tempfile.TemporaryDirectory(prefix="lobster0-memory-smoke-") as directory:
             root = Path(directory)
             disclosure = await run_memory_fixture(
                 "cross_channel_disclosure",

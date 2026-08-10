@@ -7,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       disallow: '/api/',
       userAgent: '*',
     },
-    sitemap: 'https://miniclaw.vercel.app/sitemap.xml',
+    sitemap: 'https://lobster0.vercel.app/sitemap.xml',
   };
 }

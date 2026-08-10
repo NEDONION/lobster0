@@ -23,10 +23,10 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.install import layout as layout_module
-from miniclaw.install import runtime as runtime_module
-from miniclaw.install.layout import InstallLayout, InstallLock
-from miniclaw.install.models import (
+from lobster0.install import layout as layout_module
+from lobster0.install import runtime as runtime_module
+from lobster0.install.layout import InstallLayout, InstallLock
+from lobster0.install.models import (
     Artifact,
     InstallError,
     NodePolicy,
@@ -34,8 +34,8 @@ from miniclaw.install.models import (
     PlatformKey,
     ReleaseManifest,
 )
-from miniclaw.install.receipt import InstallReceipt
-from miniclaw.install.runtime import (
+from lobster0.install.receipt import InstallReceipt
+from lobster0.install.runtime import (
     CommandResult,
     RuntimeBuilder,
     RuntimeInputs,
@@ -54,7 +54,7 @@ class FakeRunner:
         """初始化调用记录和默认成功输出。"""
         self.calls: list[tuple[tuple[str, ...], dict[str, str]]] = []
         self.fail_token: str | None = None
-        self.version = b"miniclaw 0.7.0\n"
+        self.version = b"lobster0 0.7.0\n"
         self.node_version = b"v24.18.0\n"
         self.python_version = (3, 12, 11)
         self.python_base_prefix: Path | None = None
@@ -63,7 +63,7 @@ class FakeRunner:
         self.tui_smoke = b'{"component":"pi-tui","status":"ok","version":"0.7.0"}\n'
         self.before_run: Callable[[tuple[str, ...]], None] | None = None
         self.venv_symlink_target: str | None = None
-        self.miniclaw_mode: int | None = 0o700
+        self.lobster0_mode: int | None = 0o700
 
     def run(
         self,
@@ -95,12 +95,12 @@ class FakeRunner:
                 (python.parent / "escape").symlink_to(self.venv_symlink_target)
         if len(argv) >= 3 and argv[1:3] == ("pip", "install") and "--no-deps" in argv:
             python = Path(argv[argv.index("--python") + 1])
-            if self.miniclaw_mode is not None:
-                (python.parent / "miniclaw").write_text(
+            if self.lobster0_mode is not None:
+                (python.parent / "lobster0").write_text(
                     "#!/bin/sh\nexit 0\n",
                     encoding="utf-8",
                 )
-                (python.parent / "miniclaw").chmod(self.miniclaw_mode)
+                (python.parent / "lobster0").chmod(self.lobster0_mode)
         if argv[-1:] == ("--version",) and "/node/" in argv[0]:
             return CommandResult(0, self.node_version, b"")
         if len(argv) >= 3 and argv[-2] == "-c":
@@ -123,9 +123,9 @@ class FakeRunner:
                 ).encode(),
                 b"",
             )
-        if argv[-2:] == ("miniclaw", "--version"):
+        if argv[-2:] == ("lobster0", "--version"):
             return CommandResult(0, self.version, b"")
-        if argv[-3:] == ("miniclaw", "install-smoke", "--json"):
+        if argv[-3:] == ("lobster0", "install-smoke", "--json"):
             return CommandResult(0, self.install_smoke, b"")
         if argv[-1:] == ("--smoke",):
             return CommandResult(0, self.tui_smoke, b"")
@@ -146,19 +146,19 @@ class InstallRuntimeTests(unittest.TestCase):
         self.layout = InstallLayout._build(
             self.home / "program",
             self.home / "state",
-            self.home / ".local" / "bin" / "miniclaw",
+            self.home / ".local" / "bin" / "lobster0",
             "0.7.0",
         )
         self.sources = self.root / "sources"
         self.sources.mkdir(mode=0o700)
-        self.wheel = self.sources / "miniclaw_agent-0.7.0-py3-none-any.whl"
+        self.wheel = self.sources / "lobster0_agent-0.7.0-py3-none-any.whl"
         self._write_wheel()
         self.requirements = self.sources / "requirements-all.lock"
         self._write_private(
             self.requirements,
             b"httpx==0.28.1 --hash=sha256:" + b"1" * 64 + b"\n",
         )
-        self.installer = self.sources / "miniclaw-installer.pyz"
+        self.installer = self.sources / "lobster0-installer.pyz"
         self._write_private(self.installer, b"verified installer")
         self.node = self.sources / "node"
         self.node.mkdir(mode=0o700)
@@ -274,24 +274,24 @@ class InstallRuntimeTests(unittest.TestCase):
     def _write_wheel(
         self,
         *,
-        name: str = "miniclaw-agent",
+        name: str = "lobster0-agent",
         version: str = "0.7.0",
-        entry: str | None = "miniclaw = miniclaw.cli:main",
+        entry: str | None = "lobster0 = lobster0.cli:main",
         path: Path | None = None,
     ) -> None:
         """写入只含 metadata/entry point 的最小 wheel fixture。"""
         wheel = self.wheel if path is None else path
-        dist_version = wheel.name.removeprefix("miniclaw_agent-").removesuffix(
+        dist_version = wheel.name.removeprefix("lobster0_agent-").removesuffix(
             "-py3-none-any.whl"
         )
         with zipfile.ZipFile(wheel, "w") as archive:
             archive.writestr(
-                f"miniclaw_agent-{dist_version}.dist-info/METADATA",
+                f"lobster0_agent-{dist_version}.dist-info/METADATA",
                 f"Metadata-Version: 2.4\nName: {name}\nVersion: {version}\n",
             )
             if entry is not None:
                 archive.writestr(
-                    f"miniclaw_agent-{dist_version}.dist-info/entry_points.txt",
+                    f"lobster0_agent-{dist_version}.dist-info/entry_points.txt",
                     f"[console_scripts]\n{entry}\n",
                 )
         wheel.chmod(0o600)
@@ -308,13 +308,13 @@ class InstallRuntimeTests(unittest.TestCase):
                 filename = (
                     wheel.name
                     if wheel is not None
-                    else f"miniclaw_agent-{version}-py3-none-any.whl"
+                    else f"lobster0_agent-{version}-py3-none-any.whl"
                 )
                 if wheel is not None:
                     sha256 = hashlib.sha256(wheel.read_bytes()).hexdigest()
                     size = wheel.stat().st_size
             elif artifact.kind == "tui":
-                filename = f"miniclaw-tui-{version}-linux-x86_64.tar.gz"
+                filename = f"lobster0-tui-{version}-linux-x86_64.tar.gz"
             if artifact.kind != "node":
                 component_version = version
             artifacts.append(
@@ -322,7 +322,7 @@ class InstallRuntimeTests(unittest.TestCase):
                     artifact,
                     filename=filename,
                     url=(
-                        "https://github.com/NEDONION/mini-claw/releases/"
+                        "https://github.com/NEDONION/lobster0/releases/"
                         f"download/v{version}/{filename}"
                     ),
                     sha256=sha256,
@@ -346,15 +346,15 @@ class InstallRuntimeTests(unittest.TestCase):
         filename = {
             "wheel": self.wheel.name,
             "requirements": self.requirements.name,
-            "node": "miniclaw-node-24.18.0-linux-x86_64.tar.gz",
-            "tui": "miniclaw-tui-0.7.0-linux-x86_64.tar.gz",
+            "node": "lobster0-node-24.18.0-linux-x86_64.tar.gz",
+            "tui": "lobster0-tui-0.7.0-linux-x86_64.tar.gz",
             "installer": self.installer.name,
         }[kind]
         value = digest or hashlib.sha256(path.read_bytes()).hexdigest()
         return Artifact(
             kind=kind,  # type: ignore[arg-type]
             filename=filename,
-            url=f"https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/{filename}",
+            url=f"https://github.com/NEDONION/lobster0/releases/download/v0.7.0/{filename}",
             sha256=value,
             size=path.stat().st_size if path.is_file() else 1,
             media_type={
@@ -369,7 +369,7 @@ class InstallRuntimeTests(unittest.TestCase):
             source_repository=(
                 "https://github.com/nodejs/node"
                 if is_node
-                else "https://github.com/NEDONION/mini-claw"
+                else "https://github.com/NEDONION/lobster0"
             ),
             license_ref="MIT",
             upstream_sha256="e" * 64 if is_node else None,
@@ -379,7 +379,7 @@ class InstallRuntimeTests(unittest.TestCase):
         """返回与当前 source files hash 完全绑定的 Release。"""
         return ReleaseManifest(
             schema_version=1,
-            product="miniclaw",
+            product="lobster0",
             version="0.7.0",
             git_commit="0123456789abcdef0123456789abcdef01234567",
             python="3.12",
@@ -590,8 +590,8 @@ class InstallRuntimeTests(unittest.TestCase):
                     "installer", self.platform
                 ).sha256,
                 executables_sha256=hashlib.sha256(
-                    b'{"executables":["miniclaw-installer.pyz","node/bin/node",'
-                    b'"python/bin/python3.12","venv/bin/miniclaw"]}\n'
+                    b'{"executables":["lobster0-installer.pyz","node/bin/node",'
+                    b'"python/bin/python3.12","venv/bin/lobster0"]}\n'
                 ).hexdigest(),
             ),
         )
@@ -603,7 +603,7 @@ class InstallRuntimeTests(unittest.TestCase):
             0o600,
         )
         self.assertEqual(
-            stat.S_IMODE((self.layout.runtime / "miniclaw-installer.pyz").stat().st_mode),
+            stat.S_IMODE((self.layout.runtime / "lobster0-installer.pyz").stat().st_mode),
             0o700,
         )
         self.assertEqual(
@@ -686,14 +686,14 @@ class InstallRuntimeTests(unittest.TestCase):
     def test_system_runtime_is_root_owned_public_program_data_and_activates(self) -> None:
         """system Runtime 的 0700/0600 发布树会让目标用户无法启动。"""
         (self.node / "README.md").chmod(0o700)
-        system_prefix = self.root / "usr-local-lib" / "miniclaw"
+        system_prefix = self.root / "usr-local-lib" / "lobster0"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
-        system_command = self.root / "usr-local-bin" / "miniclaw"
+        system_command = self.root / "usr-local-bin" / "lobster0"
         state_home = self.home / "system-state"
         state_home.mkdir(mode=0o700)
         secret = state_home / "secrets.env"
-        self._write_private(secret, b"MINICLAW_TEST_SECRET=preserved\n")
+        self._write_private(secret, b"LOBSTER0_TEST_SECRET=preserved\n")
         with (
             mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
             mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
@@ -715,10 +715,10 @@ class InstallRuntimeTests(unittest.TestCase):
                 activate_runtime(layout, receipt)
 
             executable_paths = {
-                layout.runtime / "miniclaw-installer.pyz",
+                layout.runtime / "lobster0-installer.pyz",
                 layout.runtime / "node" / "bin" / "node",
                 layout.runtime / "python" / "bin" / "python3.12",
-                layout.runtime / "venv" / "bin" / "miniclaw",
+                layout.runtime / "venv" / "bin" / "lobster0",
             }
             for directory, names, files in os.walk(
                 layout.runtime, topdown=True, followlinks=False
@@ -757,10 +757,10 @@ class InstallRuntimeTests(unittest.TestCase):
                     )
                 )["executables"],
                 [
-                    "miniclaw-installer.pyz",
+                    "lobster0-installer.pyz",
                     "node/bin/node",
                     "python/bin/python3.12",
-                    "venv/bin/miniclaw",
+                    "venv/bin/lobster0",
                 ],
             )
             self.assertEqual(os.readlink(layout.current), "runtimes/0.7.0")
@@ -772,17 +772,17 @@ class InstallRuntimeTests(unittest.TestCase):
             )
             self.assertEqual(stat.S_IMODE(state_home.stat().st_mode), 0o700)
             self.assertEqual(stat.S_IMODE(secret.stat().st_mode), 0o600)
-            self.assertEqual(secret.read_bytes(), b"MINICLAW_TEST_SECRET=preserved\n")
+            self.assertEqual(secret.read_bytes(), b"LOBSTER0_TEST_SECRET=preserved\n")
 
     def test_user_runtime_keeps_exact_private_modes(self) -> None:
         """system 权限分支不得把默认用户 Runtime 扩大成 public-readable。"""
         (self.node / "README.md").chmod(0o700)
         RuntimeBuilder(self.runner).build(self.inputs)
         executable_paths = {
-            self.layout.runtime / "miniclaw-installer.pyz",
+            self.layout.runtime / "lobster0-installer.pyz",
             self.layout.runtime / "node" / "bin" / "node",
             self.layout.runtime / "python" / "bin" / "python3.12",
-            self.layout.runtime / "venv" / "bin" / "miniclaw",
+            self.layout.runtime / "venv" / "bin" / "lobster0",
         }
         for directory, names, files in os.walk(
             self.layout.runtime, topdown=True, followlinks=False
@@ -802,17 +802,17 @@ class InstallRuntimeTests(unittest.TestCase):
                 )
             )["executables"],
             [
-                "miniclaw-installer.pyz",
+                "lobster0-installer.pyz",
                 "node/bin/node",
                 "python/bin/python3.12",
-                "venv/bin/miniclaw",
+                "venv/bin/lobster0",
             ],
         )
 
-    def test_user_runtime_requires_executable_miniclaw_entrypoint(self) -> None:
-        """user Runtime 的必需 miniclaw entry script 为 0600 时必须拒绝。"""
+    def test_user_runtime_requires_executable_lobster0_entrypoint(self) -> None:
+        """user Runtime 的必需 lobster0 entry script 为 0600 时必须拒绝。"""
         runner = FakeRunner()
-        runner.miniclaw_mode = 0o600
+        runner.lobster0_mode = 0o600
 
         with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
             RuntimeBuilder(runner).build(self.inputs)
@@ -823,11 +823,11 @@ class InstallRuntimeTests(unittest.TestCase):
     def test_user_runtime_accepts_safe_initial_entry_mode_and_hardens_it(self) -> None:
         """uv 生成 owner-x 且不可写的 0711 entry 应在发布前收敛为 0700。"""
         runner = FakeRunner()
-        runner.miniclaw_mode = 0o711
+        runner.lobster0_mode = 0o711
 
         RuntimeBuilder(runner).build(self.inputs)
 
-        entry = self.layout.runtime / "venv" / "bin" / "miniclaw"
+        entry = self.layout.runtime / "venv" / "bin" / "lobster0"
         self.assertEqual(stat.S_IMODE(entry.stat().st_mode), 0o700)
         executable_manifest = json.loads(
             (self.layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
@@ -837,17 +837,17 @@ class InstallRuntimeTests(unittest.TestCase):
         self.assertEqual(
             executable_manifest["executables"],
             [
-                "miniclaw-installer.pyz",
+                "lobster0-installer.pyz",
                 "node/bin/node",
                 "python/bin/python3.12",
-                "venv/bin/miniclaw",
+                "venv/bin/lobster0",
             ],
         )
 
     def test_user_runtime_rejects_writable_initial_entry_mode(self) -> None:
         """uv entry 的 group/world 写位必须在任何 harden 或发布前拒绝。"""
         runner = FakeRunner()
-        runner.miniclaw_mode = 0o722
+        runner.lobster0_mode = 0o722
 
         with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
             RuntimeBuilder(runner).build(self.inputs)
@@ -855,16 +855,16 @@ class InstallRuntimeTests(unittest.TestCase):
         self.assertFalse(self.layout.staging.exists())
         self.assertFalse(self.layout.runtime.exists())
 
-    def test_system_runtime_requires_present_miniclaw_entrypoint(self) -> None:
-        """system Runtime 也不能在缺少必需 miniclaw entry script 时发布。"""
-        system_prefix = self.root / "missing-entry-prefix" / "miniclaw"
+    def test_system_runtime_requires_present_lobster0_entrypoint(self) -> None:
+        """system Runtime 也不能在缺少必需 lobster0 entry script 时发布。"""
+        system_prefix = self.root / "missing-entry-prefix" / "lobster0"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
-        system_command = self.root / "missing-entry-bin" / "miniclaw"
+        system_command = self.root / "missing-entry-bin" / "lobster0"
         state_home = self.home / "missing-entry-state"
         state_home.mkdir(mode=0o700)
         runner = FakeRunner()
-        runner.miniclaw_mode = None
+        runner.lobster0_mode = None
 
         with (
             mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
@@ -890,10 +890,10 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_system_runtime_rejects_non_root_before_write(self) -> None:
         """非 root builder 即使持有 system layout 也不能创建任何程序目录。"""
-        system_prefix = self.root / "system-prefix" / "miniclaw"
+        system_prefix = self.root / "system-prefix" / "lobster0"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
-        system_command = self.root / "system-bin" / "miniclaw"
+        system_command = self.root / "system-bin" / "lobster0"
         state_home = self.home / "system-state"
         state_home.mkdir(mode=0o700)
         with (
@@ -922,10 +922,10 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_system_runtime_failure_cleans_public_staging(self) -> None:
         """system build 失败仍须清理本轮 0755 staging，不能留下半成品。"""
-        system_prefix = self.root / "failed-system-prefix" / "miniclaw"
+        system_prefix = self.root / "failed-system-prefix" / "lobster0"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
-        system_command = self.root / "failed-system-bin" / "miniclaw"
+        system_command = self.root / "failed-system-bin" / "lobster0"
         state_home = self.home / "failed-system-state"
         state_home.mkdir(mode=0o700)
         runner = FakeRunner()
@@ -956,10 +956,10 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_system_staging_and_transient_inputs_stay_private_during_smoke(self) -> None:
         """system staging 在最终发布前不得让目标用户读取输入或半成品。"""
-        system_prefix = self.root / "private-staging-prefix" / "miniclaw"
+        system_prefix = self.root / "private-staging-prefix" / "lobster0"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
-        system_command = self.root / "private-staging-bin" / "miniclaw"
+        system_command = self.root / "private-staging-bin" / "lobster0"
         state_home = self.home / "private-staging-state"
         state_home.mkdir(mode=0o700)
         observed: list[tuple[str, str, int]] = []
@@ -1019,10 +1019,10 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_system_cleanup_rename_failure_leaves_same_staging_inode_private(self) -> None:
         """cleanup quarantine 失败时公开 staging 至少必须撤回到 owner-only。"""
-        system_prefix = self.root / "cleanup-failure-prefix" / "miniclaw"
+        system_prefix = self.root / "cleanup-failure-prefix" / "lobster0"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
-        system_command = self.root / "cleanup-failure-bin" / "miniclaw"
+        system_command = self.root / "cleanup-failure-bin" / "lobster0"
         state_home = self.home / "cleanup-failure-state"
         state_home.mkdir(mode=0o700)
         runner = FakeRunner()
@@ -1063,10 +1063,10 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_system_final_verifier_failure_revokes_public_runtime_before_cleanup(self) -> None:
         """final verify 与 quarantine 都失败时，同 inode Runtime 必须先撤回 0700。"""
-        system_prefix = self.root / "final-failure-prefix" / "miniclaw"
+        system_prefix = self.root / "final-failure-prefix" / "lobster0"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
-        system_command = self.root / "final-failure-bin" / "miniclaw"
+        system_command = self.root / "final-failure-bin" / "lobster0"
         state_home = self.home / "final-failure-state"
         state_home.mkdir(mode=0o700)
         real_rename = runtime_module._rename_no_replace
@@ -1192,8 +1192,8 @@ class InstallRuntimeTests(unittest.TestCase):
         invalid = self._write_runtime_receipt("0.6.0")
         current = self._write_runtime_receipt("0.7.0")
         executable_manifest = (
-            b'{"executables":["miniclaw-installer.pyz","node/bin/node",'
-            b'"python/bin/python3.12","release-manifest.json","venv/bin/miniclaw"]}\n'
+            b'{"executables":["lobster0-installer.pyz","node/bin/node",'
+            b'"python/bin/python3.12","release-manifest.json","venv/bin/lobster0"]}\n'
         )
         (invalid / runtime_module._EXECUTABLES_FILENAME).write_bytes(executable_manifest)
         (invalid / runtime_module._EXECUTABLES_FILENAME).chmod(0o600)
@@ -1243,7 +1243,7 @@ class InstallRuntimeTests(unittest.TestCase):
     def test_prerelease_runtime_uses_pep440_only_inside_wheel(self) -> None:
         """Runtime保留SemVer，wheel路径与METADATA只使用唯一PEP440映射。"""
         version = "0.8.0-rc.1"
-        wheel = self.sources / "miniclaw_agent-0.8.0rc1-py3-none-any.whl"
+        wheel = self.sources / "lobster0_agent-0.8.0rc1-py3-none-any.whl"
         self._write_wheel(path=wheel, version="0.8.0rc1")
         manifest = self._manifest_for_version(version, wheel)
         layout = InstallLayout._build(
@@ -1253,7 +1253,7 @@ class InstallRuntimeTests(unittest.TestCase):
             version,
         )
         runner = FakeRunner()
-        runner.version = f"miniclaw {version}\n".encode()
+        runner.version = f"lobster0 {version}\n".encode()
         runner.install_smoke = json.dumps(
             {"status": "ok", "version": version}, separators=(",", ":")
         ).encode() + b"\n"
@@ -1372,9 +1372,9 @@ class InstallRuntimeTests(unittest.TestCase):
             Path("tests/install/fake_uv.py")
             .read_bytes()
             .replace(
-                b'(package / "__main__.py").write_bytes(_MINICLAW_MAIN)\n',
-                b'(package / "__main__.py").write_bytes(_MINICLAW_MAIN)\n'
-                b'            entry = python.parent / "miniclaw"\n'
+                b'(package / "__main__.py").write_bytes(_LOBSTER0_MAIN)\n',
+                b'(package / "__main__.py").write_bytes(_LOBSTER0_MAIN)\n'
+                b'            entry = python.parent / "lobster0"\n'
                 b'            entry.write_bytes(b"#!/bin/sh\\nexit 0\\n")\n'
                 b'            entry.chmod(0o700)\n',
             ),
@@ -1418,7 +1418,7 @@ class InstallRuntimeTests(unittest.TestCase):
             {"name": "other-agent"},
             {"version": "0.7.1"},
             {"entry": None},
-            {"entry": "miniclaw = other.cli:main"},
+            {"entry": "lobster0 = other.cli:main"},
         )
         for case in cases:
             with self.subTest(case=case):
@@ -1433,7 +1433,7 @@ class InstallRuntimeTests(unittest.TestCase):
     def test_wheel_rejects_high_ratio_zip_bomb_before_staging(self) -> None:
         """wheel 任意 member 的异常压缩比必须在执行 uv 前拒绝。"""
         with zipfile.ZipFile(self.wheel, "a", compression=zipfile.ZIP_DEFLATED) as archive:
-            archive.writestr("miniclaw/padding.bin", b"x" * (2 * 1024 * 1024))
+            archive.writestr("lobster0/padding.bin", b"x" * (2 * 1024 * 1024))
         self.wheel.chmod(0o600)
         inputs = replace(self.inputs, manifest=self._manifest())
 
@@ -1450,13 +1450,13 @@ class InstallRuntimeTests(unittest.TestCase):
                 self._write_wheel()
                 with zipfile.ZipFile(self.wheel, "a") as archive:
                     if case == "duplicate":
-                        archive.writestr("miniclaw/Agent.py", b"one")
-                        archive.writestr("miniclaw/agent.py", b"two")
+                        archive.writestr("lobster0/Agent.py", b"one")
+                        archive.writestr("lobster0/agent.py", b"two")
                     elif case == "tree-conflict":
-                        archive.writestr("miniclaw/conflict", b"file")
-                        archive.writestr("miniclaw/conflict/child.py", b"child")
+                        archive.writestr("lobster0/conflict", b"file")
+                        archive.writestr("lobster0/conflict/child.py", b"child")
                     else:
-                        link = zipfile.ZipInfo("miniclaw/link")
+                        link = zipfile.ZipInfo("lobster0/link")
                         link.create_system = 3
                         link.external_attr = (stat.S_IFLNK | 0o777) << 16
                         archive.writestr(link, b"target")
@@ -1467,7 +1467,7 @@ class InstallRuntimeTests(unittest.TestCase):
                     )
                 self.assertFalse(self.layout.staging.exists())
 
-        encrypted = zipfile.ZipInfo("miniclaw/encrypted.bin")
+        encrypted = zipfile.ZipInfo("lobster0/encrypted.bin")
         encrypted.flag_bits = 0x1
         with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
             runtime_module._validate_wheel_infos([encrypted])
@@ -1480,11 +1480,11 @@ class InstallRuntimeTests(unittest.TestCase):
         self.layout.current.symlink_to("runtimes/0.6.0")
         cases = (
             ("install-smoke", "broken_channel", b"", b""),
-            (None, "wrong_python", b"miniclaw 9.9.9\n", b""),
+            (None, "wrong_python", b"lobster0 9.9.9\n", b""),
             (
                 None,
                 "wrong_tui",
-                b"miniclaw 0.7.0\n",
+                b"lobster0 0.7.0\n",
                 b'{"component":"pi-tui","status":"ok","version":"9.9.9"}\n',
             ),
             (None, "wrong_node", b"", b""),
@@ -1830,7 +1830,7 @@ class InstallRuntimeTests(unittest.TestCase):
         other_layout = InstallLayout._build(
             self.home / "other-program",
             self.home / "other-state",
-            self.home / ".local" / "bin" / "miniclaw",
+            self.home / ".local" / "bin" / "lobster0",
             "0.7.0",
         )
         other_lock = self._acquire_live_lock(other_layout)
@@ -1865,7 +1865,7 @@ class InstallRuntimeTests(unittest.TestCase):
             git_commit=self.manifest.git_commit,
             platform=self.platform,
             installed_at="2026-08-10T00:00:00Z",
-            managed_files=(("bin/miniclaw", "f" * 64),),
+            managed_files=(("bin/lobster0", "f" * 64),),
             current_runtime=target,
             previous_runtime=None,
             service_label=None,
@@ -2211,7 +2211,7 @@ class InstallRuntimeTests(unittest.TestCase):
             git_commit=self.manifest.git_commit,
             platform=self.platform,
             installed_at="2026-08-10T00:00:00Z",
-            managed_files=(("bin/miniclaw", "f" * 64),),
+            managed_files=(("bin/lobster0", "f" * 64),),
             current_runtime=target,
             previous_runtime=None,
             service_label=None,
@@ -2267,7 +2267,7 @@ class InstallRuntimeTests(unittest.TestCase):
         other_layout = InstallLayout._build(
             self.home / "other-program",
             self.home / "other-state",
-            self.home / ".local" / "bin" / "miniclaw",
+            self.home / ".local" / "bin" / "lobster0",
             "0.7.0",
         )
         other = self._acquire_live_lock(other_layout)
@@ -2294,7 +2294,7 @@ class InstallRuntimeTests(unittest.TestCase):
                     git_commit=self.manifest.git_commit,
                     platform=self.platform,
                     installed_at="2026-08-10T00:00:00Z",
-                    managed_files=(("bin/miniclaw", "f" * 64),),
+                    managed_files=(("bin/lobster0", "f" * 64),),
                     current_runtime="runtimes/0.7.0",
                     previous_runtime=None,
                     service_label=None,
@@ -2882,8 +2882,8 @@ class InstallRuntimeTests(unittest.TestCase):
         script = (
             "import os,sys;"
             "from pathlib import Path;"
-            "from miniclaw.install import layout as module;"
-            "from miniclaw.install.layout import InstallLayout,InstallLock;"
+            "from lobster0.install import layout as module;"
+            "from lobster0.install.layout import InstallLayout,InstallLock;"
             "module._probe_process=lambda _pid:('alive','2026-08-10T00:00:00Z');"
             "layout=InstallLayout._build(Path(sys.argv[1]),Path(sys.argv[2]),"
             "Path(sys.argv[3]),'0.7.0');"
@@ -2924,10 +2924,10 @@ class InstallRuntimeTests(unittest.TestCase):
 
     def test_discard_system_precommit_failure_restores_exact_public_runtime(self) -> None:
         """system Runtime quarantine fsync 失败必须恢复 exact inode 与 0755 root。"""
-        system_prefix = self.root / "recovery-system-prefix" / "miniclaw"
+        system_prefix = self.root / "recovery-system-prefix" / "lobster0"
         system_prefix.parent.mkdir(mode=0o755)
         system_prefix.parent.chmod(0o755)
-        system_command = self.root / "recovery-system-bin" / "miniclaw"
+        system_command = self.root / "recovery-system-bin" / "lobster0"
         state_home = self.home / "recovery-system-state"
         state_home.mkdir(mode=0o700)
         real_fsync = runtime_module._fsync_directory
@@ -3139,10 +3139,10 @@ class InstallRuntimeTests(unittest.TestCase):
         manifest = self._manifest_for_version(version)
         artifacts = {artifact.kind: artifact for artifact in manifest.artifacts}
         executable_paths = (
-            "miniclaw-installer.pyz",
+            "lobster0-installer.pyz",
             "node/bin/node",
             "python/bin/python3.12",
-            "venv/bin/miniclaw",
+            "venv/bin/lobster0",
         )
         for relative in executable_paths:
             executable = runtime.joinpath(*relative.split("/"))
@@ -3199,7 +3199,7 @@ class InstallRuntimeTests(unittest.TestCase):
             git_commit=self.manifest.git_commit,
             platform=self.platform,
             installed_at="2026-08-10T00:00:00Z",
-            managed_files=(("bin/miniclaw", "f" * 64),),
+            managed_files=(("bin/lobster0", "f" * 64),),
             current_runtime="runtimes/0.7.0",
             previous_runtime="runtimes/0.6.0",
             service_label=None,

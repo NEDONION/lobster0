@@ -59,7 +59,7 @@ flowchart LR
 | 18 | WebSocket 自动重连与状态可观测 | SDK `auto_reconnect` + reconnecting/reconnected callbacks + `connection_state` | transport reconnect observer test、`FEISHU-RECONNECT-001` | LOCAL PASS；真实断网 LIVE PENDING |
 | 19 | Approval 卡片与文本 fallback | `ChannelApprovalController` + Approval Delivery | approval controller / manager / delivery tests | LOCAL PASS；真实按钮 LIVE PENDING |
 | 20 | Owner gate 与 Core continuation | Open ID gate，直接调用 `TurnService.continue_approval()` | `test_channel_approvals.py`、`FEISHU-APPROVAL-001/002` | LOCAL PASS |
-| 21 | `miniclaw gateway` | CLI 子命令 + `run_gateway()` | CLI / gateway tests、help smoke | LOCAL PASS |
+| 21 | `lobster0 gateway` | CLI 子命令 + `run_gateway()` | CLI / gateway tests、help smoke | LOCAL PASS |
 | 22 | SIGINT / SIGTERM 优雅停止 | stop receiving → manager drain → delivery → transport → runtime | gateway lifecycle / second-signal test | LOCAL PASS；真实长连接 LIVE PENDING |
 | 23 | Doctor 区分 disabled / misconfigured / locally ready | 4 个 Feishu check | doctor tests | LOCAL PASS；Doctor 不冒充联网验证 |
 | 24 | 脱敏结构化日志 | `ChannelObserver` canonical JSON + Gateway stderr handler；Audit 不可写时 `audit_persisted=false` 并 fail open | `test_channel_observability.py`、transport observer failure test | LOCAL PASS |
@@ -133,10 +133,10 @@ App Secret 是外部授权，不是代码默认值。把随机字符串填进 `.
 ## 7. 真实凭据到位后的最后一公里
 
 ```bash
-cd /Users/nedonion/PycharmProjects/miniclaw
+cd /Users/nedonion/PycharmProjects/lobster0
 uv sync --extra dev --extra feishu
-uv run miniclaw doctor
-uv run miniclaw gateway
+uv run lobster0 doctor
+uv run lobster0 gateway
 uv run python scripts/feishu_live_smoke.py --confirm-live
 ```
 

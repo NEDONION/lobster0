@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.policy.workspace import WorkspaceAccessError, WorkspaceGuard
-from miniclaw.tools.base import ToolContext
+from lobster0.policy.workspace import WorkspaceAccessError, WorkspaceGuard
+from lobster0.tools.base import ToolContext
 
 
 class WorkspaceGuardTest(unittest.TestCase):
@@ -149,14 +149,14 @@ class WorkspaceGuardTest(unittest.TestCase):
         self.assertEqual(caught.exception.code, "sensitive_path")
 
     def test_state_system_and_container_paths_are_sensitive(self) -> None:
-        """MiniClaw 状态、系统权限文件和容器 socket 必须使用敏感错误码拒绝。"""
+        """Lobster0 状态、系统权限文件和容器 socket 必须使用敏感错误码拒绝。"""
         candidates = (
             self.context.state_home / "config.toml",
-            self.context.state_home / "miniclaw.db",
-            self.context.state_home / "miniclaw.db-wal",
-            self.context.state_home / "miniclaw.db-shm",
-            self.context.state_home / "miniclaw.db-journal",
-            self.context.state_home / "logs" / "miniclaw.log",
+            self.context.state_home / "lobster0.db",
+            self.context.state_home / "lobster0.db-wal",
+            self.context.state_home / "lobster0.db-shm",
+            self.context.state_home / "lobster0.db-journal",
+            self.context.state_home / "logs" / "lobster0.log",
             Path("/etc/shadow"),
             Path("/etc/gshadow"),
             Path("/etc/sudoers"),
@@ -182,7 +182,7 @@ class WorkspaceGuardTest(unittest.TestCase):
             read_only_roots=(self.context.state_home,),
         )
         for suffix in ("-wal", "-shm", "-journal"):
-            target = self.context.state_home / f"miniclaw.db{suffix}"
+            target = self.context.state_home / f"lobster0.db{suffix}"
             target.write_text("sqlite state", encoding="utf-8")
             alias = self.workspace / f"sidecar{suffix}.txt"
             alias.symlink_to(target)
@@ -191,7 +191,7 @@ class WorkspaceGuardTest(unittest.TestCase):
                     self.guard.resolve_read(allowed_context, alias.name)
                 self.assertEqual(caught.exception.code, "sensitive_path")
 
-        notes = self.context.state_home / "miniclaw.db-notes.md"
+        notes = self.context.state_home / "lobster0.db-notes.md"
         notes.write_text("safe notes", encoding="utf-8")
         self.assertEqual(self.guard.resolve_read(allowed_context, str(notes)), notes)
 

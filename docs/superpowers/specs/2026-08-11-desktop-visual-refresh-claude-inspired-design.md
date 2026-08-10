@@ -1,4 +1,4 @@
-# MiniClaw Desktop 视觉基准迁移：从 LobsterAI 改为 Claude 风格
+# Lobster0 Desktop 视觉基准迁移：从 LobsterAI 改为 Claude 风格
 
 > 日期：2026-08-11
 > 文档类型：Phase D1 视觉基准调整（不改变 D1/D2 已定的信息架构）
@@ -44,8 +44,8 @@
 - **不下载/嵌入 `anthropic-sans` 或 Claude 的专有衬线字体**——这些是 Anthropic 的私有资产，直接引入
   既有版权风险，也违反 D1 定下的"不下载 Web Font、不增加网络依赖"原则。改用系统自带衬线字体模拟
   "衬线大标题"的观感（见 §5.2），不追求像素级一致；
-- **不使用 Claude 的 Logo、"Claude" 文字标识或任何可能让用户误认 MiniClaw 是 Anthropic 官方产品的元素**
-  ——只迁移色板数值、圆角、阴影这类通用视觉语言，MiniClaw 品牌标识（左上角 "M" 徽标、"MiniClaw" 文字）
+- **不使用 Claude 的 Logo、"Claude" 文字标识或任何可能让用户误认 Lobster0 是 Anthropic 官方产品的元素**
+  ——只迁移色板数值、圆角、阴影这类通用视觉语言，Lobster0 品牌标识（左上角 "M" 徽标、"Lobster0" 文字）
   保持不变；
 - 这与"模仿 Claude" 的用户诉求并不冲突：用户要的是配色和排版质感，不是品牌替换。
 

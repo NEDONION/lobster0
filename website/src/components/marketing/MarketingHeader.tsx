@@ -12,9 +12,9 @@ export function MarketingHeader({ locale }: { locale: Locale }) {
   return (
     <header className="marketing-header">
       <div className="site-shell marketing-header__inner">
-        <Link className="brand" href={localizedPath(locale, '/')} aria-label="MiniClaw home">
+        <Link className="brand" href={localizedPath(locale, '/')} aria-label="Lobster0 home">
           <BrandMark className="brand__mark" size={36} />
-          <span>MiniClaw</span>
+          <span>Lobster0</span>
         </Link>
         <nav className="marketing-nav" aria-label={locale === 'zh-CN' ? '主导航' : 'Primary'}>
           <a href="#product">{copy.nav.product}</a>

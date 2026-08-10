@@ -3,7 +3,7 @@ import { NextResponse, type NextFetchEvent, type NextRequest } from 'next/server
 
 import { formatLocalePath, i18n, isI18nBypassPath } from '@/lib/i18n';
 
-const rewrittenRequestHeader = 'x-miniclaw-i18n-rewrite';
+const rewrittenRequestHeader = 'x-lobster0-i18n-rewrite';
 const i18nMiddleware = createI18nMiddleware({ ...i18n, format: formatLocalePath });
 
 export default async function proxy(request: NextRequest, event: NextFetchEvent) {

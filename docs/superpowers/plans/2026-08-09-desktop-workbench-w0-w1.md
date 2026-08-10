@@ -1,12 +1,12 @@
-# MiniClaw Desktop W0/W1 Implementation Plan
+# Lobster0 Desktop W0/W1 Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build a development-ready, light-theme MiniClaw Desktop with four views and one complete single-Agent task loop over the existing Python Bridge.
+**Goal:** Build a development-ready, light-theme Lobster0 Desktop with four views and one complete single-Agent task loop over the existing Python Bridge.
 
-**Architecture:** Electron Main owns the Python Bridge child process and exposes a fixed typed IPC surface through Preload. React renders Home, Task Workbench, Automation, and Settings; Python Core remains the only authority for sessions, tools, approvals, permissions, automation data, and workspace access. W0/W1 reuse the existing `@miniclaw/pi-tui` Bridge client and event reducer instead of creating a second protocol implementation.
+**Architecture:** Electron Main owns the Python Bridge child process and exposes a fixed typed IPC surface through Preload. React renders Home, Task Workbench, Automation, and Settings; Python Core remains the only authority for sessions, tools, approvals, permissions, automation data, and workspace access. W0/W1 reuse the existing `@lobster0/pi-tui` Bridge client and event reducer instead of creating a second protocol implementation.
 
-**Tech Stack:** Python 3.12+, Electron, React, TypeScript, Vite/electron-vite, Tailwind CSS, pnpm 10.14, SQLite through the existing MiniClaw repositories, standard-library `unittest`, Node/Vitest tests.
+**Tech Stack:** Python 3.12+, Electron, React, TypeScript, Vite/electron-vite, Tailwind CSS, pnpm 10.14, SQLite through the existing Lobster0 repositories, standard-library `unittest`, Node/Vitest tests.
 
 ## Global Constraints
 
@@ -29,17 +29,17 @@
 - `tui/package.json`: export the existing Bridge client, protocol types, and event reducer for same-repo reuse.
 - `tui/src/bridge-client.ts`: parameterize client identity and add an explicit workspace spawn argument.
 - `tui/test/bridge-client.test.ts`: preserve pi-tui defaults and test Desktop spawn arguments.
-- `src/miniclaw/bridge/__main__.py`: accept a validated optional workspace override.
-- `src/miniclaw/bridge/protocol.py`: add strict read-only session and Automation request schemas.
-- `src/miniclaw/bridge/server.py`: route new query requests through Core-owned services.
-- `src/miniclaw/runtime.py`: expose the conversation query service and settle stale foreground Turns.
-- `src/miniclaw/storage/conversations.py`: add bounded CLI Session listing and stale Turn settlement.
+- `src/lobster0/bridge/__main__.py`: accept a validated optional workspace override.
+- `src/lobster0/bridge/protocol.py`: add strict read-only session and Automation request schemas.
+- `src/lobster0/bridge/server.py`: route new query requests through Core-owned services.
+- `src/lobster0/runtime.py`: expose the conversation query service and settle stale foreground Turns.
+- `src/lobster0/storage/conversations.py`: add bounded CLI Session listing and stale Turn settlement.
 - `tests/test_bridge_protocol.py`, `tests/test_bridge_server.py`, `tests/test_conversations.py`: cover new trust-boundary behavior.
 - `README.md`, `docs/engineering/README.md`: document development commands and implementation status only after the code passes.
 
 ### New Python file
 
-- `src/miniclaw/bridge/conversations.py`: serialize Owner-scoped Session summaries/history without exposing SQLite to Electron.
+- `src/lobster0/bridge/conversations.py`: serialize Owner-scoped Session summaries/history without exposing SQLite to Electron.
 - `tests/test_bridge_conversations.py`: focused repository/service tests for recent tasks and safe history.
 
 ### New Desktop package
@@ -50,7 +50,7 @@
 - `desktop/src/main/index.ts`: BrowserWindow lifecycle and shutdown.
 - `desktop/src/main/bridge-service.ts`: sole owner of the shared `BridgeClient`.
 - `desktop/src/main/ipc.ts`: fixed IPC handlers; no generic pass-through channel.
-- `desktop/src/preload/index.ts`: narrow `window.miniclaw` API.
+- `desktop/src/preload/index.ts`: narrow `window.lobster0` API.
 - `desktop/src/renderer/main.tsx`, `desktop/src/renderer/app.tsx`: React entry and four-view shell.
 - `desktop/src/renderer/navigation.ts`: exact view IDs and labels.
 - `desktop/src/renderer/task-state.ts`: Desktop wrapper around the existing pi-tui reducer.
@@ -87,7 +87,7 @@ Use this package shape, then install with `pnpm --dir desktop install` so the lo
 
 ```json
 {
-  "name": "@miniclaw/desktop",
+  "name": "@lobster0/desktop",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -101,7 +101,7 @@ Use this package shape, then install with `pnpm --dir desktop install` so the lo
     "test": "vitest run"
   },
   "dependencies": {
-    "@miniclaw/pi-tui": "file:../tui",
+    "@lobster0/pi-tui": "file:../tui",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
@@ -215,12 +215,12 @@ git commit -m "feat(desktop): 增加 light Electron 四界面壳"
 - Modify: `tui/package.json`
 - Modify: `tui/src/bridge-client.ts`
 - Modify: `tui/test/bridge-client.test.ts`
-- Modify: `src/miniclaw/bridge/__main__.py`
+- Modify: `src/lobster0/bridge/__main__.py`
 - Test: `tests/test_bridge_server.py`
 
 **Interfaces:**
 - Consumes: existing `BridgeClient`, `BridgeClient.spawnFromEnvironment()`, and protocol v1.
-- Produces: exported `@miniclaw/pi-tui/bridge-client`, `@miniclaw/pi-tui/protocol`, `@miniclaw/pi-tui/state`; `BridgeClient.hello(clientName, clientVersion)`; optional `MINICLAW_WORKSPACE` mapped to Python `--workspace`.
+- Produces: exported `@lobster0/pi-tui/bridge-client`, `@lobster0/pi-tui/protocol`, `@lobster0/pi-tui/state`; `BridgeClient.hello(clientName, clientVersion)`; optional `LOBSTER0_WORKSPACE` mapped to Python `--workspace`.
 
 - [ ] **Step 1: Write failing TypeScript tests for Desktop identity and argv**
 
@@ -228,27 +228,27 @@ Add an exported pure spawn-spec function and test its intended contract before i
 
 ```ts
 const spec = buildBridgeSpawnSpec({
-  MINICLAW_PYTHON: "/opt/miniclaw/python",
-  MINICLAW_HOME: "/state/miniclaw",
-  MINICLAW_WORKSPACE: "/work/report",
+  LOBSTER0_PYTHON: "/opt/lobster0/python",
+  LOBSTER0_HOME: "/state/lobster0",
+  LOBSTER0_WORKSPACE: "/work/report",
 });
 
-assert.equal(spec.program, "/opt/miniclaw/python");
+assert.equal(spec.program, "/opt/lobster0/python");
 assert.deepEqual(spec.args, [
-  "-m", "miniclaw.bridge",
-  "--home", "/state/miniclaw",
+  "-m", "lobster0.bridge",
+  "--home", "/state/lobster0",
   "--workspace", "/work/report",
 ]);
 ```
 
-Add a second test that calls `client.hello("miniclaw-desktop", "0.1.0")` and asserts the exact hello payload. Preserve the zero-argument pi-tui default.
+Add a second test that calls `client.hello("lobster0-desktop", "0.1.0")` and asserts the exact hello payload. Preserve the zero-argument pi-tui default.
 
 - [ ] **Step 2: Write the failing Python parser test**
 
 ```python
 def test_bridge_parser_accepts_absolute_workspace_override(self) -> None:
     arguments = build_parser().parse_args(
-        ["--home", "/state/miniclaw", "--workspace", "/work/report"]
+        ["--home", "/state/lobster0", "--workspace", "/work/report"]
     )
     self.assertEqual(arguments.workspace, Path("/work/report"))
 ```
@@ -278,12 +278,12 @@ export interface BridgeSpawnSpec {
 export function buildBridgeSpawnSpec(environment: NodeJS.ProcessEnv): BridgeSpawnSpec;
 
 public async hello(
-  clientName = "miniclaw-pi-tui",
+  clientName = "lobster0-pi-tui",
   clientVersion = "0.1.0",
 ): Promise<Record<string, JsonValue>>;
 ```
 
-`buildBridgeSpawnSpec` must reject missing Python/Home and a non-absolute `MINICLAW_WORKSPACE` with `BridgeRequestError("bridge_configuration", ...)`. It must keep `shell: false` and explicit argv.
+`buildBridgeSpawnSpec` must reject missing Python/Home and a non-absolute `LOBSTER0_WORKSPACE` with `BridgeRequestError("bridge_configuration", ...)`. It must keep `shell: false` and explicit argv.
 
 Expose existing compiled modules in `tui/package.json`:
 
@@ -319,12 +319,12 @@ uv run python -m unittest tests.test_bridge_server tests.test_config -v
 pnpm --dir tui test
 ```
 
-Expected: PASS; the existing pi-tui real Bridge handshake still sends `miniclaw-pi-tui`.
+Expected: PASS; the existing pi-tui real Bridge handshake still sends `lobster0-pi-tui`.
 
 - [ ] **Step 7: Commit the shared Bridge boundary**
 
 ```bash
-git add tui src/miniclaw/bridge tests/test_bridge_server.py
+git add tui src/lobster0/bridge tests/test_bridge_server.py
 git commit -m "feat(bridge): 支持 Desktop identity 与 Workspace binding"
 ```
 
@@ -340,7 +340,7 @@ git commit -m "feat(bridge): 支持 Desktop identity 与 Workspace binding"
 - Test: `desktop/test/preload.test.ts`
 
 **Interfaces:**
-- Consumes: `BridgeClient`, `ServerFrame`, and `PermissionMode` from `@miniclaw/pi-tui` exports.
+- Consumes: `BridgeClient`, `ServerFrame`, and `PermissionMode` from `@lobster0/pi-tui` exports.
 - Produces: `DesktopApi`, `DesktopBootstrap`, `BridgeService.start/stop/startTurn/cancelTurn/resolveApproval/setPermissionMode/restartWorkspace`, and fixed IPC channels.
 
 - [ ] **Step 1: Define the failing public-contract tests**
@@ -366,7 +366,7 @@ The BridgeService test uses a structural fake and verifies:
 
 ```ts
 await service.start();
-expect(fake.helloCalls).toEqual([["miniclaw-desktop", "0.1.0"]]);
+expect(fake.helloCalls).toEqual([["lobster0-desktop", "0.1.0"]]);
 await service.startTurn({ sessionKey: "task-1", text: "整理报告" });
 expect(fake.turns).toEqual([["task-1", "整理报告"]]);
 ```
@@ -465,7 +465,7 @@ git commit -m "feat(desktop): 建立 typed Preload 与 Bridge supervisor"
 - Test: `desktop/test/task-state.test.ts`
 
 **Interfaces:**
-- Consumes: `createInitialState`, `appendUser`, `reduceFrame`, `AppState`, and `ServerFrame` from `@miniclaw/pi-tui/state` and `@miniclaw/pi-tui/protocol`; `window.miniclaw` from Task 3.
+- Consumes: `createInitialState`, `appendUser`, `reduceFrame`, `AppState`, and `ServerFrame` from `@lobster0/pi-tui/state` and `@lobster0/pi-tui/protocol`; `window.lobster0` from Task 3.
 - Produces: `DesktopTaskState`, `createDesktopTaskState`, `reduceDesktopFrame`, and the functional Task Workbench.
 
 - [ ] **Step 1: Write the failing reducer test**
@@ -556,11 +556,11 @@ git commit -m "feat(desktop): 打通 single-Agent Task Workbench"
 ### Task 5: Add Owner-scoped recent Tasks, history, and interrupted recovery
 
 **Files:**
-- Modify: `src/miniclaw/storage/conversations.py`
-- Create: `src/miniclaw/bridge/conversations.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/bridge/protocol.py`
-- Modify: `src/miniclaw/bridge/server.py`
+- Modify: `src/lobster0/storage/conversations.py`
+- Create: `src/lobster0/bridge/conversations.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/bridge/protocol.py`
+- Modify: `src/lobster0/bridge/server.py`
 - Modify: `tui/src/protocol.ts`
 - Test: `tests/test_conversations.py`
 - Test: `tests/test_bridge_protocol.py`
@@ -690,15 +690,15 @@ Expected: PASS with no real provider or user database access.
 - [ ] **Step 8: Commit durable Task history**
 
 ```bash
-git add src/miniclaw tui/src/protocol.ts tests desktop
+git add src/lobster0 tui/src/protocol.ts tests desktop
 git commit -m "feat(desktop): 增加 durable Session history 与 interrupted 状态"
 ```
 
 ### Task 6: Make Automation, Settings, and Workspace selection functional
 
 **Files:**
-- Modify: `src/miniclaw/bridge/protocol.py`
-- Modify: `src/miniclaw/bridge/server.py`
+- Modify: `src/lobster0/bridge/protocol.py`
+- Modify: `src/lobster0/bridge/server.py`
 - Modify: `tui/src/protocol.ts`
 - Modify: `tests/test_bridge_protocol.py`
 - Modify: `tests/test_bridge_server.py`
@@ -761,7 +761,7 @@ Main uses `dialog.showOpenDialog({ properties: ["openDirectory"] })`. A cancelle
 
 1. rejects unless state is `idle`;
 2. gracefully shuts down the current Bridge;
-3. starts a new Bridge with `MINICLAW_WORKSPACE=path`;
+3. starts a new Bridge with `LOBSTER0_WORKSPACE=path`;
 4. requires a successful Desktop hello before publishing the new bootstrap;
 5. restores the previous Bridge configuration if startup fails.
 
@@ -788,7 +788,7 @@ Expected: PASS; all four approved views now show truthful data or controls.
 - [ ] **Step 8: Commit the remaining views**
 
 ```bash
-git add src/miniclaw/bridge tui/src/protocol.ts tests desktop
+git add src/lobster0/bridge tui/src/protocol.ts tests desktop
 git commit -m "feat(desktop): 接入 Automation、Settings 与 Workspace switch"
 ```
 
@@ -811,10 +811,10 @@ Reuse the existing temporary-home pattern, but call the shared client with Deskt
 ```ts
 const client = BridgeClient.spawnFromEnvironment({
   ...environment,
-  MINICLAW_WORKSPACE: workspace,
+  LOBSTER0_WORKSPACE: workspace,
 });
 try {
-  const hello = await client.hello("miniclaw-desktop", "0.1.0");
+  const hello = await client.hello("lobster0-desktop", "0.1.0");
   assert.equal(hello.protocol, 1);
   assert.equal(hello.workspace, basename(workspace));
   assert.equal(Array.isArray(hello.capabilities), true);
@@ -828,7 +828,7 @@ The test uses `offline-smoke-key`, never calls a provider, and removes its tempo
 
 - [ ] **Step 2: Run the cross-process smoke**
 
-Run: `MINICLAW_PYTHON=.venv/bin/python pnpm --dir desktop test -- python-bridge.test.ts`
+Run: `LOBSTER0_PYTHON=.venv/bin/python pnpm --dir desktop test -- python-bridge.test.ts`
 
 Expected: PASS with no network access and stdout containing only protocol frames.
 
@@ -841,8 +841,8 @@ uv sync --extra dev
 pnpm --dir tui install
 pnpm --dir tui build
 pnpm --dir desktop install
-MINICLAW_PYTHON=.venv/bin/python \
-MINICLAW_HOME=/absolute/path/to/miniclaw-home \
+LOBSTER0_PYTHON=.venv/bin/python \
+LOBSTER0_HOME=/absolute/path/to/lobster0-home \
 pnpm --dir desktop dev
 ```
 
@@ -859,7 +859,7 @@ pnpm --dir tui test
 pnpm --dir desktop test
 pnpm --dir desktop typecheck
 pnpm --dir desktop build
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 ```
@@ -873,7 +873,7 @@ Expected:
 
 - [ ] **Step 5: Perform one credential-free manual light-theme smoke**
 
-Using an initialized test MiniClaw home and a disposable workspace, verify:
+Using an initialized test Lobster0 home and a disposable workspace, verify:
 
 1. all four views are reachable by mouse and keyboard;
 2. Home creates a Task and opens Task Workbench;

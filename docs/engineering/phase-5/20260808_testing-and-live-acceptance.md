@@ -68,8 +68,8 @@ evals/scenarios/discord-channel.v1.jsonl    10
 运行：
 
 ```bash
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 ```
 
 预期结尾：
@@ -114,7 +114,7 @@ Channel eval: 32/32 passed, 0 failed
 ## 4. 640-check local soak
 
 ```bash
-uv run miniclaw eval run \
+uv run lobster0 eval run \
   --suite channel \
   --repeat 20 \
   --json \

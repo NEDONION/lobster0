@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.evals.automation import run_automation_suite
-from miniclaw.evals.cases import EvalCaseError, load_automation_cases
+from lobster0.evals.automation import run_automation_suite
+from lobster0.evals.cases import EvalCaseError, load_automation_cases
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIO_ROOT = PROJECT_ROOT / "evals" / "scenarios"

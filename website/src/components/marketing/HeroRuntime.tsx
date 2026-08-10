@@ -14,7 +14,7 @@ export function HeroRuntime({ locale }: { locale: Locale }) {
     <section className="marketing-section hero-shell" id="hero" aria-labelledby="hero-title">
       <div className="site-shell hero-runtime">
         <div className="hero-runtime__copy">
-          <BrandMark className="hero-runtime__mark" size={76} title="MiniClaw" />
+          <BrandMark className="hero-runtime__mark" size={76} title="Lobster0" />
           <p className="section-kicker">{copy.hero.eyebrow}</p>
           <h1 id="hero-title">{copy.hero.title}</h1>
           <p className="hero-runtime__lead">{copy.hero.lead}</p>

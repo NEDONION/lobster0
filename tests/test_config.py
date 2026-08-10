@@ -1,12 +1,12 @@
-"""MiniClaw 配置加载与校验的行为测试。"""
+"""Lobster0 配置加载与校验的行为测试。"""
 
 import tempfile
 import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
-from miniclaw.config import ConfigError, load_config, resolve_permission_roots
-from miniclaw.paths import build_state_paths
+from lobster0.config import ConfigError, load_config, resolve_permission_roots
+from lobster0.paths import build_state_paths
 
 
 class ConfigTest(unittest.TestCase):
@@ -24,7 +24,7 @@ class ConfigTest(unittest.TestCase):
         """尚未生成配置文件时应使用自适应 Agent loop 默认预算。"""
         config = load_config(
             self.paths,
-            {"MINICLAW_MODEL_API_KEY": "secret-must-stay-outside-config"},
+            {"LOBSTER0_MODEL_API_KEY": "secret-must-stay-outside-config"},
             {},
         )
 
@@ -34,7 +34,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.agent.max_no_progress_iterations, 3)
         self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
-        self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
+        self.assertEqual(config.provider.api_key_env, "LOBSTER0_MODEL_API_KEY")
         self.assertEqual(config.workspace.path, self.paths.workspace)
         self.assertEqual(config.permissions.profile, "workspace")
         self.assertEqual(config.permissions.read_roots, ())
@@ -73,16 +73,16 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.tools.http_get.max_response_bytes, 2 * 1024 * 1024)
         self.assertFalse(config.channels.feishu.enabled)
         self.assertFalse(config.channels.telegram.enabled)
-        self.assertEqual(config.channels.telegram.bot_token_env, "MINICLAW_TELEGRAM_BOT_TOKEN")
+        self.assertEqual(config.channels.telegram.bot_token_env, "LOBSTER0_TELEGRAM_BOT_TOKEN")
         self.assertEqual(config.channels.telegram.message_max_chars, 4096)
         self.assertFalse(config.channels.discord.enabled)
-        self.assertEqual(config.channels.discord.bot_token_env, "MINICLAW_DISCORD_BOT_TOKEN")
+        self.assertEqual(config.channels.discord.bot_token_env, "LOBSTER0_DISCORD_BOT_TOKEN")
         self.assertEqual(config.channels.discord.message_max_chars, 2000)
         self.assertEqual(config.channels.feishu.account_id, "default")
         self.assertEqual(config.channels.feishu.owner_open_id, "")
         self.assertFalse(config.browser.enabled)
         self.assertEqual(config.browser.backend, "local")
-        self.assertEqual(config.browser.profile, "miniclaw")
+        self.assertEqual(config.browser.profile, "lobster0")
         self.assertTrue(config.browser.headed)
         self.assertFalse(config.browser.allow_personal_profile)
         self.assertEqual(config.browser.max_tabs, 8)
@@ -91,7 +91,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.browser.download_max_bytes, 20 * 1024 * 1024)
         self.assertEqual(
             config.channels.feishu.app_secret_env,
-            "MINICLAW_FEISHU_APP_SECRET",
+            "LOBSTER0_FEISHU_APP_SECRET",
         )
         self.assertNotIn("secret-must-stay-outside-config", repr(config))
 
@@ -152,8 +152,8 @@ class ConfigTest(unittest.TestCase):
             load_config(
                 self.paths,
                 {
-                    "MINICLAW_MAX_TOOL_ITERATIONS": "40",
-                    "MINICLAW_MAX_TOOL_ITERATIONS_HARD": "32",
+                    "LOBSTER0_MAX_TOOL_ITERATIONS": "40",
+                    "LOBSTER0_MAX_TOOL_ITERATIONS_HARD": "32",
                 },
                 {},
             )
@@ -174,7 +174,7 @@ class ConfigTest(unittest.TestCase):
         """旧环境变量只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
         config = load_config(
             self.paths,
-            {"MINICLAW_MAX_TOOL_ITERATIONS": "100"},
+            {"LOBSTER0_MAX_TOOL_ITERATIONS": "100"},
             {},
         )
 
@@ -191,7 +191,7 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ConfigError, "max_tool_iterations_hard"):
             load_config(
                 self.paths,
-                {"MINICLAW_MAX_TOOL_ITERATIONS": "100"},
+                {"LOBSTER0_MAX_TOOL_ITERATIONS": "100"},
                 {},
             )
 
@@ -387,10 +387,10 @@ class ConfigTest(unittest.TestCase):
         config = load_config(
             self.paths,
             {
-                "MINICLAW_MODEL_NAME": "env-model",
-                "MINICLAW_MAX_TOOL_ITERATIONS": "6",
-                "MINICLAW_MAX_TOOL_ITERATIONS_HARD": "12",
-                "MINICLAW_MAX_NO_PROGRESS_ITERATIONS": "4",
+                "LOBSTER0_MODEL_NAME": "env-model",
+                "LOBSTER0_MAX_TOOL_ITERATIONS": "6",
+                "LOBSTER0_MAX_TOOL_ITERATIONS_HARD": "12",
+                "LOBSTER0_MAX_NO_PROGRESS_ITERATIONS": "4",
             },
             {"model": "cli-model"},
         )
@@ -466,14 +466,14 @@ class ConfigTest(unittest.TestCase):
 
     def test_invalid_numeric_environment_value_is_rejected(self) -> None:
         """整数环境变量写错时必须指出变量名，不能回退到不透明的默认值。"""
-        with self.assertRaisesRegex(ConfigError, "MINICLAW_MAX_TOOL_ITERATIONS"):
-            load_config(self.paths, {"MINICLAW_MAX_TOOL_ITERATIONS": "many"}, {})
+        with self.assertRaisesRegex(ConfigError, "LOBSTER0_MAX_TOOL_ITERATIONS"):
+            load_config(self.paths, {"LOBSTER0_MAX_TOOL_ITERATIONS": "many"}, {})
 
     def test_new_agent_budget_environment_values_must_be_integers(self) -> None:
         """新增 Agent 预算环境变量不能把非整数静默回退为默认值。"""
         for key in (
-            "MINICLAW_MAX_TOOL_ITERATIONS_HARD",
-            "MINICLAW_MAX_NO_PROGRESS_ITERATIONS",
+            "LOBSTER0_MAX_TOOL_ITERATIONS_HARD",
+            "LOBSTER0_MAX_NO_PROGRESS_ITERATIONS",
         ):
             with self.subTest(key=key):
                 with self.assertRaisesRegex(ConfigError, key):
@@ -593,7 +593,7 @@ class ConfigTest(unittest.TestCase):
             'active_hours_start = "09:15"\nactive_hours_end = "18:45"\n\n'
             "[sandbox]\n"
             'backend = "seatbelt"\ncontainer_engine = "podman-rootless"\n'
-            'image = "miniclaw-sandbox@sha256:'
+            'image = "lobster0-sandbox@sha256:'
             + "a" * 64
             + '"\nnetwork = "none"\nmemory_mib = 1024\ncpu_seconds = 120\n'
             "pids_limit = 256\n\n"
@@ -632,7 +632,7 @@ class ConfigTest(unittest.TestCase):
             ('[sandbox]\nnetwork = "host"\n', "sandbox.network"),
             ('[sandbox]\nimage = "bad image"\n', "sandbox.image"),
             (
-                '[automation]\nenabled = true\n\n[sandbox]\nimage = "miniclaw-sandbox:phase6"\n',
+                '[automation]\nenabled = true\n\n[sandbox]\nimage = "lobster0-sandbox:phase6"\n',
                 "sha256 digest",
             ),
             ("[sandbox]\nmemory_mib = 0\n", "sandbox.memory_mib"),

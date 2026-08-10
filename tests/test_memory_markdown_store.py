@@ -7,16 +7,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.markdown_store import (
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.markdown_store import (
     MarkdownMemoryError,
     MarkdownUnitDocument,
     MemoryMarkdownStore,
 )
-from miniclaw.memory.models import SourceRef
-from miniclaw.memory.repository import MemoryManifestRepository
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.database import Database
+from lobster0.memory.models import SourceRef
+from lobster0.memory.repository import MemoryManifestRepository
+from lobster0.paths import build_state_paths
+from lobster0.storage.database import Database
 
 
 class MemoryMarkdownStoreTest(unittest.TestCase):
@@ -56,7 +56,7 @@ class MemoryMarkdownStoreTest(unittest.TestCase):
         text = path.read_text(encoding="utf-8")
         self.assertEqual(first.content_hash, second.content_hash)
         self.assertEqual(second.status, "duplicate")
-        self.assertEqual(text.count("<!-- miniclaw:unit mem-language -->"), 1)
+        self.assertEqual(text.count("<!-- lobster0:unit mem-language -->"), 1)
         self.assertEqual(path.stat().st_mode & 0o777, 0o600)
         self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
 
@@ -70,7 +70,7 @@ class MemoryMarkdownStoreTest(unittest.TestCase):
         )
 
         with mock.patch(
-            "miniclaw.memory.markdown_store.os.replace",
+            "lobster0.memory.markdown_store.os.replace",
             side_effect=OSError("replace failed"),
         ):
             with self.assertRaises(MarkdownMemoryError):

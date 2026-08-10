@@ -4,14 +4,14 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.automation.guard import (
+from lobster0.automation.guard import (
     AutomationGuardError,
     AutomationPromptGuard,
     DeliveryOrigin,
     resolve_delivery_target,
 )
-from miniclaw.config import ChannelConfig, DiscordConfig, FeishuConfig, TelegramConfig
-from miniclaw.skills.loader import SkillLoader
+from lobster0.config import ChannelConfig, DiscordConfig, FeishuConfig, TelegramConfig
+from lobster0.skills.loader import SkillLoader
 
 
 class AutomationPromptGuardTest(unittest.TestCase):

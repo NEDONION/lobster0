@@ -14,9 +14,9 @@ Phase 6 发布时门禁：**798/798 Python**、**35/35 TypeScript**、**39/39 of
 Telegram/Discord 仍为 **LIVE PENDING**；Docker containment 为 **LIVE VERIFIED**，Seatbelt 为 **LIVE PENDING**。
 这些外部结论没有被离线 Automation gate 改写。
 
-这次 Phase 6 不是让模型“想做什么就做什么”，而是给 MiniClaw 增加一套可停、可查、可恢复、受预算限制的后台任务系统。
+这次 Phase 6 不是让模型“想做什么就做什么”，而是给 Lobster0 增加一套可停、可查、可恢复、受预算限制的后台任务系统。
 一句大白话：模型只负责完成一条已经被 Core 冻结的任务，什么时候运行、能用哪些 Tool、能花多少资源、是否需要
-Owner 审批、结果投到哪里，全部由 MiniClaw 的确定性代码和 SQLite 决定。
+Owner 审批、结果投到哪里，全部由 Lobster0 的确定性代码和 SQLite 决定。
 
 ## 1. 现在能做什么
 
@@ -28,7 +28,7 @@ Owner 审批、结果投到哪里，全部由 MiniClaw 的确定性代码和 SQL
 - 只有 `complete_task` 能声明任务成功，普通模型正文不能冒充成功；
 - 危险 Tool 进入现有 Core Approval，等待时释放 Worker lease，重启后仍可继续；
 - terminal response 先落 TaskRun，再幂等投影到现有 Channel Outbox；
-- `miniclaw task halt` 提供 durable E-stop，重启后仍然保持停止；
+- `lobster0 task halt` 提供 durable E-stop，重启后仍然保持停止；
 - Heartbeat 作为唯一 system-owned Task 使用同一 Scheduler/Runner，不建立第二套循环；
 - CLI 可以列 Task、查 Run、暂停、恢复、手动触发、取消、halt 与 unhalt；
 - `automation.v1` 固定 15 条回归场景，每个版本必须全部通过。
@@ -100,7 +100,7 @@ sequenceDiagram
 
 ## 4. 配置与启用
 
-`miniclaw init` 已生成全部 Phase 6 section，但默认关闭 Automation。Docker 自动任务启用时 image 必须固定到
+`lobster0 init` 已生成全部 Phase 6 section，但默认关闭 Automation。Docker 自动任务启用时 image 必须固定到
 SHA-256 digest；普通 tag 会在配置加载阶段失败。
 
 ```toml
@@ -120,7 +120,7 @@ active_hours_end = "23:00"
 
 [sandbox]
 backend = "docker"
-image = "registry.example/miniclaw-sandbox@sha256:<64位digest>"
+image = "registry.example/lobster0-sandbox@sha256:<64位digest>"
 network = "none"
 memory_mib = 512
 cpu_seconds = 60
@@ -140,9 +140,9 @@ digest、非 `none` 网络都会拒绝启动。`heartbeat.enabled = true` 但 Au
 启用前建议：
 
 ```bash
-uv run miniclaw doctor
-uv run miniclaw task list
-uv run miniclaw eval run --suite automation --root evals/scenarios
+uv run lobster0 doctor
+uv run lobster0 task list
+uv run lobster0 eval run --suite automation --root evals/scenarios
 ```
 
 ## 5. Task 与 Run 状态机
@@ -204,15 +204,15 @@ DST gap 会推进到第一个有效本地时间；DST fold 选择第一次 occur
 ## 7. CLI 运维入口
 
 ```bash
-uv run miniclaw task list
-uv run miniclaw task show <task-id>
-uv run miniclaw task runs <task-id>
-uv run miniclaw task pause <task-id>
-uv run miniclaw task resume <task-id>
-uv run miniclaw task run <task-id>
-uv run miniclaw task cancel <task-id>
-uv run miniclaw task halt --reason "incident response"
-uv run miniclaw task unhalt
+uv run lobster0 task list
+uv run lobster0 task show <task-id>
+uv run lobster0 task runs <task-id>
+uv run lobster0 task pause <task-id>
+uv run lobster0 task resume <task-id>
+uv run lobster0 task run <task-id>
+uv run lobster0 task cancel <task-id>
+uv run lobster0 task halt --reason "incident response"
+uv run lobster0 task unhalt
 ```
 
 CLI 是 repository-only 控制面，不加载 Provider 或 Channel SDK。`show` 只显示 prompt byte count、Schedule、Delivery
@@ -338,8 +338,8 @@ iteration 遇到 SQLite 等意外异常会记录无正文 warning、退避并继
 terminal/recovery、Approval、Delivery、ExecutionPlan、Docker hardening、Checkpoint、Rollback 和 Heartbeat。
 
 ```bash
-uv run miniclaw eval run --suite automation --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
 ```
 
 每条 case 显式声明 status、error code、Tool 集、Delivery count、evidence 和 forbidden behavior。fixture 使用固定时钟、

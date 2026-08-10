@@ -14,8 +14,8 @@
 这轮处理的是三个在真实飞书 Bot 上才暴露出来的问题：
 
 1. Gateway 使用官方 Channel SDK 时可能报 `This event loop is already running`，或者 WebSocket 已连接但
-   `miniclaw gateway` 一直等不到 ready；
-2. 一次正常回答同时出现绿色 `MiniClaw 回复` 卡片和一条内容完全相同的普通文本；
+   `lobster0 gateway` 一直等不到 ready；
+2. 一次正常回答同时出现绿色 `Lobster0 回复` 卡片和一条内容完全相同的普通文本；
 3. 用户问“最近修改的飞书文档”时，Agent 口头回答“没有飞书 API 工具”，没有调用已经安装并登录的官方
    `lark-cli`。
 
@@ -45,7 +45,7 @@
 
 ## 2. 两条“飞书能力”不要混为一谈
 
-MiniClaw 里的飞书有两层：
+Lobster0 里的飞书有两层：
 
 | 层 | 解决的问题 | 当前实现 |
 | --- | --- | --- |
@@ -161,7 +161,7 @@ SDK 尝试管理已经运行的 loop。
 当前 CLI 在进入 `asyncio.run(run_gateway(...))` 前调用 `_prime_gateway_channel_sdks()`。可选 SDK 不存在时不影响
 本地 TUI；SDK 自身依赖损坏时返回稳定 `GatewayConfigError`，不输出 App Secret。
 
-第二个问题是 SDK 的 `connect()` 属于前台阻塞入口；MiniClaw 需要“连接 ready 后返回，继续启动 Manager / Delivery”。
+第二个问题是 SDK 的 `connect()` 属于前台阻塞入口；Lobster0 需要“连接 ready 后返回，继续启动 Manager / Delivery”。
 `FeishuTransport.connect()` 现在优先调用公开的 `connect_until_ready()`，老 SDK 没有该方法时才兼容回退
 `connect()`。
 
@@ -175,15 +175,15 @@ sequenceDiagram
     G->>SDK: connect_until_ready
     SDK-->>G: WebSocket ready
     G->>G: start Delivery + Manager
-    G-->>CLI: MiniClaw gateway ready
+    G-->>CLI: Lobster0 gateway ready
 ```
 
 ## 6. `feishu-lark-cli` Skill
 
-`miniclaw init` 现在会在文件不存在时创建：
+`lobster0 init` 现在会在文件不存在时创建：
 
 ```text
-~/.miniclaw/skills/feishu-lark-cli/SKILL.md
+~/.lobster0/skills/feishu-lark-cli/SKILL.md
 ```
 
 重复 `init` 不覆盖用户已经修改过的 Skill。`SkillLoader` 只读 frontmatter 参与匹配；当前 Query 命中后才加载正文，
@@ -215,7 +215,7 @@ Skill 给 Provider 的确定映射是：
 
 - 子进程使用固定 Workspace、最小 PATH、Owner Home、stdin EOF、超时和 1 MiB 双流上限；
 - 不经过 Shell，不接受管道、重定向或拼接字符串；
-- 个人云数据使用 `--as user`，认证由 `lark-cli` 管理，MiniClaw 不复制凭据；
+- 个人云数据使用 `--as user`，认证由 `lark-cli` 管理，Lobster0 不复制凭据；
 - `safe` / `smart` 下未命中 exact rule 会生成参数绑定 Approval；
 - 可信 Owner 的 `autopilot` / `yolo` 可在硬校验后自动运行；
 - 群聊或非 Owner 即使进程处于 autopilot 也会降级到审批；
@@ -255,9 +255,9 @@ Skill 给 Provider 的确定映射是：
 ```bash
 uv run python -m unittest discover -s tests -q -b
 pnpm --dir tui test
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run ruff check .
 uv run python scripts/validate_docs.py
 uv build

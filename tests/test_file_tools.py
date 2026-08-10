@@ -6,9 +6,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.providers.base import JsonValue
-from miniclaw.tools.base import ToolContext, ToolResult, ToolValidationError
-from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
+from lobster0.providers.base import JsonValue
+from lobster0.tools.base import ToolContext, ToolResult, ToolValidationError
+from lobster0.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
 
 
 class ReadFileToolTest(unittest.IsolatedAsyncioTestCase):
@@ -321,7 +321,7 @@ class WriteFileToolTest(unittest.IsolatedAsyncioTestCase):
         target = self.workspace / "note.txt"
         target.write_text("old", encoding="utf-8")
 
-        with mock.patch("miniclaw.tools.filesystem.os.replace", side_effect=OSError):
+        with mock.patch("lobster0.tools.filesystem.os.replace", side_effect=OSError):
             result = await self._run(
                 {"path": "note.txt", "content": "new", "overwrite": True}
             )
@@ -490,7 +490,7 @@ class EditFileToolTest(unittest.IsolatedAsyncioTestCase):
             return real_mkstemp(*args, **kwargs)
 
         with mock.patch(
-            "miniclaw.tools.filesystem.tempfile.mkstemp",
+            "lobster0.tools.filesystem.tempfile.mkstemp",
             side_effect=change_then_create_temp,
         ):
             result = await self._run(

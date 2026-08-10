@@ -7,7 +7,7 @@
 
 ## 1. 模块目的
 
-`src/miniclaw/storage/conversations.py` 是 CLI Agent 闭环对 SQLite 的唯一会话写入边界。它把 Phase 0
+`src/lobster0/storage/conversations.py` 是 CLI Agent 闭环对 SQLite 的唯一会话写入边界。它把 Phase 0
 已经迁移的 `sessions`、`turns` 和 `messages` 表封装为小型 Repository，并保证关键状态变更使用单个
 事务。
 
@@ -237,14 +237,14 @@ Repository 不捕获并改写 sqlite3.IntegrityError，因为测试和上层运�
 只读查看最近 Turn：
 
 ```bash
-sqlite3 ~/.miniclaw/miniclaw.db \
+sqlite3 ~/.lobster0/lobster0.db \
   'SELECT id, session_id, status, model, input_tokens, output_tokens, error_code FROM turns ORDER BY id DESC LIMIT 10;'
 ```
 
 查看消息角色，不输出内容：
 
 ```bash
-sqlite3 ~/.miniclaw/miniclaw.db \
+sqlite3 ~/.lobster0/lobster0.db \
   'SELECT id, session_id, turn_id, role, length(content), created_at FROM messages ORDER BY id DESC LIMIT 20;'
 ```
 

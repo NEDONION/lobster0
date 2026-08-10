@@ -6,22 +6,22 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.agent.context import ContextBuilder, ContextError
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.models import DisclosureContext, SourceRef
-from miniclaw.memory.repository import MemoryUnitRepository
-from miniclaw.memory.retrieval import MemoryRetrieval
-from miniclaw.paths import build_state_paths
-from miniclaw.providers.base import ModelMessage
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
+from lobster0.agent.context import ContextBuilder, ContextError
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.models import DisclosureContext, SourceRef
+from lobster0.memory.repository import MemoryUnitRepository
+from lobster0.memory.retrieval import MemoryRetrieval
+from lobster0.paths import build_state_paths
+from lobster0.providers.base import ModelMessage
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
 
 
 class ContextBuilderTest(unittest.TestCase):
     """验证身份文件和消息历史进入模型请求的确定顺序。"""
 
     def setUp(self) -> None:
-        """创建独立且完整初始化的 MiniClaw 状态目录。"""
+        """创建独立且完整初始化的 Lobster0 状态目录。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.paths = build_state_paths(Path(self.temporary_directory.name).resolve())

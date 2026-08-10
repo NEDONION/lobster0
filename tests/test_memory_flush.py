@@ -5,18 +5,18 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.agent.context import ContextBuilder
-from miniclaw.agent.runner import AgentRunner
-from miniclaw.agent.turn import TurnService
-from miniclaw.bootstrap import initialize_state
-from miniclaw.config import WorkspaceConfig
-from miniclaw.memory.buffer import MemoryBufferRepository
-from miniclaw.memory.flush import FlushCoordinator, MemoryCapture
-from miniclaw.memory.repository import MemoryRunRepository
-from miniclaw.paths import build_state_paths
-from miniclaw.providers.base import ModelResponse
-from miniclaw.storage.conversations import MessageRepository, SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
+from lobster0.agent.context import ContextBuilder
+from lobster0.agent.runner import AgentRunner
+from lobster0.agent.turn import TurnService
+from lobster0.bootstrap import initialize_state
+from lobster0.config import WorkspaceConfig
+from lobster0.memory.buffer import MemoryBufferRepository
+from lobster0.memory.flush import FlushCoordinator, MemoryCapture
+from lobster0.memory.repository import MemoryRunRepository
+from lobster0.paths import build_state_paths
+from lobster0.providers.base import ModelResponse
+from lobster0.storage.conversations import MessageRepository, SessionRepository, TurnRepository
+from lobster0.storage.database import Database
 from tests.fakes.fake_provider import FakeProvider
 
 NOW = datetime(2026, 8, 9, 10, 0, tzinfo=UTC)

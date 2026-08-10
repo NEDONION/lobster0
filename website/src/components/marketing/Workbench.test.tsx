@@ -27,6 +27,6 @@ describe('Workbench', () => {
       'href',
       '/en/docs/getting-started',
     );
-    expect(screen.getByText(/git clone https:\/\/github.com\/NEDONION\/miniclaw.git/)).toBeInTheDocument();
+    expect(screen.getByText(/git clone https:\/\/github.com\/NEDONION\/lobster0.git/)).toBeInTheDocument();
   });
 });
