@@ -75,8 +75,8 @@ export interface MarketingCopy {
       core: string;
       surfaces: string;
       tools: string;
-      channelCases: string;
-      automationCases: string;
+      permissionModes: string;
+      dataLocation: string;
     };
   };
   product: {
@@ -163,7 +163,7 @@ export const marketingCopy = {
     },
     nav: {
       product: '特性',
-      workbench: '演示',
+      workbench: '运行机制',
       docs: '文档',
       github: 'GitHub',
       language: '切换语言',
@@ -206,8 +206,8 @@ export const marketingCopy = {
         core: 'Python Core',
         surfaces: '使用入口',
         tools: '内置 Tool',
-        channelCases: 'Channel cases',
-        automationCases: 'Automation cases',
+        permissionModes: '权限档位',
+        dataLocation: '数据存放',
       },
     },
     product: {
@@ -258,7 +258,7 @@ export const marketingCopy = {
       },
     ],
     workbench: {
-      eyebrow: '演示 / 03',
+      eyebrow: '运行机制 / 03',
       title: '看真实机制，不看功能截图。',
       lead: '两条动画化的真实执行链路，加上一张多入口结构图，展示 Lobster0 今天已经验证的工作方式——开发中持续变化，截图只会过时。',
     },
@@ -317,7 +317,7 @@ export const marketingCopy = {
     },
     nav: {
       product: 'Features',
-      workbench: 'Demo',
+      workbench: 'How it runs',
       docs: 'Docs',
       github: 'GitHub',
       language: 'Switch language',
@@ -360,8 +360,8 @@ export const marketingCopy = {
         core: 'Python core',
         surfaces: 'surfaces',
         tools: 'built-in tools',
-        channelCases: 'Channel cases',
-        automationCases: 'Automation cases',
+        permissionModes: 'permission modes',
+        dataLocation: 'data stays',
       },
     },
     product: {
@@ -412,7 +412,7 @@ export const marketingCopy = {
       },
     ],
     workbench: {
-      eyebrow: 'DEMO / 03',
+      eyebrow: 'HOW IT RUNS / 03',
       title: 'Inspect the real mechanism—not a feature screenshot.',
       lead: 'Two animated execution paths, plus one channel diagram, show the workflows Lobster0 can substantiate today—actively evolving, so a screenshot would just go stale.',
     },
