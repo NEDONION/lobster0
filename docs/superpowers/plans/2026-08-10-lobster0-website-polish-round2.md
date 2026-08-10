@@ -198,6 +198,47 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
 - `npx playwright test tests/e2e/marketing.spec.ts`：2 个失败，和 Round 3/4 记录的**同一组**预先存在的 flaky（`#safety-tab` 时序、`.claw-trace` reduced-motion 断言）一致，与本轮改动无关
 - 可视化：Playwright + 系统 Chrome 截图，03/04/05 三个面板桌面端逐一截图确认
 
+### 待办（已完成，见 Round 7）
+
+~~项目改名（README.md / README_EN.md / 官网品牌名 MiniClaw → Lobster0，含 `siteFacts.install` 里写死的旧仓库地址）还没做~~——另一个并行 session 用专门的 `codex/rename-lobster0` 分支做完了，见 Round 7。
+
+## Round 7（2026-08-11）
+
+### 触发反馈
+
+用户要求把改名合并到 main、追问 `lobster0.jchu.tech` 打不开、`miniclaw.jchu.tech` 显示的名字问题，以及"全站按钮组件不精细、比较笨重，参照 Vercel 精细化"。
+
+### 已完成
+
+#### 1. 协调另一个 session 的改名工作，安全合并进 main
+
+发现有独立的 `codex/rename-lobster0` 分支（专属 worktree）在做**全产品**改名（Python 包/CLI/PyPI 名/状态目录/环境变量前缀/npm scope/README/官网，553 个文件），设计文档写"用户已确认，执行中"。命名规范核对：仓库/URL 全小写 `lobster0`，展示文案（README、官网）用 `Lobster0`——和该分支自己的设计文档一致，不用改。
+
+**发现该 worktree 处于危险的中间状态**：`git status` 显示多个 `UU`（合并冲突未解决）标记的文件，还混入了大量与改名无关的未提交改动（桌面视觉刷新、飞书 phase6 生产验收等）。**没有碰这个 worktree**——转而验证了一个关键事实：分支的最后一次**提交**（`e027cbc`，一次干净的、已解决冲突的 `Merge remote-tracking branch 'origin/main'`）和当前 worktree 的脏工作区状态是两回事，git merge 只关心已提交内容。用一个全新的临时 worktree（`git worktree add --detach /tmp/... origin/main`）独立验证：`e027cbc` 合并进当前 main 完全无冲突（`git merge-tree` 干净输出）、内容里没有残留冲突标记、Python 包能正常 `import lobster0`、README 品牌名确认干净（15 处 `Lobster0`，0 处遗留）、网站 `tsc`/`eslint`/`vitest` 全绿。正准备 push 时发现**main 已经在这几分钟内被通过 GitHub PR #6 合并了**（另一个 session/用户自己走的标准 PR 流程）——对比了我独立验证的合并结果和 PR #6 合并后的 main，`git diff` 完全一致，确认不需要重复推送，直接清理了临时 worktree。
+
+然后把 `codex/miniclaw-website` 网站分支同步到最新 main（`git merge origin/main`），干净无冲突，`tsc`/`eslint`/`vitest` 全绿，推送。
+
+#### 2. 域名排查
+
+- `miniclaw.jchu.tech`："名字还是 miniclaw" —— 用 `curl` 直接抓服务端渲染内容确认 `<title>` 已经是 `Lobster0 — 你的本地行动助手`，代码层面没问题，是域名字符串本身或浏览器缓存的事。
+- `lobster0.jchu.tech` 打不开 —— `vercel domains inspect` 显示 DNS 未配置（不确定是之前记录有误还是记录被清掉了），给了用户需要在 DNSPod 加的 A 记录，用户已加，等待生效验证。
+
+#### 3. 按钮/阴影系统精细化，实测对齐 Vercel
+
+没有凭感觉猜，直接用 `javascript_tool` 在 vercel.com 真实页面上跑 `getComputedStyle` 抓取按钮的圆角/阴影/字重/高度实测值：导航小按钮圆角 6px、主 CTA 圆角 8px（强调型用 9999px 胶囊）、**几乎不用模糊投影阴影**（大部分 `box-shadow: none`，次要按钮只用 `0 0 0 1px` 描边模拟边界）、字重 500（不是 700 那种粗体）、高度 40px。
+
+对照实测数据改了两处：
+- `.button` 系统（`globals.css`）：`min-height` 48px→40px，`border-radius` 10px→8px，`font-weight` 680→500，字号加了 `0.875rem`；`.button--primary` 的 `box-shadow: 0 12px 32px ...`（这是"笨重感"的主要来源）直接删除，hover 从 `transform: translateY(-2px)` 位移改成纯颜色过渡（`background-color` 变暗）。
+- 全站 24 处 `box-shadow` 里，把 13 处模糊半径在 40-80px、明显"发光/悬浮"感过重的投影阴影，统一收紧到 12-28px 模糊半径、更低的不透明度（描边环性质的 `0 0 0 Npx` 阴影不动，那类本来就是克制的）。
+- **踩坑（本轮会话第四次同类问题）**：`MarketingHome.module.css` 里又发现一条 `.root :global(.button--primary) { box-shadow: 0 12px 28px ... }`，把我在 `globals.css` 里删掉的按钮阴影重新加了回来，`.root :global(.button)` 也维持着旧的 46px/10px/0.9rem 数值。删掉这条 override，让 `globals.css` 的统一新标准生效。这进一步印证了之前记录的经验：**每次改动共享组件样式前，先搜一遍 `MarketingHome.module.css` 里的同名 `:global(...)` 规则**。
+
+可视化验证：Playwright + 系统 Chrome 截图确认按钮外观已经是扁平、无阴影、圆角适中的效果，品牌名 `Lobster0` 正确显示。
+
+### 验证
+
+- `npx tsc --noEmit` / `npx eslint src/` / `npx vitest run`（28/28）：全部通过
+- `npx playwright test tests/e2e/marketing.spec.ts`：2 个失败，仍是同一组已知的预先存在 flaky，与本轮改动无关
+
 ### 待办
 
-项目改名（README.md / README_EN.md / 官网品牌名 Lobster0 → lobster0，含 `siteFacts.install` 里写死的旧仓库地址）还没做，是这轮最后剩下的一项。
+用户还要求"演示"3 个 tab 照着"特性 02-05"的真实界面剧场风格重做、"特性 01"（运行时）也重做——这两项还没做，是下一步。装甲龙虾 Logo（用户要求带盔甲/武器感，不是单纯龙虾）也还没做。
