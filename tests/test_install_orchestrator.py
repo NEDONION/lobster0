@@ -274,8 +274,10 @@ class _Operations:
         self.current = previous
         self.service = "old"
 
-    def cleanup(self, _layout: object) -> None:
-        """记录 staging cleanup。"""
+    def cleanup(self, _layout: object, lock: _Lock) -> None:
+        """记录 actual fake lock 下的 staging cleanup。"""
+        if lock is not self.held_lock:
+            raise AssertionError("cleanup did not receive the acquired lock")
         self.calls.append("cleanup")
 
 
@@ -1098,16 +1100,16 @@ class RetryRecoveryTests(unittest.TestCase):
         fresh_home = self.home / "fresh"
         fresh_home.mkdir(mode=0o700)
         layout = InstallLayout.user(fresh_home, version="0.7.0")
-        try:
-            recovered = install_orchestrator._discard_stale_downloads(layout)
-        except InstallError as error:
-            self.fail(f"missing runtimes was not empty: {error.code}")
-        self.assertIs(recovered, False)
         with mock.patch(
             "miniclaw.install.layout._probe_process",
             return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
             with InstallLock.acquire(layout) as lock:
+                try:
+                    recovered = install_orchestrator._discard_stale_downloads(layout, lock)
+                except InstallError as error:
+                    self.fail(f"missing runtimes was not empty: {error.code}")
+                self.assertIs(recovered, False)
                 self.operations.recover(layout, lock, self.manifest)
         self.assertFalse(layout.runtimes_dir.exists())
 
@@ -1194,7 +1196,6 @@ class RetryRecoveryTests(unittest.TestCase):
         stale = self.layout.runtimes_dir / ".0.7.0.downloads"
         stale.mkdir(mode=0o700)
         (stale / "partial").write_bytes(b"partial")
-        held_lock = mock.sentinel.held_lock
         with (
             mock.patch(
                 "miniclaw.install.orchestrator.discard_interrupted_runtime_staging",
@@ -1204,15 +1205,106 @@ class RetryRecoveryTests(unittest.TestCase):
                 "miniclaw.install.orchestrator.discard_unactivated_runtime",
                 return_value=True,
             ) as discard_runtime,
+            mock.patch(
+                "miniclaw.install.layout._probe_process",
+                return_value=("alive", "2026-08-10T00:00:00Z"),
+            ),
         ):
-            self.operations.recover(
-                self.layout,
-                held_lock,  # type: ignore[arg-type]
-                self.manifest,
-            )
-        discard_staging.assert_called_once_with(self.layout, held_lock, self.manifest)
-        discard_runtime.assert_called_once_with(self.layout, held_lock)
+            with InstallLock.acquire(self.layout) as held_lock:
+                self.operations.recover(self.layout, held_lock, self.manifest)
+                discard_staging.assert_called_once_with(
+                    self.layout,
+                    held_lock,
+                    self.manifest,
+                )
+                discard_runtime.assert_called_once_with(self.layout, held_lock)
         self.assertFalse(stale.exists())
+
+    def test_recovery_preserves_downloads_when_actual_lock_is_closed(self) -> None:
+        """closed actual lock 不得先删除 downloads 再由 Task8 报错。"""
+        stale = self.layout.runtimes_dir / ".0.7.0.downloads"
+        stale.mkdir(mode=0o700)
+        marker = stale / "partial"
+        marker.write_bytes(b"preserve")
+        identity = (stale.lstat().st_dev, stale.lstat().st_ino)
+        with mock.patch(
+            "miniclaw.install.layout._probe_process",
+            return_value=("alive", "2026-08-10T00:00:00Z"),
+        ):
+            lock = InstallLock.acquire(self.layout)
+            lock.close()
+            with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                self.operations.recover(self.layout, lock, self.manifest)
+        self.assertTrue(stale.is_dir())
+        self.assertEqual((stale.lstat().st_dev, stale.lstat().st_ino), identity)
+        self.assertEqual(marker.read_bytes(), b"preserve")
+
+    def test_recovery_preserves_downloads_when_lock_path_is_replaced(self) -> None:
+        """lock pathname replacement 必须在 downloads rename 前 fail closed。"""
+        stale = self.layout.runtimes_dir / ".0.7.0.downloads"
+        stale.mkdir(mode=0o700)
+        marker = stale / "partial"
+        marker.write_bytes(b"preserve")
+        identity = (stale.lstat().st_dev, stale.lstat().st_ino)
+        with mock.patch(
+            "miniclaw.install.layout._probe_process",
+            return_value=("alive", "2026-08-10T00:00:00Z"),
+        ):
+            lock = InstallLock.acquire(self.layout)
+            self.layout.lock.unlink()
+            self.layout.lock.write_bytes(b"foreign\n")
+            self.layout.lock.chmod(0o600)
+            try:
+                with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                    self.operations.recover(self.layout, lock, self.manifest)
+            finally:
+                lock.close()
+        self.assertTrue(stale.is_dir())
+        self.assertEqual((stale.lstat().st_dev, stale.lstat().st_ino), identity)
+        self.assertEqual(marker.read_bytes(), b"preserve")
+        self.assertEqual(self.layout.lock.read_bytes(), b"foreign\n")
+
+    def test_recovery_preserves_private_downloads_evidence_after_lock_drift(self) -> None:
+        """quarantine 后 lock 漂移必须保留 exact private downloads evidence。"""
+        stale = self.layout.runtimes_dir / ".0.7.0.downloads"
+        stale.mkdir(mode=0o700)
+        marker = stale / "partial"
+        marker.write_bytes(b"preserve")
+        identity = (stale.lstat().st_dev, stale.lstat().st_ino)
+        real_rename = os.rename
+
+        def replace_lock_after_quarantine(source: object, destination: object) -> None:
+            """完成 exact downloads rename 后替换 lock pathname。"""
+            real_rename(source, destination)
+            if Path(source) == stale:
+                self.layout.lock.unlink()
+                self.layout.lock.write_bytes(b"foreign\n")
+                self.layout.lock.chmod(0o600)
+
+        with mock.patch(
+            "miniclaw.install.layout._probe_process",
+            return_value=("alive", "2026-08-10T00:00:00Z"),
+        ):
+            lock = InstallLock.acquire(self.layout)
+            try:
+                with (
+                    mock.patch.object(
+                        install_orchestrator.os,
+                        "rename",
+                        side_effect=replace_lock_after_quarantine,
+                    ),
+                    self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+                ):
+                    self.operations.recover(self.layout, lock, self.manifest)
+            finally:
+                lock.close()
+        evidence = tuple(
+            self.layout.runtimes_dir.glob(".0.7.0.downloads-quarantine-*/payload")
+        )
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual((evidence[0].lstat().st_dev, evidence[0].lstat().st_ino), identity)
+        self.assertEqual((evidence[0] / "partial").read_bytes(), b"preserve")
+        self.assertEqual(self.layout.lock.read_bytes(), b"foreign\n")
 
     def test_recovery_never_follows_foreign_downloads_symlink(self) -> None:
         """伪造 downloads symlink 必须保留其 target 并稳定失败。"""
@@ -1222,18 +1314,13 @@ class RetryRecoveryTests(unittest.TestCase):
         marker.write_bytes(b"foreign")
         stale = self.layout.runtimes_dir / ".0.7.0.downloads"
         stale.symlink_to(external, target_is_directory=True)
-        with (
-            mock.patch(
-                "miniclaw.install.orchestrator.discard_unactivated_runtime",
-                return_value=False,
-            ),
-            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        with mock.patch(
+            "miniclaw.install.layout._probe_process",
+            return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
-            self.operations.recover(
-                self.layout,
-                mock.sentinel.held_lock,  # type: ignore[arg-type]
-                self.manifest,
-            )
+            with InstallLock.acquire(self.layout) as lock:
+                with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                    self.operations.recover(self.layout, lock, self.manifest)
         self.assertTrue(stale.is_symlink())
         self.assertEqual(marker.read_bytes(), b"foreign")
 
@@ -1246,7 +1333,12 @@ class RetryRecoveryTests(unittest.TestCase):
             downloads,
             (metadata.st_dev, metadata.st_ino),
         )
-        self.operations.cleanup(self.layout)
+        with mock.patch(
+            "miniclaw.install.layout._probe_process",
+            return_value=("alive", "2026-08-10T00:00:00Z"),
+        ):
+            with InstallLock.acquire(self.layout) as lock:
+                self.operations.cleanup(self.layout, lock)
         self.assertFalse(downloads.exists())
 
     def test_cleanup_preserves_replaced_downloads_inode(self) -> None:
@@ -1262,7 +1354,12 @@ class RetryRecoveryTests(unittest.TestCase):
             downloads,
             (metadata.st_dev, metadata.st_ino),
         )
-        self.operations.cleanup(self.layout)
+        with mock.patch(
+            "miniclaw.install.layout._probe_process",
+            return_value=("alive", "2026-08-10T00:00:00Z"),
+        ):
+            with InstallLock.acquire(self.layout) as lock:
+                self.operations.cleanup(self.layout, lock)
         self.assertEqual(marker.read_bytes(), b"foreign")
 
     def test_existing_managed_receipt_stops_fresh_install_before_recovery(self) -> None:

@@ -434,8 +434,8 @@ class _Operations(Protocol):
     def rollback(self, layout: InstallLayout, previous: str | None, stage: str) -> None:
         """失败时恢复事务前 current。"""
 
-    def cleanup(self, layout: InstallLayout) -> None:
-        """清理本事务的临时下载和 staging。"""
+    def cleanup(self, layout: InstallLayout, lock: InstallLock) -> None:
+        """在 actual lock 下清理本事务的临时下载和 staging。"""
 
 
 class Installer:
@@ -544,7 +544,7 @@ class Installer:
                 else:
                     self._emit(InstallEvent("service.skipped", "warn", None, "service"))
                 self._operations.retain(layout)
-                self._operations.cleanup(layout)
+                self._operations.cleanup(layout, held_lock)
                 self._emit(InstallEvent("install.complete", "ok", None, "version"))
                 return InstallResult(
                     request.action,
@@ -559,7 +559,7 @@ class Installer:
                 except InstallError:
                     raise
                 finally:
-                    self._operations.cleanup(layout)
+                    self._operations.cleanup(layout, held_lock)
                 if isinstance(error, InstallError):
                     raise
                 raise InstallError("installer_error", "manifest") from None
@@ -756,7 +756,7 @@ class _SystemOperations:
     ) -> None:
         """在 actual install lock 下恢复本版本的 crash residue。"""
         _reject_existing_receipt(layout)
-        _discard_stale_downloads(layout)
+        _discard_stale_downloads(layout, lock)
         discard_interrupted_runtime_staging(layout, lock, manifest)
         discard_unactivated_runtime(layout, lock)
 
@@ -1046,8 +1046,8 @@ class _SystemOperations:
             )
         del self._installed_services[layout.program_prefix]
 
-    def cleanup(self, layout: InstallLayout) -> None:
-        """只删除本事务创建且仍在固定位置的 downloads tree。"""
+    def cleanup(self, layout: InstallLayout, lock: InstallLock) -> None:
+        """只在 actual lock 下删除本事务创建的 downloads tree。"""
         self._downloaded.pop(layout.program_prefix, None)
         download_receipt = self._download_roots.pop(layout.program_prefix, None)
         self._prior_receipts.pop(layout.program_prefix, None)
@@ -1067,16 +1067,17 @@ class _SystemOperations:
             if download_root.parent == layout.runtimes_dir and download_root.name == (
                 f".{layout.runtime.name}.downloads"
             ):
-                _discard_downloads_tree(layout, download_root, identity)
+                _discard_downloads_tree(layout, download_root, identity, lock)
         except (InstallError, OSError):
             pass
 
 
-def _discard_stale_downloads(layout: InstallLayout) -> bool:
+def _discard_stale_downloads(layout: InstallLayout, lock: InstallLock) -> bool:
     """no-follow quarantine 并删除 Task11 自有的 stale downloads tree。
 
     Args:
         layout: 已绑定目标版本与受管 runtimes parent 的严格 layout。
+        lock: 当前 `with InstallLock.acquire(layout)` 返回的 actual lock。
 
     Returns:
         删除 exact current-owner downloads tree 时为 true；不存在时为 false。
@@ -1088,6 +1089,7 @@ def _discard_stale_downloads(layout: InstallLayout) -> bool:
         layout,
         layout.runtimes_dir / f".{layout.runtime.name}.downloads",
         None,
+        lock,
     )
 
 
@@ -1095,6 +1097,7 @@ def _discard_downloads_tree(
     layout: InstallLayout,
     path: Path,
     expected_identity: tuple[int, int] | None,
+    lock: InstallLock,
 ) -> bool:
     """按可选创建 receipt quarantine 并删除一个 exact downloads inode。
 
@@ -1102,6 +1105,7 @@ def _discard_downloads_tree(
         layout: 已绑定受管 runtimes parent 的严格 layout。
         path: parent 下固定版本的 downloads 路径。
         expected_identity: 当前事务创建时记录的 device/inode，或 retry 时为空。
+        lock: 当前 layout 的 actual live install lock。
 
     Returns:
         删除 exact downloads tree 时为 true；不存在时为 false。
@@ -1110,6 +1114,7 @@ def _discard_downloads_tree(
         InstallError: owner、类型、mode、inode 或 durability 漂移。
     """
     try:
+        _require_downloads_lock(layout, lock)
         try:
             parent = layout.runtimes_dir.lstat()
         except FileNotFoundError:
@@ -1142,9 +1147,11 @@ def _discard_downloads_tree(
         quarantine_identity = quarantine.lstat()
         private = quarantine / "payload"
         private.mkdir(mode=0o700)
+        _require_downloads_lock(layout, lock)
         os.rename(path, private)
         _fsync_directory(layout.runtimes_dir)
         _fsync_directory(quarantine)
+        _require_downloads_lock(layout, lock)
         moved = private.lstat()
         if (
             not stat.S_ISDIR(moved.st_mode)
@@ -1154,6 +1161,7 @@ def _discard_downloads_tree(
             or not shutil.rmtree.avoids_symlink_attacks
         ):
             raise InstallError("runtime_install_failed", "manifest")
+        _require_downloads_lock(layout, lock)
         shutil.rmtree(private)
         current_quarantine = quarantine.lstat()
         if (
@@ -1165,6 +1173,7 @@ def _discard_downloads_tree(
         ):
             raise InstallError("runtime_install_failed", "manifest")
         _fsync_directory(quarantine)
+        _require_downloads_lock(layout, lock)
         quarantine.rmdir()
         _fsync_directory(layout.runtimes_dir)
         return True
@@ -1172,6 +1181,20 @@ def _discard_downloads_tree(
         raise
     except OSError:
         raise InstallError("runtime_install_failed", "manifest") from None
+
+
+def _require_downloads_lock(layout: InstallLayout, lock: InstallLock) -> None:
+    """要求 downloads mutation 持有当前 layout 的 actual live lock。
+
+    Args:
+        layout: 需要绑定 ownership 的严格安装 layout。
+        lock: 必须来自当前 layout 的 `InstallLock.acquire` 实例。
+
+    Raises:
+        InstallError: lock 类型、路径、inode、payload 或进程 identity 漂移。
+    """
+    if type(lock) is not InstallLock or not lock.owns(layout):
+        raise InstallError("runtime_install_failed", "manifest")
 
 
 def verify_bootstrap_inputs(inputs: BootstrapInputs) -> bytes:

@@ -19,9 +19,18 @@ _DYNAMIC_BUILTINS = {"__import__", "compile", "eval", "exec"}
 _DYNAMIC_MODULES = {"builtins", "importlib"}
 _DYNAMIC_NAMES = _DYNAMIC_BUILTINS | _DYNAMIC_MODULES | {
     "__builtins__",
+    "__dict__",
+    "globals",
     "import_module",
+    "locals",
+    "modules",
+    "vars",
 }
-_DYNAMIC_ATTRIBUTES = (_DYNAMIC_BUILTINS - {"compile"}) | {"import_module"}
+_DYNAMIC_ATTRIBUTES = (_DYNAMIC_BUILTINS - {"compile"}) | {
+    "__dict__",
+    "import_module",
+    "modules",
+}
 
 
 def validate_imports(source: Path) -> None:
@@ -72,6 +81,8 @@ def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
             raise ValueError(f"unsafe dynamic {node.id} in {path.name}")
         if isinstance(node, ast.Attribute) and node.attr in _DYNAMIC_ATTRIBUTES:
             raise ValueError(f"unsafe dynamic {node.attr} in {path.name}")
+        if isinstance(node, ast.Constant) and node.value in _DYNAMIC_NAMES:
+            raise ValueError(f"unsafe dynamic {node.value} in {path.name}")
         if isinstance(node, ast.ImportFrom):
             blocked = next(
                 (alias.name for alias in node.names if alias.name in _DYNAMIC_NAMES),
@@ -79,9 +90,6 @@ def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
             )
             if blocked is not None:
                 raise ValueError(f"unsafe dynamic {blocked} in {path.name}")
-        folded = _constant_string(node) if isinstance(node, ast.expr) else None
-        if folded in _DYNAMIC_NAMES:
-            raise ValueError(f"unsafe dynamic {folded} in {path.name}")
     for node in nodes:
         modules: tuple[str, ...] = ()
         if isinstance(node, ast.Import):
@@ -98,21 +106,6 @@ def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
         )
         if blocked is not None:
             raise ValueError(f"unsafe dynamic {blocked} in {path.name}")
-
-
-def _constant_string(node: ast.expr) -> str | None:
-    """折叠 bounded literal string 加法，其他表达式返回空。"""
-    if isinstance(node, ast.Constant) and type(node.value) is str:
-        return node.value
-    if not isinstance(node, ast.BinOp) or not isinstance(node.op, ast.Add):
-        return None
-    left = _constant_string(node.left)
-    right = _constant_string(node.right)
-    if left is None or right is None or len(left) + len(right) > 128:
-        return None
-    return left + right
-
-
 def build_zipapp(source: Path, output: Path) -> Path:
     """只复制 install package 并生成 byte-reproducible stdlib-only pyz。
 

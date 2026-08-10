@@ -43,7 +43,8 @@ class InstallerZipappTests(unittest.TestCase):
             source = Path(temporary) / "install"
             source.mkdir()
             (source / "__init__.py").write_text(
-                "import json\nfrom . import models\nfrom miniclaw.install import models\n",
+                "import json\nimport sys\nprint(sys.argv[0])\n"
+                "from . import models\nfrom miniclaw.install import models\n",
                 encoding="utf-8",
             )
             (source / "models.py").write_text("from pathlib import Path\n", encoding="utf-8")
@@ -88,17 +89,49 @@ class InstallerZipappTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, detail):
                     builder.validate_imports(source)
 
-    def test_ast_boundary_rejects_dynamic_module_access_and_constant_folding(self) -> None:
-        """importlib/builtins 的 alias、全局访问与常量折叠均必须 fail closed。"""
+    def test_ast_boundary_rejects_dynamic_module_and_global_namespace_access(self) -> None:
+        """importlib/builtins alias 与 global namespace 均必须 fail closed。"""
         cases = (
             ("import importlib as loader\nloader\n", "importlib"),
             ("import builtins as b\nb\n", "builtins"),
             ("globals()['__builtins__']\n", "__builtins__"),
-            ("globals()['__built' + 'ins__']\n", "__builtins__"),
+            ("globals()['__built' + 'ins__']\n", "globals"),
             (
                 "import importlib\n"
                 "getattr(importlib, 'import_' + 'module')('httpx')\n",
                 "importlib",
+            ),
+        )
+        builder = _load_builder()
+        for payload, detail in cases:
+            with self.subTest(detail=detail), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "install"
+                source.mkdir()
+                (source / "__init__.py").write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, detail):
+                    builder.validate_imports(source)
+
+    def test_ast_boundary_rejects_dynamic_namespace_primitives_and_literal_join(self) -> None:
+        """namespace 原语、alias/getattr 与 literal join 组合均必须 fail closed。"""
+        cases = (
+            ("import sys\nsys.modules\n", "modules"),
+            ("lookup = globals\nlookup()\n", "globals"),
+            ("lookup = vars\nlookup()\n", "vars"),
+            ("lookup = locals\nlookup()\n", "locals"),
+            ("import sys as platform\nplatform.__dict__\n", "__dict__"),
+            ("import sys as platform\ngetattr(platform, '__dict__')\n", "__dict__"),
+            ("import sys as platform\ngetattr(platform, 'modules')\n", "modules"),
+            (
+                "import sys\n"
+                "loader = sys.modules[''.join(('import', 'lib'))]\n"
+                "getattr(loader, ''.join(('import_', 'module')))('httpx')\n",
+                "modules",
+            ),
+            (
+                "import sys\n"
+                "namespace = sys.modules[''.join(('built', 'ins'))]\n"
+                "getattr(namespace, ''.join(('__im', 'port__')))('httpx')\n",
+                "modules",
             ),
         )
         builder = _load_builder()
