@@ -72,6 +72,7 @@ from lobster0.install.service import (
     service_install,
     service_uninstall,
 )
+from lobster0.install.update import UpdateCoordinator, UpdateRequest
 
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _VERSION = re.compile(
@@ -88,6 +89,7 @@ _MAX_CONFIG_BYTES = 1024 * 1024
 _PATH = "/usr/local/bin:/usr/bin:/bin"
 _TIMEOUT = 300.0
 _OUTPUT_LIMIT = 64 * 1024
+_UPDATE_HEALTH_TIMEOUT = 30.0
 _INTERNAL_HOP = "LOBSTER0_INSTALLER_HOPS"
 _CHANNEL_FIELDS = {
     "feishu": ("app_id_env", "app_secret_env"),
@@ -382,6 +384,14 @@ class _Operations(Protocol):
     ) -> None:
         """在 actual lock 下恢复 staging、未激活 Runtime 与 stale downloads。"""
 
+    def recover_for_update(
+        self,
+        layout: InstallLayout,
+        lock: InstallLock,
+        manifest: ReleaseManifest,
+    ) -> None:
+        """恢复 update 场景的 staging/未激活 Runtime，但不拒绝既有 receipt。"""
+
     def download(self, plan: InstallPlan, layout: InstallLayout) -> _Downloaded:
         """下载并解包全部 verified artifacts。"""
 
@@ -427,6 +437,15 @@ class _Operations(Protocol):
 
     def install_service(self, plan: InstallPlan, layout: InstallLayout) -> None:
         """安装并 health-check Gateway service。"""
+
+    def update(
+        self,
+        plan: InstallPlan,
+        layout: InstallLayout,
+        built: RuntimeReceipt,
+        previous: str | None,
+    ) -> None:
+        """在 DB-guarded UpdateCoordinator 保护下切换到新 Runtime。"""
 
     def retain(self, layout: InstallLayout) -> None:
         """只保留 current 与 N-1 Runtime。"""
@@ -480,8 +499,6 @@ class Installer:
             raise InstallError("request_invalid", "action")
         plan = self._operations.preflight(request, self._bootstrap)
         self._emit(InstallEvent("install.preflight", "ok", None, "manifest"))
-        if request.action == "update" and hop == "1":
-            raise InstallError("request_invalid", "action")
         if request.dry_run:
             self._emit(
                 InstallEvent(
@@ -511,21 +528,37 @@ class Installer:
             executable, argv, environment = handoff
             self._execve(executable, argv, environment)
             raise InstallError("installer_error", "manifest")
-        if request.action == "update":
-            raise InstallError("request_invalid", "action")
         plan = self._operations.prepare_dependencies(plan, self._bootstrap)
         layout = self._operations.layout(plan)
         with self._operations.lock(layout) as held_lock:
-            self._operations.recover(layout, held_lock, plan.manifest)
+            if request.action == "update":
+                self._operations.recover_for_update(layout, held_lock, plan.manifest)
+            else:
+                self._operations.recover(layout, held_lock, plan.manifest)
             previous = self._operations.previous_current(layout)
             stage = "locked"
             try:
+                if request.action == "update" and previous is None:
+                    raise InstallError("request_invalid", "action")
                 downloaded = self._operations.download(plan, layout)
                 stage = "downloaded"
                 self._emit(InstallEvent("install.download", "ok", None, "artifacts"))
                 built = self._operations.build(plan, layout, downloaded)
                 stage = "built"
                 self._emit(InstallEvent("install.staged", "ok", None, "version"))
+                if request.action == "update":
+                    self._operations.update(plan, layout, built, previous)
+                    stage = "updated"
+                    self._emit(InstallEvent("update.activated", "ok", None, "version"))
+                    self._operations.cleanup(layout, held_lock)
+                    self._emit(InstallEvent("update.complete", "ok", None, "version"))
+                    return InstallResult(
+                        request.action,
+                        plan.manifest.version,
+                        plan.platform,
+                        True,
+                        tuple(self._events),
+                    )
                 self._operations.setup(plan, layout, built)
                 service_ready = self._operations.doctor(plan, layout, built)
                 self._emit(InstallEvent("install.smoke", "ok", None, "service"))
@@ -554,6 +587,14 @@ class Installer:
                     tuple(self._events),
                 )
             except BaseException as error:
+                if request.action == "update":
+                    # UpdateCoordinator 已经在返回前完成了自己的 DB-guarded
+                    # 回滚（干净恢复旧 Runtime/service，或者保留 conflict
+                    # 状态）；这里只需要释放本次事务专属的 staging 目录。
+                    self._operations.cleanup(layout, held_lock)
+                    if isinstance(error, InstallError):
+                        raise
+                    raise InstallError("installer_error", "manifest") from None
                 try:
                     self._operations.rollback(layout, previous, stage)
                 except InstallError:
@@ -756,6 +797,22 @@ class _SystemOperations:
     ) -> None:
         """在 actual install lock 下恢复本版本的 crash residue。"""
         _reject_existing_receipt(layout)
+        _discard_stale_downloads(layout, lock)
+        discard_interrupted_runtime_staging(layout, lock, manifest)
+        discard_unactivated_runtime(layout, lock)
+
+    def recover_for_update(
+        self,
+        layout: InstallLayout,
+        lock: InstallLock,
+        manifest: ReleaseManifest,
+    ) -> None:
+        """恢复 update 场景的 crash residue，但不拒绝既有 install receipt。
+
+        与 `recover` 唯一的区别是跳过 `_reject_existing_receipt`：update
+        本身要求目标 layout 已经有一份受管 receipt，这是 Task 13 才能
+        安全处理的场景（参见 `_reject_existing_receipt` 自身的说明）。
+        """
         _discard_stale_downloads(layout, lock)
         discard_interrupted_runtime_staging(layout, lock, manifest)
         discard_unactivated_runtime(layout, lock)
@@ -993,6 +1050,116 @@ class _SystemOperations:
         except BaseException:
             self._rollback_installed_service(layout)
             raise
+
+    def update(
+        self,
+        plan: InstallPlan,
+        layout: InstallLayout,
+        built: RuntimeReceipt,
+        previous: str | None,
+    ) -> None:
+        """在 DB-guarded UpdateCoordinator 保护下切换到新 Runtime。
+
+        Doctor smoke 通过之后才停止旧 service，最大限度缩短停机窗口；
+        真正的备份、migration、activation、service 刷新与失败回滚全部
+        委托给 `UpdateCoordinator`，本方法只把 Task 8/10/11 原语绑定
+        成它需要的回调闭包。
+        """
+        if previous is None:
+            raise InstallError("request_invalid", "manifest")
+        if not self.doctor(plan, layout, built):
+            raise InstallError("doctor_blocked", "service")
+        old_receipt = InstallReceipt.load(layout.receipt)
+        if old_receipt.current_runtime != previous:
+            raise InstallError("plan_invalid", "manifest")
+        platform = (
+            ServicePlatform.SYSTEMD_USER
+            if plan.service_manager == "systemd-user"
+            else ServicePlatform.LAUNCHD
+        )
+        has_service = old_receipt.service_file_sha256 is not None
+        system_prefix = plan.request.system_prefix
+        new_python = layout.runtime / "venv" / "bin" / "python"
+        new_service_started = False
+
+        def run_migration() -> None:
+            argv = (
+                str(new_python),
+                "-I",
+                "-m",
+                "lobster0",
+                "init",
+                "--home",
+                str(layout.state_home),
+            )
+            _checked_owner_command(self.runner, argv, layout, system_prefix=system_prefix)
+
+        def stop_service() -> None:
+            if not has_service:
+                return
+            assert old_receipt.service_file_sha256 is not None
+            if system_prefix:
+                _uninstall_service_as_owner(
+                    layout, platform, old_receipt.service_file_sha256, self.runner
+                )
+            else:
+                service_uninstall(
+                    render_service_spec(layout, platform),
+                    self.runner,
+                    expected_sha256=old_receipt.service_file_sha256,
+                )
+
+        def start_service() -> None:
+            if not has_service:
+                return
+            if system_prefix:
+                _install_service_as_owner(layout, platform, self.runner)
+            else:
+                service_install(render_service_spec(layout, platform), self.runner)
+
+        def start_new_service(timeout: float) -> bool:
+            nonlocal new_service_started
+            del timeout
+            start_service()
+            new_service_started = True
+            return True
+
+        def stop_new_service() -> None:
+            nonlocal new_service_started
+            if not new_service_started:
+                return
+            stop_service()
+            new_service_started = False
+
+        def activate_new_runtime() -> None:
+            activate_runtime(layout, built)
+
+        def commit_receipt() -> None:
+            replace(
+                old_receipt,
+                current_runtime=built.runtime_relative,
+                previous_runtime=previous,
+            ).write(layout.receipt)
+
+        def revert_to_old_runtime() -> None:
+            _restore_current(layout, previous)
+            old_receipt.write(layout.receipt)
+
+        request = UpdateRequest(
+            database=layout.state_home / "lobster0.db",
+            backup_path=layout.state_home / f".lobster0.db.update-backup.{os.getpid()}",
+            stop_old_service=stop_service,
+            run_migration=run_migration,
+            activate_new_runtime=activate_new_runtime,
+            commit_receipt=commit_receipt,
+            revert_to_old_runtime=revert_to_old_runtime,
+            start_new_service=start_new_service,
+            stop_new_service=stop_new_service,
+            restart_old_service=start_service,
+            retain_runtimes=lambda: retain_current_and_previous(layout),
+            health_timeout=_UPDATE_HEALTH_TIMEOUT,
+        )
+        UpdateCoordinator().update(request)
 
     def retain(self, layout: InstallLayout) -> None:
         """复用 Runtime retention，仅保留 current 与 N-1。"""

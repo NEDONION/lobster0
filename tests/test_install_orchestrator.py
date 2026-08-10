@@ -169,6 +169,7 @@ class _Operations:
                 "service": "service_install_failed",
                 "service_receipt": "installer_error",
                 "retain": "runtime_install_failed",
+                "update": "rollback_conflict",
             }[name]
             raise InstallError(code, "manifest")
 
@@ -221,6 +222,18 @@ class _Operations:
         self.recovery_manifest = manifest
         self.calls.append("recover")
 
+    def recover_for_update(
+        self,
+        _layout: object,
+        lock: _Lock,
+        manifest: object,
+    ) -> None:
+        """记录 update 场景跳过 receipt 拒绝的恢复边界。"""
+        if lock is not self.held_lock:
+            raise AssertionError("recovery did not receive the acquired lock")
+        self.recovery_manifest = manifest
+        self.calls.append("recover")
+
     def previous_current(self, _layout: object) -> str:
         """返回事务开始前的 current。"""
         self.calls.append("previous_current")
@@ -263,6 +276,17 @@ class _Operations:
         self._call("service")
         self.service = "new"
         self._call("service_receipt")
+
+    def update(self, _plan: _Plan, _layout: object, _built: object, _previous: str) -> None:
+        """模拟 DB-guarded update：成功时原子切换 fake current/service。
+
+        真正的备份/守卫/回滚行为已经在 `tests/test_install_update.py` 里
+        针对 `UpdateCoordinator` 单独覆盖；这里只需要验证 orchestrator
+        级别的顺序、事件与失败路由。
+        """
+        self._call("update")
+        self.current = "new"
+        self.service = "new"
 
     def retain(self, _layout: object) -> None:
         """记录 Runtime retention。"""
@@ -392,25 +416,94 @@ class InstallerStateMachineTests(unittest.TestCase):
                 ))
                 self.assertEqual(operations.calls, [])
 
-    def test_update_target_hop_fails_after_preflight_before_pipeline(self) -> None:
-        """已跳转的 update target 只验证 bootstrap，不再 discovery 或安装。"""
+    def test_update_target_hop_runs_full_pipeline_and_activates(self) -> None:
+        """Task13：已跳转的 update target 现在会执行真正的 DB-guarded pipeline。"""
         operations = _Operations()
+        result = Installer(
+            self.bootstrap,
+            operations=operations,
+            environ={"LOBSTER0_INSTALLER_HOPS": "1"},
+        ).run(replace(self.request, action="update"))
+        self.assertEqual(
+            operations.calls,
+            [
+                "preflight",
+                "select_target",
+                "sandbox",
+                "system_plan",
+                "layout",
+                "lock.enter",
+                "recover",
+                "previous_current",
+                "download",
+                "hash",
+                "extract",
+                "venv",
+                "wheel",
+                "tui",
+                "update",
+                "cleanup",
+                "lock.exit",
+            ],
+        )
+        self.assertEqual(operations.current, "new")
+        self.assertEqual(operations.service, "new")
+        self.assertEqual(
+            [event.name for event in result.events],
+            [
+                "install.preflight",
+                "install.download",
+                "install.staged",
+                "update.activated",
+                "update.complete",
+            ],
+        )
+        self.assertEqual(
+            result,
+            InstallResult(
+                "update", "0.7.0", PlatformKey("linux", "x86_64"), True, result.events
+            ),
+        )
+
+    def test_update_without_verified_handoff_runs_pipeline_directly(self) -> None:
+        """第一跳没有更新目标（已经在目标版本）时，直接执行真正的 update pipeline。"""
+        operations = _Operations()
+        result = Installer(self.bootstrap, operations=operations).run(
+            replace(self.request, action="update")
+        )
+        self.assertEqual(operations.calls[:2], ["preflight", "select_target"])
+        self.assertIn("update", operations.calls)
+        self.assertTrue(result.changed)
+        self.assertEqual(operations.current, "new")
+
+    def test_update_failure_never_calls_install_style_rollback(self) -> None:
+        """update 失败时 UpdateCoordinator 已自行回滚，不得再调用 install 专用 rollback。"""
+        operations = _Operations(fail="update")
+        with self.assertRaisesRegex(InstallError, "rollback_conflict"):
+            Installer(
+                self.bootstrap,
+                operations=operations,
+                environ={"LOBSTER0_INSTALLER_HOPS": "1"},
+            ).run(replace(self.request, action="update"))
+        self.assertNotIn("rollback", operations.calls)
+        self.assertIn("cleanup", operations.calls)
+        self.assertEqual(operations.calls[-1], "lock.exit")
+        self.assertEqual(operations.current, "old")
+        self.assertEqual(operations.service, "old")
+
+    def test_update_without_existing_install_fails_closed(self) -> None:
+        """从未安装过（current 为空）时 update 必须 fail closed，不得凭空创建安装。"""
+        operations = _Operations()
+        operations.current = None  # type: ignore[assignment]
         with self.assertRaisesRegex(InstallError, "request_invalid"):
             Installer(
                 self.bootstrap,
                 operations=operations,
                 environ={"LOBSTER0_INSTALLER_HOPS": "1"},
             ).run(replace(self.request, action="update"))
-        self.assertEqual(operations.calls, ["preflight"])
-
-    def test_update_without_verified_handoff_never_runs_install_pipeline(self) -> None:
-        """第一跳 update 缺少 target handoff 时必须 fail closed。"""
-        operations = _Operations()
-        with self.assertRaisesRegex(InstallError, "request_invalid"):
-            Installer(self.bootstrap, operations=operations).run(
-                replace(self.request, action="update")
-            )
-        self.assertEqual(operations.calls, ["preflight", "select_target"])
+        self.assertNotIn("update", operations.calls)
+        self.assertIn("cleanup", operations.calls)
+        self.assertEqual(operations.calls[-1], "lock.exit")
 
     def test_update_first_hop_execs_verified_target_once(self) -> None:
         """第一跳 update 只能执行一次 target installer，不能进入 Task11 pipeline。"""
