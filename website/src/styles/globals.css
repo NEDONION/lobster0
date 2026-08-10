@@ -1205,55 +1205,136 @@ pre {
   overflow-wrap: anywhere;
 }
 
-.workflow-shot {
-  position: relative;
+.flow-diagram {
+  display: flex;
   align-self: center;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
   margin: 22px;
   border-radius: 18px;
-  background: #050609;
+  padding: 44px 30px;
+  background: var(--terminal);
   box-shadow: 0 20px 50px rgb(16 19 26 / 18%);
 }
 
-.workflow-shot img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border: 1px solid rgb(255 255 255 / 8%);
-  border-radius: 18px;
-}
-
-.workflow-shot figcaption {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
+.flow-diagram__nodes {
+  position: relative;
   display: flex;
-  max-width: calc(100% - 32px);
+  width: 100%;
+  justify-content: space-between;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.flow-diagram__nodes::before,
+.flow-diagram__nodes::after {
+  content: '';
+  position: absolute;
+  top: 22px;
+  right: 22px;
+  left: 22px;
+  height: 1px;
+}
+
+.flow-diagram__nodes::before {
+  background: rgb(255 255 255 / 14%);
+}
+
+.flow-diagram__nodes::after {
+  background: linear-gradient(90deg, transparent, var(--signal) 45%, transparent 90%);
+  background-repeat: no-repeat;
+  background-size: 45% 100%;
+  animation: flowPulse 3.4s linear infinite;
+}
+
+.flow-diagram[data-reduced-motion='true'] .flow-diagram__nodes::after {
+  animation: none;
+  opacity: 0;
+}
+
+.flow-diagram__nodes > li {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  width: 108px;
   flex-direction: column;
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 12px;
-  padding: 10px 13px;
-  background: rgb(13 16 23 / 88%);
-  color: white;
-  box-shadow: 0 12px 30px rgb(0 0 0 / 24%);
-  backdrop-filter: blur(12px);
+  align-items: center;
+  gap: 8px;
+  text-align: center;
 }
 
-.workflow-shot figcaption span,
-.workflow-shot figcaption strong {
+.flow-diagram__icon {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1.5px solid rgb(255 255 255 / 16%);
+  border-radius: 999px;
+  background: #0d1017;
+  color: #8792a6;
+  transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
+}
+
+.flow-diagram__nodes > li strong {
+  color: #f5f7fb;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 620;
+}
+
+.flow-diagram__nodes > li code {
+  max-width: 118px;
+  overflow-wrap: anywhere;
+  color: #8792a6;
   font-family: var(--font-mono);
+  font-size: 0.6rem;
+  line-height: 1.4;
 }
 
-.workflow-shot figcaption span {
+.flow-diagram__nodes > li[data-state='waiting'] .flow-diagram__icon {
+  border-color: color-mix(in srgb, var(--warn) 60%, transparent);
+  background: color-mix(in srgb, var(--warn) 20%, #0d1017);
+  color: var(--warn);
+  animation: flowWaitingPulse 1.8s ease-in-out infinite;
+}
+
+.flow-diagram[data-reduced-motion='true'] .flow-diagram__nodes > li[data-state='waiting'] .flow-diagram__icon {
+  animation: none;
+}
+
+.flow-diagram__nodes > li[data-state='active'] .flow-diagram__icon {
+  border-color: color-mix(in srgb, var(--signal) 65%, transparent);
+  background: color-mix(in srgb, var(--signal) 22%, #0d1017);
+  color: #b9c4ff;
+}
+
+.flow-diagram__nodes > li[data-state='done'] .flow-diagram__icon {
+  border-color: color-mix(in srgb, var(--safe) 65%, transparent);
+  background: color-mix(in srgb, var(--safe) 20%, #0d1017);
   color: var(--safe);
-  font-size: 0.52rem;
-  letter-spacing: 0.08em;
 }
 
-.workflow-shot figcaption strong {
-  margin-top: 5px;
-  font-size: 0.58rem;
-  font-weight: 500;
+@keyframes flowPulse {
+  0% {
+    background-position: -60% 0;
+  }
+
+  100% {
+    background-position: 160% 0;
+  }
+}
+
+@keyframes flowWaitingPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warn) 35%, transparent);
+  }
+
+  50% {
+    box-shadow: 0 0 0 6px transparent;
+  }
 }
 
 .multi-channel-map {
@@ -1438,13 +1519,8 @@ pre {
 }
 
 @media (min-width: 821px) {
-  .workflow-shot {
-    height: 370px;
-  }
-
-  .workflow-shot img {
-    height: 100%;
-    object-fit: contain;
+  .flow-diagram {
+    min-height: 370px;
   }
 }
 
@@ -1575,7 +1651,7 @@ pre {
     grid-template-columns: minmax(280px, 5fr) minmax(0, 7fr);
   }
 
-  .workflow-shot,
+  .flow-diagram,
   .multi-channel-map {
     margin: 18px;
   }
@@ -1795,16 +1871,28 @@ pre {
     margin-top: 24px;
   }
 
-  .workflow-shot,
+  .flow-diagram,
   .multi-channel-map {
     margin: 14px;
   }
 
-  .workflow-shot figcaption {
-    position: static;
-    max-width: none;
-    margin: 10px;
-    background: rgb(23 27 36 / 96%);
+  .flow-diagram {
+    padding: 30px 16px;
+  }
+
+  .flow-diagram__nodes {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 22px 12px;
+  }
+
+  .flow-diagram__nodes::before,
+  .flow-diagram__nodes::after {
+    display: none;
+  }
+
+  .flow-diagram__nodes > li {
+    width: 84px;
   }
 
   .multi-channel-map {

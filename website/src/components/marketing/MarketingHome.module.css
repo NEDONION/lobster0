@@ -700,14 +700,14 @@
   line-height: 1.1;
 }
 
-.root :global(.workflow-shot) {
+.root :global(.flow-diagram) {
   position: relative;
   border-color: rgb(255 255 255 / 12%);
   box-shadow: 0 22px 50px rgb(18 23 34 / 18%);
   overflow: hidden;
 }
 
-.root :global(.workflow-shot::after) {
+.root :global(.flow-diagram::after) {
   position: absolute;
   inset: -30% auto -30% -45%;
   width: 34%;
@@ -716,14 +716,6 @@
   pointer-events: none;
   transform: skewX(-18deg);
   animation: imageSheen 6.8s ease-in-out infinite;
-}
-
-.root :global(.workflow-shot img) {
-  transition: transform 500ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.root :global(.workflow-shot:hover img) {
-  transform: scale(1.018);
 }
 
 .root :global(.quick-start-close) {
@@ -993,12 +985,12 @@
   .root :global(.safety-map),
   .root :global(.memory-map),
   .root :global(.automation-map),
-  .root :global(.workflow-shot),
+  .root :global(.flow-diagram),
   .root :global(.multi-channel-map) {
     margin: 12px;
   }
 
-  .root :global(.workflow-shot::after) {
+  .root :global(.flow-diagram::after) {
     display: none;
   }
 
@@ -1014,7 +1006,7 @@
   .root :global(.hero-network__route-pulse),
   .root :global(.hero-network__signal),
   .root :global(.hero-surface-card),
-  .root :global(.workflow-shot::after) {
+  .root :global(.flow-diagram::after) {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
