@@ -1,6 +1,8 @@
-import { siteFacts, type CapabilityCopy, type Locale } from '@/content/site';
+import { marketingCopy, type CapabilityCopy, type Locale } from '@/content/site';
 
 export function RuntimePanel({ copy, locale }: { copy: CapabilityCopy; locale: Locale }) {
+  const steps = marketingCopy[locale].trace.steps;
+
   return (
     <article className="capability-panel capability-panel--runtime">
       <div className="capability-panel__copy">
@@ -13,15 +15,16 @@ export function RuntimePanel({ copy, locale }: { copy: CapabilityCopy; locale: L
           ))}
         </ul>
       </div>
-      <div className="runtime-map" aria-label={locale === 'zh-CN' ? 'MiniClaw 运行路径' : 'MiniClaw runtime path'}>
-        {siteFacts.traceEvents.map((event, index) => (
-          <div key={event}>
-            <span>{String(index + 1).padStart(2, '0')}</span>
-            <strong>{event}</strong>
-            {index < siteFacts.traceEvents.length - 1 ? <i aria-hidden="true">→</i> : null}
-          </div>
+      <ol className="runtime-map" aria-label={locale === 'zh-CN' ? 'MiniClaw 运行路径' : 'MiniClaw runtime path'}>
+        {steps.map((step, index) => (
+          <li key={step.event} data-state={step.state}>
+            <span className="runtime-map__index">{String(index + 1).padStart(2, '0')}</span>
+            <strong className="runtime-map__event">{step.event}</strong>
+            <em className="runtime-map__state">{step.state}</em>
+            <small className="runtime-map__detail">{step.detail}</small>
+          </li>
         ))}
-      </div>
+      </ol>
     </article>
   );
 }
