@@ -2,9 +2,10 @@
 """供 bootstrap 集成测试使用的离线 curl fake。
 
 只理解模板固定使用的调用形状：
-``curl -fL --proto '=https' --tlsv1.2 --retry 3 --retry-connrefused -sS -o DEST URL``.
-按 URL basename 从 ``FAKE_HTTP_ROOT`` 提供 fixture bytes，并可通过环境变量
-模拟网络失败或被中断的传输，不访问任何真实网络。
+``curl -fL --proto '=https' --tlsv1.2 --retry 3 --retry-connrefused
+[--max-filesize N] -sS -o DEST URL``. 按 URL basename 从 ``FAKE_HTTP_ROOT``
+提供 fixture bytes，并可通过环境变量模拟网络失败、被中断的传输或超过
+``--max-filesize`` 的响应，不访问任何真实网络。
 """
 
 from __future__ import annotations
@@ -33,6 +34,9 @@ def main() -> int:
     dest = args[args.index("-o") + 1]
     url = args[-1]
     name = url.rsplit("/", 1)[-1]
+    max_filesize = None
+    if "--max-filesize" in args:
+        max_filesize = int(args[args.index("--max-filesize") + 1])
 
     sleep_seconds = os.environ.get("FAKE_CURL_SLEEP")
     if sleep_seconds:
@@ -50,6 +54,13 @@ def main() -> int:
         return 22
     with open(source, "rb") as handle:
         payload = handle.read()
+
+    if max_filesize is not None and len(payload) > max_filesize:
+        # Mimic real curl aborting a --max-filesize transfer mid-stream: at
+        # most the bound is ever written to disk, never the full response.
+        with open(dest, "wb") as handle:
+            handle.write(payload[:max_filesize])
+        return 63
 
     truncate_tokens = [
         item for item in os.environ.get("FAKE_CURL_TRUNCATE_MATCH", "").split(",") if item

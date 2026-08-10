@@ -33,7 +33,7 @@ _UV_ARCHIVE_NAMES = {
     "macos-x86_64": "uv-x86_64-apple-darwin.tar.gz",
     "macos-arm64": "uv-aarch64-apple-darwin.tar.gz",
 }
-_PASSTHROUGH_COMMANDS = ("mktemp", "mkdir", "chmod", "rm", "wc")
+_PASSTHROUGH_COMMANDS = ("mktemp", "mkdir", "chmod", "rm")
 _PROFILE_NAMES = (".profile", ".bashrc", ".bash_profile", ".zshrc")
 
 
@@ -128,6 +128,7 @@ class InstallBootstrapTest(unittest.TestCase):
         sha256sum: bool = True,
         shasum: bool = True,
         uname: bool = True,
+        wc: bool = True,
     ) -> None:
         """构造一个只含所需真实工具与 fake 的封闭 PATH 目录。"""
         self.bin_dir.mkdir(exist_ok=True)
@@ -142,6 +143,13 @@ class InstallBootstrapTest(unittest.TestCase):
             if link.exists() or link.is_symlink():
                 link.unlink()
             link.symlink_to(resolved)
+        wc_link = self.bin_dir / "wc"
+        if wc_link.exists() or wc_link.is_symlink():
+            wc_link.unlink()
+        if wc:
+            resolved = shutil.which("wc")
+            self.assertIsNotNone(resolved, "missing real wc on this host")
+            wc_link.symlink_to(resolved)
         wanted = {
             "curl": curl,
             "tar": tar,
@@ -319,6 +327,14 @@ class InstallBootstrapTest(unittest.TestCase):
         self.assertEqual(self._calls("curl"), [])
         self.assertFalse(any(self.tmp_root.iterdir()))
 
+    def test_missing_wc_fails_closed(self) -> None:
+        """缺少 wc 必须在创建任何私有目录前失败，而不是在中途报 could-not-size。"""
+        self._build_hermetic_bin(wc=False)
+        completed = self._run()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(self._calls("curl"), [])
+        self.assertFalse(any(self.tmp_root.iterdir()))
+
     # -- checksum command fallback ---------------------------------------
 
     def test_checksum_prefers_sha256sum_when_both_present(self) -> None:
@@ -357,6 +373,47 @@ class InstallBootstrapTest(unittest.TestCase):
         completed = self._run()
         self.assertNotEqual(completed.returncode, 0)
         self.assertFalse((self.home / ".miniclaw").exists())
+
+    def test_manifest_size_mismatch_is_rejected(self) -> None:
+        """manifest 字节数与渲染进脚本的 pinned size 不一致时必须失败。"""
+        (self.http_root / self.release_inputs.manifest_filename).write_bytes(
+            self.manifest_bytes + b"extra"
+        )
+        completed = self._run()
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(self._calls("uv"), [])
+        self.assertFalse((self.home / ".miniclaw").exists())
+
+    def test_oversized_manifest_download_is_rejected_before_full_write(self) -> None:
+        """伪造的超大响应必须被 curl ``--max-filesize`` 挡在完整落盘之前。
+
+        没有这个上界，一个恶意/被攻破的端点可以在任何 size/hash 检查生效前
+        把无限字节流进私有工作目录；这里断言 curl 确实带上了
+        ``--max-filesize``，且从未到达 uv/installer 阶段。
+        """
+        oversized = self.manifest_bytes + b"x" * (self.release_inputs.manifest_size * 4)
+        (self.http_root / self.release_inputs.manifest_filename).write_bytes(oversized)
+        record = self.root / "record.json"
+        completed = self._run(env_overrides={"FAKE_PYZ_RECORD": str(record)})
+
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertEqual(self._calls("uv"), [])
+        self.assertFalse(record.exists())
+        self.assertFalse((self.home / ".miniclaw").exists())
+        self.assertFalse(any(self.tmp_root.iterdir()))
+
+        manifest_calls = [
+            call
+            for call in self._calls("curl")
+            if call["args"] and call["args"][-1].endswith(self.release_inputs.manifest_filename)
+        ]
+        self.assertTrue(manifest_calls)
+        self.assertIn("--max-filesize", manifest_calls[0]["args"])
+        max_filesize_index = manifest_calls[0]["args"].index("--max-filesize")
+        self.assertEqual(
+            manifest_calls[0]["args"][max_filesize_index + 1],
+            str(self.release_inputs.manifest_size),
+        )
 
     def test_interrupted_curl_download_aborts(self) -> None:
         """被截断的传输必须让 curl 以非零退出并中止 bootstrap。"""
@@ -447,11 +504,13 @@ class InstallBootstrapTest(unittest.TestCase):
     # -- cleanup and state isolation ---------------------------------------
 
     def test_signal_cleanup_removes_private_tree(self) -> None:
-        """收到 TERM 信号时必须清理私有 bootstrap 目录。
+        """收到 TERM 信号时必须清理私有 bootstrap 目录并以 143 (128+SIGTERM) 退出。
 
         信号发送给整个进程组（而不仅是 shell 本身），因为 POSIX shell 在
         阻塞等待前台子进程（这里是睡眠中的 fake curl）期间会推迟自身 trap
-        的执行，直到该子进程先退出；这与真实终端 Ctrl-C 的语义一致。
+        的执行，直到该子进程先退出；这与真实终端 Ctrl-C 的语义一致。退出码
+        显式断言为 143，而不是所有信号共用同一个码，这样包装脚本或 CI 才能
+        区分到底是哪个信号中止了 bootstrap。
         """
         env = self._env(**{"FAKE_CURL_SLEEP": "5"})
         if self.call_log.exists():
@@ -482,7 +541,7 @@ class InstallBootstrapTest(unittest.TestCase):
             if process.poll() is None:
                 process.kill()
                 process.communicate(timeout=5.0)
-        self.assertNotEqual(process.returncode, 0)
+        self.assertEqual(process.returncode, 143)
         self.assertFalse(any(self.tmp_root.iterdir()))
 
     def test_no_shell_profile_or_secret_state_is_touched(self) -> None:
