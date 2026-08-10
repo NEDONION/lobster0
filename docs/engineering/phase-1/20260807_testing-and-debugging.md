@@ -3,7 +3,7 @@
 > 文档性质：`HISTORICAL SNAPSHOT`。本文保留 Phase 1 的测试分层和旧 CLI 证据；`test_cli_chat.py` 已随
 > 单入口 TUI 迁移删除。当前测试与
 > Live Smoke 命令以 [Phase 2 回归、恢复与调试](../phase-2/20260808_testing-and-debugging.md) 为准，下面出现的
-> `miniclaw chat --message` 只表示当时的发布流程，不能用于当前版本。
+> `lobster0 chat --message` 只表示当时的发布流程，不能用于当前版本。
 
 ## 1. 目标
 
@@ -87,7 +87,7 @@ sequenceDiagram
 `tests/test_cli_chat.py` 使用 `ThreadingHTTPServer(("127.0.0.1", 0), handler)`：
 
 1. 操作系统分配随机 loopback 端口；
-2. 临时 MiniClaw home 执行真实 `init`；
+2. 临时 Lobster0 home 执行真实 `init`；
 3. 只把临时 `config.toml` 的 `base_url` 改为 loopback；
 4. 创建权限为 `0600` 的临时 `.env`；
 5. 调用真实 `cli.main()`；
@@ -150,10 +150,10 @@ payload 或响应写入日志。
 先停止正在运行的 CLI，再使用只读方式：
 
 ```bash
-sqlite3 "file:$HOME/.miniclaw/miniclaw.db?mode=ro" \
+sqlite3 "file:$HOME/.lobster0/lobster0.db?mode=ro" \
   "SELECT id,status,model,input_tokens,output_tokens,error_code FROM turns ORDER BY id DESC LIMIT 10;"
 
-sqlite3 "file:$HOME/.miniclaw/miniclaw.db?mode=ro" \
+sqlite3 "file:$HOME/.lobster0/lobster0.db?mode=ro" \
   "SELECT id,session_id,turn_id,role,length(content) FROM messages ORDER BY id DESC LIMIT 20;"
 ```
 
@@ -174,15 +174,15 @@ queued → running → cancelled
 
 ## 8. 历史 DeepSeek 冒烟
 
-前置：仓库根 `.env` 已安全配置 `MINICLAW_MODEL_API_KEY`，且不在 Git 中。
+前置：仓库根 `.env` 已安全配置 `LOBSTER0_MODEL_API_KEY`，且不在 Git 中。
 
-以下命令仅用于解释 Phase 1 的历史证据，当前版本请使用裸 `miniclaw --home "$smoke_home"` 进入唯一 TUI：
+以下命令仅用于解释 Phase 1 的历史证据，当前版本请使用裸 `lobster0 --home "$smoke_home"` 进入唯一 TUI：
 
 ```bash
 smoke_home=$(mktemp -d)
 chmod 700 "$smoke_home"
-uv run miniclaw init --home "$smoke_home"
-uv run miniclaw chat --home "$smoke_home" --message "只回答：MiniClaw online"
+uv run lobster0 init --home "$smoke_home"
+uv run lobster0 chat --home "$smoke_home" --message "只回答：Lobster0 online"
 ```
 
 验收：
@@ -204,7 +204,7 @@ uv run miniclaw chat --home "$smoke_home" --message "只回答：MiniClaw online
 依次检查：
 
 ```bash
-uv run miniclaw doctor --home /absolute/state
+uv run lobster0 doctor --home /absolute/state
 ls -l .env
 ```
 
@@ -232,7 +232,7 @@ Provider 对 429、5xx、timeout、transport 和 2xx 协议解析失败在未输
 
 ### 9.4 exit 5
 
-先备份 `miniclaw.db`，再运行 `doctor`。检查磁盘空间、文件权限、Schema 版本和 SQLite integrity。不要直接删除个人
+先备份 `lobster0.db`，再运行 `doctor`。检查磁盘空间、文件权限、Schema 版本和 SQLite integrity。不要直接删除个人
 数据库来“修复”。
 
 ## 10. 完成门禁

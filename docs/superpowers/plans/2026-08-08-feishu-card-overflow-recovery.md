@@ -22,7 +22,7 @@
 
 **Files:**
 - Modify: `tests/test_channel_experience.py`
-- Modify: `src/miniclaw/channels/experience.py`
+- Modify: `src/lobster0/channels/experience.py`
 
 **Interfaces:**
 - Consumes: `ExperienceActivity.finish(content: str | None, failed: bool) -> ExperienceOutcome`
@@ -56,7 +56,7 @@ Expected: all Experience tests pass.
 
 **Files:**
 - Modify: `tests/test_channel_manager.py`
-- Modify: `src/miniclaw/channels/manager.py`
+- Modify: `src/lobster0/channels/manager.py`
 
 **Interfaces:**
 - Consumes: Task 1 `ExperienceOutcome`
@@ -89,7 +89,7 @@ Expected: all Manager tests pass.
 
 **Files:**
 - Modify: `tests/test_channel_manager.py`
-- Modify: `src/miniclaw/channels/manager.py`
+- Modify: `src/lobster0/channels/manager.py`
 
 **Interfaces:**
 - Consumes: stable `ExperienceActivity.idempotency_key` and Task 1 outcome
@@ -122,8 +122,8 @@ Expected: all Manager recovery tests pass.
 **Files:**
 - Modify: `tests/test_feishu_transport.py`
 - Modify: `tests/test_channel_capabilities.py`
-- Modify: `src/miniclaw/channels/feishu.py`
-- Modify: `src/miniclaw/channels/capabilities.py`
+- Modify: `src/lobster0/channels/feishu.py`
+- Modify: `src/lobster0/channels/capabilities.py`
 
 **Interfaces:**
 - Produces: both progress Card JSON renderers set Markdown `text_size` to literal `"small"`
@@ -155,7 +155,7 @@ Expected: both suites pass.
 - Modify: `docs/architecture/20260807_系统架构.md`
 - Modify: `docs/evals/releases/v0.5.2.md`
 - Modify: `docs/progress/index.html`
-- Modify: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
+- Modify: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`
 
 **Interfaces:**
 - Produces: current behavior, test counts, and live limitations visible from the docs index and progress page
@@ -172,9 +172,9 @@ Run:
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ruff check .
-.venv/bin/miniclaw eval run --suite offline --root evals/scenarios
-.venv/bin/miniclaw eval run --suite channel --root evals/scenarios
-.venv/bin/miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+.venv/bin/lobster0 eval run --suite offline --root evals/scenarios
+.venv/bin/lobster0 eval run --suite channel --root evals/scenarios
+.venv/bin/lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 .venv/bin/python scripts/validate_docs.py
 git diff --check
 ```
@@ -183,5 +183,5 @@ Expected: all commands exit 0; counts in docs match fresh output.
 
 - [ ] **Step 3: Review, commit, and push**
 
-Run a focused code review, stage only the intended MiniClaw changes, commit with a mixed Chinese/English title such as
+Run a focused code review, stage only the intended Lobster0 changes, commit with a mixed Chinese/English title such as
 `fix(feishu): 卡片溢出回复与 restart recovery`, then push `main` and verify `HEAD == origin/main`.

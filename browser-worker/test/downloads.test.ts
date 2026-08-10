@@ -72,7 +72,7 @@ test(
 );
 
 async function setup(t: TestContext, maxArtifactBytes: number) {
-  const root = await mkdtemp(join(tmpdir(), "miniclaw-browser-downloads-"));
+  const root = await mkdtemp(join(tmpdir(), "lobster0-browser-downloads-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const profile = join(root, "profile");
   const staging = join(root, "staging");
@@ -118,7 +118,7 @@ function target(
 
 function request(action: string, params: Record<string, unknown>) {
   return {
-    protocol: "miniclaw.browser.v1" as const,
+    protocol: "lobster0.browser.v1" as const,
     id: `request-${action}`,
     session_id: "session-1",
     action,

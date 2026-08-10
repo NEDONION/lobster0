@@ -1,4 +1,4 @@
-# MiniClaw v0.5.3 Stabilization：Feishu / Discord Live Gate 收口设计
+# Lobster0 v0.5.3 Stabilization：Feishu / Discord Live Gate 收口设计
 
 > 编号说明：历史路线称“Phase 5.3”；本页按交付版本展示，架构 Phase 5 仍专指 Telegram/Discord Channel。
 
@@ -18,7 +18,7 @@
 在不重写 Channel Core 的前提下，用真实飞书租户和一个隔离的 Discord Test Server 完成两个平台的 Live Gate，
 修复飞书 SDK 连接日志泄露临时参数的问题，并生成绑定 Git commit、可复核且不含私人正文或凭据的验收记录。
 
-Phase 5.3 完成后，MiniClaw 才能准确写成：
+Phase 5.3 完成后，Lobster0 才能准确写成：
 
 ```text
 Feishu 15/15 LIVE PASS
@@ -48,8 +48,8 @@ Telegram IMPLEMENTATION PASS / LIVE PENDING
 - 使用真实 Feishu 与 Discord Bot 发送验收消息；
 - 创建专用测试群、Discord Server、频道和 Thread；
 - 生成不含正文、账号标识和 Secret 的脱敏 Evidence；
-- 使用 `Lucas 的 MiniClaw` 作为 Bot 名称；
-- 使用私有 `MiniClaw Test` 作为 Discord Server 名称。
+- 使用 `Lucas 的 Lobster0` 作为 Bot 名称；
+- 使用私有 `Lobster0 Test` 作为 Discord Server 名称。
 
 每个独立消息写操作仍应在执行前展示收件人、内容和发送身份；危险 Tool 的批准或拒绝仍必须由 Owner 明确作出。
 
@@ -68,7 +68,7 @@ Telegram IMPLEMENTATION PASS / LIVE PENDING
 ### 2.4 新发现的安全问题
 
 Feishu Channel SDK 在 INFO 连接日志中输出完整 WebSocket URL；URL query 包含临时 `access_key`、`ticket` 和设备
-标识。MiniClaw 自己的 JSON Observer 没有记录这些值，但上游 `Lark` logger 的 handler 会直接写 stdout。
+标识。Lobster0 自己的 JSON Observer 没有记录这些值，但上游 `Lark` logger 的 handler 会直接写 stdout。
 
 这违反“日志中不出现 Token、Ticket 或完整平台标识”的仓库边界，必须在继续完整 Live Gate 前修复并回归。
 
@@ -81,7 +81,7 @@ Feishu Channel SDK 在 INFO 连接日志中输出完整 WebSocket URL；URL quer
 3. 记录 Gateway 启动 commit，并在 Live Runner 启动前拒绝旧进程或来源不明的 Gateway；
 4. 复用现有 Feishu 严格 Runner 完成 `FEISHU-LIVE-001..015`；
 5. 创建 Discord Developer Application 和 Bot；
-6. 创建私有 `MiniClaw Test` Server、普通频道和 Thread 验收区；
+6. 创建私有 `Lobster0 Test` Server、普通频道和 Thread 验收区；
 7. 只启用 Discord 必需 Intent 和最小频道权限；
 8. 把 Discord Bot Token 放入本地 0600 `.env`，把 numeric Owner/Guild/Channel ID 放入本地 `config.toml`；
 9. 运行 Discord 15 项真实人工 Harness，任意 fail/skip 均不能标记 Live PASS；
@@ -100,7 +100,7 @@ Feishu Channel SDK 在 INFO 连接日志中输出完整 WebSocket URL；URL quer
 - 不把人工输入 `p` 当成自动 evidence 的替代品；
 - 不做 Web 管理后台；
 - 不开始 Phase 6 Evolution 或 Phase 7 Docker/VPS；
-- 不自动批准危险 Tool，不自动修改或部署 MiniClaw 源码。
+- 不自动批准危险 Tool，不自动修改或部署 Lobster0 源码。
 
 ## 4. 方案比较
 
@@ -129,7 +129,7 @@ flowchart TD
     FS --> FSE{"15/15 + secret scan 0?"}
     FSE -->|否| STOP1["保持 Feishu LIVE PENDING"]
     FSE -->|是| APP["创建 Discord App / Bot"]
-    APP --> SERVER["创建 MiniClaw Test 私有 Server"]
+    APP --> SERVER["创建 Lobster0 Test 私有 Server"]
     SERVER --> CFG["最小 Intent / 权限 / allowlist"]
     CFG --> DC["Discord 15-check live harness"]
     DC --> DCE{"15/15 + secret scan 0?"}
@@ -145,7 +145,7 @@ flowchart TD
 
 ### 6.1 日志边界
 
-MiniClaw 在导入 `lark_channel` 后、调用 `connect()` 前，为 `Lark` logger 的现有 handler 安装一个幂等 Filter。
+Lobster0 在导入 `lark_channel` 后、调用 `connect()` 前，为 `Lark` logger 的现有 handler 安装一个幂等 Filter。
 Filter 只处理日志文本，不修改 SDK 请求或连接 URL。
 
 最小规则：
@@ -165,7 +165,7 @@ Live Runner 已把 40 位 commit 写入 Evidence，但本次真实事故说明�
 Phase 5.3 增加以下运行约束：
 
 1. Runner 自己启动并持有 production Gateway 子进程时，Evidence 绑定当前 clean commit；
-2. 人工 Harness 使用外部 Gateway 时，先确认本机只有一个 MiniClaw Gateway；
+2. 人工 Harness 使用外部 Gateway 时，先确认本机只有一个 Lobster0 Gateway；
 3. ready 状态同时记录进程 PID、启动 UTC 与 commit 的短哈希；
 4. PID 和启动时间只用于本地 Evidence，不进入 Git 文档；
 5. commit 不一致或存在两个 Gateway 时 fail closed，不继续发 Live 消息；
@@ -205,7 +205,7 @@ Owner 已授权使用 `lark-cli --as user` 发送测试 Query；但每条写操�
 
 ### 8.1 Application / Bot
 
-- Developer Application：`Lucas 的 MiniClaw`；
+- Developer Application：`Lucas 的 Lobster0`；
 - Bot 只用于当前用户的个人学习项目；
 - Token 生成后只进入本地 `.env`；
 - 不把 Token 粘贴到对话、终端 argv、截图、Git 或 Evidence；
@@ -224,12 +224,12 @@ Owner 已授权使用 `lark-cli --as user` 发送测试 Query；但每条写操�
 
 ### 8.3 Test Server 与权限
 
-创建私有 `MiniClaw Test` Server，并建立：
+创建私有 `Lobster0 Test` Server，并建立：
 
 ```text
-MiniClaw Test
-├── #miniclaw-live
-└── #miniclaw-thread-lab
+Lobster0 Test
+├── #lobster0-live
+└── #lobster0-thread-lab
     └── validation-thread
 ```
 
@@ -252,7 +252,7 @@ Server 初始只有 Owner 和 Bot；若执行 `non_owner_denied`，再邀请一�
 Secret 只进入 0600 `.env`：
 
 ```dotenv
-MINICLAW_DISCORD_BOT_TOKEN=...
+LOBSTER0_DISCORD_BOT_TOKEN=...
 ```
 
 numeric Owner、Guild、Channel ID 进入本地 `config.toml`，不进入 Git：
@@ -261,7 +261,7 @@ numeric Owner、Guild、Channel ID 进入本地 `config.toml`，不进入 Git：
 [channels.discord]
 enabled = true
 account_id = "default"
-bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"
+bot_token_env = "LOBSTER0_DISCORD_BOT_TOKEN"
 owner_user_id = 0
 allowed_user_ids = [0]
 allowed_guild_ids = [0]
@@ -381,9 +381,9 @@ Release Record 只写 Evidence 的 schema、结论、commit 和门禁摘要，�
 ```bash
 uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run ruff check .
 uv run python scripts/validate_docs.py
 uv lock --check

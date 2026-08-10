@@ -1,4 +1,4 @@
-# MiniClaw Desktop D2 附件/模型/Workspace/Agent 控件设计
+# Lobster0 Desktop D2 附件/模型/Workspace/Agent 控件设计
 
 > 日期：2026-08-10
 > 文档类型：Phase D2 产品、界面与协议设计
@@ -38,11 +38,11 @@ D2 明确不做：多模型路由平台、模型/Agent 的增删改配置界面�
 
 | 能力 | 现状 | 结论 |
 | --- | --- | --- |
-| Bridge 协议 | `src/miniclaw/bridge/protocol.py` 用 `_REQUEST_TYPES` 白名单 + 逐字段 `_validate_payload`；`hello` 的 `capabilities` 是 `server.py:97-106` 里的硬编码字符串数组 | 新增请求类型必须先进白名单，再加校验分支，再加 dispatch 分支——三处都要改，模式已有先例（如 `automation.list`） |
+| Bridge 协议 | `src/lobster0/bridge/protocol.py` 用 `_REQUEST_TYPES` 白名单 + 逐字段 `_validate_payload`；`hello` 的 `capabilities` 是 `server.py:97-106` 里的硬编码字符串数组 | 新增请求类型必须先进白名单，再加校验分支，再加 dispatch 分支——三处都要改，模式已有先例（如 `automation.list`） |
 | 模型配置 | `AgentConfig`/`ProviderConfig`（`config.py:201-218`）都是单个扁平配置，`ModelProvider` 协议（`providers/base.py`）只有 `complete()`/`aclose()`，**没有 `list_models`** | `models.list` 是全新协议请求，Python 侧只能包一层：把 `runtime.model` 包成一项列表返回，不是真的多模型枚举 |
 | Agent 配置 | `AgentRuntime`（`runtime.py:107-133`）就是一个 provider+tool 集合的运行时，**没有 agent_id、没有 Agent 注册表**，"Main Agent" 目前只是 `task-workbench.tsx:165` 里的字面量字符串 | `agents.list` 同样是全新协议请求；Python 侧返回一个硬编码单项（如 `{"id": "main", "label": "Main Agent"}`），但这一项从 Bridge 来，Desktop 不再自己写死文案，满足"真实只读状态"的 D1/D2 一贯要求 |
-| Workspace 切换 | **已经是完整可用的真实链路**：`chooseWorkspace()` → `dialog.showOpenDialog`（`main/index.ts:73-76`）→ `bridge-service.ts:207-227 restartWorkspace()`（绝对路径/长度/NUL 校验 + idle 才允许 + 失败回滚）→ Python `config.py:_absolute_path` 独立再校验 | D2 不新建切换逻辑，只是在 Composer 状态栏新增一个可点击入口，复用 `window.miniclaw.chooseWorkspace()` |
-| 附件/Artifact | `ArtifactStore`（`src/miniclaw/artifacts/store.py:67`）已有完整的 content-addressed 存储 + 深度校验（`O_NOFOLLOW`、owner-only mode、TOCTOU re-fstat、magic byte 嗅探、PNG 尺寸上限、原子写入），但 `source` 是封闭枚举 `{"browser_screenshot", "browser_download"}`（第 25 行），**没有 `list()` 查询**，也**没有任何 Bridge 请求类型连到它** | 这是 D2 唯一真正的新工程：加 `"user_upload"` 到 `_SOURCES`、新增一个安全的"外部路径 → staging → put()"拷贝步骤、新增 Bridge 请求类型 |
+| Workspace 切换 | **已经是完整可用的真实链路**：`chooseWorkspace()` → `dialog.showOpenDialog`（`main/index.ts:73-76`）→ `bridge-service.ts:207-227 restartWorkspace()`（绝对路径/长度/NUL 校验 + idle 才允许 + 失败回滚）→ Python `config.py:_absolute_path` 独立再校验 | D2 不新建切换逻辑，只是在 Composer 状态栏新增一个可点击入口，复用 `window.lobster0.chooseWorkspace()` |
+| 附件/Artifact | `ArtifactStore`（`src/lobster0/artifacts/store.py:67`）已有完整的 content-addressed 存储 + 深度校验（`O_NOFOLLOW`、owner-only mode、TOCTOU re-fstat、magic byte 嗅探、PNG 尺寸上限、原子写入），但 `source` 是封闭枚举 `{"browser_screenshot", "browser_download"}`（第 25 行），**没有 `list()` 查询**，也**没有任何 Bridge 请求类型连到它** | 这是 D2 唯一真正的新工程：加 `"user_upload"` 到 `_SOURCES`、新增一个安全的"外部路径 → staging → put()"拷贝步骤、新增 Bridge 请求类型 |
 | 附件与消息的关联存储 | `messages` 表已有通用 `metadata_json` 列（`storage/conversations.py`，多处用于如 `experience_trace`） | 附件引用存进用户消息的 `metadata_json`，**不需要新迁移**，符合落地文档"仅现有 schema 无法表达时才迁移"的原则 |
 
 ## 3. 方案比较
@@ -70,7 +70,7 @@ session（新增一张极小的 session↔artifact 关联，或直接把 artifac
 
 ### 4.1 新增请求类型
 
-在 `src/miniclaw/bridge/protocol.py` 的 `_REQUEST_TYPES`（第 13-27 行）追加三个只读/一个动作类型：
+在 `src/lobster0/bridge/protocol.py` 的 `_REQUEST_TYPES`（第 13-27 行）追加三个只读/一个动作类型：
 
 | 类型 | payload | 说明 |
 | --- | --- | --- |
@@ -129,9 +129,9 @@ D1 的状态栏是一行只读文本（`task-workbench.tsx:165`）。D2 把它�
 "当前值只读徽标"（模型/Agent，因为今天真的只有一个选项，做成下拉反而是假交互）；一旦 Bridge 返回
 多项（未来），组件本身已按数组渲染，不需要重写。
 
-附件区域：点击"📎 附件"触发 `window.miniclaw.pickAttachment()`（新 IPC）→ Main 进程
+附件区域：点击"📎 附件"触发 `window.lobster0.pickAttachment()`（新 IPC）→ Main 进程
 `dialog.showOpenDialog({ properties: ["openFile"] })` → 拿到路径后 Renderer 调
-`window.miniclaw.stageAttachment(path)` → Bridge `attachment.stage` → 成功后 Composer 里出现一个
+`window.lobster0.stageAttachment(path)` → Bridge `attachment.stage` → 成功后 Composer 里出现一个
 附件 chip（文件名 + 大小 + 移除按钮），draft 状态里累积 `attachmentIds: string[]`；发送时随
 `startTurn` 一起提交，成功后清空。上传/校验中禁用该 chip 的移除按钮，失败态用现有 `composer-error`
 `role="alert"` 展示具体原因（不支持的类型/过大/文件已变化等，直接透传 Bridge 错误码对应的中文提示）。
@@ -162,7 +162,7 @@ agentId?: string;
 ### 5.3 与现有 Workspace 切换的关系
 
 Composer 里的 Workspace 控件点击后直接调用 D1 之前就已存在、已在真实 Electron+Bridge smoke 里验证过
-的 `window.miniclaw.chooseWorkspace()`，行为（包括"运行中禁止切换""失败回滚"）完全不变，只是多了一个
+的 `window.lobster0.chooseWorkspace()`，行为（包括"运行中禁止切换""失败回滚"）完全不变，只是多了一个
 入口。不新增测试覆盖这条已有路径的核心逻辑，只新增"从 Composer 触发"这一条集成路径的测试。
 
 ## 6. 状态与数据流
@@ -248,7 +248,7 @@ Desktop 侧（新增，遵循 D1 已用的 Vitest + `renderToStaticMarkup` 模�
 - `common/api.ts` 类型与 `DESKTOP_CHANNELS` 新增项的静态测试（比照现有 IPC 测试模式）；
 - Composer 附件 chip 的添加/移除/禁用状态纯函数测试；
 - `app.test.tsx` 断言首屏 Composer 状态栏包含四个控件的可访问入口，且模型/Agent 展示的是通过 mock
-  `window.miniclaw.listModels()`/`listAgents()` 返回的数据而非任何硬编码字符串；
+  `window.lobster0.listModels()`/`listAgents()` 返回的数据而非任何硬编码字符串；
 - 真实 Python Bridge + Electron smoke（复用并扩展 `scripts/smoke-electron.mjs`）新增一步：真实 stage
   一个小文本文件、断言返回 `artifactId`、断言 `turn.start` 携带该 id 被接受。
 
@@ -258,9 +258,9 @@ Desktop 侧（新增，遵循 D1 已用的 Vitest + `renderToStaticMarkup` 模�
 
 Python：
 
-- `src/miniclaw/bridge/protocol.py`（新请求类型 + 校验）；
-- `src/miniclaw/bridge/server.py`（新 dispatch 分支）；
-- `src/miniclaw/artifacts/store.py`（`stage_from_external_path`、`_SOURCES` 追加 `user_upload`）；
+- `src/lobster0/bridge/protocol.py`（新请求类型 + 校验）；
+- `src/lobster0/bridge/server.py`（新 dispatch 分支）；
+- `src/lobster0/artifacts/store.py`（`stage_from_external_path`、`_SOURCES` 追加 `user_upload`）；
 - `tests/test_bridge_protocol.py`、`tests/test_bridge_server.py`、`tests/test_artifacts_store.py`。
 
 Desktop：

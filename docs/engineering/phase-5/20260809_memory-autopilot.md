@@ -6,7 +6,7 @@
 >
 > 边界：单本地 Owner、Markdown Truth、SQLite Control Plane、离线确定性证据；不声称真实 IM 平台 Live PASS。
 
-MiniClaw 采用混合方案：借鉴腾讯 Agent Memory 的结构化提取、分层状态和可检索 Projection，同时保留
+Lobster0 采用混合方案：借鉴腾讯 Agent Memory 的结构化提取、分层状态和可检索 Projection，同时保留
 EverOS 风格的 Owner 可见 Markdown、持续整理和可直接维护体验。最终约束是“Markdown 保存已接受语义真相，
 SQLite 保存消息、队列、lease、候选、来源、审计、Review 和可重建 FTS5 Projection”。
 
@@ -110,7 +110,7 @@ TUI 支持：
 /memory rebuild
 ```
 
-`miniclaw doctor` 的 Memory 项只读报告 parser error、manifest/Projection drift、retry、dead-letter、stale lease
+`lobster0 doctor` 的 Memory 项只读报告 parser error、manifest/Projection drift、retry、dead-letter、stale lease
 和 legacy migration 计数，不输出 Memory 正文。
 
 ## 7. Versioned gate
@@ -121,8 +121,8 @@ TUI 支持：
 legacy migration 和中文 Recall@5。
 
 ```bash
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 uv run python -m unittest tests.test_memory_release_smoke -v
 ```
 

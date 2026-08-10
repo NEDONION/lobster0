@@ -9,8 +9,8 @@ test("smoke imports real pi-tui before TTY or Bridge startup", () => {
     cwd: process.cwd(),
     encoding: "utf8",
     env: {
-      MINICLAW_HOME: "/does/not/exist",
-      MINICLAW_PYTHON: "/does/not/exist/python",
+      LOBSTER0_HOME: "/does/not/exist",
+      LOBSTER0_PYTHON: "/does/not/exist/python",
       PATH: "",
     },
     stdio: ["ignore", "pipe", "pipe"],

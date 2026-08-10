@@ -1,6 +1,6 @@
 # Phase 4 Feishu Channel Implementation Plan
 
-> **For MiniClaw maintainers:** Execute this plan sequentially with test-driven development. Every
+> **For Lobster0 maintainers:** Execute this plan sequentially with test-driven development. Every
 > production edit must be preceded by a focused failing test. Do not stage unrelated worktree files.
 
 **Goal:** Deliver the complete Phase 4 Feishu production Channel: private chat, allowlisted group
@@ -8,7 +8,7 @@ mentions, persistent idempotent inbox, shared Agent Core, recoverable delivery, 
 fallback, approval continuation, reconnect, Gateway CLI, Doctor diagnostics, regression evidence and
 up-to-date documentation.
 
-**Architecture:** The official `lark-channel-sdk` owns Feishu transport behavior. MiniClaw owns the
+**Architecture:** The official `lark-channel-sdk` owns Feishu transport behavior. Lobster0 owns the
 durable application state: normalized inbound rows, session serialization, Agent Turns, Approval,
 Delivery Outbox and audit. SQLite is the source of truth; `asyncio.Queue` is only a bounded wake-up
 mechanism. CLI and Feishu enter the same `TurnService`.
@@ -56,7 +56,7 @@ Add a test that parses `pyproject.toml` and asserts:
 
 - `project.optional-dependencies.feishu` exists;
 - it pins `lark-channel-sdk>=1.2,<2`;
-- importing ordinary MiniClaw modules does not import `lark_channel` eagerly.
+- importing ordinary Lobster0 modules does not import `lark_channel` eagerly.
 
 Run:
 
@@ -98,8 +98,8 @@ git commit -m "build(feishu): 增加 official Channel SDK optional extra"
 
 **Files:**
 
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
 - Modify: `tests/test_config.py`
 - Modify: `tests/test_bootstrap.py`
 
@@ -138,13 +138,13 @@ when starting Gateway.
 
 ```bash
 uv run python -m unittest tests.test_config tests.test_bootstrap -v
-uv run ruff check src/miniclaw/config.py src/miniclaw/bootstrap.py tests/test_config.py tests/test_bootstrap.py
+uv run ruff check src/lobster0/config.py src/lobster0/bootstrap.py tests/test_config.py tests/test_bootstrap.py
 ```
 
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/config.py src/miniclaw/bootstrap.py tests/test_config.py tests/test_bootstrap.py
+git add src/lobster0/config.py src/lobster0/bootstrap.py tests/test_config.py tests/test_bootstrap.py
 git commit -m "feat(config): 增加 Feishu Channel typed settings"
 ```
 
@@ -152,9 +152,9 @@ git commit -m "feat(config): 增加 Feishu Channel typed settings"
 
 **Files:**
 
-- Create: `src/miniclaw/storage/migrations/0002_feishu_channel.sql`
-- Modify: `src/miniclaw/storage/migrations.py`
-- Modify: `src/miniclaw/storage/schema.sql`
+- Create: `src/lobster0/storage/migrations/0002_feishu_channel.sql`
+- Modify: `src/lobster0/storage/migrations.py`
+- Modify: `src/lobster0/storage/schema.sql`
 - Modify: `tests/test_storage.py`
 - Modify: `tests/test_bootstrap.py`
 - Modify: `tests/test_doctor.py`
@@ -199,8 +199,8 @@ uv run python -m unittest tests.test_storage tests.test_bootstrap tests.test_doc
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/storage/migrations.py src/miniclaw/storage/schema.sql \
-  src/miniclaw/storage/migrations/0002_feishu_channel.sql \
+git add src/lobster0/storage/migrations.py src/lobster0/storage/schema.sql \
+  src/lobster0/storage/migrations/0002_feishu_channel.sql \
   tests/test_storage.py tests/test_bootstrap.py tests/test_doctor.py
 git commit -m "feat(storage): 增加 schema v2 durable Channel state"
 ```
@@ -209,9 +209,9 @@ git commit -m "feat(storage): 增加 schema v2 durable Channel state"
 
 **Files:**
 
-- Create: `src/miniclaw/channels/__init__.py`
-- Create: `src/miniclaw/channels/base.py`
-- Create: `src/miniclaw/channels/feishu.py`
+- Create: `src/lobster0/channels/__init__.py`
+- Create: `src/lobster0/channels/base.py`
+- Create: `src/lobster0/channels/feishu.py`
 - Create: `tests/fakes/fake_channel.py`
 - Create: `tests/test_channel_contracts.py`
 - Create: `tests/test_feishu_adapter.py`
@@ -237,7 +237,7 @@ Run:
 uv run python -m unittest tests.test_channel_contracts tests.test_feishu_adapter -v
 ```
 
-Expected RED: `miniclaw.channels` does not exist.
+Expected RED: `lobster0.channels` does not exist.
 
 **Step 2: Implement pure contracts and adapter**
 
@@ -248,14 +248,14 @@ need `lark_channel` internals.
 
 ```bash
 uv run python -m unittest tests.test_channel_contracts tests.test_feishu_adapter -v
-uv run ruff check src/miniclaw/channels tests/fakes/fake_channel.py \
+uv run ruff check src/lobster0/channels tests/fakes/fake_channel.py \
   tests/test_channel_contracts.py tests/test_feishu_adapter.py
 ```
 
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/channels tests/fakes/fake_channel.py \
+git add src/lobster0/channels tests/fakes/fake_channel.py \
   tests/test_channel_contracts.py tests/test_feishu_adapter.py
 git commit -m "feat(channel): 建立 normalized Feishu message contract"
 ```
@@ -264,9 +264,9 @@ git commit -m "feat(channel): 建立 normalized Feishu message contract"
 
 **Files:**
 
-- Create: `src/miniclaw/storage/channels.py`
+- Create: `src/lobster0/storage/channels.py`
 - Create: `tests/test_channel_storage.py`
-- Modify: `src/miniclaw/storage/__init__.py`
+- Modify: `src/lobster0/storage/__init__.py`
 
 **Step 1: Write RED repository tests**
 
@@ -307,7 +307,7 @@ uv run python -m unittest tests.test_channel_storage -v
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/storage/channels.py src/miniclaw/storage/__init__.py \
+git add src/lobster0/storage/channels.py src/lobster0/storage/__init__.py \
   tests/test_channel_storage.py
 git commit -m "feat(storage): 实现 idempotent inbox 与 Delivery outbox"
 ```
@@ -316,8 +316,8 @@ git commit -m "feat(storage): 实现 idempotent inbox 与 Delivery outbox"
 
 **Files:**
 
-- Modify: `src/miniclaw/storage/conversations.py`
-- Modify: `src/miniclaw/agent/turn.py`
+- Modify: `src/lobster0/storage/conversations.py`
+- Modify: `src/lobster0/agent/turn.py`
 - Modify: `tests/test_conversations.py`
 - Modify: `tests/test_turn.py`
 - Modify: `tests/test_cli.py`
@@ -356,7 +356,7 @@ uv run python -m unittest tests.test_conversations tests.test_turn tests.test_cl
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/storage/conversations.py src/miniclaw/agent/turn.py \
+git add src/lobster0/storage/conversations.py src/lobster0/agent/turn.py \
   tests/test_conversations.py tests/test_turn.py tests/test_cli.py tests/test_tui.py
 git commit -m "refactor(agent): 统一 CLI 与 Channel Turn entry"
 ```
@@ -365,9 +365,9 @@ git commit -m "refactor(agent): 统一 CLI 与 Channel Turn entry"
 
 **Files:**
 
-- Create: `src/miniclaw/channels/manager.py`
+- Create: `src/lobster0/channels/manager.py`
 - Create: `tests/test_channel_manager.py`
-- Modify: `src/miniclaw/runtime.py`
+- Modify: `src/lobster0/runtime.py`
 - Modify: `tests/test_runtime.py`
 
 **Step 1: Write asynchronous RED tests**
@@ -407,7 +407,7 @@ uv run python -m unittest tests.test_channel_manager tests.test_runtime -v
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/channels/manager.py src/miniclaw/runtime.py \
+git add src/lobster0/channels/manager.py src/lobster0/runtime.py \
   tests/test_channel_manager.py tests/test_runtime.py
 git commit -m "feat(gateway): 增加 durable inbound queue 与 Worker recovery"
 ```
@@ -416,7 +416,7 @@ git commit -m "feat(gateway): 增加 durable inbound queue 与 Worker recovery"
 
 **Files:**
 
-- Create: `src/miniclaw/channels/delivery.py`
+- Create: `src/lobster0/channels/delivery.py`
 - Create: `tests/test_delivery.py`
 - Modify: `tests/fakes/fake_channel.py`
 
@@ -458,7 +458,7 @@ uv run python -m unittest tests.test_delivery tests.test_channel_storage -v
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/channels/delivery.py tests/test_delivery.py tests/fakes/fake_channel.py
+git add src/lobster0/channels/delivery.py tests/test_delivery.py tests/fakes/fake_channel.py
 git commit -m "feat(delivery): 实现 Feishu split retry 与 outbox recovery"
 ```
 
@@ -466,7 +466,7 @@ git commit -m "feat(delivery): 实现 Feishu split retry 与 outbox recovery"
 
 **Files:**
 
-- Modify: `src/miniclaw/channels/feishu.py`
+- Modify: `src/lobster0/channels/feishu.py`
 - Create: `tests/test_feishu_transport.py`
 - Modify: `tests/fakes/fake_channel.py`
 
@@ -481,7 +481,7 @@ Patch only the SDK constructor/facade and assert:
 - reply uses `reply_to` and stable UUID;
 - Typing add/remove;
 - card create/update; and
-- SDK exceptions map to stable MiniClaw error codes.
+- SDK exceptions map to stable Lobster0 error codes.
 
 Run:
 
@@ -505,7 +505,7 @@ uv run python -m unittest tests.test_feishu_transport tests.test_feishu_adapter 
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/channels/feishu.py tests/test_feishu_transport.py \
+git add src/lobster0/channels/feishu.py tests/test_feishu_transport.py \
   tests/fakes/fake_channel.py
 git commit -m "feat(feishu): 接入 official WebSocket transport"
 ```
@@ -514,9 +514,9 @@ git commit -m "feat(feishu): 接入 official WebSocket transport"
 
 **Files:**
 
-- Create: `src/miniclaw/channels/capabilities.py`
-- Modify: `src/miniclaw/channels/manager.py`
-- Modify: `src/miniclaw/channels/delivery.py`
+- Create: `src/lobster0/channels/capabilities.py`
+- Modify: `src/lobster0/channels/manager.py`
+- Modify: `src/lobster0/channels/delivery.py`
 - Create: `tests/test_channel_capabilities.py`
 - Modify: `tests/test_channel_manager.py`
 
@@ -554,8 +554,8 @@ uv run python -m unittest tests.test_channel_capabilities tests.test_channel_man
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/channels/capabilities.py src/miniclaw/channels/manager.py \
-  src/miniclaw/channels/delivery.py tests/test_channel_capabilities.py \
+git add src/lobster0/channels/capabilities.py src/lobster0/channels/manager.py \
+  src/lobster0/channels/delivery.py tests/test_channel_capabilities.py \
   tests/test_channel_manager.py
 git commit -m "feat(feishu): 增加 Typing 与 streaming card fallback"
 ```
@@ -564,9 +564,9 @@ git commit -m "feat(feishu): 增加 Typing 与 streaming card fallback"
 
 **Files:**
 
-- Create: `src/miniclaw/channels/approvals.py`
-- Modify: `src/miniclaw/channels/manager.py`
-- Modify: `src/miniclaw/channels/feishu.py`
+- Create: `src/lobster0/channels/approvals.py`
+- Modify: `src/lobster0/channels/manager.py`
+- Modify: `src/lobster0/channels/feishu.py`
 - Create: `tests/test_channel_approvals.py`
 - Modify: `tests/test_approvals.py`
 
@@ -608,8 +608,8 @@ uv run python -m unittest tests.test_channel_approvals tests.test_approvals \
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/channels/approvals.py src/miniclaw/channels/manager.py \
-  src/miniclaw/channels/feishu.py tests/test_channel_approvals.py tests/test_approvals.py
+git add src/lobster0/channels/approvals.py src/lobster0/channels/manager.py \
+  src/lobster0/channels/feishu.py tests/test_channel_approvals.py tests/test_approvals.py
 git commit -m "feat(approval): 打通 Feishu card 与 continuation flow"
 ```
 
@@ -617,9 +617,9 @@ git commit -m "feat(approval): 打通 Feishu card 与 continuation flow"
 
 **Files:**
 
-- Create: `src/miniclaw/gateway.py`
-- Modify: `src/miniclaw/cli.py`
-- Modify: `src/miniclaw/doctor.py`
+- Create: `src/lobster0/gateway.py`
+- Modify: `src/lobster0/cli.py`
+- Modify: `src/lobster0/doctor.py`
 - Create: `tests/test_gateway.py`
 - Modify: `tests/test_cli.py`
 - Modify: `tests/test_doctor.py`
@@ -629,7 +629,7 @@ git commit -m "feat(approval): 打通 Feishu card 与 continuation flow"
 
 Assert:
 
-- parser exposes `miniclaw gateway`;
+- parser exposes `lobster0 gateway`;
 - disabled/misconfigured/missing SDK/missing credential fails before network;
 - credential values do not appear in exceptions or captured output;
 - successful startup uses one AgentRuntime and prints a redacted ready line;
@@ -656,24 +656,24 @@ shutdown event injection path.
 
 ```bash
 uv run python -m unittest tests.test_gateway tests.test_cli tests.test_doctor tests.test_env -v
-uv run miniclaw gateway --help
-uv run miniclaw doctor
+uv run lobster0 gateway --help
+uv run lobster0 doctor
 ```
 
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/gateway.py src/miniclaw/cli.py src/miniclaw/doctor.py \
+git add src/lobster0/gateway.py src/lobster0/cli.py src/lobster0/doctor.py \
   tests/test_gateway.py tests/test_cli.py tests/test_doctor.py tests/test_env.py
-git commit -m "feat(cli): 增加 miniclaw gateway 与 Feishu doctor"
+git commit -m "feat(cli): 增加 lobster0 gateway 与 Feishu doctor"
 ```
 
 ## Task 13: Add R4 regression suite and live-smoke harness
 
 **Files:**
 
-- Modify: `src/miniclaw/evals/cases.py`
-- Modify: `src/miniclaw/evals/runner.py`
+- Modify: `src/lobster0/evals/cases.py`
+- Modify: `src/lobster0/evals/runner.py`
 - Create: `evals/cases/feishu-channel.jsonl`
 - Create: `scripts/feishu_live_smoke.py`
 - Create: `tests/test_feishu_evals.py`
@@ -708,13 +708,13 @@ The live harness must:
 
 ```bash
 uv run python -m unittest tests.test_feishu_evals tests.test_eval_cases tests.test_eval_runner -v
-uv run miniclaw eval --suite all
+uv run lobster0 eval --suite all
 ```
 
 **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/evals evals/cases/feishu-channel.jsonl \
+git add src/lobster0/evals evals/cases/feishu-channel.jsonl \
   scripts/feishu_live_smoke.py tests/test_feishu_evals.py \
   tests/test_eval_cases.py tests/test_eval_runner.py
 git commit -m "test(feishu): 增加 R4 regression 与 live smoke harness"
@@ -733,7 +733,7 @@ git commit -m "test(feishu): 增加 R4 regression 与 live smoke harness"
 - Modify: `README.md`
 - Modify: `.env.example` if present
 - Modify: `docs/progress/index.html`
-- Modify outside repo: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
+- Modify outside repo: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`
 
 **Step 1: Write a documentation truth checklist**
 
@@ -777,7 +777,7 @@ The external progress HTML is not part of the Git commit; verify it separately a
 **Step 1: Static and auth diagnosis**
 
 ```bash
-uv run miniclaw doctor
+uv run lobster0 doctor
 lark-cli auth status --json --verify
 lark-cli event schema im.message.receive_v1 --json
 ```
@@ -787,7 +787,7 @@ Capture only redacted status. Never copy auth JSON verbatim into docs.
 **Step 2: Start the real Gateway**
 
 ```bash
-uv run miniclaw gateway
+uv run lobster0 gateway
 ```
 
 Wait for a redacted ready marker.
@@ -817,8 +817,8 @@ git commit -m "test(release): 记录 Phase4 Feishu live acceptance"
 uv sync --extra dev --extra feishu
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval --suite all
-uv run miniclaw doctor
+uv run lobster0 eval --suite all
+uv run lobster0 doctor
 uv build
 git diff --check origin/main...HEAD
 ```

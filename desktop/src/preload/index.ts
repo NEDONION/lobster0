@@ -11,4 +11,4 @@ const api = createDesktopApi(
   },
 );
 
-contextBridge.exposeInMainWorld("miniclaw", api);
+contextBridge.exposeInMainWorld("lobster0", api);

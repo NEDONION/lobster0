@@ -1,4 +1,4 @@
-# MiniClaw Agent 工程规范
+# Lobster0 Agent 工程规范
 
 ## 适用范围与优先级
 
@@ -9,8 +9,8 @@
 
 ## 项目事实
 
-- Python 最低版本为 3.12，使用 `src` 布局，主包位于 `src/miniclaw/`。
-- 项目、仓库、Python 导入包和 CLI 使用 `miniclaw`，产品名写作 `MiniClaw`。
+- Python 最低版本为 3.12，使用 `src` 布局，主包位于 `src/lobster0/`。
+- 项目、仓库、Python 导入包和 CLI 使用 `lobster0`，产品名写作 `Lobster0`。
 - 构建和工具配置以 `pyproject.toml` 为准，包管理优先使用 `uv`。
 - 测试位于 `tests/`，使用标准库 `unittest`；静态检查使用 Ruff，行宽为 100。
 - 产品范围以 `docs/product/20260807_产品需求文档.md` 为准，架构边界以
@@ -29,19 +29,19 @@ uv run python -m unittest discover -s tests -v
 uv run ruff check .
 
 # CLI 冒烟验证
-uv run miniclaw --version
+uv run lobster0 --version
 
 # 三平台 versioned Channel gate 与 20 轮稳定性门禁
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 
 # Phase 6 Automation 15-case 与 20 轮稳定性门禁
-uv run miniclaw eval run --suite automation --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
 
 # Phase 6.5 Browser 18-case 与 20 轮稳定性门禁
-uv run miniclaw eval run --suite browser --root evals/scenarios
-uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite browser --root evals/scenarios
+uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios
 
 # 当前发布文档、链接、Mermaid 与 HTML 一致性
 uv run python scripts/validate_docs.py
@@ -125,11 +125,11 @@ uv run python scripts/validate_docs.py
 2. 新增行为有测试，相关文档已同步。
 3. `uv run python -m unittest discover -s tests -v` 通过。
 4. `uv run ruff check .` 通过。
-5. Channel 改动运行 `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios`。
+5. Channel 改动运行 `uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios`。
 6. Automation、Sandbox 或 Checkpoint 改动运行
-   `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios`。
+   `uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios`。
 7. Browser、Artifact 或 Worker 改动运行 `pnpm --dir browser-worker test` 和
-   `uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios`。
+   `uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios`。
 8. 文档改动运行 `uv run python scripts/validate_docs.py`。
 9. `git diff --check` 无空白错误，diff 中无密钥、调试输出或意外大文件。
 

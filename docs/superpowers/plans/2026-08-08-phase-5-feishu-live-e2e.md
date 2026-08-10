@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 创建并接入一个真实飞书企业自建机器人，把“飞书消息 → MiniClaw Agent/Tool/Approval → 飞书回复”变成版本化、可取证、默认安全的 Live E2E 门禁。
+**Goal:** 创建并接入一个真实飞书企业自建机器人，把“飞书消息 → Lobster0 Agent/Tool/Approval → 飞书回复”变成版本化、可取证、默认安全的 Live E2E 门禁。
 
 **Architecture:** 保留现有 `FeishuTransport -> ChannelManager -> AgentRuntime -> DeliveryWorker` 生产链，不增加测试专用执行链。新 Live 模块只负责严格加载 15 条真实场景、管理真实 Gateway 子进程、只读比较 SQLite checkpoint、收集必要人工确认并输出脱敏 Evidence；平台创建、发布、发消息和审批仍由 Owner 完成。
 
@@ -29,9 +29,9 @@
 
 ## File Map
 
-- `src/miniclaw/evals/cases.py`：扩展通用 JSONL 契约，增加严格的 live local/human evidence allowlist。
+- `src/lobster0/evals/cases.py`：扩展通用 JSONL 契约，增加严格的 live local/human evidence allowlist。
 - `evals/scenarios/feishu-live.v1.jsonl`：15 条真实平台场景，不含凭据、外部 ID 或真实正文。
-- `src/miniclaw/evals/feishu_live.py`：Feishu 专用 Live case 选择、SQLite checkpoint/观察、Gateway 生命周期、Evidence 与交互编排。
+- `src/lobster0/evals/feishu_live.py`：Feishu 专用 Live case 选择、SQLite checkpoint/观察、Gateway 生命周期、Evidence 与交互编排。
 - `scripts/feishu_live_smoke.py`：保持现有脚本路径，只做薄入口。
 - `tests/test_eval_cases.py`：Live JSONL schema RED/GREEN。
 - `tests/test_feishu_live_e2e.py`：数据库取证、Gateway 监督、Evidence 和 Runner 契约。
@@ -41,7 +41,7 @@
 - `docs/engineering/phase-5/20260808_troubleshooting.md`：同应用 Open ID、Scope、发布、WebSocket、审批和恢复排障。
 - `docs/evals/releases/v0.5.1.md`：实现门禁与真实平台 Evidence；若未完成 Live，只能写 pending/partial。
 - `README.md`、`docs/engineering/README.md`、`docs/architecture/20260807_系统架构.md`、`docs/progress/index.html`：入口和真实进度。
-- `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`：外部可点击进度页，不进入 Git。
+- `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`：外部可点击进度页，不进入 Git。
 - `scripts/validate_docs.py`：把新工程文档和 v0.5.1 纳入链接、Mermaid、HTML 与事实门禁。
 
 ---
@@ -49,7 +49,7 @@
 ### Task 1: Versioned Feishu Live Scenario Contract
 
 **Files:**
-- Modify: `src/miniclaw/evals/cases.py`
+- Modify: `src/lobster0/evals/cases.py`
 - Modify: `tests/test_eval_cases.py`
 - Modify: `tests/test_feishu_evals.py`
 - Create: `evals/scenarios/feishu-live.v1.jsonl`
@@ -99,7 +99,7 @@ Expected: FAIL，因为 `live_local_evidence` 是未知字段，`EvalExpectation
 
 - [ ] **Step 3: Implement minimal strict parser**
 
-在 `src/miniclaw/evals/cases.py`：
+在 `src/lobster0/evals/cases.py`：
 
 ```python
 _LIVE_LOCAL_EVIDENCE = frozenset({...})
@@ -144,7 +144,7 @@ self.assertTrue(all(case.expected.live_local_evidence for case in live))
 
 ```bash
 .venv/bin/python -m unittest tests.test_eval_cases tests.test_feishu_evals -v
-.venv/bin/python -m miniclaw eval validate --root evals/scenarios
+.venv/bin/python -m lobster0 eval validate --root evals/scenarios
 ```
 
 Expected: PASS；总 validate case 数比基线上调 15，但 offline 28 与 channel 32 不变。
@@ -152,7 +152,7 @@ Expected: PASS；总 validate case 数比基线上调 15，但 offline 28 与 ch
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/miniclaw/evals/cases.py tests/test_eval_cases.py tests/test_feishu_evals.py evals/scenarios/feishu-live.v1.jsonl
+git add src/lobster0/evals/cases.py tests/test_eval_cases.py tests/test_feishu_evals.py evals/scenarios/feishu-live.v1.jsonl
 git commit -m "test(feishu): 固化 Live scenario 与 evidence contract"
 ```
 
@@ -161,7 +161,7 @@ git commit -m "test(feishu): 固化 Live scenario 与 evidence contract"
 ### Task 2: Read-only SQLite Evidence Probe
 
 **Files:**
-- Create: `src/miniclaw/evals/feishu_live.py`
+- Create: `src/lobster0/evals/feishu_live.py`
 - Create: `tests/test_feishu_live_e2e.py`
 
 **Interfaces:**
@@ -238,7 +238,7 @@ _EVIDENCE_CHECKS: dict[str, Callable[[sqlite3.Connection, DatabaseCheckpoint], b
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/evals/feishu_live.py tests/test_feishu_live_e2e.py
+git add src/lobster0/evals/feishu_live.py tests/test_feishu_live_e2e.py
 git commit -m "feat(feishu): 增加 read-only Live evidence probe"
 ```
 
@@ -247,11 +247,11 @@ git commit -m "feat(feishu): 增加 read-only Live evidence probe"
 ### Task 3: Bounded Gateway Process Supervisor
 
 **Files:**
-- Modify: `src/miniclaw/evals/feishu_live.py`
+- Modify: `src/lobster0/evals/feishu_live.py`
 - Modify: `tests/test_feishu_live_e2e.py`
 
 **Interfaces:**
-- Consumes: 当前 Python、项目根、MiniClaw home 和 `.env` 所在 cwd。
+- Consumes: 当前 Python、项目根、Lobster0 home 和 `.env` 所在 cwd。
 - Produces:
 
 ```python
@@ -277,7 +277,7 @@ class GatewayProcess:
 在临时目录生成只用于测试的 Python 脚本：
 
 ```python
-print("MiniClaw gateway ready: feishu/default", flush=True)
+print("Lobster0 gateway ready: feishu/default", flush=True)
 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
 time.sleep(60)
 ```
@@ -300,7 +300,7 @@ Expected: FAIL，因为 `GatewayProcess` 尚不存在。
 (
     sys.executable,
     "-m",
-    "miniclaw",
+    "lobster0",
     "--home",
     str(home),
     "gateway",
@@ -324,7 +324,7 @@ Expected: FAIL，因为 `GatewayProcess` 尚不存在。
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/evals/feishu_live.py tests/test_feishu_live_e2e.py
+git add src/lobster0/evals/feishu_live.py tests/test_feishu_live_e2e.py
 git commit -m "feat(feishu): 管理 bounded Gateway live lifecycle"
 ```
 
@@ -333,7 +333,7 @@ git commit -m "feat(feishu): 管理 bounded Gateway live lifecycle"
 ### Task 4: Redacted Evidence Report and Secret Scan
 
 **Files:**
-- Modify: `src/miniclaw/evals/feishu_live.py`
+- Modify: `src/lobster0/evals/feishu_live.py`
 - Modify: `tests/test_feishu_live_e2e.py`
 
 **Interfaces:**
@@ -388,7 +388,7 @@ def scan_secret_matches(paths: Sequence[Path], secrets: Sequence[str]) -> int: .
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/miniclaw/evals/feishu_live.py tests/test_feishu_live_e2e.py
+git add src/lobster0/evals/feishu_live.py tests/test_feishu_live_e2e.py
 git commit -m "feat(feishu): 输出 redacted Live evidence report"
 ```
 
@@ -397,7 +397,7 @@ git commit -m "feat(feishu): 输出 redacted Live evidence report"
 ### Task 5: Interactive Feishu Live Orchestrator
 
 **Files:**
-- Modify: `src/miniclaw/evals/feishu_live.py`
+- Modify: `src/lobster0/evals/feishu_live.py`
 - Modify: `scripts/feishu_live_smoke.py`
 - Modify: `tests/test_feishu_live_e2e.py`
 - Modify: `tests/test_feishu_evals.py`
@@ -468,7 +468,7 @@ git commit -m "feat(feishu): 输出 redacted Live evidence report"
 #!/usr/bin/env python3
 """运行显式确认、可取证的 Feishu Live E2E。"""
 
-from miniclaw.evals.feishu_live import run_feishu_live_harness
+from lobster0.evals.feishu_live import run_feishu_live_harness
 
 if __name__ == "__main__":
     raise SystemExit(run_feishu_live_harness())
@@ -483,7 +483,7 @@ if __name__ == "__main__":
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/miniclaw/evals/feishu_live.py scripts/feishu_live_smoke.py tests/test_feishu_live_e2e.py tests/test_feishu_evals.py
+git add src/lobster0/evals/feishu_live.py scripts/feishu_live_smoke.py tests/test_feishu_live_e2e.py tests/test_feishu_evals.py
 git commit -m "feat(feishu): 编排真实 Bot Live E2E gate"
 ```
 
@@ -502,7 +502,7 @@ git commit -m "feat(feishu): 编排真实 Bot Live E2E gate"
 - Modify: `docs/engineering/phase-5/20260808_troubleshooting.md`
 - Modify: `docs/progress/index.html`
 - Modify: `scripts/validate_docs.py`
-- Modify external: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html`
+- Modify external: `/Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html`
 
 **Interfaces:**
 - Consumes: 已实现命令、当前新鲜测试数字、真实 Live Evidence（若尚未运行则明确 pending）。
@@ -529,7 +529,7 @@ Expected: FAIL，报告缺少 `phase-5/20260808_feishu-live-e2e.md` 和 `v0.5.1.
 3. 长连接与 `im.message.receive_v1`；
 4. 发布测试版本和可用范围；
 5. `.env 0600`；
-6. `lark-cli --profile miniclaw-e2e` 一次性 Owner discovery，先 schema、等 ready marker、有界退出；
+6. `lark-cli --profile lobster0-e2e` 一次性 Owner discovery，先 schema、等 ready marker、有界退出；
 7. 私聊 config → Doctor → E2E Runner；
 8. 群聊 allowlist 第二阶段；
 9. 15 case 对照表和 Evidence 解释；
@@ -555,7 +555,7 @@ FEISHU E2E VERIFIED
 - [ ] **Step 5: Run GREEN documentation gates**
 
 ```bash
-.venv/bin/python scripts/validate_docs.py --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html
+.venv/bin/python scripts/validate_docs.py --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html
 git diff --check
 ```
 
@@ -575,7 +575,7 @@ External HTML 不进入 Git，但记录其校验结果。
 **Files:**
 - No source file required before live setup.
 - Modify after evidence only: `docs/evals/releases/v0.5.1.md`、`docs/engineering/phase-5/20260808_testing-and-live-acceptance.md`、两份 progress HTML。
-- Local secret only: project `.env` and `~/.miniclaw/config.toml`（禁止 `git add`）。
+- Local secret only: project `.env` and `~/.lobster0/config.toml`（禁止 `git add`）。
 - Local ignored evidence: `.local/eval-results/feishu/*.json`（禁止 `git add`）。
 
 **Interfaces:**
@@ -588,10 +588,10 @@ External HTML 不进入 Git，但记录其校验结果。
 .venv/bin/python -m unittest discover -s tests -v
 corepack pnpm --dir tui test
 .venv/bin/ruff check .
-.venv/bin/python -m miniclaw eval validate --root evals/scenarios
-.venv/bin/python -m miniclaw eval run --suite all --root evals/scenarios
-.venv/bin/python -m miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
-.venv/bin/python scripts/validate_docs.py --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html
+.venv/bin/python -m lobster0 eval validate --root evals/scenarios
+.venv/bin/python -m lobster0 eval run --suite all --root evals/scenarios
+.venv/bin/python -m lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
+.venv/bin/python scripts/validate_docs.py --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html
 uv lock --check
 uv build
 git diff --check
@@ -602,7 +602,7 @@ Expected: 全部 PASS、工作区干净、offline 28 与 channel 32 不变、Pyt
 
 - [ ] **Step 2: Create and publish the real Bot with the user**
 
-在飞书开发者后台执行规格第 6 节：企业自建应用 `MiniClaw E2E Bot`、启用机器人、最小 Scope、长连接、
+在飞书开发者后台执行规格第 6 节：企业自建应用 `Lobster0 E2E Bot`、启用机器人、最小 Scope、长连接、
 `im.message.receive_v1`、Owner-only 可用范围、发布测试版本。任何后台权限扩大或发布动作先把具体 Scope/范围展示给用户确认。
 
 - [ ] **Step 3: Store credentials without exposing them**
@@ -611,18 +611,18 @@ Expected: 全部 PASS、工作区干净、offline 28 与 channel 32 不变、Pyt
 
 - [ ] **Step 4: Discover same-app Owner Open ID**
 
-使用命名 profile `miniclaw-e2e`。在普通人类 TTY 中运行下列初始化命令；App ID 可作为参数，App Secret 只从
+使用命名 profile `lobster0-e2e`。在普通人类 TTY 中运行下列初始化命令；App ID 可作为参数，App Secret 只从
 stdin 读取，不能使用 shell pipe、环境回显或 argv：
 
 ```bash
-lark-cli config init --app-id cli_xxx --app-secret-stdin --brand feishu --name miniclaw-e2e
+lark-cli config init --app-id cli_xxx --app-secret-stdin --brand feishu --name lobster0-e2e
 ```
 
 初始化完成后先查看 schema，再启动有界 consumer：
 
 ```bash
-lark-cli --profile miniclaw-e2e event schema im.message.receive_v1 --json
-lark-cli --profile miniclaw-e2e event consume im.message.receive_v1 --as bot --max-events 1 --timeout 2m
+lark-cli --profile lobster0-e2e event schema im.message.receive_v1 --json
+lark-cli --profile lobster0-e2e event consume im.message.receive_v1 --as bot --max-events 1 --timeout 2m
 ```
 
 必须等 `[event] ready` 后让用户发送一次性 challenge。只把 `sender_id` 写入本地 `owner_open_id` / `allowed_open_ids`；不得把 event JSON、正文或 ID 写进仓库和 Evidence。
@@ -630,7 +630,7 @@ lark-cli --profile miniclaw-e2e event consume im.message.receive_v1 --as bot --m
 - [ ] **Step 5: Run Doctor and P0 private-chat gate**
 
 ```bash
-.venv/bin/miniclaw doctor
+.venv/bin/lobster0 doctor
 .venv/bin/python scripts/feishu_live_smoke.py --confirm-live
 ```
 
@@ -638,7 +638,7 @@ lark-cli --profile miniclaw-e2e event consume im.message.receive_v1 --as bot --m
 
 - [ ] **Step 6: Enable only the dedicated test group**
 
-Bot 加入 `MiniClaw E2E` 测试群，获取同应用 Chat ID，配置唯一 `allowed_chat_ids` 并开启 `allow_group_mentions`。确认配置 diff 只存在本地 state，不进入 Git。
+Bot 加入 `Lobster0 E2E` 测试群，获取同应用 Chat ID，配置唯一 `allowed_chat_ids` 并开启 `allow_group_mentions`。确认配置 diff 只存在本地 state，不进入 Git。
 
 - [ ] **Step 7: Complete 15/15 and record evidence**
 
@@ -651,7 +651,7 @@ Bot 加入 `MiniClaw E2E` 测试群，获取同应用 Chat ID，配置唯一 `al
 - [ ] **Step 9: Final verification and commit**
 
 ```bash
-.venv/bin/python scripts/validate_docs.py --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/miniclaw-progress.html
+.venv/bin/python scripts/validate_docs.py --html /Users/nedonion/Documents/Codex/2026-08-07/new-chat/outputs/lobster0-progress.html
 git diff --check
 git status --short
 git add docs README.md scripts/validate_docs.py

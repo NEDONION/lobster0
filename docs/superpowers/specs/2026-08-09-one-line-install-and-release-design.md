@@ -1,4 +1,4 @@
-# MiniClaw 一键安装、托管发布与原子升级设计
+# Lobster0 一键安装、托管发布与原子升级设计
 
 > 日期：2026-08-09
 >
@@ -14,17 +14,17 @@
 ## 1. 一句话目标
 
 让用户在一台全新的受支持服务器或 Mac 上执行一条命令，即可获得可验证、可升级、可回滚、可卸载的完整
-MiniClaw；安装过程不要求克隆仓库，不把 Secret 写进命令行、日志或服务定义，也不让 Agent 以 root 身份运行。
+Lobster0；安装过程不要求克隆仓库，不把 Secret 写进命令行、日志或服务定义，也不让 Agent 以 root 身份运行。
 
 ```bash
 curl -fsSL --proto '=https' --tlsv1.2 \
-  https://github.com/NEDONION/mini-claw/releases/latest/download/install.sh | bash
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash
 ```
 
-“安装完成”不是只有 `miniclaw` 命令存在，而是必须同时满足：
+“安装完成”不是只有 `lobster0` 命令存在，而是必须同时满足：
 
 - Python Core、默认 pi-tui、Feishu/Telegram/Discord SDK 与该 Release 已实现的功能均已安装；
-- `miniclaw --version`、`miniclaw doctor` 和 install smoke 通过；
+- `lobster0 --version`、`lobster0 doctor` 和 install smoke 通过；
 - Linux systemd user service 或 macOS LaunchAgent 已按用户选择注册；
 - Gateway 使用非 root 身份运行并能报告健康状态；
 - 失败不会破坏上一版运行环境或用户数据。
@@ -33,7 +33,7 @@ curl -fsSL --proto '=https' --tlsv1.2 \
 
 仓库当前仍是源码安装体验：
 
-- `pyproject.toml` 的分发名是已被其他项目占用的 `miniclaw`；
+- `pyproject.toml` 的分发名是已被其他项目占用的 `lobster0`；
 - Python 版本仍写作 `0.1.0`，与仓库 Release 线没有统一来源；
 - `tui/dist/main.js` 依赖仓库内 `node_modules`，Python wheel 不包含可运行 pi-tui；
 - 快速开始要求用户手工安装 uv、Python、Node、pnpm 并从源码构建；
@@ -58,7 +58,7 @@ Scheduler、TaskRunner、Sandbox 或 Checkpoint。
 
 不照搬：
 
-- 不使用全局 npm 作为 MiniClaw 的事实安装源；
+- 不使用全局 npm 作为 Lobster0 的事实安装源；
 - 不让系统 Node、shell rc 或用户当前 Python 环境决定运行结果；
 - 不在安装成功前覆盖旧版本。
 
@@ -66,7 +66,7 @@ Scheduler、TaskRunner、Sandbox 或 Checkpoint。
 
 采用：
 
-- MiniClaw 自己管理 uv、Python 与 Node；
+- Lobster0 自己管理 uv、Python 与 Node；
 - 普通用户模式与 root 发起模式均有清晰布局；
 - 系统依赖确实需要 sudo 时才请求提权；
 - 没有 sudo 时给出精确管理员命令，不伪装成功；
@@ -84,16 +84,16 @@ Scheduler、TaskRunner、Sandbox 或 Checkpoint。
 采用 **Managed Prefix + Versioned Release Bundle**：
 
 1. GitHub Release 是版本、installer、manifest、TUI bundle、checksum、SBOM 与 attestation 的权威发布入口；
-2. PyPI 使用分发名 `miniclaw-agent` 发布相同 Python wheel/sdist；
+2. PyPI 使用分发名 `lobster0-agent` 发布相同 Python wheel/sdist；
 3. 一键安装器按 Release manifest 安装精确 wheel 和锁定依赖，不从 `main` 构建；
-4. uv、Python、Node、pi-tui 与 Python 环境放在 MiniClaw 管理的版本目录；
+4. uv、Python、Node、pi-tui 与 Python 环境放在 Lobster0 管理的版本目录；
 5. 稳定 launcher 通过 `current` 指针进入当前版本；
 6. 新版本通过全部本机 smoke 后才原子切换，失败时旧版本保持可用。
 
 仅 PyPI 安装仍作为高级入口：
 
 ```bash
-uv tool install 'miniclaw-agent[channels]'
+uv tool install 'lobster0-agent[channels]'
 ```
 
 它不承诺自动注册服务和准备 Node/TUI/Sandbox 系统依赖，因此不是 README 的首选完整安装方式。
@@ -102,18 +102,18 @@ uv tool install 'miniclaw-agent[channels]'
 
 ```toml
 [project]
-name = "miniclaw-agent"
+name = "lobster0-agent"
 ```
 
 只改变 Python 分发名。以下公共名称保持不变：
 
-- 产品：`MiniClaw`；
-- 仓库：`miniclaw`；
-- Python import：`miniclaw`；
-- CLI：`miniclaw`；
-- 状态根：`~/.miniclaw`。
+- 产品：`Lobster0`；
+- 仓库：`lobster0`；
+- Python import：`lobster0`；
+- CLI：`lobster0`；
+- 状态根：`~/.lobster0`。
 
-发布前必须实际创建 PyPI `miniclaw-agent` 项目并配置 Trusted Publisher。PyPI 返回 404 只说明检查时未注册，
+发布前必须实际创建 PyPI `lobster0-agent` 项目并配置 Trusted Publisher。PyPI 返回 404 只说明检查时未注册，
 不能当成永久名称保留。
 
 ## 6. 支持矩阵
@@ -146,9 +146,9 @@ Tier 1。
 普通用户默认布局：
 
 ```text
-~/.miniclaw/
+~/.lobster0/
 ├── bin/
-│   ├── miniclaw
+│   ├── lobster0
 │   └── uv
 ├── current -> runtimes/0.7.0
 ├── runtimes/
@@ -166,7 +166,7 @@ Tier 1。
 ├── workspace/
 └── logs/
 
-~/.local/bin/miniclaw -> ~/.miniclaw/bin/miniclaw
+~/.local/bin/lobster0 -> ~/.lobster0/bin/lobster0
 ```
 
 规则：
@@ -178,7 +178,7 @@ Tier 1。
 - 安装器只替换自己创建且 receipt/hash 匹配的链接或文件。
 
 以 root 身份调用安装器时，默认仍安装给原始登录用户。只有显式 `--system-prefix` 才把只读程序文件放进
-`/usr/local/lib/miniclaw` 和 `/usr/local/bin/miniclaw`；配置、Memory 和 SQLite 继续属于实际运行用户。Gateway
+`/usr/local/lib/lobster0` 和 `/usr/local/bin/lobster0`；配置、Memory 和 SQLite 继续属于实际运行用户。Gateway
 不得以 UID 0 启动。
 
 ## 8. 两层安装器
@@ -192,7 +192,7 @@ GitHub Release 的 `install.sh` 保持最小，只承担：
 3. 创建 owner-only 临时目录；
 4. 使用脚本内嵌的 uv 版本、平台 URL 和 SHA-256 下载官方 uv archive；
 5. 用 `sha256sum` 或 `shasum -a 256` 校验并解压 managed uv；
-6. 下载同一 Release 的 manifest 和 `miniclaw-installer.pyz`，并按脚本内嵌 hash 校验；
+6. 下载同一 Release 的 manifest 和 `lobster0-installer.pyz`，并按脚本内嵌 hash 校验；
 7. 用 managed uv 准备 Python 3.12；
 8. 运行 stdlib-only installer zipapp；
 9. 透传退出码并清理临时文件。
@@ -203,7 +203,7 @@ hash；stable `latest/download/install.sh` 因此仍对应一个不可混装的�
 
 ### 8.2 Python installer
 
-Release artifact `miniclaw-installer.pyz` 从 `src/miniclaw/install/` 构建，只使用 Python 3.12 标准库，承担：
+Release artifact `lobster0-installer.pyz` 从 `src/lobster0/install/` 构建，只使用 Python 3.12 标准库，承担：
 
 - manifest/schema 校验；
 - 精确依赖与 Runtime 安装；
@@ -214,11 +214,11 @@ Release artifact `miniclaw-installer.pyz` 从 `src/miniclaw/install/` 构建，�
 - doctor、smoke、原子切换和失败恢复；
 - JSON/人类可读事件输出。
 
-zipapp 只能导入标准库和 `miniclaw.install` 同包模块，不能依赖尚未安装的 Runtime 包。archive 解包统一拒绝绝对
+zipapp 只能导入标准库和 `lobster0.install` 同包模块，不能依赖尚未安装的 Runtime 包。archive 解包统一拒绝绝对
 路径、`..`、symlink、hardlink、device 和目标目录逃逸，并在写入前执行 entry 数量与总字节预算。
 
 安装器调用外部程序必须传 argv 数组，不经过 shell 字符串。下载 URL 只来自已验证 manifest 中的
-`https://github.com/NEDONION/mini-claw/`、`https://files.pythonhosted.org/`、`https://nodejs.org/` 和 Astral uv
+`https://github.com/NEDONION/lobster0/`、`https://files.pythonhosted.org/`、`https://nodejs.org/` 和 Astral uv
 官方 Release allowlist。
 
 ## 9. Release Manifest
@@ -228,7 +228,7 @@ zipapp 只能导入标准库和 `miniclaw.install` 同包模块，不能依赖�
 ```json
 {
   "schema_version": 1,
-  "product": "miniclaw",
+  "product": "lobster0",
   "version": "0.7.0",
   "git_commit": "40-hex-commit",
   "python": "3.12",
@@ -265,10 +265,10 @@ manifest、checksum、wheel、TUI bundle 与 installer 必须来自同一 tag/co
 - Release 生成 `requirements-all.lock`，锁定 Core 与 `channels` extras 的精确版本和 artifact hash；
 - 安装使用 hash-required 模式，不在用户机器重新自由求解依赖；
 - 不运行任意 package post-install shell；
-- wheel 安装后验证 metadata 中名称、版本和 `miniclaw` entry point。
+- wheel 安装后验证 metadata 中名称、版本和 `lobster0` entry point。
 
-项目版本的单一源码是 `src/miniclaw/_version.py`。`pyproject.toml` 通过 setuptools dynamic attr 读取该常量，
-`miniclaw.__version__` 只重新导出它；CLI、wheel metadata、Git tag、manifest 和 release record 必须一致。
+项目版本的单一源码是 `src/lobster0/_version.py`。`pyproject.toml` 通过 setuptools dynamic attr 读取该常量，
+`lobster0.__version__` 只重新导出它；CLI、wheel metadata、Git tag、manifest 和 release record 必须一致。
 
 ## 11. Node 与 pi-tui
 
@@ -279,13 +279,13 @@ manifest、checksum、wheel、TUI bundle 与 installer 必须来自同一 tag/co
 - 可复用经过验证的 Node 22.22.3+ 或 Node 24.15.0+；
 - CI 同时覆盖 Node 22 最低受支持补丁与 manifest 默认 Node 24；
 - Node 20、23、25 已 EOL，不支持；
-- Node 26 在进入 LTS 且完成 MiniClaw 全门禁前不支持；
+- Node 26 在进入 LTS 且完成 Lobster0 全门禁前不支持；
 - managed Node 下载官方二进制并按 manifest SHA-256 校验，不使用系统 package manager 获得不确定补丁版。
 
 ### 11.2 TUI Bundle
 
 当前 `tsc` 输出仍依赖 `@earendil-works/pi-tui`，不能只把 `dist/main.js` 放进 wheel。Release 按 OS/arch 构建
-`miniclaw-tui-<version>-<os>-<arch>.tar.gz`，使 Python 3.12 标准库可以直接安全解包；bundle 包含：
+`lobster0-tui-<version>-<os>-<arch>.tar.gz`，使 Python 3.12 标准库可以直接安全解包；bundle 包含：
 
 - 编译后的 `tui/dist`；
 - 精确 lockfile 对应的 production Node dependency tree；
@@ -296,8 +296,8 @@ manifest、checksum、wheel、TUI bundle 与 installer 必须来自同一 tag/co
 Runtime launcher 显式设置：
 
 ```text
-MINICLAW_NODE=<runtime>/node/bin/node
-MINICLAW_TUI_ENTRY=<runtime>/tui/dist/main.js
+LOBSTER0_NODE=<runtime>/node/bin/node
+LOBSTER0_TUI_ENTRY=<runtime>/tui/dist/main.js
 ```
 
 安装门禁必须在没有仓库 checkout、全局 pnpm 和全局 node_modules 的环境中实际启动 pi-tui。Textual 保留为显式
@@ -344,16 +344,16 @@ onboarding 引导，Doctor 精确报告；安装器不能伪造授权成功。
 安装后公共命令：
 
 ```bash
-miniclaw service install
-miniclaw service status
-miniclaw service logs
-miniclaw service restart
-miniclaw service uninstall
+lobster0 service install
+lobster0 service status
+lobster0 service logs
+lobster0 service restart
+lobster0 service uninstall
 ```
 
 Linux：
 
-- 默认 `~/.config/systemd/user/miniclaw-gateway.service`；
+- 默认 `~/.config/systemd/user/lobster0-gateway.service`；
 - `ExecStart` 指向稳定 launcher；
 - `Restart=on-failure`、有界退避、明确 stop timeout；
 - headless VPS 可经确认执行 `loginctl enable-linger <user>`；
@@ -363,7 +363,7 @@ Linux：
 
 macOS：
 
-- `~/Library/LaunchAgents/io.miniclaw.gateway.plist`；
+- `~/Library/LaunchAgents/io.lobster0.gateway.plist`；
 - ProgramArguments 是绝对 launcher 与 exact argv；
 - 不写 Secret；
 - stdout/stderr 进入 owner-only logs；
@@ -416,9 +416,9 @@ stateDiagram-v2
 ## 16. 卸载与数据保留
 
 ```bash
-miniclaw service uninstall
-miniclaw uninstall
-miniclaw uninstall --purge-data
+lobster0 service uninstall
+lobster0 uninstall
+lobster0 uninstall --purge-data
 ```
 
 默认卸载：
@@ -459,9 +459,9 @@ miniclaw uninstall --purge-data
 | 内容 | 托管位置 | 作用 |
 | --- | --- | --- |
 | 源码、tag、Release | GitHub | 代码与版本事实 |
-| wheel / sdist | PyPI `miniclaw-agent` | 标准 Python 安装 |
+| wheel / sdist | PyPI `lobster0-agent` | 标准 Python 安装 |
 | installer / manifest / TUI / checksum / SBOM | GitHub Releases | 一键安装权威 artifact |
-| Runtime/部署镜像 | GHCR `ghcr.io/nedonion/miniclaw` | 可选 Docker/VPS 路径 |
+| Runtime/部署镜像 | GHCR `ghcr.io/nedonion/lobster0` | 可选 Docker/VPS 路径 |
 
 首版不建设自有包服务器、S3 bucket 或镜像代理。未来稳定域名只能作为 GitHub Release 的 HTTPS 入口，不成为第二套
 artifact 事实源。
@@ -493,7 +493,7 @@ artifact 事实源。
 - 所有本机下载验证 SHA-256、size 与来源；GitHub attestation 由 Release workflow 在发布提升前独立验证并公开；
 - stable 只接受 GitHub Release，不接受 branch tarball；
 - Runtime 安装目录不可被 group/world 写；
-- PATH 中已有同名 `miniclaw` 不被静默覆盖；
+- PATH 中已有同名 `lobster0` 不被静默覆盖；
 - 不从当前目录导入 Python 模块；
 - 不执行下载到 Workspace 的脚本；
 - installer、service 和 doctor 日志统一凭据过滤；
@@ -531,13 +531,13 @@ artifact 事实源。
 | --- | --- |
 | `scripts/install.sh` | 最小 POSIX bootstrap |
 | `scripts/build_installer_zipapp.py` | 从受测安装模块构建 stdlib-only installer zipapp |
-| `src/miniclaw/install/models.py` | Manifest、Plan、Receipt 强类型模型 |
-| `src/miniclaw/install/platforms.py` | OS/arch/distro 与系统依赖 adapter |
-| `src/miniclaw/install/runtime.py` | versioned Runtime staging/verify/activate |
-| `src/miniclaw/install/service.py` | systemd/launchd 受管文件生成与校验 |
-| `src/miniclaw/install/receipt.py` | owner-only 安装事实与 ownership hash |
-| `src/miniclaw/install/update.py` | update/rollback 状态机 |
-| `src/miniclaw/install/__main__.py` | zipapp 与已安装 CLI 共用入口 |
+| `src/lobster0/install/models.py` | Manifest、Plan、Receipt 强类型模型 |
+| `src/lobster0/install/platforms.py` | OS/arch/distro 与系统依赖 adapter |
+| `src/lobster0/install/runtime.py` | versioned Runtime staging/verify/activate |
+| `src/lobster0/install/service.py` | systemd/launchd 受管文件生成与校验 |
+| `src/lobster0/install/receipt.py` | owner-only 安装事实与 ownership hash |
+| `src/lobster0/install/update.py` | update/rollback 状态机 |
+| `src/lobster0/install/__main__.py` | zipapp 与已安装 CLI 共用入口 |
 | `deploy/Dockerfile` | 非 root Runtime 镜像 |
 | `.github/workflows/release.yml` | 构建、attest、PyPI/GHCR 与 install gate |
 | `tests/test_install_*.py` | 离线模型、计划、receipt、升级与服务测试 |
@@ -549,9 +549,9 @@ artifact 事实源。
 | --- | --- |
 | `pyproject.toml` | 分发名、单一版本源、package data/release metadata |
 | `tui/package.json` | 精确受支持 Node range 与 release build |
-| `src/miniclaw/tui_launcher.py` | 安装布局下的 managed Node/TUI 解析 |
-| `src/miniclaw/cli.py` | service/update/uninstall 公共入口 |
-| `src/miniclaw/doctor.py` | install method、Runtime、service 与 dependency facts |
+| `src/lobster0/tui_launcher.py` | 安装布局下的 managed Node/TUI 解析 |
+| `src/lobster0/cli.py` | service/update/uninstall 公共入口 |
+| `src/lobster0/doctor.py` | install method、Runtime、service 与 dependency facts |
 | `README.md` | 一行安装为主入口，源码安装转开发说明 |
 | `docs/getting-started/20260807_本地运行指南.md` | 安装、升级、回滚与卸载 |
 | 产品、架构、工程与 Release 文档 | 已实现事实和门禁证据同步 |
@@ -589,7 +589,7 @@ artifact 事实源。
 5. `--json --no-onboard` 自动化安装；
 6. pi-tui entry/import smoke；
 7. 三个 Channel SDK import/contract smoke；
-8. `miniclaw --version` 与 Doctor；
+8. `lobster0 --version` 与 Doctor；
 9. service install/start/status/restart/logs/uninstall；
 10. 重复安装幂等；
 11. N-1 → N 升级；
@@ -611,7 +611,7 @@ rootless containment 与 Apple Intel/ARM 差异必须使用对应 VM/实体 runn
 
 只有同时满足以下条件，`GAP-OPS-002` 才能标记完成：
 
-- [ ] `miniclaw-agent` PyPI 项目与 Trusted Publisher 已建立；
+- [ ] `lobster0-agent` PyPI 项目与 Trusted Publisher 已建立；
 - [ ] GitHub Release 包含同 commit 的 installer、manifest、wheel、TUI bundles、checksums、SBOM 与 attestations；
 - [ ] README 的一行命令能在所有 Tier 1 组合完成 fresh install；
 - [ ] 安装机器不需要预装 Python、Node 或 pnpm；

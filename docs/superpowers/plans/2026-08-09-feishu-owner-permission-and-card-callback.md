@@ -22,8 +22,8 @@
 **Files:**
 - Modify: `tests/test_tool_executor.py`
 - Modify: `tests/test_channel_approvals.py`
-- Modify: `src/miniclaw/tools/executor.py`
-- Modify: `src/miniclaw/channels/approvals.py`
+- Modify: `src/lobster0/tools/executor.py`
+- Modify: `src/lobster0/channels/approvals.py`
 
 **Interfaces:**
 - Produces: 有界 `_approval_summary()`；`feishu_approval_status_card(state, visible)`。
@@ -37,9 +37,9 @@
 ### Task 2: 飞书按钮回调 durable 闭环
 
 **Files:**
-- Create: `src/miniclaw/channels/feishu_approval.py`
+- Create: `src/lobster0/channels/feishu_approval.py`
 - Create: `tests/test_feishu_approval.py`
-- Modify: `src/miniclaw/gateway.py`
+- Modify: `src/lobster0/gateway.py`
 
 **Interfaces:**
 - Produces: `FeishuApprovalActionHandler.__call__(actor_open_id, value, chat_id, message_id) -> None`。
@@ -58,8 +58,8 @@
 **Files:**
 - Modify: `tests/test_openai_compatible_provider.py`
 - Modify: `tests/test_channel_manager.py`
-- Modify: `src/miniclaw/providers/openai_compatible.py`
-- Modify: `src/miniclaw/channels/manager.py`
+- Modify: `src/lobster0/providers/openai_compatible.py`
+- Modify: `src/lobster0/channels/manager.py`
 
 - [x] 复现无可见文本的畸形 Tool JSON，确认旧实现直接 `provider_protocol`。
 - [x] 只在无可见文本时有限重试一次；已展示文本时不重试。
@@ -70,7 +70,7 @@
 ### Task 4: 当前 Owner 运行配置与文档
 
 **Files:**
-- Modify outside repository: `~/.miniclaw/config.toml`
+- Modify outside repository: `~/.lobster0/config.toml`
 - Modify: `README.md`
 - Modify: `docs/engineering/phase-2/20260808_autopilot-permissions-and-approval-ui.md`
 
@@ -84,6 +84,6 @@
 
 - [ ] 运行 `uv run python -m unittest discover -s tests -v`，要求零失败。
 - [ ] 运行 `uv run ruff check .` 与 `uv run python scripts/validate_docs.py`。
-- [ ] 运行 `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios`，要求全部通过。
+- [ ] 运行 `uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios`，要求全部通过。
 - [ ] 运行 `git diff --check`，确认无 Secret、调试输出和意外文件。
 - [ ] 合并最新 `main`、推送 `origin/main`，更新 LaunchAgent commit 并验证 Gateway connected/ready。

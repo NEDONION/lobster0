@@ -28,30 +28,30 @@ export async function generateMetadata({
   return {
     description: copy.meta.description,
     icons: { icon: '/favicon.svg' },
-    metadataBase: new URL('https://miniclaw.vercel.app'),
+    metadataBase: new URL('https://lobster0.vercel.app'),
     openGraph: {
       description: copy.meta.description,
       images: [
         {
           alt: copy.meta.title,
           height: 630,
-          url: 'https://miniclaw.vercel.app/opengraph-image',
+          url: 'https://lobster0.vercel.app/opengraph-image',
           width: 1200,
         },
       ],
       locale: locale === 'zh-CN' ? 'zh_CN' : 'en_US',
-      siteName: 'MiniClaw',
+      siteName: 'Lobster0',
       title: copy.meta.title,
       type: 'website',
     },
     title: {
       default: copy.meta.title,
-      template: '%s — MiniClaw',
+      template: '%s — Lobster0',
     },
     twitter: {
       card: 'summary_large_image',
       description: copy.meta.description,
-      images: ['https://miniclaw.vercel.app/opengraph-image'],
+      images: ['https://lobster0.vercel.app/opengraph-image'],
       title: copy.meta.title,
     },
   };

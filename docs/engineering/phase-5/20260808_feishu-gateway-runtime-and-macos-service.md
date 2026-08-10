@@ -20,7 +20,7 @@ sequenceDiagram
     participant U as "Lucas"
     participant F as "飞书开放平台"
     participant W as "lark-channel WebSocket"
-    participant M as "MiniClaw ChannelManager"
+    participant M as "Lobster0 ChannelManager"
     participant A as "AgentRuntime"
     participant D as "DeliveryWorker"
 
@@ -33,7 +33,7 @@ sequenceDiagram
     A-->>M: "公开回答；reasoning 不发到 IM"
     M->>M: "写 durable Outbox"
     D->>F: "回复原消息"
-    F-->>U: "MiniClaw 最终回复"
+    F-->>U: "Lobster0 最终回复"
     M->>F: "移除 Typing reaction"
 ```
 
@@ -57,7 +57,7 @@ This event loop is already running
 
 ```mermaid
 flowchart LR
-    C["miniclaw gateway"] --> P["在 asyncio.run 前预加载 Feishu SDK"]
+    C["lobster0 gateway"] --> P["在 asyncio.run 前预加载 Feishu SDK"]
     P --> L["asyncio.run 创建 Core loop"]
     L --> G["GatewaySupervisor"]
     G --> W["SDK 自有线程 / loop"]
@@ -68,7 +68,7 @@ flowchart LR
 
 ### 2.2 错用了前台阻塞连接入口
 
-SDK 的 `connect()` 是前台生命周期入口，正常连接期间不会返回。MiniClaw 需要在 WebSocket ready 后继续启动
+SDK 的 `connect()` 是前台生命周期入口，正常连接期间不会返回。Lobster0 需要在 WebSocket ready 后继续启动
 Inbox Worker 和 Delivery Worker，所以 Transport 优先调用 `connect_until_ready()`；只有旧版 SDK 不提供该方法时
 才回退到 `connect()`。
 
@@ -85,8 +85,8 @@ Inbox Worker 和 Delivery Worker，所以 Transport 优先调用 `connect_until_
 仓库根目录执行：
 
 ```bash
-uv run miniclaw doctor
-uv run miniclaw gateway
+uv run lobster0 doctor
+uv run lobster0 gateway
 ```
 
 正常启动至少应看到以下稳定事件：
@@ -94,7 +94,7 @@ uv run miniclaw gateway
 ```text
 channel.transport.connected
 channel.supervisor.ready
-MiniClaw gateway ready: feishu/default
+Lobster0 gateway ready: feishu/default
 ```
 
 收到一条 Owner 私聊后，判断顺序是：
@@ -136,14 +136,14 @@ Mac 上推荐使用用户级 `launchd`，而不是 `nohup` 或一直开着 Termi
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>io.miniclaw.gateway</string>
+  <string>io.lobster0.gateway</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/absolute/path/to/miniclaw/.venv/bin/miniclaw</string>
+    <string>/absolute/path/to/lobster0/.venv/bin/lobster0</string>
     <string>gateway</string>
   </array>
   <key>WorkingDirectory</key>
-  <string>/absolute/path/to/miniclaw</string>
+  <string>/absolute/path/to/lobster0</string>
   <key>RunAtLoad</key>
   <true/>
   <key>KeepAlive</key>
@@ -151,9 +151,9 @@ Mac 上推荐使用用户级 `launchd`，而不是 `nohup` 或一直开着 Termi
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>StandardOutPath</key>
-  <string>/Users/your-name/.miniclaw/logs/gateway.stdout.log</string>
+  <string>/Users/your-name/.lobster0/logs/gateway.stdout.log</string>
   <key>StandardErrorPath</key>
-  <string>/Users/your-name/.miniclaw/logs/gateway.stderr.log</string>
+  <string>/Users/your-name/.lobster0/logs/gateway.stderr.log</string>
 </dict>
 </plist>
 ```
@@ -161,22 +161,22 @@ Mac 上推荐使用用户级 `launchd`，而不是 `nohup` 或一直开着 Termi
 保存为：
 
 ```text
-~/Library/LaunchAgents/io.miniclaw.gateway.plist
+~/Library/LaunchAgents/io.lobster0.gateway.plist
 ```
 
 检查并启动：
 
 ```bash
-plutil -lint ~/Library/LaunchAgents/io.miniclaw.gateway.plist
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.miniclaw.gateway.plist
-launchctl kickstart -k gui/$(id -u)/io.miniclaw.gateway
-launchctl print gui/$(id -u)/io.miniclaw.gateway
+plutil -lint ~/Library/LaunchAgents/io.lobster0.gateway.plist
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/io.lobster0.gateway.plist
+launchctl kickstart -k gui/$(id -u)/io.lobster0.gateway
+launchctl print gui/$(id -u)/io.lobster0.gateway
 ```
 
 停止并卸载：
 
 ```bash
-launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/io.miniclaw.gateway.plist
+launchctl bootout gui/$(id -u) ~/Library/LaunchAgents/io.lobster0.gateway.plist
 ```
 
 安全要求：
@@ -196,12 +196,12 @@ LaunchAgent 只能在 Mac 已开机、用户已登录且系统没有阻断网络
 ```mermaid
 flowchart LR
     F["飞书云"] <-->|"出站 WebSocket"| V["Linux VPS"]
-    V --> G["MiniClaw Gateway"]
+    V --> G["Lobster0 Gateway"]
     G --> S["持久化 state volume"]
     G --> M["模型 HTTPS API"]
 ```
 
-VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy、持久化 `~/.miniclaw`、只读 Secret 注入和
+VPS 推荐 Docker Compose 或 systemd，设置非 root 用户、restart policy、持久化 `~/.lobster0`、只读 Secret 注入和
 日志轮转；不要挂载宿主机 SSH、浏览器 Profile、Keychain 或 Docker socket。
 
 ## 7. 验证矩阵

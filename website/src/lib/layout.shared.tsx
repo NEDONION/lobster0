@@ -49,7 +49,7 @@ export function baseOptions(locale: Locale): BaseLayoutProps {
       title: (
         <span className="docs-brand">
           <span aria-hidden="true">M</span>
-          MiniClaw
+          Lobster0
         </span>
       ),
       url: localizedPath(locale, '/docs'),

@@ -1,4 +1,4 @@
-# MiniClaw Phase 1：CLI Agent 闭环设计
+# Lobster0 Phase 1：CLI Agent 闭环设计
 
 > 状态：已实现并通过离线门禁与真实 DeepSeek 验证<br>
 > 日期：2026-08-07<br>
@@ -10,7 +10,7 @@
 Phase 1 交付第一条真实、可持久化、可诊断的 Agent 主链路：
 
 ```text
-miniclaw chat --message
+lobster0 chat --message
   → ContextBuilder
   → AgentRunner
   → OpenAI-compatible Provider
@@ -22,8 +22,8 @@ miniclaw chat --message
 完成后，用户在仓库根目录配置本地 `.env`，即可执行：
 
 ```bash
-uv run miniclaw init
-uv run miniclaw chat --message "你好，请介绍你自己"
+uv run lobster0 init
+uv run lobster0 chat --message "你好，请介绍你自己"
 ```
 
 命令必须调用 `deepseek-v4-pro`，输出最终回答，并将用户消息、助手消息、Turn 状态、Token 用量和错误
@@ -36,7 +36,7 @@ uv run miniclaw chat --message "你好，请介绍你自己"
 | 基座模型 | `deepseek-v4-pro` |
 | API 协议 | OpenAI Chat Completions compatible |
 | Base URL | `https://api.deepseek.com` |
-| 凭证 | 仓库根目录 `.env` 中的 `MINICLAW_MODEL_API_KEY` |
+| 凭证 | 仓库根目录 `.env` 中的 `LOBSTER0_MODEL_API_KEY` |
 | 凭证来源 | 从 EvalHub 已加密保存的 DeepSeek Provider 凭据一次性复制 |
 | 凭证边界 | `.env` 被 Git 忽略、权限 `0600`、环境变量优先、日志永不输出值 |
 | HTTP Client | `httpx>=0.28,<1`，异步请求与 SSE 流式响应 |
@@ -45,25 +45,25 @@ uv run miniclaw chat --message "你好，请介绍你自己"
 | 工具 | Runner 支持结构化 Tool Call 循环；内置工具在 Phase 2 接入 |
 | 思考模式 | 使用 DeepSeek V4 Pro 默认思考模式，不额外关闭；解析但不向终端展示思维链 |
 
-MiniClaw 不导入 EvalHub 包，也不读取 EvalHub 数据库。EvalHub 只在开发初始化时作为凭据来源，运行时
+Lobster0 不导入 EvalHub 包，也不读取 EvalHub 数据库。EvalHub 只在开发初始化时作为凭据来源，运行时
 不存在兄弟仓库依赖。
 
 ### 2.1 凭据方案比较
 
 | 方案 | 优点 | 代价 | 结论 |
 | --- | --- | --- | --- |
-| 运行时读取 EvalHub | 不复制凭据 | MiniClaw 被兄弟仓库路径、加密实现和运行目录绑定 | 拒绝 |
-| `~/.miniclaw/secrets.toml` | 与项目目录分离 | 用户明确不选择；需要新增一套私密配置格式 | 拒绝 |
+| 运行时读取 EvalHub | 不复制凭据 | Lobster0 被兄弟仓库路径、加密实现和运行目录绑定 | 拒绝 |
+| `~/.lobster0/secrets.toml` | 与项目目录分离 | 用户明确不选择；需要新增一套私密配置格式 | 拒绝 |
 | 仓库根目录 `.env` | 本地开发直观，生态习惯成熟，Git 已忽略 | 只能从启动工作目录发现，必须保护文件权限 | 采用 |
 
 `.env` 方案使用一次性本地迁移命令完成凭据复制；该命令不进入仓库，避免把 EvalHub 路径变成产品
-接口。MiniClaw 自身只知道环境变量名。
+接口。Lobster0 自身只知道环境变量名。
 
 ## 3. 范围
 
 ### 3.1 本阶段实现
 
-- `miniclaw chat --message TEXT [--session ID] [--home PATH]` 单次对话。
+- `lobster0 chat --message TEXT [--session ID] [--home PATH]` 单次对话。
 - 无 `--message` 且连接 TTY 时的最小交互循环；EOF 或 `/exit` 正常退出。
 - 严格 `.env` 加载：只接受 `KEY=VALUE`，不执行 Shell、不展开变量，已有进程环境变量优先。
 - Provider 稳定数据契约、错误类型和异步 OpenAI-compatible 实现。
@@ -97,7 +97,7 @@ sequenceDiagram
     participant Provider as OpenAICompatibleProvider
     participant DeepSeek as DeepSeek V4 Pro
 
-    User->>CLI: miniclaw chat --message TEXT
+    User->>CLI: lobster0 chat --message TEXT
     CLI->>Turn: run_cli_turn(TEXT, session?)
     Turn->>DB: 创建或读取 cli Session
     Turn->>DB: 写入 queued Turn + user Message
@@ -123,7 +123,7 @@ sequenceDiagram
 
 ### 5.1 `.env` 边界
 
-新增 `src/miniclaw/env.py`：
+新增 `src/lobster0/env.py`：
 
 ```python
 def load_dotenv(path: Path, environ: MutableMapping[str, str] | None = None) -> tuple[str, ...]:
@@ -141,7 +141,7 @@ def load_dotenv(path: Path, environ: MutableMapping[str, str] | None = None) -> 
 
 ### 5.2 Provider 契约
 
-新增 `src/miniclaw/providers/base.py`，定义：
+新增 `src/lobster0/providers/base.py`，定义：
 
 ```python
 @dataclass(frozen=True, slots=True)
@@ -183,7 +183,7 @@ Runner 的内部消息，不写入普通 Assistant Message，也不输出到终�
 
 ### 5.3 OpenAI-compatible Provider
 
-新增 `src/miniclaw/providers/openai_compatible.py`：
+新增 `src/lobster0/providers/openai_compatible.py`：
 
 - 构造时接收 `base_url`、`api_key`、`timeout_seconds` 和可注入 `httpx.AsyncClient`。
 - API Key 只保存在私有属性，类不实现包含字段值的自定义 `repr`。
@@ -207,7 +207,7 @@ Runner 的内部消息，不写入普通 Assistant Message，也不输出到终�
 
 ### 5.4 Agent Runner
 
-新增 `src/miniclaw/agent/runner.py`：
+新增 `src/lobster0/agent/runner.py`：
 
 ```python
 class AgentRunner:
@@ -244,7 +244,7 @@ Runner 规则：
 ## 6. CLI 行为
 
 ```text
-miniclaw chat --message TEXT [--session ID] [--home ABSOLUTE_PATH]
+lobster0 chat --message TEXT [--session ID] [--home ABSOLUTE_PATH]
 ```
 
 退出码：
@@ -258,8 +258,8 @@ miniclaw chat --message TEXT [--session ID] [--home ABSOLUTE_PATH]
 | `5` | 本地数据库、初始化或 I/O 错误 |
 | `130` | 用户取消 |
 
-未执行 `miniclaw init` 时，`chat` 返回可操作提示，不在对话入口偷偷创建状态。缺少 API Key 时只显示：
-`MINICLAW_MODEL_API_KEY is not configured`。
+未执行 `lobster0 init` 时，`chat` 返回可操作提示，不在对话入口偷偷创建状态。缺少 API Key 时只显示：
+`LOBSTER0_MODEL_API_KEY is not configured`。
 
 ## 7. DeepSeek V4 Pro 兼容策略
 
@@ -293,8 +293,8 @@ Phase 1 不发送 `temperature`、`top_p` 等在思考模式中无效的参数�
 
 ```bash
 chmod 600 .env
-uv run miniclaw init --home /tmp/miniclaw-live
-uv run miniclaw chat --home /tmp/miniclaw-live --message "只回复：MiniClaw online"
+uv run lobster0 init --home /tmp/lobster0-live
+uv run lobster0 chat --home /tmp/lobster0-live --message "只回复：Lobster0 online"
 ```
 
 成功标准：退出码 0；stdout 有非空最终回答；SQLite Turn 为 `completed`；模型为
@@ -304,7 +304,7 @@ uv run miniclaw chat --home /tmp/miniclaw-live --message "只回复：MiniClaw o
 
 Phase 1 只有在以下条件全部满足后才能合并到 `main`：
 
-1. `miniclaw chat --message` 的离线 E2E 通过。
+1. `lobster0 chat --message` 的离线 E2E 通过。
 2. Provider 的重试、认证、SSE、Tool Call 和 reasoning 契约测试通过。
 3. Runner 的空响应、8 轮上限和取消测试通过。
 4. 真实 `deepseek-v4-pro` 冒烟调用成功，且凭据未出现在输出和 diff 中。

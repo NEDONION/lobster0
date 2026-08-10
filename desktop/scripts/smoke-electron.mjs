@@ -1,6 +1,6 @@
 // Desktop smoke: boots the real Electron main process (which spawns the real Python
 // Bridge), waits for the renderer to settle, asserts the shell, captures the window,
-// then quits. Run `pnpm build` first; see docs for the required MINICLAW_* env vars.
+// then quits. Run `pnpm build` first; see docs for the required LOBSTER0_* env vars.
 import { app, BrowserWindow } from "electron";
 import { writeFile } from "node:fs/promises";
 

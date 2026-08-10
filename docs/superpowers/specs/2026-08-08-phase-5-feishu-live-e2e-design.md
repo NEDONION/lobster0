@@ -1,15 +1,15 @@
-# MiniClaw Phase 5：真实飞书机器人与 Live E2E 设计
+# Lobster0 Phase 5：真实飞书机器人与 Live E2E 设计
 
 > 状态：设计已确认，等待书面评审后进入实施计划
 > 日期：2026-08-08
-> 目标：创建一个真实飞书企业自建机器人，跑通“飞书 → MiniClaw → Tool/Approval → 飞书”基础 E2E
+> 目标：创建一个真实飞书企业自建机器人，跑通“飞书 → Lobster0 → Tool/Approval → 飞书”基础 E2E
 > 当前基线：Python 483/483、TypeScript 27/27、Agent 28/28、Channel 32/32、local soak 640/640
 > 当前真实状态：`channels.feishu` 未启用，真实机器人、凭据、Scope 与 Live Evidence 尚未完成
 
 ## 1. 一句话目标
 
 把现有的飞书 Channel 从“代码与 fake SDK 已通过”推进到“真实飞书机器人已创建、Owner 能在飞书里操控
-MiniClaw、MiniClaw 能把 Tool/审批结果回复到飞书，并留下不泄密的可复核证据”。
+Lobster0、Lobster0 能把 Tool/审批结果回复到飞书，并留下不泄密的可复核证据”。
 
 本设计只完成基础机器人 E2E，不扩展日历、任务、文档、云盘等飞书业务域，也不穷举 `lark-cli` 的所有命令。
 
@@ -38,10 +38,10 @@ IMPLEMENTATION PASS / FEISHU LIVE PENDING
 
 ### 3.1 本次交付
 
-1. 创建一个专用的飞书企业自建应用，名称建议为 `MiniClaw E2E Bot`；
+1. 创建一个专用的飞书企业自建应用，名称建议为 `Lobster0 E2E Bot`；
 2. 启用机器人能力、长连接事件订阅和最小消息权限；
 3. 发布一个仅对 Owner/测试人员可见的应用版本；
-4. 用真实 App ID/App Secret 配置 MiniClaw，但永不提交或打印 Secret；
+4. 用真实 App ID/App Secret 配置 Lobster0，但永不提交或打印 Secret；
 5. 获取这个应用命名空间下的 Owner Open ID，建立严格白名单；
 6. 跑通 Owner 私聊机器人并收到真实回复；
 7. 跑通连续上下文、只读 Tool、危险 Tool 审批、拒绝和重启恢复；
@@ -57,9 +57,9 @@ IMPLEMENTATION PASS / FEISHU LIVE PENDING
 - 不申请读取群内所有消息的敏感权限；
 - 不部署公网 Webhook，本地通过出站 WebSocket 长连接工作；
 - 不自动生成、读取、复制或提交 App Secret；
-- 不绕过 MiniClaw Policy，不自动批准危险 Tool；
+- 不绕过 Lobster0 Policy，不自动批准危险 Tool；
 - 不把 fake SDK、人工勾选或 SQLite `sent` 单独冒充外部送达证明；
-- 不自动修改或部署 MiniClaw 源码作为“自我进化”。
+- 不自动修改或部署 Lobster0 源码作为“自我进化”。
 
 ## 4. 方案比较
 
@@ -116,10 +116,10 @@ E2E Runner 只做编排和只读取证；它不能直接调用 Tool、篡改状�
 ### 6.1 应用类型与可见范围
 
 - 创建企业自建应用，不使用“群自定义机器人”；
-- 名称建议为 `MiniClaw E2E Bot`，图标可后补；
+- 名称建议为 `Lobster0 E2E Bot`，图标可后补；
 - 第一版只对 Owner 或专用测试用户可见；
 - 先完成私聊，再把机器人加入一个专用测试群；
-- 测试群建议命名为 `MiniClaw E2E`，不要加入真实工作群。
+- 测试群建议命名为 `Lobster0 E2E`，不要加入真实工作群。
 
 飞书官方发送消息接口只支持开发者后台创建的应用机器人；机器人能力启用后还需要发布版本才会生效。参考：
 
@@ -137,7 +137,7 @@ E2E Runner 只做编排和只读取证；它不能直接调用 Tool、篡改状�
 | 以机器人身份回复 | `im:message:send_as_bot` | 必需 |
 | 添加/移除 Typing reaction | 以当前后台展示的 reaction 写权限为准 | 体验能力，可降级 |
 
-不申请 `im:message.group_msg`，因为 MiniClaw 只应看到明确寻址给机器人的群消息。平台会依据接收消息 Scope 决定
+不申请 `im:message.group_msg`，因为 Lobster0 只应看到明确寻址给机器人的群消息。平台会依据接收消息 Scope 决定
 推送哪些事件；同一消息可能重复推送，官方也建议用 `message_id` 去重。参考：
 
 - [接收消息事件](https://open.feishu.cn/document/server-docs/im-v1/message/events/receive?lang=zh-CN)
@@ -165,8 +165,8 @@ E2E Runner 只做编排和只读取证；它不能直接调用 Tool、篡改状�
 真实值只进入权限为 `0600` 的本地 `.env`：
 
 ```dotenv
-MINICLAW_FEISHU_APP_ID=cli_xxx
-MINICLAW_FEISHU_APP_SECRET=...
+LOBSTER0_FEISHU_APP_ID=cli_xxx
+LOBSTER0_FEISHU_APP_SECRET=...
 ```
 
 禁止把 Secret 放入：
@@ -179,11 +179,11 @@ MINICLAW_FEISHU_APP_SECRET=...
 ### 7.2 为什么不能复制其他应用的 Open ID
 
 Open ID 是应用维度标识。同一个人在不同飞书应用里的 Open ID 不同，因此不能直接把当前其他 `lark-cli` profile
-返回的 `ou_...` 写入 MiniClaw Bot 白名单。
+返回的 `ou_...` 写入 Lobster0 Bot 白名单。
 
 ### 7.3 一次性 Owner 发现
 
-使用与 MiniClaw Bot 相同 App ID/App Secret 创建独立命名 profile `miniclaw-e2e`，不能覆盖用户已有的默认 profile。
+使用与 Lobster0 Bot 相同 App ID/App Secret 创建独立命名 profile `lobster0-e2e`，不能覆盖用户已有的默认 profile。
 App Secret 通过 stdin 或交互式 TTY 输入，不能出现在 argv。然后：
 
 1. 先查看 `im.message.receive_v1` schema；
@@ -192,12 +192,12 @@ App Secret 通过 stdin 或交互式 TTY 输入，不能出现在 argv。然后�
 4. 用户在机器人私聊发送一次性 challenge；
 5. 只从该事件提取 `sender_id` 与 `chat_id`；
 6. 将 `sender_id` 写入 `owner_open_id` 和 `allowed_open_ids`；
-7. 停止 consumer 后再启动 MiniClaw Gateway，避免同一应用并发抢占事件通道；
+7. 停止 consumer 后再启动 Lobster0 Gateway，避免同一应用并发抢占事件通道；
 8. 不保存消息正文或原始事件 JSON。
 
 consumer 必须有界退出或使用 SIGTERM；禁止 `kill -9`，避免遗留服务端订阅或本地 event bus 状态。
 
-## 8. MiniClaw 配置
+## 8. Lobster0 配置
 
 第一阶段只启用 Owner 私聊：
 
@@ -205,8 +205,8 @@ consumer 必须有界退出或使用 SIGTERM；禁止 `kill -9`，避免遗留�
 [channels.feishu]
 enabled = true
 account_id = "default"
-app_id_env = "MINICLAW_FEISHU_APP_ID"
-app_secret_env = "MINICLAW_FEISHU_APP_SECRET"
+app_id_env = "LOBSTER0_FEISHU_APP_ID"
+app_secret_env = "LOBSTER0_FEISHU_APP_SECRET"
 domain = "feishu"
 owner_open_id = "ou_owner_for_this_app"
 allowed_open_ids = ["ou_owner_for_this_app"]
@@ -221,7 +221,7 @@ streaming_card = true
 私聊通过后再加入测试群：
 
 ```toml
-allowed_chat_ids = ["oc_miniclaw_e2e_group"]
+allowed_chat_ids = ["oc_lobster0_e2e_group"]
 allow_group_mentions = true
 ```
 
@@ -273,7 +273,7 @@ uv run python scripts/feishu_live_smoke.py --confirm-live
   "status": "active",
   "layers": ["live"],
   "capability": "feishu_e2e",
-  "query": "回复 MINICLAW_E2E_OK，不要省略下划线",
+  "query": "回复 LOBSTER0_E2E_OK，不要省略下划线",
   "expected": {
     "local_evidence": ["inbox_completed", "turn_completed", "delivery_sent"],
     "human_evidence": ["reply_visible_in_feishu"]
@@ -313,10 +313,10 @@ Loader 必须拒绝重复 ID、未知字段、未知 evidence key、空 Query、
 sequenceDiagram
     autonumber
     participant R as "Live Runner"
-    participant G as "MiniClaw Gateway"
+    participant G as "Lobster0 Gateway"
     participant U as "Owner 飞书客户端"
     participant F as "飞书平台"
-    participant DB as "MiniClaw SQLite"
+    participant DB as "Lobster0 SQLite"
     participant A as "Agent / Policy / Tool"
 
     R->>R: Doctor、scenario、commit、secret preflight
@@ -325,7 +325,7 @@ sequenceDiagram
     F-->>G: ready
     G-->>R: stable ready marker
     R-->>U: 显示本 case Query + nonce
-    U->>F: 发送给 MiniClaw Bot
+    U->>F: 发送给 Lobster0 Bot
     F->>G: im.message.receive_v1
     G->>DB: Inbox queued
     DB->>A: Turn / Tool / Approval
@@ -453,7 +453,7 @@ flowchart TD
 
 - `evals/scenarios/feishu-live.v1.jsonl`：15 条真实场景；
 - `scripts/feishu_live_smoke.py`：从人工 Recorder 升级为安全 E2E 编排器；
-- `src/miniclaw/evals/live.py` 或新建聚焦模块：schema、证据和状态断言；
+- `src/lobster0/evals/live.py` 或新建聚焦模块：schema、证据和状态断言；
 - `tests/test_feishu_live_e2e.py`：secret-free fake process/SQLite 契约；
 - `tests/test_feishu_evals.py`：保持旧入口兼容并扩充安全门禁；
 - `docs/engineering/phase-5/20260808_feishu-live-e2e.md`：大白话操作手册；
@@ -490,7 +490,7 @@ flowchart TD
 
 同时满足以下条件，才能声明本任务完成：
 
-1. 真实 `MiniClaw E2E Bot` 已创建、启用、发布并限制可用范围；
+1. 真实 `Lobster0 E2E Bot` 已创建、启用、发布并限制可用范围；
 2. App ID/App Secret 只在本地私有环境，Secret scan 为零；
 3. Owner Open ID 来自同一应用命名空间；
 4. `doctor` 显示 Feishu enabled、SDK、runtime prerequisites 全部 PASS；

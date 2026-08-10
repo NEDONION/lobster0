@@ -1,12 +1,12 @@
-# MiniClaw Phase 0 Foundation Implementation Plan
+# Lobster0 Phase 0 Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Deliver a safe, idempotent local foundation with resolved state paths, validated TOML
-configuration, versioned SQLite migrations, a single Owner, `miniclaw init`, and offline
-`miniclaw doctor`.
+configuration, versioned SQLite migrations, a single Owner, `lobster0 init`, and offline
+`lobster0 doctor`.
 
 **Architecture:** Keep Phase 0 synchronous and standard-library-only. `paths.py` owns filesystem
 locations, `config.py` owns parsing and precedence, `storage/` owns SQLite, `bootstrap.py` composes
@@ -19,10 +19,10 @@ initialization, and `doctor.py` inspects the same public boundaries without repa
 
 - Work on branch `phase-0-foundation` in an isolated worktree.
 - Keep runtime dependencies empty; use the Python 3.12 standard library.
-- Use `src/miniclaw/`, Chinese docstrings, UTF-8 text, aware UTC timestamps, and 100-character lines.
-- `MINICLAW_HOME` and configured Workspace paths must resolve to absolute paths; relative paths fail.
+- Use `src/lobster0/`, Chinese docstrings, UTF-8 text, aware UTC timestamps, and 100-character lines.
+- `LOBSTER0_HOME` and configured Workspace paths must resolve to absolute paths; relative paths fail.
 - State directories use owner-only permissions when created; existing user files are never overwritten.
-- Configuration precedence is defaults < `config.toml` < `MINICLAW_*` environment < explicit override.
+- Configuration precedence is defaults < `config.toml` < `LOBSTER0_*` environment < explicit override.
 - SQLite enables foreign keys, WAL, and a 5,000 ms busy timeout on every connection.
 - Tests are offline `unittest` cases using temporary directories and real files/databases.
 - Planning claims remain marked as targets; README only advertises behavior verified in this phase.
@@ -32,7 +32,7 @@ initialization, and `doctor.py` inspects the same public boundaries without repa
 ### Task 1: Safe state paths
 
 **Files:**
-- Create: `src/miniclaw/paths.py`
+- Create: `src/lobster0/paths.py`
 - Test: `tests/test_paths.py`
 
 **Interfaces:**
@@ -50,7 +50,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.paths import (
+from lobster0.paths import (
     PathConfigurationError,
     build_state_paths,
     resolve_home,
@@ -60,11 +60,11 @@ from miniclaw.paths import (
 class StatePathsTest(unittest.TestCase):
     def test_environment_home_is_expanded_and_all_paths_stay_under_it(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            home = resolve_home(None, {"MINICLAW_HOME": directory})
+            home = resolve_home(None, {"LOBSTER0_HOME": directory})
             paths = build_state_paths(home)
 
         self.assertEqual(home, Path(directory).resolve())
-        self.assertEqual(paths.database, home / "miniclaw.db")
+        self.assertEqual(paths.database, home / "lobster0.db")
         self.assertEqual(paths.workspace, home / "workspace")
         self.assertTrue(all(path == home or home in path.parents for path in paths.directories))
 
@@ -81,7 +81,7 @@ Run:
 .venv/bin/python -m unittest tests.test_paths -v
 ```
 
-Expected: import failure because `miniclaw.paths` does not exist.
+Expected: import failure because `lobster0.paths` does not exist.
 
 - [x] **Step 3: Implement the path boundary**
 
@@ -126,7 +126,7 @@ class StatePaths:
         )
 ```
 
-`resolve_home()` chooses explicit value, then `MINICLAW_HOME`, then `~/.miniclaw`; it calls
+`resolve_home()` chooses explicit value, then `LOBSTER0_HOME`, then `~/.lobster0`; it calls
 `expanduser()`, rejects a non-absolute result, and returns `resolve(strict=False)`.
 
 - [x] **Step 4: Verify GREEN and commit**
@@ -135,8 +135,8 @@ Run:
 
 ```bash
 .venv/bin/python -m unittest tests.test_paths -v
-.venv/bin/ruff check --no-cache src/miniclaw/paths.py tests/test_paths.py
-git add src/miniclaw/paths.py tests/test_paths.py
+.venv/bin/ruff check --no-cache src/lobster0/paths.py tests/test_paths.py
+git add src/lobster0/paths.py tests/test_paths.py
 git commit -m "feat: add safe state paths"
 ```
 
@@ -145,7 +145,7 @@ Expected: focused tests and Ruff pass; commit contains only path code and tests.
 ### Task 2: Validated configuration and precedence
 
 **Files:**
-- Create: `src/miniclaw/config.py`
+- Create: `src/lobster0/config.py`
 - Test: `tests/test_config.py`
 
 **Interfaces:**
@@ -163,8 +163,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.config import ConfigError, load_config
-from miniclaw.paths import build_state_paths
+from lobster0.config import ConfigError, load_config
+from lobster0.paths import build_state_paths
 
 
 class ConfigTest(unittest.TestCase):
@@ -185,13 +185,13 @@ class ConfigTest(unittest.TestCase):
 
         config = load_config(
             self.paths,
-            {"MINICLAW_MODEL_NAME": "env-model"},
+            {"LOBSTER0_MODEL_NAME": "env-model"},
             {"model": "cli-model"},
         )
 
         self.assertEqual(config.agent.model, "cli-model")
         self.assertEqual(config.provider.base_url, "https://file.example/v1")
-        self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
+        self.assertEqual(config.provider.api_key_env, "LOBSTER0_MODEL_API_KEY")
 
     def test_relative_workspace_is_rejected(self) -> None:
         self.paths.config.write_text('[workspace]\npath = "relative"\n', encoding="utf-8")
@@ -208,7 +208,7 @@ Run:
 .venv/bin/python -m unittest tests.test_config -v
 ```
 
-Expected: import failure because `miniclaw.config` does not exist.
+Expected: import failure because `lobster0.config` does not exist.
 
 - [x] **Step 3: Implement typed configuration**
 
@@ -226,7 +226,7 @@ class AgentConfig:
 @dataclass(frozen=True, slots=True)
 class ProviderConfig:
     base_url: str = "https://api.openai.com/v1"
-    api_key_env: str = "MINICLAW_MODEL_API_KEY"
+    api_key_env: str = "LOBSTER0_MODEL_API_KEY"
     timeout_seconds: int = 120
 
 
@@ -272,8 +272,8 @@ Run:
 ```bash
 .venv/bin/python -m unittest tests.test_config -v
 .venv/bin/python -m unittest discover -s tests -v
-.venv/bin/ruff check --no-cache src/miniclaw/config.py tests/test_config.py
-git add src/miniclaw/config.py tests/test_config.py
+.venv/bin/ruff check --no-cache src/lobster0/config.py tests/test_config.py
+git add src/lobster0/config.py tests/test_config.py
 git commit -m "feat: add validated configuration"
 ```
 
@@ -282,11 +282,11 @@ Expected: all tests pass and no secret values appear in failure text.
 ### Task 3: SQLite migration and Owner repository
 
 **Files:**
-- Create: `src/miniclaw/storage/__init__.py`
-- Create: `src/miniclaw/storage/database.py`
-- Create: `src/miniclaw/storage/migrations.py`
-- Create: `src/miniclaw/storage/repositories.py`
-- Create: `src/miniclaw/storage/schema.sql`
+- Create: `src/lobster0/storage/__init__.py`
+- Create: `src/lobster0/storage/database.py`
+- Create: `src/lobster0/storage/migrations.py`
+- Create: `src/lobster0/storage/repositories.py`
+- Create: `src/lobster0/storage/schema.sql`
 - Modify: `pyproject.toml`
 - Test: `tests/test_storage.py`
 
@@ -306,16 +306,16 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 
 
 class StorageTest(unittest.TestCase):
     def setUp(self) -> None:
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.database_path = Path(self.temporary_directory.name) / "miniclaw.db"
+        self.database_path = Path(self.temporary_directory.name) / "lobster0.db"
 
     def test_migration_creates_schema_once_with_required_pragmas(self) -> None:
         database = Database(self.database_path)
@@ -348,7 +348,7 @@ Run:
 .venv/bin/python -m unittest tests.test_storage.StorageTest.test_migration_creates_schema_once_with_required_pragmas -v
 ```
 
-Expected: import failure because `miniclaw.storage` does not exist.
+Expected: import failure because `lobster0.storage` does not exist.
 
 - [x] **Step 3: Implement connection and migration primitives**
 
@@ -367,7 +367,7 @@ and raises `MigrationError`. Add this package-data declaration:
 
 ```toml
 [tool.setuptools.package-data]
-"miniclaw.storage" = ["schema.sql"]
+"lobster0.storage" = ["schema.sql"]
 ```
 
 Use the complete version-1 DDL from the approved engineering specification; do not add repository
@@ -401,26 +401,26 @@ Run:
 
 ```bash
 .venv/bin/python -m unittest tests.test_storage -v
-.venv/bin/ruff check --no-cache src/miniclaw/storage tests/test_storage.py
-git add pyproject.toml src/miniclaw/storage tests/test_storage.py
+.venv/bin/ruff check --no-cache src/lobster0/storage tests/test_storage.py
+git add pyproject.toml src/lobster0/storage tests/test_storage.py
 git commit -m "feat: add sqlite migrations and owner repository"
 ```
 
 Expected: storage tests and Ruff pass; a second migration run is empty and a second Owner call does
 not add or rename a row.
 
-### Task 4: Idempotent bootstrap and `miniclaw init`
+### Task 4: Idempotent bootstrap and `lobster0 init`
 
 **Files:**
-- Create: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/cli.py`
+- Create: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/cli.py`
 - Test: `tests/test_bootstrap.py`
 - Modify: `tests/test_cli.py`
 
 **Interfaces:**
 - Consumes: `StatePaths`, config loader, migrations, and Owner repository.
 - Produces: `InitResult`, `initialize_state(paths) -> InitResult`, and CLI
-  `miniclaw init [--home PATH]`.
+  `lobster0 init [--home PATH]`.
 
 - [x] **Step 1: Write failing bootstrap idempotency test**
 
@@ -432,8 +432,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
 
 
 class BootstrapTest(unittest.TestCase):
@@ -463,7 +463,7 @@ Run:
 .venv/bin/python -m unittest tests.test_bootstrap -v
 ```
 
-Expected: import failure because `miniclaw.bootstrap` does not exist.
+Expected: import failure because `lobster0.bootstrap` does not exist.
 
 - [x] **Step 3: Implement minimal initialization**
 
@@ -471,7 +471,7 @@ Create every `StatePaths.directories` entry with mode `0o700`. Create only missi
 exclusive mode and UTF-8:
 
 - `config.toml`: `[agent]`, `[provider]`, and `[workspace]` values matching `load_config()` defaults;
-- `SOUL.md`: `# MiniClaw\n`;
+- `SOUL.md`: `# Lobster0\n`;
 - `USER.md`: `# User\n`;
 - `MEMORY.md`: `# Long-term Memory\n`.
 
@@ -505,9 +505,9 @@ def test_init_creates_state_and_is_repeatable(self) -> None:
 
         self.assertEqual((first_code, second_code), (0, 0))
         self.assertEqual((first_error, second_error), ("", ""))
-        self.assertIn("Initialized MiniClaw", first_output)
+        self.assertIn("Initialized Lobster0", first_output)
         self.assertIn("already initialized", second_output)
-        self.assertTrue((Path(directory) / "miniclaw.db").is_file())
+        self.assertTrue((Path(directory) / "lobster0.db").is_file())
 ```
 
 `run_cli()` is a test-only helper that redirects stdout/stderr around the real `main()` function.
@@ -525,24 +525,24 @@ Run:
 .venv/bin/python -m unittest tests.test_bootstrap tests.test_cli -v
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ruff check --no-cache src tests
-git add src/miniclaw/bootstrap.py src/miniclaw/cli.py tests/test_bootstrap.py tests/test_cli.py
+git add src/lobster0/bootstrap.py src/lobster0/cli.py tests/test_bootstrap.py tests/test_cli.py
 git commit -m "feat: add idempotent init command"
 ```
 
 Expected: repeated init succeeds without replacing files or creating another Owner.
 
-### Task 5: Offline diagnostics and `miniclaw doctor`
+### Task 5: Offline diagnostics and `lobster0 doctor`
 
 **Files:**
-- Create: `src/miniclaw/doctor.py`
-- Modify: `src/miniclaw/cli.py`
+- Create: `src/lobster0/doctor.py`
+- Modify: `src/lobster0/cli.py`
 - Create: `tests/test_doctor.py`
 - Modify: `tests/test_cli.py`
 
 **Interfaces:**
 - Consumes: initialized `StatePaths`, config loader, and `Database`.
 - Produces: `CheckStatus`, `CheckResult`, `run_local_checks(paths, environ)`, and CLI
-  `miniclaw doctor [--home PATH]`.
+  `lobster0 doctor [--home PATH]`.
 
 - [x] **Step 1: Write failing healthy-state diagnostics test**
 
@@ -554,9 +554,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.doctor import CheckStatus, run_local_checks
-from miniclaw.paths import build_state_paths
+from lobster0.bootstrap import initialize_state
+from lobster0.doctor import CheckStatus, run_local_checks
+from lobster0.paths import build_state_paths
 
 
 class DoctorTest(unittest.TestCase):
@@ -587,7 +587,7 @@ Run:
 .venv/bin/python -m unittest tests.test_doctor -v
 ```
 
-Expected: import failure because `miniclaw.doctor` does not exist.
+Expected: import failure because `lobster0.doctor` does not exist.
 
 - [x] **Step 3: Implement real local checks**
 
@@ -636,7 +636,7 @@ Run:
 .venv/bin/python -m unittest tests.test_doctor tests.test_cli -v
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ruff check --no-cache src tests
-git add src/miniclaw/doctor.py src/miniclaw/cli.py tests/test_doctor.py tests/test_cli.py
+git add src/lobster0/doctor.py src/lobster0/cli.py tests/test_doctor.py tests/test_cli.py
 git commit -m "feat: add offline doctor checks"
 ```
 
@@ -660,9 +660,9 @@ does not appear in output.
 Change repository status from scaffold to Phase 0 foundation. Document:
 
 ```bash
-uv run miniclaw init
-uv run miniclaw doctor
-MINICLAW_HOME=/absolute/path uv run miniclaw init
+uv run lobster0 init
+uv run lobster0 doctor
+LOBSTER0_HOME=/absolute/path uv run lobster0 init
 ```
 
 List created local files, configuration precedence, exit codes 0/2/5, and the fact that doctor is
@@ -674,9 +674,9 @@ Run:
 
 ```bash
 phase0_home="$(mktemp -d)"
-.venv/bin/miniclaw init --home "$phase0_home"
-.venv/bin/miniclaw init --home "$phase0_home"
-.venv/bin/miniclaw doctor --home "$phase0_home"
+.venv/bin/lobster0 init --home "$phase0_home"
+.venv/bin/lobster0 init --home "$phase0_home"
+.venv/bin/lobster0 doctor --home "$phase0_home"
 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/ruff check --no-cache .
 git diff --check

@@ -24,17 +24,17 @@ class FakeProcess extends EventEmitter implements BridgeProcess {
 
 test("Desktop workspace is passed as an explicit Bridge argument", () => {
   const spec = buildBridgeSpawnSpec({
-    MINICLAW_PYTHON: "/opt/miniclaw/python",
-    MINICLAW_HOME: "/state/miniclaw",
-    MINICLAW_WORKSPACE: "/work/report",
+    LOBSTER0_PYTHON: "/opt/lobster0/python",
+    LOBSTER0_HOME: "/state/lobster0",
+    LOBSTER0_WORKSPACE: "/work/report",
   });
 
-  assert.equal(spec.program, "/opt/miniclaw/python");
+  assert.equal(spec.program, "/opt/lobster0/python");
   assert.deepEqual(spec.args, [
     "-m",
-    "miniclaw.bridge",
+    "lobster0.bridge",
     "--home",
-    "/state/miniclaw",
+    "/state/lobster0",
     "--workspace",
     "/work/report",
   ]);
@@ -44,9 +44,9 @@ test("relative Desktop workspace is rejected before spawning Python", () => {
   assert.throws(
     () =>
       buildBridgeSpawnSpec({
-        MINICLAW_PYTHON: "/opt/miniclaw/python",
-        MINICLAW_HOME: "/state/miniclaw",
-        MINICLAW_WORKSPACE: "relative/report",
+        LOBSTER0_PYTHON: "/opt/lobster0/python",
+        LOBSTER0_HOME: "/state/lobster0",
+        LOBSTER0_WORKSPACE: "relative/report",
       }),
     (error: unknown) =>
       error instanceof BridgeRequestError && error.code === "bridge_configuration",
@@ -59,11 +59,11 @@ test("hello sends the Desktop client identity when provided", async () => {
   const written: Buffer[] = [];
   process.stdin.on("data", (chunk: Buffer) => written.push(chunk));
 
-  const pending = client.hello("miniclaw-desktop", "0.1.0");
+  const pending = client.hello("lobster0-desktop", "0.1.0");
   await new Promise((resolve) => setImmediate(resolve));
   const request = JSON.parse(Buffer.concat(written).toString("utf8"));
   assert.deepEqual(request.payload, {
-    client_name: "miniclaw-desktop",
+    client_name: "lobster0-desktop",
     client_version: "0.1.0",
     protocols: [1],
   });
@@ -82,7 +82,7 @@ test("hello keeps the pi-tui identity by default", async () => {
   const pending = client.hello();
   await new Promise((resolve) => setImmediate(resolve));
   const request = JSON.parse(Buffer.concat(written).toString("utf8"));
-  assert.equal(request.payload.client_name, "miniclaw-pi-tui");
+  assert.equal(request.payload.client_name, "lobster0-pi-tui");
   process.stdout.write(
     `${JSON.stringify({ v: 1, id: request.id, type: "response.ok", payload: {} })}\n`,
   );

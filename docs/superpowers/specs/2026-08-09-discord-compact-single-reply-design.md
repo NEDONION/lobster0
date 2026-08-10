@@ -1,4 +1,4 @@
-# MiniClaw Discord 紧凑单回复设计
+# Lobster0 Discord 紧凑单回复设计
 
 > 状态：用户已确认设计，等待实施
 >
@@ -164,8 +164,8 @@ uv run python -m unittest tests.test_discord_transport tests.test_channel_experi
   tests.test_channel_manager -v
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 ```
@@ -175,8 +175,8 @@ git diff --check
 
 ## 9. 预计修改边界
 
-- `src/miniclaw/channels/discord.py`：紧凑 Markdown 与 progress/final 渲染。
-- `src/miniclaw/gateway.py`：Discord Experience 使用单消息完成语义。
+- `src/lobster0/channels/discord.py`：紧凑 Markdown 与 progress/final 渲染。
+- `src/lobster0/gateway.py`：Discord Experience 使用单消息完成语义。
 - `tests/test_discord_transport.py`：renderer、edit、长度和 fallback 回归。
 - `tests/test_channel_manager.py`：短回答无额外 Delivery、长回答/失败有 durable fallback。
 - `evals/scenarios/`：新增 Discord 紧凑单回复 versioned case。

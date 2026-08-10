@@ -1,10 +1,10 @@
-# MiniClaw TUI Polish, Telemetry, and Scoped Approval Implementation Plan
+# Lobster0 TUI Polish, Telemetry, and Scoped Approval Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 交付默认中文、可切换英文的紧凑 TUI，明确区分用户与 Agent，弱化 Provider reasoning，可靠恢复失败草稿，显示真实 Token/上下文/Tool 审计，并支持安全受限的 Allow this session / Always allow。
 
-**Architecture:** 继续使用唯一 `RunEvent → MiniClawApp` 投影，不新增遥测总线。AgentRunner 在每次 Provider 响应后发布真实 usage，TUI 只渲染；Approval 继续消费原有参数绑定记录，成功执行后才把精确 scope 加入当前 PolicyEngine 或既有 `policy_rules`。
+**Architecture:** 继续使用唯一 `RunEvent → Lobster0App` 投影，不新增遥测总线。AgentRunner 在每次 Provider 响应后发布真实 usage，TUI 只渲染；Approval 继续消费原有参数绑定记录，成功执行后才把精确 scope 加入当前 PolicyEngine 或既有 `policy_rules`。
 
 **Tech Stack:** Python 3.12+、Textual 8.2.x、Rich（Textual 已安装依赖）、SQLite、argparse、unittest、Ruff；不新增直接依赖。
 
@@ -14,7 +14,7 @@
 
 ## Global Constraints
 
-- 唯一人类对话入口仍是 `uv run miniclaw`；不恢复 `chat`、`tui` 或 plain REPL。
+- 唯一人类对话入口仍是 `uv run lobster0`；不恢复 `chat`、`tui` 或 plain REPL。
 - 默认 UI 语言为 `zh-CN`，只允许 `zh-CN` 和 `en`。
 - Reasoning 内容跟随当前用户消息语言，不跟 UI language，也不二次翻译。
 - Token 指标只使用 Provider usage；缺失必须显示 `N/A`，不能估算成 0。
@@ -70,9 +70,9 @@ Expected: 253 tests pass and Ruff exits 0 before feature edits.
 ### Task 1: Add the Default-Chinese UI Configuration Contract
 
 **Files:**
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/runtime.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/runtime.py`
 - Modify: `tests/test_config.py`
 - Modify: `tests/test_bootstrap.py`
 - Modify: `tests/test_runtime.py`
@@ -81,7 +81,7 @@ Expected: 253 tests pass and Ruff exits 0 before feature edits.
 - Produces: `UIConfig(language: str = "zh-CN")`.
 - Produces: `AppConfig.ui: UIConfig`.
 - Produces: `AgentRuntime.ui_language: str` and `AgentRuntime.context_budget_tokens: int`.
-- Consumes later: `MiniClawApp` reads both Runtime fields; no global environment lookup in the Widget layer.
+- Consumes later: `Lobster0App` reads both Runtime fields; no global environment lookup in the Widget layer.
 
 - [ ] **Step 1: Write RED config and bootstrap tests**
 
@@ -138,7 +138,7 @@ Expected RED: `AgentRuntime` lacks the fields. Add both dataclass fields and pop
 - [ ] **Step 7: Commit Task 1**
 
 ```bash
-git add src/miniclaw/config.py src/miniclaw/bootstrap.py src/miniclaw/runtime.py tests/test_config.py tests/test_bootstrap.py tests/test_runtime.py
+git add src/lobster0/config.py src/lobster0/bootstrap.py src/lobster0/runtime.py tests/test_config.py tests/test_bootstrap.py tests/test_runtime.py
 git commit -m "feat(config): add TUI language and context settings"
 ```
 
@@ -147,9 +147,9 @@ git commit -m "feat(config): add TUI language and context settings"
 ### Task 2: Publish Real Per-Turn Usage Telemetry
 
 **Files:**
-- Modify: `src/miniclaw/agent/events.py`
-- Modify: `src/miniclaw/agent/runner.py`
-- Modify: `src/miniclaw/agent/turn.py`
+- Modify: `src/lobster0/agent/events.py`
+- Modify: `src/lobster0/agent/runner.py`
+- Modify: `src/lobster0/agent/turn.py`
 - Modify: `tests/test_agent_runner.py`
 - Modify: `tests/test_turn.py`
 - Modify: `tests/test_run_events.py`
@@ -204,7 +204,7 @@ Measure Turn duration with `time.monotonic()` in `TurnService`; add `duration_ms
 - [ ] **Step 7: Commit Task 2**
 
 ```bash
-git add src/miniclaw/agent/events.py src/miniclaw/agent/runner.py src/miniclaw/agent/turn.py tests/test_agent_runner.py tests/test_turn.py tests/test_run_events.py
+git add src/lobster0/agent/events.py src/lobster0/agent/runner.py src/lobster0/agent/turn.py tests/test_agent_runner.py tests/test_turn.py tests/test_run_events.py
 git commit -m "feat(agent): publish real turn telemetry"
 ```
 
@@ -213,15 +213,15 @@ git commit -m "feat(agent): publish real turn telemetry"
 ### Task 3: Add Scoped Session and Persistent Approval Grants
 
 **Files:**
-- Modify: `src/miniclaw/policy/approvals.py`
-- Modify: `src/miniclaw/policy/command.py`
-- Modify: `src/miniclaw/policy/engine.py`
-- Modify: `src/miniclaw/storage/tooling.py`
-- Modify: `src/miniclaw/tools/executor.py`
-- Modify: `src/miniclaw/agent/runner.py`
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/evals/runner.py`
+- Modify: `src/lobster0/policy/approvals.py`
+- Modify: `src/lobster0/policy/command.py`
+- Modify: `src/lobster0/policy/engine.py`
+- Modify: `src/lobster0/storage/tooling.py`
+- Modify: `src/lobster0/tools/executor.py`
+- Modify: `src/lobster0/agent/runner.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/evals/runner.py`
 - Modify: `tests/test_approvals.py`
 - Modify: `tests/test_tool_executor.py`
 - Modify: `tests/test_turn.py`
@@ -298,7 +298,7 @@ uv run python -m unittest tests.test_approvals tests.test_tool_executor tests.te
 Map existing eval actions `approve` and `deny` to `ONCE` and `DENY`; add no new scenario syntax in this task.
 
 ```bash
-git add src/miniclaw/policy src/miniclaw/storage/tooling.py src/miniclaw/tools/executor.py src/miniclaw/agent/runner.py src/miniclaw/agent/turn.py src/miniclaw/runtime.py src/miniclaw/evals/runner.py tests/test_approvals.py tests/test_tool_executor.py tests/test_turn.py tests/test_eval_runner.py
+git add src/lobster0/policy src/lobster0/storage/tooling.py src/lobster0/tools/executor.py src/lobster0/agent/runner.py src/lobster0/agent/turn.py src/lobster0/runtime.py src/lobster0/evals/runner.py tests/test_approvals.py tests/test_tool_executor.py tests/test_turn.py tests/test_eval_runner.py
 git commit -m "feat(approval): add scoped session and persistent grants"
 ```
 
@@ -307,8 +307,8 @@ git commit -m "feat(approval): add scoped session and persistent grants"
 ### Task 4: Polish the TUI and Make Long Drafts Recoverable
 
 **Files:**
-- Modify: `src/miniclaw/tui/app.py`
-- Modify: `src/miniclaw/agent/context.py`
+- Modify: `src/lobster0/tui/app.py`
+- Modify: `src/lobster0/agent/context.py`
 - Modify: `tests/test_tui.py`
 - Modify: `tests/test_context.py`
 
@@ -320,12 +320,12 @@ git commit -m "feat(approval): add scoped session and persistent grants"
 
 - [ ] **Step 1: Write RED role and compact-reasoning tests**
 
-Assert each user message has a visible localized role label and `user-message` container; each Assistant has `MiniClaw` label, an `assistant-message` container, and the same single Markdown child during streaming. Assert Reasoning is collapsed, localized, has a distinct compact class, and still expands with Ctrl+O.
+Assert each user message has a visible localized role label and `user-message` container; each Assistant has `Lobster0` label, an `assistant-message` container, and the same single Markdown child during streaming. Assert Reasoning is collapsed, localized, has a distinct compact class, and still expands with Ctrl+O.
 
 - [ ] **Step 2: Run RED**
 
 ```bash
-uv run python -m unittest tests.test_tui.MiniClawAppTest.test_model_deltas_update_one_temporary_message_then_finalize_it tests.test_tui.MiniClawAppTest.test_reasoning_and_tool_traces_remain_visible_and_toggle_together -v
+uv run python -m unittest tests.test_tui.Lobster0AppTest.test_model_deltas_update_one_temporary_message_then_finalize_it tests.test_tui.Lobster0AppTest.test_reasoning_and_tool_traces_remain_visible_and_toggle_together -v
 ```
 
 Expected: FAIL because the Assistant wrapper/labels and compact title are absent.
@@ -379,7 +379,7 @@ uv run python -m unittest tests.test_tui tests.test_context -v
 - [ ] **Step 13: Commit Task 4**
 
 ```bash
-git add src/miniclaw/tui/app.py src/miniclaw/agent/context.py tests/test_tui.py tests/test_context.py
+git add src/lobster0/tui/app.py src/lobster0/agent/context.py tests/test_tui.py tests/test_context.py
 git commit -m "feat(tui): polish chat and expose runtime telemetry"
 ```
 
@@ -437,7 +437,7 @@ Expected: all selected tests pass with no warnings or tracebacks.
 
 ```bash
 uv run python -m unittest discover -s tests -v
-uv run miniclaw eval --suite evals/scenarios/phase2.v1.jsonl --offline evals/fixtures/phase2.v1.responses.jsonl
+uv run lobster0 eval --suite evals/scenarios/phase2.v1.jsonl --offline evals/fixtures/phase2.v1.responses.jsonl
 uv run ruff check src tests
 git diff --check main...HEAD
 python -m build
@@ -447,7 +447,7 @@ Expected: all unit tests pass; all 20 offline evals pass; Ruff/build/diff check 
 
 - [ ] **Step 5: Perform a PTY smoke test**
 
-Launch `uv run miniclaw` in a real PTY and verify at 80x24 and a wider terminal:
+Launch `uv run lobster0` in a real PTY and verify at 80x24 and a wider terminal:
 
 - default Chinese UI and compact telemetry are visible;
 - long multiline paste remains editable;

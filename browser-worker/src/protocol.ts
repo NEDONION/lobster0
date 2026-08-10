@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 
-export const PROTOCOL = "miniclaw.browser.v1";
+export const PROTOCOL = "lobster0.browser.v1";
 export const MAX_FRAME_BYTES = 1024 * 1024;
 
 const IDENTIFIER = /^[A-Za-z0-9._:-]{1,128}$/;

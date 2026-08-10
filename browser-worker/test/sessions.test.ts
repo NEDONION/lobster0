@@ -37,7 +37,7 @@ class FakeContext {
 }
 
 test("always launches the exact dedicated profile root", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "miniclaw-browser-profile-"));
+  const root = await mkdtemp(join(tmpdir(), "lobster0-browser-profile-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const context = new FakeContext();
   let launchedRoot = "";
@@ -65,7 +65,7 @@ test("always launches the exact dedicated profile root", async (t) => {
 });
 
 test("closes idle sessions and their browser context", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "miniclaw-browser-idle-"));
+  const root = await mkdtemp(join(tmpdir(), "lobster0-browser-idle-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const context = new FakeContext();
   let now = 0;
@@ -90,7 +90,7 @@ test("closes idle sessions and their browser context", async (t) => {
 });
 
 test("profile lock and maxTabs fail closed", async (t) => {
-  const root = await mkdtemp(join(tmpdir(), "miniclaw-browser-lock-"));
+  const root = await mkdtemp(join(tmpdir(), "lobster0-browser-lock-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const firstContext = new FakeContext();
   const first = new SessionManager({

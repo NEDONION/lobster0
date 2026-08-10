@@ -1,4 +1,4 @@
-# MiniClaw Production-grade Website Redesign Implementation Plan
+# Lobster0 Production-grade Website Redesign Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -56,7 +56,7 @@ it('keeps all six real runtime events in the animated hero signal', () => {
   setReducedMotion(false);
   render(<ClawTrace copy={marketingCopy['zh-CN'].trace} surfaces={marketingCopy['zh-CN'].hero.surfaces} />);
 
-  expect(screen.getByRole('list', { name: 'MiniClaw 运行轨迹' })).toHaveTextContent('POLICY_CHECK');
+  expect(screen.getByRole('list', { name: 'Lobster0 运行轨迹' })).toHaveTextContent('POLICY_CHECK');
   expect(screen.getAllByRole('listitem')).toHaveLength(10);
 });
 ```
@@ -257,7 +257,7 @@ Expected: all commands PASS.
 
 Start the production server, capture desktop `1440×1000` and mobile `390×844` screenshots, and check: arrow Logo consistency, title scale, Chinese coverage, card alignment, animation hierarchy, three-section density, real TUI legibility, focus states, and no console errors. Fix any visible defect before running the verification commands again.
 
-Deploy the verified commit to the existing Vercel `miniclaw` project as Preview, inspect `/`, `/en`, `/docs`, `/en/docs`, `/opengraph-image`, `/sitemap.xml`, and `/robots.txt`, then promote only this artifact to Production.
+Deploy the verified commit to the existing Vercel `lobster0` project as Preview, inspect `/`, `/en`, `/docs`, `/en/docs`, `/opengraph-image`, `/sitemap.xml`, and `/robots.txt`, then promote only this artifact to Production.
 
 - [ ] **Step 6: Commit the social brand and final fixes**
 

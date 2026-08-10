@@ -13,7 +13,7 @@
 
 这份文档是一份可以边看图、边照着操作的工程手册。它回答五个问题：
 
-1. 飞书消息最后怎样进入同一个 MiniClaw Agent；
+1. 飞书消息最后怎样进入同一个 Lobster0 Agent；
 2. 怎样创建一个权限最小的真实飞书机器人；
 3. App ID、App Secret、Owner Open ID 分别放在哪里；
 4. 怎样运行 15 条真实 E2E，而不是只看 fake SDK；
@@ -71,8 +71,8 @@ flowchart TD
 | 模块 | 文件 | 作用 |
 | --- | --- | --- |
 | 15 条场景 | `evals/scenarios/feishu-live.v1.jsonl` | 固定 ID、动作和自动/人工证据，不含真实 ID 或 Secret |
-| 严格 Loader | `src/miniclaw/evals/cases.py` | 拒绝未知字段、错误 evidence、混入 offline fixture 和非 15 条 suite |
-| Live 核心 | `src/miniclaw/evals/feishu_live.py` | preflight、Gateway、checkpoint、轮询、报告、Secret scan |
+| 严格 Loader | `src/lobster0/evals/cases.py` | 拒绝未知字段、错误 evidence、混入 offline fixture 和非 15 条 suite |
+| Live 核心 | `src/lobster0/evals/feishu_live.py` | preflight、Gateway、checkpoint、轮询、报告、Secret scan |
 | 薄入口 | `scripts/feishu_live_smoke.py` | 只调用 `run_feishu_live_harness()` |
 | 契约测试 | `tests/test_feishu_live_e2e.py` | 数据库、进程、隐私、确认门和编排回归 |
 | 数据集测试 | `tests/test_feishu_evals.py` | 12 条旧 Feishu Channel + 15 条 Live 场景不漂移 |
@@ -89,11 +89,11 @@ flowchart TD
 
 ### 3.1 Runner 会做什么
 
-- 显式 `--confirm-live` 后读取私有 `.env` 与 MiniClaw state；
+- 显式 `--confirm-live` 后读取私有 `.env` 与 Lobster0 state；
 - 要求只启用 Feishu，避免 Telegram/Discord 同时产生 evidence；
 - 运行 22 项 Doctor 与完整 Gateway preflight；
 - 要求 40 位 commit、clean worktree、15 条固定场景和 0 条旧 pending Approval；
-- 启动当前 Python 的 `miniclaw gateway`；
+- 启动当前 Python 的 `lobster0 gateway`；
 - 捕获每个 case 动作前的数据库 checkpoint；
 - 轮询只读 SQL，人工只确认飞书客户端是否可见；
 - 最多扫描 1000 个普通文件，每个不超过 1 MiB；
@@ -129,7 +129,7 @@ uv run python scripts/feishu_live_smoke.py
 
 1. 登录飞书开放平台开发者后台；
 2. 新建“企业自建应用”；
-3. 名称建议为 `MiniClaw E2E Bot`；
+3. 名称建议为 `Lobster0 E2E Bot`；
 4. 图标和说明可以自定义，但可用范围先只包含你自己；
 5. 在“应用能力”中启用机器人；
 6. 暂时不要把它加入真实工作群。
@@ -140,11 +140,11 @@ MVP 只需要三类消息能力：
 
 | 用途 | Scope ID | 为什么需要 |
 | --- | --- | --- |
-| 读取发给机器人的私聊 | `im:message.p2p_msg:readonly` | Owner 私聊进入 MiniClaw |
+| 读取发给机器人的私聊 | `im:message.p2p_msg:readonly` | Owner 私聊进入 Lobster0 |
 | 读取群里明确 @机器人的消息 | `im:message.group_at_msg:readonly` | 专用测试群 mention |
 | 以机器人身份回复 | `im:message:send_as_bot` | DeliveryWorker 发送最终回复 |
 
-不要为了省事申请“读取群内所有消息”、通讯录全量、管理员或云盘权限。MiniClaw 的群聊设计是：测试群在
+不要为了省事申请“读取群内所有消息”、通讯录全量、管理员或云盘权限。Lobster0 的群聊设计是：测试群在
 allowlist 中，并且消息明确 mention Bot，才会进入 Agent。
 
 ### 4.3 配置事件订阅
@@ -155,7 +155,7 @@ allowlist 中，并且消息明确 mention Bot，才会进入 Agent。
 im.message.receive_v1
 ```
 
-不需要公网 Webhook、反向代理或公网回调 URL。MiniClaw 的 `FeishuTransport` 使用 official SDK 主动建立长连接。
+不需要公网 Webhook、反向代理或公网回调 URL。Lobster0 的 `FeishuTransport` 使用 official SDK 主动建立长连接。
 
 ### 4.4 发布测试版本
 
@@ -175,9 +175,9 @@ im.message.receive_v1
 仓库根目录的 `.env` 至少需要：
 
 ```dotenv
-MINICLAW_MODEL_API_KEY=<在本机填写>
-MINICLAW_FEISHU_APP_ID=<在本机填写>
-MINICLAW_FEISHU_APP_SECRET=<在本机填写>
+LOBSTER0_MODEL_API_KEY=<在本机填写>
+LOBSTER0_FEISHU_APP_ID=<在本机填写>
+LOBSTER0_FEISHU_APP_SECRET=<在本机填写>
 ```
 
 设置权限：
@@ -196,8 +196,8 @@ chmod 600 .env
 [channels.feishu]
 enabled = true
 account_id = "default"
-app_id_env = "MINICLAW_FEISHU_APP_ID"
-app_secret_env = "MINICLAW_FEISHU_APP_SECRET"
+app_id_env = "LOBSTER0_FEISHU_APP_ID"
+app_secret_env = "LOBSTER0_FEISHU_APP_SECRET"
 domain = "feishu"
 owner_open_id = "<同应用 Owner Open ID>"
 allowed_open_ids = ["<同应用 Owner Open ID>"]
@@ -220,16 +220,16 @@ Live gate 要求 Telegram 和 Discord 暂时 disabled，因为本次 Evidence �
 ## 6. 为什么 Owner Open ID 必须“同应用发现”
 
 Open ID 不是一个人在整个飞书里的全局固定 ID；它和应用有关。从另一个机器人、另一个 lark-cli profile 或别的应用
-复制来的 Open ID，可能长得完全合法，但对 MiniClaw Bot 无效。
+复制来的 Open ID，可能长得完全合法，但对 Lobster0 Bot 无效。
 
 ```mermaid
 flowchart TD
     U["同一个真实用户"] --> A["App A"]
-    U --> B["MiniClaw App B"]
+    U --> B["Lobster0 App B"]
     A --> OA["App A 的 Open ID"]
     B --> OB["App B 的 Open ID"]
     OA -. "不能复制给 App B" .-> X["sender_denied"]
-    OB --> OK["MiniClaw owner allowlist"]
+    OB --> OK["Lobster0 owner allowlist"]
 ```
 
 ### 6.1 创建独立 lark-cli profile
@@ -241,7 +241,7 @@ lark-cli config init \
   --app-id <本机输入 App ID> \
   --app-secret-stdin \
   --brand feishu \
-  --name miniclaw-e2e
+  --name lobster0-e2e
 ```
 
 App Secret 必须从 stdin 读取，不要放进 argv、shell pipe 或环境回显。
@@ -249,15 +249,15 @@ App Secret 必须从 stdin 读取，不要放进 argv、shell pipe 或环境回�
 ### 6.2 先看事件 schema，再消费一次事件
 
 ```bash
-lark-cli --profile miniclaw-e2e event schema im.message.receive_v1 --json
-lark-cli --profile miniclaw-e2e event consume \
+lark-cli --profile lobster0-e2e event schema im.message.receive_v1 --json
+lark-cli --profile lobster0-e2e event consume \
   im.message.receive_v1 \
   --as bot \
   --max-events 1 \
   --timeout 2m
 ```
 
-等终端出现 `[event] ready` 后，再从 Owner 飞书客户端给 MiniClaw Bot 发送一次性 challenge。只把该事件里的
+等终端出现 `[event] ready` 后，再从 Owner 飞书客户端给 Lobster0 Bot 发送一次性 challenge。只把该事件里的
 `sender_id` 写进本地 `owner_open_id` 和 `allowed_open_ids`。不要把整条 event JSON、正文或 ID 保存到仓库。
 
 ## 7. 运行前检查
@@ -271,8 +271,8 @@ uv sync --extra dev --extra feishu
 初始化和 Doctor：
 
 ```bash
-uv run miniclaw init
-uv run miniclaw doctor
+uv run lobster0 init
+uv run lobster0 doctor
 ```
 
 Live preflight 需要满足：
@@ -316,7 +316,7 @@ uv run python scripts/feishu_live_smoke.py --confirm-live
 ```mermaid
 sequenceDiagram
     participant R as Live Runner
-    participant G as MiniClaw Gateway
+    participant G as Lobster0 Gateway
     participant U as Owner
     participant F as Feishu
     participant DB as SQLite
@@ -436,8 +436,8 @@ uv run python -m unittest tests.test_feishu_live_e2e -v
 
 ```bash
 uv run python -m unittest tests.test_eval_cases tests.test_feishu_evals -v
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 ```
 
 ### 11.3 验证 Gateway 与 CLI 没有回归
@@ -452,9 +452,9 @@ uv run python -m unittest tests.test_gateway tests.test_cli tests.test_channel_s
 uv run python -m unittest discover -s tests -v
 corepack pnpm --dir tui test
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite all --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite all --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 uv lock --check
 uv build
@@ -511,7 +511,7 @@ flowchart TD
 
 真实 Feishu gate 只有在下面全部满足时完成：
 
-- [x] MiniClaw 专用企业自建应用已经创建；
+- [x] Lobster0 专用企业自建应用已经创建；
 - [x] 机器人能力已启用；
 - [ ] 只申请最小三个 Scope；
 - [x] `im.message.receive_v1` 使用长连接；
@@ -542,7 +542,7 @@ TARGETED CALLBACK LIVE VERIFIED
 
 ### 15.1 Source card 必须绑定 Approval
 
-只校验按钮 payload 不够。生产 callback 同时带 `message_id`，MiniClaw 现在先用它反查 durable Delivery：
+只校验按钮 payload 不够。生产 callback 同时带 `message_id`，Lobster0 现在先用它反查 durable Delivery：
 
 ```mermaid
 sequenceDiagram

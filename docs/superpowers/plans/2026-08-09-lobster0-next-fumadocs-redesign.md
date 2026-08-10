@@ -1,4 +1,4 @@
-# MiniClaw Next.js + Fumadocs Redesign Implementation Plan
+# Lobster0 Next.js + Fumadocs Redesign Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -183,7 +183,7 @@ export default async function LocaleLayout({ children, params }: {
 }
 ```
 
-The minimal page renders `<main><h1>MiniClaw</h1></main>`. Add the approved CSS variables and generated
+The minimal page renders `<main><h1>Lobster0</h1></main>`. Add the approved CSS variables and generated
 directories to `.gitignore`; delete `astro.config.mjs`.
 
 - [ ] **Step 6: Verify and commit the foundation**
@@ -436,8 +436,8 @@ Commit with `feat(website): 增加 hash-driven Capability Explorer`.
 - Create: `website/src/components/marketing/QuickStartClose.tsx`
 - Modify: `website/src/components/marketing/MarketingHome.tsx`
 - Modify: `website/src/styles/globals.css`
-- Retain: `website/public/images/miniclaw-tui-approval-warp.webp`
-- Retain: `website/public/images/miniclaw-tui-external-cli-warp.webp`
+- Retain: `website/public/images/lobster0-tui-approval-warp.webp`
+- Retain: `website/public/images/lobster0-tui-external-cli-warp.webp`
 
 **Interfaces:**
 - Consumes: `WorkflowCopy[]`, real WebP assets, localized close copy, and shared install command.
@@ -559,7 +559,7 @@ export const source = loader({
 });
 ```
 
-`layout.shared.tsx` extends official Fumadocs UI translations for `zh-CN` and `en`, maps MiniClaw to the
+`layout.shared.tsx` extends official Fumadocs UI translations for `zh-CN` and `en`, maps Lobster0 to the
 localized homepage, and exposes GitHub as the external nav action. `mdx-components.tsx` merges
 `fumadocs-ui/mdx` defaults with Fumadocs Tabs and Tab.
 
@@ -617,7 +617,7 @@ and `/api/search`. Commit with `docs(website): 迁移双语 Fumadocs 与 Orama s
 - Modify: `website/src/app/[lang]/page.tsx`
 
 **Interfaces:**
-- Consumes: `https://miniclaw.vercel.app`, locales, docs slugs, and localized metadata copy.
+- Consumes: `https://lobster0.vercel.app`, locales, docs slugs, and localized metadata copy.
 - Produces: Next Metadata, localized sitemap alternates, robots policy, 1200×630 OG image, and 404 links.
 
 - [ ] **Step 1: Write failing metadata route tests**
@@ -630,14 +630,14 @@ import sitemap from '@/app/sitemap';
 describe('public metadata', () => {
   it('publishes localized homes and docs', () => {
     const urls = sitemap().map((entry) => entry.url);
-    expect(urls).toContain('https://miniclaw.vercel.app/');
-    expect(urls).toContain('https://miniclaw.vercel.app/en');
-    expect(urls).toContain('https://miniclaw.vercel.app/docs');
-    expect(urls).toContain('https://miniclaw.vercel.app/en/docs');
+    expect(urls).toContain('https://lobster0.vercel.app/');
+    expect(urls).toContain('https://lobster0.vercel.app/en');
+    expect(urls).toContain('https://lobster0.vercel.app/docs');
+    expect(urls).toContain('https://lobster0.vercel.app/en/docs');
   });
 
   it('advertises the sitemap', () => {
-    expect(robots().sitemap).toBe('https://miniclaw.vercel.app/sitemap.xml');
+    expect(robots().sitemap).toBe('https://lobster0.vercel.app/sitemap.xml');
   });
 });
 ```
@@ -756,7 +756,7 @@ Expected: all checks PASS and status includes only intended migration changes. C
 - Read if created: `website/.vercel/project.json`
 
 **Interfaces:**
-- Consumes: clean `codex/miniclaw-website`, Vercel project `prj_LH9mqjqnxCpZv3jhI7qu9ZIZ8m1Q`, team `team_g6lK7VMRTBPfx0t2HjGgRPkS`.
+- Consumes: clean `codex/lobster0-website`, Vercel project `prj_LH9mqjqnxCpZv3jhI7qu9ZIZ8m1Q`, team `team_g6lK7VMRTBPfx0t2HjGgRPkS`.
 - Produces: READY Preview, remote build/browser evidence, and explicitly approved Production deployment.
 
 - [ ] **Step 1: Record the exact candidate**
@@ -768,7 +768,7 @@ Expected: clean worktree and one recorded SHA.
 - [ ] **Step 2: Create an isolated Vercel Preview**
 
 Deploy `website/` to the existing project and team with target `preview`. Do not pass `production` or modify
-the current `miniclaw.vercel.app` alias.
+the current `lobster0.vercel.app` alias.
 
 Expected: a unique `.vercel.app` deployment reaches READY.
 
@@ -781,16 +781,16 @@ overflow, console, resources, same-origin links, and fragments.
 - [ ] **Step 4: Request exact Production approval**
 
 After reporting the Preview URL and candidate SHA, ask one exact approval question containing the literal
-short SHA printed in Step 1, the words `Vercel Production`, and the target `miniclaw.vercel.app`. For example,
+short SHA printed in Step 1, the words `Vercel Production`, and the target `lobster0.vercel.app`. For example,
 if Step 1 printed `a1b2c3d`, ask: `允许将 commit a1b2c3d 部署到 Vercel Production，覆盖
-miniclaw.vercel.app？`
+lobster0.vercel.app？`
 
 Do not promote without an affirmative response referring to Production.
 
 - [ ] **Step 5: Promote the same verified candidate and recheck Production**
 
 Deploy the same file tree and SHA with target `production`. Confirm READY, alias
-`https://miniclaw.vercel.app`, canonical URLs, and the complete route/browser gate.
+`https://lobster0.vercel.app`, canonical URLs, and the complete route/browser gate.
 
 Expected: Production serves the verified Next.js/Fumadocs build and no required work remains.
 

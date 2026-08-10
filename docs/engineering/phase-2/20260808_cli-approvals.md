@@ -1,7 +1,7 @@
 # Phase 2.2 工程文档：Approvals CLI 与操作手册
 
 > [!WARNING]
-> 本文保留 Phase 2.2A 的历史交付证据。Phase 2.2B 已删除 `miniclaw approvals`；当前审批在默认 pi-tui
+> 本文保留 Phase 2.2A 的历史交付证据。Phase 2.2B 已删除 `lobster0 approvals`；当前审批在默认 pi-tui
 > Overlay（Textual fallback 为 Modal）中展示完整归一化参数，并按 Core scope 提供
 > **Allow once / Allow this session / Always allow / Deny**。
 > 文件写入仍只提供 Once。SQLite Approval 生命周期与安全约束仍然有效，当前用法见
@@ -16,7 +16,7 @@
 先让 Agent 发起写操作：
 
 ```bash
-uv run miniclaw chat --message "请把 hello 写到 note.txt"
+uv run lobster0 chat --message "请把 hello 写到 note.txt"
 ```
 
 如果模型调用 `write_file`，CLI 会返回类似：
@@ -28,11 +28,11 @@ Approval 42 required for write_file.
 查看并决定：
 
 ```bash
-uv run miniclaw approvals list --status pending
-uv run miniclaw approvals show 42
-uv run miniclaw approvals approve 42
+uv run lobster0 approvals list --status pending
+uv run lobster0 approvals show 42
+uv run lobster0 approvals approve 42
 # 或
-uv run miniclaw approvals deny 42
+uv run lobster0 approvals deny 42
 ```
 
 `approve` 执行原先绑定的参数，再让同一模型基于真实 Tool Result 继续回答；`deny` 不执行工具，但也会让模型
@@ -51,7 +51,7 @@ uv run miniclaw approvals deny 42
 自定义状态目录时，`--home` 放在 `approvals` 后面：
 
 ```bash
-uv run miniclaw approvals --home /absolute/state list --json
+uv run lobster0 approvals --home /absolute/state list --json
 ```
 
 ## 3. 输出为什么不显示完整参数
@@ -81,7 +81,7 @@ flowchart LR
 - `list/show` 不加载 API Key，也不构造 Provider；可以离线排查。
 - `approve/deny` 需要模型继续回答，因此加载与 `chat` 相同的 Provider 配置。
 - Provider 始终在 `finally` 中关闭；Key 只保留在当前进程内存。
-- CLI 不会在审批命令中暗中初始化状态；缺失状态需先运行 `miniclaw init`。
+- CLI 不会在审批命令中暗中初始化状态；缺失状态需先运行 `lobster0 init`。
 
 ## 5. 状态与退出码
 

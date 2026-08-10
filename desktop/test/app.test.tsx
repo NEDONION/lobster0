@@ -17,6 +17,6 @@ describe("desktop app shell", () => {
 
   it("drops the old home entry view", () => {
     expect(markup).not.toContain("home-grid");
-    expect(markup).not.toContain("把一件事，完整地交给 MiniClaw");
+    expect(markup).not.toContain("把一件事，完整地交给 Lobster0");
   });
 });

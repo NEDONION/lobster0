@@ -129,35 +129,35 @@ export const siteFacts = {
     'RESULT_DELIVERED',
   ],
   install: [
-    'git clone https://github.com/NEDONION/mini-claw.git',
-    'cd miniclaw',
+    'git clone https://github.com/NEDONION/lobster0.git',
+    'cd lobster0',
     'uv sync --extra dev --extra channels',
     'pnpm --dir tui install',
     'pnpm --dir tui build',
     'cp .env.example .env',
-    'uv run miniclaw init',
-    'uv run miniclaw doctor',
-    'uv run miniclaw',
+    'uv run lobster0 init',
+    'uv run lobster0 doctor',
+    'uv run lobster0',
   ].join('\n'),
   status: {
     automationDefault: false,
     implementationPassIsLivePass: false,
   },
   links: {
-    github: 'https://github.com/NEDONION/mini-claw',
-    issues: 'https://github.com/NEDONION/mini-claw/issues',
+    github: 'https://github.com/NEDONION/lobster0',
+    issues: 'https://github.com/NEDONION/lobster0/issues',
     product:
-      'https://github.com/NEDONION/mini-claw/blob/main/docs/product/20260807_%E4%BA%A7%E5%93%81%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3.md',
+      'https://github.com/NEDONION/lobster0/blob/main/docs/product/20260807_%E4%BA%A7%E5%93%81%E9%9C%80%E6%B1%82%E6%96%87%E6%A1%A3.md',
     architecture:
-      'https://github.com/NEDONION/mini-claw/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md',
-    evaluation: 'https://github.com/NEDONION/mini-claw/tree/main/evals',
+      'https://github.com/NEDONION/lobster0/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md',
+    evaluation: 'https://github.com/NEDONION/lobster0/tree/main/evals',
   },
 } as const;
 
 export const marketingCopy = {
   'zh-CN': {
     meta: {
-      title: 'MiniClaw — 你的本地行动助手',
+      title: 'Lobster0 — 你的本地行动助手',
       description:
         '一个本地优先、边界可检查的开源个人 Agent：同一个 Python Core，通过 TUI、飞书、Telegram 与 Discord 安全行动。',
     },
@@ -172,7 +172,7 @@ export const marketingCopy = {
       eyebrow: '本地优先 · 开源 · 边界可检查',
       title: '你的本地行动助手。',
       lead:
-        '从熟悉的入口发出请求。MiniClaw 在你的机器上理解意图、检查边界、请求审批，并把任务安全做完。',
+        '从熟悉的入口发出请求。Lobster0 在你的机器上理解意图、检查边界、请求审批，并把任务安全做完。',
       primaryCta: '5 分钟开始',
       secondaryCta: '查看源码',
       installLabel: '从源码启动',
@@ -186,7 +186,7 @@ export const marketingCopy = {
       ],
     },
     trace: {
-      ariaLabel: 'MiniClaw 运行轨迹',
+      ariaLabel: 'Lobster0 运行轨迹',
       eyebrow: '运行轨迹 / 01',
       title: '行动不是黑盒。',
       description: '一次请求穿过真实运行时的六个状态，每一步都有边界、结果与归属。',
@@ -260,7 +260,7 @@ export const marketingCopy = {
     workbench: {
       eyebrow: '演示 / 03',
       title: '看真实机制，不看功能截图。',
-      lead: '两条动画化的真实执行链路，加上一张多入口结构图，展示 MiniClaw 今天已经验证的工作方式——开发中持续变化，截图只会过时。',
+      lead: '两条动画化的真实执行链路，加上一张多入口结构图，展示 Lobster0 今天已经验证的工作方式——开发中持续变化，截图只会过时。',
     },
     workflows: [
       {
@@ -270,7 +270,7 @@ export const marketingCopy = {
         summary: 'Owner 看到目标与参数后再决定，授权不会转移给另一组参数。',
         flow: [
           { icon: 'intent', label: '用户请求', detail: '"帮我发一条安全问候"', state: 'default' },
-          { icon: 'argv', label: 'exact argv', detail: 'printf "Hello, MiniClaw!"', state: 'default' },
+          { icon: 'argv', label: 'exact argv', detail: 'printf "Hello, Lobster0!"', state: 'default' },
           { icon: 'gate', label: 'Owner 审批', detail: '参数已锁定，等待确认', state: 'waiting' },
           { icon: 'run', label: '隔离执行', detail: '仅这组 argv 可以运行', state: 'active' },
           { icon: 'result', label: '结果返回', detail: '回到同一对话', state: 'done' },
@@ -311,7 +311,7 @@ export const marketingCopy = {
   },
   en: {
     meta: {
-      title: 'MiniClaw — Your local agent, ready to act.',
+      title: 'Lobster0 — Your local agent, ready to act.',
       description:
         'A local-first open-source personal agent with inspectable boundaries: one Python core across TUI, Feishu, Telegram, and Discord.',
     },
@@ -326,7 +326,7 @@ export const marketingCopy = {
       eyebrow: 'LOCAL-FIRST / OPEN SOURCE',
       title: 'Your local agent, ready to act.',
       lead:
-        'Ask from a surface you already use. MiniClaw understands intent, checks boundaries, requests approval, and finishes the work on your machine.',
+        'Ask from a surface you already use. Lobster0 understands intent, checks boundaries, requests approval, and finishes the work on your machine.',
       primaryCta: 'Start in 5 minutes',
       secondaryCta: 'View source',
       installLabel: 'Run from source',
@@ -414,7 +414,7 @@ export const marketingCopy = {
     workbench: {
       eyebrow: 'DEMO / 03',
       title: 'Inspect the real mechanism—not a feature screenshot.',
-      lead: 'Two animated execution paths, plus one channel diagram, show the workflows MiniClaw can substantiate today—actively evolving, so a screenshot would just go stale.',
+      lead: 'Two animated execution paths, plus one channel diagram, show the workflows Lobster0 can substantiate today—actively evolving, so a screenshot would just go stale.',
     },
     workflows: [
       {
@@ -424,7 +424,7 @@ export const marketingCopy = {
         summary: 'The Owner decides with the target and parameters visible; approval never transfers to different arguments.',
         flow: [
           { icon: 'intent', label: 'User request', detail: '"send a safe greeting"', state: 'default' },
-          { icon: 'argv', label: 'exact argv', detail: 'printf "Hello, MiniClaw!"', state: 'default' },
+          { icon: 'argv', label: 'exact argv', detail: 'printf "Hello, Lobster0!"', state: 'default' },
           { icon: 'gate', label: 'Owner approval', detail: 'arguments locked, awaiting confirm', state: 'waiting' },
           { icon: 'run', label: 'Isolated execution', detail: 'only this exact argv runs', state: 'active' },
           { icon: 'result', label: 'Result delivered', detail: 'back to the same conversation', state: 'done' },

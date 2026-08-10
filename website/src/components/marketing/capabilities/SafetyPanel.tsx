@@ -15,7 +15,7 @@ export function SafetyPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
           ))}
         </ul>
       </div>
-      <div className="safety-map" aria-label={zh ? 'MiniClaw 权限模式与安全边界' : 'MiniClaw permission modes and boundaries'}>
+      <div className="safety-map" aria-label={zh ? 'Lobster0 权限模式与安全边界' : 'Lobster0 permission modes and boundaries'}>
         <div className="safety-map__modes">
           {siteFacts.permissionModes.map((mode, index) => (
             <div data-active={index === 0 ? 'true' : undefined} key={mode}>

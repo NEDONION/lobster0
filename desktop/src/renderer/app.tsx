@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { isPermissionMode, type PermissionMode } from "@miniclaw/pi-tui/protocol";
+import { isPermissionMode, type PermissionMode } from "@lobster0/pi-tui/protocol";
 
 import type {
   AutomationList,
@@ -19,7 +19,7 @@ const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }
   automation: {
     eyebrow: "AUTOMATION",
     title: "自动化",
-    body: "查看 MiniClaw Core 已有的定时任务和下次运行时间。W1 仅提供只读信息。",
+    body: "查看 Lobster0 Core 已有的定时任务和下次运行时间。W1 仅提供只读信息。",
   },
   settings: {
     eyebrow: "LOCAL CONTROL",
@@ -47,14 +47,14 @@ export function App(): React.JSX.Element {
 
   useEffect(() => {
     let active = true;
-    void window.miniclaw.bootstrap().then((value) => {
+    void window.lobster0.bootstrap().then((value) => {
       if (active) {
         setBootstrap(value);
         setBootstrapError(null);
       }
     }).catch(() => {
       if (active) {
-        setBootstrapError("无法连接 MiniClaw Core，请检查本地启动配置。");
+        setBootstrapError("无法连接 Lobster0 Core，请检查本地启动配置。");
       }
     });
     return () => {
@@ -67,7 +67,7 @@ export function App(): React.JSX.Element {
       return;
     }
     let active = true;
-    void window.miniclaw.listSessions(20).then((value) => {
+    void window.lobster0.listSessions(20).then((value) => {
       if (active) {
         setSessions(value);
         setSessionsError(null);
@@ -87,7 +87,7 @@ export function App(): React.JSX.Element {
       return;
     }
     let active = true;
-    void window.miniclaw.listAutomations(50).then((value) => {
+    void window.lobster0.listAutomations(50).then((value) => {
       if (active) {
         setAutomations(value);
         setAutomationError(null);
@@ -117,7 +117,7 @@ export function App(): React.JSX.Element {
     }
     setSessionsError(null);
     try {
-      const loaded = await window.miniclaw.loadSession(selected, 100);
+      const loaded = await window.lobster0.loadSession(selected, 100);
       setSessionKey(selected);
       setHistory(loaded);
       setView("task");
@@ -133,7 +133,7 @@ export function App(): React.JSX.Element {
     setSettingsBusy(true);
     setSettingsError(null);
     try {
-      const selected = await window.miniclaw.setPermissionMode(mode);
+      const selected = await window.lobster0.setPermissionMode(mode);
       setBootstrap({ ...bootstrap, permissionMode: selected });
     } catch {
       setSettingsError("权限模式切换失败，请确认当前没有运行中的任务。");
@@ -149,16 +149,16 @@ export function App(): React.JSX.Element {
     setSettingsBusy(true);
     setSettingsError(null);
     try {
-      const selected = await window.miniclaw.chooseWorkspace();
+      const selected = await window.lobster0.chooseWorkspace();
       if (selected === null) {
         return;
       }
-      setBootstrap(await window.miniclaw.bootstrap());
+      setBootstrap(await window.lobster0.bootstrap());
       setHistory(null);
       setSessions([]);
       setSessionKey(crypto.randomUUID());
     } catch {
-      setSettingsError("工作目录切换失败，MiniClaw 已尝试恢复原目录。");
+      setSettingsError("工作目录切换失败，Lobster0 已尝试恢复原目录。");
     } finally {
       setSettingsBusy(false);
     }
@@ -168,9 +168,9 @@ export function App(): React.JSX.Element {
     <div className="app-shell min-h-screen">
       <div className="app-drag-region" aria-hidden="true" />
       <aside className="sidebar">
-        <div className="brand" aria-label="MiniClaw Desktop">
+        <div className="brand" aria-label="Lobster0 Desktop">
           <span className="brand-mark" aria-hidden="true">M</span>
-          <span>MiniClaw</span>
+          <span>Lobster0</span>
         </div>
         <button
           className="button-primary sidebar-create"

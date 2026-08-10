@@ -8,7 +8,7 @@
 
 ## 1. 模块目的
 
-`src/miniclaw/agent/turn.py` 是所有 Channel 最终进入 Agent Core 的用例边界。Phase 1 由 CLI 调用；飞书、
+`src/lobster0/agent/turn.py` 是所有 Channel 最终进入 Agent Core 的用例边界。Phase 1 由 CLI 调用；飞书、
 Telegram 和 Discord 后续把标准化消息映射到同一服务，而不是直接调用 Provider。
 
 TurnService 把一次用户输入从持久化 queued 记录推进到 completed、failed 或 cancelled，并保证已发生的用户
@@ -204,7 +204,7 @@ uv run python -m unittest tests.test_turn -v
 安全查看最近状态：
 
 ```bash
-sqlite3 ~/.miniclaw/miniclaw.db \
+sqlite3 ~/.lobster0/lobster0.db \
   'SELECT id,status,model,input_tokens,output_tokens,error_code FROM turns ORDER BY id DESC LIMIT 10;'
 ```
 

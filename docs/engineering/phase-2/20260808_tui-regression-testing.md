@@ -1,4 +1,4 @@
-# MiniClaw TUI 回归测试规范
+# Lobster0 TUI 回归测试规范
 
 > 状态：已落地。本规范与 `tests/test_tui.py`、`tests/test_cli.py`、`tests/test_turn.py`、
 > `tests/test_agent_runner.py` 和 `tui/test/*.test.ts` 共同构成版本门禁。当前全仓基线：
@@ -41,7 +41,7 @@ flowchart TB
 | L2 真实 Core 集成 | Fake Provider + 真实 SQLite/Policy/Tool | UI 看到未落库状态、审批绕过 | 否 |
 | L3 跨进程 | 真实 Node BridgeClient + 真实 Python Bridge | stdout 污染、环境、协议漂移、退出回收 | 否 |
 | L4 fallback | Textual `run_test()` + Pilot | 首次 onboarding、Node 不可用、迁移回退 | 否 |
-| L5 PTY/Agent | 真实 TTY + `miniclaw eval run --suite offline` | 终端生命周期和 Claw-like 行为漂移 | 否 |
+| L5 PTY/Agent | 真实 TTY + `lobster0 eval run --suite offline` | 终端生命周期和 Claw-like 行为漂移 | 否 |
 
 Live DeepSeek 是发布抽样，不作为每次提交的硬门禁：它有费用、网络和模型随机性。
 
@@ -111,7 +111,7 @@ ID 固定，行为变更时更新原 ID；只有新增独立能力时才新增 I
 | `TUI-016` | 裸命令 TTY guard | 非 TTY 和 `TERM=dumb` 明确失败 | `test_cli` |
 | `TUI-017` | 持久化事件顺序 | Tool/Turn 事件发送前数据库已进入对应状态 | `test_turn` |
 | `TUI-018` | 裸命令 PTY smoke | 真实启动、可提交、可正常退出 | 发布前 smoke |
-| `TUI-019` | 对话角色层级 | “你”/“MiniClaw”文字标签、不同容器、Assistant 仍单 Widget 流式更新 | `test_tui` |
+| `TUI-019` | 对话角色层级 | “你”/“Lobster0”文字标签、不同容器、Assistant 仍单 Widget 流式更新 | `test_tui` |
 | `TUI-020` | 长文本失败恢复 | 250,000 字符中文原文逐字回填，焦点恢复 | `test_tui` |
 | `TUI-021` | 真实遥测 | context/input/output/tool/iteration/duration 正确投影；缺失为 N/A | `test_tui` / `test_agent_runner` |
 | `TUI-022` | UI 双语 | 默认中文，`/lang zh|en` 原地切换且不调用 Agent | `test_tui` / `test_config` |
@@ -129,7 +129,7 @@ ID 固定，行为变更时更新原 ID；只有新增独立能力时才新增 I
 
 ## 5. 为什么只做有语义的虚拟终端快照
 
-整屏 golden 文本对终端尺寸、Unicode 宽度和主题非常敏感，很容易出现“行为没变，快照全红”。MiniClaw 使用真实
+整屏 golden 文本对终端尺寸、Unicode 宽度和主题非常敏感，很容易出现“行为没变，快照全红”。Lobster0 使用真实
 pi-tui renderer 与内存 Terminal，但断言有语义的布局事实：
 
 - 64/80/120 列下任何行不越界；
@@ -164,15 +164,15 @@ Approval Repository 和 Workspace Guard 在集成测试中使用真实实现。�
 .venv/bin/ruff check --no-cache .
 pnpm --dir tui build
 pnpm --dir tui test
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 git diff --check
 ```
 
 发布或修改 CLI/pi-tui/Textual fallback 时，再加一次真实 PTY smoke：
 
 ```text
-1. 在伪终端启动裸 miniclaw。
+1. 在伪终端启动裸 lobster0。
 2. 验证屏幕出现状态栏、transcript 和唯一 composer。
 3. 提交一条可预测输入或 `/help`。
 4. 验证界面仍可交互。

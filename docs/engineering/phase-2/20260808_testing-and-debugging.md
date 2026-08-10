@@ -35,9 +35,9 @@ flowchart TB
 ```bash
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 git diff --check
 ```
 
@@ -56,7 +56,7 @@ git diff --check
 
 | 类别 | ID | 证明内容 |
 | --- | --- | --- |
-| 身份 | `CORE-001` | 基础 MiniClaw 身份回答 |
+| 身份 | `CORE-001` | 基础 Lobster0 身份回答 |
 | 会话 | `STATE-001` | 同 session 恢复前一轮文本 |
 | Provider | `PROTO-001` | empty tool arguments 兼容事故 |
 | 系统 Tool | `TOOL-001` | system_info 真实 Tool Loop |
@@ -138,7 +138,7 @@ sequenceDiagram
 
 ## 5. Crash recovery
 
-ToolRun 从 `running` 进入终态通常由当前进程完成。但进程被强制退出时，SQLite 可能留下 `running`。MiniClaw 不会
+ToolRun 从 `running` 进入终态通常由当前进程完成。但进程被强制退出时，SQLite 可能留下 `running`。Lobster0 不会
 猜测动作是否完成，更不会自动再执行一次。
 
 ```mermaid
@@ -209,23 +209,23 @@ flowchart LR
 
 v0.2.0 发布时用历史 `chat`/`approvals` 入口完成了以下场景，脱敏证据保存在
 [`docs/evals/releases/v0.2.0.md`](../../evals/releases/v0.2.0.md)。这些命令是发布历史，当前版本不再提供
-`miniclaw chat` 或 `miniclaw approvals`：
+`lobster0 chat` 或 `lobster0 approvals`：
 
 ```bash
-uv run miniclaw chat --message "帮我看看我的电脑是什么配置"
-uv run miniclaw chat --message "请在 workspace 创建 README.md，内容为：MiniClaw Phase 2 live smoke fixture。"
-uv run miniclaw approvals show ID
-uv run miniclaw approvals approve ID
-uv run miniclaw chat --message "读一下 workspace 里的 README.md 并总结"
-uv run miniclaw chat --message "在 workspace 里运行 git status --short"
-uv run miniclaw approvals approve ID
-uv run miniclaw approvals list --status pending --json
+uv run lobster0 chat --message "帮我看看我的电脑是什么配置"
+uv run lobster0 chat --message "请在 workspace 创建 README.md，内容为：Lobster0 Phase 2 live smoke fixture。"
+uv run lobster0 approvals show ID
+uv run lobster0 approvals approve ID
+uv run lobster0 chat --message "读一下 workspace 里的 README.md 并总结"
+uv run lobster0 chat --message "在 workspace 里运行 git status --short"
+uv run lobster0 approvals approve ID
+uv run lobster0 approvals list --status pending --json
 ```
 
 当前版本的人类入口只有：
 
 ```bash
-uv run miniclaw
+uv run lobster0
 ```
 
 进入 TUI 后输入同样的 query；需审批动作在 Modal 中选择 **Allow once** 或 **Deny**。每次重跑
@@ -264,8 +264,8 @@ object 与字符串混合分片仍然按协议错误关闭，不能因此绕过 
 ### Agent 说“无法访问电脑”
 
 ```bash
-uv run miniclaw doctor
-uv run miniclaw
+uv run lobster0 doctor
+uv run lobster0
 # 在 TUI 输入：请使用 system_info 查看电脑配置
 ```
 
@@ -292,7 +292,7 @@ uv run miniclaw
 
 ### Doctor 显示 stale running
 
-当前 Doctor 不修改状态。重新启动一次裸 `miniclaw` 会在 Runtime 装配时运行 crash recovery；超过 5 分钟的旧记录转为
+当前 Doctor 不修改状态。重新启动一次裸 `lobster0` 会在 Runtime 装配时运行 crash recovery；超过 5 分钟的旧记录转为
 `interrupted`。它不会自动再次执行原动作。
 
 ## 10. 发布完成定义
@@ -306,7 +306,7 @@ uv run miniclaw
 - [x] 671/671 Python tests + 35/35 TypeScript tests；
 - [x] 29/29 offline Agent cases、32/32 Channel cases；
 - [x] v0.2.0 DeepSeek V4 Pro live smoke 有单独历史记录；
-- [x] 裸 `miniclaw` 单入口 TUI 与真实 PTY smoke；
+- [x] 裸 `lobster0` 单入口 TUI 与真实 PTY smoke；
 - [x] Provider reasoning、Tool 参数/状态/耗时/结果可展开回归；
 - [x] 用户/Agent 角色区分、默认中文与 `/lang zh|en`；
 - [x] 真实 usage 审计栏、缺失 N/A 与 Provider Request ID；

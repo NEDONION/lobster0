@@ -7,7 +7,7 @@
 
 ## 1. 模块目的
 
-`src/miniclaw/providers/base.py` 是 Agent Core 与任意模型服务之间唯一稳定边界。AgentRunner 只认识
+`src/lobster0/providers/base.py` 是 Agent Core 与任意模型服务之间唯一稳定边界。AgentRunner 只认识
 `ModelProvider.complete()`、请求/响应值对象和五类错误；它不知道 HTTP、SSE、SDK、Base URL 或 API
 Key。
 

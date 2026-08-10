@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让 MiniClaw 在显式 `personal` Profile 下安全读取普通个人文件、经单次审批写入配置目录，并稳定发现 NVM/uv/pnpm 中的本机 CLI。
+**Goal:** 让 Lobster0 在显式 `personal` Profile 下安全读取普通个人文件、经单次审批写入配置目录，并稳定发现 NVM/uv/pnpm 中的本机 CLI。
 
 **Architecture:** 新增强类型 `PermissionConfig`，由纯函数把 Profile 和显式 Roots 解析为 `ToolContext` 中不可由模型伪造的 Read/Write/Executable 边界。现有 `WorkspaceGuard` 保留入口但扩展为多根 Guard；新增 `ExecutableDiscovery` 生成稳定搜索路径，Policy 与 `RunCommandTool` 共用同一个解析结果和最小环境。旧配置缺少 `[permissions]` 时继续 workspace-only。
 
@@ -23,8 +23,8 @@
 ### Task 1: PermissionConfig 与 Profile Root 解析
 
 **Files:**
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
 - Test: `tests/test_config.py`
 - Test: `tests/test_bootstrap.py`
 
@@ -105,8 +105,8 @@ Bootstrap 测试断言新实例生成 personal，重复 init 不覆盖已有 wor
 
 ```bash
 uv run python -m unittest tests.test_config tests.test_bootstrap -v
-uv run ruff check src/miniclaw/config.py src/miniclaw/bootstrap.py tests/test_config.py tests/test_bootstrap.py
-git add src/miniclaw/config.py src/miniclaw/bootstrap.py tests/test_config.py tests/test_bootstrap.py
+uv run ruff check src/lobster0/config.py src/lobster0/bootstrap.py tests/test_config.py tests/test_bootstrap.py
+git add src/lobster0/config.py src/lobster0/bootstrap.py tests/test_config.py tests/test_bootstrap.py
 git commit -m "feat(permission): 增加 Personal Profile 强类型配置"
 ```
 
@@ -115,11 +115,11 @@ git commit -m "feat(permission): 增加 Personal Profile 强类型配置"
 ### Task 2: 多根文件读取与受控外部写入
 
 **Files:**
-- Modify: `src/miniclaw/tools/base.py`
-- Modify: `src/miniclaw/policy/workspace.py`
-- Modify: `src/miniclaw/tools/filesystem.py`
-- Modify: `src/miniclaw/tools/search.py`
-- Modify: `src/miniclaw/agent/turn.py`
+- Modify: `src/lobster0/tools/base.py`
+- Modify: `src/lobster0/policy/workspace.py`
+- Modify: `src/lobster0/tools/filesystem.py`
+- Modify: `src/lobster0/tools/search.py`
+- Modify: `src/lobster0/agent/turn.py`
 - Test: `tests/test_workspace_policy.py`
 - Test: `tests/test_file_tools.py`
 - Test: `tests/test_search_tools.py`
@@ -165,7 +165,7 @@ uv run python -m unittest tests.test_workspace_policy tests.test_file_tools -v
 
 - [ ] **Step 5: 扩展敏感路径回归**
 
-加入明确路径模式：Keychains、Chrome/Chromium/Firefox/Safari 的 Cookies/Login Data、1Password、已知即时通讯数据、MiniClaw state、socket 和非普通文件。测试逻辑路径与 symlink 真实目标两条路径都拒绝。
+加入明确路径模式：Keychains、Chrome/Chromium/Firefox/Safari 的 Cookies/Login Data、1Password、已知即时通讯数据、Lobster0 state、socket 和非普通文件。测试逻辑路径与 symlink 真实目标两条路径都拒绝。
 
 - [ ] **Step 6: 接入 TurnService 与 Approval**
 
@@ -175,8 +175,8 @@ Runtime 用 `dataclasses.replace(config.workspace, owner_home=..., read_only_roo
 
 ```bash
 uv run python -m unittest tests.test_workspace_policy tests.test_file_tools tests.test_search_tools tests.test_tool_executor tests.test_turn -v
-uv run ruff check src/miniclaw/tools/base.py src/miniclaw/policy/workspace.py src/miniclaw/tools/filesystem.py src/miniclaw/tools/search.py src/miniclaw/agent/turn.py tests/test_workspace_policy.py tests/test_file_tools.py tests/test_search_tools.py tests/test_tool_executor.py
-git add src/miniclaw/tools/base.py src/miniclaw/policy/workspace.py src/miniclaw/tools/filesystem.py src/miniclaw/tools/search.py src/miniclaw/agent/turn.py tests/test_workspace_policy.py tests/test_file_tools.py tests/test_search_tools.py tests/test_tool_executor.py tests/test_turn.py
+uv run ruff check src/lobster0/tools/base.py src/lobster0/policy/workspace.py src/lobster0/tools/filesystem.py src/lobster0/tools/search.py src/lobster0/agent/turn.py tests/test_workspace_policy.py tests/test_file_tools.py tests/test_search_tools.py tests/test_tool_executor.py
+git add src/lobster0/tools/base.py src/lobster0/policy/workspace.py src/lobster0/tools/filesystem.py src/lobster0/tools/search.py src/lobster0/agent/turn.py tests/test_workspace_policy.py tests/test_file_tools.py tests/test_search_tools.py tests/test_tool_executor.py tests/test_turn.py
 git commit -m "feat(files): 支持 Personal 多根读取与受控外部写入"
 ```
 
@@ -185,9 +185,9 @@ git commit -m "feat(files): 支持 Personal 多根读取与受控外部写入"
 ### Task 3: 可信 ExecutableDiscovery
 
 **Files:**
-- Create: `src/miniclaw/policy/executables.py`
-- Modify: `src/miniclaw/policy/command.py`
-- Modify: `src/miniclaw/policy/engine.py`
+- Create: `src/lobster0/policy/executables.py`
+- Modify: `src/lobster0/policy/command.py`
+- Modify: `src/lobster0/policy/engine.py`
 - Test: `tests/test_executable_discovery.py`
 - Test: `tests/test_command_policy.py`
 
@@ -231,8 +231,8 @@ uv run python -m unittest tests.test_executable_discovery -v
 
 ```bash
 uv run python -m unittest tests.test_executable_discovery tests.test_command_policy -v
-uv run ruff check src/miniclaw/policy/executables.py src/miniclaw/policy/command.py src/miniclaw/policy/engine.py tests/test_executable_discovery.py tests/test_command_policy.py
-git add src/miniclaw/policy/executables.py src/miniclaw/policy/command.py src/miniclaw/policy/engine.py tests/test_executable_discovery.py tests/test_command_policy.py
+uv run ruff check src/lobster0/policy/executables.py src/lobster0/policy/command.py src/lobster0/policy/engine.py tests/test_executable_discovery.py tests/test_command_policy.py
+git add src/lobster0/policy/executables.py src/lobster0/policy/command.py src/lobster0/policy/engine.py tests/test_executable_discovery.py tests/test_command_policy.py
 git commit -m "feat(command): 确定性发现 NVM 与用户 CLI"
 ```
 
@@ -241,9 +241,9 @@ git commit -m "feat(command): 确定性发现 NVM 与用户 CLI"
 ### Task 4: 最小子进程环境、Runtime 与 Doctor
 
 **Files:**
-- Modify: `src/miniclaw/tools/command.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/tools/command.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/doctor.py`
 - Test: `tests/test_run_command.py`
 - Test: `tests/test_runtime.py`
 - Test: `tests/test_doctor.py`
@@ -255,7 +255,7 @@ git commit -m "feat(command): 确定性发现 NVM 与用户 CLI"
 - [ ] **Step 1: 写最小环境 RED**
 
 真实临时 executable 输出选择后的环境键。personal 模式断言只有 `PATH/HOME/LANG/LC_ALL` 和两个
-`LARKSUITE_CLI_NO_*_NOTIFIER`；输入环境中的 `MINICLAW_MODEL_API_KEY`、`HTTP_PROXY`、`PYTHONPATH`、`COOKIE` 不得出现。workspace 模式不得包含 HOME。
+`LARKSUITE_CLI_NO_*_NOTIFIER`；输入环境中的 `LOBSTER0_MODEL_API_KEY`、`HTTP_PROXY`、`PYTHONPATH`、`COOKIE` 不得出现。workspace 模式不得包含 HOME。
 
 - [ ] **Step 2: 写真实 wrapper 启动 RED**
 
@@ -288,8 +288,8 @@ Doctor 固定增加两项，消息只包含 Profile、root 数量、发现的 ba
 
 ```bash
 uv run python -m unittest tests.test_run_command tests.test_runtime tests.test_doctor tests.test_cli -v
-uv run ruff check src/miniclaw/tools/command.py src/miniclaw/runtime.py src/miniclaw/doctor.py tests/test_run_command.py tests/test_runtime.py tests/test_doctor.py
-git add src/miniclaw/tools/command.py src/miniclaw/runtime.py src/miniclaw/doctor.py tests/test_run_command.py tests/test_runtime.py tests/test_doctor.py tests/test_cli.py
+uv run ruff check src/lobster0/tools/command.py src/lobster0/runtime.py src/lobster0/doctor.py tests/test_run_command.py tests/test_runtime.py tests/test_doctor.py
+git add src/lobster0/tools/command.py src/lobster0/runtime.py src/lobster0/doctor.py tests/test_run_command.py tests/test_runtime.py tests/test_doctor.py tests/test_cli.py
 git commit -m "feat(runtime): 接线 Personal CLI 环境与 Doctor"
 ```
 
@@ -302,7 +302,7 @@ git commit -m "feat(runtime): 接线 Personal CLI 环境与 Doctor"
 - Modify: `tui/test/approval.test.ts`
 - Modify: `evals/scenarios/claw_like_v1.jsonl`
 - Modify: `tests/test_eval_cases.py`
-- Modify: `src/miniclaw/agent/context.py`
+- Modify: `src/lobster0/agent/context.py`
 - Test: `tests/test_context.py`
 
 **Interfaces:**
@@ -340,9 +340,9 @@ corepack pnpm --dir tui test
 ```bash
 corepack pnpm --dir tui test
 uv run python -m unittest tests.test_context tests.test_eval_cases -v
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-git add tui/src/components/approval.ts tui/test/approval.test.ts src/miniclaw/agent/context.py tests/test_context.py evals/scenarios/claw_like_v1.jsonl tests/test_eval_cases.py
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+git add tui/src/components/approval.ts tui/test/approval.test.ts src/lobster0/agent/context.py tests/test_context.py evals/scenarios/claw_like_v1.jsonl tests/test_eval_cases.py
 git commit -m "feat(tui): 解释命令权限并增加 Personal 回归场景"
 ```
 
@@ -389,15 +389,15 @@ git commit -m "docs(phase2.3): 记录 Personal 权限工程边界与进度"
 - Modify only if a failing regression proves an implementation defect.
 
 **Interfaces:**
-- Produces release evidence for the feature branch; does not modify `~/.miniclaw` or execute authenticated Lark operations.
+- Produces release evidence for the feature branch; does not modify `~/.lobster0` or execute authenticated Lark operations.
 
 - [ ] **Step 1: 完整离线门禁**
 
 ```bash
 uv run python -m unittest discover -s tests -v
 corepack pnpm --dir tui test
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 uv run ruff check .
 git diff --check
 ```

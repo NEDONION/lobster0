@@ -13,13 +13,13 @@
 模型脚本、Tool/Audit 结果和最终答案断言绑在一起。
 
 大白话理解：模型边界是“按剧本说话的演员”，其余舞台都是真的。测试不会花模型费用，也不会碰个人数据，但会真实
-创建临时 MiniClaw、跑 TurnService、执行 Policy/Tool、写 SQLite，再从结果判定 PASS/FAIL。
+创建临时 Lobster0、跑 TurnService、执行 Policy/Tool、写 SQLite，再从结果判定 PASS/FAIL。
 
 ```mermaid
 flowchart LR
     QUERY["Claw-like query"] --> CASE["JSONL case"]
     CASE --> VALIDATOR["严格 validator"]
-    VALIDATOR --> TEMP["临时 MiniClaw state"]
+    VALIDATOR --> TEMP["临时 Lobster0 state"]
     TEMP --> TURN["真实 TurnService"]
     SCRIPT["ScriptedProvider"] --> TURN
     TURN --> RUNNER["真实 AgentRunner"]
@@ -37,7 +37,7 @@ flowchart LR
 真实模型会受网络、限流、账户、Provider 更新和采样波动影响。把它放进每次提交会混淆两种失败：代码真的坏了，
 还是外部服务暂时不稳定。
 
-MiniClaw 因此分层：
+Lobster0 因此分层：
 
 | 层 | 当前状态 | 运行时机 | 通过规则 |
 | --- | --- | --- | --- |
@@ -50,9 +50,9 @@ MiniClaw 因此分层：
 当前不使用 LLM Judge。现有场景都能用 ToolRun、Audit、消息上下文、哨兵文本和稳定错误码判断；为了十条场景
 引入第二个模型只会增加费用和不确定性。
 
-## 3. 参考项目的方法如何落到 MiniClaw
+## 3. 参考项目的方法如何落到 Lobster0
 
-| 项目 | 借鉴点 | MiniClaw 取舍 |
+| 项目 | 借鉴点 | Lobster0 取舍 |
 | --- | --- | --- |
 | OpenClaw | unit/E2E/live 分层、优先覆盖边界 | 分成 L0/L1/L2/L3，不让 live 阻断普通 commit |
 | ZeroClaw | unit/component/integration/system/live，live 默认忽略 | offline 默认，live 必须显式运行 |
@@ -67,7 +67,7 @@ MiniClaw 因此分层：
 ## 4. 文件地图
 
 ```text
-src/miniclaw/evals/
+src/lobster0/evals/
 ├── __init__.py
 ├── cases.py                 # JSONL loader、Schema 与安全校验
 ├── runner.py                # ScriptedProvider、真实 Agent 组装、verifier
@@ -179,15 +179,15 @@ CLI 不打印 query、脚本响应、工具原始结果、绝对临时路径或�
 ## 9. CLI 契约
 
 ```bash
-uv run miniclaw eval list --root evals/scenarios
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval list --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 ```
 
 `eval` 在解析后先于普通 StatePaths 分支执行，因此：
 
-- 不要求 `miniclaw init`；
+- 不要求 `lobster0 init`；
 - 不读取 `.env`；
 - 不需要 API Key；
 - 不调用互联网；
@@ -252,9 +252,9 @@ DeepSeek probe 复现了另一个错误分支：先读取 Darwin，再生成被 
 
 ```bash
 uv run python -m unittest tests.test_eval_cases tests.test_eval_runner -v
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 ```
 
 发布前：
@@ -262,9 +262,9 @@ uv run miniclaw eval run --suite channel --root evals/scenarios
 ```bash
 uv run python -m unittest discover -s tests -v
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 git diff --check
 ```
 

@@ -1,4 +1,4 @@
-# MiniClaw Memory Autopilot Implementation Plan
+# Lobster0 Memory Autopilot Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -39,9 +39,9 @@
 ### Task 1: Memory A — typed identity and disclosure policy
 
 **Files:**
-- Create: `src/miniclaw/memory/models.py`
-- Create: `src/miniclaw/memory/policy.py`
-- Modify: `src/miniclaw/memory/__init__.py`
+- Create: `src/lobster0/memory/models.py`
+- Create: `src/lobster0/memory/policy.py`
+- Modify: `src/lobster0/memory/__init__.py`
 - Test: `tests/test_memory_disclosure.py`
 
 **Interfaces:**
@@ -67,7 +67,7 @@ def test_model_cannot_select_another_owner() -> None:
 
 Run: `uv run python -m unittest tests.test_memory_disclosure -v`
 
-Expected: `miniclaw.memory.models` and `miniclaw.memory.policy` do not exist.
+Expected: `lobster0.memory.models` and `lobster0.memory.policy` do not exist.
 
 - [ ] **Step 3: Implement immutable contracts and one decision table**
 
@@ -98,18 +98,18 @@ Expected: all local/direct/group/non-owner/unknown cases PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/memory tests/test_memory_disclosure.py
+git add src/lobster0/memory tests/test_memory_disclosure.py
 git commit -m "feat(memory): 建立 Owner Disclosure fail-closed 边界"
 ```
 
 ### Task 2: Memory A — propagate disclosure through Turn and Channel
 
 **Files:**
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/agent/context.py`
-- Modify: `src/miniclaw/channels/manager.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/tools/base.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/agent/context.py`
+- Modify: `src/lobster0/channels/manager.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/tools/base.py`
 - Test: `tests/test_turn_service.py`
 - Test: `tests/test_context.py`
 - Test: `tests/test_channel_manager.py`
@@ -151,17 +151,17 @@ Expected: four entry points share owner 1; group/non-owner/unknown receive empty
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/agent src/miniclaw/channels/manager.py src/miniclaw/runtime.py src/miniclaw/tools/base.py tests
+git add src/lobster0/agent src/lobster0/channels/manager.py src/lobster0/runtime.py src/lobster0/tools/base.py tests
 git commit -m "feat(memory): 贯通跨渠道 DisclosureContext"
 ```
 
 ### Task 3: Memory B — migration, repository state machines and durable buffer
 
 **Files:**
-- Create: `src/miniclaw/storage/migrations/0003_memory_autopilot.sql`
-- Modify: `src/miniclaw/storage/migrations.py`
-- Create: `src/miniclaw/memory/repository.py`
-- Create: `src/miniclaw/memory/buffer.py`
+- Create: `src/lobster0/storage/migrations/0003_memory_autopilot.sql`
+- Modify: `src/lobster0/storage/migrations.py`
+- Create: `src/lobster0/memory/repository.py`
+- Create: `src/lobster0/memory/buffer.py`
 - Test: `tests/test_memory_repository.py`
 - Test: `tests/test_memory_buffer.py`
 - Test: `tests/test_storage.py`
@@ -202,18 +202,18 @@ Expected: queued/running/retry/projection-pending/completed/dead-letter transiti
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0003_memory_autopilot.sql src/miniclaw/memory tests/test_memory_repository.py tests/test_memory_buffer.py tests/test_storage.py
+git add src/lobster0/storage/migrations.py src/lobster0/storage/migrations/0003_memory_autopilot.sql src/lobster0/memory tests/test_memory_repository.py tests/test_memory_buffer.py tests/test_storage.py
 git commit -m "feat(memory): 持久化 buffer、lease 与审计状态机"
 ```
 
 ### Task 4: Memory B — atomic Markdown store and explicit remember
 
 **Files:**
-- Create: `src/miniclaw/memory/markdown_store.py`
-- Create: `src/miniclaw/memory/service.py`
-- Create: `src/miniclaw/tools/memory_v2.py`
-- Modify: `src/miniclaw/memory/store.py`
-- Modify: `src/miniclaw/runtime.py`
+- Create: `src/lobster0/memory/markdown_store.py`
+- Create: `src/lobster0/memory/service.py`
+- Create: `src/lobster0/tools/memory_v2.py`
+- Modify: `src/lobster0/memory/store.py`
+- Modify: `src/lobster0/runtime.py`
 - Test: `tests/test_memory_markdown_store.py`
 - Test: `tests/test_memory_service.py`
 - Test: `tests/test_memory_tools_v2.py`
@@ -257,19 +257,19 @@ Expected: temp-write/fsync/replace failure leaves the old truth intact; duplicat
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/memory src/miniclaw/tools/memory_v2.py src/miniclaw/runtime.py tests/test_memory_markdown_store.py tests/test_memory_service.py tests/test_memory_tools_v2.py tests/test_memory_store.py tests/test_memory_tools.py
+git add src/lobster0/memory src/lobster0/tools/memory_v2.py src/lobster0/runtime.py tests/test_memory_markdown_store.py tests/test_memory_service.py tests/test_memory_tools_v2.py tests/test_memory_store.py tests/test_memory_tools.py
 git commit -m "feat(memory): 原子持久化明确 remember 请求"
 ```
 
 ### Task 5: Memory B — non-blocking capture, flush worker and recovery
 
 **Files:**
-- Create: `src/miniclaw/memory/flush.py`
-- Create: `src/miniclaw/memory/worker.py`
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/agent/compaction.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/gateway.py`
+- Create: `src/lobster0/memory/flush.py`
+- Create: `src/lobster0/memory/worker.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/agent/compaction.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/gateway.py`
 - Test: `tests/test_memory_flush.py`
 - Test: `tests/test_memory_worker.py`
 - Test: `tests/test_memory_recovery.py`
@@ -312,19 +312,19 @@ Expected: before/after Provider, temp write, replace, manifest update, projectio
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/memory src/miniclaw/agent src/miniclaw/runtime.py src/miniclaw/gateway.py tests/test_memory_flush.py tests/test_memory_worker.py tests/test_memory_recovery.py tests/test_compaction.py tests/test_gateway.py
+git add src/lobster0/memory src/lobster0/agent src/lobster0/runtime.py src/lobster0/gateway.py tests/test_memory_flush.py tests/test_memory_worker.py tests/test_memory_recovery.py tests/test_compaction.py tests/test_gateway.py
 git commit -m "feat(memory): 自动 flush 并恢复中断运行"
 ```
 
 ### Task 6: Memory C — FTS5/CJK retrieval, Context budget and user surface
 
 **Files:**
-- Create: `src/miniclaw/memory/retrieval.py`
-- Create: `src/miniclaw/memory/context.py`
-- Modify: `src/miniclaw/agent/context.py`
-- Modify: `src/miniclaw/tools/memory_v2.py`
-- Modify: `src/miniclaw/bridge/protocol.py`
-- Modify: `src/miniclaw/channels/experience.py`
+- Create: `src/lobster0/memory/retrieval.py`
+- Create: `src/lobster0/memory/context.py`
+- Modify: `src/lobster0/agent/context.py`
+- Modify: `src/lobster0/tools/memory_v2.py`
+- Modify: `src/lobster0/bridge/protocol.py`
+- Modify: `src/lobster0/channels/experience.py`
 - Modify: `tui/src/`
 - Test: `tests/test_memory_retrieval.py`
 - Test: `tests/test_memory_context.py`
@@ -364,17 +364,17 @@ Model Tools never accept owner id. `memory_get` returns source metadata but not 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/memory src/miniclaw/agent/context.py src/miniclaw/tools/memory_v2.py src/miniclaw/bridge src/miniclaw/channels/experience.py tui tests
+git add src/lobster0/memory src/lobster0/agent/context.py src/lobster0/tools/memory_v2.py src/lobster0/bridge src/lobster0/channels/experience.py tui tests
 git commit -m "feat(memory): 增加 owner-scoped FTS5 召回"
 ```
 
 ### Task 7: Memory D — extraction, validation and automatic promotion
 
 **Files:**
-- Create: `src/miniclaw/memory/extractor.py`
-- Create: `src/miniclaw/memory/validator.py`
-- Create: `src/miniclaw/memory/promotion.py`
-- Modify: `src/miniclaw/memory/flush.py`
+- Create: `src/lobster0/memory/extractor.py`
+- Create: `src/lobster0/memory/validator.py`
+- Create: `src/lobster0/memory/promotion.py`
+- Modify: `src/lobster0/memory/flush.py`
 - Test: `tests/test_memory_extractor.py`
 - Test: `tests/test_memory_validator.py`
 - Test: `tests/test_memory_promotion.py`
@@ -415,18 +415,18 @@ Expected: malformed JSON, oversized output, fabricated source, duplicate, secret
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/memory tests/test_memory_extractor.py tests/test_memory_validator.py tests/test_memory_promotion.py tests/test_memory_flush.py
+git add src/lobster0/memory tests/test_memory_extractor.py tests/test_memory_validator.py tests/test_memory_promotion.py tests/test_memory_flush.py
 git commit -m "feat(memory): 自动提取并治理低风险事实"
 ```
 
 ### Task 8: Memory D — review, conflict, correction and forget
 
 **Files:**
-- Create: `src/miniclaw/memory/review.py`
-- Modify: `src/miniclaw/memory/service.py`
-- Modify: `src/miniclaw/tools/memory_v2.py`
-- Modify: `src/miniclaw/bridge/protocol.py`
-- Modify: `src/miniclaw/channels/experience.py`
+- Create: `src/lobster0/memory/review.py`
+- Modify: `src/lobster0/memory/service.py`
+- Modify: `src/lobster0/tools/memory_v2.py`
+- Modify: `src/lobster0/bridge/protocol.py`
+- Modify: `src/lobster0/channels/experience.py`
 - Modify: `tui/src/`
 - Test: `tests/test_memory_review.py`
 - Test: `tests/test_memory_forget.py`
@@ -467,18 +467,18 @@ Run Python tests plus `pnpm --dir tui test`. Verify stale buttons, replay, cross
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/memory src/miniclaw/tools/memory_v2.py src/miniclaw/bridge src/miniclaw/channels/experience.py tui tests
+git add src/lobster0/memory src/lobster0/tools/memory_v2.py src/lobster0/bridge src/lobster0/channels/experience.py tui tests
 git commit -m "feat(memory): 支持 Review、纠错与可审计遗忘"
 ```
 
 ### Task 9: Memory E — direct-edit reconcile, legacy migration and maintenance
 
 **Files:**
-- Create: `src/miniclaw/memory/reconcile.py`
-- Create: `src/miniclaw/memory/migration.py`
-- Create: `src/miniclaw/memory/maintenance.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/doctor.py`
+- Create: `src/lobster0/memory/reconcile.py`
+- Create: `src/lobster0/memory/migration.py`
+- Create: `src/lobster0/memory/maintenance.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/doctor.py`
 - Test: `tests/test_memory_reconcile.py`
 - Test: `tests/test_memory_migration.py`
 - Test: `tests/test_memory_maintenance.py`
@@ -520,7 +520,7 @@ Expire TTL Units daily, produce a weekly review candidate instead of silent prof
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/memory src/miniclaw/bootstrap.py src/miniclaw/doctor.py tests/test_memory_reconcile.py tests/test_memory_migration.py tests/test_memory_maintenance.py tests/test_doctor.py
+git add src/lobster0/memory src/lobster0/bootstrap.py src/lobster0/doctor.py tests/test_memory_reconcile.py tests/test_memory_migration.py tests/test_memory_maintenance.py tests/test_doctor.py
 git commit -m "feat(memory): 对账 Markdown 并迁移 legacy memory"
 ```
 
@@ -530,7 +530,7 @@ git commit -m "feat(memory): 对账 Markdown 并迁移 legacy memory"
 - Create: `evals/scenarios/memory.v1.jsonl`
 - Create: `docs/engineering/phase-5/20260809_memory-autopilot.md`
 - Create: `docs/evals/releases/v0.6.0.md`
-- Modify: `src/miniclaw/evals/runner.py`
+- Modify: `src/lobster0/evals/runner.py`
 - Modify: `tests/test_eval_runner.py`
 - Modify: `README.md`
 - Modify: `README_EN.md`
@@ -554,9 +554,9 @@ uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 pnpm --dir tui build
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 uv lock --check
 uv build
@@ -574,7 +574,7 @@ Before completion docs must continue to say `PLANNED / NOT IMPLEMENTED`. After a
 - [ ] **Step 5: Commit**
 
 ```bash
-git add evals src/miniclaw/evals docs README.md README_EN.md tests/test_eval_runner.py tests/test_documentation.py
+git add evals src/lobster0/evals docs README.md README_EN.md tests/test_eval_runner.py tests/test_documentation.py
 git commit -m "release(memory): 验证 Memory Autopilot A-E"
 ```
 

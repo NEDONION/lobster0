@@ -1,4 +1,4 @@
-# MiniClaw Desktop D1 打开即聊设计
+# Lobster0 Desktop D1 打开即聊设计
 
 > 日期：2026-08-10
 > 文档类型：Phase D1 产品与界面设计
@@ -8,7 +8,7 @@
 
 ## 1. D1 目标
 
-D1 只解决一个完整问题：用户打开 MiniClaw Desktop 后，不经过首页和“新建任务”跳转，就能在首屏大对话框中
+D1 只解决一个完整问题：用户打开 Lobster0 Desktop 后，不经过首页和“新建任务”跳转，就能在首屏大对话框中
 提交真实任务，并继续使用现有 Tool、Approval、Cancel、History 和 Python Core。
 
 D1 完成后的用户体验：
@@ -56,7 +56,7 @@ D1 不实现附件 admission、模型切换、Workspace 快捷切换、Agent 切
 
 ### 方案 C：直接移植 LobsterAI Cowork Renderer
 
-视觉接近上游，但会带入 LobsterAI 的状态、组件和业务假设，重复 MiniClaw 已有任务、审批和 Bridge 逻辑。D1 不采用。
+视觉接近上游，但会带入 LobsterAI 的状态、组件和业务假设，重复 Lobster0 已有任务、审批和 Bridge 逻辑。D1 不采用。
 
 ## 4. 页面结构
 
@@ -64,7 +64,7 @@ D1 不实现附件 admission、模型切换、Workspace 快捷切换、Agent 切
 
 ```text
 ┌──────────────────────┬────────────────────────────────────────┬──────────────────┐
-│ MiniClaw             │ 新任务                                  │ 当前结果          │
+│ Lobster0             │ 新任务                                  │ 当前结果          │
 │                      │                                        │                  │
 │ ＋ 新建任务           │  今天想完成什么？                        │ 暂无结果时安静空态 │
 │                      │  ┌──────────────────────────────────┐  │                  │
@@ -198,7 +198,7 @@ sequenceDiagram
     A-->>W: bootstrap ready，Composer enabled
 ```
 
-bootstrap 失败时，Composer 保持可见但禁用，并在输入区上方显示“无法连接 MiniClaw Core，请检查本地启动配置”。
+bootstrap 失败时，Composer 保持可见但禁用，并在输入区上方显示“无法连接 Lobster0 Core，请检查本地启动配置”。
 
 ### 7.2 首条消息
 
@@ -261,7 +261,7 @@ D1 不新增测试库。使用已安装的 React/ReactDOM/Vitest：
 - Task state tests 继续覆盖流式、Approval、Cancel 和 History；
 - 对 Enter/composition 的处理提取为一个小的纯函数，测试“发送 / 换行 / 输入法”三个分支；
 - Desktop 全量 test、typecheck 和 build 防止 Electron 打包回归；
-- 真实 Python Bridge + Electron 进程 smoke 证明仍走 MiniClaw Core；
+- 真实 Python Bridge + Electron 进程 smoke 证明仍走 Lobster0 Core；
 - 手工视觉 smoke 检查首屏、发送后布局、窄窗口、中文输入法、焦点和审批。
 
 测试必须先出现预期失败，再写最小实现。D1 不通过新增依赖模拟浏览器 DOM。

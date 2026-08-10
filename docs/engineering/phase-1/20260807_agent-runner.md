@@ -8,7 +8,7 @@
 
 ## 1. 模块目的
 
-`src/miniclaw/agent/runner.py` 管理一次 Turn 内部的模型与 Tool Call 循环。它接收完整 `ModelRequest`，
+`src/lobster0/agent/runner.py` 管理一次 Turn 内部的模型与 Tool Call 循环。它接收完整 `ModelRequest`，
 重复调用 `ModelProvider.complete()`，按响应顺序执行工具，直到得到非空最终回答或完成有界收口。当前默认采用
 32 轮软预算、64 轮硬预算和连续 3 轮无进展保护。
 

@@ -1,6 +1,6 @@
-# MiniClaw Website
+# Lobster0 Website
 
-MiniClaw 的双语官网和用户文档，使用 Next.js 16 App Router、React 19 与 Fumadocs 构建。
+Lobster0 的双语官网和用户文档，使用 Next.js 16 App Router、React 19 与 Fumadocs 构建。
 网站代码、内容、测试和部署配置全部位于仓库根目录的 `website/`，与 Python Core 保持依赖隔离。
 
 ## Code map
@@ -53,7 +53,7 @@ Vercel 项目使用以下配置：
 - Install Command：`npm ci`
 - Build Command：`npm run build`
 - Output Directory：留空，由 Next.js 管理 `.next`
-- Production URL：`https://miniclaw.vercel.app`
+- Production URL：`https://lobster0.vercel.app`
 
 每次发布先创建 Vercel Preview，完成双语官网、文档、搜索、链接和移动端验证后，才能将同一个
 候选提交部署到 Production。Production 部署必须得到明确授权，不从本地未验证文件树直接覆盖。

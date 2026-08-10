@@ -1,4 +1,4 @@
-import { isPermissionMode, type ServerFrame } from "@miniclaw/pi-tui/protocol";
+import { isPermissionMode, type ServerFrame } from "@lobster0/pi-tui/protocol";
 
 import {
   DESKTOP_CHANNELS,

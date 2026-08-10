@@ -1,4 +1,4 @@
-# MiniClaw Phase 6 Autonomy Runtime and Sandbox Implementation Plan
+# Lobster0 Phase 6 Autonomy Runtime and Sandbox Implementation Plan
 
 > **SUPERSEDED / 历史计划：** 当前实施以
 > [`2026-08-09-phase-6-autonomy-sandbox.md`](2026-08-09-phase-6-autonomy-sandbox.md) 为准。
@@ -6,7 +6,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 交付重启可恢复的定时/后台任务、Heartbeat、主动投递、任务预算、OS Sandbox 和工作区 Checkpoint，使 MiniClaw 能在无人盯屏时安全工作。
+**Goal:** 交付重启可恢复的定时/后台任务、Heartbeat、主动投递、任务预算、OS Sandbox 和工作区 Checkpoint，使 Lobster0 能在无人盯屏时安全工作。
 
 **Architecture:** Scheduler 只负责确定到期时间并原子创建 `task_runs`；TaskRunner 使用现有 `TurnService` 执行隔离 Session；所有 Tool 继续经过 `PolicyEngine` 和 `ToolExecutor`。命令副作用先生成 canonical `ExecutionPlan`，审批绑定 plan hash，再由 host/docker/seatbelt backend 执行并产生 receipt。
 
@@ -29,8 +29,8 @@
 
 **Files:**
 - Modify: `pyproject.toml`
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
 - Test: `tests/test_config.py`
 - Test: `tests/test_bootstrap.py`
 
@@ -86,18 +86,18 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pyproject.toml uv.lock src/miniclaw/config.py src/miniclaw/bootstrap.py tests/test_config.py tests/test_bootstrap.py
+git add pyproject.toml uv.lock src/lobster0/config.py src/lobster0/bootstrap.py tests/test_config.py tests/test_bootstrap.py
 git commit -m "feat(automation): define strict autonomy configuration"
 ```
 
 ### Task 2: Task schema and repository state machine
 
 **Files:**
-- Create: `src/miniclaw/storage/migrations/0004_autonomy.sql`
-- Modify: `src/miniclaw/storage/migrations.py`
-- Create: `src/miniclaw/automation/__init__.py`
-- Create: `src/miniclaw/automation/models.py`
-- Create: `src/miniclaw/automation/repository.py`
+- Create: `src/lobster0/storage/migrations/0004_autonomy.sql`
+- Modify: `src/lobster0/storage/migrations.py`
+- Create: `src/lobster0/automation/__init__.py`
+- Create: `src/lobster0/automation/models.py`
+- Create: `src/lobster0/automation/repository.py`
 - Test: `tests/test_automation_repository.py`
 - Test: `tests/test_storage.py`
 
@@ -136,14 +136,14 @@ Expected: PASS for pause/resume/cancel, stale lease, interrupted recovery, waiti
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0004_autonomy.sql src/miniclaw/automation tests/test_automation_repository.py tests/test_storage.py
+git add src/lobster0/storage/migrations.py src/lobster0/storage/migrations/0004_autonomy.sql src/lobster0/automation tests/test_automation_repository.py tests/test_storage.py
 git commit -m "feat(automation): persist scheduled tasks and runs"
 ```
 
 ### Task 3: Schedule parser with timezone and misfire rules
 
 **Files:**
-- Create: `src/miniclaw/automation/parser.py`
+- Create: `src/lobster0/automation/parser.py`
 - Test: `tests/test_schedule_parser.py`
 
 **Interfaces:**
@@ -178,14 +178,14 @@ Expected: PASS for leap day, DST, invalid zones, huge intervals and deterministi
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/automation/parser.py tests/test_schedule_parser.py
+git add src/lobster0/automation/parser.py tests/test_schedule_parser.py
 git commit -m "feat(automation): parse bounded schedules and timezones"
 ```
 
 ### Task 4: Scheduler and restart recovery
 
 **Files:**
-- Create: `src/miniclaw/automation/scheduler.py`
+- Create: `src/lobster0/automation/scheduler.py`
 - Test: `tests/test_scheduler.py`
 
 **Interfaces:**
@@ -223,16 +223,16 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/automation/scheduler.py tests/test_scheduler.py
+git add src/lobster0/automation/scheduler.py tests/test_scheduler.py
 git commit -m "feat(automation): enqueue durable due runs"
 ```
 
 ### Task 5: TaskRunner through existing TurnService
 
 **Files:**
-- Create: `src/miniclaw/automation/runner.py`
-- Modify: `src/miniclaw/agent/turn.py`
-- Modify: `src/miniclaw/runtime.py`
+- Create: `src/lobster0/automation/runner.py`
+- Modify: `src/lobster0/agent/turn.py`
+- Modify: `src/lobster0/runtime.py`
 - Test: `tests/test_task_runner.py`
 - Test: `tests/test_turn.py`
 
@@ -272,16 +272,16 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/automation/runner.py src/miniclaw/agent/turn.py src/miniclaw/runtime.py tests/test_task_runner.py tests/test_turn.py
+git add src/lobster0/automation/runner.py src/lobster0/agent/turn.py src/lobster0/runtime.py tests/test_task_runner.py tests/test_turn.py
 git commit -m "feat(automation): execute tasks through the core runtime"
 ```
 
 ### Task 6: Durable proactive delivery and silence contract
 
 **Files:**
-- Modify: `src/miniclaw/channels/delivery.py`
-- Modify: `src/miniclaw/storage/channels.py`
-- Create: `src/miniclaw/automation/delivery.py`
+- Modify: `src/lobster0/channels/delivery.py`
+- Modify: `src/lobster0/storage/channels.py`
+- Create: `src/lobster0/automation/delivery.py`
 - Test: `tests/test_task_delivery.py`
 - Test: `tests/test_delivery.py`
 
@@ -320,16 +320,16 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/automation/delivery.py src/miniclaw/channels/delivery.py src/miniclaw/storage/channels.py tests/test_task_delivery.py tests/test_delivery.py
+git add src/lobster0/automation/delivery.py src/lobster0/channels/delivery.py src/lobster0/storage/channels.py tests/test_task_delivery.py tests/test_delivery.py
 git commit -m "feat(automation): deliver background results durably"
 ```
 
 ### Task 7: Heartbeat and manage_task Tool
 
 **Files:**
-- Create: `src/miniclaw/automation/heartbeat.py`
-- Create: `src/miniclaw/tools/automation.py`
-- Modify: `src/miniclaw/runtime.py`
+- Create: `src/lobster0/automation/heartbeat.py`
+- Create: `src/lobster0/tools/automation.py`
+- Modify: `src/lobster0/runtime.py`
 - Test: `tests/test_heartbeat.py`
 - Test: `tests/test_automation_tool.py`
 - Modify: `evals/scenarios/personal.v1.jsonl`
@@ -365,18 +365,18 @@ Add active cases for “明早九点提醒我”、recurring task creation, canc
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/automation/heartbeat.py src/miniclaw/tools/automation.py src/miniclaw/runtime.py tests/test_heartbeat.py tests/test_automation_tool.py evals/scenarios/personal.v1.jsonl
+git add src/lobster0/automation/heartbeat.py src/lobster0/tools/automation.py src/lobster0/runtime.py tests/test_heartbeat.py tests/test_automation_tool.py evals/scenarios/personal.v1.jsonl
 git commit -m "feat(automation): expose scheduled tasks and heartbeats"
 ```
 
 ### Task 8: Canonical execution plan and sandbox protocol
 
 **Files:**
-- Create: `src/miniclaw/sandbox/__init__.py`
-- Create: `src/miniclaw/sandbox/base.py`
-- Create: `src/miniclaw/sandbox/host.py`
-- Modify: `src/miniclaw/tools/command.py`
-- Modify: `src/miniclaw/tools/executor.py`
+- Create: `src/lobster0/sandbox/__init__.py`
+- Create: `src/lobster0/sandbox/base.py`
+- Create: `src/lobster0/sandbox/host.py`
+- Modify: `src/lobster0/tools/command.py`
+- Modify: `src/lobster0/tools/executor.py`
 - Test: `tests/test_sandbox_contract.py`
 - Test: `tests/test_run_command.py`
 
@@ -412,16 +412,16 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/sandbox src/miniclaw/tools/command.py src/miniclaw/tools/executor.py tests/test_sandbox_contract.py tests/test_run_command.py tests/test_tool_executor.py
+git add src/lobster0/sandbox src/lobster0/tools/command.py src/lobster0/tools/executor.py tests/test_sandbox_contract.py tests/test_run_command.py tests/test_tool_executor.py
 git commit -m "refactor(sandbox): bind command approval to execution plans"
 ```
 
 ### Task 9: Docker and Seatbelt backends
 
 **Files:**
-- Create: `src/miniclaw/sandbox/docker.py`
-- Create: `src/miniclaw/sandbox/seatbelt.py`
-- Modify: `src/miniclaw/doctor.py`
+- Create: `src/lobster0/sandbox/docker.py`
+- Create: `src/lobster0/sandbox/seatbelt.py`
+- Modify: `src/lobster0/doctor.py`
 - Test: `tests/test_docker_sandbox.py`
 - Test: `tests/test_seatbelt_sandbox.py`
 - Test: `tests/test_doctor.py`
@@ -461,17 +461,17 @@ Run deterministic fake-runner tests in CI. On release candidates, execute real a
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/sandbox/docker.py src/miniclaw/sandbox/seatbelt.py src/miniclaw/doctor.py tests/test_docker_sandbox.py tests/test_seatbelt_sandbox.py tests/test_doctor.py
+git add src/lobster0/sandbox/docker.py src/lobster0/sandbox/seatbelt.py src/lobster0/doctor.py tests/test_docker_sandbox.py tests/test_seatbelt_sandbox.py tests/test_doctor.py
 git commit -m "feat(sandbox): add docker and seatbelt execution backends"
 ```
 
 ### Task 10: Checkpoint and conflict-aware rollback
 
 **Files:**
-- Create: `src/miniclaw/checkpoints/__init__.py`
-- Create: `src/miniclaw/checkpoints/store.py`
-- Create: `src/miniclaw/checkpoints/rollback.py`
-- Modify: `src/miniclaw/tools/filesystem.py`
+- Create: `src/lobster0/checkpoints/__init__.py`
+- Create: `src/lobster0/checkpoints/store.py`
+- Create: `src/lobster0/checkpoints/rollback.py`
+- Modify: `src/lobster0/tools/filesystem.py`
 - Test: `tests/test_checkpoints.py`
 - Test: `tests/test_file_tools.py`
 
@@ -509,15 +509,15 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/checkpoints src/miniclaw/tools/filesystem.py tests/test_checkpoints.py tests/test_file_tools.py
+git add src/lobster0/checkpoints src/lobster0/tools/filesystem.py tests/test_checkpoints.py tests/test_file_tools.py
 git commit -m "feat(checkpoint): snapshot and safely roll back file edits"
 ```
 
 ### Task 11: Gateway lifecycle, scenarios and Phase 6 release record
 
 **Files:**
-- Modify: `src/miniclaw/gateway.py`
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/gateway.py`
+- Modify: `src/lobster0/doctor.py`
 - Modify: `evals/scenarios/personal.v1.jsonl`
 - Create: `evals/scenarios/automation.v1.jsonl`
 - Create: `docs/engineering/phase-6/autonomy-runtime-and-sandbox.md`
@@ -548,9 +548,9 @@ uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 pnpm --dir tui build
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 uv run python scripts/validate_docs.py
 uv lock --check
 uv build
@@ -564,7 +564,7 @@ Run one one-shot and one recurring real task through Feishu, restart during a re
 - [ ] **Step 6: Commit verified facts**
 
 ```bash
-git add src/miniclaw/gateway.py src/miniclaw/doctor.py evals docs README.md
+git add src/lobster0/gateway.py src/lobster0/doctor.py evals docs README.md
 git commit -m "release(v0.6.0): deliver durable autonomous tasks"
 ```
 

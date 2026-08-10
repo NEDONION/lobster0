@@ -1,4 +1,4 @@
-/** Executable entry for the default MiniClaw pi-tui shell. */
+/** Executable entry for the default Lobster0 pi-tui shell. */
 
 const RELEASE_VERSION = "0.7.0";
 
@@ -29,10 +29,10 @@ async function main(): Promise<number> {
     return smoke();
   }
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    process.stderr.write("error: MiniClaw pi-tui requires an interactive terminal\n");
+    process.stderr.write("error: Lobster0 pi-tui requires an interactive terminal\n");
     return 2;
   }
-  const [{ ProcessTerminal, TuiAltScreen }, { MiniClawTui }, { BridgeClient }] =
+  const [{ ProcessTerminal, TuiAltScreen }, { Lobster0Tui }, { BridgeClient }] =
     await Promise.all([
       import("@earendil-works/pi-tui"),
       import("./app.js"),
@@ -41,7 +41,7 @@ async function main(): Promise<number> {
   const terminal = new ProcessTerminal();
   const tui = new TuiAltScreen(terminal, false, undefined, { mouse: true });
   const bridge = BridgeClient.spawnFromEnvironment();
-  const app = new MiniClawTui({ tui, bridge, language: "zh-CN", sessionKey: "default" });
+  const app = new Lobster0Tui({ tui, bridge, language: "zh-CN", sessionKey: "default" });
   const shutdown = () => app.stop(130);
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
@@ -58,6 +58,6 @@ try {
   process.exitCode = await main();
 } catch (error) {
   const code = safeErrorCode(error);
-  process.stderr.write(`error: MiniClaw pi-tui failed (${code})\n`);
+  process.stderr.write(`error: Lobster0 pi-tui failed (${code})\n`);
   process.exitCode = 2;
 }

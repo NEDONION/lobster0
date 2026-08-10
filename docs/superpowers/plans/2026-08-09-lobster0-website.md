@@ -1,8 +1,8 @@
-# MiniClaw Website Implementation Plan
+# Lobster0 Website Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build and deploy a distinctive bilingual Astro marketing site and curated Starlight documentation for MiniClaw.
+**Goal:** Build and deploy a distinctive bilingual Astro marketing site and curated Starlight documentation for Lobster0.
 
 **Architecture:** A static Astro site lives in `website/` and imports one bilingual content document plus one language-neutral project facts document. Two marketing routes reuse the same Astro component tree, while Starlight owns the `/docs/` and `/en/docs/` routes. Vercel builds only `website/` and serves the generated `dist/` directory.
 
@@ -13,7 +13,7 @@
 - Chinese is the unprefixed root language; complete English routes use `/en/`.
 - Website source lives only in `website/`; Python Core, TUI, and Eval behavior are out of scope.
 - Marketing copy describes implemented behavior only and distinguishes Implementation PASS from Live PASS.
-- The homepage uses real MiniClaw screenshots and real execution-state vocabulary.
+- The homepage uses real Lobster0 screenshots and real execution-state vocabulary.
 - Do not add React, Tailwind, a generic UI component library, runtime analytics, or a backend.
 - Respect keyboard focus, WCAG AA contrast, semantic landmarks, and `prefers-reduced-motion`.
 - Vercel Root Directory is `website`; build command is `npm run build`; output is `dist`.
@@ -79,7 +79,7 @@ Expected: FAIL with `ENOENT` for `project-facts.json`.
 
 ```json
 {
-  "name": "miniclaw-website",
+  "name": "lobster0-website",
   "private": true,
   "type": "module",
   "scripts": {
@@ -108,7 +108,7 @@ GitHub social link, curated sidebar entries, and `./src/styles/docs.css` as cust
 
 - [ ] **Step 4: Add the shared facts, matching bilingual content, types, and favicon**
 
-Use the values in `docs/superpowers/specs/2026-08-09-miniclaw-website-design.md` exactly.
+Use the values in `docs/superpowers/specs/2026-08-09-lobster0-website-design.md` exactly.
 The install value is the complete clone, sync, TUI build, init, doctor, and launch sequence from the current README.
 
 - [ ] **Step 5: Install dependencies and run the contract test**
@@ -167,7 +167,7 @@ test('renders the real Claw Trace states and install command', async () => {
   for (const step of ['MESSAGE_RECEIVED', 'POLICY_CHECK', 'APPROVAL', 'TOOL_EXECUTION', 'RESULT_DELIVERED']) {
     assert.match(zh, new RegExp(step));
   }
-  assert.match(zh, /git clone https:\/\/github\.com\/NEDONION\/miniclaw\.git/);
+  assert.match(zh, /git clone https:\/\/github\.com\/NEDONION\/lobster0\.git/);
   assert.match(zh, /aria-live="polite"/);
 });
 ```
@@ -224,8 +224,8 @@ git commit -m "feat(website): 构建双语 Hero 与 Claw Trace"
 - Create: `website/src/components/QuickStart.astro`
 - Modify: `website/src/components/HomePage.astro`
 - Modify: `website/src/styles/global.css`
-- Create: `website/public/images/miniclaw-tui-approval-warp.png`
-- Create: `website/public/images/miniclaw-tui-external-cli-warp.png`
+- Create: `website/public/images/lobster0-tui-approval-warp.png`
+- Create: `website/public/images/lobster0-tui-external-cli-warp.png`
 
 **Interfaces:**
 - Consumes: shared facts and localized section content.
@@ -239,8 +239,8 @@ test('shows evidence without overstating live acceptance', async () => {
   assert.match(zh, /33 条 versioned Channel cases/);
   assert.match(zh, /Implementation PASS 不等于 Live PASS/);
   assert.match(en, /Implementation PASS is not Live PASS/);
-  assert.match(zh, /miniclaw-tui-approval-warp\.png/);
-  assert.match(zh, /miniclaw-tui-external-cli-warp\.png/);
+  assert.match(zh, /lobster0-tui-approval-warp\.png/);
+  assert.match(zh, /lobster0-tui-external-cli-warp\.png/);
 });
 ```
 
@@ -257,7 +257,7 @@ surfaces, safety, and memory. Quick Start renders the same command string as the
 
 - [ ] **Step 4: Reuse the two current product screenshots**
 
-Copy `docs/assets/miniclaw-tui-approval-warp.png` and `docs/assets/miniclaw-tui-external-cli-warp.png`
+Copy `docs/assets/lobster0-tui-approval-warp.png` and `docs/assets/lobster0-tui-external-cli-warp.png`
 byte-for-byte into `website/public/images/`. Do not use the older conversation screenshot because its Memory copy is stale.
 
 - [ ] **Step 5: Build and run all website tests**
@@ -424,7 +424,7 @@ git commit -m "docs(website): 补充本地开发与 Vercel 部署"
 
 - [ ] **Step 1: Confirm the Vercel team and existing project state**
 
-Use the connected Vercel tools to list teams and projects. Reuse a project only if it is already named for MiniClaw;
+Use the connected Vercel tools to list teams and projects. Reuse a project only if it is already named for Lobster0;
 otherwise deploy the current website as a new project with Root Directory `website`.
 
 - [ ] **Step 2: Deploy a Preview from the verified website directory**

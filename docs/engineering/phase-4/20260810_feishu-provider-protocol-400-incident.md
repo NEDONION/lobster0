@@ -2,7 +2,7 @@
 
 > 状态：根因已定位，代码修复已落地并通过全部相关测试；已用真实 DeepSeek 请求重放验证修复有效；
 > 修复已同步进当前运行的 Gateway 进程（`.worktrees/phase6-feishu-production-design`）并重启生效。
-> 受影响会话：Feishu session_id=20（"Lucas 的 MiniClaw" Owner DM）。
+> 受影响会话：Feishu session_id=20（"Lucas 的 Lobster0" Owner DM）。
 
 ## 1. 症状
 
@@ -25,7 +25,7 @@ Gateway 进程本身没有卡死——同一时间段其它会话（如 session 
 1. `07:32:06Z` 助手在 turn 262 里一次性发起 3 个 Tool Call（其中一个 `run_command` 需要人工审批），
    Feishu 卡片提示 `/approve 109`。
 2. 审批还没处理完时，用户在 `07:32:24Z` 又发了一条新消息（"你为什么还需要审批"）。Channel 层
-   （`src/miniclaw/channels/manager.py` → `TurnService.handle_inbound`）**没有检查同一 Session 是否已有
+   （`src/lobster0/channels/manager.py` → `TurnService.handle_inbound`）**没有检查同一 Session 是否已有
    Turn 处于 `waiting_approval`**，直接把这条新消息作为新 Turn 的 User Message 写入了会话历史。
 3. `07:32:28Z` 审批处理完成，`create_continuation` 生成的续跑 Turn（264）把 3 个 Tool Call 里
    1 个真实执行结果和 2 个 `not_executed` 占位结果一起落库——但落库时间比第 2 步的用户消息晚，
@@ -40,7 +40,7 @@ Gateway 进程本身没有卡死——同一时间段其它会话（如 session 
 
 ### 2.2 真正炸掉请求的 Bug：Provider-safe 过滤按 Turn ID 判定，误删无关消息
 
-`src/miniclaw/storage/conversations.py` 里的 `_provider_safe_context()` 本来就是为了兜住上面这种
+`src/lobster0/storage/conversations.py` 里的 `_provider_safe_context()` 本来就是为了兜住上面这种
 情况设计的——它会扫描消息序列，一旦发现某个 Turn 的 Tool Call 批次没能在下一条非 Tool 消息前
 完整拿到所有 Tool 结果，就把这个"孤儿"批次从发给模型的历史里剔除。这一层过滤器*应该*已经能够
 避免协议错误。
@@ -50,7 +50,7 @@ Gateway 进程本身没有卡死——同一时间段其它会话（如 session 
 执行结果，可能因为审批 continuation 被落库到跟触发它的 Assistant 消息不同的 Turn 里**——这是
 `create_continuation` 的正常行为，不是数据损坏。
 
-真实数据（`/Users/nedonion/.miniclaw/miniclaw.db`, session 20）复现了这个碰撞：
+真实数据（`/Users/nedonion/.lobster0/lobster0.db`, session 20）复现了这个碰撞：
 
 | message id | turn_id | role | 说明 |
 | --- | --- | --- | --- |
@@ -79,7 +79,7 @@ Tool 参数格式不对"这两种完全不同的情况，也没有保留 DeepSee
 
 ### 3.1 `_provider_safe_context()` 改为按单条消息判定，而不是按 Turn（核心修复）
 
-文件：[`src/miniclaw/storage/conversations.py`](../../../src/miniclaw/storage/conversations.py)
+文件：[`src/lobster0/storage/conversations.py`](../../../src/lobster0/storage/conversations.py)
 
 - 失效集合从 `set[Turn ID]` 改为 `set[Message ID]` + `set[Tool Call ID]`。
 - 孤儿 Tool Call 批次只连带**它紧邻的前一条 User 消息**一起剔除（那是它唯一的触发者），不再
@@ -93,7 +93,7 @@ Tool 参数格式不对"这两种完全不同的情况，也没有保留 DeepSee
 
 ### 3.2 Provider 400 等被拒绝请求，保留响应正文用于诊断
 
-文件：[`src/miniclaw/providers/openai_compatible.py`](../../../src/miniclaw/providers/openai_compatible.py)
+文件：[`src/lobster0/providers/openai_compatible.py`](../../../src/lobster0/providers/openai_compatible.py)
 
 - `_status_error()` 改为 `async`，对非重试状态码（如 400）读取并截断（≤500 字符）HTTP 响应正文，
   拼进 `ProviderProtocolError` 的异常信息。
@@ -104,7 +104,7 @@ Tool 参数格式不对"这两种完全不同的情况，也没有保留 DeepSee
 
 ### 3.3 卡片文案区分"服务商直接拒绝"和"工具参数格式错误"
 
-文件：[`src/miniclaw/channels/manager.py`](../../../src/miniclaw/channels/manager.py)
+文件：[`src/lobster0/channels/manager.py`](../../../src/lobster0/channels/manager.py)
 
 `_failure_profile()` 里 `ProviderProtocolError` 分支新增判断：如果异常信息以
 `"model provider rejected the request with status"` 开头（即 3.2 里新加的这类），卡片文案改成：

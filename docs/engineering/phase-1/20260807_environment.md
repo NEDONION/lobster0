@@ -7,15 +7,15 @@
 
 ## 1. 模块目的
 
-`src/miniclaw/env.py` 只解决一个问题：把用户明确放在当前工作目录 `.env` 中的本地变量，安全地加入
-MiniClaw 进程环境。它不是 Shell 解释器、通用 dotenv 兼容层或秘密管理系统。
+`src/lobster0/env.py` 只解决一个问题：把用户明确放在当前工作目录 `.env` 中的本地变量，安全地加入
+Lobster0 进程环境。它不是 Shell 解释器、通用 dotenv 兼容层或秘密管理系统。
 
 Phase 1 使用它承载 DeepSeek 凭据：
 
 ```dotenv
-MINICLAW_MODEL_API_KEY=<your-local-key>
-MINICLAW_MODEL_BASE_URL=https://api.deepseek.com
-MINICLAW_MODEL_NAME=deepseek-v4-pro
+LOBSTER0_MODEL_API_KEY=<your-local-key>
+LOBSTER0_MODEL_BASE_URL=https://api.deepseek.com
+LOBSTER0_MODEL_NAME=deepseek-v4-pro
 ```
 
 真实 `.env` 已由仓库 `.gitignore` 忽略；`.env.example` 只保存虚拟值和公开模型配置。
@@ -75,9 +75,9 @@ VALUE    := unquoted | 'single quoted' | "double quoted"
 以下写法被拒绝：
 
 ```dotenv
-export MINICLAW_MODEL_API_KEY=...
+export LOBSTER0_MODEL_API_KEY=...
 lowercase=value
-MINICLAW_MODEL_API_KEY='unclosed
+LOBSTER0_MODEL_API_KEY='unclosed
 ```
 
 ## 5. 加载与优先级
@@ -98,7 +98,7 @@ flowchart TD
 最终配置优先级仍由 `config.load_config()` 控制：
 
 1. 代码安全默认值；
-2. `~/.miniclaw/config.toml`；
+2. `~/.lobster0/config.toml`；
 3. `.env` 加入的进程环境；
 4. 启动命令原本已有的 Shell 环境；
 5. CLI 显式覆盖。
@@ -127,11 +127,11 @@ chmod 600 .env
 
 EvalHub 把 DeepSeek Key 以 Fernet 密文保存在自身 `.runtime/model_providers.sqlite3`，主密钥在权限为
 `0600` 的 `.runtime/provider_credentials.key`。迁移只在开发机本地执行一次：调用 EvalHub 的公开
-Repository 解密，然后直接写入 MiniClaw `.env`，目标权限设为 `0600`。
+Repository 解密，然后直接写入 Lobster0 `.env`，目标权限设为 `0600`。
 
-MiniClaw 仓库中不会保存迁移脚本，原因是：
+Lobster0 仓库中不会保存迁移脚本，原因是：
 
-- EvalHub 的绝对路径不是 MiniClaw 产品接口；
+- EvalHub 的绝对路径不是 Lobster0 产品接口；
 - 运行时不应依赖另一个个人仓库；
 - 一次性迁移命令不应长期扩大攻击面。
 
@@ -171,10 +171,10 @@ MiniClaw 仓库中不会保存迁移脚本，原因是：
 
 ```bash
 chmod 600 .env
-uv run python -c 'from pathlib import Path; from miniclaw.env import load_dotenv; print(load_dotenv(Path(".env")))'
+uv run python -c 'from pathlib import Path; from lobster0.env import load_dotenv; print(load_dotenv(Path(".env")))'
 ```
 
-输出只应是变量名元组，例如 `('MINICLAW_MODEL_API_KEY',)`。不要执行会打印 `os.environ` 的调试命令。
+输出只应是变量名元组，例如 `('LOBSTER0_MODEL_API_KEY',)`。不要执行会打印 `os.environ` 的调试命令。
 
 聚焦测试：
 

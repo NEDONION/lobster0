@@ -2,7 +2,7 @@
   "zh": {
     "meta": {
       "lang": "zh-CN",
-      "title": "MiniClaw — 小而完整，真正能行动的个人 Agent",
+      "title": "Lobster0 — 小而完整，真正能行动的个人 Agent",
       "description": "一个可自托管、边界可控的个人 AI Agent：同一个本地 Core，通过 TUI、飞书、Telegram 和 Discord 安全行动。"
     },
     "nav": {
@@ -16,7 +16,7 @@
     "hero": {
       "eyebrow": "PRIVATE AGENT / OPEN SOURCE",
       "title": "小而完整，真正能行动。",
-      "lead": "MiniClaw 把 Agent、Policy、Approval、Tool 和 Memory 收进一个本地 Core。你可以从熟悉的入口发出请求，也始终知道它为什么行动、获准做了什么。",
+      "lead": "Lobster0 把 Agent、Policy、Approval、Tool 和 Memory 收进一个本地 Core。你可以从熟悉的入口发出请求，也始终知道它为什么行动、获准做了什么。",
       "primaryCta": "5 分钟开始",
       "secondaryCta": "查看 GitHub",
       "installLabel": "从源码启动"
@@ -71,7 +71,7 @@
     "safety": {
       "eyebrow": "POWERFUL, WITH BOUNDARIES",
       "title": "能力越强，边界越具体。",
-      "lead": "MiniClaw 不把“安全”写成一句口号。它把限制放在动作发生前。",
+      "lead": "Lobster0 不把“安全”写成一句口号。它把限制放在动作发生前。",
       "items": [
         { "title": "Workspace 边界", "body": "文件动作只在明确配置的 Workspace 中发生。" },
         { "title": "Exact argv 审批", "body": "审批绑定程序与参数数组，不接受拼接命令字符串。" },
@@ -92,8 +92,8 @@
       "eyebrow": "REAL WORKFLOWS",
       "title": "展示真实终端，不画不存在的产品。",
       "items": [
-        { "title": "SAFE 模式审批", "body": "危险动作先展示影响与参数，再由 Owner 决定。", "alt": "MiniClaw TUI 中的 SAFE 模式工具审批界面" },
-        { "title": "Exact-argv 外部 CLI", "body": "程序与参数结构化传递，执行结果回到同一条会话。", "alt": "MiniClaw TUI 中执行 exact-argv 外部 CLI 的界面" }
+        { "title": "SAFE 模式审批", "body": "危险动作先展示影响与参数，再由 Owner 决定。", "alt": "Lobster0 TUI 中的 SAFE 模式工具审批界面" },
+        { "title": "Exact-argv 外部 CLI", "body": "程序与参数结构化传递，执行结果回到同一条会话。", "alt": "Lobster0 TUI 中执行 exact-argv 外部 CLI 的界面" }
       ]
     },
     "quickStart": {
@@ -113,7 +113,7 @@
   "en": {
     "meta": {
       "lang": "en",
-      "title": "MiniClaw — Small by design. Ready to act.",
+      "title": "Lobster0 — Small by design. Ready to act.",
       "description": "A private, self-hosted personal AI agent: one local core acting safely through TUI, Feishu, Telegram, and Discord."
     },
     "nav": {
@@ -127,7 +127,7 @@
     "hero": {
       "eyebrow": "PRIVATE AGENT / OPEN SOURCE",
       "title": "Small by design. Ready to act.",
-      "lead": "MiniClaw brings Agent, Policy, Approval, Tools, and Memory into one local core. Ask from the surface you already use—and always see why it acts and what it was allowed to do.",
+      "lead": "Lobster0 brings Agent, Policy, Approval, Tools, and Memory into one local core. Ask from the surface you already use—and always see why it acts and what it was allowed to do.",
       "primaryCta": "Start in 5 minutes",
       "secondaryCta": "View on GitHub",
       "installLabel": "Run from source"
@@ -182,7 +182,7 @@
     "safety": {
       "eyebrow": "POWERFUL, WITH BOUNDARIES",
       "title": "More capability calls for sharper limits.",
-      "lead": "MiniClaw does not reduce safety to a slogan. It puts constraints before the action happens.",
+      "lead": "Lobster0 does not reduce safety to a slogan. It puts constraints before the action happens.",
       "items": [
         { "title": "Workspace boundary", "body": "File actions stay inside the explicitly configured workspace." },
         { "title": "Exact argv approval", "body": "Approval binds a program and argument array, never a concatenated command string." },
@@ -203,8 +203,8 @@
       "eyebrow": "REAL WORKFLOWS",
       "title": "Real terminals, not a product that does not exist.",
       "items": [
-        { "title": "SAFE mode approval", "body": "A risky action shows its impact and arguments before the Owner decides.", "alt": "Tool approval in the MiniClaw TUI SAFE mode" },
-        { "title": "Exact-argv external CLI", "body": "Program and arguments stay structured, and the result returns to the same conversation.", "alt": "Exact-argv external CLI execution in the MiniClaw TUI" }
+        { "title": "SAFE mode approval", "body": "A risky action shows its impact and arguments before the Owner decides.", "alt": "Tool approval in the Lobster0 TUI SAFE mode" },
+        { "title": "Exact-argv external CLI", "body": "Program and arguments stay structured, and the result returns to the same conversation.", "alt": "Exact-argv external CLI execution in the Lobster0 TUI" }
       ]
     },
     "quickStart": {

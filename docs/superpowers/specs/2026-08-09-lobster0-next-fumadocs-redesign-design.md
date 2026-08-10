@@ -1,10 +1,10 @@
-# MiniClaw Next.js + Fumadocs 官网重构设计
+# Lobster0 Next.js + Fumadocs 官网重构设计
 
 ## 1. 背景与目标
 
 当前 `website/` 是 Astro + Starlight 实现，已经具备双语首页、双语用户文档、真实 TUI
 截图和 Vercel 部署，但营销首页以连续纵向 Section 为主。实际浏览时页面偏长、留白偏多，
-信息分散，无法在较短路径内体现 MiniClaw 的运行时、安全边界和真实工程证据。
+信息分散，无法在较短路径内体现 Lobster0 的运行时、安全边界和真实工程证据。
 
 本轮在原仓库内重构官网，不创建第二个网站仓库。最终代码仍位于仓库根目录的
 `website/`，并继续作为独立 Vercel Project 的 Root Directory。
@@ -36,7 +36,7 @@ Next.js 负责营销首页、路由、Metadata、图片、Server Components 和 
 
 ### 2.2 不采用 Docusaurus
 
-Docusaurus 适合文档本身是主要产品、需要长期维护多个历史版本的大型项目。MiniClaw 当前
+Docusaurus 适合文档本身是主要产品、需要长期维护多个历史版本的大型项目。Lobster0 当前
 更需要高度定制的营销交互，同时只维护一套当前用户文档。为 Docusaurus 深度定制营销首页
 和主题会增加 swizzle 与升级维护成本，因此本轮不采用。
 
@@ -68,7 +68,7 @@ Fumadocs 使用本地 MDX 集合。中文是默认内容文件，英文使用 `.
 
 桌面端目标高度约 `100vh`，包含：
 
-- 精简主导航：MiniClaw、Product 锚点、Workbench 锚点、Docs、English/中文、GitHub。
+- 精简主导航：Lobster0、Product 锚点、Workbench 锚点、Docs、English/中文、GitHub。
 - 一句话定位：“小而完整，真正能行动。”及一段不超过三行的说明。
 - 主 CTA 指向安装文档，次 CTA 指向 GitHub。
 - 可复制的源码安装命令。
@@ -107,7 +107,7 @@ Claw Trace 是首页唯一的主视觉签名。它表现真实运行时顺序，
 ## 5. 视觉系统
 
 LobsterAI 只作为设计语言参考，不进行页面复刻。借鉴范围限定为三个原则：首屏用单一中心命题建立
-认知、在首屏折线附近尽早展示产品本体、用任务与证据卡解释场景。MiniClaw 使用独立的浅色 Runtime
+认知、在首屏折线附近尽早展示产品本体、用任务与证据卡解释场景。Lobster0 使用独立的浅色 Runtime
 工作台、三屏高密度构图、技术字体、真实深色 TUI 证据与六步 Trace 标志性动效。
 
 视觉方向命名为 **Interactive Runtime Instrument**：像一件紧凑、可信的工程仪器，而不是
@@ -242,9 +242,9 @@ SVG path 推进和状态颜色过渡；避免只做整块淡入淡出。切换�
 
 ### 11.3 发布
 
-- 在 `codex/miniclaw-website` 分支完成重构和验证。
+- 在 `codex/lobster0-website` 分支完成重构和验证。
 - 从 `website/` 创建 Vercel Preview，检查构建日志与公开页面。
-- 未经明确 Production 确认，不覆盖 `https://miniclaw.vercel.app`。
+- 未经明确 Production 确认，不覆盖 `https://lobster0.vercel.app`。
 - Production 更新后重新检查 `/`、`/en`、`/docs`、`/en/docs`、sitemap、robots 和主要资源。
 
 ## 12. 迁移范围与非目标
@@ -265,7 +265,7 @@ Vercel 配置。旧 Astro/Starlight 构建文件和依赖在 Next.js 版本验�
 4. 五个 Capability Tabs、三个 Workbench Tabs 与三组动画按本设计工作。
 5. 双语 Fumadocs 文档、搜索、导航和语言切换可用。
 6. 自动检查、浏览器验收、Preview 构建与路由检查全部通过。
-7. 经用户明确确认后，最新验证版本部署到 `https://miniclaw.vercel.app` 并再次通过验收。
+7. 经用户明确确认后，最新验证版本部署到 `https://lobster0.vercel.app` 并再次通过验收。
 
 ## 14. 参考
 

@@ -7,7 +7,7 @@
 
 ## 1. 模块目的
 
-`src/miniclaw/agent/context.py` 把 MiniClaw 的固定身份和 Storage 已筛选的会话历史组合成
+`src/lobster0/agent/context.py` 把 Lobster0 的固定身份和 Storage 已筛选的会话历史组合成
 `ModelRequest`。它保证不同 Channel 最终使用相同的身份顺序，不让 CLI、飞书或 Provider 各自拼 Prompt。
 
 Phase 1 的上下文是可运行闭环所需的最小版本：
@@ -27,7 +27,7 @@ Phase 1 的上下文是可运行闭环所需的最小版本：
 模块负责：
 
 - 读取当前实例固定的 `SOUL.md` 与 `USER.md`；
-- 使用一个稳定的 MiniClaw System Preamble；
+- 使用一个稳定的 Lobster0 System Preamble；
 - 保证 SOUL 在 USER 前、身份在历史前；
 - 保持 Storage 提供的历史顺序，不删除或改写当前用户消息；
 - 把身份读取错误收窄为不含文件内容的 `ContextError`。
@@ -67,7 +67,7 @@ class ContextBuilder:
 最终首条消息为：
 
 ```markdown
-You are MiniClaw, a private self-hosted personal agent. Follow the owner's
+You are Lobster0, a private self-hosted personal agent. Follow the owner's
 identity instructions, preserve user privacy, and answer clearly.
 
 ## SOUL
@@ -119,7 +119,7 @@ ContextBuilder 不缓存文件，因此用户编辑 SOUL/USER 后下一次 Turn 
 读取失败统一为：
 
 ```text
-ContextError: cannot read MiniClaw identity file <absolute path>
+ContextError: cannot read Lobster0 identity file <absolute path>
 ```
 
 错误可能由文件缺失、目录替代文件、权限、I/O 或 UTF-8 解码产生。异常使用 `raise ... from error` 保留内部
@@ -162,8 +162,8 @@ State 目录由 Phase 0 创建并限制权限。若后续支持多 Owner，Conte
 查看当前身份文件：
 
 ```bash
-sed -n '1,120p' ~/.miniclaw/SOUL.md
-sed -n '1,120p' ~/.miniclaw/USER.md
+sed -n '1,120p' ~/.lobster0/SOUL.md
+sed -n '1,120p' ~/.lobster0/USER.md
 ```
 
 不要在共享日志或 Issue 中粘贴包含个人信息的 USER 内容。

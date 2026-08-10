@@ -7,7 +7,7 @@
 > 边界：本地专用 Chromium、真实 Worker、Core Policy、Artifact 和 18 条版本化回归已经闭环；尚未把任意
 > 真实网站账号登录或提交动作标为 Live Verified。
 
-Phase 6.5 让 MiniClaw 可以在一个与个人日常浏览器隔离的 Chromium Profile 中打开网页、读取有界快照、点击、
+Phase 6.5 让 Lobster0 可以在一个与个人日常浏览器隔离的 Chromium Profile 中打开网页、读取有界快照、点击、
 输入、按键、滚动、截图和接收下载。它不是“让模型直接控制 Playwright”：Python Core 仍是唯一决策者，浏览器
 Worker 只执行已经通过 Schema、Policy 和 Approval 的封闭动作。
 
@@ -21,7 +21,7 @@ Worker 只执行已经通过 Schema、Policy 和 Approval 的封闭动作。
 
 - “打开这个 HTTPS 页面并告诉我标题和主要按钮”；
 - “向下滚动，截一张整页图”；
-- “在搜索框输入 MiniClaw”；
+- “在搜索框输入 Lobster0”；
 - “点击下载报告”，下载结果保存为私有 Artifact；
 - “关闭浏览器会话”。
 
@@ -88,10 +88,10 @@ dedicated profile/staging/resource limits from argv
 
 ## 4. 专用 Profile 与生命周期
 
-默认 Profile 位于 MiniClaw 私有状态目录，不在 Workspace，也不是 Chrome 的日常用户目录：
+默认 Profile 位于 Lobster0 私有状态目录，不在 Workspace，也不是 Chrome 的日常用户目录：
 
 ```text
-~/.miniclaw/
+~/.lobster0/
 ├── browser/       # 0700 dedicated Chromium profile + lock
 ├── artifacts/     # 0700 content-addressed accepted artifacts
 ├── downloads/     # 0700 one-shot Worker staging
@@ -182,7 +182,7 @@ Policy、要求自动批准、索取 Secret 或变成高优先级指令。Compac
 - 任意 JavaScript eval；
 - 自动输入密码、验证码或 OTP；
 - 读取个人 Chrome Profile、Cookie 导出或 localStorage；
-- 由网页内容修改 MiniClaw 配置、Memory Policy 或 Approval；
+- 由网页内容修改 Lobster0 配置、Memory Policy 或 Approval；
 - 绕过 `http_get`/Browser Network Policy 的原始 socket。
 
 ## 8. Screenshot、Download 与 Artifact
@@ -208,19 +208,19 @@ Runtime 启动时清理过期 Artifact，metadata 标为 deleted。
 
 ## 9. 配置与启用
 
-Browser 默认关闭。先构建 Worker，再修改私有 `~/.miniclaw/config.toml`：
+Browser 默认关闭。先构建 Worker，再修改私有 `~/.lobster0/config.toml`：
 
 ```bash
 pnpm --dir browser-worker install
 pnpm --dir browser-worker build
-uv run miniclaw doctor
+uv run lobster0 doctor
 ```
 
 ```toml
 [browser]
 enabled = true
 backend = "local"
-profile = "miniclaw"
+profile = "lobster0"
 headed = true
 allow_personal_profile = false
 max_tabs = 8
@@ -230,7 +230,7 @@ download_max_bytes = 20971520
 ```
 
 建议学习阶段保持 `headed = true`，这样可以看到 Agent 实际操作；CI 和受控回归使用 headless Chrome。当前正式运行
-路径只使用 MiniClaw 专用 Profile；不要把 `allow_personal_profile` 当成“读取日常 Chrome”的承诺。
+路径只使用 Lobster0 专用 Profile；不要把 `allow_personal_profile` 当成“读取日常 Chrome”的承诺。
 
 `doctor` 检查 Node 版本、Worker build、Playwright、Chromium、Profile 权限和 lock 状态，但不会启动浏览器或替用户登录。
 
@@ -281,9 +281,9 @@ Browser 页面状态本身不写入 SQLite，也不在重启后自动重放点�
 复现：
 
 ```bash
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite browser --root evals/scenarios
-uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite browser --root evals/scenarios
+uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios
 pnpm --dir browser-worker test
 pnpm --dir browser-worker build
 ```

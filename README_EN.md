@@ -1,6 +1,6 @@
 <div align="center">
 
-# MiniClaw
+# Lobster0
 
 **A small, complete, private-by-default personal agent you can self-host.**
 
@@ -12,20 +12,20 @@
 [![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
-[Why MiniClaw](#why-miniclaw) · [Capabilities](#current-capabilities) · [Quick start](#quick-start) · [Gallery](#product-gallery) · [Architecture](#how-it-works) · [Roadmap](#roadmap) · [Docs](#documentation)
+[Why Lobster0](#why-lobster0) · [Capabilities](#current-capabilities) · [Quick start](#quick-start) · [Gallery](#product-gallery) · [Architecture](#how-it-works) · [Roadmap](#roadmap) · [Docs](#documentation)
 
 </div>
 
-![MiniClaw completing a Chinese conversation inside Warp](docs/assets/miniclaw-tui-conversation-warp.png)
+![Lobster0 completing a Chinese conversation inside Warp](docs/assets/lobster0-tui-conversation-warp.png)
 
-MiniClaw brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
+Lobster0 brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
 > The repository has passed the Phase 6.5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is implemented locally. Phase 6 adds durable Tasks, Scheduler/Runner, E-stop, budgets, Approval continuation, proactive Delivery, immutable Docker/Seatbelt plans, Checkpoints, Rollback, and a 15-case Automation gate. Phase 6.5 adds a dedicated Chromium Profile, bounded snapshots/refs, eight policy-gated Browser Tools, and private screenshot/download Artifacts. Browser automation remains disabled by default and its controlled public live smoke is pending.
 
-## Why MiniClaw
+## Why Lobster0
 
-| Goal | MiniClaw's choice |
+| Goal | Lobster0's choice |
 | --- | --- |
 | Private and controlled | State, conversations, approvals, and audit stay local; secrets do not enter prompts, logs, or Memory. |
 | Small but complete | One Python Core, one primary TUI, and one OpenAI-compatible Provider before adding services. |
@@ -34,7 +34,7 @@ MiniClaw brings the model, tools, permissions, approvals, persistence, and multi
 | One Core, many entry points | TUI, Feishu, Telegram, and Discord reuse one `AgentRuntime`; transports and failure domains stay isolated. |
 | Evidence before expansion | Python and TypeScript tests, versioned Agent/Channel cases, 20-round soak, and docs validation gate changes. |
 
-MiniClaw is not a chat box wired directly to a shell. The model proposes a Tool Call; the Core validates its schema, decides risk, binds approvals, executes, audits, and recovers.
+Lobster0 is not a chat box wired directly to a shell. The model proposes a Tool Call; the Core validates its schema, decides risk, binds approvals, executes, audits, and recovers.
 
 ## Current capabilities
 
@@ -73,8 +73,8 @@ New installations and older configurations without `tools.mode` default to `auto
 ### Install and run
 
 ```bash
-git clone https://github.com/NEDONION/mini-claw.git
-cd miniclaw
+git clone https://github.com/NEDONION/lobster0.git
+cd lobster0
 
 uv sync --extra dev --extra channels
 pnpm --dir tui install
@@ -83,64 +83,64 @@ pnpm --dir browser-worker install
 pnpm --dir browser-worker build
 
 cp .env.example .env
-# Set MINICLAW_MODEL_API_KEY locally. Never commit .env.
+# Set LOBSTER0_MODEL_API_KEY locally. Never commit .env.
 
-uv run miniclaw init
-uv run miniclaw doctor
-uv run miniclaw
+uv run lobster0 init
+uv run lobster0 doctor
+uv run lobster0
 ```
 
-The default state home is `~/.miniclaw`; the default workspace is `~/.miniclaw/workspace`. To create an isolated instance:
+The default state home is `~/.lobster0`; the default workspace is `~/.lobster0/workspace`. To create an isolated instance:
 
 ```bash
-uv run miniclaw --home /absolute/path/to/demo-home init
-uv run miniclaw --home /absolute/path/to/demo-home
+uv run lobster0 --home /absolute/path/to/demo-home init
+uv run lobster0 --home /absolute/path/to/demo-home
 ```
 
 If a suitable Node.js runtime is not available, select the migration fallback explicitly:
 
 ```bash
-MINICLAW_TUI=textual uv run miniclaw
+LOBSTER0_TUI=textual uv run lobster0
 ```
 
 ### Main commands
 
 | Command | Purpose |
 | --- | --- |
-| `uv run miniclaw` | Start the single primary TUI. |
-| `uv run miniclaw init` | Idempotently initialize private state, config, Memory, Skills, and SQLite. |
-| `uv run miniclaw doctor` | Diagnose config, directory permissions, Provider, TUI, and database state. |
-| `uv run miniclaw gateway` | Start configured Feishu/Telegram/Discord gateways. |
-| `uv run miniclaw task list` | Inspect durable tasks; `show/runs/pause/resume/run/cancel/halt/unhalt` provide the control plane. |
-| `uv run miniclaw eval validate --root evals/scenarios` | Validate versioned JSONL scenarios. |
-| `uv run miniclaw eval run --suite offline --root evals/scenarios` | Run offline cases through the real Core/Policy/Tool/SQLite path. |
-| `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios` | Run all Channel cases and the 20-round local soak. |
-| `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios` | Run the 15 Phase 6 Automation cases and 20-round soak. |
-| `uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios` | Run the 18 Phase 6.5 Browser cases and 20-round soak. |
+| `uv run lobster0` | Start the single primary TUI. |
+| `uv run lobster0 init` | Idempotently initialize private state, config, Memory, Skills, and SQLite. |
+| `uv run lobster0 doctor` | Diagnose config, directory permissions, Provider, TUI, and database state. |
+| `uv run lobster0 gateway` | Start configured Feishu/Telegram/Discord gateways. |
+| `uv run lobster0 task list` | Inspect durable tasks; `show/runs/pause/resume/run/cancel/halt/unhalt` provide the control plane. |
+| `uv run lobster0 eval validate --root evals/scenarios` | Validate versioned JSONL scenarios. |
+| `uv run lobster0 eval run --suite offline --root evals/scenarios` | Run offline cases through the real Core/Policy/Tool/SQLite path. |
+| `uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios` | Run all Channel cases and the 20-round local soak. |
+| `uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios` | Run the 15 Phase 6 Automation cases and 20-round soak. |
+| `uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios` | Run the 18 Phase 6.5 Browser cases and 20-round soak. |
 
 See the [local setup guide](docs/getting-started/20260807_本地运行指南.md) for Channel allowlists, Owner identities, and credentials.
 
 ## Product gallery
 
-These three representative cases ran in Warp with a fresh isolated `MINICLAW_HOME`. A deterministic local endpoint supplied Provider responses so no real model quota was consumed. MiniClaw's TUI, Bridge, TurnService, Policy, ToolExecutor, SQLite, Approval, and Tool execution all used the real code path.
+These three representative cases ran in Warp with a fresh isolated `LOBSTER0_HOME`. A deterministic local endpoint supplied Provider responses so no real model quota was consumed. Lobster0's TUI, Bridge, TurnService, Policy, ToolExecutor, SQLite, Approval, and Tool execution all used the real code path.
 
 ### 1. A complete TUI conversation
 
-![MiniClaw TUI conversation](docs/assets/miniclaw-tui-conversation-warp.png)
+![Lobster0 TUI conversation](docs/assets/lobster0-tui-conversation-warp.png)
 
 Chinese input and output, the application-side 32K context budget, tokens, iterations, and latency are visible in one view.
 
 ### 2. A permission request in SAFE mode
 
-![MiniClaw SAFE approval](docs/assets/miniclaw-tui-approval-warp.png)
+![Lobster0 SAFE approval](docs/assets/lobster0-tui-approval-warp.png)
 
 Before `run_command` executes, the approval card shows the normalized executable, exact argv, timeout, and four decisions. The command is still `requested` in this image and has not executed.
 
 ### 3. Completing a task with an external Git CLI
 
-![MiniClaw invoking an external Git CLI](docs/assets/miniclaw-tui-external-cli-warp.png)
+![Lobster0 invoking an external Git CLI](docs/assets/lobster0-tui-external-cli-warp.png)
 
-MiniClaw invokes `git status --short --branch` against an isolated repository using exact argv, then summarizes the real Tool result without shell-string interpolation.
+Lobster0 invokes `git status --short --branch` against an isolated repository using exact argv, then summarizes the real Tool result without shell-string interpolation.
 
 ## How it works
 
@@ -212,7 +212,7 @@ only the primary Workspace, and Rollback has no CLI/TUI yet. See the
 
 ## Phase 6.5: isolated Browser Agent
 
-Browser is disabled by default. When enabled, one Runtime owns one TypeScript Worker and one dedicated MiniClaw Chromium
+Browser is disabled by default. When enabled, one Runtime owns one TypeScript Worker and one dedicated Lobster0 Chromium
 Profile. The model can only request eight closed actions: open, snapshot, click, type, press, scroll, screenshot, and close.
 It cannot execute arbitrary JavaScript, read a personal Chrome Profile, export cookies, or type passwords and OTPs.
 
@@ -263,9 +263,9 @@ pnpm --dir tui build
 pnpm --dir browser-worker test
 pnpm --dir browser-worker build
 uv run ruff check .
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 ```
@@ -287,7 +287,7 @@ Owner-scoped `AUTOPILOT`, the Feishu `Claw Trail` Agent Card, v0.5.3 Core harden
 ## Repository layout
 
 ```text
-src/miniclaw/
+src/lobster0/
 ├── agent/       # Context, Runner, Turn, Compaction
 ├── automation/  # Task Ledger, Scheduler, Runner, Heartbeat, Delivery
 ├── artifacts/   # private Browser screenshot/download CAS and TTL

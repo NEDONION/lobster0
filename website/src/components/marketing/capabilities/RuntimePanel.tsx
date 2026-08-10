@@ -15,7 +15,7 @@ export function RuntimePanel({ copy, locale }: { copy: CapabilityCopy; locale: L
           ))}
         </ul>
       </div>
-      <ol className="runtime-map" aria-label={locale === 'zh-CN' ? 'MiniClaw 运行路径' : 'MiniClaw runtime path'}>
+      <ol className="runtime-map" aria-label={locale === 'zh-CN' ? 'Lobster0 运行路径' : 'Lobster0 runtime path'}>
         {steps.map((step, index) => (
           <li key={step.event} data-state={step.state}>
             <span className="runtime-map__index">{String(index + 1).padStart(2, '0')}</span>

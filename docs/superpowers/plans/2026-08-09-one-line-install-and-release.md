@@ -1,10 +1,10 @@
-# MiniClaw One-line Install and Trusted Release Implementation Plan
+# Lobster0 One-line Install and Trusted Release Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 交付 Linux/macOS 一行安装、完整功能依赖、受管 Python/Node/pi-tui、非 root 服务、原子升级/回滚、安全卸载以及 GitHub Release、PyPI、GHCR 同源发布门禁。
 
-**Architecture:** GitHub Release 的 immutable manifest 是安装事实源；一个最小 POSIX bootstrap 建立 uv/Python 信任根，再把控制权交给 stdlib-only `miniclaw-installer.pyz`。安装器在 versioned Runtime staging 中校验并安装 Python wheel、hash-locked dependencies、managed Node 和 platform TUI bundle，通过新 Runtime smoke、数据库保护和 service health 后才原子切换 `current`；稳定 launcher、用户状态和 Secret 文件不随 Runtime 版本漂移。
+**Architecture:** GitHub Release 的 immutable manifest 是安装事实源；一个最小 POSIX bootstrap 建立 uv/Python 信任根，再把控制权交给 stdlib-only `lobster0-installer.pyz`。安装器在 versioned Runtime staging 中校验并安装 Python wheel、hash-locked dependencies、managed Node 和 platform TUI bundle，通过新 Runtime smoke、数据库保护和 service health 后才原子切换 `current`；稳定 launcher、用户状态和 Secret 文件不随 Runtime 版本漂移。
 
 **Tech Stack:** Python 3.12、stdlib `dataclasses/json/tarfile/urllib/zipapp/sqlite3/plistlib/subprocess`、uv 0.12.0、Node 24.18.0（默认）与 Node 22.22.3+、pnpm 10.14.0、systemd user service、macOS launchd、GitHub Actions/Attestations、PyPI Trusted Publishing、GHCR、`unittest`、Ruff。
 
@@ -12,8 +12,8 @@
 
 - 权威设计是 `docs/superpowers/specs/2026-08-09-one-line-install-and-release-design.md`；本计划一次交付完整方案，不发布缺 TUI、Channel、service、upgrade 或 uninstall 的临时稳定版。
 - 生产实现必须从 Phase 6 Task 18 已完成、全部门禁通过且工作区干净的最新 `main` 开始；当前观察到 Phase 6 正在实现 Docker/Seatbelt Sandbox，禁止覆盖或重复其 Sandbox、Checkpoint、Gateway lifecycle 和 Doctor 事实。
-- Python 分发名固定为 `miniclaw-agent`；产品、仓库、Python import、CLI 和默认状态根保持 `MiniClaw`、`miniclaw`、`miniclaw`、`miniclaw`、`~/.miniclaw`。
-- 首个按本计划发布的目标版本是 `0.7.0`；`src/miniclaw/_version.py` 是版本单一来源，wheel、CLI、tag `v0.7.0`、manifest 和 release record 必须一致。
+- Python 分发名固定为 `lobster0-agent`；产品、仓库、Python import、CLI 和默认状态根保持 `Lobster0`、`lobster0`、`lobster0`、`lobster0`、`~/.lobster0`。
+- 首个按本计划发布的目标版本是 `0.7.0`；`src/lobster0/_version.py` 是版本单一来源，wheel、CLI、tag `v0.7.0`、manifest 和 release record 必须一致。
 - Python Runtime 固定 3.12 系列；bootstrap/runtime 使用 uv 0.12.0，四个平台官方 archive SHA-256 固定在 `release/runtime-versions.json`。
 - 默认 managed Node 固定 24.18.0；只接受 `22.22.3 <= version < 23.0.0` 或 `24.15.0 <= version < 25.0.0`，拒绝 Node 20/23/25/26。
 - Tier 1 是 Ubuntu 22.04/24.04、Debian 12/13、RHEL/Rocky/Alma 9/10 的 x86_64/arm64，以及 macOS 13+ Intel/Apple Silicon；Windows、WSL、Alpine/musl、NixOS、Android、32 位和非 systemd Linux service host 明确不支持。
@@ -36,19 +36,19 @@
 
 | 文件 | 单一职责 |
 | --- | --- |
-| `src/miniclaw/_version.py` | Python/CLI/build 的唯一版本常量 |
-| `src/miniclaw/setup.py` | fresh-install 交互配置与 owner-only Secret 写入 |
-| `src/miniclaw/install/models.py` | strict manifest、artifact、request、plan、event 强类型模型 |
-| `src/miniclaw/install/platforms.py` | OS/distro/arch 检测、Node policy 与 system dependency actions |
-| `src/miniclaw/install/artifacts.py` | allowlisted HTTPS 下载、hash/size 校验与安全 tar 解包 |
-| `src/miniclaw/install/releases.py` | fixed/stable/dev GitHub Release manifest 发现与 bounded API 解析 |
-| `src/miniclaw/install/layout.py` | program prefix、state home、Runtime staging 和 stable launcher 路径 |
-| `src/miniclaw/install/receipt.py` | install lock、owner-only receipt 与 managed-file ownership hash |
-| `src/miniclaw/install/runtime.py` | venv/requirements/wheel/Node/TUI staging、smoke 与 atomic activation |
-| `src/miniclaw/install/service.py` | systemd user/LaunchAgent render、validate 与 exact lifecycle argv |
-| `src/miniclaw/install/update.py` | DB backup/data-version guard、N-1 rollback 与 retention |
-| `src/miniclaw/install/orchestrator.py` | install/update/uninstall state machine 与脱敏 events |
-| `src/miniclaw/install/__main__.py` | installer zipapp 与已安装 CLI 共用参数入口 |
+| `src/lobster0/_version.py` | Python/CLI/build 的唯一版本常量 |
+| `src/lobster0/setup.py` | fresh-install 交互配置与 owner-only Secret 写入 |
+| `src/lobster0/install/models.py` | strict manifest、artifact、request、plan、event 强类型模型 |
+| `src/lobster0/install/platforms.py` | OS/distro/arch 检测、Node policy 与 system dependency actions |
+| `src/lobster0/install/artifacts.py` | allowlisted HTTPS 下载、hash/size 校验与安全 tar 解包 |
+| `src/lobster0/install/releases.py` | fixed/stable/dev GitHub Release manifest 发现与 bounded API 解析 |
+| `src/lobster0/install/layout.py` | program prefix、state home、Runtime staging 和 stable launcher 路径 |
+| `src/lobster0/install/receipt.py` | install lock、owner-only receipt 与 managed-file ownership hash |
+| `src/lobster0/install/runtime.py` | venv/requirements/wheel/Node/TUI staging、smoke 与 atomic activation |
+| `src/lobster0/install/service.py` | systemd user/LaunchAgent render、validate 与 exact lifecycle argv |
+| `src/lobster0/install/update.py` | DB backup/data-version guard、N-1 rollback 与 retention |
+| `src/lobster0/install/orchestrator.py` | install/update/uninstall state machine 与脱敏 events |
+| `src/lobster0/install/__main__.py` | installer zipapp 与已安装 CLI 共用参数入口 |
 | `scripts/build_installer_zipapp.py` | 校验 stdlib import boundary 并构建 deterministic pyz |
 | `scripts/build_tui_bundle.py` | pnpm production deploy、symlink materialization、license inventory 和 deterministic tar.gz |
 | `scripts/build_node_bundle.py` | 从已校验官方 Node archive 提取 node/LICENSE 并生成 symlink-free tar.gz |
@@ -59,14 +59,14 @@
 | `release/runtime-versions.json` | uv/Node/pnpm 固定版本、官方 URL 与四平台 upstream hashes |
 | `release/manifest.schema.json` | Release manifest schema v1 的机器可验证副本 |
 | `requirements-all.lock` | Core + Feishu/Telegram/Discord 的 exact/hash-required Python 依赖 |
-| `deploy/Dockerfile` | 非 root 完整 MiniClaw GHCR Runtime image |
+| `deploy/Dockerfile` | 非 root 完整 Lobster0 GHCR Runtime image |
 | `.github/workflows/ci.yml` | Python/Node/build/docs/offline installer 门禁 |
 | `.github/workflows/release.yml` | tag build、Tier 1 gate、attest、PyPI/GHCR 与 stable promotion |
 | `tests/install/` | fake artifacts、fake commands 和离线 crash-window fixtures |
 | `tests/install_matrix/` | 容器/VM/实体 runner fresh install、service、upgrade、rollback、uninstall driver |
 | `docs/engineering/operations/20260809_install-release-operations.md` | 安装、权限、服务、升级、恢复与发布运维事实 |
 
-`src/miniclaw/cli.py` 只负责 parser/dispatch；安装业务放在 `miniclaw.install`。`StatePaths` 继续描述用户状态，不承载 Runtime layout；`InstallLayout` 单独描述程序安装位置。Execution Preflight 要求 `src/miniclaw/install/`、`deploy/Dockerfile` 和 `deploy/sandbox.Dockerfile` 尚不存在；任一路径已被 Phase 6 占用时停止执行并修订本计划，不能创建第二份实现。
+`src/lobster0/cli.py` 只负责 parser/dispatch；安装业务放在 `lobster0.install`。`StatePaths` 继续描述用户状态，不承载 Runtime layout；`InstallLayout` 单独描述程序安装位置。Execution Preflight 要求 `src/lobster0/install/`、`deploy/Dockerfile` 和 `deploy/sandbox.Dockerfile` 尚不存在；任一路径已被 Phase 6 占用时停止执行并修订本计划，不能创建第二份实现。
 
 ---
 
@@ -90,7 +90,7 @@ Run:
 
 ```bash
 rg -n "service|install|update|uninstall|Dockerfile|LaunchAgent|systemd" src tests scripts deploy .github docs
-find src/miniclaw -maxdepth 2 -type f | sort
+find src/lobster0 -maxdepth 2 -type f | sort
 ```
 
 Expected: 记录 Phase 6 已提供的 Gateway health、Doctor、Sandbox image 和 lifecycle 接口；本计划不保留重复实现。
@@ -116,12 +116,12 @@ Expected: 全部 PASS。任一基线失败先按 `superpowers:systematic-debuggi
 ### Task 0: Phase 6 rootless container-engine handoff
 
 **Files:**
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/tools/command.py`
-- Modify: `src/miniclaw/sandbox/docker.py`
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/tools/command.py`
+- Modify: `src/lobster0/sandbox/docker.py`
+- Modify: `src/lobster0/doctor.py`
 - Modify: `scripts/sandbox_live_smoke.py`
 - Modify: `tests/test_config.py`
 - Modify: `tests/test_run_command.py`
@@ -160,29 +160,29 @@ Commit: `fix(sandbox): 闭合 rootless Docker 与 Podman handoff`
 ### Task 1: Distribution identity and one version source
 
 **Files:**
-- Create: `src/miniclaw/_version.py`
-- Modify: `src/miniclaw/__init__.py`
+- Create: `src/lobster0/_version.py`
+- Modify: `src/lobster0/__init__.py`
 - Modify: `pyproject.toml`
 - Modify: `uv.lock`
 - Create: `tests/test_package_metadata.py`
 
 **Interfaces:**
-- Consumes: clean Phase 6 `main` and existing `miniclaw` console entry point.
-- Produces: `miniclaw._version.__version__: str == "0.7.0"`; wheel distribution `miniclaw-agent`; extras `channels` and `all`; unchanged import/CLI names.
+- Consumes: clean Phase 6 `main` and existing `lobster0` console entry point.
+- Produces: `lobster0._version.__version__: str == "0.7.0"`; wheel distribution `lobster0-agent`; extras `channels` and `all`; unchanged import/CLI names.
 
 - [ ] **Step 1: Write metadata RED tests**
 
 ```python
 def test_version_has_one_python_source(self) -> None:
     metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
-    self.assertEqual(metadata["project"]["name"], "miniclaw-agent")
+    self.assertEqual(metadata["project"]["name"], "lobster0-agent")
     self.assertEqual(metadata["project"]["dynamic"], ["version"])
     self.assertNotIn("version", metadata["project"])
     self.assertEqual(__version__, "0.7.0")
 
 def test_public_names_and_complete_extras_do_not_change(self) -> None:
     project = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))["project"]
-    self.assertEqual(project["scripts"]["miniclaw"], "miniclaw.cli:main")
+    self.assertEqual(project["scripts"]["lobster0"], "lobster0.cli:main")
     self.assertEqual(set(project["optional-dependencies"]["all"]), set(project["optional-dependencies"]["channels"]))
 ```
 
@@ -195,13 +195,13 @@ Expected: FAIL because `_version.py`, dynamic metadata and `all` extra are absen
 - [ ] **Step 3: Implement the exact metadata contract**
 
 ```python
-# src/miniclaw/_version.py
-"""MiniClaw 发布版本的唯一源码。"""
+# src/lobster0/_version.py
+"""Lobster0 发布版本的唯一源码。"""
 
 __version__ = "0.7.0"
 ```
 
-`src/miniclaw/__init__.py` only re-exports `from miniclaw._version import __version__`. In `pyproject.toml`, set build requirement to the reviewed `setuptools==80.9.0`, set `name = "miniclaw-agent"`, replace literal version with `dynamic = ["version"]`, add `[tool.setuptools.dynamic] version = {attr = "miniclaw._version.__version__"}`, and define `all` with the same three exact SDK requirements as `channels`.
+`src/lobster0/__init__.py` only re-exports `from lobster0._version import __version__`. In `pyproject.toml`, set build requirement to the reviewed `setuptools==80.9.0`, set `name = "lobster0-agent"`, replace literal version with `dynamic = ["version"]`, add `[tool.setuptools.dynamic] version = {attr = "lobster0._version.__version__"}`, and define `all` with the same three exact SDK requirements as `channels`.
 
 - [ ] **Step 4: Verify wheel metadata and entry point**
 
@@ -211,16 +211,16 @@ Run:
 uv lock
 uv build
 uv run python -m unittest tests.test_package_metadata tests.test_cli -v
-uv run python -c 'import zipfile,glob; p=glob.glob("dist/*.whl")[0]; z=zipfile.ZipFile(p); n=[x for x in z.namelist() if x.endswith("METADATA")][0]; m=z.read(n).decode(); assert "Name: miniclaw-agent" in m and "Version: 0.7.0" in m'
+uv run python -c 'import zipfile,glob; p=glob.glob("dist/*.whl")[0]; z=zipfile.ZipFile(p); n=[x for x in z.namelist() if x.endswith("METADATA")][0]; m=z.read(n).decode(); assert "Name: lobster0-agent" in m and "Version: 0.7.0" in m'
 ```
 
-Expected: PASS; wheel filename begins `miniclaw_agent-0.7.0-`; no package named `miniclaw-agent` is imported.
+Expected: PASS; wheel filename begins `lobster0_agent-0.7.0-`; no package named `lobster0-agent` is imported.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add pyproject.toml uv.lock src/miniclaw/_version.py src/miniclaw/__init__.py tests/test_package_metadata.py
-git commit -m "build(package): 统一 miniclaw-agent version metadata"
+git add pyproject.toml uv.lock src/lobster0/_version.py src/lobster0/__init__.py tests/test_package_metadata.py
+git commit -m "build(package): 统一 lobster0-agent version metadata"
 ```
 
 ---
@@ -228,11 +228,11 @@ git commit -m "build(package): 统一 miniclaw-agent version metadata"
 ### Task 2: Installed Secret-file resolution without breaking development
 
 **Files:**
-- Modify: `src/miniclaw/paths.py`
-- Modify: `src/miniclaw/env.py`
-- Modify: `src/miniclaw/gateway.py`
-- Modify: `src/miniclaw/tui/app.py`
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/paths.py`
+- Modify: `src/lobster0/env.py`
+- Modify: `src/lobster0/gateway.py`
+- Modify: `src/lobster0/tui/app.py`
+- Modify: `src/lobster0/cli.py`
 - Modify: `tests/test_env.py`
 - Modify: `tests/test_gateway.py`
 - Modify: `tests/test_cli.py`
@@ -240,7 +240,7 @@ git commit -m "build(package): 统一 miniclaw-agent version metadata"
 
 **Interfaces:**
 - Consumes: existing owner-only `load_dotenv(path, environ)` and `StatePaths` factory.
-- Produces: `StatePaths.secrets_file`; `resolve_dotenv_path(paths, environ, cwd=None) -> Path`; development defaults to `cwd/.env`, installed launcher selects an absolute `MINICLAW_ENV_FILE`.
+- Produces: `StatePaths.secrets_file`; `resolve_dotenv_path(paths, environ, cwd=None) -> Path`; development defaults to `cwd/.env`, installed launcher selects an absolute `LOBSTER0_ENV_FILE`.
 
 - [ ] **Step 1: Write installed/development path RED tests**
 
@@ -248,17 +248,17 @@ git commit -m "build(package): 统一 miniclaw-agent version metadata"
 def test_installed_env_file_must_be_absolute_and_wins_over_cwd(self) -> None:
     private = self.root / "secrets.env"
     self.assertEqual(
-        resolve_dotenv_path(self.paths, {"MINICLAW_ENV_FILE": str(private)}, cwd=self.other),
+        resolve_dotenv_path(self.paths, {"LOBSTER0_ENV_FILE": str(private)}, cwd=self.other),
         private,
     )
     with self.assertRaisesRegex(DotEnvError, "must be absolute"):
-        resolve_dotenv_path(self.paths, {"MINICLAW_ENV_FILE": "relative.env"}, cwd=self.other)
+        resolve_dotenv_path(self.paths, {"LOBSTER0_ENV_FILE": "relative.env"}, cwd=self.other)
 
 def test_development_keeps_fixed_cwd_dotenv(self) -> None:
     self.assertEqual(resolve_dotenv_path(self.paths, {}, cwd=self.other), self.other / ".env")
 ```
 
-Add Gateway/Doctor/TUI tests with a sentinel in `<state>/secrets.env`; set only `MINICLAW_ENV_FILE`; assert the sentinel is never printed and the old cwd `.env` tests still pass.
+Add Gateway/Doctor/TUI tests with a sentinel in `<state>/secrets.env`; set only `LOBSTER0_ENV_FILE`; assert the sentinel is never printed and the old cwd `.env` tests still pass.
 
 - [ ] **Step 2: Run RED**
 
@@ -276,12 +276,12 @@ def resolve_dotenv_path(
     cwd: Path | None = None,
 ) -> Path:
     """解析显式安装态 Secret 文件，否则保持 cwd/.env 开发语义。"""
-    selected = environ.get("MINICLAW_ENV_FILE", "").strip()
+    selected = environ.get("LOBSTER0_ENV_FILE", "").strip()
     if not selected:
         return (Path.cwd() if cwd is None else cwd) / ".env"
     candidate = Path(selected).expanduser()
     if not candidate.is_absolute():
-        raise DotEnvError("MINICLAW_ENV_FILE must be an absolute path")
+        raise DotEnvError("LOBSTER0_ENV_FILE must be an absolute path")
     return candidate.resolve(strict=False)
 ```
 
@@ -293,7 +293,7 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_env tests.test_gateway tests.test_cli tests.test_tui -v
-rg -n "Path\.cwd\(\) / \"\.env\"" src/miniclaw
+rg -n "Path\.cwd\(\) / \"\.env\"" src/lobster0
 ```
 
 Expected: tests PASS; remaining direct cwd usage exists only in explicitly development-only eval/bridge code or is migrated through the same resolver where `StatePaths` is available.
@@ -301,7 +301,7 @@ Expected: tests PASS; remaining direct cwd usage exists only in explicitly devel
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/paths.py src/miniclaw/env.py src/miniclaw/gateway.py src/miniclaw/tui/app.py src/miniclaw/cli.py tests/test_env.py tests/test_gateway.py tests/test_cli.py tests/test_tui.py
+git add src/lobster0/paths.py src/lobster0/env.py src/lobster0/gateway.py src/lobster0/tui/app.py src/lobster0/cli.py tests/test_env.py tests/test_gateway.py tests/test_cli.py tests/test_tui.py
 git commit -m "feat(env): 支持 installed owner-only Secret file"
 ```
 
@@ -310,16 +310,16 @@ git commit -m "feat(env): 支持 installed owner-only Secret file"
 ### Task 3: Fresh-install onboarding with no Secret argv
 
 **Files:**
-- Create: `src/miniclaw/setup.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Modify: `src/miniclaw/cli.py`
+- Create: `src/lobster0/setup.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Modify: `src/lobster0/cli.py`
 - Create: `tests/test_setup.py`
 - Modify: `tests/test_bootstrap.py`
 - Modify: `tests/test_cli.py`
 
 **Interfaces:**
 - Consumes: `StatePaths.secrets_file`, existing strict config loader and `initialize_state(paths)`.
-- Produces: `SetupAnswers`, `write_fresh_setup(paths, answers, secrets, sandbox_image) -> InitResult`, interactive `miniclaw setup`; the installer may pass one non-Secret pinned Sandbox image, but no Secret-valued CLI option exists.
+- Produces: `SetupAnswers`, `write_fresh_setup(paths, answers, secrets, sandbox_image) -> InitResult`, interactive `lobster0 setup`; the installer may pass one non-Secret pinned Sandbox image, but no Secret-valued CLI option exists.
 
 - [ ] **Step 1: Write onboarding RED tests**
 
@@ -337,11 +337,11 @@ def test_fresh_setup_writes_private_config_and_secrets_without_echo(self) -> Non
         self.paths,
         answers,
         {
-            "MINICLAW_MODEL_API_KEY": "sentinel-model-key",
-            "MINICLAW_FEISHU_APP_ID": "cli_app",
-            "MINICLAW_FEISHU_APP_SECRET": "sentinel-app-secret",
+            "LOBSTER0_MODEL_API_KEY": "sentinel-model-key",
+            "LOBSTER0_FEISHU_APP_ID": "cli_app",
+            "LOBSTER0_FEISHU_APP_SECRET": "sentinel-app-secret",
         },
-        sandbox_image="ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64,
+        sandbox_image="ghcr.io/nedonion/lobster0-sandbox@sha256:" + "a" * 64,
     )
     self.assertEqual(stat.S_IMODE(self.paths.config.stat().st_mode), 0o600)
     self.assertEqual(stat.S_IMODE(self.paths.secrets_file.stat().st_mode), 0o600)
@@ -357,8 +357,8 @@ def test_setup_refuses_overwrite_and_unsafe_secret_text(self) -> None:
         write_fresh_setup(
             self.paths,
             SetupAnswers.defaults(),
-            {"MINICLAW_MODEL_API_KEY": "x"},
-            sandbox_image="ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64,
+            {"LOBSTER0_MODEL_API_KEY": "x"},
+            sandbox_image="ghcr.io/nedonion/lobster0-sandbox@sha256:" + "a" * 64,
         )
     with self.assertRaisesRegex(SetupError, "unsafe secret"):
         validate_secret_value("line1\nline2")
@@ -392,7 +392,7 @@ def validate_secret_value(value: str) -> str:
     return value
 ```
 
-Make `render_default_config(paths, *, sandbox_image: str | None = None)` public in `bootstrap.py`; when provided, require `ghcr.io/nedonion/miniclaw-sandbox@sha256:` plus 64 lowercase hex characters. `setup.py` first creates/validates `paths.home` as owner-only 0700 without following a symlink, appends only enabled Channel tables with fixed env variable names and validated Owner IDs, writes config and `secrets.env` with `O_CREAT|O_EXCL`, mode `0600`, fsync, then calls `initialize_state`. Interactive reads non-Secrets from `/dev/tty`, reads Secrets with `getpass.getpass`, never prints values, and always permits selecting zero Channels. Existing config or Secret file returns a safe error instead of merging unknown TOML. `miniclaw setup` and `miniclaw init` accept only the non-Secret `--sandbox-image`; installer always supplies the digest from the verified manifest, while source development can omit it and retain the Phase 6 default.
+Make `render_default_config(paths, *, sandbox_image: str | None = None)` public in `bootstrap.py`; when provided, require `ghcr.io/nedonion/lobster0-sandbox@sha256:` plus 64 lowercase hex characters. `setup.py` first creates/validates `paths.home` as owner-only 0700 without following a symlink, appends only enabled Channel tables with fixed env variable names and validated Owner IDs, writes config and `secrets.env` with `O_CREAT|O_EXCL`, mode `0600`, fsync, then calls `initialize_state`. Interactive reads non-Secrets from `/dev/tty`, reads Secrets with `getpass.getpass`, never prints values, and always permits selecting zero Channels. Existing config or Secret file returns a safe error instead of merging unknown TOML. `lobster0 setup` and `lobster0 init` accept only the non-Secret `--sandbox-image`; installer always supplies the digest from the verified manifest, while source development can omit it and retain the Phase 6 default.
 
 - [ ] **Step 4: Verify CLI behavior**
 
@@ -400,15 +400,15 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_setup tests.test_bootstrap tests.test_cli -v
-uv run miniclaw setup --help
+uv run lobster0 setup --help
 ```
 
-Expected: PASS; help includes `--home` and `--sandbox-image` only and contains no Secret-valued option. `miniclaw init` remains idempotent; `miniclaw setup` is fresh-state only.
+Expected: PASS; help includes `--home` and `--sandbox-image` only and contains no Secret-valued option. `lobster0 init` remains idempotent; `lobster0 setup` is fresh-state only.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/setup.py src/miniclaw/bootstrap.py src/miniclaw/cli.py tests/test_setup.py tests/test_bootstrap.py tests/test_cli.py
+git add src/lobster0/setup.py src/lobster0/bootstrap.py src/lobster0/cli.py tests/test_setup.py tests/test_bootstrap.py tests/test_cli.py
 git commit -m "feat(setup): 增加 no-argv Secret onboarding"
 ```
 
@@ -417,8 +417,8 @@ git commit -m "feat(setup): 增加 no-argv Secret onboarding"
 ### Task 4: Strict Release manifest and installer request models
 
 **Files:**
-- Create: `src/miniclaw/install/__init__.py`
-- Create: `src/miniclaw/install/models.py`
+- Create: `src/lobster0/install/__init__.py`
+- Create: `src/lobster0/install/models.py`
 - Create: `release/manifest.schema.json`
 - Create: `tests/test_install_models.py`
 - Create: `tests/install/manifest_v1.json`
@@ -454,7 +454,7 @@ Add cases for non-40-hex commit, missing/uppercase hash, zero/oversized size, UR
 
 Run: `uv run python -m unittest tests.test_install_models -v`
 
-Expected: FAIL because `miniclaw.install.models` is absent.
+Expected: FAIL because `lobster0.install.models` is absent.
 
 - [ ] **Step 3: Implement exact immutable types**
 
@@ -507,7 +507,7 @@ class Artifact:
 class ReleaseManifest:
     """保存一个已完成 strict schema 校验的同源 Release。"""
     schema_version: Literal[1]
-    product: Literal["miniclaw"]
+    product: Literal["lobster0"]
     version: str
     git_commit: str
     python: Literal["3.12"]
@@ -582,7 +582,7 @@ Expected: all strict positive/negative cases PASS and errors contain only stable
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/install release/manifest.schema.json tests/test_install_models.py tests/install/manifest_v1.json
+git add src/lobster0/install release/manifest.schema.json tests/test_install_models.py tests/install/manifest_v1.json
 git commit -m "feat(installer): 定义 strict Release manifest v1"
 ```
 
@@ -591,7 +591,7 @@ git commit -m "feat(installer): 定义 strict Release manifest v1"
 ### Task 5: Tier 1 detection, Node policy and explicit privilege plan
 
 **Files:**
-- Create: `src/miniclaw/install/platforms.py`
+- Create: `src/lobster0/install/platforms.py`
 - Create: `release/runtime-versions.json`
 - Create: `tests/test_install_platforms.py`
 
@@ -676,7 +676,7 @@ RHEL/Rocky/Alma: sudo dnf install -y podman-docker slirp4netns fuse-overlayfs sh
 
 On Debian-family hosts, select only an executable regular file from `/usr/bin/dockerd-rootless-setuptool.sh` and `/usr/share/docker.io/contrib/dockerd-rootless-setuptool.sh`, run it with exact argument `install` as the target non-root user, and verify its user socket/context; never start the root daemon or add docker group membership. On RHEL-family hosts, verify `/usr/bin/docker` resolves to the rootless Podman compatibility CLI and passes the Phase 6 containment smoke. macOS uses built-in Seatbelt by default; an existing absolute Homebrew may manage optional Docker/Colima, but installer never installs Homebrew. If the selected Tier 1 backend cannot be established, interactive refusal or noninteractive missing `--allow-system-packages` returns `system_dependency_missing` before activation; a stable full install cannot silently continue without Sandbox.
 
-Headless Linux service may add only `("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", validated_user)` after a separate linger confirmation. `--system-prefix` never silently re-execs with sudo: a non-root call returns `privilege_denied` and the operator must start the original one-line installer under sudo. The root call requires `SUDO_USER`/`SUDO_UID` resolving to a real non-root account and Task 5 internally re-hashes the currently loaded absolute regular zipapp against the verified manifest `installer` artifact before building and before executing every privileged action; no caller-supplied trust object or installer path is accepted. It installs program files under `/usr/local/lib/miniclaw`, and always creates state/onboarding/systemd-user service as that account. Root without an original non-root user or without a matching current-loaded installer returns `privilege_denied`.
+Headless Linux service may add only `("/usr/bin/sudo", "/usr/bin/loginctl", "enable-linger", validated_user)` after a separate linger confirmation. `--system-prefix` never silently re-execs with sudo: a non-root call returns `privilege_denied` and the operator must start the original one-line installer under sudo. The root call requires `SUDO_USER`/`SUDO_UID` resolving to a real non-root account and Task 5 internally re-hashes the currently loaded absolute regular zipapp against the verified manifest `installer` artifact before building and before executing every privileged action; no caller-supplied trust object or installer path is accepted. It installs program files under `/usr/local/lib/lobster0`, and always creates state/onboarding/systemd-user service as that account. Root without an original non-root user or without a matching current-loaded installer returns `privilege_denied`.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -687,7 +687,7 @@ Expected: all Tier 1 facts map deterministically; unsupported cases return `unsu
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/install/platforms.py release/runtime-versions.json tests/test_install_platforms.py
+git add src/lobster0/install/platforms.py release/runtime-versions.json tests/test_install_platforms.py
 git commit -m "feat(installer): 固化 Tier 1 与 privilege InstallPlan"
 ```
 
@@ -696,8 +696,8 @@ git commit -m "feat(installer): 固化 Tier 1 与 privilege InstallPlan"
 ### Task 6: Verified download and bounded archive extraction
 
 **Files:**
-- Create: `src/miniclaw/install/artifacts.py`
-- Create: `src/miniclaw/install/releases.py`
+- Create: `src/lobster0/install/artifacts.py`
+- Create: `src/lobster0/install/releases.py`
 - Create: `tests/test_install_artifacts.py`
 - Create: `tests/test_install_releases.py`
 - Create: `tests/install/make_archives.py`
@@ -726,7 +726,7 @@ def test_tar_rejects_every_escaping_or_special_member(self) -> None:
 
 Also test short read, content-length mismatch, hash mismatch, redirect outside allowlist, credentials/query/fragment, timeout, interrupted `.part`, pre-existing target, case-colliding paths on macOS semantics, mode stripping, and no log body leakage.
 
-`tests/test_install_releases.py` covers fixed `v0.7.0`, stable latest redirect, bounded `api.github.com/repos/NEDONION/mini-claw/releases?per_page=20` dev discovery, draft exclusion, prerelease requirement, semver ordering, oversized/malformed API JSON and wrong repository/asset name. Installed downgrade/equal-version refusal is tested in Task 11/13 so a fresh machine may explicitly install an older supported Release. All HTTP responses use fakes.
+`tests/test_install_releases.py` covers fixed `v0.7.0`, stable latest redirect, bounded `api.github.com/repos/NEDONION/lobster0/releases?per_page=20` dev discovery, draft exclusion, prerelease requirement, semver ordering, oversized/malformed API JSON and wrong repository/asset name. Installed downgrade/equal-version refusal is tested in Task 11/13 so a fresh machine may explicitly install an older supported Release. All HTTP responses use fakes.
 
 - [ ] **Step 2: Run RED**
 
@@ -762,9 +762,9 @@ def _safe_member_path(root: Path, name: str) -> Path:
     return target
 ```
 
-`resolve_release_source` maps explicit versions to `https://github.com/NEDONION/mini-claw/releases/download/v<version>/release-manifest.json`, stable to `https://github.com/NEDONION/mini-claw/releases/latest/download/release-manifest.json`, and dev to the bounded GitHub Releases API response's exact `release-manifest.json` browser-download URL. It rejects stable prereleases, dev drafts and repositories outside `NEDONION/mini-claw`.
+`resolve_release_source` maps explicit versions to `https://github.com/NEDONION/lobster0/releases/download/v<version>/release-manifest.json`, stable to `https://github.com/NEDONION/lobster0/releases/latest/download/release-manifest.json`, and dev to the bounded GitHub Releases API response's exact `release-manifest.json` browser-download URL. It rejects stable prereleases, dev drafts and repositories outside `NEDONION/lobster0`.
 
-Use a redirect handler that revalidates every Location. The initial host allowlist is `github.com`, `api.github.com`, `files.pythonhosted.org`, `nodejs.org` and official Astral endpoints; only a request originating at `github.com/NEDONION/mini-claw/releases/` may redirect to HTTPS `release-assets.githubusercontent.com`. Stream into an `O_EXCL` `.part`, cap bytes before write, fsync, compare exact size/hash with `hmac.compare_digest`, then `os.replace`. For tar, first validate all headers and cumulative declared sizes, then reopen and copy only regular files/directories with a second actual-byte budget; create dirs 0700/files 0600 or executable 0700 only for manifest-declared executable paths; fsync and leave destination empty on failure.
+Use a redirect handler that revalidates every Location. The initial host allowlist is `github.com`, `api.github.com`, `files.pythonhosted.org`, `nodejs.org` and official Astral endpoints; only a request originating at `github.com/NEDONION/lobster0/releases/` may redirect to HTTPS `release-assets.githubusercontent.com`. Stream into an `O_EXCL` `.part`, cap bytes before write, fsync, compare exact size/hash with `hmac.compare_digest`, then `os.replace`. For tar, first validate all headers and cumulative declared sizes, then reopen and copy only regular files/directories with a second actual-byte budget; create dirs 0700/files 0600 or executable 0700 only for manifest-declared executable paths; fsync and leave destination empty on failure.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -775,7 +775,7 @@ Expected: all malicious fixtures fail closed and the valid tar extracts reproduc
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/install/artifacts.py src/miniclaw/install/releases.py tests/test_install_artifacts.py tests/test_install_releases.py tests/install/make_archives.py
+git add src/lobster0/install/artifacts.py src/lobster0/install/releases.py tests/test_install_artifacts.py tests/test_install_releases.py tests/install/make_archives.py
 git commit -m "feat(installer): 校验 downloads 与 bounded safe extract"
 ```
 
@@ -784,8 +784,8 @@ git commit -m "feat(installer): 校验 downloads 与 bounded safe extract"
 ### Task 7: Install layout, lock, receipt and stable launcher ownership
 
 **Files:**
-- Create: `src/miniclaw/install/layout.py`
-- Create: `src/miniclaw/install/receipt.py`
+- Create: `src/lobster0/install/layout.py`
+- Create: `src/lobster0/install/receipt.py`
 - Create: `tests/test_install_layout.py`
 - Create: `tests/test_install_receipt.py`
 
@@ -798,11 +798,11 @@ git commit -m "feat(installer): 校验 downloads 与 bounded safe extract"
 ```python
 def test_default_layout_separates_runtime_from_user_state(self) -> None:
     layout = InstallLayout.user(self.home, version="0.7.0")
-    self.assertEqual(layout.program_prefix, self.home / ".miniclaw")
-    self.assertEqual(layout.state_home, self.home / ".miniclaw")
+    self.assertEqual(layout.program_prefix, self.home / ".lobster0")
+    self.assertEqual(layout.state_home, self.home / ".lobster0")
     self.assertEqual(layout.runtime, layout.program_prefix / "runtimes" / "0.7.0")
     self.assertEqual(layout.secrets_file, layout.state_home / "secrets.env")
-    self.assertEqual(layout.command_link, self.home / ".local" / "bin" / "miniclaw")
+    self.assertEqual(layout.command_link, self.home / ".local" / "bin" / "lobster0")
 
 def test_lock_and_receipt_prevent_concurrent_or_foreign_overwrite(self) -> None:
     first = InstallLock.acquire(self.layout)
@@ -861,27 +861,27 @@ def render_launcher(layout: InstallLayout) -> bytes:
     home = shlex.quote(str(layout.state_home))
     return (
         "#!/bin/sh\nset -eu\n"
-        f"MINICLAW_PREFIX={prefix}\nMINICLAW_HOME={home}\n"
-        'MINICLAW_NODE="$MINICLAW_PREFIX/current/node/bin/node"\n'
-        'MINICLAW_TUI_ENTRY="$MINICLAW_PREFIX/current/tui/dist/main.js"\n'
-        'MINICLAW_ENV_FILE="$MINICLAW_HOME/secrets.env"\n'
-        "export MINICLAW_HOME MINICLAW_NODE MINICLAW_TUI_ENTRY MINICLAW_ENV_FILE\n"
-        'exec "$MINICLAW_PREFIX/current/venv/bin/python" -m miniclaw "$@"\n'
+        f"LOBSTER0_PREFIX={prefix}\nLOBSTER0_HOME={home}\n"
+        'LOBSTER0_NODE="$LOBSTER0_PREFIX/current/node/bin/node"\n'
+        'LOBSTER0_TUI_ENTRY="$LOBSTER0_PREFIX/current/tui/dist/main.js"\n'
+        'LOBSTER0_ENV_FILE="$LOBSTER0_HOME/secrets.env"\n'
+        "export LOBSTER0_HOME LOBSTER0_NODE LOBSTER0_TUI_ENTRY LOBSTER0_ENV_FILE\n"
+        'exec "$LOBSTER0_PREFIX/current/venv/bin/python" -m lobster0 "$@"\n'
     ).encode("utf-8")
 ```
 
-Lock uses `O_CREAT|O_EXCL` and stores only pid/uid/start UTC; stale removal requires same uid and confirmed dead pid. User mode creates `~/.local/bin/miniclaw` as a relative symlink to the stable launcher, system-prefix mode uses `/usr/local/bin/miniclaw`; either path must be absent or match the prior receipt/hash, and installer never edits shell profiles. Ownership hash is SHA-256 of regular file bytes or `b"symlink\0" + os.readlink(path).encode()` without following the link. Receipt JSON uses exact keys, relative managed paths, hashes and UTC timestamp, mode 0600, temp+fsync+replace. Never hash or record config, Secret, DB, Memory, Skills, Workspace or logs.
+Lock uses `O_CREAT|O_EXCL` and stores only pid/uid/start UTC; stale removal requires same uid and confirmed dead pid. User mode creates `~/.local/bin/lobster0` as a relative symlink to the stable launcher, system-prefix mode uses `/usr/local/bin/lobster0`; either path must be absent or match the prior receipt/hash, and installer never edits shell profiles. Ownership hash is SHA-256 of regular file bytes or `b"symlink\0" + os.readlink(path).encode()` without following the link. Receipt JSON uses exact keys, relative managed paths, hashes and UTC timestamp, mode 0600, temp+fsync+replace. Never hash or record config, Secret, DB, Memory, Skills, Workspace or logs.
 
 - [ ] **Step 4: Run GREEN**
 
 Run: `uv run python -m unittest tests.test_install_layout tests.test_install_receipt -v`
 
-Expected: PASS; executing rendered launcher against a fake versioned Python preserves each argv element and exports only path-valued MiniClaw variables.
+Expected: PASS; executing rendered launcher against a fake versioned Python preserves each argv element and exports only path-valued Lobster0 variables.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/install/layout.py src/miniclaw/install/receipt.py tests/test_install_layout.py tests/test_install_receipt.py
+git add src/lobster0/install/layout.py src/lobster0/install/receipt.py tests/test_install_layout.py tests/test_install_receipt.py
 git commit -m "feat(installer): 增加 managed layout lock 与 receipt"
 ```
 
@@ -890,7 +890,7 @@ git commit -m "feat(installer): 增加 managed layout lock 与 receipt"
 ### Task 8: Managed Python Runtime and atomic activation
 
 **Files:**
-- Create: `src/miniclaw/install/runtime.py`
+- Create: `src/lobster0/install/runtime.py`
 - Create: `requirements-all.lock`
 - Create: `tests/test_install_runtime.py`
 - Create: `tests/install/fake_uv.py`
@@ -959,12 +959,12 @@ Runtime argv sequence is:
 uv venv --relocatable --python <staging>/python/bin/python3.12 --no-python-downloads <staging>/venv
 uv pip install --python <staging>/venv/bin/python --require-hashes -r requirements-all.lock
 uv pip install --python <staging>/venv/bin/python --no-deps <verified-wheel>
-<staging>/venv/bin/python -I -m miniclaw --version
-<staging>/venv/bin/python -I -m miniclaw install-smoke --json
+<staging>/venv/bin/python -I -m lobster0 --version
+<staging>/venv/bin/python -I -m lobster0 install-smoke --json
 <staging>/node/bin/node <staging>/tui/dist/main.js --smoke
 ```
 
-Copy the bootstrap-verified managed Python tree into `staging/python` through descriptor-bound no-follow reads, then build the venv from that explicit internal interpreter with downloads disabled. Copy only verified Node/TUI directories from safe extraction plus verified `miniclaw-installer.pyz`. User-prefix Runtime trees remain owner-only (directories 0700, data 0600, required executables 0700). System-prefix Runtime trees remain root-owned and non-writable by the target user but are readable/executable as program files (directories 0755, data/metadata 0644, required executables 0755); state/config/Secret paths remain target-user 0700/0600. Write and fsync the whole tree boundary with the selected program mode. Before activation, publish staging as immutable `runtimes/0.7.0`, repair only the venv's interpreter link/config to the known final-internal Python path, and rerun an exact final-path smoke which requires both the resolved executable and `sys.base_prefix` to remain under that Runtime. A bootstrap/system/user Python outside the Runtime is never accepted. Activation creates a relative `current.next` symlink and atomically switches it over `current`; no in-place venv update exists.
+Copy the bootstrap-verified managed Python tree into `staging/python` through descriptor-bound no-follow reads, then build the venv from that explicit internal interpreter with downloads disabled. Copy only verified Node/TUI directories from safe extraction plus verified `lobster0-installer.pyz`. User-prefix Runtime trees remain owner-only (directories 0700, data 0600, required executables 0700). System-prefix Runtime trees remain root-owned and non-writable by the target user but are readable/executable as program files (directories 0755, data/metadata 0644, required executables 0755); state/config/Secret paths remain target-user 0700/0600. Write and fsync the whole tree boundary with the selected program mode. Before activation, publish staging as immutable `runtimes/0.7.0`, repair only the venv's interpreter link/config to the known final-internal Python path, and rerun an exact final-path smoke which requires both the resolved executable and `sys.base_prefix` to remain under that Runtime. A bootstrap/system/user Python outside the Runtime is never accepted. Activation creates a relative `current.next` symlink and atomically switches it over `current`; no in-place venv update exists.
 
 `discard_unactivated_runtime(layout, lock)` is the only public retry/crash recovery boundary for a published target Runtime. It requires the actual live `InstallLock` instance and first calls its descriptor/inode/payload-bound ownership predicate for the same layout. It then loads the embedded Runtime receipt and manifest, performs the same full-tree owner/mode/symlink/executable verification as activation, and removes the exact inode only when neither `current` nor the managed install receipt references it as current/previous. Referenced, foreign, partially valid or concurrently replaced trees fail closed and are never deleted. It never touches state, config, Secret, DB, Memory, Skills, Workspace or logs.
 
@@ -984,7 +984,7 @@ Expected: PASS; fake uv proves exact argv/order; every injected failure leaves o
 - [ ] **Step 5: Commit**
 
 ```bash
-git add requirements-all.lock src/miniclaw/install/runtime.py tests/test_install_runtime.py tests/install/fake_uv.py
+git add requirements-all.lock src/lobster0/install/runtime.py tests/test_install_runtime.py tests/install/fake_uv.py
 git commit -m "feat(runtime): 构建 hash-locked atomic Runtime"
 ```
 
@@ -997,8 +997,8 @@ git commit -m "feat(runtime): 构建 hash-locked atomic Runtime"
 - Modify: `tui/package.json`
 - Modify: `tui/src/main.ts`
 - Create: `tui/test/smoke.test.ts`
-- Modify: `src/miniclaw/tui_launcher.py`
-- Modify: `src/miniclaw/doctor.py`
+- Modify: `src/lobster0/tui_launcher.py`
+- Modify: `src/lobster0/doctor.py`
 - Modify: `tests/test_tui_launcher.py`
 - Modify: `tests/test_doctor.py`
 - Modify: `tests/test_cli.py`
@@ -1012,7 +1012,7 @@ git commit -m "feat(runtime): 构建 hash-locked atomic Runtime"
 
 **Interfaces:**
 - Consumes: runtime pins, pnpm lock, official Node archive already checked against upstream hash.
-- Produces: `miniclaw-node-24.18.0-<os>-<arch>.tar.gz`, `miniclaw-tui-0.7.0-<os>-<arch>.tar.gz`, `node_version_supported`, `main.js --smoke`.
+- Produces: `lobster0-node-24.18.0-<os>-<arch>.tar.gz`, `lobster0-tui-0.7.0-<os>-<arch>.tar.gz`, `node_version_supported`, `main.js --smoke`.
 
 - [ ] **Step 1: Write Node/TUI isolation RED tests**
 
@@ -1048,7 +1048,7 @@ Expected: FAIL because ranges still use `>=22.19`, smoke flag and bundle builder
 
 - [ ] **Step 3: Implement exact LTS contract and bundle builders**
 
-Set package engine to `>=22.22.3 <23 || >=24.15.0 <25`, keep pnpm 10.14.0, add a TUI-local workspace at `tui/pnpm-workspace.yaml` with package `.`, and add `release:deploy` using `pnpm --filter @miniclaw/pi-tui deploy --legacy --prod`. The repository root intentionally remains outside a pnpm workspace so Desktop and Browser keep consuming their own frozen lockfiles. `main.ts` handles `--smoke` before TTY checks and imports `@earendil-works/pi-tui` without spawning Bridge.
+Set package engine to `>=22.22.3 <23 || >=24.15.0 <25`, keep pnpm 10.14.0, add a TUI-local workspace at `tui/pnpm-workspace.yaml` with package `.`, and add `release:deploy` using `pnpm --filter @lobster0/pi-tui deploy --legacy --prod`. The repository root intentionally remains outside a pnpm workspace so Desktop and Browser keep consuming their own frozen lockfiles. `main.ts` handles `--smoke` before TTY checks and imports `@earendil-works/pi-tui` without spawning Bridge.
 
 `build_node_bundle.py` validates official archive hash from runtime pins, extracts only regular `bin/node` and `LICENSE`, verifies `node --version`, and writes a deterministic gzip tar with uid/gid/mtime zero. `build_tui_bundle.py` runs build/test/deploy, captures `pnpm licenses list --prod --json`, resolves every internal staging symlink only when its final target remains inside staging, replaces it with regular content, rejects cycles/escapes, strips dev files/cache, and writes deterministic tar metadata.
 
@@ -1068,7 +1068,7 @@ CI repeats TypeScript test/bundle smoke with Node 22.22.3 and 24.18.0. Expected:
 - [ ] **Step 5: Commit**
 
 ```bash
-git add tui/pnpm-workspace.yaml tui/package.json tui/src/main.ts tui/test/smoke.test.ts src/miniclaw/tui_launcher.py src/miniclaw/doctor.py tests/test_tui_launcher.py tests/test_doctor.py tests/test_cli.py tests/test_pi_tui_integration.py README.md README_EN.md docs/getting-started/20260807_本地运行指南.md scripts/build_node_bundle.py scripts/build_tui_bundle.py tests/test_release_bundles.py
+git add tui/pnpm-workspace.yaml tui/package.json tui/src/main.ts tui/test/smoke.test.ts src/lobster0/tui_launcher.py src/lobster0/doctor.py tests/test_tui_launcher.py tests/test_doctor.py tests/test_cli.py tests/test_pi_tui_integration.py README.md README_EN.md docs/getting-started/20260807_本地运行指南.md scripts/build_node_bundle.py scripts/build_tui_bundle.py tests/test_release_bundles.py
 git commit -m "build(tui): 生成 symlink-free managed Node/TUI bundles"
 ```
 
@@ -1077,7 +1077,7 @@ git commit -m "build(tui): 生成 symlink-free managed Node/TUI bundles"
 ### Task 10: systemd user and LaunchAgent lifecycle
 
 **Files:**
-- Create: `src/miniclaw/install/service.py`
+- Create: `src/lobster0/install/service.py`
 - Create: `tests/test_install_service.py`
 - Create: `tests/install/fake_systemctl.py`
 - Create: `tests/install/fake_launchctl.py`
@@ -1094,17 +1094,17 @@ def test_systemd_unit_uses_stable_launcher_and_no_secret_value(self) -> None:
     self.assertIn(f"ExecStart={self.layout.launcher} gateway --home {self.layout.state_home}", spec.content)
     self.assertIn("Restart=on-failure", spec.content)
     self.assertIn("RestartSec=5", spec.content)
-    self.assertIn(f"Environment=MINICLAW_ENV_FILE={self.layout.secrets_file}", spec.content)
+    self.assertIn(f"Environment=LOBSTER0_ENV_FILE={self.layout.secrets_file}", spec.content)
     self.assertNotIn(self.sentinel, spec.content)
 
 def test_launchd_uses_program_arguments_and_owner_logs(self) -> None:
     spec = render_service_spec(self.layout, ServicePlatform.LAUNCHD)
     parsed = plistlib.loads(spec.content.encode("utf-8"))
-    self.assertEqual(parsed["Label"], "io.miniclaw.gateway")
+    self.assertEqual(parsed["Label"], "io.lobster0.gateway")
     self.assertEqual(parsed["ProgramArguments"], [str(self.layout.launcher), "gateway", "--home", str(self.layout.state_home)])
 ```
 
-Add exact command tests for `systemctl --user daemon-reload/enable --now/is-active/restart/disable --now`, `journalctl --user-unit miniclaw-gateway.service`, `launchctl bootstrap/print/kickstart -k/bootout`, plutil lint before replace, idempotent install, foreign file hash mismatch, failure rollback and no root service user.
+Add exact command tests for `systemctl --user daemon-reload/enable --now/is-active/restart/disable --now`, `journalctl --user-unit lobster0-gateway.service`, `launchctl bootstrap/print/kickstart -k/bootout`, plutil lint before replace, idempotent install, foreign file hash mismatch, failure rollback and no root service user.
 
 - [ ] **Step 2: Run RED**
 
@@ -1133,7 +1133,7 @@ class ServiceSpec:
     uninstall_argvs: tuple[tuple[str, ...], ...]
 ```
 
-systemd unit uses absolute launcher, explicit `--home`, minimal `/usr/local/bin:/usr/bin:/bin` PATH, `Environment=MINICLAW_ENV_FILE=...`, `Restart=on-failure`, `RestartSec=5`, `TimeoutStopSec=30`, `UMask=0077`, and no `WorkingDirectory` dependency. LaunchAgent uses plistlib, `KeepAlive.SuccessfulExit=false`, `ProcessType=Background`, owner-only stdout/stderr files. Validate temp unit with `systemd-analyze --user verify` when available and plist with `/usr/bin/plutil -lint`; only then replace and register.
+systemd unit uses absolute launcher, explicit `--home`, minimal `/usr/local/bin:/usr/bin:/bin` PATH, `Environment=LOBSTER0_ENV_FILE=...`, `Restart=on-failure`, `RestartSec=5`, `TimeoutStopSec=30`, `UMask=0077`, and no `WorkingDirectory` dependency. LaunchAgent uses plistlib, `KeepAlive.SuccessfulExit=false`, `ProcessType=Background`, owner-only stdout/stderr files. Validate temp unit with `systemd-analyze --user verify` when available and plist with `/usr/bin/plutil -lint`; only then replace and register.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -1144,7 +1144,7 @@ Expected: PASS; fake managers prove exact order and cleanup; sentinel is absent 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/install/service.py tests/test_install_service.py tests/install/fake_systemctl.py tests/install/fake_launchctl.py
+git add src/lobster0/install/service.py tests/test_install_service.py tests/install/fake_systemctl.py tests/install/fake_launchctl.py
 git commit -m "feat(service): 管理 systemd user 与 LaunchAgent lifecycle"
 ```
 
@@ -1153,15 +1153,15 @@ git commit -m "feat(service): 管理 systemd user 与 LaunchAgent lifecycle"
 ### Task 11: Installer orchestrator and stdlib-only zipapp
 
 **Files:**
-- Create: `src/miniclaw/install/orchestrator.py`
-- Create: `src/miniclaw/install/__main__.py`
+- Create: `src/lobster0/install/orchestrator.py`
+- Create: `src/lobster0/install/__main__.py`
 - Create: `scripts/build_installer_zipapp.py`
 - Create: `tests/test_install_orchestrator.py`
 - Create: `tests/test_installer_zipapp.py`
 
 **Interfaces:**
-- Consumes: Tasks 4～10 models/platform/releases/artifacts/layout/runtime/service and subprocess invocation of the newly staged `miniclaw setup|init`.
-- Produces: `Installer.run(request) -> InstallResult`, `emit_event(event)`, `python miniclaw-installer.pyz ...`, error-code exit mapping 0/2/3.
+- Consumes: Tasks 4～10 models/platform/releases/artifacts/layout/runtime/service and subprocess invocation of the newly staged `lobster0 setup|init`.
+- Produces: `Installer.run(request) -> InstallResult`, `emit_event(event)`, `python lobster0-installer.pyz ...`, error-code exit mapping 0/2/3.
 
 - [ ] **Step 1: Write state-machine and JSON RED tests**
 
@@ -1216,9 +1216,9 @@ class Installer:
             return self._execute_locked(plan)
 ```
 
-Initial install requires the internal bootstrap handoff `--manifest-file <absolute-temp-file> --manifest-sha256 <64-hex> --managed-uv <absolute-private-executable> --managed-python-root <absolute-private-root> --managed-python-executable <absolute-private-root/bin/python3.12>`. It re-verifies the manifest before parsing and binds all three Runtime inputs to the same current-owner 0700 bootstrap temporary tree through component-wise no-follow checks; the uv and Python executable must be current-owner regular executables and these internal flags cannot be supplied twice. If public `--version` names a different version or `--channel dev` selects a prerelease, this verified pyz resolves the target manifest, downloads/verifies that manifest's `installer` pyz and `os.execve`s the managed Python with `<target-installer.pyz>` plus target manifest/hash, the same three verified Runtime inputs and the same public flags before any persistent write. `MINICLAW_INSTALLER_HOPS=1` prevents recursion, and the target pyz must match the selected manifest version.
+Initial install requires the internal bootstrap handoff `--manifest-file <absolute-temp-file> --manifest-sha256 <64-hex> --managed-uv <absolute-private-executable> --managed-python-root <absolute-private-root> --managed-python-executable <absolute-private-root/bin/python3.12>`. It re-verifies the manifest before parsing and binds all three Runtime inputs to the same current-owner 0700 bootstrap temporary tree through component-wise no-follow checks; the uv and Python executable must be current-owner regular executables and these internal flags cannot be supplied twice. If public `--version` names a different version or `--channel dev` selects a prerelease, this verified pyz resolves the target manifest, downloads/verifies that manifest's `installer` pyz and `os.execve`s the managed Python with `<target-installer.pyz>` plus target manifest/hash, the same three verified Runtime inputs and the same public flags before any persistent write. `LOBSTER0_INSTALLER_HOPS=1` prevents recursion, and the target pyz must match the selected manifest version.
 
-Installed update first calls `resolve_release_source`, downloads a bounded manifest, rejects downgrade/equal version, selects and verifies that manifest's `installer` pyz, then execs the target pyz with internal manifest file/hash and action `update`; target-Release code therefore owns its own migration. Until Task 13 adds that migration coordinator, a target pyz reached with `MINICLAW_INSTALLER_HOPS=1` fails closed before dependency planning, layout creation or another network lookup. Task 11 never executes an update install pipeline. `uninstall` fails closed before downloader/writer/runner/lock until Task 14 adds receipt-bounded deletion. Normal install order: validate request/platform/manifest/current-loaded installer → download and verify only the small `sandbox-image` digest artifact into the existing bootstrap-private temporary tree → build/confirm system actions with Task 5 live probes → create persistent private dirs and acquire the exact live install lock → lock-bound recovery of stale downloads, interrupted manifest-bound staging and a published unactivated Runtime → remaining verified artifacts → Runtime build/smoke → staged `miniclaw setup --sandbox-image <verified-digest>` or `init --sandbox-image <verified-digest>` → local Doctor → activation → launcher/receipt → service install/health → retention. Downloads recovery verifies that same lock before rename, after quarantine and before committed deletion; lock drift restores the exact inode or retains private evidence. The sandbox preflight artifact is ephemeral, is re-hashed at every Task 5 probe, and is never treated as an installed component. Dry-run performs no download or write and reports system dependency actions as deferred rather than claiming live readiness or emitting executable privilege capabilities. Service installation additionally requires at least one enabled Channel and all of that Channel's required environment names in the owner-only Secret file; selecting zero Channels leaves the TUI fully installed but does not create a Gateway service. `--no-onboard` without a structurally valid imported config, one enabled Channel and complete Secret file forces `install_service=False`; an explicit `--install-service` in that state returns `doctor_blocked` before activation. In system-prefix mode, root performs only verified program-file operations; every state, setup, Doctor and systemd-user command is launched with `/usr/bin/sudo -u <validated-user> --` and a fixed minimal environment, and no Secret is preserved from root or passed in argv. JSON mode prints one compact event per line to stdout; human mode prints status to stderr; no subprocess raw output is forwarded without redaction/cap.
+Installed update first calls `resolve_release_source`, downloads a bounded manifest, rejects downgrade/equal version, selects and verifies that manifest's `installer` pyz, then execs the target pyz with internal manifest file/hash and action `update`; target-Release code therefore owns its own migration. Until Task 13 adds that migration coordinator, a target pyz reached with `LOBSTER0_INSTALLER_HOPS=1` fails closed before dependency planning, layout creation or another network lookup. Task 11 never executes an update install pipeline. `uninstall` fails closed before downloader/writer/runner/lock until Task 14 adds receipt-bounded deletion. Normal install order: validate request/platform/manifest/current-loaded installer → download and verify only the small `sandbox-image` digest artifact into the existing bootstrap-private temporary tree → build/confirm system actions with Task 5 live probes → create persistent private dirs and acquire the exact live install lock → lock-bound recovery of stale downloads, interrupted manifest-bound staging and a published unactivated Runtime → remaining verified artifacts → Runtime build/smoke → staged `lobster0 setup --sandbox-image <verified-digest>` or `init --sandbox-image <verified-digest>` → local Doctor → activation → launcher/receipt → service install/health → retention. Downloads recovery verifies that same lock before rename, after quarantine and before committed deletion; lock drift restores the exact inode or retains private evidence. The sandbox preflight artifact is ephemeral, is re-hashed at every Task 5 probe, and is never treated as an installed component. Dry-run performs no download or write and reports system dependency actions as deferred rather than claiming live readiness or emitting executable privilege capabilities. Service installation additionally requires at least one enabled Channel and all of that Channel's required environment names in the owner-only Secret file; selecting zero Channels leaves the TUI fully installed but does not create a Gateway service. `--no-onboard` without a structurally valid imported config, one enabled Channel and complete Secret file forces `install_service=False`; an explicit `--install-service` in that state returns `doctor_blocked` before activation. In system-prefix mode, root performs only verified program-file operations; every state, setup, Doctor and systemd-user command is launched with `/usr/bin/sudo -u <validated-user> --` and a fixed minimal environment, and no Secret is preserved from root or passed in argv. JSON mode prints one compact event per line to stdout; human mode prints status to stderr; no subprocess raw output is forwarded without redaction/cap.
 
 `--config` and `--secrets-file` accept absolute regular non-symlink files only. Config is parsed by the staged Runtime before copy and cannot contain credential values under the strict schema; Secret import requires owner uid and mode 0600, is copied with `O_EXCL` to `StatePaths.secrets_file`, and only its validated environment variable names may enter events. Neither source path nor value enters receipt/log output.
 
@@ -1226,15 +1226,15 @@ Installed update first calls `resolve_release_source`, downloads a bounded manif
 
 Interactive onboarding keeps the caller's controlling terminal and the setup layer opens `/dev/tty` as a non-seekable duplex stream built from explicit read/write file descriptors; it never relies on text `r+` seek semantics. The bounded interactive runner preserves the foreground terminal while still enforcing output/time budgets. Noninteractive `init` keeps closed stdin.
 
-`build_installer_zipapp.py` copies only `src/miniclaw/install`, parses every module AST, permits stdlib roots and relative `miniclaw.install` imports only, fixes source timestamps, and runs `zipapp.create_archive(..., interpreter="/usr/bin/env python3", main="miniclaw.install.__main__:main")`. Its closed-world validation recursively uses stdlib `symtable` to reject any scope that shadows or exports the builtin `getattr`; direct calls accept only exact constant attribute names from the machine-audited install-package allowlist, and ordinary dunder attributes default to deny except for the exact bounded set used by the package. Dynamic namespace/reflection access is rejected before archive creation, and tests require the allowlists to match the current source exactly.
+`build_installer_zipapp.py` copies only `src/lobster0/install`, parses every module AST, permits stdlib roots and relative `lobster0.install` imports only, fixes source timestamps, and runs `zipapp.create_archive(..., interpreter="/usr/bin/env python3", main="lobster0.install.__main__:main")`. Its closed-world validation recursively uses stdlib `symtable` to reject any scope that shadows or exports the builtin `getattr`; direct calls accept only exact constant attribute names from the machine-audited install-package allowlist, and ordinary dunder attributes default to deny except for the exact bounded set used by the package. Dynamic namespace/reflection access is rejected before archive creation, and tests require the allowlists to match the current source exactly.
 
 - [ ] **Step 4: Verify stdlib isolation**
 
 Run:
 
 ```bash
-uv run python scripts/build_installer_zipapp.py --output dist/miniclaw-installer.pyz
-python3 -I dist/miniclaw-installer.pyz --help
+uv run python scripts/build_installer_zipapp.py --output dist/lobster0-installer.pyz
+python3 -I dist/lobster0-installer.pyz --help
 uv run python -m unittest tests.test_install_orchestrator tests.test_installer_zipapp -v
 ```
 
@@ -1243,7 +1243,7 @@ Expected: PASS; pyz help works from an empty directory with site packages disabl
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/install/orchestrator.py src/miniclaw/install/__main__.py scripts/build_installer_zipapp.py tests/test_install_orchestrator.py tests/test_installer_zipapp.py
+git add src/lobster0/install/orchestrator.py src/lobster0/install/__main__.py scripts/build_installer_zipapp.py tests/test_install_orchestrator.py tests/test_installer_zipapp.py
 git commit -m "feat(installer): 编排 atomic install 与 stdlib zipapp"
 ```
 
@@ -1277,7 +1277,7 @@ def test_hash_failure_stops_before_python_or_installer(self) -> None:
     completed = self.run_bootstrap(fake_manifest=b"tampered")
     self.assertNotEqual(completed.returncode, 0)
     self.assertEqual(self.fake_uv.calls, [])
-    self.assertFalse((self.home / ".miniclaw").exists())
+    self.assertFalse((self.home / ".lobster0").exists())
 ```
 
 Add `sh -n`, unsupported OS/arch, missing TLS/hash/tar utility, private mktemp mode, interrupted curl, checksum command fallback, flag passthrough, signal cleanup, no shell profile mutation, no Secret read and installer exit-code propagation tests. Fixed-version/dev pyz handoff and recursion are covered in Task 11 because shell never discovers Releases.
@@ -1290,7 +1290,7 @@ Expected: FAIL because template and renderer are absent.
 
 - [ ] **Step 3: Implement the nine bootstrap operations only**
 
-The rendered shell uses `set -eu`, `umask 077`, `trap` cleanup, `mktemp -d`, `uname -s/-m`, exact case mapping, `curl -fL --proto '=https' --tlsv1.2 --retry 3`, `sha256sum` or `shasum -a 256`, and `tar -xzf`. It downloads the fixed uv 0.12.0 archive, verifies its embedded platform hash, extracts the uv executable inside the same private bootstrap tree, downloads exact `v0.7.0/release-manifest.json` and `miniclaw-installer.pyz`, verifies embedded size/hash, sets `UV_PYTHON_INSTALL_DIR` to that tree, runs `uv python install 3.12`, resolves the managed interpreter with `uv python find --managed-python 3.12`, then `exec`s the pyz with internal `--manifest-file`, `--manifest-sha256`, `--managed-uv`, `--managed-python-root`, `--managed-python-executable` and original public flags. The pyz binds uv plus both Python paths to the same current-owner 0700 bootstrap tree before Task 8 copies them into the versioned Runtime; it never resolves uv or Python from `PATH` and never downloads Python again. The shell never parses manifest JSON, edits config, invokes sudo, writes service files or touches `current`.
+The rendered shell uses `set -eu`, `umask 077`, `trap` cleanup, `mktemp -d`, `uname -s/-m`, exact case mapping, `curl -fL --proto '=https' --tlsv1.2 --retry 3`, `sha256sum` or `shasum -a 256`, and `tar -xzf`. It downloads the fixed uv 0.12.0 archive, verifies its embedded platform hash, extracts the uv executable inside the same private bootstrap tree, downloads exact `v0.7.0/release-manifest.json` and `lobster0-installer.pyz`, verifies embedded size/hash, sets `UV_PYTHON_INSTALL_DIR` to that tree, runs `uv python install 3.12`, resolves the managed interpreter with `uv python find --managed-python 3.12`, then `exec`s the pyz with internal `--manifest-file`, `--manifest-sha256`, `--managed-uv`, `--managed-python-root`, `--managed-python-executable` and original public flags. The pyz binds uv plus both Python paths to the same current-owner 0700 bootstrap tree before Task 8 copies them into the versioned Runtime; it never resolves uv or Python from `PATH` and never downloads Python again. The shell never parses manifest JSON, edits config, invokes sudo, writes service files or touches `current`.
 
 - [ ] **Step 4: Run GREEN and shell syntax gates**
 
@@ -1298,9 +1298,9 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_install_bootstrap -v
-uv run python scripts/render_install_script.py --fixture tests/install/bootstrap-release.json --output /tmp/miniclaw-install.sh
-sh -n /tmp/miniclaw-install.sh
-bash -n /tmp/miniclaw-install.sh
+uv run python scripts/render_install_script.py --fixture tests/install/bootstrap-release.json --output /tmp/lobster0-install.sh
+sh -n /tmp/lobster0-install.sh
+bash -n /tmp/lobster0-install.sh
 ```
 
 Expected: PASS; fake bootstrap reaches only the fake managed Python/pyz on valid hashes; all failure fixtures leave user state untouched.
@@ -1317,8 +1317,8 @@ git commit -m "feat(bootstrap): 生成 pinned POSIX one-line installer"
 ### Task 13: Database-safe update, rollback and retention
 
 **Files:**
-- Create: `src/miniclaw/install/update.py`
-- Modify: `src/miniclaw/install/orchestrator.py`
+- Create: `src/lobster0/install/update.py`
+- Modify: `src/lobster0/install/orchestrator.py`
 - Create: `tests/test_install_update.py`
 
 **Interfaces:**
@@ -1372,7 +1372,7 @@ class DatabaseChangeGuard:
         return current != self.expected_data_version
 ```
 
-Stop old service; open guard connection; use `sqlite3.Connection.backup` to an owner-only file, fsync, run new Runtime `miniclaw init --home` while service is stopped, refresh guard, switch current, refresh/start service, and wait bounded health. On failure stop new service; if guard unchanged restore DB through temp+fsync+replace and old current/service; if changed retain backup/new state and return `rollback_conflict` with recovery commands. Keep only current and N-1 after success; never remove runtime referenced by receipt/symlink.
+Stop old service; open guard connection; use `sqlite3.Connection.backup` to an owner-only file, fsync, run new Runtime `lobster0 init --home` while service is stopped, refresh guard, switch current, refresh/start service, and wait bounded health. On failure stop new service; if guard unchanged restore DB through temp+fsync+replace and old current/service; if changed retain backup/new state and return `rollback_conflict` with recovery commands. Keep only current and N-1 after success; never remove runtime referenced by receipt/symlink.
 
 - [ ] **Step 4: Run GREEN**
 
@@ -1383,7 +1383,7 @@ Expected: every crash window has a deterministic final state; auto rollback occu
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/install/update.py src/miniclaw/install/orchestrator.py tests/test_install_update.py
+git add src/lobster0/install/update.py src/lobster0/install/orchestrator.py tests/test_install_update.py
 git commit -m "feat(update): 增加 DB-guarded atomic rollback"
 ```
 
@@ -1392,16 +1392,16 @@ git commit -m "feat(update): 增加 DB-guarded atomic rollback"
 ### Task 14: Public service/update/uninstall CLI and install-aware Doctor
 
 **Files:**
-- Modify: `src/miniclaw/cli.py`
-- Modify: `src/miniclaw/doctor.py`
-- Modify: `src/miniclaw/install/orchestrator.py`
+- Modify: `src/lobster0/cli.py`
+- Modify: `src/lobster0/doctor.py`
+- Modify: `src/lobster0/install/orchestrator.py`
 - Modify: `tests/test_cli.py`
 - Modify: `tests/test_doctor.py`
 - Create: `tests/test_install_uninstall.py`
 
 **Interfaces:**
 - Consumes: installed receipt/layout, service/update coordinators and existing 27+ Phase 6 Doctor checks.
-- Produces: `miniclaw service install|status|logs|restart|uninstall`, `miniclaw update`, `miniclaw uninstall [--purge-data]`; install facts in Doctor; `miniclaw install-smoke --json` internal gate.
+- Produces: `lobster0 service install|status|logs|restart|uninstall`, `lobster0 update`, `lobster0 uninstall [--purge-data]`; install facts in Doctor; `lobster0 install-smoke --json` internal gate.
 
 - [ ] **Step 1: Write CLI/Doctor/uninstall RED tests**
 
@@ -1409,7 +1409,7 @@ git commit -m "feat(update): 增加 DB-guarded atomic rollback"
 def test_service_update_and_uninstall_dispatch_outside_agent_runtime(self) -> None:
     for argv, action in ((["service", "status"], "service.status"),
                          (["update"], "update"), (["uninstall"], "uninstall")):
-        with self.subTest(argv=argv), mock.patch("miniclaw.cli.run_install_action", return_value=0) as run:
+        with self.subTest(argv=argv), mock.patch("lobster0.cli.run_install_action", return_value=0) as run:
             self.assertEqual(main(argv), 0)
             self.assertEqual(run.call_args.args[0], action)
 
@@ -1431,7 +1431,7 @@ Expected: FAIL because public lifecycle commands and install facts are absent.
 
 - [ ] **Step 3: Add thin parser dispatch and receipt-bounded deletion**
 
-CLI only parses non-Secret options and passes typed requests to install modules. Before deleting any Runtime, installed uninstall copies the receipt-matching `current/miniclaw-installer.pyz` to a 0700 private temp directory, verifies its hash again and execs it with action `uninstall`; a one-hop environment guard prevents recursion. Default uninstall then verifies hashes, stops/removes service, removes managed launcher/link/receipt/runtimes, preserves config, DB, `secrets.env`, Memory, Skills, Workspace and logs, and prints exact retained root. Purge enumerates explicit state paths, refuses broad/symlink targets, requires both TTY confirmation phrases; noninteractive additionally requires the exact long flag.
+CLI only parses non-Secret options and passes typed requests to install modules. Before deleting any Runtime, installed uninstall copies the receipt-matching `current/lobster0-installer.pyz` to a 0700 private temp directory, verifies its hash again and execs it with action `uninstall`; a one-hop environment guard prevents recursion. Default uninstall then verifies hashes, stops/removes service, removes managed launcher/link/receipt/runtimes, preserves config, DB, `secrets.env`, Memory, Skills, Workspace and logs, and prints exact retained root. Purge enumerates explicit state paths, refuses broad/symlink targets, requires both TTY confirmation phrases; noninteractive additionally requires the exact long flag.
 
 Doctor appends checks named `install_method`, `managed_runtime`, `managed_node`, `managed_tui`, `managed_service`, and `release_receipt` when a receipt exists; source mode reports `WARN` rather than failing. `install-smoke --json` validates version, metadata, entry point, Channel SDK imports, Phase 6 Automation/Sandbox/Checkpoint imports, Node policy, TUI entry and local DB schema without Provider/Channel/network calls.
 
@@ -1441,9 +1441,9 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_cli tests.test_doctor tests.test_install_uninstall -v
-uv run miniclaw service --help
-uv run miniclaw update --help
-uv run miniclaw uninstall --help
+uv run lobster0 service --help
+uv run lobster0 update --help
+uv run lobster0 uninstall --help
 ```
 
 Expected: PASS; help has no Secret flags; Doctor source mode stays usable; uninstall fixtures prove all personal data survives by default.
@@ -1451,7 +1451,7 @@ Expected: PASS; help has no Secret flags; Doctor source mode stays usable; unins
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/cli.py src/miniclaw/doctor.py src/miniclaw/install/orchestrator.py tests/test_cli.py tests/test_doctor.py tests/test_install_uninstall.py
+git add src/lobster0/cli.py src/lobster0/doctor.py src/lobster0/install/orchestrator.py tests/test_cli.py tests/test_doctor.py tests/test_install_uninstall.py
 git commit -m "feat(cli): 暴露 service update uninstall lifecycle"
 ```
 
@@ -1505,12 +1505,12 @@ Run:
 
 ```bash
 release_epoch=$(git show -s --format=%ct HEAD)
-SOURCE_DATE_EPOCH="$release_epoch" uv build --out-dir /tmp/miniclaw-build-a
-SOURCE_DATE_EPOCH="$release_epoch" uv build --out-dir /tmp/miniclaw-build-b
-cmp /tmp/miniclaw-build-a/miniclaw_agent-0.7.0-py3-none-any.whl /tmp/miniclaw-build-b/miniclaw_agent-0.7.0-py3-none-any.whl
-SOURCE_DATE_EPOCH="$release_epoch" uv run python scripts/build_installer_zipapp.py --output /tmp/miniclaw-installer-a.pyz
-SOURCE_DATE_EPOCH="$release_epoch" uv run python scripts/build_installer_zipapp.py --output /tmp/miniclaw-installer-b.pyz
-cmp /tmp/miniclaw-installer-a.pyz /tmp/miniclaw-installer-b.pyz
+SOURCE_DATE_EPOCH="$release_epoch" uv build --out-dir /tmp/lobster0-build-a
+SOURCE_DATE_EPOCH="$release_epoch" uv build --out-dir /tmp/lobster0-build-b
+cmp /tmp/lobster0-build-a/lobster0_agent-0.7.0-py3-none-any.whl /tmp/lobster0-build-b/lobster0_agent-0.7.0-py3-none-any.whl
+SOURCE_DATE_EPOCH="$release_epoch" uv run python scripts/build_installer_zipapp.py --output /tmp/lobster0-installer-a.pyz
+SOURCE_DATE_EPOCH="$release_epoch" uv run python scripts/build_installer_zipapp.py --output /tmp/lobster0-installer-b.pyz
+cmp /tmp/lobster0-installer-a.pyz /tmp/lobster0-installer-b.pyz
 uv run python -m unittest tests.test_release_manifest_build -v
 ```
 
@@ -1535,7 +1535,7 @@ git commit -m "build(release): 生成 closed-world manifest 与 checksums"
 
 **Interfaces:**
 - Consumes: verified wheel/requirements, managed TUI bundle and Phase 6 pinned Sandbox image contract.
-- Produces: `ghcr.io/nedonion/miniclaw:0.7.0` and `ghcr.io/nedonion/miniclaw-sandbox:0.7.0`, immutable digests, non-root UID, CLI/install smoke and Phase 6 containment smoke.
+- Produces: `ghcr.io/nedonion/lobster0:0.7.0` and `ghcr.io/nedonion/lobster0-sandbox:0.7.0`, immutable digests, non-root UID, CLI/install smoke and Phase 6 containment smoke.
 
 - [ ] **Step 1: Write Dockerfile contract RED tests**
 
@@ -1558,16 +1558,16 @@ Expected: FAIL because deployment files are absent.
 
 - [ ] **Step 3: Implement multi-stage verified image**
 
-Builder stage uses digest-pinned Python 3.12 slim, copies `requirements-all.lock` and verified wheel, installs with hashes into `/opt/miniclaw/venv`, and copies the native TUI bundle. Final stage copies only Runtime output, creates UID/GID 65532, uses `/data` owner-only state, sets `MINICLAW_HOME=/data` and managed Node/TUI paths, exposes no Docker socket, and runs stable entrypoint with exact argv. `deploy/sandbox.Dockerfile` builds the Phase 6 command image with the same UID 65532, no package manager/cache in the final layer, a read-only-root compatible `/tmp`, and no entrypoint that can reinterpret model argv. Do not embed user Secret or default Provider key.
+Builder stage uses digest-pinned Python 3.12 slim, copies `requirements-all.lock` and verified wheel, installs with hashes into `/opt/lobster0/venv`, and copies the native TUI bundle. Final stage copies only Runtime output, creates UID/GID 65532, uses `/data` owner-only state, sets `LOBSTER0_HOME=/data` and managed Node/TUI paths, exposes no Docker socket, and runs stable entrypoint with exact argv. `deploy/sandbox.Dockerfile` builds the Phase 6 command image with the same UID 65532, no package manager/cache in the final layer, a read-only-root compatible `/tmp`, and no entrypoint that can reinterpret model argv. Do not embed user Secret or default Provider key.
 
 - [ ] **Step 4: Build and run local container gate**
 
 Run:
 
 ```bash
-docker build --pull=false -f deploy/Dockerfile -t miniclaw:0.7.0 .
-docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --user 65532:65532 miniclaw:0.7.0 --version
-docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --user 65532:65532 miniclaw:0.7.0 install-smoke --json
+docker build --pull=false -f deploy/Dockerfile -t lobster0:0.7.0 .
+docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --user 65532:65532 lobster0:0.7.0 --version
+docker run --rm --read-only --tmpfs /tmp:rw,noexec,nosuid,size=64m --user 65532:65532 lobster0:0.7.0 install-smoke --json
 ```
 
 Expected: version and smoke PASS as non-root. If Docker is unavailable, keep this gate PENDING with exact blocker; do not mark image verified.
@@ -1677,7 +1677,7 @@ git commit -m "ci(release): 门禁 Tier 1 install 与 trusted publishing"
 
 - [ ] **Step 1: Write documentation contract RED tests**
 
-Extend `scripts/validate_docs.py` tests/assertions so README contains the exact one-line URL, `miniclaw-agent`, supported platform table, Node policy, service/update/uninstall commands, data-preserving default and source development path; reject old `name = miniclaw`, Node `>=22.19`, global pnpm requirement and claims that PENDING runners passed.
+Extend `scripts/validate_docs.py` tests/assertions so README contains the exact one-line URL, `lobster0-agent`, supported platform table, Node policy, service/update/uninstall commands, data-preserving default and source development path; reject old `name = lobster0`, Node `>=22.19`, global pnpm requirement and claims that PENDING runners passed.
 
 - [ ] **Step 2: Run RED**
 
@@ -1691,7 +1691,7 @@ README primary command is:
 
 ```bash
 curl -fsSL --proto '=https' --tlsv1.2 \
-  https://github.com/NEDONION/mini-claw/releases/latest/download/install.sh | bash
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash
 ```
 
 Document interactive and `--no-onboard --no-service --json`, exact supported/unsupported matrix, sudo plan, Secret file, rootless/non-root boundary, service commands, update/rollback conflict, uninstall/purge semantics, diagnostics and source development using uv/pnpm. Architecture shows bootstrap → pyz → manifest → staging → smoke → current → service; product marks Gap complete only after evidence. Operations runbook contains draft promotion, PyPI Trusted Publisher, GHCR digest, rollback-conflict recovery and revocation.
@@ -1725,9 +1725,9 @@ uv run python -m unittest discover -s tests -v
 uv run ruff check .
 corepack pnpm --dir tui test
 uv build
-uv run python scripts/build_installer_zipapp.py --output dist/miniclaw-installer.pyz
+uv run python scripts/build_installer_zipapp.py --output dist/lobster0-installer.pyz
 uv run python scripts/validate_docs.py
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 git diff --check
 git diff --cached --check
 ```

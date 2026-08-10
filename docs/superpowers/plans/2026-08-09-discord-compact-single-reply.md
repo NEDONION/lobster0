@@ -19,20 +19,20 @@
 - Final text must never be truncated; over-limit or failed edits fall back to the durable Outbox.
 - Every new or modified top-level function/class/method has an accurate Chinese docstring and Python 3.12 type annotations.
 - Do not read, print, persist, or commit real Discord tokens, account IDs, guild IDs, channel IDs, or message bodies.
-- Preserve unrelated workspace changes under `src/miniclaw/checkpoints/`, Sandbox/Tool files, tests, and `.pnpm-store/`.
+- Preserve unrelated workspace changes under `src/lobster0/checkpoints/`, Sandbox/Tool files, tests, and `.pnpm-store/`.
 
 ---
 
 ## File Map
 
-- Create `src/miniclaw/channels/discord_rendering.py`: pure, offline compact Markdown and progress rendering.
+- Create `src/lobster0/channels/discord_rendering.py`: pure, offline compact Markdown and progress rendering.
 - Create `tests/test_discord_rendering.py`: renderer semantics and length-budget regression tests.
-- Modify `src/miniclaw/channels/discord.py`: use the renderer for send/create/edit and report exact final visibility.
+- Modify `src/lobster0/channels/discord.py`: use the renderer for send/create/edit and report exact final visibility.
 - Modify `tests/test_discord_transport.py`: one-message terminal edit, long-answer fallback, and safe send tests.
-- Modify `src/miniclaw/gateway.py`: configure only Discord Experience as final-answer-bearing progress.
+- Modify `src/lobster0/gateway.py`: configure only Discord Experience as final-answer-bearing progress.
 - Modify `tests/test_gateway.py`: assert Discord wiring passes `progress_is_final=True`.
-- Modify `src/miniclaw/evals/cases.py`: register the `compact_reply` channel fixture.
-- Modify `src/miniclaw/evals/multi_channel.py`: run production Discord renderer evidence.
+- Modify `src/lobster0/evals/cases.py`: register the `compact_reply` channel fixture.
+- Modify `src/lobster0/evals/multi_channel.py`: run production Discord renderer evidence.
 - Modify `evals/scenarios/discord-channel.v1.jsonl`: add `DISCORD-UX-001`.
 - Modify `tests/test_multi_channel_evals.py`: lock the 10 Telegram + 11 Discord matrix.
 - Modify `README.md`, `docs/engineering/phase-5/20260808_telegram-discord-channels.md`, `docs/getting-started/20260807_本地运行指南.md`, and `docs/progress/index.html`: document verified compact single-reply behavior and fresh gate counts.
@@ -42,11 +42,11 @@
 ### Task 1: Pure Discord Compact Renderer
 
 **Files:**
-- Create: `src/miniclaw/channels/discord_rendering.py`
+- Create: `src/lobster0/channels/discord_rendering.py`
 - Create: `tests/test_discord_rendering.py`
 
 **Interfaces:**
-- Consumes: `AgentProgress` from `miniclaw.channels.progress`.
+- Consumes: `AgentProgress` from `lobster0.channels.progress`.
 - Produces: `render_discord_text(content: str, *, max_chars: int) -> str | None`.
 - Produces: `render_discord_progress(progress: AgentProgress, *, max_chars: int) -> str`.
 
@@ -59,11 +59,11 @@ Create `tests/test_discord_rendering.py` with focused public-result assertions:
 
 import unittest
 
-from miniclaw.channels.discord_rendering import (
+from lobster0.channels.discord_rendering import (
     render_discord_progress,
     render_discord_text,
 )
-from miniclaw.channels.progress import ProgressProjector
+from lobster0.channels.progress import ProgressProjector
 
 
 class DiscordRenderingTest(unittest.TestCase):
@@ -104,7 +104,7 @@ class DiscordRenderingTest(unittest.TestCase):
 
         rendered = render_discord_progress(progress, max_chars=2000)
 
-        self.assertEqual(rendered, "⏳ **MiniClaw 正在处理**\n正在理解请求")
+        self.assertEqual(rendered, "⏳ **Lobster0 正在处理**\n正在理解请求")
         self.assertNotIn("Claw Trail", rendered)
         self.assertNotIn("个工具", rendered)
 
@@ -121,18 +121,18 @@ Run:
 uv run python -m unittest tests.test_discord_rendering -v
 ```
 
-Expected: FAIL with `ModuleNotFoundError: No module named 'miniclaw.channels.discord_rendering'`.
+Expected: FAIL with `ModuleNotFoundError: No module named 'lobster0.channels.discord_rendering'`.
 
 - [ ] **Step 3: Implement the minimal pure renderer**
 
-Create `src/miniclaw/channels/discord_rendering.py` with these concrete rules:
+Create `src/lobster0/channels/discord_rendering.py` with these concrete rules:
 
 ```python
 """Discord 专属的正文紧凑 Markdown 与公开进度渲染。"""
 
 import re
 
-from miniclaw.channels.progress import AgentProgress
+from lobster0.channels.progress import AgentProgress
 
 _ATX_HEADING = re.compile(r"^[ \t]{0,3}#{1,6}[ \t]+(.+?)\s*#*\s*$")
 _FENCE = re.compile(r"^[ \t]*(```|~~~)")
@@ -156,7 +156,7 @@ def render_discord_progress(progress: AgentProgress, *, max_chars: int) -> str:
     if type(max_chars) is not int or max_chars <= 0:
         raise ValueError("Discord max chars must be positive")
     if progress.status == "running":
-        text = f"⏳ **MiniClaw 正在处理**\n{progress.summary}"
+        text = f"⏳ **Lobster0 正在处理**\n{progress.summary}"
     elif progress.status == "completed":
         text = "✅ **已完成**\n回答较长，正在分段发送。"
     else:
@@ -202,7 +202,7 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_discord_rendering -v
-uv run ruff check src/miniclaw/channels/discord_rendering.py tests/test_discord_rendering.py
+uv run ruff check src/lobster0/channels/discord_rendering.py tests/test_discord_rendering.py
 ```
 
 Expected: all renderer tests PASS and Ruff exits 0.
@@ -210,7 +210,7 @@ Expected: all renderer tests PASS and Ruff exits 0.
 - [ ] **Step 5: Commit the renderer slice**
 
 ```bash
-git add src/miniclaw/channels/discord_rendering.py tests/test_discord_rendering.py
+git add src/lobster0/channels/discord_rendering.py tests/test_discord_rendering.py
 git commit -m "feat(discord): 增加 compact Markdown renderer"
 ```
 
@@ -219,7 +219,7 @@ git commit -m "feat(discord): 增加 compact Markdown renderer"
 ### Task 2: Discord Transport Single-Message Terminal Edit
 
 **Files:**
-- Modify: `src/miniclaw/channels/discord.py:1-25, 314-435, 752-753`
+- Modify: `src/lobster0/channels/discord.py:1-25, 314-435, 752-753`
 - Modify: `tests/test_discord_transport.py:1-28, 202-228`
 
 **Interfaces:**
@@ -251,7 +251,7 @@ Replace the old “最终内容见下一条消息” assertion and add long-answ
         )
         await transport.stop_typing(token)
 
-        self.assertEqual(client.sent[0]["text"], "⏳ **MiniClaw 正在处理**\n正在理解请求")
+        self.assertEqual(client.sent[0]["text"], "⏳ **Lobster0 正在处理**\n正在理解请求")
         self.assertEqual(client.edited[0]["text"], "**完整回答**\n\n- 第一项")
         self.assertEqual(completed.visible_answer_chars, len(final))
         self.assertNotIn("Claw Trail", client.edited[0]["text"])
@@ -306,12 +306,12 @@ Expected: FAIL because completed edit still contains `Claw Trail`/“最终内�
 
 - [ ] **Step 3: Use the renderer in DiscordTransport**
 
-Modify `src/miniclaw/channels/discord.py`:
+Modify `src/lobster0/channels/discord.py`:
 
 ```python
 from dataclasses import dataclass
 
-from miniclaw.channels.discord_rendering import (
+from lobster0.channels.discord_rendering import (
     render_discord_progress,
     render_discord_text,
 )
@@ -366,7 +366,7 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_discord_rendering tests.test_discord_transport tests.test_channel_experience -v
-uv run ruff check src/miniclaw/channels/discord.py src/miniclaw/channels/discord_rendering.py tests/test_discord_transport.py tests/test_discord_rendering.py
+uv run ruff check src/lobster0/channels/discord.py src/lobster0/channels/discord_rendering.py tests/test_discord_transport.py tests/test_discord_rendering.py
 ```
 
 Expected: all selected tests PASS and Ruff exits 0.
@@ -374,7 +374,7 @@ Expected: all selected tests PASS and Ruff exits 0.
 - [ ] **Step 5: Commit the Transport slice**
 
 ```bash
-git add src/miniclaw/channels/discord.py tests/test_discord_transport.py
+git add src/lobster0/channels/discord.py tests/test_discord_transport.py
 git commit -m "feat(discord): 原地收口 compact final reply"
 ```
 
@@ -383,7 +383,7 @@ git commit -m "feat(discord): 原地收口 compact final reply"
 ### Task 3: Wire Discord Experience as the Final Reply
 
 **Files:**
-- Modify: `src/miniclaw/gateway.py:430-444`
+- Modify: `src/lobster0/gateway.py:430-444`
 - Modify: `tests/test_gateway.py:1-15, 300+`
 
 **Interfaces:**
@@ -411,12 +411,12 @@ Import `_build_discord_channel`, `GatewaySecrets`, `AsyncMock`, and `Mock`, then
         experience = object()
         with (
             patch(
-                "miniclaw.gateway._channel_common",
+                "lobster0.gateway._channel_common",
                 return_value=(object(), object(), manager, object(), object()),
             ),
-            patch("miniclaw.gateway.DiscordTransport", return_value=object()),
-            patch("miniclaw.gateway.DeliveryWorker", return_value=object()),
-            patch("miniclaw.gateway.ChannelExperience", return_value=experience) as factory,
+            patch("lobster0.gateway.DiscordTransport", return_value=object()),
+            patch("lobster0.gateway.DeliveryWorker", return_value=object()),
+            patch("lobster0.gateway.ChannelExperience", return_value=experience) as factory,
         ):
             _build_discord_channel(
                 config,
@@ -469,7 +469,7 @@ Expected: all selected tests PASS. Existing final-progress fallback tests contin
 - [ ] **Step 5: Commit the wiring slice**
 
 ```bash
-git add src/miniclaw/gateway.py tests/test_gateway.py
+git add src/lobster0/gateway.py tests/test_gateway.py
 git commit -m "feat(gateway): 启用 Discord single-message final"
 ```
 
@@ -478,8 +478,8 @@ git commit -m "feat(gateway): 启用 Discord single-message final"
 ### Task 4: Versioned UX Gate and User Documentation
 
 **Files:**
-- Modify: `src/miniclaw/evals/cases.py:78-98`
-- Modify: `src/miniclaw/evals/multi_channel.py:1-80`
+- Modify: `src/lobster0/evals/cases.py:78-98`
+- Modify: `src/lobster0/evals/multi_channel.py:1-80`
 - Modify: `evals/scenarios/discord-channel.v1.jsonl`
 - Modify: `tests/test_multi_channel_evals.py:25-70`
 - Modify: `README.md`
@@ -506,7 +506,7 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_multi_channel_evals -v
-uv run miniclaw eval validate --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
 ```
 
 Expected: FAIL because `compact_reply` is not registered or implemented.
@@ -539,8 +539,8 @@ Run:
 
 ```bash
 uv run python -m unittest tests.test_multi_channel_evals -v
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 ```
 
 Expected: 33/33 Channel cases PASS: Feishu 12, Telegram 10, Discord 11.
@@ -573,7 +573,7 @@ Expected: documentation validation PASS and no whitespace errors.
 Commit only these files:
 
 ```bash
-git add src/miniclaw/evals/cases.py src/miniclaw/evals/multi_channel.py evals/scenarios/discord-channel.v1.jsonl tests/test_multi_channel_evals.py README.md docs/engineering/phase-5/20260808_telegram-discord-channels.md docs/getting-started/20260807_本地运行指南.md docs/progress/index.html
+git add src/lobster0/evals/cases.py src/lobster0/evals/multi_channel.py evals/scenarios/discord-channel.v1.jsonl tests/test_multi_channel_evals.py README.md docs/engineering/phase-5/20260808_telegram-discord-channels.md docs/getting-started/20260807_本地运行指南.md docs/progress/index.html
 git commit -m "test(discord): 增加 compact reply Channel gate"
 ```
 
@@ -605,8 +605,8 @@ Expected: all tests PASS and Ruff exits 0. Record the actual test count from uni
 Run:
 
 ```bash
-uv run miniclaw eval run --suite channel --root evals/scenarios
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 ```
 
 Expected: 33/33 and 660/660 PASS. If counts differ because concurrent in-scope cases landed, update only current-fact documentation to the fresh values and rerun validation.
@@ -625,12 +625,12 @@ Expected: docs PASS, no whitespace errors, and no task files remain uncommitted.
 
 - [ ] **Step 4: Restart the existing local Gateway service**
 
-Use read-only service inspection first, then restart the already configured MiniClaw Gateway without reading `.env`:
+Use read-only service inspection first, then restart the already configured Lobster0 Gateway without reading `.env`:
 
 ```bash
-launchctl print gui/501/io.miniclaw.gateway
-launchctl kickstart -k gui/501/io.miniclaw.gateway
-uv run miniclaw doctor
+launchctl print gui/501/io.lobster0.gateway
+launchctl kickstart -k gui/501/io.lobster0.gateway
+uv run lobster0 doctor
 ```
 
 Expected: service is running and Doctor reports Discord locally ready. Do not print environment variables or Token values.

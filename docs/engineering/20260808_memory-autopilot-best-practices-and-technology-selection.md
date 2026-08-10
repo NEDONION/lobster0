@@ -1,4 +1,4 @@
-# MiniClaw Memory Autopilot 最佳实践与技术选型
+# Lobster0 Memory Autopilot 最佳实践与技术选型
 
 > 日期：2026-08-08
 > 状态：**APPROVED DESIGN / PLANNED / NOT IMPLEMENTED**
@@ -78,7 +78,7 @@ flowchart TB
 建议新增或重构为以下模块。文件名是计划接口，不代表已经实现。
 
 ```text
-src/miniclaw/memory/
+src/lobster0/memory/
 ├── models.py             # MemoryUnit / SourceRef / Candidate / Conflict
 ├── policy.py             # capture、promotion、sensitivity、disclosure
 ├── buffer.py             # durable source-range buffer
@@ -161,7 +161,7 @@ schema_version: 1
 id: mem_01J...
 owner_id: 1
 kind: preference
-text: 用户希望 MiniClaw 默认使用中文回复
+text: 用户希望 Lobster0 默认使用中文回复
 status: active
 scope: private
 sensitivity: normal
@@ -251,7 +251,7 @@ stateDiagram-v2
 ### 8.1 目录
 
 ```text
-~/.miniclaw/memory/owners/<owner_id>/
+~/.lobster0/memory/owners/<owner_id>/
 ├── profile.md
 ├── facts/YYYY-MM-DD.md
 ├── episodes/YYYY-MM-DD.md
@@ -266,13 +266,13 @@ Markdown 必须同时适合人读和机器稳定解析，不依赖脆弱的任�
 
 ```markdown
 ---
-schema: miniclaw.memory/v1
+schema: lobster0.memory/v1
 owner_id: 1
 kind: facts
 date: 2026-08-08
 ---
 
-<!-- miniclaw:unit mem_01J... -->
+<!-- lobster0:unit mem_01J... -->
 ## 偏好：默认使用中文
 
 - status: active
@@ -282,8 +282,8 @@ date: 2026-08-08
 - valid_from: 2026-08-08T22:00:00+08:00
 - sources: src_message_123
 
-用户希望 MiniClaw 默认使用中文回复。
-<!-- /miniclaw:unit -->
+用户希望 Lobster0 默认使用中文回复。
+<!-- /lobster0:unit -->
 ```
 
 ### 8.3 原子写入
@@ -557,7 +557,7 @@ Web、邮件、文档、Tool stdout 默认 `untrusted_external`：
 
 ### 17.1 现有文件迁移
 
-1. 首次启动以只读方式扫描 `~/.miniclaw/MEMORY.md` 和 `memory/*.md`；
+1. 首次启动以只读方式扫描 `~/.lobster0/MEMORY.md` 和 `memory/*.md`；
 2. 生成 `legacy_manual` Unit 和 manifest，不改旧文件；
 3. 对比 Unit 数、hash、secret scan；
 4. 用户/自动 gate 确认后写入新目录；

@@ -1,4 +1,4 @@
-# MiniClaw Python Core + pi-tui Implementation Plan
+# Lobster0 Python Core + pi-tui Implementation Plan
 
 > 状态：实现完成，等待最终 main 合并与发布证据固化。
 
@@ -6,14 +6,14 @@
 
 **Goal:** 保留 Python Agent Core，并以版本化 NDJSON Bridge 接入默认 TypeScript pi-tui，完整交付稳定流式对话、Codex 风格活动流、多行输入、分级审批和回归门禁。
 
-**Architecture:** `miniclaw` Python launcher 启动 Node pi-tui，Node 再以 argv 启动 `python -m miniclaw.bridge`。Bridge 是唯一跨语言边界，把现有 `TurnService` 请求和 `RunEvent` 转换为协议 v1；Textual 仅保留迁移期 fallback。
+**Architecture:** `lobster0` Python launcher 启动 Node pi-tui，Node 再以 argv 启动 `python -m lobster0.bridge`。Bridge 是唯一跨语言边界，把现有 `TurnService` 请求和 `RunEvent` 转换为协议 v1；Textual 仅保留迁移期 fallback。
 
 **Tech Stack:** Python 3.12、SQLite、unittest、Ruff、Node.js 22.19+、TypeScript 5、pnpm、`@earendil-works/pi-tui 0.84.1`、Node test runner。
 
 ## Global Constraints
 
-- 唯一人类入口是裸命令 `miniclaw`；`init/doctor/eval/--version` 继续直接由 Python 执行。
-- `MINICLAW_TUI=pi|textual|auto`；默认 `auto` 优先 pi，显式 `pi` 不得静默 fallback。
+- 唯一人类入口是裸命令 `lobster0`；`init/doctor/eval/--version` 继续直接由 Python 执行。
+- `LOBSTER0_TUI=pi|textual|auto`；默认 `auto` 优先 pi，显式 `pi` 不得静默 fallback。
 - 协议固定 `v:1`、UTF-8 NDJSON、2 MiB 单帧上限；stdout 只承载协议。
 - Node UI 不能读取 SQLite、模型 Key 或直接执行 Tool；所有授权以 Python Core 为准。
 - Provider reasoning 只展示显式 `reasoning_content`，默认展开并跟随用户语言。
@@ -25,9 +25,9 @@
 ### Task 1: Finish Current Provider and Textual Regressions
 
 **Files:**
-- Modify: `src/miniclaw/storage/conversations.py`
-- Modify: `src/miniclaw/agent/context.py`
-- Modify: `src/miniclaw/tui/app.py`
+- Modify: `src/lobster0/storage/conversations.py`
+- Modify: `src/lobster0/agent/context.py`
+- Modify: `src/lobster0/tui/app.py`
 - Modify: `tests/test_conversations.py`
 - Modify: `tests/test_context.py`
 - Modify: `tests/test_tui.py`
@@ -59,15 +59,15 @@ Keep one test for manual scroll preservation and one for active bottom following
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_conversations tests.test_context tests.test_tui -v
-git add src/miniclaw/storage/conversations.py src/miniclaw/agent/context.py src/miniclaw/tui/app.py tests/test_conversations.py tests/test_context.py tests/test_tui.py
+git add src/lobster0/storage/conversations.py src/lobster0/agent/context.py src/lobster0/tui/app.py tests/test_conversations.py tests/test_context.py tests/test_tui.py
 git commit -m "fix(tui): 修复审批历史与流式选区丢失"
 ```
 
 ### Task 2: Implement Protocol v1 Codec
 
 **Files:**
-- Create: `src/miniclaw/bridge/__init__.py`
-- Create: `src/miniclaw/bridge/protocol.py`
+- Create: `src/lobster0/bridge/__init__.py`
+- Create: `src/lobster0/bridge/protocol.py`
 - Create: `tests/test_bridge_protocol.py`
 
 **Interfaces:**
@@ -85,7 +85,7 @@ Test a literal valid `turn.start` frame plus wrong version, invalid UTF-8, non-o
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_bridge_protocol -v
 ```
 
-Expected: import failure because `miniclaw.bridge.protocol` does not exist.
+Expected: import failure because `lobster0.bridge.protocol` does not exist.
 
 - [x] **Step 3: Implement typed codec and run GREEN**
 
@@ -94,15 +94,15 @@ Use frozen slotted dataclasses and stdlib `json`; call `json.dumps(..., allow_na
 - [x] **Step 4: Commit protocol codec**
 
 ```bash
-git add src/miniclaw/bridge tests/test_bridge_protocol.py
+git add src/lobster0/bridge tests/test_bridge_protocol.py
 git commit -m "feat(bridge): 定义 versioned NDJSON protocol v1"
 ```
 
 ### Task 3: Implement the Python Bridge Process
 
 **Files:**
-- Create: `src/miniclaw/bridge/__main__.py`
-- Create: `src/miniclaw/bridge/server.py`
+- Create: `src/lobster0/bridge/__main__.py`
+- Create: `src/lobster0/bridge/server.py`
 - Create: `tests/test_bridge_server.py`
 
 **Interfaces:**
@@ -126,33 +126,33 @@ Read stdin using a bounded async line reader, start one task per accepted Turn, 
 
 - [x] **Step 4: Add a subprocess smoke test**
 
-Launch `python -m miniclaw.bridge --home <temp>` with a controlled initialized state, send `client.hello` and `bridge.shutdown`, and assert every stdout line is valid protocol JSON.
+Launch `python -m lobster0.bridge --home <temp>` with a controlled initialized state, send `client.hello` and `bridge.shutdown`, and assert every stdout line is valid protocol JSON.
 
 - [x] **Step 5: Run GREEN and commit**
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_bridge_protocol tests.test_bridge_server -v
-git add src/miniclaw/bridge tests/test_bridge_server.py
+git add src/lobster0/bridge tests/test_bridge_server.py
 git commit -m "feat(bridge): 接通 Python Agent Core stdio server"
 ```
 
 ### Task 4: Add the Single-Entry pi-tui Launcher
 
 **Files:**
-- Create: `src/miniclaw/tui_launcher.py`
-- Modify: `src/miniclaw/cli.py`
-- Modify: `src/miniclaw/doctor.py`
+- Create: `src/lobster0/tui_launcher.py`
+- Modify: `src/lobster0/cli.py`
+- Modify: `src/lobster0/doctor.py`
 - Modify: `pyproject.toml`
 - Modify: `tests/test_cli.py`
 - Modify: `tests/test_doctor.py`
 
 **Interfaces:**
 - Produces: `run_default_tui(paths, *, environ, stdin, stdout, stderr) -> int`.
-- Consumes: `MINICLAW_TUI=auto|pi|textual`, `MINICLAW_NODE`, `MINICLAW_TUI_ENTRY`.
+- Consumes: `LOBSTER0_TUI=auto|pi|textual`, `LOBSTER0_NODE`, `LOBSTER0_TUI_ENTRY`.
 
 - [x] **Step 1: Write RED launcher tests**
 
-Assert bare `miniclaw` selects pi with compatible Node and built entry, explicit `textual` skips Node, `auto` falls back with one diagnostic, explicit `pi` exits non-zero, and maintenance commands never inspect Node.
+Assert bare `lobster0` selects pi with compatible Node and built entry, explicit `textual` skips Node, `auto` falls back with one diagnostic, explicit `pi` exits non-zero, and maintenance commands never inspect Node.
 
 - [x] **Step 2: Verify RED**
 
@@ -162,13 +162,13 @@ PYTHONPATH=src .venv/bin/python -m unittest tests.test_cli tests.test_doctor -v
 
 - [x] **Step 3: Implement safe argv launcher and doctor checks**
 
-Resolve Node from `MINICLAW_NODE` or PATH, parse `node --version`, require `22.19.0`, locate `tui/dist/main.js`, and call `subprocess.run([node, entry], shell=False, env=child_env)`. Add doctor rows for Node and pi-tui build without changing init/eval behavior.
+Resolve Node from `LOBSTER0_NODE` or PATH, parse `node --version`, require `22.19.0`, locate `tui/dist/main.js`, and call `subprocess.run([node, entry], shell=False, env=child_env)`. Add doctor rows for Node and pi-tui build without changing init/eval behavior.
 
 - [x] **Step 4: Run GREEN and commit**
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m unittest tests.test_cli tests.test_doctor -v
-git add src/miniclaw/tui_launcher.py src/miniclaw/cli.py src/miniclaw/doctor.py pyproject.toml tests/test_cli.py tests/test_doctor.py
+git add src/lobster0/tui_launcher.py src/lobster0/cli.py src/lobster0/doctor.py pyproject.toml tests/test_cli.py tests/test_doctor.py
 git commit -m "feat(cli): 默认启动 pi-tui 并保留 Textual fallback"
 ```
 
@@ -200,7 +200,7 @@ pnpm --dir tui test
 
 - [x] **Step 3: Implement the minimal client and pure reducer**
 
-Spawn `[MINICLAW_PYTHON, "-m", "miniclaw.bridge", "--home", MINICLAW_HOME]` with `shell:false`; reserve stdout for frames, buffer by newline, enforce 2 MiB, and publish typed events to the reducer.
+Spawn `[LOBSTER0_PYTHON, "-m", "lobster0.bridge", "--home", LOBSTER0_HOME]` with `shell:false`; reserve stdout for frames, buffer by newline, enforce 2 MiB, and publish typed events to the reducer.
 
 - [x] **Step 4: Run GREEN, typecheck and commit**
 
@@ -226,7 +226,7 @@ git commit -m "feat(pi-tui): 建立 Bridge client 与事件状态机"
 - Create: `tui/test/approval.test.ts`
 
 **Interfaces:**
-- Produces: `MiniClawTui` accepting an injected `TUI`, `BridgePort`, language and initial metadata.
+- Produces: `Lobster0Tui` accepting an injected `TUI`, `BridgePort`, language and initial metadata.
 - Consumes: pi-tui `TuiAltScreen`, `ScrollView`, `Editor`, `Markdown`, `VirtualTerminal`, Overlay API.
 
 - [x] **Step 1: Write RED VirtualTerminal snapshots**
@@ -332,15 +332,15 @@ uv run python -m unittest discover -s tests -v
 uv run ruff check .
 pnpm --dir tui test
 pnpm --dir tui build
-uv run miniclaw eval validate
-uv run miniclaw eval run --offline
+uv run lobster0 eval validate
+uv run lobster0 eval run --offline
 uv build
 git diff --check
 ```
 
 - [x] **Step 2: Run real offline smoke checks**
 
-Use a temporary MiniClaw home to validate Bridge hello/shutdown, explicit Textual fallback, pi launcher with controlled Node path, and built TUI startup/exit. Do not call a real model or飞书。
+Use a temporary Lobster0 home to validate Bridge hello/shutdown, explicit Textual fallback, pi launcher with controlled Node path, and built TUI startup/exit. Do not call a real model or飞书。
 
 - [x] **Step 3: Self-review requirements and security**
 

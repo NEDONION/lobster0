@@ -10,7 +10,7 @@ export function EvidenceStrip({ copy }: { copy: MarketingCopy['evidence'] }) {
   ];
 
   return (
-    <aside className="evidence-strip" aria-label="MiniClaw evidence">
+    <aside className="evidence-strip" aria-label="Lobster0 evidence">
       <dl>
         {facts.map((fact, index) => (
           <div data-accent={['blue', 'coral', 'green', 'amber', 'violet'][index]} key={fact.label}>

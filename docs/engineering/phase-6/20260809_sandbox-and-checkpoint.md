@@ -144,12 +144,12 @@ Seatbelt profile 从 deny-default 开始，导入现代 macOS 启动普通进程
 `file-read-metadata + path-ancestors`，不开放父目录内容。路径经过 canonicalize 和转义，不能把 `)`、引号或换行
 注入 profile。profile 作为独立文件/参数传给 `sandbox-exec`，命令仍是 exact argv。
 
-Seatbelt 是 macOS 兼容后端，不是未来长期的跨平台承诺；如果系统移除 `/usr/bin/sandbox-exec`，MiniClaw 返回
+Seatbelt 是 macOS 兼容后端，不是未来长期的跨平台承诺；如果系统移除 `/usr/bin/sandbox-exec`，Lobster0 返回
 `sandbox_backend_unavailable`，不会在 Host 重试。
 
 ## 8. 最小环境
 
-Backend 只解析 Plan 中列出的安全环境名。常见值来自 MiniClaw 构造的固定集合：`PATH`、`LANG`、`LC_ALL` 和必要的
+Backend 只解析 Plan 中列出的安全环境名。常见值来自 Lobster0 构造的固定集合：`PATH`、`LANG`、`LC_ALL` 和必要的
 CLI notifier 开关。Automation 删除 `HOME`；API Key、App Secret、Token、Cookie、Proxy 和父进程任意环境不继承。
 
 Receipt 只保存：plan hash、backend、exit/signal/timeout、bounded stdout/stderr、截断标记、耗时和相对 changed paths。
@@ -189,7 +189,7 @@ Manifest entry 保存相对路径、是否存在、content hash、size 和 mode�
 - symlink、目录逃逸、socket、device 和非 regular file；
 - `.git`、`.ssh`、`.aws`、`.gnupg`、`.kube`；
 - `.env*`、credentials、token、key、SQLite database 及 `-wal`/`-shm` sidecar；
-- MiniClaw state/system/socket 路径；
+- Lobster0 state/system/socket 路径；
 - 超出 entry/file/total budget 的内容。
 
 当前 CheckpointStore 只捕获主 Workspace 相对路径。Personal Profile 的额外 write roots 仍由 WorkspaceGuard、Policy 和
@@ -222,7 +222,7 @@ sequenceDiagram
 Preview 不产生副作用。Apply 重新计算同一 preview hash；任何并发编辑都拒绝整批，不能恢复一半。恢复 existing file 时
 同时恢复 mode；恢复 tombstone 时删除操作新建的 regular file。目标被换成 symlink 时不会跟随。
 
-当前 RollbackService 是内部 Python API，还没有独立 `miniclaw rollback` CLI。Checkpoint ID 可从 ToolRun/SQLite
+当前 RollbackService 是内部 Python API，还没有独立 `lobster0 rollback` CLI。Checkpoint ID 可从 ToolRun/SQLite
 诊断链路追踪；面向 Owner 的可视化预览与 CLI 属于后续运维增强。
 
 ## 12. Crash matrix
@@ -250,14 +250,14 @@ uv run python -m unittest \
   tests.test_checkpoint_store \
   tests.test_rollback \
   tests.test_tool_executor -v
-uv run miniclaw eval run --suite automation --root evals/scenarios
+uv run lobster0 eval run --suite automation --root evals/scenarios
 ```
 
 显式 live smoke：
 
 ```bash
 uv run python scripts/sandbox_live_smoke.py --backend docker \
-  --image 'registry.example/miniclaw-sandbox@sha256:<digest>'
+  --image 'registry.example/lobster0-sandbox@sha256:<digest>'
 uv run python scripts/sandbox_live_smoke.py --backend seatbelt
 ```
 
@@ -273,7 +273,7 @@ Python 会二次 `posix_spawn` `Resources/Python.app/.../Python`；当前 Plan �
 ## 14. 当前限制
 
 - Docker live containment 已验证；Seatbelt 仍缺 Framework launcher 的显式 Plan 字段与 hash/Approval 绑定；
-- Docker socket 永远不能挂进 MiniClaw 容器；
+- Docker socket 永远不能挂进 Lobster0 容器；
 - Automation command 当前默认 Workspace 只读，尚未提供用户级 writable mount 配置；
 - Checkpoint 只覆盖主 Workspace，不覆盖 Personal 外部 write roots；
 - Rollback 没有 Owner CLI/TUI 页面；

@@ -85,7 +85,7 @@ export function ClawTrace({ copy, surfaces }: ClawTraceProps) {
       <span aria-hidden="true" className="hero-network__signal hero-network__signal--one" />
       <span aria-hidden="true" className="hero-network__signal hero-network__signal--two" />
       <span aria-hidden="true" className="hero-network__signal hero-network__signal--three" />
-      <ul className="hero-network__surfaces" aria-label="MiniClaw surfaces">
+      <ul className="hero-network__surfaces" aria-label="Lobster0 surfaces">
         {surfaces.map((surface, index) => {
           const hasIcon = hasSurfaceIcon(surface.name);
 

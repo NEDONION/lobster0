@@ -2,7 +2,7 @@ import { constants } from "node:fs";
 import { chmod, lstat, mkdir, open, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
-export const PROFILE_LOCK_NAME = ".miniclaw-browser.lock";
+export const PROFILE_LOCK_NAME = ".lobster0-browser.lock";
 
 export class BrowserLifecycleError extends Error {
   public constructor(

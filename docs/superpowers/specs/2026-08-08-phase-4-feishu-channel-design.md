@@ -3,11 +3,11 @@
 > 日期：2026-08-08
 > 状态：Implementation complete / live acceptance pending
 > 目标分支：`main`
-> 适用范围：单用户、自托管 MiniClaw；飞书企业自建应用
+> 适用范围：单用户、自托管 Lobster0；飞书企业自建应用
 
 ## 1. 一句话说明
 
-Phase 4 把已经可用的 MiniClaw Agent Core 接到飞书。用户从飞书私聊或在白名单群里明确 `@机器人`
+Phase 4 把已经可用的 Lobster0 Agent Core 接到飞书。用户从飞书私聊或在白名单群里明确 `@机器人`
 发消息，消息会先可靠写入 SQLite，再由后台 Worker 调用与 TUI 完全相同的 Agent、Memory、Skills、Tool 和
 Approval，最后通过可恢复的 Delivery Outbox 回复飞书。
 
@@ -66,9 +66,9 @@ Telegram、Discord、多用户、公开机器人、语音、文件消息和任�
 - Delivery Outbox、稳定 UUID、发送重试与终态；
 - WebSocket 断线自动重连和可观测状态；
 - 待审批 Tool 的飞书通知、交互卡片和文本命令降级；
-- `miniclaw gateway` 前台守护命令；
+- `lobster0 gateway` 前台守护命令；
 - SIGINT / SIGTERM 优雅停止；
-- `miniclaw doctor` 飞书静态配置与 SDK 检查；
+- `lobster0 doctor` 飞书静态配置与 SDK 检查；
 - 脱敏结构化日志和 Audit；
 - fake SDK 契约测试、故障恢复测试和真实飞书验收记录。
 
@@ -90,7 +90,7 @@ Telegram、Discord、多用户、公开机器人、语音、文件消息和任�
 
 ### 5.1 方案 A：官方 `lark-channel-sdk`（采用）
 
-SDK 负责 WebSocket transport、标准事件封装、出站消息、Typing、卡片及连接恢复；MiniClaw 负责持久队列、
+SDK 负责 WebSocket transport、标准事件封装、出站消息、Typing、卡片及连接恢复；Lobster0 负责持久队列、
 身份、Session、Agent、Approval、Delivery 和审计。这样能复用官方协议实现，又不会把业务可靠性寄托在内存回调上。
 
 ### 5.2 方案 B：直接使用 `lark-oapi`
@@ -170,8 +170,8 @@ class InboundMessage:
 [channels.feishu]
 enabled = false
 account_id = "default"
-app_id_env = "MINICLAW_FEISHU_APP_ID"
-app_secret_env = "MINICLAW_FEISHU_APP_SECRET"
+app_id_env = "LOBSTER0_FEISHU_APP_ID"
+app_secret_env = "LOBSTER0_FEISHU_APP_SECRET"
 domain = "feishu"
 owner_open_id = "ou_replace_with_owner_open_id"
 allowed_open_ids = []
@@ -422,7 +422,7 @@ sequenceDiagram
 
 ## 16. 启动、停止和恢复
 
-### 16.1 `miniclaw gateway`
+### 16.1 `lobster0 gateway`
 
 启动顺序：
 
@@ -465,7 +465,7 @@ sequenceDiagram
 
 ## 17. Doctor 设计
 
-默认 `miniclaw doctor` 只做安全、快速、无副作用检查：
+默认 `lobster0 doctor` 只做安全、快速、无副作用检查：
 
 - `feishu_config`：开关、account、白名单、环境变量存在性；
 - `feishu_sdk`：可选依赖能否导入及兼容版本；
@@ -519,7 +519,7 @@ SDK 原始异常在 adapter 边界映射为这些错误码。数据库、用户�
 - SDK 原始事件 JSON；
 - Provider 隐藏 reasoning。
 
-`miniclaw gateway` 的 stdout/stderr 是运维日志，不混入普通 Agent 回复格式。
+`lobster0 gateway` 的 stdout/stderr 是运维日志，不混入普通 Agent 回复格式。
 
 ## 20. 安全模型
 
@@ -610,7 +610,7 @@ Phase 4 只有同时满足以下条件才算完成：
 3. active Agent 回归 100% 通过；
 4. R4 Channel 回归 100% 通过；
 5. Ruff、构建、文档链接、Mermaid 和 HTML 检查通过；
-6. `miniclaw doctor` 能区分 disabled、misconfigured、ready；
+6. `lobster0 doctor` 能区分 disabled、misconfigured、ready；
 7. 真实飞书 20 轮、Tool、Approval、重启和重连记录通过；
 8. `.env`、数据库、日志、Git diff 均无秘密；
 9. README、PRD、系统架构、工程索引和进度页同步；
@@ -643,7 +643,7 @@ Phase 4 只有同时满足以下条件才算完成：
 - `docs/engineering/README.md`：Phase 4 索引；
 - `README.md`：安装、配置、Gateway 和飞书应用设置；
 - `docs/progress/index.html`：进度、测试数量、commit、下一阶段；
-- 外部 `outputs/miniclaw-progress.html`：与仓库进度页同口径；
+- 外部 `outputs/lobster0-progress.html`：与仓库进度页同口径；
 - `docs/evals/releases/`：Phase 4 release evidence。
 
 ## 25. 参考资料
@@ -654,5 +654,5 @@ Phase 4 只有同时满足以下条件才算完成：
 - 官方安全说明：<https://github.com/larksuite/channel-sdk-python/blob/main/docs/security.md>
 - 飞书消息接收事件：<https://open.feishu.cn/document/uAjLw4CM/ukTMukTMukTM/reference/im-v1/message/events/receive>
 - 飞书事件订阅概览：<https://open.feishu.cn/document/server-docs/event-subscription-guide/overview>
-- MiniClaw 产品 PRD：`docs/product/20260807_产品需求文档.md`
-- MiniClaw 完整工程设计：`docs/superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md`
+- Lobster0 产品 PRD：`docs/product/20260807_产品需求文档.md`
+- Lobster0 完整工程设计：`docs/superpowers/specs/2026-08-07-lobster0-complete-engineering-design.md`

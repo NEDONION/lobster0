@@ -1,4 +1,4 @@
-# MiniClaw Phase 7 Controlled Evolution and Memory Reflection Implementation Plan
+# Lobster0 Phase 7 Controlled Evolution and Memory Reflection Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -24,10 +24,10 @@
 ### Task 1: Evolution configuration and schema migration
 
 **Files:**
-- Modify: `src/miniclaw/config.py`
-- Modify: `src/miniclaw/bootstrap.py`
-- Create: `src/miniclaw/storage/migrations/0006_evolution.sql`
-- Modify: `src/miniclaw/storage/migrations.py`
+- Modify: `src/lobster0/config.py`
+- Modify: `src/lobster0/bootstrap.py`
+- Create: `src/lobster0/storage/migrations/0006_evolution.sql`
+- Modify: `src/lobster0/storage/migrations.py`
 - Test: `tests/test_config.py`
 - Test: `tests/test_storage.py`
 
@@ -75,16 +75,16 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/config.py src/miniclaw/bootstrap.py src/miniclaw/storage/migrations.py src/miniclaw/storage/migrations/0006_evolution.sql tests/test_config.py tests/test_storage.py
+git add src/lobster0/config.py src/lobster0/bootstrap.py src/lobster0/storage/migrations.py src/lobster0/storage/migrations/0006_evolution.sql tests/test_config.py tests/test_storage.py
 git commit -m "feat(evolution): define reviewed evolution storage"
 ```
 
 ### Task 2: Message-bound Feedback service
 
 **Files:**
-- Create: `src/miniclaw/evolution/__init__.py`
-- Create: `src/miniclaw/evolution/feedback.py`
-- Modify: `src/miniclaw/storage/repositories.py`
+- Create: `src/lobster0/evolution/__init__.py`
+- Create: `src/lobster0/evolution/feedback.py`
+- Modify: `src/lobster0/storage/repositories.py`
 - Test: `tests/test_feedback.py`
 
 **Interfaces:**
@@ -119,18 +119,18 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/evolution src/miniclaw/storage/repositories.py tests/test_feedback.py
+git add src/lobster0/evolution src/lobster0/storage/repositories.py tests/test_feedback.py
 git commit -m "feat(evolution): record trusted message feedback"
 ```
 
 ### Task 3: TUI and Channel feedback controls
 
 **Files:**
-- Modify: `src/miniclaw/bridge/protocol.py`
-- Modify: `src/miniclaw/bridge/server.py`
+- Modify: `src/lobster0/bridge/protocol.py`
+- Modify: `src/lobster0/bridge/server.py`
 - Modify: `tui/src/`
-- Modify: `src/miniclaw/channels/experience.py`
-- Modify: `src/miniclaw/channels/manager.py`
+- Modify: `src/lobster0/channels/experience.py`
+- Modify: `src/lobster0/channels/manager.py`
 - Test: `tests/test_bridge_protocol.py`
 - Test: `tests/test_channel_experience.py`
 - Modify: `tui/test/`
@@ -153,15 +153,15 @@ Run Python focused suites and `pnpm --dir tui test`. Expected: PASS.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/miniclaw/bridge src/miniclaw/channels tui tests/test_bridge_protocol.py tests/test_channel_experience.py
+git add src/lobster0/bridge src/lobster0/channels tui tests/test_bridge_protocol.py tests/test_channel_experience.py
 git commit -m "feat(feedback): collect ratings across TUI and channels"
 ```
 
 ### Task 4: Proposal model and isolated candidate overlay
 
 **Files:**
-- Create: `src/miniclaw/evolution/proposals.py`
-- Create: `src/miniclaw/evolution/overlay.py`
+- Create: `src/lobster0/evolution/proposals.py`
+- Create: `src/lobster0/evolution/overlay.py`
 - Test: `tests/test_proposals.py`
 - Test: `tests/test_evolution_overlay.py`
 
@@ -172,7 +172,7 @@ git commit -m "feat(feedback): collect ratings across TUI and channels"
 
 ```python
 def test_proposal_rejects_core_and_config_targets(self, service):
-    for target in ("src/miniclaw/runtime.py", ".env", "config.toml", "tests/test_context.py"):
+    for target in ("src/lobster0/runtime.py", ".env", "config.toml", "tests/test_context.py"):
         with self.subTest(target=target):
             with self.assertRaisesRegex(ProposalError, "proposal target is not allowed"):
                 service.create(target=target, ...)
@@ -198,14 +198,14 @@ Cover path escape, symlink, binary/invalid UTF-8, base changed, duplicate propos
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/evolution/proposals.py src/miniclaw/evolution/overlay.py tests/test_proposals.py tests/test_evolution_overlay.py
+git add src/lobster0/evolution/proposals.py src/lobster0/evolution/overlay.py tests/test_proposals.py tests/test_evolution_overlay.py
 git commit -m "feat(evolution): stage immutable memory and skill proposals"
 ```
 
 ### Task 5: Security scanner for candidates
 
 **Files:**
-- Create: `src/miniclaw/evolution/scanner.py`
+- Create: `src/lobster0/evolution/scanner.py`
 - Test: `tests/test_evolution_scanner.py`
 
 **Interfaces:**
@@ -242,16 +242,16 @@ Include false-positive fixtures for ordinary security documentation and legitima
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/evolution/scanner.py tests/test_evolution_scanner.py
+git add src/lobster0/evolution/scanner.py tests/test_evolution_scanner.py
 git commit -m "feat(evolution): scan candidate memory and skills"
 ```
 
 ### Task 6: Proposal evaluator and incident-case generation
 
 **Files:**
-- Create: `src/miniclaw/evolution/evaluator.py`
-- Modify: `src/miniclaw/evals/runner.py`
-- Modify: `src/miniclaw/evals/cases.py`
+- Create: `src/lobster0/evolution/evaluator.py`
+- Modify: `src/lobster0/evals/runner.py`
+- Modify: `src/lobster0/evals/cases.py`
 - Test: `tests/test_proposal_evaluator.py`
 - Test: `tests/test_eval_runner.py`
 
@@ -287,17 +287,17 @@ Pass only when all active and incident cases pass, safety failures are zero, can
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/evolution/evaluator.py src/miniclaw/evals/runner.py src/miniclaw/evals/cases.py tests/test_proposal_evaluator.py tests/test_eval_runner.py
+git add src/lobster0/evolution/evaluator.py src/lobster0/evals/runner.py src/lobster0/evals/cases.py tests/test_proposal_evaluator.py tests/test_eval_runner.py
 git commit -m "feat(evolution): gate proposals with full regression"
 ```
 
 ### Task 7: Owner review, atomic apply and rollback
 
 **Files:**
-- Create: `src/miniclaw/evolution/reviewer.py`
-- Create: `src/miniclaw/evolution/apply.py`
-- Create: `src/miniclaw/evolution/rollback.py`
-- Modify: `src/miniclaw/storage/tooling.py`
+- Create: `src/lobster0/evolution/reviewer.py`
+- Create: `src/lobster0/evolution/apply.py`
+- Create: `src/lobster0/evolution/rollback.py`
+- Modify: `src/lobster0/storage/tooling.py`
 - Test: `tests/test_evolution_apply.py`
 - Test: `tests/test_evolution_rollback.py`
 
@@ -335,18 +335,18 @@ Rollback preview shows target/current/version hashes; approval binds preview has
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/evolution/reviewer.py src/miniclaw/evolution/apply.py src/miniclaw/evolution/rollback.py src/miniclaw/storage/tooling.py tests/test_evolution_apply.py tests/test_evolution_rollback.py
+git add src/lobster0/evolution/reviewer.py src/lobster0/evolution/apply.py src/lobster0/evolution/rollback.py src/lobster0/storage/tooling.py tests/test_evolution_apply.py tests/test_evolution_rollback.py
 git commit -m "feat(evolution): approve apply and roll back proposals"
 ```
 
 ### Task 8: Evolution Tools and TUI/Channel review UX
 
 **Files:**
-- Create: `src/miniclaw/tools/evolution.py`
-- Modify: `src/miniclaw/runtime.py`
-- Modify: `src/miniclaw/bridge/protocol.py`
+- Create: `src/lobster0/tools/evolution.py`
+- Modify: `src/lobster0/runtime.py`
+- Modify: `src/lobster0/bridge/protocol.py`
 - Modify: `tui/src/`
-- Modify: `src/miniclaw/channels/experience.py`
+- Modify: `src/lobster0/channels/experience.py`
 - Test: `tests/test_evolution_tools.py`
 - Test: `tests/test_pi_tui_integration.py`
 - Modify: `tui/test/`
@@ -378,7 +378,7 @@ Verify long diff copy, Chinese/English labels, stale candidate notice, scan/eval
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/miniclaw/tools/evolution.py src/miniclaw/runtime.py src/miniclaw/bridge/protocol.py src/miniclaw/channels/experience.py tui tests/test_evolution_tools.py tests/test_pi_tui_integration.py
+git add src/lobster0/tools/evolution.py src/lobster0/runtime.py src/lobster0/bridge/protocol.py src/lobster0/channels/experience.py tui tests/test_evolution_tools.py tests/test_pi_tui_integration.py
 git commit -m "feat(evolution): review proposals without self approval"
 ```
 
@@ -408,9 +408,9 @@ uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
 pnpm --dir tui build
 uv run ruff check .
-uv run miniclaw eval validate --root evals/scenarios
-uv run miniclaw eval run --suite offline --root evals/scenarios
-uv run miniclaw eval run --suite channel --root evals/scenarios
+uv run lobster0 eval validate --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite channel --root evals/scenarios
 uv run python scripts/validate_docs.py
 uv lock --check
 uv build

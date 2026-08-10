@@ -1,6 +1,6 @@
 # 工程文档索引
 
-这里同时保存 MiniClaw 的当前工程说明、历史阶段快照和后续实施计划。目录按“能力归属”组织，
+这里同时保存 Lobster0 的当前工程说明、历史阶段快照和后续实施计划。目录按“能力归属”组织，
 不等同于 Git 的真实开发顺序；真实交付顺序见[开发与交付时间线](20260809_development-timeline.md)。
 
 ## 如何阅读状态
@@ -48,14 +48,14 @@ Memory 上线前的 v0.5.3 历史基线为 562 Python、30 TypeScript 和 29/29 
 Phase 0 建立 Python 包、配置目录、Workspace、SQLite migration、`init`/`doctor` 和安全文件权限。它早于首个
 Eval Release，因此没有独立 `docs/engineering/phase-0/` 快照；设计与逐步施工记录分别见：
 
-- [完整工程设计](../superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md)
+- [完整工程设计](../superpowers/specs/2026-08-07-lobster0-complete-engineering-design.md)
 - [Phase 0 Foundation 计划](../superpowers/plans/2026-08-07-phase-0-foundation.md)
 - [项目初始化计划](../superpowers/plans/2026-08-07-project-initialization.md)
 
 ## Phase 1：Agent Core（旧 CLI 为历史快照）
 
 > Phase 1 的 Provider、Context、Runner 和 Turn 边界仍是当前 Core 的基础，但这些页面记录的是阶段交付时状态。
-> `miniclaw chat`、one-shot 和 `input()` REPL 已移除；当前人类入口见[单入口 TUI](phase-2/20260808_single-entry-tui.md)。
+> `lobster0 chat`、one-shot 和 `input()` REPL 已移除；当前人类入口见[单入口 TUI](phase-2/20260808_single-entry-tui.md)。
 
 | 模块 | 文档 |
 | --- | --- |
@@ -152,7 +152,7 @@ Desktop hello 和隔离 Electron 进程 smoke 已通过；安装包、签名、�
 Artifact 和 Sub-agent 未完成。
 
 下一条 Desktop 主线已经确认：以 LobsterAI Cowork 为主体，首屏直接提供 Composer、附件、模型、Workspace 和
-Agent 选择；吸收 OpenAgents 的 Agent/Thread/Participant/Shared Artifact 信息架构，底层继续只使用 MiniClaw
+Agent 选择；吸收 OpenAgents 的 Agent/Thread/Participant/Shared Artifact 信息架构，底层继续只使用 Lobster0
 Core。当前为 `TARGET CONFIRMED / D1-D5 IMPLEMENTATION PENDING`。
 
 | 文档或代码 | 当前定位 |

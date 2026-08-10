@@ -1,4 +1,4 @@
-# MiniClaw LobsterAI-first 桌面多 Agent 架构设计
+# Lobster0 LobsterAI-first 桌面多 Agent 架构设计
 
 > 日期：2026-08-10
 > 文档类型：系统与界面设计
@@ -11,9 +11,9 @@ Desktop 保留现有 Electron + React + Python Bridge 技术路线，但重排�
 
 - LobsterAI Cowork 是主要界面和交互参照；
 - OpenAgents 提供 Agent、Thread、Participant、Shared Artifact 的信息架构参照；
-- MiniClaw Core 继续是唯一执行、安全与持久化权威；
+- Lobster0 Core 继续是唯一执行、安全与持久化权威；
 - 现有首页不再挡在输入框之前，应用默认进入可直接对话的 Workspace；
-- Multi-Agent 只实现 MiniClaw Phase 9 定义的 depth-1 子任务，不引入 Agent Network。
+- Multi-Agent 只实现 Lobster0 Phase 9 定义的 depth-1 子任务，不引入 Agent Network。
 
 这次演进是替换 Desktop 的信息架构，不是重写后端。
 
@@ -50,7 +50,7 @@ flowchart LR
     RENDERER --> PRELOAD["固定 Preload API"]
     PRELOAD --> MAIN["Electron Main\n窗口 / Dialog / Bridge Supervisor"]
     MAIN <-->|"versioned NDJSON"| BRIDGE["Python Desktop Bridge"]
-    BRIDGE --> CORE["MiniClaw Core\nTurnService / AgentRuntime"]
+    BRIDGE --> CORE["Lobster0 Core\nTurnService / AgentRuntime"]
     CORE --> PROVIDER["Provider"]
     CORE --> POLICY["Policy / Approval / Workspace"]
     CORE --> STORAGE["SQLite"]
@@ -185,7 +185,7 @@ flowchart TB
 
 | 状态 | 行为 |
 | --- | --- |
-| booting | 禁用，显示“正在连接 MiniClaw Core” |
+| booting | 禁用，显示“正在连接 Lobster0 Core” |
 | ready-empty | 首屏大输入框，可选择附件/模型/Workspace/Agent |
 | ready-thread | 固定在时间线底部，可继续追问 |
 | submitting | 防止重复提交，保留文本直到 Core 接受 |
@@ -342,7 +342,7 @@ sequenceDiagram
 
 实施约束：
 
-- 优先用现有 MiniClaw 组件和原生平台能力；
+- 优先用现有 Lobster0 组件和原生平台能力；
 - 若复制或改写 LobsterAI 代码，保留 MIT copyright/license；
 - 若复制或改写 OpenAgents 代码，保留 Apache-2.0、NOTICE，并标注修改；
 - 不复制 WorkBuddy/Codex 的非公开源码、商标、图标、截图资产或专有文案；
@@ -355,7 +355,7 @@ sequenceDiagram
 - Renderer：App 初始态、Composer、reducer、键盘、错误和 capability gate；
 - Main/Preload：IPC exact-key、Dialog、Bridge 监督和系统动作；
 - Python：Bridge protocol、owner/session、Artifact、Provider capability、Sub-agent 安全与恢复；
-- 集成：真实 Python Bridge、Electron 进程、隔离 `MINICLAW_HOME`；
+- 集成：真实 Python Bridge、Electron 进程、隔离 `LOBSTER0_HOME`；
 - 手工：浅色视觉、窗口缩放、输入法、键盘、附件、审批和恢复；
 - 全量：Python unittest、Ruff、TUI/Desktop tests/build、docs validation 和 `git diff --check`。
 

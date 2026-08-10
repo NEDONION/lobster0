@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 让 MiniClaw 能在配置允许的目录内安全地读取文本、匹配路径和搜索文本，同时阻止绝对路径、`..`、符号链接和敏感文件逃逸。
+**Goal:** 让 Lobster0 能在配置允许的目录内安全地读取文本、匹配路径和搜索文本，同时阻止绝对路径、`..`、符号链接和敏感文件逃逸。
 
 **Architecture:** 复用已有 `ToolRegistry → PolicyEngine → ToolExecutor → SQLite` 唯一执行链。新增一个标准库实现的 `WorkspaceGuard` 统一解析路径与敏感路径；`read_file`、`glob`、`grep` 在 Policy 预检后，执行前再次使用同一个 Guard，避免任何 Tool 自己发明安全规则。
 
@@ -12,7 +12,7 @@
 
 - 只实现 `read_file`、`glob`、`grep` 和 Workspace 读边界；不实现写文件、Shell、HTTP、审批或 Web 管理页。
 - 相对路径以 `workspace.path` 为基准；绝对路径只能位于 Workspace 或 `workspace.read_only_roots`。
-- `.env*`、私钥、常见凭据、MiniClaw 自身配置/数据库/日志和系统敏感文件必须硬拒绝。
+- `.env*`、私钥、常见凭据、Lobster0 自身配置/数据库/日志和系统敏感文件必须硬拒绝。
 - `Path.resolve(strict=False)` 后重新检查允许根，拒绝目标或父链符号链接逃逸。
 - `read_file` 只读 UTF-8 文本，默认 200 行、最大 1000 行、单次最多 512 KiB。
 - `glob` 最多返回 200 个按相对路径字典序排列的结果，不跟随目录符号链接。
@@ -27,11 +27,11 @@
 
 | 文件 | 单一职责 |
 | --- | --- |
-| `src/miniclaw/policy/workspace.py` | 解析允许根、阻止路径逃逸、识别敏感路径、生成不泄露 Home 的展示路径 |
-| `src/miniclaw/policy/engine.py` | 在 ToolRun 创建前对三个文件 Tool 做 Workspace 预检，并返回稳定拒绝码 |
-| `src/miniclaw/tools/filesystem.py` | `read_file` 参数契约、UTF-8/二进制判断、行窗口和 512 KiB 上限 |
-| `src/miniclaw/tools/search.py` | 不跟随目录 symlink 的候选遍历，以及 `glob`/`grep` 上限 |
-| `src/miniclaw/cli.py` | 在产品 Bootstrap 中注册三个新 Tool |
+| `src/lobster0/policy/workspace.py` | 解析允许根、阻止路径逃逸、识别敏感路径、生成不泄露 Home 的展示路径 |
+| `src/lobster0/policy/engine.py` | 在 ToolRun 创建前对三个文件 Tool 做 Workspace 预检，并返回稳定拒绝码 |
+| `src/lobster0/tools/filesystem.py` | `read_file` 参数契约、UTF-8/二进制判断、行窗口和 512 KiB 上限 |
+| `src/lobster0/tools/search.py` | 不跟随目录 symlink 的候选遍历，以及 `glob`/`grep` 上限 |
+| `src/lobster0/cli.py` | 在产品 Bootstrap 中注册三个新 Tool |
 | `tests/test_workspace_policy.py` | 允许根、`..`、绝对路径、symlink、敏感文件和只读根矩阵 |
 | `tests/test_file_tools.py` | `read_file` 正常行窗口、二进制、编码、大小和错误码 |
 | `tests/test_search_tools.py` | `glob`/`grep` 排序、过滤、上限、正则和二进制行为 |
@@ -44,8 +44,8 @@
 ### Task 1: WorkspaceGuard 与 Policy 预检
 
 **Files:**
-- Create: `src/miniclaw/policy/workspace.py`
-- Modify: `src/miniclaw/policy/engine.py`
+- Create: `src/lobster0/policy/workspace.py`
+- Modify: `src/lobster0/policy/engine.py`
 - Create: `tests/test_workspace_policy.py`
 - Modify: `tests/test_tool_executor.py`
 
@@ -79,7 +79,7 @@ def test_resolve_read_rejects_parent_and_absolute_escape(self) -> None:
 
 Run: `.venv/bin/python -m unittest tests.test_workspace_policy -v`
 
-Expected: `ModuleNotFoundError: No module named 'miniclaw.policy.workspace'`。
+Expected: `ModuleNotFoundError: No module named 'lobster0.policy.workspace'`。
 
 - [ ] **Step 3: 用 `Path.resolve(strict=False)` 实现最小允许根解析**
 
@@ -115,7 +115,7 @@ Run: `.venv/bin/python -m unittest tests.test_workspace_policy -v`
 
 Expected: 普通路径和逃逸用例通过。
 
-- [ ] **Step 5: 增加 symlink、敏感路径和 MiniClaw 状态文件的失败测试**
+- [ ] **Step 5: 增加 symlink、敏感路径和 Lobster0 状态文件的失败测试**
 
 ```python
 def test_symlink_cannot_escape_workspace(self) -> None:
@@ -146,7 +146,7 @@ def display(self, context: ToolContext, path: Path, *, root: Path | None = None)
     return path.resolve(strict=False).relative_to(base).as_posix() or "."
 ```
 
-实现同时覆盖 `.env*`、`.ssh/.aws/.gnupg/.kube/.config/gcloud`、私钥名、凭据名、`state_home/config.toml`、`state_home/miniclaw.db`、`state_home/logs`、系统 shadow/sudoers 和容器 socket；逻辑输入与 resolve 后路径各检查一次。
+实现同时覆盖 `.env*`、`.ssh/.aws/.gnupg/.kube/.config/gcloud`、私钥名、凭据名、`state_home/config.toml`、`state_home/lobster0.db`、`state_home/logs`、系统 shadow/sudoers 和容器 socket；逻辑输入与 resolve 后路径各检查一次。
 
 - [ ] **Step 8: 让 Policy 在创建 ToolRun 前返回具体拒绝码**
 
@@ -167,7 +167,7 @@ Run: `.venv/bin/python -m unittest tests.test_workspace_policy tests.test_tool_e
 Expected: 全部通过。
 
 ```bash
-git add src/miniclaw/policy/workspace.py src/miniclaw/policy/engine.py tests/test_workspace_policy.py tests/test_tool_executor.py
+git add src/lobster0/policy/workspace.py src/lobster0/policy/engine.py tests/test_workspace_policy.py tests/test_tool_executor.py
 git commit -m "feat: enforce workspace read boundaries"
 ```
 
@@ -176,7 +176,7 @@ git commit -m "feat: enforce workspace read boundaries"
 ### Task 2: `read_file` UTF-8 行窗口
 
 **Files:**
-- Create: `src/miniclaw/tools/filesystem.py`
+- Create: `src/lobster0/tools/filesystem.py`
 - Create: `tests/test_file_tools.py`
 
 **Interfaces:**
@@ -210,7 +210,7 @@ async def test_reads_utf8_lines_with_one_based_offset(self) -> None:
 
 Run: `.venv/bin/python -m unittest tests.test_file_tools -v`
 
-Expected: import failure 指向 `miniclaw.tools.filesystem`。
+Expected: import failure 指向 `lobster0.tools.filesystem`。
 
 - [ ] **Step 3: 实现严格参数校验和最小 UTF-8 读取**
 
@@ -275,7 +275,7 @@ Run: `.venv/bin/python -m unittest tests.test_workspace_policy tests.test_file_t
 Expected: 全部通过。
 
 ```bash
-git add src/miniclaw/tools/filesystem.py tests/test_file_tools.py
+git add src/lobster0/tools/filesystem.py tests/test_file_tools.py
 git commit -m "feat: add bounded read file tool"
 ```
 
@@ -284,7 +284,7 @@ git commit -m "feat: add bounded read file tool"
 ### Task 3: `glob` 与 `grep` 安全搜索
 
 **Files:**
-- Create: `src/miniclaw/tools/search.py`
+- Create: `src/lobster0/tools/search.py`
 - Create: `tests/test_search_tools.py`
 
 **Interfaces:**
@@ -358,7 +358,7 @@ Run: `.venv/bin/python -m unittest tests.test_workspace_policy tests.test_search
 Expected: 全部通过。
 
 ```bash
-git add src/miniclaw/tools/search.py tests/test_search_tools.py
+git add src/lobster0/tools/search.py tests/test_search_tools.py
 git commit -m "feat: add safe workspace search tools"
 ```
 
@@ -367,7 +367,7 @@ git commit -m "feat: add safe workspace search tools"
 ### Task 4: 产品 Bootstrap 与真实 Turn Tool Loop
 
 **Files:**
-- Modify: `src/miniclaw/cli.py`
+- Modify: `src/lobster0/cli.py`
 - Modify: `tests/test_turn.py`
 - Modify: `tests/test_tool_contract.py`
 
@@ -416,7 +416,7 @@ Run: `.venv/bin/python -m unittest discover -s tests -v`
 Expected: 所有测试通过，且原 99 个测试无回归。
 
 ```bash
-git add src/miniclaw/cli.py tests/test_tool_contract.py tests/test_turn.py
+git add src/lobster0/cli.py tests/test_tool_contract.py tests/test_turn.py
 git commit -m "feat: expose workspace read tools to the agent"
 ```
 

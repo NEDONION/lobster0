@@ -1,13 +1,13 @@
 # Phase 2：Python Core + TypeScript pi-tui 工程落地文档
 
 > 状态：已实现；pi-tui 为默认展示层，Textual 为迁移期 fallback
-> 协议：MiniClaw stdio NDJSON protocol v1
+> 协议：Lobster0 stdio NDJSON protocol v1
 > 运行时：Python 3.12、Node.js >= 22.19.0、pnpm、pi-tui 0.84.1
 > 时间说明：本文按 Phase 2 的 TUI 交付组织；其中“后续阶段”只表示当时顺序，当前能力以工程索引为准。
 
 ## 1. 大白话说明
 
-MiniClaw 现在由两个进程配合：Python 是“大脑和安全负责人”，TypeScript 是“终端屏幕和键盘”。你在 TUI 输入
+Lobster0 现在由两个进程配合：Python 是“大脑和安全负责人”，TypeScript 是“终端屏幕和键盘”。你在 TUI 输入
 一句话，TypeScript 把它作为一行 JSON 发给 Python；Python 调模型、执行 Tool、做审批、存 SQLite，再把每一步作为
 一行行事件发回来。UI 只能展示和提出请求，不能绕开 Python 直接执行命令。
 
@@ -21,10 +21,10 @@ MiniClaw 现在由两个进程配合：Python 是“大脑和安全负责人”�
 
 | 路径 | 作用 |
 |---|---|
-| src/miniclaw/bridge/protocol.py | Python 权威协议校验和编码 |
-| src/miniclaw/bridge/server.py | 请求调度、单 Turn、审批续跑、RunEvent 转发 |
-| src/miniclaw/bridge/__main__.py | python -m miniclaw.bridge 进程入口 |
-| src/miniclaw/tui_launcher.py | 唯一 CLI 的 pi/Textual 选择、Node 检查、argv 启动 |
+| src/lobster0/bridge/protocol.py | Python 权威协议校验和编码 |
+| src/lobster0/bridge/server.py | 请求调度、单 Turn、审批续跑、RunEvent 转发 |
+| src/lobster0/bridge/__main__.py | python -m lobster0.bridge 进程入口 |
+| src/lobster0/tui_launcher.py | 唯一 CLI 的 pi/Textual 选择、Node 检查、argv 启动 |
 | tui/src/protocol.ts | TypeScript 帧类型、增量 NDJSON decoder、2 MiB 限制 |
 | tui/src/bridge-client.ts | Python 子进程监督、请求关联、事件订阅、稳定错误 |
 | tui/src/state.ts | 纯 reducer：消息、Reasoning、Tool、Telemetry、Approval |
@@ -45,9 +45,9 @@ uv sync --extra dev
 corepack enable
 pnpm --dir tui install --frozen-lockfile
 pnpm --dir tui build
-uv run miniclaw init
-uv run miniclaw doctor
-uv run miniclaw
+uv run lobster0 init
+uv run lobster0 doctor
+uv run lobster0
 ~~~
 
 仓库根目录的 .node-version 固定最低 Node 版本。使用 fnm、nvm、mise 或 Volta 均可，但最终 node --version 必须
@@ -57,16 +57,16 @@ uv run miniclaw
 
 ~~~bash
 # 默认：优先 pi-tui，不满足要求时回退 Textual
-uv run miniclaw
+uv run lobster0
 
 # 要求 pi-tui；缺 Node/构建产物时直接失败，适合 CI 和验收
-MINICLAW_TUI=pi uv run miniclaw
+LOBSTER0_TUI=pi uv run lobster0
 
 # 迁移期故障排查
-MINICLAW_TUI=textual uv run miniclaw
+LOBSTER0_TUI=textual uv run lobster0
 
 # 使用不在 PATH 的 Node
-MINICLAW_NODE=/absolute/path/to/node uv run miniclaw
+LOBSTER0_NODE=/absolute/path/to/node uv run lobster0
 ~~~
 
 dist 是本地构建产物，不提交 Git。修改 TypeScript 后必须重新运行 pnpm --dir tui build。
@@ -78,7 +78,7 @@ dist 是本地构建产物，不提交 Git。修改 TypeScript 后必须重新�
 请求必须包含 v/id/type/payload；响应带相同 id；异步事件没有 id：
 
 ~~~json
-{"v":1,"id":"ui-1","type":"client.hello","payload":{"client_name":"miniclaw-pi-tui","client_version":"0.1.0","protocols":[1]}}
+{"v":1,"id":"ui-1","type":"client.hello","payload":{"client_name":"lobster0-pi-tui","client_version":"0.1.0","protocols":[1]}}
 {"v":1,"id":"ui-1","type":"response.ok","payload":{"protocol":1,"core_version":"0.1.0"}}
 {"v":1,"type":"event.model_text_delta","payload":{"turn_id":42,"text":"你好"}}
 ~~~
@@ -198,13 +198,13 @@ uv run python -m unittest \
 node --version
 pnpm --dir tui install --frozen-lockfile
 pnpm --dir tui build
-uv run miniclaw doctor
+uv run lobster0 doctor
 ~~~
 
 ### 强制 pi-tui，避免自动回退掩盖问题
 
 ~~~bash
-MINICLAW_TUI=pi uv run miniclaw
+LOBSTER0_TUI=pi uv run lobster0
 ~~~
 
 ### 单独检查 Bridge stdout
@@ -219,7 +219,7 @@ Core 必须发送 turn_finished/turn_failed/turn_cancelled。未知异常由 Bri
 
 ### 真实字号太大
 
-在终端应用设置中调小 Font Size。MiniClaw 无法只缩小 Reasoning 字号；当前通过弱色、单行状态和少留白实现高密度。
+在终端应用设置中调小 Font Size。Lobster0 无法只缩小 Reasoning 字号；当前通过弱色、单行状态和少留白实现高密度。
 
 ## 10. 扩展协议的正确步骤
 
@@ -238,4 +238,4 @@ Core 必须发送 turn_finished/turn_failed/turn_cancelled。未知异常由 Bri
 - lark-cli P2.3B 与飞书 Channel 已由后续阶段完成；Telegram、Discord 也已在架构 Phase 5 完成
   implementation，三个外部平台仍按各自 Live Evidence 独立验收；
 - 桌面版尚未实现；
-- 不公开模型隐藏思维链，只展示 Provider 明确返回的 Reasoning 和 MiniClaw 可审计活动。
+- 不公开模型隐藏思维链，只展示 Provider 明确返回的 Reasoning 和 Lobster0 可审计活动。

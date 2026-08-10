@@ -47,7 +47,7 @@ export class HeaderLine implements Component {
     const workspace = this.language === "zh-CN" ? "工作区" : "workspace";
     const badge = permissionBadge(this.permissionMode);
     const text = `${palette.muted(
-      ` MiniClaw ${this.version} · ${this.model} · ${session} ${this.session} · ${workspace} ${this.workspace} · `,
+      ` Lobster0 ${this.version} · ${this.model} · ${session} ${this.session} · ${workspace} ${this.workspace} · `,
     )}${badge}`;
     return [truncateToWidth(text, Math.max(1, width), "")];
   }
@@ -128,7 +128,7 @@ function renderItem(item: TimelineItem, width: number, language: UiLanguage): st
         "",
       ];
     case "assistant": {
-      const role = palette.green(" ▌ MiniClaw");
+      const role = palette.green(" ▌ Lobster0");
       if (item.streaming) {
         return [role, ...indent(terminalSafe(item.content), width, 3), ""];
       }

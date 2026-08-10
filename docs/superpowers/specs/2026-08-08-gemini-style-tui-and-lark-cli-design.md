@@ -1,34 +1,34 @@
-# MiniClaw 单入口 TUI 与 lark-cli 设计方案
+# Lobster0 单入口 TUI 与 lark-cli 设计方案
 
 > 状态：历史决策记录；Textual 已落地但默认展示层随后被 Python Core + pi-tui 方案取代
 > 日期：2026-08-08
 > 目标阶段：P2.2B（TUI）与 P2.3（受限命令和 lark-cli）
-> 适用范围：本地单用户 MiniClaw；不改变 Phase 4 飞书 Channel 规划
+> 适用范围：本地单用户 Lobster0；不改变 Phase 4 飞书 Channel 规划
 > 当前替代方案：[Python Core + pi-tui 终端架构设计](2026-08-08-python-core-pi-tui-design.md)
 
 ## 1. 结论
 
-MiniClaw 应交付一个简洁但完整的全屏终端界面，而不是继续扩展当前 `input()` / `print()` REPL。
+Lobster0 应交付一个简洁但完整的全屏终端界面，而不是继续扩展当前 `input()` / `print()` REPL。
 
 推荐方案是：
 
 1. 使用 **Textual** 实现 Python 全屏 TUI，只新增这一项直接依赖；
-2. `uv run miniclaw` 是唯一的人类对话入口，在正常 TTY 中永远打开同一个 TUI；
-3. 不再设计 `miniclaw chat`、`miniclaw tui`、`chat --plain` 或 `chat --message` 等平行对话入口；
+2. `uv run lobster0` 是唯一的人类对话入口，在正常 TTY 中永远打开同一个 TUI；
+3. 不再设计 `lobster0 chat`、`lobster0 tui`、`chat --plain` 或 `chat --message` 等平行对话入口；
 4. TUI 只负责展示和输入，继续复用现有 `TurnService → AgentRunner → ToolExecutor`；
 5. P2.2 先完成持久化审批，再由 TUI 提供 `Allow once / Deny` 本地确认界面；
 6. P2.3 新增只接受 `program + args[]` 的 `run_command`，不接受 Shell 字符串；
 7. 把官方 `lark-cli` 作为 P2.3 第一个真实 CLI 集成和端到端验收场景。
 
-最终用户体验应接近 Gemini CLI/OpenClaw TUI，但 MiniClaw MVP 不复制它们的全部功能。
+最终用户体验应接近 Gemini CLI/OpenClaw TUI，但 Lobster0 MVP 不复制它们的全部功能。
 
-这里的“单入口”专指人类和 Agent 的交互界面。`miniclaw init`、`miniclaw doctor` 和
-`miniclaw eval` 仍作为初始化、故障诊断和 CI 回归命令保留；它们不会启动第二套聊天界面，也不会拥有独立
-Agent Loop。初始化完成后，用户只需记住 `miniclaw`。
+这里的“单入口”专指人类和 Agent 的交互界面。`lobster0 init`、`lobster0 doctor` 和
+`lobster0 eval` 仍作为初始化、故障诊断和 CI 回归命令保留；它们不会启动第二套聊天界面，也不会拥有独立
+Agent Loop。初始化完成后，用户只需记住 `lobster0`。
 
 ## 2. 当前基础与缺口
 
-截至本文，MiniClaw 已有：
+截至本文，Lobster0 已有：
 
 - CLI 单次和连续会话；
 - OpenAI-compatible SSE Provider；
@@ -57,7 +57,7 @@ RayClaw、openclaw-python/pi-mono-python，以及本次集成目标 lark-cli。P
 argparse、prompt_toolkit、Rich、Textual、Aider、Harlequin 和 Toolong。资料均来自官方仓库或官方文档，
 核对日期为 2026-08-08；这是代表性工程样本，不声称穷举所有 Python 仓库。
 
-| 项目 | 终端入口 | TUI/交互特点 | Tool 与命令 | 审批/安全 | MiniClaw 取舍 |
+| 项目 | 终端入口 | TUI/交互特点 | Tool 与命令 | 审批/安全 | Lobster0 取舍 |
 |---|---|---|---|---|---|
 | OpenClaw | `openclaw tui`，`chat`/`terminal` 是本地别名 | TypeScript + `@earendil-works/pi-tui`；工具折叠、取消、Slash Commands、本地/Gateway | `exec`、本地 `!` 命令 | allowlist、on-miss/always、执行主机审批、参数绑定 | 学交互和审批；不复制多别名和 TS 渲染层 |
 | Gemini CLI | `gemini` | TypeScript + React/Ink；流式内容、工具卡片、多行输入、Session 恢复、`/tools`、`!` | Shell、文件、搜索、MCP | Shell/写入展示命令或 Diff 后确认；trusted folder/sandbox | 作为主要 UX 标杆；不复制 React/Ink 技术栈 |
@@ -77,11 +77,11 @@ Runtime，Gateway 模式则连接远端服务。
 OpenClaw 当前在 TypeScript/Node Runtime 中使用
 [`@earendil-works/pi-tui`](https://github.com/openclaw/openclaw/blob/main/THIRD_PARTY_NOTICES.md)，其实现源自
 Pi/pi-mono。选择它不只是因为“OpenClaw 使用 TypeScript”，也因为 Agent Runtime、消息组件、编辑器和 Tool
-渲染已经在同一 Pi 生态中。对 OpenClaw 来说这是低耦合集成；对 Python MiniClaw 来说直接复用则需要再运行
+渲染已经在同一 Pi 生态中。对 OpenClaw 来说这是低耦合集成；对 Python Lobster0 来说直接复用则需要再运行
 Node 进程和跨进程协议，成本完全不同。
 
 [OpenClaw Exec Approval](https://docs.openclaw.ai/tools/exec-approvals) 把命令策略、allowlist 和用户审批
-叠加起来，并绑定规范 cwd、argv、环境和可执行文件。MiniClaw 应采用“审批只会收紧，不能绕过 Policy”以及
+叠加起来，并绑定规范 cwd、argv、环境和可执行文件。Lobster0 应采用“审批只会收紧，不能绕过 Policy”以及
 “审批后参数漂移必须拒绝”两条语义。
 
 不复制：Gateway TUI、远端节点、队列模式、YOLO 模式、复杂选择器和几十个 Slash Commands。
@@ -93,7 +93,7 @@ Node 进程和跨进程协议，成本完全不同。
 `!` 可由用户直接触发 Shell。
 
 [Gemini CLI 参考](https://github.com/google-gemini/gemini-cli/blob/main/docs/cli/cli-reference.md) 还提供
-交互/非交互、Session 恢复、取消和结构化输出。MiniClaw 第一版只采用全屏聊天、流式输出、Tool 卡片、
+交互/非交互、Session 恢复、取消和结构化输出。Lobster0 第一版只采用全屏聊天、流式输出、Tool 卡片、
 审批弹窗和少量 Slash Commands。
 
 不复制：React/Ink 技术栈、MCP 管理界面、扩展市场、模型选择器、YOLO、计划模式和 Git Worktree。
@@ -102,7 +102,7 @@ Node 进程和跨进程协议，成本完全不同。
 
 [OpenCode](https://github.com/anomalyco/opencode) 使用
 [OpenTUI](https://github.com/anomalyco/opentui)；后者以 Zig 编写原生渲染核心，当前主要通过 TypeScript
-bindings 和 SolidJS/React reconciler 使用。它适合高性能、复杂布局和产品级终端前端，但会给 MiniClaw
+bindings 和 SolidJS/React reconciler 使用。它适合高性能、复杂布局和产品级终端前端，但会给 Lobster0
 增加 Bun/Node、原生库、跨进程通信和跨平台打包。只有当 TUI 成为独立客户端并需要同时连接本地/远程
 Agent 时，才值得重新评估。
 
@@ -113,7 +113,7 @@ AgentLoop、AgentRunner 和 Tools 分开；终端入口与聊天平台最终经�
 
 [Nanobot Shell Tool](https://github.com/HKUDS/nanobot/blob/main/nanobot/agent/tools/shell.py) 已实现超时、
 输出截断、环境变量白名单、Workspace 检查和可选 bubblewrap，但模型参数仍是一整段 Shell 字符串。
-MiniClaw 不采用字符串入口，因为命令拼接、重定向和解释器行为更难做精确审批。
+Lobster0 不采用字符串入口，因为命令拼接、重定向和解释器行为更难做精确审批。
 
 ### 3.5 ZeroClaw
 
@@ -124,12 +124,12 @@ MiniClaw 不采用字符串入口，因为命令拼接、重定向和解释器�
 auto-approve、always-ask、allow-once、deny 和 Audit。它的
 [Codex CLI Tool](https://github.com/zeroclaw-labs/zeroclaw/blob/master/src/tools/codex_cli.rs)使用固定
 可执行文件、清空环境后按白名单恢复、
-固定 Workspace、超时、输出上限和显式错误。这比通用 Shell 更接近 MiniClaw 调用 lark-cli 的需求。
+固定 Workspace、超时、输出上限和显式错误。这比通用 Shell 更接近 Lobster0 调用 lark-cli 的需求。
 
 ### 3.6 RayClaw
 
 [RayClaw](https://github.com/rayclaw/rayclaw) 让 Telegram、Discord、Slack、飞书和 Web UI 都进入同一
-Agent Engine，并共享 bash、文件、搜索和记忆 Tool。MiniClaw 应保持相同原则：TUI 是入口，不是第二套 Agent。
+Agent Engine，并共享 bash、文件、搜索和记忆 Tool。Lobster0 应保持相同原则：TUI 是入口，不是第二套 Agent。
 
 不复制：默认暴露宽 Bash、多 Channel 管理和 Web UI。
 
@@ -137,9 +137,9 @@ Agent Engine，并共享 bash、文件、搜索和记忆 Tool。MiniClaw 应保�
 
 [openclaw-python](https://github.com/openxjarvis/openclaw-python) 依赖独立的 `pi-tui` 和 coding-agent。
 [pi-mono-python](https://github.com/openxjarvis/pi-mono-python) 自研差分渲染、键盘协议、Editor、Markdown、
-选择器和补全，功能完整但代码与维护成本明显超过 MiniClaw 当前阶段。
+选择器和补全，功能完整但代码与维护成本明显超过 Lobster0 当前阶段。
 
-MiniClaw 不复制 `pi-tui`：TUI 框架不是本项目要学习的核心，直接使用成熟 Python TUI 框架更符合个人项目
+Lobster0 不复制 `pi-tui`：TUI 框架不是本项目要学习的核心，直接使用成熟 Python TUI 框架更符合个人项目
 的投入产出。
 
 ### 3.8 官方 lark-cli
@@ -147,7 +147,7 @@ MiniClaw 不复制 `pi-tui`：TUI 框架不是本项目要学习的核心，直�
 [larksuite/cli](https://github.com/larksuite/cli) 是官方维护、面向人和 AI Agent 的飞书/Lark CLI，覆盖
 Messenger、Docs、Base、Sheets、Calendar、Mail、Tasks、Meetings 等领域，并提供 Agent Skills。
 
-MiniClaw P2.3 不重新封装 200 多个 OpenAPI；先安全执行官方 CLI。Phase 3 Skills 再按需加载官方 Skill
+Lobster0 P2.3 不重新封装 200 多个 OpenAPI；先安全执行官方 CLI。Phase 3 Skills 再按需加载官方 Skill
 说明，避免把整套命令手册塞进系统 Prompt。
 
 ## 4. 技术方案选择
@@ -157,7 +157,7 @@ MiniClaw P2.3 不重新封装 200 多个 OpenAPI；先安全执行官方 CLI。P
 “Python CLI 用什么框架”不是一个问题，而是四层不同问题。调研 Python 官方资料和代表性项目后，得到以下
 分层：
 
-| 层次 | 主流方案 | 适用场景 | MiniClaw 决策 |
+| 层次 | 主流方案 | 适用场景 | Lobster0 决策 |
 |---|---|---|---|
 | 命令参数解析 | stdlib `argparse`、Click、Typer | 子命令、参数、帮助、退出码 | 保留现有 `argparse` |
 | 行式交互 Shell | `prompt_toolkit` | 历史、多行输入、补全、Vim/Emacs 键位 | 不采用，避免与全屏 TUI 重复 |
@@ -165,7 +165,7 @@ MiniClaw P2.3 不重新封装 200 多个 OpenAPI；先安全执行官方 CLI。P
 | 富文本输出 | Rich | Markdown、表格、颜色、日志 | 由 Textual 间接提供，不单独新增 |
 
 [Python 官方文档](https://docs.python.org/3/library/argparse.html)把 `argparse` 作为基础 CLI 的默认推荐。
-MiniClaw 当前只有 `init`、`doctor`、`eval` 和一个交互入口，不需要为了语法更短迁移到 Click/Typer。
+Lobster0 当前只有 `init`、`doctor`、`eval` 和一个交互入口，不需要为了语法更短迁移到 Click/Typer。
 Click 的优势是动态组合和深层命令树；Typer 的优势是从类型标注生成参数。这两个需求当前都不存在。
 
 [prompt_toolkit](https://github.com/prompt-toolkit/python-prompt-toolkit) 是 Python 行式交互 Shell 的成熟选择，
@@ -177,12 +177,12 @@ Click 的优势是动态组合和深层命令树；Typer 的优势是从类型�
 
 Textual 面向完整终端应用。[Harlequin](https://github.com/tconbeer/harlequin/blob/main/pyproject.toml)使用
 Textual 构建终端 SQL IDE，并为交互做异步和 Snapshot 测试；
-[Toolong](https://github.com/Textualize/toolong) 使用 Textual 构建跨平台日志 TUI。MiniClaw 的聊天记录、
+[Toolong](https://github.com/Textualize/toolong) 使用 Textual 构建跨平台日志 TUI。Lobster0 的聊天记录、
 Tool 状态、审批和取消与这一类应用更接近。
 
 因此选型不是“Textual 在所有 Python CLI 中最好”，而是：
 
-- `argparse` 最适合 MiniClaw 当前的非交互命令；
+- `argparse` 最适合 Lobster0 当前的非交互命令；
 - Textual 最适合用户明确要求的全屏 Agent 交互；
 - prompt_toolkit、Rich、Click 和 Typer 在当前范围内没有新增价值，不同时叠加。
 
@@ -235,10 +235,10 @@ Python Core 暴露版本化 JSON/WebSocket 协议，再用 pi-tui 或 OpenTUI �
 曾考虑以下几种启动方式并存：
 
 ```text
-miniclaw chat
-miniclaw tui
-miniclaw chat --plain
-miniclaw chat --message "..."
+lobster0 chat
+lobster0 tui
+lobster0 chat --plain
+lobster0 chat --message "..."
 ```
 
 最终全部否决。原因不是这些模式做不到，而是它们把同一个个人 Agent 暴露成多套产品：用户需要判断该进入
@@ -247,10 +247,10 @@ miniclaw chat --message "..."
 最终规则只有一条：
 
 ```text
-TTY + miniclaw  → 唯一 Textual TUI → 唯一 TurnService → 唯一 Agent Runtime
+TTY + lobster0  → 唯一 Textual TUI → 唯一 TurnService → 唯一 Agent Runtime
 ```
 
-脚本和 CI 不伪装成人类聊天：离线回归继续走 `miniclaw eval`，代码集成继续调用 Python API。未来只有在出现
+脚本和 CI 不伪装成人类聊天：离线回归继续走 `lobster0 eval`，代码集成继续调用 Python API。未来只有在出现
 真实的机器调用需求时，才单独设计稳定的 JSON/RPC 接口；不会把另一个简易 REPL 塞回 CLI。
 
 ## 5. 产品交互设计
@@ -258,13 +258,13 @@ TTY + miniclaw  → 唯一 Textual TUI → 唯一 TurnService → 唯一 Agent R
 ### 5.1 启动命令
 
 ```bash
-uv run miniclaw              # 唯一人类交互入口，启动全屏 TUI
-uv run miniclaw init         # 非对话：初始化本地状态
-uv run miniclaw doctor       # 非对话：诊断本地状态
-uv run miniclaw eval ...     # 非对话：运行版本回归门禁
+uv run lobster0              # 唯一人类交互入口，启动全屏 TUI
+uv run lobster0 init         # 非对话：初始化本地状态
+uv run lobster0 doctor       # 非对话：诊断本地状态
+uv run lobster0 eval ...     # 非对话：运行版本回归门禁
 ```
 
-不提供 `miniclaw chat`、`miniclaw tui` 或另一套 plain REPL。若本地状态尚未初始化，裸 `miniclaw` 仍进入
+不提供 `lobster0 chat`、`lobster0 tui` 或另一套 plain REPL。若本地状态尚未初始化，裸 `lobster0` 仍进入
 同一个 TUI，但首先显示初始化引导；完成后在原界面进入聊天，不跳转到另一套 Wizard。
 
 交互入口要求 stdin/stdout 都是 TTY。非 TTY、`TERM=dumb` 或无法进入终端 application mode 时，稳定返回
@@ -273,7 +273,7 @@ uv run miniclaw eval ...     # 非对话：运行版本回归门禁
 ### 5.2 简洁布局
 
 ```text
-┌ MiniClaw 0.1.0 ─ deepseek-v4-pro ─ session:default ─ workspace:… ┐
+┌ Lobster0 0.1.0 ─ deepseek-v4-pro ─ session:default ─ workspace:… ┐
 │                                                                  │
 │ You                                                              │
 │ 帮我检查飞书 CLI 是否已经登录。                                 │
@@ -284,7 +284,7 @@ uv run miniclaw eval ...     # 非对话：运行版本回归门禁
 │ ✓ run_command                                      318 ms        │
 │   Logged in as nedonion@example.com                              │
 │                                                                  │
-│ MiniClaw                                                        │
+│ Lobster0                                                        │
 │ 飞书 CLI 已登录，当前身份是……                                   │
 │                                                                  │
 ├──────────────────────────────────────────────────────────────────┤
@@ -335,7 +335,7 @@ MVP 只实现：
 
 ```mermaid
 flowchart TD
-    USER["用户键盘输入"] --> APP["Textual MiniClawApp"]
+    USER["用户键盘输入"] --> APP["Textual Lobster0App"]
     APP --> PRESENTER["TUI Presenter"]
     PRESENTER --> TURN["现有 TurnService"]
     TURN --> RUNNER["现有 AgentRunner"]
@@ -404,7 +404,7 @@ P2.2 的原则保持不变：审批不能靠挂起一个长期协程等待点击
 ```mermaid
 sequenceDiagram
     actor U as 用户
-    participant TUI as MiniClaw TUI
+    participant TUI as Lobster0 TUI
     participant A as AgentRunner
     participant P as Policy / ApprovalService
     participant DB as SQLite
@@ -460,7 +460,7 @@ MVP TUI 只提供 `Allow once` 和 `Deny`，不创建永久规则。未来出现
 - cwd 固定为配置的 Workspace；
 - stdin 固定为 `DEVNULL`，不支持交互子进程；
 - 环境从空字典构造，只传 `PATH`、`HOME`、locale、`TERM`、`TMPDIR` 等必要键；
-- 明确移除 DeepSeek/OpenAI Key、飞书 App Secret 和 MiniClaw 私密环境变量；
+- 明确移除 DeepSeek/OpenAI Key、飞书 App Secret 和 Lobster0 私密环境变量；
 - 默认 30 秒，模型请求最大 120 秒；
 - stdout/stderr 分开读取，设置硬上限，给模型的结果继续服从 `tool_result_max_chars`；
 - 超时或取消终止整个进程组并回收子进程；
@@ -484,7 +484,7 @@ Allowlist 必须匹配解析后的 executable 和 argv 规则，而不是对拼�
 ### 9.1 为什么先调用 CLI
 
 - 官方 CLI 已处理认证、OpenAPI 路由、参数编码和错误；
-- MiniClaw 可以学习“Agent 调另一个可靠 CLI”的企业常见模式；
+- Lobster0 可以学习“Agent 调另一个可靠 CLI”的企业常见模式；
 - 不需要为飞书几十个业务域各写一个 Tool；
 - 后续仍可把高频操作升级成一等结构化 Tool。
 
@@ -499,7 +499,7 @@ Allowlist 必须匹配解析后的 executable 和 argv 规则，而不是对拼�
 
 ### 9.3 明确限制
 
-- MiniClaw 不自动安装 lark-cli；
+- Lobster0 不自动安装 lark-cli；
 - `lark-cli auth login` 等交互登录必须由用户在普通终端完成；
 - 不把飞书 Token 作为模型参数；
 - 不允许模型读取 lark-cli 凭据文件；
@@ -545,7 +545,7 @@ flowchart LR
 交付：
 
 - Textual App；
-- 唯一裸 `miniclaw` 交互入口；
+- 唯一裸 `lobster0` 交互入口；
 - 未初始化状态下的同界面 Onboarding；
 - RunEvent 回调；
 - 真流式临时卡片；
@@ -563,11 +563,11 @@ flowchart LR
 ### P2.3B：lark-cli
 交付 doctor 检查、help/status 窄 allowlist、其他动作审批和真实本机 smoke。
 
-P2.3 完成不代表 Phase 4 完成：用户此时从本地 TUI 操作飞书；直接在飞书中与 MiniClaw 对话仍属于 Phase 4。
+P2.3 完成不代表 Phase 4 完成：用户此时从本地 TUI 操作飞书；直接在飞书中与 Lobster0 对话仍属于 Phase 4。
 
 ## 11. 测试与回归门禁
 
-MiniClaw 继续使用现有 `unittest`。不因为 Textual 官方示例使用 pytest 就引入 pytest；
+Lobster0 继续使用现有 `unittest`。不因为 Textual 官方示例使用 pytest 就引入 pytest；
 [Textual `run_test()`](https://textual.textualize.io/guide/testing/) 可以在异步 unittest 中调用。
 
 ### 11.1 TUI 自动化
@@ -582,7 +582,7 @@ MiniClaw 继续使用现有 `unittest`。不因为 Textual 官方示例使用 py
 | TUI-006 审批允许 | Modal 显示绑定参数，Allow once 只执行一次 |
 | TUI-007 审批拒绝 | deny 不产生副作用，也不自动重试 |
 | TUI-008 小终端 | 80×24 仍可输入、滚动和审批 |
-| TUI-009 单入口 | 裸 `miniclaw` 打开 TUI；不存在 `chat`/`tui`/`plain` 平行聊天入口 |
+| TUI-009 单入口 | 裸 `lobster0` 打开 TUI；不存在 `chat`/`tui`/`plain` 平行聊天入口 |
 | TUI-010 初始化 | 缺少本地状态时在同一个 TUI 完成引导，完成后进入聊天 |
 | TUI-011 非 TTY | 稳定返回非零退出码，不阻塞也不降级到隐藏 REPL |
 | TUI-012 可访问性基础 | 全键盘可操作，焦点顺序稳定，任何状态都不只依赖颜色 |
@@ -621,7 +621,7 @@ MiniClaw 继续使用现有 `unittest`。不因为 Textual 官方示例使用 py
 3. 本地 `!command` 第一版不实现，避免绕过 Agent Policy；
 4. 审批 Modal 可以给本机 Owner 看准确参数，但日志、Audit 和错误信息必须脱敏；
 5. 任何批准只绑定一个 Owner、Tool、规范化参数、可执行文件、Turn 和过期时间；
-6. lark-cli 自身凭据由其认证系统管理，MiniClaw 不复制或显示；
+6. lark-cli 自身凭据由其认证系统管理，Lobster0 不复制或显示；
 7. 模型文本与子进程输出在渲染前移除终端控制字符，不能解释原始 ANSI escape；
 8. TUI 崩溃不得把 pending Approval 视为已批准；
 9. 无 UI、审批回调异常或状态不一致时一律 deny。
@@ -657,7 +657,7 @@ MiniClaw 继续使用现有 `unittest`。不因为 Textual 官方示例使用 py
 
 方案完成必须同时满足：
 
-1. `uv run miniclaw` 在正常 TTY 打开唯一全屏 TUI；
+1. `uv run lobster0` 在正常 TTY 打开唯一全屏 TUI；
 2. 普通回答可见流式，Markdown 和中文正常；
 3. 四个现有只读 Tool 的请求、状态、结果和最终回答可见；
 4. Esc 取消不会留下 running Turn/ToolRun；
@@ -665,7 +665,7 @@ MiniClaw 继续使用现有 `unittest`。不因为 Textual 官方示例使用 py
 6. `run_command` 不存在字符串 Shell 入口；
 7. lark-cli help/status 能工作，其他动作按准确参数审批；
 8. API Key、飞书 Secret 和凭据不进入子进程输出、日志或 Audit；
-9. 不存在 `miniclaw chat`、`miniclaw tui`、`--plain` 或 `chat --message` 等平行对话入口；
+9. 不存在 `lobster0 chat`、`lobster0 tui`、`--plain` 或 `chat --message` 等平行对话入口；
 10. `init`、`doctor`、`eval` 继续保持非对话命令，不创建另一份 Agent Runtime；
 11. 缺少初始化状态时仍在同一个 TUI 完成引导，非 TTY 时稳定拒绝；
 12. 默认离线回归、安全回归、TUI 无头测试和 lint 全部通过；

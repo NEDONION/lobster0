@@ -17,7 +17,7 @@ Tool Schema、参数校验、`PolicyEngine`、`ToolExecutor`、ToolRun/Audit 和
 ```mermaid
 flowchart TB
     subgraph L1["第 1 层：用户与入口"]
-        USER["用户"] --> CLI["bare miniclaw TUI"]
+        USER["用户"] --> CLI["bare lobster0 TUI"]
     end
     subgraph L2["第 2 层：Agent Runtime"]
         CLI --> TURN["TurnService / AgentRunner"]
@@ -133,9 +133,9 @@ flowchart TD
 ```
 
 Guard 会拒绝 `.env*`、`.ssh`、`.aws`、`.gnupg`、`.kube`、`.git-credentials`、`.pypirc`、
-`.docker/config.json`、GCP 默认凭据、常见私钥/密钥库后缀、MiniClaw 自己的配置/数据库/日志、
-状态根下精确的 `miniclaw.db-wal/-shm/-journal`、`/etc/shadow` 等系统敏感文件，以及容器 socket。检查同时在
-逻辑路径和符号链接解析后的路径做一次；`miniclaw.db-notes.md` 这类普通文件不会被无限通配误伤。
+`.docker/config.json`、GCP 默认凭据、常见私钥/密钥库后缀、Lobster0 自己的配置/数据库/日志、
+状态根下精确的 `lobster0.db-wal/-shm/-journal`、`/etc/shadow` 等系统敏感文件，以及容器 socket。检查同时在
+逻辑路径和符号链接解析后的路径做一次；`lobster0.db-notes.md` 这类普通文件不会被无限通配误伤。
 
 对模型可见的成功路径始终相对于实际允许根展示。例如 `shared` 只读根里的绝对文件返回 `guide.md`，而不是泄露本机
 Home 或临时目录绝对路径。
@@ -214,13 +214,13 @@ Shell 看起来是最短路径，但对模型来说它会把“读取一个文�
 
 | 文件 | 本阶段职责 |
 | --- | --- |
-| `src/miniclaw/policy/workspace.py` | `WorkspaceGuard`、稳定 `WorkspaceAccessError`、敏感路径黑名单和安全相对展示路径。 |
-| `src/miniclaw/tools/filesystem.py` | `ReadFileTool` 的 Schema、参数规范化、512 KiB 有界 UTF-8 行窗口、文件错误映射。 |
-| `src/miniclaw/tools/search.py` | `GlobTool`/`GrepTool` 的 Schema、稳定遍历、普通文件筛选、排序、结果与读取预算。 |
-| `src/miniclaw/storage/tooling.py` | allowed ToolRun 状态迁移，以及不创建 ToolRun 的脱敏 `tool.denied` 审计。 |
-| `src/miniclaw/runtime.py` | 生产 Runtime 组装；把文件/search Tool 与 `SystemInfoTool` 注册进唯一 `ToolExecutor`。 |
-| `src/miniclaw/policy/engine.py` | 对三个读取 Tool 的路径参数在开始 ToolRun 前做 Guard 预检；合法 low-risk 读取才允许执行。 |
-| `src/miniclaw/tools/executor.py` | 保持唯一顺序：`get → validate → policy → (deny audit 或 start → execute → finish)`；负责失败关闭、异常脱敏和结果上限。 |
+| `src/lobster0/policy/workspace.py` | `WorkspaceGuard`、稳定 `WorkspaceAccessError`、敏感路径黑名单和安全相对展示路径。 |
+| `src/lobster0/tools/filesystem.py` | `ReadFileTool` 的 Schema、参数规范化、512 KiB 有界 UTF-8 行窗口、文件错误映射。 |
+| `src/lobster0/tools/search.py` | `GlobTool`/`GrepTool` 的 Schema、稳定遍历、普通文件筛选、排序、结果与读取预算。 |
+| `src/lobster0/storage/tooling.py` | allowed ToolRun 状态迁移，以及不创建 ToolRun 的脱敏 `tool.denied` 审计。 |
+| `src/lobster0/runtime.py` | 生产 Runtime 组装；把文件/search Tool 与 `SystemInfoTool` 注册进唯一 `ToolExecutor`。 |
+| `src/lobster0/policy/engine.py` | 对三个读取 Tool 的路径参数在开始 ToolRun 前做 Guard 预检；合法 low-risk 读取才允许执行。 |
+| `src/lobster0/tools/executor.py` | 保持唯一顺序：`get → validate → policy → (deny audit 或 start → execute → finish)`；负责失败关闭、异常脱敏和结果上限。 |
 
 相关测试分别在 `tests/test_workspace_policy.py`、`tests/test_file_tools.py`、`tests/test_search_tools.py`，并由
 `tests/test_tool_executor.py`、`tests/test_turn.py`、`tests/test_runtime.py` 与 `tests/test_tui.py` 覆盖 Policy、消息
@@ -239,20 +239,20 @@ uv run ruff check .
 ```
 
 若要让已配置的模型**尝试**读取 Workspace，先初始化，并把演示文件放入默认的
-`~/.miniclaw/workspace/`（或在 `config.toml` 设置绝对 `[workspace].path`）。以下命令只提供模型可调用的
+`~/.lobster0/workspace/`（或在 `config.toml` 设置绝对 `[workspace].path`）。以下命令只提供模型可调用的
 工具与提示；模型是否选择调用，取决于真实 Provider。它不是本阶段已完成的真实 DeepSeek smoke。
 
 ```bash
-uv run miniclaw init
-printf 'hello from MiniClaw workspace\n' > ~/.miniclaw/workspace/demo.txt
-uv run miniclaw
+uv run lobster0 init
+printf 'hello from Lobster0 workspace\n' > ~/.lobster0/workspace/demo.txt
+uv run lobster0
 ```
 
 然后在同一个 TUI 中依次输入“请使用 read_file 读取 demo.txt 的内容”“请使用 glob 查找当前 Workspace 的
-`*.txt` 文件”“请使用 grep 在当前 Workspace 的 `*.txt` 中搜索 MiniClaw”。
+`*.txt` 文件”“请使用 grep 在当前 Workspace 的 `*.txt` 中搜索 Lobster0”。
 
-也可通过绝对 `MINICLAW_WORKSPACE` 环境变量或 `config.toml` 的 `[workspace].path` 切换到另一个 Workspace。
-不要把 `.env`、凭据、MiniClaw 状态目录或任意 Home 目录当作演示目标：Guard 的目标正是拒绝它们。
+也可通过绝对 `LOBSTER0_WORKSPACE` 环境变量或 `config.toml` 的 `[workspace].path` 切换到另一个 Workspace。
+不要把 `.env`、凭据、Lobster0 状态目录或任意 Home 目录当作演示目标：Guard 的目标正是拒绝它们。
 
 ## 9. 测试矩阵
 

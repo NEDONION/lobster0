@@ -1,6 +1,6 @@
 <div align="center">
 
-# MiniClaw
+# Lobster0
 
 **一个小而完整、私有自托管、默认受控的个人 Agent。**
 
@@ -12,13 +12,13 @@
 [![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
-[为什么是 MiniClaw](#为什么是-miniclaw) · [当前能力](#当前能力) · [快速开始](#快速开始) · [产品预览](#产品预览) · [架构](#工作原理) · [路线图](#路线图) · [文档](#文档)
+[为什么是 Lobster0](#为什么是-lobster0) · [当前能力](#当前能力) · [快速开始](#快速开始) · [产品预览](#产品预览) · [架构](#工作原理) · [路线图](#路线图) · [文档](#文档)
 
 </div>
 
-![MiniClaw 在 Warp 中完成中文对话](docs/assets/miniclaw-tui-conversation-warp.png)
+![Lobster0 在 Warp 中完成中文对话](docs/assets/lobster0-tui-conversation-warp.png)
 
-MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收进同一个本地 Core。你可以从 TUI、飞书、Telegram 或 Discord 与同一个 Agent 交互；所有本机动作仍要经过统一的 Policy、Workspace 边界和可审计执行链。
+Lobster0 把模型、Tool、权限、审批、持久化和多个消息渠道收进同一个本地 Core。你可以从 TUI、飞书、Telegram 或 Discord 与同一个 Agent 交互；所有本机动作仍要经过统一的 Policy、Workspace 边界和可审计执行链。
 
 > [!IMPORTANT]
 > 当前代码已完成 Phase 5 的本地实现门禁；Feishu/Telegram/Discord 的完整真实 Live Gate 仍按各自证据单独标记。
@@ -37,9 +37,9 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 > Phase 6.5 Browser Agent 已完成本地实现：专用 Chromium Profile、snapshot/ref、八个受 Policy 管理的 Browser Tool、
 > Screenshot/Download Artifact 和 18 条版本化门禁已经接通；Browser 默认关闭，受控公网 Live smoke 尚未执行。
 
-## 为什么是 MiniClaw
+## 为什么是 Lobster0
 
-| 目标 | MiniClaw 的选择 |
+| 目标 | Lobster0 的选择 |
 | --- | --- |
 | 私有与可控 | 状态、会话、审批和审计保存在本机；Secret 不进入 Prompt、日志或 Memory。 |
 | 小而完整 | 一个 Python Core、一个主 TUI、一个 OpenAI-compatible Provider，不提前堆叠服务。 |
@@ -48,7 +48,7 @@ MiniClaw 把模型、Tool、权限、审批、持久化和多个消息渠道收�
 | 多入口同一 Core | TUI、Feishu、Telegram、Discord 复用同一个 `AgentRuntime`；Transport 和故障域隔离。 |
 | 先验证再扩张 | `unittest`、TypeScript test、Agent/Channel JSONL、20 轮 soak 和文档校验共同守门。 |
 
-MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，Core 负责参数校验、风险判定、审批绑定、执行、审计和恢复。
+Lobster0 不是“把聊天框接到 Shell”——模型只提出 Tool Call，Core 负责参数校验、风险判定、审批绑定、执行、审计和恢复。
 
 ## 当前能力
 
@@ -77,7 +77,7 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 
 新安装和缺少 `tools.mode` 的旧配置默认使用 `autopilot`；显式 `safe`/`smart` 保持不变。该默认值只信任本地入口和经过验证的 Owner 私聊，群聊、其他用户与硬拒绝规则不会扩权。
 
-如果当前个人实例明确要求最少监督，可在私有 `~/.miniclaw/config.toml` 中设置 `mode = "yolo"` 并重启 Gateway；这只减少硬校验通过后的审批，不会开放凭据、敏感路径、SSRF、提权或 Shell 字符串执行。
+如果当前个人实例明确要求最少监督，可在私有 `~/.lobster0/config.toml` 中设置 `mode = "yolo"` 并重启 Gateway；这只减少硬校验通过后的审批，不会开放凭据、敏感路径、SSRF、提权或 Shell 字符串执行。
 
 ## 快速开始
 
@@ -92,8 +92,8 @@ MiniClaw 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 ### 安装与启动
 
 ```bash
-git clone https://github.com/NEDONION/mini-claw.git
-cd miniclaw
+git clone https://github.com/NEDONION/lobster0.git
+cd lobster0
 
 uv sync --extra dev --extra channels
 pnpm --dir tui install
@@ -102,40 +102,40 @@ pnpm --dir browser-worker install
 pnpm --dir browser-worker build
 
 cp .env.example .env
-# 只在本机填写 MINICLAW_MODEL_API_KEY；不要提交 .env
+# 只在本机填写 LOBSTER0_MODEL_API_KEY；不要提交 .env
 
-uv run miniclaw init
-uv run miniclaw doctor
-uv run miniclaw
+uv run lobster0 init
+uv run lobster0 doctor
+uv run lobster0
 ```
 
-默认状态目录是 `~/.miniclaw`，Workspace 是 `~/.miniclaw/workspace`。使用隔离实例：
+默认状态目录是 `~/.lobster0`，Workspace 是 `~/.lobster0/workspace`。使用隔离实例：
 
 ```bash
-uv run miniclaw --home /absolute/path/to/demo-home init
-uv run miniclaw --home /absolute/path/to/demo-home
+uv run lobster0 --home /absolute/path/to/demo-home init
+uv run lobster0 --home /absolute/path/to/demo-home
 ```
 
 如果暂时没有满足版本要求的 Node.js，可以显式使用迁移期 fallback：
 
 ```bash
-MINICLAW_TUI=textual uv run miniclaw
+LOBSTER0_TUI=textual uv run lobster0
 ```
 
 ### 常用入口
 
 | 命令 | 用途 |
 | --- | --- |
-| `uv run miniclaw` | 启动唯一主 TUI。 |
-| `uv run miniclaw init` | 幂等初始化 owner-only 状态、配置、Memory、Skills 和 SQLite。 |
-| `uv run miniclaw doctor` | 检查配置、目录权限、Provider、TUI 和数据库状态。 |
-| `uv run miniclaw gateway` | 启动已配置的 Feishu/Telegram/Discord Gateway。 |
-| `uv run miniclaw task list` | 查看 durable ScheduledTask；`show/runs/pause/resume/run/cancel/halt/unhalt` 提供完整控制面。 |
-| `uv run miniclaw eval validate --root evals/scenarios` | 校验版本化 JSONL 场景。 |
-| `uv run miniclaw eval run --suite offline --root evals/scenarios` | 跑真实 Core/Policy/Tool/SQLite 离线回归。 |
-| `uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios` | 跑三平台 Channel gate 与 20 轮本地 soak。 |
-| `uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios` | 跑 Phase 6 的 15 条 Automation gate 与 20 轮 soak。 |
-| `uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios` | 跑 Phase 6.5 的 18 条 Browser gate 与 20 轮 soak。 |
+| `uv run lobster0` | 启动唯一主 TUI。 |
+| `uv run lobster0 init` | 幂等初始化 owner-only 状态、配置、Memory、Skills 和 SQLite。 |
+| `uv run lobster0 doctor` | 检查配置、目录权限、Provider、TUI 和数据库状态。 |
+| `uv run lobster0 gateway` | 启动已配置的 Feishu/Telegram/Discord Gateway。 |
+| `uv run lobster0 task list` | 查看 durable ScheduledTask；`show/runs/pause/resume/run/cancel/halt/unhalt` 提供完整控制面。 |
+| `uv run lobster0 eval validate --root evals/scenarios` | 校验版本化 JSONL 场景。 |
+| `uv run lobster0 eval run --suite offline --root evals/scenarios` | 跑真实 Core/Policy/Tool/SQLite 离线回归。 |
+| `uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios` | 跑三平台 Channel gate 与 20 轮本地 soak。 |
+| `uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios` | 跑 Phase 6 的 15 条 Automation gate 与 20 轮 soak。 |
+| `uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios` | 跑 Phase 6.5 的 18 条 Browser gate 与 20 轮 soak。 |
 
 Channel 的 allowlist、Owner 身份与平台凭据配置见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
 
@@ -152,8 +152,8 @@ macOS 已安装 `uv`、Node.js `>=22.19.0` 和 Corepack 后，首选直接在 Fi
 ```
 
 脚本会按需安装锁定的 Python/TUI/Desktop 项目依赖、构建共享 TUI Bridge client、补齐 Electron 二进制，
-并在首次启动时调用安全的 `miniclaw setup` 收集模型 Key；后续启动只运行幂等 `init`。默认状态目录是 `~/.miniclaw`，也可提前设置绝对
-路径 `MINICLAW_HOME`。Secret 继续由 Core 写入 owner-only `secrets.env`，脚本不读取或打印其内容。
+并在首次启动时调用安全的 `lobster0 setup` 收集模型 Key；后续启动只运行幂等 `init`。默认状态目录是 `~/.lobster0`，也可提前设置绝对
+路径 `LOBSTER0_HOME`。Secret 继续由 Core 写入 owner-only `secrets.env`，脚本不读取或打印其内容。
 旧状态没有 `secrets.env` 时，开发入口会显式选择仓库根目录现有的 owner-only `.env`。
 
 如果一键入口报告依赖或配置错误，可按下面步骤手工排障：
@@ -163,11 +163,11 @@ uv sync --extra dev
 pnpm --dir tui install
 pnpm --dir tui build
 pnpm --dir desktop install
-uv run miniclaw setup --home /absolute/path/to/miniclaw-home
+uv run lobster0 setup --home /absolute/path/to/lobster0-home
 
-MINICLAW_PYTHON="$(pwd)/.venv/bin/python" \
-MINICLAW_HOME=/absolute/path/to/miniclaw-home \
-MINICLAW_ENV_FILE=/absolute/path/to/miniclaw-home/secrets.env \
+LOBSTER0_PYTHON="$(pwd)/.venv/bin/python" \
+LOBSTER0_HOME=/absolute/path/to/lobster0-home \
+LOBSTER0_ENV_FILE=/absolute/path/to/lobster0-home/secrets.env \
 pnpm --dir desktop dev
 ```
 
@@ -176,7 +176,7 @@ pnpm --dir desktop dev
 LIVE smoke 尚未完成。
 
 新的 D1～D5 目标已确认：以 LobsterAI Cowork 为主体，让首屏直接显示大对话框、附件、模型、Workspace 和 Agent
-选择；吸收 OpenAgents 的 Agent 列表、任务线程、参与状态和右侧共享产物；底层继续只使用 MiniClaw Core、Policy、
+选择；吸收 OpenAgents 的 Agent 列表、任务线程、参与状态和右侧共享产物；底层继续只使用 Lobster0 Core、Policy、
 Approval、ArtifactStore 和 SQLite。当前处于设计完成、实现 pending，详见
 [桌面多 Agent 开发需求](docs/product/20260810_桌面多Agent工作台开发需求.md)、
 [架构设计](docs/architecture/20260810_LobsterAI-first桌面多Agent设计.md)和
@@ -184,25 +184,25 @@ Approval、ArtifactStore 和 SQLite。当前处于设计完成、实现 pending�
 
 ## 产品预览
 
-下面 3 个典型 Case 均在 Warp 中使用全新隔离 `MINICLAW_HOME` 运行。为了不消耗真实模型额度，Provider 响应来自本地固定端点；MiniClaw 的 TUI、Bridge、TurnService、Policy、ToolExecutor、SQLite、Approval 和 Tool 执行均走真实代码路径。
+下面 3 个典型 Case 均在 Warp 中使用全新隔离 `LOBSTER0_HOME` 运行。为了不消耗真实模型额度，Provider 响应来自本地固定端点；Lobster0 的 TUI、Bridge、TurnService、Policy、ToolExecutor、SQLite、Approval 和 Tool 执行均走真实代码路径。
 
 ### 1. TUI 对话完整跑通
 
-![MiniClaw TUI 对话](docs/assets/miniclaw-tui-conversation-warp.png)
+![Lobster0 TUI 对话](docs/assets/lobster0-tui-conversation-warp.png)
 
 中文输入、回答、32K 应用侧 Context budget、token、迭代和耗时在同一界面可见。
 
 ### 2. SAFE 模式请求权限
 
-![MiniClaw SAFE 权限审批](docs/assets/miniclaw-tui-approval-warp.png)
+![Lobster0 SAFE 权限审批](docs/assets/lobster0-tui-approval-warp.png)
 
 `run_command` 在执行前展示规范化后的绝对程序、精确 argv、超时和四种审批选择；截图时命令仍处于 `requested`，没有执行。
 
 ### 3. 调用外部 Git CLI 完成任务
 
-![MiniClaw 调用外部 Git CLI](docs/assets/miniclaw-tui-external-cli-warp.png)
+![Lobster0 调用外部 Git CLI](docs/assets/lobster0-tui-external-cli-warp.png)
 
-MiniClaw 用 `run_command` 的 exact argv 调用隔离仓库中的 `git status --short --branch`，再根据真实 Tool 结果完成总结；没有 Shell 字符串拼接。
+Lobster0 用 `run_command` 的 exact argv 调用隔离仓库中的 `git status --short --branch`，再根据真实 Tool 结果完成总结；没有 Shell 字符串拼接。
 
 ## 工作原理
 
@@ -257,7 +257,7 @@ flowchart LR
 
 ## Phase 6：自治运行与安全
 
-Phase 6 让 MiniClaw 在 Gateway 常驻时执行受控后台任务，但不把控制权交给模型：
+Phase 6 让 Lobster0 在 Gateway 常驻时执行受控后台任务，但不把控制权交给模型：
 
 - SQLite Task Ledger 冻结 Task/Run snapshot，Scheduler 幂等生成 due Run；
 - 每个 Run 使用独立 Automation Session、固定 Tool profile 和 wall-clock/turn/tool/token/cost 预算；
@@ -274,14 +274,14 @@ Phase 6 让 MiniClaw 在 Gateway 常驻时执行受控后台任务，但不把�
 
 ## Phase 6.5：隔离 Browser Agent
 
-Browser 默认关闭。开启后，一个 Runtime 独占一个 TypeScript Worker 和 MiniClaw 专用 Chromium Profile；模型只能使用
+Browser 默认关闭。开启后，一个 Runtime 独占一个 TypeScript Worker 和 Lobster0 专用 Chromium Profile；模型只能使用
 `browser_open/snapshot/click/type/press/scroll/screenshot/close` 八个封闭 Tool，不能执行任意 JavaScript，也不能读取
 个人 Chrome Profile、Cookie、密码或 OTP。
 
 ```toml
 [browser]
 enabled = true
-profile = "miniclaw"
+profile = "lobster0"
 headed = true
 allow_personal_profile = false
 max_tabs = 8
@@ -337,9 +337,9 @@ pnpm --dir tui build
 pnpm --dir browser-worker test
 pnpm --dir browser-worker build
 uv run ruff check .
-uv run miniclaw eval run --suite channel --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite automation --repeat 20 --json --root evals/scenarios
-uv run miniclaw eval run --suite browser --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
+uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios
 uv run python scripts/validate_docs.py
 git diff --check
 ```
@@ -363,7 +363,7 @@ Browser controlled live smoke 和 Feishu/Discord 严格 Live Evidence 仍作为�
 ## 仓库结构
 
 ```text
-src/miniclaw/
+src/lobster0/
 ├── agent/       # Context、Runner、Turn、Compaction
 ├── automation/  # Task Ledger、Scheduler、Runner、Heartbeat、Delivery
 ├── artifacts/   # Browser Screenshot/Download 私有 CAS 与 TTL

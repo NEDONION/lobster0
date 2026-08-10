@@ -6,7 +6,7 @@
 
 ## 1. 大白话解释
 
-`http_get` 让 MiniClaw 读取公网 HTTPS 文本，但它不是“把 URL 交给普通 HTTP 客户端”这么简单。Agent 收到的
+`http_get` 让 Lobster0 读取公网 HTTPS 文本，但它不是“把 URL 交给普通 HTTP 客户端”这么简单。Agent 收到的
 网页地址可能指向本机、路由器、云元数据服务或公司内网；域名也可能在检查后换成私网 IP。P2.4 的原则是：
 
 1. 只允许 HTTPS GET；
@@ -20,7 +20,7 @@
 
 ```json
 {
-  "url": "https://example.com/docs?q=miniclaw",
+  "url": "https://example.com/docs?q=lobster0",
   "timeout_seconds": 20
 }
 ```
@@ -97,7 +97,7 @@ socket 仍有明确 timeout，不阻塞 Agent 的 asyncio 主循环。
 ## 6. 为什么要固定连接 IP
 
 只在 Policy 阶段查 DNS 还不够。普通 HTTP 客户端连接时会再次查 DNS，攻击者可以让第一次返回公网 IP、第二次
-返回私网 IP。MiniClaw 使用 `PinnedHTTPSConnection` 消除这段检查与使用之间的 DNS 重绑定窗口：
+返回私网 IP。Lobster0 使用 `PinnedHTTPSConnection` 消除这段检查与使用之间的 DNS 重绑定窗口：
 
 ```mermaid
 sequenceDiagram
@@ -215,7 +215,7 @@ uv run python -m unittest \
   tests.test_runtime \
   tests.test_tui -v
 uv run python -m unittest discover -s tests -v
-uv run miniclaw eval run --suite offline --root evals/scenarios
+uv run lobster0 eval run --suite offline --root evals/scenarios
 uv run ruff check --no-cache .
 ```
 

@@ -8,11 +8,11 @@
 >
 > 目标版本：v0.5.0
 >
-> 入口：`miniclaw gateway`
+> 入口：`lobster0 gateway`
 
 ## 1. 一句话说明
 
-Phase 5 要让 Telegram、Discord 和飞书同时接入同一个 MiniClaw。三个平台各自负责收发消息、限流和重连，
+Phase 5 要让 Telegram、Discord 和飞书同时接入同一个 Lobster0。三个平台各自负责收发消息、限流和重连，
 背后只存在一个 AgentRuntime、一份 SQLite、一个 Owner、一套 Memory/Skills/Policy/Approval。任何一个平台故障，
 不能拖垮另外两个平台，也不能绕过 Agent Core 的安全边界。
 
@@ -34,7 +34,7 @@ flowchart LR
     U2["Discord Owner"] <--> DC["Discord Gateway"]
     U3["Feishu Owner"] <--> FS["Feishu WebSocket"]
 
-    subgraph G["MiniClaw Gateway Process"]
+    subgraph G["Lobster0 Gateway Process"]
         SUP["GatewaySupervisor"]
         P1["Telegram Pipeline"]
         P2["Discord Pipeline"]
@@ -88,7 +88,7 @@ Phase 5 必须先把这些边界收敛成平台无关接口，再接入两个新
 
 1. 用户确认：先写完整文档，再同时实现 Telegram 和 Discord；
 2. `docs/product/20260807_产品需求文档.md`：两个平台复用统一消息模型和 Channel Adapter；
-3. `docs/superpowers/specs/2026-08-07-miniclaw-complete-engineering-design.md`：long polling、Discord
+3. `docs/superpowers/specs/2026-08-07-lobster0-complete-engineering-design.md`：long polling、Discord
    Gateway、白名单、mention、Typing、流式编辑、分片和限流；
 4. Phase 4 已验证实现：durable Inbox/Outbox、Worker、Approval、Observer 和 Gateway 生命周期；
 5. 本设计：解决现有实现与 Phase 5 之间的具体接口冲突。
@@ -129,7 +129,7 @@ Phase 5 必须先把这些边界收敛成平台无关接口，再接入两个新
 - 跨平台共享同一短期 Conversation；
 - Channel 插件市场、动态 Python 插件加载或远程代码；
 - 自动创建 Bot、自动修改平台权限或自动填充 Token；
-- 自动修改/部署 MiniClaw 源码；
+- 自动修改/部署 Lobster0 源码；
 - Phase 6 Evolution 和 Phase 7 容器/系统服务部署。
 
 ## 6. 技术方案比较
@@ -154,7 +154,7 @@ Phase 5 必须先把这些边界收敛成平台无关接口，再接入两个新
 
 ```mermaid
 flowchart TB
-    CLI["miniclaw gateway"] --> ENV["dotenv + typed AppConfig"]
+    CLI["lobster0 gateway"] --> ENV["dotenv + typed AppConfig"]
     ENV --> PRE["All-enabled-channel preflight"]
     PRE --> R["One AgentRuntime"]
     PRE --> S["GatewaySupervisor"]
@@ -206,13 +206,13 @@ flowchart TB
 计划创建：
 
 ```text
-src/miniclaw/channels/
+src/lobster0/channels/
 ├── telegram.py          # Telegram event view、Adapter、Transport、错误映射
 ├── discord.py           # Discord event view、Adapter、Transport、错误映射
 ├── experience.py        # 平台无关 Typing / progress preview 接口与活动状态
 └── supervisor.py        # 多 Channel runtime bundle 与生命周期监督
 
-src/miniclaw/evals/
+src/lobster0/evals/
 └── multi_channel.py     # Telegram/Discord 确定性纵切 fixture
 
 scripts/
@@ -281,8 +281,8 @@ concrete Transport 内构造。
 [channels.feishu]
 enabled = false
 account_id = "default"
-app_id_env = "MINICLAW_FEISHU_APP_ID"
-app_secret_env = "MINICLAW_FEISHU_APP_SECRET"
+app_id_env = "LOBSTER0_FEISHU_APP_ID"
+app_secret_env = "LOBSTER0_FEISHU_APP_SECRET"
 owner_open_id = ""
 allowed_open_ids = []
 allowed_chat_ids = []
@@ -291,7 +291,7 @@ allow_group_mentions = false
 [channels.telegram]
 enabled = false
 account_id = "default"
-bot_token_env = "MINICLAW_TELEGRAM_BOT_TOKEN"
+bot_token_env = "LOBSTER0_TELEGRAM_BOT_TOKEN"
 owner_user_id = 0
 allowed_user_ids = []
 allowed_chat_ids = []
@@ -304,7 +304,7 @@ progress_update_interval = 0.8
 [channels.discord]
 enabled = false
 account_id = "default"
-bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"
+bot_token_env = "LOBSTER0_DISCORD_BOT_TOKEN"
 owner_user_id = 0
 allowed_user_ids = []
 allowed_guild_ids = []
@@ -369,7 +369,7 @@ Session 键保持：
 
 ### 12.1 预检
 
-`miniclaw gateway` 的新语义是启动全部 enabled Channels：
+`lobster0 gateway` 的新语义是启动全部 enabled Channels：
 
 1. 加载私密 `.env`；
 2. 解析完整 AppConfig；
@@ -409,7 +409,7 @@ Channel 和共享 Runtime；第二个终止信号只取消当前阻塞清理。
 ready 日志只输出本地逻辑名，例如：
 
 ```text
-MiniClaw gateway ready: feishu/default, telegram/default, discord/default
+Lobster0 gateway ready: feishu/default, telegram/default, discord/default
 ```
 
 不得输出 Token、Bot ID、Owner ID、Chat/Guild/Channel ID。
@@ -422,7 +422,7 @@ MiniClaw gateway ready: feishu/default, telegram/default, discord/default
 - 不启用 webhook，不监听公网端口；
 - 启动时 `get_me()` 校验 Token 并只在内存保存 bot user ID/username；
 - allowed updates 仅包含新文本 message，不消费 edited/channel post；
-- SDK 管理 polling offset；MiniClaw 仍按业务 message key 去重；
+- SDK 管理 polling offset；Lobster0 仍按业务 message key 去重；
 - `stop_receiving()` 先停止 updater，再由 Supervisor drain；
 - SDK 原始 Update 不进入 SQLite、日志或 Agent Core。
 
@@ -477,7 +477,7 @@ MiniClaw gateway ready: feishu/default, telegram/default, discord/default
 - 为读取自然语言正文，必须启用 `message_content` privileged intent，这是唯一必要 privileged intent；
 - 不启用 members、presences、voice_states；
 - Developer Portal 未开启 Message Content Intent 时 Doctor/启动提示明确配置错误；
-- SDK 自动处理 heartbeat 和基础 reconnect，MiniClaw 观测 connecting/connected/reconnecting/disconnected。
+- SDK 自动处理 heartbeat 和基础 reconnect，Lobster0 观测 connecting/connected/reconnecting/disconnected。
 
 ### 14.2 标准化
 
@@ -821,7 +821,7 @@ Phase 5 至少新增 20 条 active Channel cases：
 ### 25.6 Local soak
 
 ```bash
-uv run miniclaw eval run --suite channel --repeat 20 --root evals/scenarios
+uv run lobster0 eval run --suite channel --repeat 20 --root evals/scenarios
 ```
 
 至少执行 20 轮完整 32-case matrix，即 640 个本地纵切检查。它证明状态机和故障隔离可重复，不证明真实平台
@@ -928,7 +928,7 @@ Phase 5 production verified 还必须要求 Telegram 和 Discord 各自通过 15
 
 ## 31. 参考资料与参考原则
 
-- MiniClaw Phase 4 已验证 Channel 实现：优先复用状态机和安全边界；
+- Lobster0 Phase 4 已验证 Channel 实现：优先复用状态机和安全边界；
 - `python-telegram-bot` 官方文档：Application、long polling、RetryAfter、ChatAction；
 - `discord.py` 官方文档：Client/Bot、Intents、Gateway、AllowedMentions、Typing；
 - nanobot：参考多 Channel 目录和轻量装配，不复制安全较弱的直连模型路径；

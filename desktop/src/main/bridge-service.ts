@@ -1,13 +1,13 @@
 import {
   BridgeClient,
   BridgeRequestError,
-} from "@miniclaw/pi-tui/bridge-client";
+} from "@lobster0/pi-tui/bridge-client";
 import {
   isPermissionMode,
   type JsonValue,
   type PermissionMode,
   type ServerFrame,
-} from "@miniclaw/pi-tui/protocol";
+} from "@lobster0/pi-tui/protocol";
 import { isAbsolute } from "node:path";
 
 import type {
@@ -211,11 +211,11 @@ export class BridgeService {
       || workspace.length > 4_096
       || workspace.includes("\0")
     ) {
-      throw new BridgeRequestError("bridge_state", "MiniClaw Core 当前状态不允许切换工作目录");
+      throw new BridgeRequestError("bridge_state", "Lobster0 Core 当前状态不允许切换工作目录");
     }
     const previousEnvironment = this.environment;
     await this.stop();
-    this.environment = { ...previousEnvironment, MINICLAW_WORKSPACE: workspace };
+    this.environment = { ...previousEnvironment, LOBSTER0_WORKSPACE: workspace };
     try {
       return await this.start();
     } catch (error) {
@@ -247,7 +247,7 @@ export class BridgeService {
       this.currentStatus = "failed";
     });
     try {
-      const payload = await client.hello("miniclaw-desktop", "0.1.0");
+      const payload = await client.hello("lobster0-desktop", "0.1.0");
       const bootstrap = parseBootstrap(payload);
       this.bootstrapData = bootstrap;
       this.currentStatus = "idle";
@@ -280,7 +280,7 @@ export class BridgeService {
 
   private requireClient(expectedStatus?: BridgeStatus): BridgePort {
     if (!this.client || (expectedStatus && this.currentStatus !== expectedStatus)) {
-      throw new BridgeRequestError("bridge_state", "MiniClaw Core 当前状态不允许此操作");
+      throw new BridgeRequestError("bridge_state", "Lobster0 Core 当前状态不允许此操作");
     }
     return this.client;
   }
@@ -303,7 +303,7 @@ function parseBootstrap(payload: Record<string, JsonValue>): DesktopBootstrap {
     || !Number.isSafeInteger(payload.context_budget_tokens)
     || payload.context_budget_tokens <= 0
   ) {
-    throw new BridgeRequestError("bridge_protocol", "MiniClaw Core 握手数据无效");
+    throw new BridgeRequestError("bridge_protocol", "Lobster0 Core 握手数据无效");
   }
   return {
     coreVersion: stringValue(payload.core_version),
@@ -320,14 +320,14 @@ function parseBootstrap(payload: Record<string, JsonValue>): DesktopBootstrap {
 
 function stringValue(value: JsonValue | undefined): string {
   if (typeof value !== "string" || value.length === 0) {
-    throw new BridgeRequestError("bridge_protocol", "MiniClaw Core 握手数据无效");
+    throw new BridgeRequestError("bridge_protocol", "Lobster0 Core 握手数据无效");
   }
   return value;
 }
 
 function stringArray(value: JsonValue | undefined): string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new BridgeRequestError("bridge_protocol", "MiniClaw Core 握手数据无效");
+    throw new BridgeRequestError("bridge_protocol", "Lobster0 Core 握手数据无效");
   }
   return value as string[];
 }
@@ -365,5 +365,5 @@ function nullableString(value: JsonValue | undefined): string | null {
 }
 
 function protocolError(): BridgeRequestError {
-  return new BridgeRequestError("bridge_protocol", "MiniClaw Core 返回了无效数据");
+  return new BridgeRequestError("bridge_protocol", "Lobster0 Core 返回了无效数据");
 }

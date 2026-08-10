@@ -1,7 +1,7 @@
 import type {
   PermissionMode,
   ServerFrame,
-} from "@miniclaw/pi-tui/protocol";
+} from "@lobster0/pi-tui/protocol";
 
 export type ApprovalDecision = "deny" | "once" | "session" | "always";
 
@@ -117,6 +117,6 @@ export function createDesktopApi(invoke: Invoke, subscribe: Subscribe): DesktopA
 
 declare global {
   interface Window {
-    miniclaw: DesktopApi;
+    lobster0: DesktopApi;
   }
 }

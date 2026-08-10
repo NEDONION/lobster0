@@ -1,4 +1,4 @@
-# MiniClaw Production-grade 官网视觉重设计
+# Lobster0 Production-grade 官网视觉重设计
 
 ## 1. 目标与边界
 

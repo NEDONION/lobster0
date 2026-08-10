@@ -1,4 +1,4 @@
-# MiniClaw 官网设计改动记录 · Round 2
+# Lobster0 官网设计改动记录 · Round 2
 
 > 本文档按用户要求（"改的时候和改之前设计的时候一定要同步给我落库文档，记录详细"）落库，记录本轮改动的触发反馈、设计决策与改动明细。后续每轮设计改动都应在本文件追加一个新的 `## Round N` 小节，而不是另开文件，除非改动跨度足够大值得单独立项。
 
@@ -79,7 +79,7 @@
 
 ## Round 4（2026-08-10）
 
-### 触发反馈（用户原话，来自线上 miniclaw.jchu.tech 的真实截图）
+### 触发反馈（用户原话，来自线上 lobster0.jchu.tech 的真实截图）
 
 1. 首页统计条（01/04/18/33/15）右侧有一大块空白方块。
 2. 语言切换用纯文字"English"链接，要求换成标准化图标（globe），并且要为将来加日语/法语这类多语言留出扩展空间。
@@ -113,7 +113,7 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
   - `content/site.ts`：`WorkflowCopy.image` 字段整个替换成 `WorkflowCopy.flow`（`FlowStepCopy[]`，含 icon/label/detail/state），给 `approval` 写了 5 步（用户请求 → exact argv → Owner 审批 → 隔离执行 → 结果返回），给 `external-cli` 写了 4 步（程序 → argv[] → 隔离子进程 → 结构化结果），中英文各一份。
   - 新增 `FlowIcon.tsx`（6 个手绘 monoline SVG 图标：intent/argv/gate/run/result/program）和 `FlowDiagram.tsx`（client component：IntersectionObserver 触发的交错入场动画 + 连接线上的常驻流动光效，尊重 `useReducedMotionPreference`，复用 `ClawTrace.tsx` 已经验证过的“进入视口再播放”模式）。
   - `Workbench.tsx` 里原来渲染 `<Image>` 的 `ScreenshotWorkflow` 改名 `FlowWorkflow`，改渲染 `<FlowDiagram>`；meta 条的"来源/分辨率/状态"改成"步骤/来源/状态"（"来源"从"仓库真实图片"改成"真实执行链路"，仍然诚实——链路内容是真的，只是载体不是截图）。
-  - 删除了 `public/images/miniclaw-tui-approval-warp.{png,webp}` 和 `miniclaw-tui-external-cli-warp.{png,webp}`——确认过仓库根目录 `README.md`/`README_EN.md` 用的是 `docs/assets/` 下的独立副本，不受影响。
+  - 删除了 `public/images/lobster0-tui-approval-warp.{png,webp}` 和 `lobster0-tui-external-cli-warp.{png,webp}`——确认过仓库根目录 `README.md`/`README_EN.md` 用的是 `docs/assets/` 下的独立副本，不受影响。
   - `workbench.eyebrow`/`title`/`lead` 文案同步更新（中英文），不再提"两张 TUI 截图"。
   - `globals.css` 里 `.workflow-shot` 系列（含 `figcaption`、`img` 悬浮缩放）整体替换为 `.flow-diagram` 系列（暗色终端底 + 节点连接线 + 流动光效 + 等待态呼吸动画）；`MarketingHome.module.css` 里的页面级 sheen 扫光效果同步从 `.workflow-shot` 重命名到 `.flow-diagram`，继续复用。
   - 更新了 `Workbench.test.tsx`（不再断言 `<img>`，改断言 `FlowDiagram` 的 `<ol aria-label>` 和步骤文案）。

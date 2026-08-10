@@ -5,7 +5,7 @@ test('publishes the arrow brand in social and browser metadata', async ({ page, 
 
   await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
     'content',
-    'MiniClaw — Your local agent, ready to act.',
+    'Lobster0 — Your local agent, ready to act.',
   );
 
   const image = await request.get('/opengraph-image');

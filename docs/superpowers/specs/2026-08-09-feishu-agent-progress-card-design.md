@@ -1,4 +1,4 @@
-# MiniClaw 飞书 Agent 过程卡设计
+# Lobster0 飞书 Agent 过程卡设计
 
 > 状态：已确认，等待书面规格复核
 > 日期：2026-08-09
@@ -6,10 +6,10 @@
 
 ## 1. 产品定位
 
-这张卡服务于通过飞书使用个人 MiniClaw 的 Owner。它的唯一任务是让用户在同一张消息卡片中看懂
+这张卡服务于通过飞书使用个人 Lobster0 的 Owner。它的唯一任务是让用户在同一张消息卡片中看懂
 Agent 正在做什么、调用了什么工具、查看了什么对象、每一步是否成功，以及最终答案是什么。
 
-当前飞书卡只把最终 Markdown 包进“MiniClaw 回复”，`ChannelExperience` 明确忽略 Tool trace 与
+当前飞书卡只把最终 Markdown 包进“Lobster0 回复”，`ChannelExperience` 明确忽略 Tool trace 与
 reasoning，因而复杂任务看起来仍像普通聊天机器人。目标体验借鉴 OpenClaw 的 live digest、按工具类型
 展示活动和完成后保留轨迹，但不复制 Web UI，也不引入额外模型调用。
 
@@ -57,7 +57,7 @@ flowchart LR
 
 ## 4. 数据模型与文件边界
 
-新增 `src/miniclaw/channels/progress.py`：
+新增 `src/lobster0/channels/progress.py`：
 
 - `ProgressStatus`：`running / completed / incomplete / waiting`。
 - `ProgressStep`：稳定序号、类别、标题、安全详情、状态、耗时。
@@ -67,7 +67,7 @@ flowchart LR
 - 持久化 serializer 省略 `final_answer`；恢复时从同一 Assistant Message 的正文重新组合，避免在
   metadata 中复制长回答。
 
-新增 `src/miniclaw/channels/feishu_cards.py`：
+新增 `src/lobster0/channels/feishu_cards.py`：
 
 - 只把 `AgentProgress` 映射为 Feishu Card JSON 2.0。
 - 不解析 RunEvent，不接触原始 Tool 参数，不处理持久化。
@@ -147,7 +147,7 @@ Autopilot 路径不会触发它。
 加粗 Markdown。状态符号固定为 `● running / ✓ succeeded / ! waiting / × failed`，不使用装饰性 emoji。
 
 ```text
-┌ MiniClaw · 执行中                         8s ┐
+┌ Lobster0 · 执行中                         8s ┐
 │ 正在统计你的飞书文档                         │
 ├ Claw Trail ────────────────────────────────┤
 │ ✓ 1  理解请求                               │

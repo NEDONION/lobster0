@@ -39,10 +39,10 @@ flowchart LR
 
 | 文件 | 当前职责 |
 | --- | --- |
-| `src/miniclaw/config.py` | 严格解析 `[tools]`、命令子配置和 HTTP 子配置 |
-| `src/miniclaw/policy/workspace.py` | 分离 `resolve_read` 与 `resolve_write` 权限边界 |
-| `src/miniclaw/policy/engine.py` | 写 Tool 在进入 Executor 后先做路径硬禁止，再要求审批 |
-| `src/miniclaw/tools/filesystem.py` | `ReadFileTool`、`WriteFileTool`、`EditFileTool` 和唯一原子写 helper |
+| `src/lobster0/config.py` | 严格解析 `[tools]`、命令子配置和 HTTP 子配置 |
+| `src/lobster0/policy/workspace.py` | 分离 `resolve_read` 与 `resolve_write` 权限边界 |
+| `src/lobster0/policy/engine.py` | 写 Tool 在进入 Executor 后先做路径硬禁止，再要求审批 |
+| `src/lobster0/tools/filesystem.py` | `ReadFileTool`、`WriteFileTool`、`EditFileTool` 和唯一原子写 helper |
 | `tests/test_config.py` | 默认值、未知键、枚举、重复工具、exact argv 配置 |
 | `tests/test_workspace_policy.py` | 写根、父目录、read-only、逃逸、symlink 和敏感路径 |
 | `tests/test_file_tools.py` | 新建、覆盖、编辑、权限、上限、失败清理和并发修改保护 |
@@ -112,7 +112,7 @@ Workspace 内部，也拒绝用于写入；这是为了让审批摘要和最终�
 ```json
 {
   "path": "notes/today.md",
-  "content": "今天完成了 MiniClaw P2.2A。\n",
+  "content": "今天完成了 Lobster0 P2.2A。\n",
   "overwrite": false
 }
 ```
@@ -202,7 +202,7 @@ Task 2 聚焦门禁：
 
 ```bash
 uv run python -m unittest tests.test_file_tools tests.test_tool_contract tests.test_tool_executor -v
-uv run ruff check src/miniclaw/tools/filesystem.py src/miniclaw/policy/engine.py tests/test_file_tools.py tests/test_tool_contract.py
+uv run ruff check src/lobster0/tools/filesystem.py src/lobster0/policy/engine.py tests/test_file_tools.py tests/test_tool_contract.py
 ```
 
 结果：36/36 通过。
@@ -211,7 +211,7 @@ uv run ruff check src/miniclaw/tools/filesystem.py src/miniclaw/policy/engine.py
 
 ```bash
 uv run python -m unittest discover -s tests
-uv run miniclaw eval run --suite offline
+uv run lobster0 eval run --suite offline
 uv run ruff check .
 git diff --check
 ```

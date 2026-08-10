@@ -1,11 +1,11 @@
-# MiniClaw 完整工程落地设计
+# Lobster0 完整工程落地设计
 
-> 状态：待评审。用户确认后作为 MiniClaw v1.0 的工程设计基线。本文描述目标架构与落地边界，
+> 状态：待评审。用户确认后作为 Lobster0 v1.0 的工程设计基线。本文描述目标架构与落地边界，
 > 文中标记为“目标”的能力在实现和验证前不得写成仓库现状。
 
 ## 1. 文档目的
 
-MiniClaw 是一个 Python 3.12 编写、面向单个所有者、自托管并长期运行的个人 Agent。它贯彻
+Lobster0 是一个 Python 3.12 编写、面向单个所有者、自托管并长期运行的个人 Agent。它贯彻
 OpenClaw 类产品的核心思想：用户拥有运行环境、数据、凭证和工具权限；CLI、飞书、Telegram 和
 Discord 背后共享同一个 Agent Core、身份、记忆、Skills 与安全策略。
 
@@ -26,7 +26,7 @@ Discord 背后共享同一个 Agent Core、身份、记忆、Skills 与安全策
 ## 2. 工程决策摘要
 
 采用“自有 Python 内核 + 选择性移植成熟实现”，不直接 Fork 任一参考仓库，也不依赖另一个本地兄弟
-仓库。MiniClaw 保持单仓库、单 Python 发行包、单进程 Gateway 和一个 SQLite 数据库。
+仓库。Lobster0 保持单仓库、单 Python 发行包、单进程 Gateway 和一个 SQLite 数据库。
 
 | 决策 | 选择 | 原因 |
 | --- | --- | --- |
@@ -71,12 +71,12 @@ Discord 背后共享同一个 Agent Core、身份、记忆、Skills 与安全策
 
 1. 可直接移植 MIT 或 ZeroClaw MIT 许可下的代码，但必须保留原版权头或在文件头写明来源。
 2. 每个实质性移植文件必须在 `THIRD_PARTY_NOTICES.md` 记录上游仓库、commit、原路径、License 和
-   MiniClaw 中的新路径。
+   Lobster0 中的新路径。
 3. 对 Apache-2.0 路径的直接移植必须保留修改声明和 NOTICE 要求；默认优先采用 ZeroClaw 的 MIT
    许可选项，除非上游单文件另有说明。
 4. 只借鉴思想、重新实现且未复制表达时，在设计文档记录参考即可，不需要伪造版权头。
 5. 禁止复制上游密钥、品牌资产、测试凭证、生成产物和未明确许可的第三方资源。
-6. 每次移植都要先写 MiniClaw 的行为测试，再移植满足测试的最小代码；不能整目录复制后再删。
+6. 每次移植都要先写 Lobster0 的行为测试，再移植满足测试的最小代码；不能整目录复制后再删。
 
 ### 3.3 明确不继承的设计
 
@@ -84,13 +84,13 @@ Discord 背后共享同一个 Agent Core、身份、记忆、Skills 与安全策
 - 不复制 nanobot 的 WebUI、Cron、MCP、多 Agent、文档处理和全部 Provider。
 - 不复制 ZeroClaw 的 WASM 插件系统和硬件通道。
 - 不复制 RayClaw 的 Web UI、向量记忆、定时任务和子 Agent。
-- 不以 OpenClaw API 全兼容为 v1.0 验收条件；MiniClaw 只承诺自己的公开接口。
+- 不以 OpenClaw API 全兼容为 v1.0 验收条件；Lobster0 只承诺自己的公开接口。
 
 ## 4. v1.0 范围
 
 ### 4.1 必须完成
 
-- 可安装的 `miniclaw` Python 包和 CLI。
+- 可安装的 `lobster0` Python 包和 CLI。
 - `init`、`onboard`、`chat`、`gateway`、`doctor`、`sessions`、`approvals`、`eval`、`evolve` 命令。
 - CLI、飞书、Telegram、Discord 四个 Channel，共用同一个 Agent Core。
 - 统一身份映射、会话路由、事件去重、有限队列、消息分片和失败重试。
@@ -111,7 +111,7 @@ Discord 背后共享同一个 Agent Core、身份、记忆、Skills 与安全策
 - 语音、视频、OCR、图片理解和文件附件处理；Channel 只接收文本，出站可发送文本。
 - Cron、主动推送、浏览器自动化、MCP Client、Skill 市场和远程插件安装。
 - 向量数据库、语义检索平台和复杂 RAG。
-- Agent 自动修改、合并、推送或部署 MiniClaw Python 源码。
+- Agent 自动修改、合并、推送或部署 Lobster0 Python 源码。
 - Kubernetes、Redis、PostgreSQL、Celery 和分布式 Worker。
 
 ## 5. 完整架构
@@ -184,14 +184,14 @@ flowchart LR
 - `AgentRunner` 只能通过 `PolicyEngine` 调用 `ToolRegistry`，不存在绕过安全层的公开入口。
 - Repository 负责事务和 SQL；领域逻辑不得拼接 SQL。
 - Markdown Memory 与 SQLite Message History 是不同数据源，不能互相冒充。
-- Evolution 只能写入版本候选和激活指针，不能修改 `src/miniclaw/`。
+- Evolution 只能写入版本候选和激活指针，不能修改 `src/lobster0/`。
 
 ## 6. 目标仓库结构
 
 目录在对应里程碑开始时创建，不一次性提交空模块。
 
 ```text
-miniclaw/
+lobster0/
 ├── AGENTS.md
 ├── LICENSE
 ├── THIRD_PARTY_NOTICES.md
@@ -212,7 +212,7 @@ miniclaw/
 │   ├── config.example.toml
 │   ├── evals/basic.yaml
 │   └── skills/summarize/SKILL.md
-├── src/miniclaw/
+├── src/lobster0/
 │   ├── __init__.py
 │   ├── __main__.py
 │   ├── cli.py
@@ -471,13 +471,13 @@ class PolicyDecision:
 
 ### 8.1 默认目录
 
-默认状态根目录为 `~/.miniclaw/`，可由 `MINICLAW_HOME` 覆盖。覆盖值必须展开并解析为绝对路径，不能
+默认状态根目录为 `~/.lobster0/`，可由 `LOBSTER0_HOME` 覆盖。覆盖值必须展开并解析为绝对路径，不能
 默默接受相对路径。
 
 ```text
-~/.miniclaw/
+~/.lobster0/
 ├── config.toml
-├── miniclaw.db
+├── lobster0.db
 ├── SOUL.md
 ├── USER.md
 ├── MEMORY.md
@@ -503,7 +503,7 @@ class PolicyDecision:
 
 1. 代码内安全默认值。
 2. `config.toml`。
-3. `MINICLAW_*` 环境变量。
+3. `LOBSTER0_*` 环境变量。
 4. 显式 CLI 参数。
 
 高优先级只覆盖明确传入的字段。敏感值允许写环境变量或权限为 `0600` 的本地配置，但 `doctor` 必须
@@ -520,11 +520,11 @@ tool_result_max_chars = 20000
 
 [provider]
 base_url = "https://api.example.com/v1"
-api_key_env = "MINICLAW_MODEL_API_KEY"
+api_key_env = "LOBSTER0_MODEL_API_KEY"
 timeout_seconds = 120
 
 [workspace]
-path = "~/.miniclaw/workspace"
+path = "~/.lobster0/workspace"
 read_only_roots = []
 
 [tools.shell]
@@ -539,22 +539,22 @@ max_bytes = 2000000
 
 [channels.feishu]
 enabled = false
-app_id_env = "MINICLAW_FEISHU_APP_ID"
-app_secret_env = "MINICLAW_FEISHU_APP_SECRET"
+app_id_env = "LOBSTER0_FEISHU_APP_ID"
+app_secret_env = "LOBSTER0_FEISHU_APP_SECRET"
 allowed_open_ids = []
 
 [channels.telegram]
 enabled = false
-bot_token_env = "MINICLAW_TELEGRAM_BOT_TOKEN"
+bot_token_env = "LOBSTER0_TELEGRAM_BOT_TOKEN"
 allowed_user_ids = []
 
 [channels.discord]
 enabled = false
-bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"
+bot_token_env = "LOBSTER0_DISCORD_BOT_TOKEN"
 allowed_user_ids = []
 ```
 
-`tomllib` 负责读取；写配置使用项目内固定序列化器，只修改 MiniClaw 自己生成的文件。v1.0 不为了写
+`tomllib` 负责读取；写配置使用项目内固定序列化器，只修改 Lobster0 自己生成的文件。v1.0 不为了写
 TOML 引入一个通用配置框架。
 
 ## 9. SQLite 数据模型
@@ -899,12 +899,12 @@ HTTP 响应正文只在脱敏、截断到 2 KB 后进入诊断日志。测试使
 | `grep` | `pattern`, `glob`, `root` | low | 结果数量和字节数设上限 |
 | `http_get` | `url` | medium | 仅 HTTPS，执行 SSRF 和响应限制 |
 | `run_command` | `program`, `args`, `timeout` | high | 不接收 shell 字符串，固定 cwd |
-| `read_memory` | `scope` | low | 只读 MiniClaw Memory 文件 |
+| `read_memory` | `scope` | low | 只读 Lobster0 Memory 文件 |
 | `propose_memory` | `content`, `source` | medium | 生成候选，用户或 consolidator 应用 |
 
 ### 15.2 结果限制
 
-- Tool 结果默认最多 20,000 字符，超过部分写入 Workspace 下的 `.miniclaw-results/` 并返回路径。
+- Tool 结果默认最多 20,000 字符，超过部分写入 Workspace 下的 `.lobster0-results/` 并返回路径。
 - Tool Error 使用 `code`、`message`、`retryable` 三字段；不把 Python traceback 返回模型。
 - `run_command` stdout 与 stderr 分开收集，各自最多 1 MiB；超时后先发送 TERM，2 秒后 KILL。
 - 文件读写显式使用 UTF-8；二进制文件返回 `binary_file`，v1.0 不做自动解码。
@@ -927,10 +927,10 @@ HTTP 响应正文只在脱敏、截断到 2 KB 后进入诊断日志。测试使
 
 组合规则固定：`deny` 和硬禁止永远不能申请审批；`allowlist + off` 对未命中动作直接拒绝；
 `allowlist + on-miss` 才允许用户做参数绑定的一次性授权。默认 Shell allowlist 为空，用户必须主动配置或
-逐次批准，不能因为安装 MiniClaw 就获得任意本机命令执行权。
+逐次批准，不能因为安装 Lobster0 就获得任意本机命令执行权。
 
 硬禁止规则优先级最高，不能被 `full` 绕过：访问状态目录中的凭证、挂载 Docker Socket、访问 SSH
-私钥、向外部上传 Workspace、递归删除 Workspace 根、修改 MiniClaw 源码后自动提交/推送。
+私钥、向外部上传 Workspace、递归删除 Workspace 根、修改 Lobster0 源码后自动提交/推送。
 
 ### 16.2 Workspace 防逃逸
 
@@ -1043,10 +1043,10 @@ ChannelCapabilities 至少包含：`supports_edit`、`supports_reply`、`support
 
 ### 19.2 CLI Channel
 
-- `miniclaw chat` 使用同一个 `InboundMessage` 和 TurnOrchestrator，不建立第二套直连逻辑。
+- `lobster0 chat` 使用同一个 `InboundMessage` 和 TurnOrchestrator，不建立第二套直连逻辑。
 - 支持 `/new`、`/sessions`、`/approve <id>`、`/deny <id>`、`/good`、`/bad <reason>` 和 `/exit`。
 - EOF 与 Ctrl+C 第一次取消当前输入，第二次在 2 秒内请求优雅退出。
-- 非 TTY 环境支持 `miniclaw chat --message "..."` 单次调用，便于脚本和端到端测试。
+- 非 TTY 环境支持 `lobster0 chat --message "..."` 单次调用，便于脚本和端到端测试。
 
 ### 19.3 飞书
 
@@ -1065,7 +1065,7 @@ ChannelCapabilities 至少包含：`supports_edit`、`supports_reply`、`support
 
 - 使用 `python-telegram-bot` 的 long polling；v1.0 不要求 webhook 和公网端口。
 - 启动时通过 `get_me()` 校验 Token，保存 bot user ID 用于群聊 mention 判断。
-- 使用 Update ID 去重；offset 由库维护，MiniClaw 仍保存业务事件幂等记录。
+- 使用 Update ID 去重；offset 由库维护，Lobster0 仍保存业务事件幂等记录。
 - 私聊只接受白名单用户；群聊同时要求白名单和 @机器人或 Reply 机器人消息。
 - 文本更新最低间隔 800 ms，避免频繁编辑触发限流；最终消息强制刷新。
 - 429 使用平台返回的 retry-after；其他发送失败进入 Delivery 通用重试。
@@ -1100,7 +1100,7 @@ input: "Read notes/today.md and summarize it."
 workspace_fixture: fixtures/file-read-001
 assertions:
   answer_contains: ["decision"]
-  answer_not_contains: ["MINICLAW_MODEL_API_KEY"]
+  answer_not_contains: ["LOBSTER0_MODEL_API_KEY"]
   required_tools: ["read_file"]
   forbidden_tools: ["run_command"]
   max_tool_calls: 3
@@ -1141,22 +1141,22 @@ P95 延迟不增加超过 30%。样本不足 10 条时，性能指标只展示�
 ## 21. CLI 信息架构
 
 ```text
-miniclaw init
-miniclaw onboard
-miniclaw chat [--message TEXT] [--session ID]
-miniclaw gateway [--channel NAME]
-miniclaw doctor [--check NAME]
-miniclaw sessions list
-miniclaw sessions show ID
-miniclaw sessions replay TURN_ID
-miniclaw approvals list
-miniclaw approvals approve ID [--always]
-miniclaw approvals deny ID
-miniclaw eval run [--suite PATH] [--proposal ID]
-miniclaw evolve propose --feedback ID
-miniclaw evolve show ID
-miniclaw evolve apply ID
-miniclaw evolve rollback [--target NAME]
+lobster0 init
+lobster0 onboard
+lobster0 chat [--message TEXT] [--session ID]
+lobster0 gateway [--channel NAME]
+lobster0 doctor [--check NAME]
+lobster0 sessions list
+lobster0 sessions show ID
+lobster0 sessions replay TURN_ID
+lobster0 approvals list
+lobster0 approvals approve ID [--always]
+lobster0 approvals deny ID
+lobster0 eval run [--suite PATH] [--proposal ID]
+lobster0 evolve propose --feedback ID
+lobster0 evolve show ID
+lobster0 evolve apply ID
+lobster0 evolve rollback [--target NAME]
 ```
 
 退出码统一：`0` 成功、`2` 参数/配置错误、`3` 外部依赖不可用、`4` 权限/策略拒绝、`5` 运行失败。
@@ -1191,7 +1191,7 @@ CLI 面向人的输出写 stdout，诊断写 stderr；`--json` 只在 `doctor`�
 
 不开放公网 HTTP。Gateway 每 10 秒原子写 `run/health.json`：进程 ID、启动时间、数据库状态、Provider
 配置状态、各 Channel 状态、队列深度和最后成功 Turn 时间。Docker `HEALTHCHECK` 调用
-`miniclaw doctor --check runtime --json`。
+`lobster0 doctor --check runtime --json`。
 
 ## 23. 依赖策略
 
@@ -1231,10 +1231,10 @@ dev = [
 
 ```bash
 uv sync --extra dev --extra all-channels
-uv run miniclaw init
-uv run miniclaw doctor
-uv run miniclaw chat
-uv run miniclaw gateway
+uv run lobster0 init
+uv run lobster0 doctor
+uv run lobster0 chat
+uv run lobster0 gateway
 ```
 
 开发默认使用云端 OpenAI-compatible API，不要求 GPU。飞书 WebSocket、Telegram polling 和 Discord
@@ -1243,7 +1243,7 @@ Gateway 都是出站连接。
 ### 24.2 Docker Compose
 
 - 镜像使用非 root UID，基础镜像固定 Python 3.12 slim digest。
-- 只挂载 `/data`，映射 MiniClaw Home、SQLite、Workspace、Memory、Skills 和日志。
+- 只挂载 `/data`，映射 Lobster0 Home、SQLite、Workspace、Memory、Skills 和日志。
 - 不挂载宿主 Home、SSH、云凭证、Docker Socket 和源码目录。
 - 配置以只读文件或环境变量注入，Secret 不写进镜像层。
 - `restart: unless-stopped`，停止宽限期 35 秒。
@@ -1298,7 +1298,7 @@ Gateway 都是出站连接。
 
 **创建/修改：** `config.py`、`paths.py`、`bootstrap.py`、`storage/*`、`init`、`doctor`、数据库测试。
 
-**交付：** `miniclaw init` 幂等创建状态目录和 Owner；Migration 可从空库升级；Doctor 能发现路径、配置
+**交付：** `lobster0 init` 幂等创建状态目录和 Owner；Migration 可从空库升级；Doctor 能发现路径、配置
 和数据库错误。
 
 **退出门禁：** 临时目录端到端测试通过；重复 `init` 不丢数据；损坏配置返回退出码 2；Schema DDL 与
@@ -1309,7 +1309,7 @@ Repository 测试通过。
 **创建/修改：** `bus/*`、`agent/context.py`、`agent/runner.py`、`agent/turn.py`、`providers/*`、
 `channels/cli.py`、`tests/fakes/fake_provider.py`。
 
-**交付：** `miniclaw chat --message` 通过 fake 和真实 OpenAI-compatible Provider 完成对话，消息、Turn、
+**交付：** `lobster0 chat --message` 通过 fake 和真实 OpenAI-compatible Provider 完成对话，消息、Turn、
 Token 与错误持久化。
 
 **退出门禁：** 离线 E2E 通过；真实 Provider 手工验证；8 轮上限、一次重试、空响应和优雅取消通过。
@@ -1379,7 +1379,7 @@ Git tag `v1.0.0` 只在门禁完成后创建。
 
 ## 28. v1.0 完成定义
 
-只有同时满足以下条件，才能声明 MiniClaw v1.0 完成：
+只有同时满足以下条件，才能声明 Lobster0 v1.0 完成：
 
 1. CLI、飞书、Telegram、Discord 均调用同一个 TurnOrchestrator 和 AgentRunner。
 2. 四入口至少各有一次真实平台或终端验证记录；缺少凭证的入口不能标记生产可用。
@@ -1398,8 +1398,8 @@ Git tag `v1.0.0` 只在门禁完成后创建。
 
 ### ADR-001：不直接 Fork nanobot 或 openclaw-python
 
-MiniClaw 需要成为可解释的个人学习项目，并保留自己的安全和演进模型。直接 Fork 虽快，但会继承 WebUI、
-Cron、多 Provider、兄弟仓库依赖和大量非目标功能。选择在文件级移植成熟实现，并用 MiniClaw 契约约束。
+Lobster0 需要成为可解释的个人学习项目，并保留自己的安全和演进模型。直接 Fork 虽快，但会继承 WebUI、
+Cron、多 Provider、兄弟仓库依赖和大量非目标功能。选择在文件级移植成熟实现，并用 Lobster0 契约约束。
 
 ### ADR-002：先单进程，不引入分布式队列
 
@@ -1413,7 +1413,7 @@ v1.0 的首要目标是用户可直接审阅和修改长期事实。Markdown 加
 
 ### ADR-004：审批结束当前 Turn，不挂起模型协程
 
-跨 IM 的人工审批可能持续数分钟。挂起协程会占用运行状态且难以在重启后恢复。MiniClaw 保存 Tool Call，
+跨 IM 的人工审批可能持续数分钟。挂起协程会占用运行状态且难以在重启后恢复。Lobster0 保存 Tool Call，
 结束当前 Turn；批准后创建续执行 Turn，并通过参数哈希保证执行的是原动作。
 
 ### ADR-005：高完成度来自纵向可靠性，不来自无限功能数量
@@ -1428,8 +1428,8 @@ v1.0 优先保证四入口、核心 Tool、安全、记忆、演进和部署完�
 1. `paths.py` 与安全状态目录；
 2. `config.py` 与 TOML/环境变量加载；
 3. SQLite migration 和 Repository；
-4. `miniclaw init`；
-5. 本地版 `miniclaw doctor`；
+4. `lobster0 init`；
+5. 本地版 `lobster0 doctor`；
 6. 临时目录内的离线端到端测试。
 
 Phase 0 完成前不创建空的 Channel、Provider、Tool、Memory 或 Evolution 抽象。每个后续 Phase 都以本文

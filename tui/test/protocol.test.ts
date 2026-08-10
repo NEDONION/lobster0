@@ -48,7 +48,7 @@ test("malformed and over-limit server frames fail with stable client codes", () 
 test("client requests use one compact UTF-8 NDJSON line", () => {
   const line = encodeRequest("req-1", "turn.start", {
     session_key: "default",
-    text: "你好\nMiniClaw",
+    text: "你好\nLobster0",
   });
 
   assert.equal(line.endsWith("\n"), true);
@@ -57,7 +57,7 @@ test("client requests use one compact UTF-8 NDJSON line", () => {
     v: 1,
     id: "req-1",
     type: "turn.start",
-    payload: { session_key: "default", text: "你好\nMiniClaw" },
+    payload: { session_key: "default", text: "你好\nLobster0" },
   });
 });
 

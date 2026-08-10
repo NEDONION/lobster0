@@ -8,10 +8,10 @@ import type { Metadata } from 'next';
 import { siteFacts } from '@/content/site';
 
 export const metadata: Metadata = {
-  description: 'The requested MiniClaw route could not be found.',
-  metadataBase: new URL('https://miniclaw.vercel.app'),
+  description: 'The requested Lobster0 route could not be found.',
+  metadataBase: new URL('https://lobster0.vercel.app'),
   robots: { follow: false, index: false },
-  title: 'Route not found — MiniClaw',
+  title: 'Route not found — Lobster0',
 };
 
 export default function GlobalNotFound() {
@@ -23,7 +23,7 @@ export default function GlobalNotFound() {
           <div className="not-found-page__content">
             <p className="section-kicker">ROUTE_NOT_FOUND</p>
             <h1>这条 Trace 没有找到目标。</h1>
-            <p>The route ended before RESULT_DELIVERED. Return to a known MiniClaw surface.</p>
+            <p>The route ended before RESULT_DELIVERED. Return to a known Lobster0 surface.</p>
             <div>
               <Link className="button button--primary" href="/">返回官网</Link>
               <Link className="button button--secondary" href="/docs">阅读文档</Link>
