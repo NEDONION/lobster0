@@ -3,13 +3,13 @@
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
-import { siteFacts, type CapabilityCopy, type Locale } from '@/content/site';
+import { marketingCopy, siteFacts, type CapabilityCopy, type Locale } from '@/content/site';
 import { useReducedMotionPreference } from '@/lib/motion';
 
 import { SurfaceIcon } from '../SurfaceIcon';
 
 export function SafetyPanel({ copy, locale }: { copy: CapabilityCopy; locale: Locale }) {
-  const zh = locale === 'zh-CN';
+  const ui = marketingCopy[locale].ui;
   const reducedMotion = useReducedMotionPreference();
   const rootRef = useRef<HTMLDivElement>(null);
   const [started, setStarted] = useState(false);
@@ -54,7 +54,7 @@ export function SafetyPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
         </ul>
       </div>
       <div
-        aria-label={zh ? '飞书里的一次 SAFE 审批' : 'A SAFE approval inside Feishu'}
+        aria-label={ui.safetyAria}
         className="chat-scene"
         ref={rootRef}
       >
@@ -63,19 +63,17 @@ export function SafetyPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             <span aria-hidden="true" className="chat-scene__app-icon">
               <SurfaceIcon name="飞书" />
             </span>
-            <span>lobster0 · {zh ? '工作入口' : 'work surface'}</span>
+            <span>lobster0 · {ui.workSurface}</span>
           </div>
           <div className="chat-scene__thread">
             <motion.p className="chat-bubble chat-bubble--user" {...beat(0)}>
-              {zh ? '帮我清一下 /tmp 下的临时文件' : 'Clean up the temp files under /tmp'}
+              {ui.safetyAsk}
             </motion.p>
             <motion.p className="chat-bubble chat-bubble--agent" {...beat(1)}>
-              {zh
-                ? '检测到高风险操作，需要你确认 exact argv 后再执行'
-                : 'This is a high-risk action — confirm the exact argv before I run it'}
+              {ui.safetyReply}
             </motion.p>
             <motion.div className="chat-card chat-card--pending" {...beat(2)}>
-              <span className="chat-card__label">POLICY_CHECK · {zh ? '等待确认' : 'awaiting confirm'}</span>
+              <span className="chat-card__label">POLICY_CHECK · {ui.awaitingConfirm}</span>
               <code>rm -rf /tmp/lobster0-cache-2026</code>
               <div className="chat-modes">
                 {siteFacts.permissionModes.map((mode, index) => (
@@ -88,10 +86,10 @@ export function SafetyPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             <motion.div className="chat-card chat-card--done" {...beat(3)}>
               <span className="chat-card__label">RESULT_DELIVERED</span>
               <div className="chat-checks">
-                <span>✓ {zh ? '工作区' : 'WORKSPACE'}</span>
-                <span>✓ {zh ? '命令' : 'COMMAND'}</span>
-                <span>✓ {zh ? '网络' : 'NETWORK'}</span>
-                <span>✓ {zh ? '密钥' : 'SECRET'}</span>
+                <span>✓ {ui.checkWorkspace}</span>
+                <span>✓ {ui.checkCommand}</span>
+                <span>✓ {ui.checkNetwork}</span>
+                <span>✓ {ui.checkSecret}</span>
               </div>
             </motion.div>
           </div>

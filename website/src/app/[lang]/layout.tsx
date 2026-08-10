@@ -9,7 +9,7 @@ import type { ReactNode } from 'react';
 
 import { marketingCopy, siteFacts } from '@/content/site';
 import { AppProvider } from '@/components/AppProvider';
-import { getLocale, locales } from '@/lib/i18n';
+import { getLocale, openGraphLocales, locales } from '@/lib/i18n';
 import { i18nUI } from '@/lib/layout.shared';
 
 export function generateStaticParams() {
@@ -39,7 +39,7 @@ export async function generateMetadata({
           width: 1200,
         },
       ],
-      locale: locale === 'zh-CN' ? 'zh_CN' : 'en_US',
+      locale: openGraphLocales[locale],
       siteName: 'Lobster0',
       title: copy.meta.title,
       type: 'website',

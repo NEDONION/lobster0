@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 
 import type { Locale } from '@/content/site';
-import { localeNames, localizedPath, locales } from '@/lib/i18n';
+import { localeNames, localeShortNames, localizedPath, locales } from '@/lib/i18n';
 
 function GlobeIcon() {
   return (
@@ -50,7 +50,7 @@ export function LanguageSwitcher({ locale, label }: { locale: Locale; label: str
         type="button"
       >
         <GlobeIcon />
-        <span>{locale === 'zh-CN' ? '中' : 'EN'}</span>
+        <span>{localeShortNames[locale]}</span>
       </button>
       {open ? (
         <ul className="language-switch__menu" role="listbox">

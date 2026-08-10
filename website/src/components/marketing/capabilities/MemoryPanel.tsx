@@ -3,11 +3,11 @@
 import { motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 
-import type { CapabilityCopy, Locale } from '@/content/site';
+import { marketingCopy, type CapabilityCopy, type Locale } from '@/content/site';
 import { useReducedMotionPreference } from '@/lib/motion';
 
 export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Locale }) {
-  const zh = locale === 'zh-CN';
+  const ui = marketingCopy[locale].ui;
   const reducedMotion = useReducedMotionPreference();
   const rootRef = useRef<HTMLDivElement>(null);
   const [started, setStarted] = useState(false);
@@ -47,13 +47,13 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
         </ul>
       </div>
       <div
-        aria-label={zh ? 'Markdown 事实源与 SQLite 投影' : 'Markdown truth and SQLite projection'}
+        aria-label={ui.memoryAria}
         className="memory-scene"
         ref={rootRef}
       >
         <div className="memory-scene__bar">
           <span>~/.lobster0/memory</span>
-          <em>{zh ? '所有者边界 · 本地工作区' : 'owner boundary · local workspace'}</em>
+          <em>{ui.ownerBoundary}</em>
         </div>
         <div className="memory-scene__panes">
           <motion.div
@@ -63,24 +63,24 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             transition={{ duration: 0.4, ease: 'easeOut' }}
           >
             <div className="memory-pane__label">
-              {zh ? '长期记忆 · 一直记得' : 'LONG-TERM · always remembered'}
+              {ui.longTerm}
             </div>
             <ul className="memory-list">
               <li>
-                <b>{zh ? '称呼' : 'Name'}</b>
-                <span>{zh ? '叫我 Ned' : 'Call me Ned'}</span>
+                <b>{ui.memoryName}</b>
+                <span>{ui.memoryNameValue}</span>
               </li>
               <li>
-                <b>{zh ? '语言' : 'Language'}</b>
-                <span>{zh ? '默认用中文回复' : 'Reply in Chinese'}</span>
+                <b>{ui.memoryLang}</b>
+                <span>{ui.memoryLangValue}</span>
               </li>
               <li>
-                <b>{zh ? '习惯' : 'Habit'}</b>
-                <span>{zh ? '删文件前先问我' : 'Ask before deleting files'}</span>
+                <b>{ui.memoryHabit}</b>
+                <span>{ui.memoryHabitValue}</span>
               </li>
               <li>
-                <b>{zh ? '项目' : 'Project'}</b>
-                <span>{zh ? '主力仓库是 lobster0' : 'Main repo is lobster0'}</span>
+                <b>{ui.memoryProject}</b>
+                <span>{ui.memoryProjectValue}</span>
               </li>
             </ul>
           </motion.div>
@@ -90,7 +90,7 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             initial={reducedMotion ? false : { opacity: 0 }}
             transition={{ delay: reducedMotion ? 0 : 0.35, duration: 0.3 }}
           >
-            <span>{zh ? '沉淀' : 'promote'}</span>
+            <span>{ui.promote}</span>
             <i aria-hidden="true" />
           </motion.div>
           <motion.div
@@ -100,20 +100,20 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             transition={{ delay: reducedMotion ? 0 : 0.15, duration: 0.4, ease: 'easeOut' }}
           >
             <div className="memory-pane__label memory-pane__label--short">
-              {zh ? '短期记忆 · 本次对话' : 'SHORT-TERM · this session'}
+              {ui.shortTerm}
             </div>
             <ul className="memory-list memory-list--short">
               <li>
-                <b>{zh ? '正在做' : 'Doing'}</b>
-                <span>{zh ? '改官网 Logo' : 'Reworking the site logo'}</span>
+                <b>{ui.memoryDoing}</b>
+                <span>{ui.memoryDoingValue}</span>
               </li>
               <li>
-                <b>{zh ? '刚提到' : 'Just said'}</b>
-                <span>{zh ? '钳子要从胸口伸出' : 'Claws should come from the chest'}</span>
+                <b>{ui.memoryJustSaid}</b>
+                <span>{ui.memoryJustSaidValue}</span>
               </li>
               <li>
-                <b>{zh ? '会话结束' : 'On session end'}</b>
-                <span>{zh ? '重要的沉淀为长期' : 'Important bits promoted'}</span>
+                <b>{ui.memoryOnEnd}</b>
+                <span>{ui.memoryOnEndValue}</span>
               </li>
             </ul>
           </motion.div>

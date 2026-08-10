@@ -8,6 +8,7 @@ import { useReducedMotionPreference } from '@/lib/motion';
 
 export function RuntimePanel({ copy, locale }: { copy: CapabilityCopy; locale: Locale }) {
   const steps = marketingCopy[locale].trace.steps;
+  const ui = marketingCopy[locale].ui;
   const reducedMotion = useReducedMotionPreference();
   const rootRef = useRef<HTMLDivElement>(null);
   const [started, setStarted] = useState(false);
@@ -55,7 +56,7 @@ export function RuntimePanel({ copy, locale }: { copy: CapabilityCopy; locale: L
           </span>
           <span>lobster0 trace --follow</span>
         </div>
-        <ol className="runtime-map" aria-label={locale === 'zh-CN' ? 'Lobster0 运行路径' : 'Lobster0 runtime path'}>
+        <ol className="runtime-map" aria-label={ui.runtimePath}>
           {steps.map((step, index) => (
             <motion.li
               animate={play ? { opacity: 1, x: 0 } : undefined}

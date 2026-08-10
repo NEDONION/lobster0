@@ -8,6 +8,7 @@ import { LanguageSwitcher } from './LanguageSwitcher';
 
 export function MarketingHeader({ locale }: { locale: Locale }) {
   const copy = marketingCopy[locale];
+  const ui = copy.ui;
 
   return (
     <header className="marketing-header">
@@ -16,7 +17,7 @@ export function MarketingHeader({ locale }: { locale: Locale }) {
           <BrandMark className="brand__mark" size={36} />
           <span>Lobster0</span>
         </Link>
-        <nav className="marketing-nav" aria-label={locale === 'zh-CN' ? '主导航' : 'Primary'}>
+        <nav className="marketing-nav" aria-label={ui.primaryNav}>
           <a href="#product">{copy.nav.product}</a>
           <a href="#workbench">{copy.nav.workbench}</a>
           <Link href={localizedPath(locale, '/docs')}>{copy.nav.docs}</Link>
