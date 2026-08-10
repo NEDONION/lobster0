@@ -21,6 +21,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号，必须与 src/lobster0/_version.py 完全一致，例如 0.7.0'
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -43,7 +49,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
-      contents: read
+      contents: write
     outputs:
       version: ${{ steps.facts.outputs.version }}
       tag: ${{ steps.facts.outputs.tag }}
@@ -56,12 +62,36 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           fetch-depth: 0
-          persist-credentials: false
-      - name: Bind the tag, the version constant and the commit into one fact
-        id: facts
+          persist-credentials: ${{ github.event_name == 'workflow_dispatch' }}
+      # 手动派发只是把"创建 tag"这一步搬进流水线，绝不放宽发布前提：
+      # 仍然要求在默认分支、工作树干净、版本号与 _version.py 完全一致，
+      # 并在继续之前把 tag 真实创建出来，使后续所有作业与 tag-push 路径
+      # 绑定到同一个不可变事实上。既有 tag 与当前 HEAD 不符即失败。
+      - name: Create the release tag for a manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          test "${GITHUB_REF_NAME}" = "${{ github.event.repository.default_branch }}"
+          printf '%s' "${INPUT_VERSION}" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          constant="$(python3 -c "import re,pathlib;print(re.search(r'__version__:\s*str\s*=\s*\"([^\"]+)\"',pathlib.Path('src/lobster0/_version.py').read_text(encoding='utf-8')).group(1))")"
+          test "${INPUT_VERSION}" = "${constant}"
+          test -z "$(git status --porcelain)"
+          tag="v${INPUT_VERSION}"
+          if git rev-parse --verify --quiet "refs/tags/${tag}" >/dev/null; then
+            test "$(git rev-parse --verify "${tag}^{commit}")" = "$(git rev-parse HEAD)"
+          else
+            git tag "${tag}" "$(git rev-parse HEAD)"
+            git push origin "refs/tags/${tag}"
+          fi
+      - name: Bind the tag, the version constant and the commit into one fact
+        id: facts
+        env:
+          DISPATCH_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || '' }}
+        run: |
+          set -euo pipefail
+          tag="${DISPATCH_TAG:-${GITHUB_REF_NAME}}"
           version="${tag#v}"
           constant="$(python3 -c "import re,pathlib;print(re.search(r'__version__:\s*str\s*=\s*\"([^\"]+)\"',pathlib.Path('src/lobster0/_version.py').read_text(encoding='utf-8')).group(1))")"
           test "${version}" = "${constant}"

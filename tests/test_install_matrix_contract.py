@@ -256,11 +256,47 @@ class ReleaseTriggerTest(unittest.TestCase):
         self.workflow = _load(_RELEASE_WORKFLOW)
         self.jobs = _jobs(self.workflow)
 
-    def test_release_only_triggers_on_version_tags(self) -> None:
-        """禁止 branch push、手动派发或定时任务进入发布路径。"""
+    def test_release_only_triggers_on_version_tags_or_guarded_dispatch(self) -> None:
+        """只允许 ``v*`` tag 与受守卫的手动派发，禁止 branch push 与定时任务。
+
+        手动派发把"创建 tag"搬进流水线，方便在 GitHub UI 上点按钮发布；
+        它不放宽任何发布前提，仍由 guard 在继续之前真实创建 tag（见
+        ``test_dispatch_path_cannot_bypass_the_tag_binding``）。
+        """
         triggers = self.workflow.get("on")
-        self.assertEqual(set(triggers), {"push"})
+        self.assertEqual(set(triggers), {"push", "workflow_dispatch"})
         self.assertEqual(triggers["push"], {"tags": ["v*"]})
+        self.assertNotIn("branches", triggers["push"])
+        self.assertEqual(set(triggers["workflow_dispatch"]["inputs"]), {"version"})
+        self.assertEqual(triggers["workflow_dispatch"]["inputs"]["version"]["required"], "true")
+
+    def test_dispatch_path_cannot_bypass_the_tag_binding(self) -> None:
+        """手动派发必须与 tag-push 路径等价：默认分支、干净、版本一致、真建 tag。
+
+        这条测试是手动派发按钮的安全代价所在。若它被削弱，就可能从任意
+        分支、任意版本号发布一个没有不可变 tag 支撑的正式版。
+        """
+        text = _run_text(self.jobs["guard"])
+        self.assertIn("github.event.repository.default_branch", text)
+        self.assertIn("_version.py", text)
+        self.assertIn("git status --porcelain", text)
+        self.assertIn("git tag ", text)
+        self.assertIn("git push origin ", text)
+        self.assertIn("rev-parse --verify", text)
+
+    def test_only_the_guard_job_may_push_a_git_ref(self) -> None:
+        """只有 guard 允许推送 git 引用，杜绝第二处能创建或移动 tag 的地方。
+
+        多个作业持有 ``contents: write`` 是为了往草稿 Release 上传产物（草稿
+        即产物传递通道）。真正需要收紧的不是写权限本身，而是"谁能动 tag"：
+        tag 是发布产物绑定的不可变事实，只能由 guard 在校验通过后创建一次。
+        """
+        for job_id, job in self.jobs.items():
+            if job_id == "guard":
+                continue
+            text = _run_text(job)
+            self.assertNotIn("git push", text, f"{job_id} 不得推送任何 git 引用")
+            self.assertNotIn("git tag", text, f"{job_id} 不得创建或移动 tag")
 
     def test_release_serializes_and_never_cancels_itself(self) -> None:
         """发布必须串行且不得被后续运行取消到一半。"""
