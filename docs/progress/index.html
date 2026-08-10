@@ -464,10 +464,10 @@
           <div><h3>Browser Agent</h3><p>独立 Chromium Profile、snapshot/ref、网页动作审批、Screenshot/Download Artifact 与 18-case gate 已实现；controlled live smoke pending。</p></div>
           <span class="pill">CODE PASS · LIVE PENDING</span>
         </article>
-        <article class="phase queued">
+        <article class="phase current">
           <div class="phase-no">Phase 7</div>
-          <div><h3>Controlled Evolution</h3><p>详细工程落地方案已发布：Feedback、受限 Prompt/Skill/Memory Proposal、全量评测、Owner 审批、原子应用和回滚；代码尚未实现。</p></div>
-          <span class="pill">ENGINEERING PLAN · NOT IMPLEMENTED</span>
+          <div><h3>Controlled Evolution</h3><p>详细工程落地方案已发布：Feedback、受限 Prompt/Skill/Memory Proposal、全量评测、Owner 审批、原子应用和回滚；Task 1（Schema v7 + Repository）已实现，Task 2～6（CLI、飞书命令、Candidate、Evaluator、Approval/Apply/Rollback）尚未开始。Owner 明确决定在 Phase 6 生产验收通过前提前开工。</p></div>
+          <span class="pill">IMPLEMENTATION IN PROGRESS · TASK 1/6</span>
         </article>
         <article class="phase queued">
           <div class="phase-no">Phase 8</div>
@@ -603,7 +603,7 @@
         <div class="decision"><code>approval</code><p>审批框固定头尾、只滚动参数；Session 只活在当前 Runtime；Always 只保存成功的 exact argv / hostname；UI 不能扩大 Core scope。</p></div>
         <div class="decision"><code>telemetry</code><p>只显示 Provider 真实 usage；缺失 N/A，不估算，不暴露 Prompt 或密钥。</p></div>
         <div class="decision"><code>scope</code><p>pi-tui、Personal Machine、Memory、Skills、Approval、三平台 Channel、Phase 6 Autonomy/Sandbox 与 Phase 6.5 Browser 已完成；下一主线是 Phase 7。</p></div>
-        <div class="decision"><code>phase 7</code><p><a href="../engineering/phase-7/20260810_controlled-evolution.md">Controlled Evolution 工程落地方案</a>已发布；当前仅是 ENGINEERING PLAN / NOT IMPLEMENTED，不代表自我进化代码已经存在。</p></div>
+        <div class="decision"><code>phase 7</code><p><a href="../engineering/phase-7/20260810_controlled-evolution.md">Controlled Evolution 工程落地方案</a>已发布；Task 1（Schema v7 + Repository）已实现，Task 2～6 未开始，不代表自我进化代码已经完整存在。Owner 明确决定在 Phase 6 生产验收前提前开工。</p></div>
         <div class="decision"><code>live truth</code><p>Phase 6 PRODUCTION SOAK PENDING · Browser CONTROLLED LIVE SMOKE PENDING · Feishu TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING · Telegram live pending · Discord live pending · 本地 Chrome、fixture 和 soak 不冒充 Live Gate。</p></div>
         <div class="decision"><code>lark-cli</code><p>Channel 负责收发消息；业务查询由 Skill 生成 lark-cli argv 并经过 run_command / Policy / Approval。私有标题和 URL 进入模型前必须得到 Owner 授权。</p></div>
         <div class="decision"><code>commits</code><p><a href="https://github.com/NEDONION/lobster0/commit/c5f5e5b">c5f5e5b Worker + provenance</a> · <a href="https://github.com/NEDONION/lobster0/commit/cc31b74">cc31b74 Artifact CAS</a> · <a href="https://github.com/NEDONION/lobster0/commit/3cf3fe7">3cf3fe7 Browser gate</a></p></div>
