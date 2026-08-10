@@ -65,7 +65,7 @@ select:focus-visible {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 8px;
+  gap: 2px;
   padding: 40px 10px 12px;
   border-right: 1px solid var(--lobster-border);
   background: var(--lobster-background);
@@ -83,9 +83,11 @@ select:focus-visible {
   letter-spacing: -0.01em;
 }
 
+/* 与 .sidebar 的 gap 保持一致，让「新建对话」和三个导航项呈现同一套间距节奏，
+   否则前者会因为间隔更大而看起来像被孤立出去的一块。 */
 .navigation {
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 
 /* 侧栏所有条目共享同一套尺寸节奏；视觉保持克制，默认无背景色块，
@@ -126,10 +128,7 @@ select:focus-visible {
 }
 
 /* 新建对话是主操作，但靠位置和字重区分即可，不需要整块填色。 */
-.sidebar-create {
-  color: var(--lobster-foreground);
-  font-weight: var(--lobster-ui-font-weight-medium);
-}
+/* 「新建对话」与导航项完全同款，只靠开头的 + 图标区分，不再额外加粗或加深。 */
 
 .nav-mark {
   width: 16px;
@@ -138,11 +137,14 @@ select:focus-visible {
   text-align: center;
 }
 
+/* 导航与历史之间需要一段呼吸，靠自身 margin 撑开，
+   而不是放大 .sidebar 的 gap（那会连带拉开导航项之间的间距）。 */
 .sidebar-recent {
   display: grid;
   min-height: 0;
   align-content: start;
   gap: 4px;
+  margin-top: 10px;
   padding-top: 12px;
   border-top: 1px solid var(--lobster-border);
 }
@@ -525,6 +527,20 @@ select:focus-visible {
   letter-spacing: -0.01em;
 }
 
+/* 运行指标与状态同处顶栏右侧：指标用等宽字体、低对比，状态标签保持醒目。 */
+.conversation-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.telemetry-fact {
+  color: var(--lobster-text-muted);
+  font-family: var(--lobster-font-mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
 .task-status {
   border-radius: 999px;
   padding: 3px 9px;
@@ -608,17 +624,27 @@ select:focus-visible {
   gap: 5px;
 }
 
+/* 助手回复是阅读主体，不套气泡、直接融进背景；用户消息保留气泡以区分来源。 */
+.message-assistant {
+  max-width: 100%;
+}
+
 .message > span {
   color: var(--lobster-text-muted);
   font-size: var(--lobster-text-xs);
 }
 
 .message .markdown {
+  font-size: var(--lobster-text-sm);
+}
+
+.message-assistant .markdown {
+  color: var(--lobster-text-primary);
+}
+
+.message-user .markdown {
   border-radius: 12px;
   padding: 9px 13px;
-  color: var(--lobster-chat-bot-foreground);
-  background: var(--lobster-chat-bot);
-  font-size: var(--lobster-text-sm);
 }
 
 .message-user {

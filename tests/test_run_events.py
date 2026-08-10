@@ -3,7 +3,12 @@
 import asyncio
 import unittest
 
-from lobster0.agent.events import RunEvent, display_tool_arguments, emit
+from lobster0.agent.events import (
+    RunEvent,
+    display_tool_arguments,
+    emit,
+    tool_display_summary,
+)
 
 
 class RunEventTest(unittest.IsolatedAsyncioTestCase):
@@ -78,6 +83,73 @@ class RunEventTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(opened, {"origin": "https://example.com"})
         self.assertNotIn("private-generation", str(typed))
         self.assertNotIn("must-not-display", str(opened))
+
+
+class ToolDisplaySummaryTest(unittest.TestCase):
+    """摘要必须比工具名更有信息量，同时不泄露正文、凭据与完整参数。"""
+
+    def test_command_summary_reports_program_and_argument_count_only(self) -> None:
+        """完整 argv 可能含密钥或路径，只暴露程序名与参数个数。"""
+        summary = tool_display_summary(
+            "run_command",
+            {"program": "/usr/bin/git", "args": ["push", "--force"]},
+        )
+
+        self.assertEqual(summary, "run_command git · 2 args")
+        self.assertNotIn("--force", summary)
+
+    def test_command_summary_uses_singular_for_one_argument(self) -> None:
+        """单参数不应显示成 1 args。"""
+        self.assertEqual(
+            tool_display_summary("run_command", {"program": "ls", "args": ["-l"]}),
+            "run_command ls · 1 arg",
+        )
+
+    def test_http_summary_keeps_authority_and_drops_path_and_query(self) -> None:
+        """URL 的 path 与 query 常含 token，只保留 authority。"""
+        summary = tool_display_summary(
+            "http_get",
+            {"url": "https://example.com/private?token=must-not-display"},
+        )
+
+        self.assertEqual(summary, "http_get https://example.com:443")
+        self.assertNotIn("must-not-display", summary)
+
+    def test_browser_type_summary_reports_length_instead_of_typed_text(self) -> None:
+        """键入内容可能是密码，只报字符数。"""
+        summary = tool_display_summary(
+            "browser_type",
+            {"origin": "https://example.com", "role": "textbox", "text": "secret-value"},
+        )
+
+        self.assertEqual(summary, "browser_type https://example.com:443 · textbox · 12 chars")
+        self.assertNotIn("secret-value", summary)
+
+    def test_path_summary_keeps_basename_only(self) -> None:
+        """完整路径会泄露目录结构，只保留文件名。"""
+        summary = tool_display_summary("read_file", {"path": "/Users/someone/secret/notes.md"})
+
+        self.assertEqual(summary, "read_file notes.md")
+        self.assertNotIn("someone", summary)
+
+    def test_unknown_tool_falls_back_without_raising(self) -> None:
+        """未知工具或缺字段时必须仍返回可展示的稳定文本。"""
+        self.assertEqual(tool_display_summary("mystery_tool", {}), "mystery_tool request")
+        self.assertEqual(
+            tool_display_summary("run_command", {"program": 42, "args": "not-a-list"}),
+            "run_command request",
+        )
+
+    def test_summary_always_differs_from_the_bare_tool_name(self) -> None:
+        """摘要等于工具名时前端会退化成重复两行，这里保证始终带附加信息。"""
+        for tool_name, arguments in (
+            ("run_command", {"program": "ls", "args": []}),
+            ("http_get", {"url": "https://example.com"}),
+            ("read_file", {"path": "/tmp/a.txt"}),
+            ("mystery_tool", {}),
+        ):
+            with self.subTest(tool=tool_name):
+                self.assertNotEqual(tool_display_summary(tool_name, arguments), tool_name)
 
 
 if __name__ == "__main__":

@@ -196,7 +196,7 @@ export function App(): React.JSX.Element {
           onClick={createTask}
           type="button"
         >
-          <span className="nav-mark" aria-hidden="true">＋</span>
+          <span className="nav-mark" aria-hidden="true">+</span>
           <span>新建对话</span>
         </button>
         <nav className="navigation" aria-label="主导航">

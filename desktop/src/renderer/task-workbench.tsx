@@ -23,6 +23,7 @@ import {
   reduceDesktopFrame,
   type DesktopTaskStatus,
 } from "./task-state";
+import { telemetryFacts as buildTelemetryFacts } from "./telemetry-facts";
 import { groupTimeline, toolDetail } from "./timeline-blocks";
 
 interface TaskWorkbenchProps {
@@ -73,6 +74,10 @@ export function TaskWorkbench({
   const [expandedProcesses, setExpandedProcesses] = useState<ReadonlySet<number>>(new Set());
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineBlocks = useMemo(() => groupTimeline(task.run.timeline), [task.run.timeline]);
+  const telemetryFacts = useMemo(
+    () => buildTelemetryFacts(task.run.telemetry),
+    [task.run.telemetry],
+  );
 
   useEffect(() => window.lobster0.onFrame((frame) => {
     setTask((current) => reduceDesktopFrame(current, frame));
@@ -224,9 +229,16 @@ export function TaskWorkbench({
               <span className="eyebrow">CONVERSATION</span>
               <h1>当前对话</h1>
             </div>
-            <span className="task-status" data-status={task.status}>
-              {STATUS_LABELS[task.status]}
-            </span>
+            <div className="conversation-meta">
+              {telemetryFacts.map((fact) => (
+                <span className="telemetry-fact" key={fact.label} title={fact.label}>
+                  {fact.value}
+                </span>
+              ))}
+              <span className="task-status" data-status={task.status}>
+                {STATUS_LABELS[task.status]}
+              </span>
+            </div>
           </div>
         )}
 

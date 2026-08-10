@@ -9,7 +9,13 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import urlsplit
 
-from lobster0.agent.events import RunEvent, RunEventHandler, display_tool_arguments, emit
+from lobster0.agent.events import (
+    RunEvent,
+    RunEventHandler,
+    display_tool_arguments,
+    emit,
+    tool_display_summary,
+)
 from lobster0.checkpoints.store import CheckpointError, CheckpointStore
 from lobster0.policy.approvals import (
     ApprovalDecision,
@@ -403,7 +409,7 @@ class ToolExecutor:
                     arguments,
                     decision,
                     ttl_seconds=self._approval_ttl_seconds,
-                    summary=_approval_summary(call.name, arguments),
+                    summary=tool_display_summary(call.name, arguments),
                     execution_plan=execution_plan,
                 )
                 await emit(
@@ -783,50 +789,6 @@ def _safe_prepare_error_code(error: ValueError) -> str:
     ):
         return candidate
     return "invalid_arguments"
-
-
-def _approval_summary(tool_name: str, arguments: dict[str, JsonValue]) -> str:
-    """生成有界审批摘要，隐藏正文、凭据、路径和完整命令参数。"""
-    if tool_name == "run_command":
-        program = arguments.get("program")
-        args = arguments.get("args")
-        if isinstance(program, str) and isinstance(args, list):
-            program_label = Path(program).name or "command"
-            suffix = "arg" if len(args) == 1 else "args"
-            return f"run_command {program_label} · {len(args)} {suffix}"
-    if tool_name == "http_get":
-        url = arguments.get("url")
-        if isinstance(url, str):
-            try:
-                parsed = urlsplit(url)
-                hostname = parsed.hostname
-                port = parsed.port or 443
-            except ValueError:
-                hostname = None
-            if hostname is not None:
-                host_text = f"[{hostname}]" if ":" in hostname else hostname
-                return f"http_get https://{host_text}:{port}"
-    if tool_name in {"browser_click", "browser_type", "browser_press"}:
-        origin = arguments.get("origin")
-        role = arguments.get("role")
-        if isinstance(origin, str) and isinstance(role, str):
-            try:
-                parsed = urlsplit(origin)
-                hostname = parsed.hostname
-                port = parsed.port or 443
-            except ValueError:
-                hostname = None
-            if hostname is not None:
-                host_text = f"[{hostname}]" if ":" in hostname else hostname
-                summary = f"{tool_name} https://{host_text}:{port} · {role}"
-                text = arguments.get("text")
-                if tool_name == "browser_type" and isinstance(text, str):
-                    summary += f" · {len(text)} chars"
-                return summary
-    path = arguments.get("path")
-    if isinstance(path, str):
-        return f"{tool_name} {Path(path).name}"
-    return f"{tool_name} request"
 
 
 def _command_scope(arguments: dict[str, JsonValue]) -> NormalizedCommand:

@@ -8,7 +8,13 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from lobster0.agent.events import RunEvent, RunEventHandler, display_tool_arguments, emit
+from lobster0.agent.events import (
+    RunEvent,
+    RunEventHandler,
+    display_tool_arguments,
+    emit,
+    tool_display_summary,
+)
 from lobster0.automation.models import TaskResponse
 from lobster0.policy.approvals import ApprovalDecision
 from lobster0.providers.base import (
@@ -483,7 +489,7 @@ class AgentRunner:
                             {
                                 "call_id": call.call_id,
                                 "tool_name": call.name,
-                                "summary": call.name,
+                                "summary": tool_display_summary(call.name, call.arguments),
                                 "arguments": display_tool_arguments(call.name, call.arguments),
                             },
                         ),
