@@ -102,9 +102,7 @@ export function ClawTrace({ copy, surfaces }: ClawTraceProps) {
         })}
       </ul>
       <div className="hero-network__caption">
-        <span>{copy.eyebrow}</span>
         <strong>{copy.title}</strong>
-        <small>{copy.description}</small>
       </div>
       <ol aria-label={copy.ariaLabel} className="hero-network__trace">
         {copy.steps.map((step, index) => {

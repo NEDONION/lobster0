@@ -12,7 +12,7 @@
 [![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
-[Why Lobster0](#why-lobster0) · [Capabilities](#current-capabilities) · [Quick start](#quick-start) · [Gallery](#product-gallery) · [Architecture](#how-it-works) · [Roadmap](#roadmap) · [Docs](#documentation)
+[Website](https://lobster0.jchu.tech) · [Why Lobster0](#why-lobster0) · [Capabilities](#current-capabilities) · [Quick start](#quick-start) · [Gallery](#product-gallery) · [Architecture](#how-it-works) · [Roadmap](#roadmap) · [Docs](#documentation)
 
 </div>
 
@@ -21,7 +21,9 @@
 Lobster0 brings the model, tools, permissions, approvals, persistence, and multiple messaging channels into one local Core. The same agent is available through its TUI, Feishu, Telegram, and Discord, while every local action still passes through a shared Policy, workspace boundary, and auditable execution path.
 
 > [!IMPORTANT]
-> The repository has passed the Phase 6.5 local implementation gates. Feishu now carries a normal answer in one `Claw Trail` Agent Card, while configurations without `tools.mode` default to Owner-scoped `AUTOPILOT` without weakening hard safety boundaries. The v0.5.3 Core also includes SDK log redaction, Gateway lease/provenance, managed Live Runners, and recovery from orphaned Tool history. Card callbacks are bound to the unique sent receipt, account, and Approval ID; a real one-time approval completed its Tool, child Turn, and result Delivery. The exact status is **TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING**. Memory Autopilot A–E is implemented locally. Phase 6 adds durable Tasks, Scheduler/Runner, E-stop, budgets, Approval continuation, proactive Delivery, immutable Docker/Seatbelt plans, Checkpoints, Rollback, and a 15-case Automation gate. The macOS + Feishu production orchestrator and exact-duration checkpoint are implemented, but the status remains **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING** until the same clean commit passes Seatbelt 2/2, Feishu 15/15, Automation 10/10, managed recovery, and 24 continuous hours. Phase 6.5 adds a dedicated Chromium Profile, bounded snapshots/refs, eight policy-gated Browser Tools, and private screenshot/download Artifacts. Browser automation remains disabled by default and its controlled public live smoke is pending.
+> Everything below is **IMPLEMENTATION PASS**: local gates and offline suites are green, but the real
+> Feishu / Telegram / Discord Live Gates and the Phase 6 production soak are still in progress.
+> See [Project status](#project-status) for the per-item evidence.
 
 ## Why Lobster0
 
