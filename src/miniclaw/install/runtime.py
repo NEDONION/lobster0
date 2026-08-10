@@ -266,14 +266,24 @@ class RuntimeReceipt:
 
     def to_bytes(self) -> bytes:
         """返回 deterministic exact-key owner-only receipt JSON。"""
-        keys = (
-            _LEGACY_RECEIPT_KEYS
-            if self.executables_sha256 is None
-            else _RECEIPT_KEYS
-        )
+        document = {
+            "git_commit": self.git_commit,
+            "installer_sha256": self.installer_sha256,
+            "node_sha256": self.node_sha256,
+            "node_version": self.node_version,
+            "python_version": self.python_version,
+            "requirements_sha256": self.requirements_sha256,
+            "runtime_relative": self.runtime_relative,
+            "tui_sha256": self.tui_sha256,
+            "tui_version": self.tui_version,
+            "version": self.version,
+            "wheel_sha256": self.wheel_sha256,
+        }
+        if self.executables_sha256 is not None:
+            document["executables_sha256"] = self.executables_sha256
         return (
             json.dumps(
-                {name: getattr(self, name) for name in sorted(keys)},
+                document,
                 sort_keys=True,
                 separators=(",", ":"),
                 ensure_ascii=True,

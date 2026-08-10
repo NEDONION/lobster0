@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import errno
 import hashlib
+import inspect
 import json
 import os
 import shutil
@@ -11,6 +13,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 import warnings
@@ -404,6 +407,74 @@ class InstallRuntimeTests(unittest.TestCase):
             database_schema=5,
             minimum_readable_schema=5,
         )
+
+    def test_runtime_receipt_serialization_has_static_closed_world_field_access(self) -> None:
+        """zipapp AST 必须看到全部 receipt 字段的显式 self attribute access。"""
+        tree = ast.parse(textwrap.dedent(inspect.getsource(RuntimeReceipt.to_bytes)))
+        dynamic_getattr = tuple(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and node.id == "getattr"
+        )
+        explicit_fields = {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+        }
+
+        self.assertEqual(dynamic_getattr, ())
+        self.assertEqual(
+            explicit_fields,
+            {
+                "executables_sha256",
+                "git_commit",
+                "installer_sha256",
+                "node_sha256",
+                "node_version",
+                "python_version",
+                "requirements_sha256",
+                "runtime_relative",
+                "tui_sha256",
+                "tui_version",
+                "version",
+                "wheel_sha256",
+            },
+        )
+
+    def test_runtime_receipt_static_serialization_preserves_every_field_token(self) -> None:
+        """显式字段序列化必须保持 current 全字段及 legacy omission 的 exact bytes。"""
+        receipt = RuntimeReceipt(
+            version="1.2.3",
+            git_commit="1" * 40,
+            runtime_relative="runtimes/1.2.3",
+            python_version="3.12.99",
+            node_version="22.1.0",
+            tui_version="1.2.3",
+            wheel_sha256="a" * 64,
+            requirements_sha256="b" * 64,
+            node_sha256="c" * 64,
+            tui_sha256="d" * 64,
+            installer_sha256="e" * 64,
+            executables_sha256="f" * 64,
+        )
+        expected = (
+            b'{"executables_sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",'
+            b'"git_commit":"1111111111111111111111111111111111111111",'
+            b'"installer_sha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",'
+            b'"node_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",'
+            b'"node_version":"22.1.0","python_version":"3.12.99",'
+            b'"requirements_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",'
+            b'"runtime_relative":"runtimes/1.2.3",'
+            b'"tui_sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",'
+            b'"tui_version":"1.2.3","version":"1.2.3",'
+            b'"wheel_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n'
+        )
+
+        self.assertEqual(receipt.to_bytes(), expected)
+        legacy = replace(receipt, executables_sha256=None).to_bytes()
+        self.assertEqual(legacy, b"{" + expected.split(b",", 1)[1])
 
     def test_exported_lock_has_only_exact_hashed_logical_requirements(self) -> None:
         """每个非注释 logical requirement 都必须 exact/direct 且带 SHA-256。"""
