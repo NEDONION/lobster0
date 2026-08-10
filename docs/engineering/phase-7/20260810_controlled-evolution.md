@@ -1,7 +1,8 @@
 # Phase 7 Controlled Evolution 工程落地方案
 
 > 文档日期：2026-08-10（施工状态更新于 2026-08-11）  
-> 状态：**IMPLEMENTATION IN PROGRESS（Task 1/6 完成；Task 2/6 部分完成，飞书命令未接线）**  
+> 状态：**IMPLEMENTATION IN PROGRESS（Task 1/6 完成；Task 2/6、Task 3/6 部分完成——飞书命令未接线，
+> Memory candidate 仅支持 forget）**  
 > 前置条件：Phase 6 生产验收通过；Memory Autopilot A～E 已实现  
 > 施工偏离说明：Phase 6 生产验收（真实 Seatbelt 2/2、飞书 15/15、Automation 10/10、24 小时 soak）截至
 > 2026-08-11 仍是 `PRODUCTION SOAK PENDING`，未通过。Owner 明确决定跳过该前置条件、提前开工 Phase 7 第 16
@@ -547,12 +548,32 @@ case result 去重全部有测试；CLI、飞书命令、Candidate 生成、Eval
 未预见的前置缺口，故意没有在没有真实 SDK 环境验证字段映射前就动手改动线上飞书收发链路；已作为 Task 2 的
 遗留项，未折叠进"完成"。
 
-### Task 3：受限 Candidate
+### Task 3：受限 Candidate —— **PARTIAL（2026-08-11）：三类校验器完成，Memory 仅支持 forget**
 
 - Prompt versioned Markdown block；
 - Skill staging + 现有 validator/Policy；
 - Memory review adapter；
 - hard-deny fixtures 必须先 RED。
+
+实现落点：`src/lobster0/evolution/proposals.py`（`validate_prompt_candidate`、
+`validate_skill_candidate`、`build_memory_forget_candidate`）、`tests/test_evolution_proposals.py`
+（13 个 case，含 hard-deny：diff/patch 形状、控制字符、Tool 权限语言、单 Skill 限制）。
+
+**Prompt**：`PROMPT_BLOCKS` 是这里新建的自包含 registry，`agent-behavior` 的 base text 是本任务
+新写的占位文本，**没有**接到 `agent/context.py` 里正在使用的 `_SYSTEM_PREAMBLE_EN/ZH`（那是双语、
+按用户消息语言动态选择的安全前言，直接接上属于 Task 5"Runtime 每 Turn 读取 active revision"的范围，
+在没有 Task 5 的原子切换/回滚保护前不动它）。候选内容原子落盘到 `StatePaths.prompt_versions`。
+
+**Skill**：完整复用 `SkillLoader`（路径、symlink、frontmatter、64 KiB、name/version 全部原样生效），
+只加了"staging 目录必须恰好一个 Skill"这条 Phase 7 专属约束。首版沿用 Core 现状——Skill 只有
+Markdown 正文，没有可执行 Python，因此没有实现文档提到的"Python Skill AST/import allowlist"，
+因为这个 Runtime 能力本身还不存在，不是本任务遗漏。
+
+**Memory**：只实现了 `forget`（直接复用 `MemoryReviewService.preview_forget`，candidate_hash 就是
+既有的 `preview_hash`，manifest 不复制 Memory 正文）。`propose_correction`（add/update）需要真实
+对话里的 `SourceRef` 和 Owner 明确纠错意图匹配，与 Evolution 由 `/good`/`/bad` 反馈发起的场景不
+自然吻合；在没有想清楚这种情况下的正确语义前，没有为了"看起来功能齐全"而硬凑一个假 SourceRef，
+留作后续单独设计的缺口。
 
 ### Task 4：Evaluator 与 Receipt
 
