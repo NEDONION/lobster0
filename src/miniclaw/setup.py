@@ -1,6 +1,7 @@
 """MiniClaw fresh-install 的交互配置与 owner-only Secret 写入。"""
 
 import getpass
+import io
 import json
 import os
 import re
@@ -22,6 +23,26 @@ _DISCORD_SECRET = "MINICLAW_DISCORD_BOT_TOKEN"
 
 class SetupError(ValueError):
     """表示 fresh setup 输入或目标状态不满足安全约束。"""
+
+
+class _DuplexTty(io.TextIOWrapper):
+    """为分离读写端的 TextIOWrapper 提供真实 TTY descriptor。"""
+
+    def __init__(self, buffer: io.BufferedRWPair, descriptor: int) -> None:
+        """绑定双工 buffer 与用于终端操作的读取 descriptor。"""
+        self._descriptor = descriptor
+        super().__init__(
+            buffer,
+            encoding="utf-8",
+            line_buffering=True,
+            write_through=True,
+        )
+
+    def fileno(self) -> int:
+        """返回仍由当前双工流持有的终端 descriptor。"""
+        if self.closed:
+            raise ValueError("I/O operation on closed file")
+        return self._descriptor
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,10 +383,46 @@ def _open_tty() -> TextIO:
     Raises:
         SetupError: 当前进程没有可用控制终端。
     """
+    descriptor: int | None = None
+    read_descriptor: int | None = None
+    write_descriptor: int | None = None
+    reader: io.FileIO | None = None
+    writer: io.FileIO | None = None
+    buffer: io.BufferedRWPair | None = None
+    stream: _DuplexTty | None = None
     try:
-        return open("/dev/tty", "r+", encoding="utf-8", buffering=1)
-    except OSError as error:
-        raise SetupError("interactive terminal is unavailable") from error
+        flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open("/dev/tty", flags)
+        if not stat.S_ISCHR(os.fstat(descriptor).st_mode):
+            raise OSError("not a character device")
+        read_descriptor = os.dup(descriptor)
+        write_descriptor = os.dup(descriptor)
+        os.close(descriptor)
+        descriptor = None
+
+        reader = io.FileIO(read_descriptor, "rb", closefd=True)
+        read_descriptor = None
+        writer = io.FileIO(write_descriptor, "wb", closefd=True)
+        write_descriptor = None
+        buffer = io.BufferedRWPair(reader, writer)
+        stream = _DuplexTty(buffer, reader.fileno())
+        return stream
+    except BaseException as error:
+        for resource in (stream, buffer, writer, reader):
+            if resource is not None:
+                try:
+                    resource.close()
+                except Exception:
+                    pass
+        for acquired in (write_descriptor, read_descriptor, descriptor):
+            if acquired is not None:
+                try:
+                    os.close(acquired)
+                except OSError:
+                    pass
+        if not isinstance(error, Exception):
+            raise
+        raise SetupError("interactive terminal is unavailable") from None
 
 
 def _ask_yes_no(tty: TextIO, prompt: str) -> bool:
