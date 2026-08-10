@@ -307,6 +307,11 @@
   font-weight: 650;
 }
 
+.root :global(.hero-surface-card > span[data-brand='true']) {
+  background: #fff;
+  border: 1px solid rgb(18 23 34 / 10%);
+}
+
 .root :global(.hero-surface-card strong) {
   align-self: end;
   font-size: 0.76rem;

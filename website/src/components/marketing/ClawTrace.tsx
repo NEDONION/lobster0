@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { MarketingCopy } from '@/content/site';
 import { useReducedMotionPreference } from '@/lib/motion';
 
+import { hasSurfaceIcon, SurfaceIcon } from './SurfaceIcon';
+
 interface ClawTraceProps {
   copy: MarketingCopy['trace'];
   surfaces: MarketingCopy['hero']['surfaces'];
@@ -84,14 +86,20 @@ export function ClawTrace({ copy, surfaces }: ClawTraceProps) {
       <span aria-hidden="true" className="hero-network__signal hero-network__signal--two" />
       <span aria-hidden="true" className="hero-network__signal hero-network__signal--three" />
       <ul className="hero-network__surfaces" aria-label="MiniClaw surfaces">
-        {surfaces.map((surface, index) => (
-          <li className="hero-surface-card" data-surface={index + 1} key={surface.name}>
-            <span aria-hidden="true">{surface.name.slice(0, 2).toUpperCase()}</span>
-            <strong>{surface.name}</strong>
-            <small>{surface.role}</small>
-            <i>{surface.note}</i>
-          </li>
-        ))}
+        {surfaces.map((surface, index) => {
+          const hasIcon = hasSurfaceIcon(surface.name);
+
+          return (
+            <li className="hero-surface-card" data-surface={index + 1} key={surface.name}>
+              <span aria-hidden="true" data-brand={hasIcon}>
+                {hasIcon ? <SurfaceIcon name={surface.name} /> : surface.name.slice(0, 2).toUpperCase()}
+              </span>
+              <strong>{surface.name}</strong>
+              <small>{surface.role}</small>
+              <i>{surface.note}</i>
+            </li>
+          );
+        })}
       </ul>
       <div className="hero-network__caption">
         <span>{copy.eyebrow}</span>
