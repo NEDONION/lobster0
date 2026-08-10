@@ -988,19 +988,28 @@ def discard_unactivated_runtime(layout: InstallLayout, lock: InstallLock) -> boo
             post_second = _stable_runtime_reference_facts(layout, verify_links=False)
             _verify_reference_targets_except(layout, post_second, target)
         except BaseException:
-            _restore_runtime_quarantine(quarantine)
+            _restore_or_preserve_runtime_quarantine(quarantine)
             raise
         if post_first != post_second or not lock.owns(layout):
-            _restore_runtime_quarantine(quarantine)
+            _restore_or_preserve_runtime_quarantine(quarantine)
             _runtime_failed()
         if target in post_second.targets:
-            if not _restore_runtime_quarantine(quarantine):
+            if not _restore_or_preserve_runtime_quarantine(quarantine):
                 _runtime_failed()
+            restored_receipt = _verified_runtime_target(layout, target)
+            restored_identity = _directory_identity(
+                layout.runtime,
+                expected_mode=program_mode,
+            )
+            final_references = _stable_runtime_reference_facts(
+                layout,
+                verify_links=True,
+            )
             if (
-                not lock.owns(layout)
-                or _verified_runtime_target(layout, target) != receipt
-                or target
-                not in _stable_runtime_reference_facts(layout, verify_links=True).targets
+                restored_receipt != receipt
+                or restored_identity != identity
+                or target not in final_references.targets
+                or not lock.owns(layout)
             ):
                 _runtime_failed()
             return False
@@ -2906,19 +2915,20 @@ def _quarantine_runtime_target(
             or moved.st_uid != os.geteuid()
             or stat.S_IMODE(moved.st_mode) != 0o700
         ):
-            _restore_runtime_quarantine(quarantine, exact=False)
+            _restore_or_preserve_runtime_quarantine(quarantine, exact=False)
             _runtime_failed()
         try:
+            _fsync_directory(directory)
             _fsync_directory(path.parent)
         except OSError:
-            _restore_runtime_quarantine(quarantine)
+            _restore_or_preserve_runtime_quarantine(quarantine)
             _runtime_failed()
         return quarantine
     except InstallError:
         raise
     except BaseException as error:
         if quarantine is not None:
-            _restore_runtime_quarantine(quarantine, exact=False)
+            _restore_or_preserve_runtime_quarantine(quarantine, exact=False)
         elif directory is not None:
             try:
                 directory.rmdir()
@@ -2968,11 +2978,58 @@ def _restore_runtime_quarantine(
             quarantine.program_mode,
         ):
             return False
+        _fsync_directory(quarantine.original.parent)
+        _fsync_directory(quarantine.directory)
         quarantine.directory.rmdir()
         _fsync_directory(quarantine.original.parent)
         return True
     except (InstallError, OSError):
         return False
+
+
+def _restore_or_preserve_runtime_quarantine(
+    quarantine: _RuntimeQuarantine,
+    *,
+    exact: bool = True,
+) -> bool:
+    """恢复 private entry，失败时 durable 保留 owner-only evidence。
+
+    Args:
+        quarantine: 已移动目录项与 private parent 的绑定 token。
+        exact: true 时只恢复原 verified Runtime inode；false 时归还 foreign race。
+
+    Returns:
+        identity-bound restore 完整持久化时返回 true；否则返回 false 并尽力持久化 evidence。
+    """
+    if _restore_runtime_quarantine(quarantine, exact=exact):
+        return True
+    _preserve_runtime_quarantine(quarantine)
+    return False
+
+
+def _preserve_runtime_quarantine(quarantine: _RuntimeQuarantine) -> None:
+    """尽力持久化仍位于 0700 quarantine parent 的 private evidence。
+
+    Args:
+        quarantine: 已移动目录项与 private parent 的绑定 token。
+
+    Returns:
+        无返回值；evidence 已被并发替换或 fsync 失败时保持 stable failure 路径。
+    """
+    try:
+        directory = _verify_directory(quarantine.directory, expected_mode=0o700)
+        private = quarantine.private.lstat()
+        _fsync_directory(quarantine.directory)
+        private_after = quarantine.private.lstat()
+        directory_after = quarantine.directory.lstat()
+        if (
+            _metadata_snapshot(directory_after) != _metadata_snapshot(directory)
+            or _metadata_snapshot(private_after) != _metadata_snapshot(private)
+        ):
+            return
+        _fsync_directory(quarantine.original.parent)
+    except (InstallError, OSError):
+        return
 
 
 def _discard_runtime_quarantine(quarantine: _RuntimeQuarantine) -> None:

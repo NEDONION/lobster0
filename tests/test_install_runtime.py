@@ -1853,6 +1853,8 @@ class InstallRuntimeTests(unittest.TestCase):
         RuntimeBuilder(self.runner).build(self.inputs)
         lock = self._acquire_live_lock()
         original = self.layout.runtime.with_name("0.7.0.original")
+        fsync_calls: list[Path] = []
+        real_fsync = runtime_module._fsync_directory
 
         def replace_before_rename(path: Path) -> None:
             """让 quarantine 原子移动一个 foreign replacement。"""
@@ -1864,6 +1866,11 @@ class InstallRuntimeTests(unittest.TestCase):
             """在 no-replace restore 前占用 public target。"""
             path.mkdir(mode=0o700)
             (path / "marker").write_text("competitor", encoding="utf-8")
+
+        def record_fsync(path: Path) -> None:
+            """记录 competitor evidence 的 directory durability 边界。"""
+            fsync_calls.append(path)
+            real_fsync(path)
 
         with (
             mock.patch.object(
@@ -1878,6 +1885,11 @@ class InstallRuntimeTests(unittest.TestCase):
                 side_effect=publish_competitor,
                 create=True,
             ),
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=record_fsync,
+            ),
             self.assertRaisesRegex(InstallError, "runtime_install_failed"),
         ):
             discard_unactivated_runtime(self.layout, lock)
@@ -1888,12 +1900,61 @@ class InstallRuntimeTests(unittest.TestCase):
         )
         evidence = tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*"))
         self.assertEqual(len(evidence), 1)
+        self.assertIn(evidence[0], fsync_calls)
         self.assertEqual(stat.S_IMODE(evidence[0].lstat().st_mode), 0o700)
         self.assertEqual(
             (evidence[0] / "entry" / "marker").read_text(encoding="utf-8"),
             "replacement",
         )
         self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.cleanup-*")), ())
+
+    def test_discard_quarantine_fsyncs_regular_mismatch_evidence(self) -> None:
+        """regular replacement 无法恢复时也必须 durable 保留 private evidence。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        original = self.layout.runtime.with_name("0.7.0.original")
+        fsync_calls: list[Path] = []
+        real_fsync = runtime_module._fsync_directory
+
+        def replace_before_rename(path: Path) -> None:
+            """让 quarantine 原子移动一个 foreign regular file。"""
+            path.rename(original)
+            path.write_text("replacement", encoding="utf-8")
+            path.chmod(0o600)
+
+        def publish_competitor(path: Path) -> None:
+            """阻止 foreign regular file 恢复到 public target。"""
+            path.mkdir(mode=0o700)
+
+        def record_fsync(path: Path) -> None:
+            """记录 generic mismatch evidence 的 directory durability。"""
+            fsync_calls.append(path)
+            real_fsync(path)
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_race_hook",
+                side_effect=replace_before_rename,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_restore_hook",
+                side_effect=publish_competitor,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=record_fsync,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        evidence = tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*"))
+        self.assertEqual(len(evidence), 1)
+        self.assertIn(evidence[0], fsync_calls)
+        self.assertEqual((evidence[0] / "entry").read_text(encoding="utf-8"), "replacement")
 
     def test_discard_precommit_fsync_failure_restores_exact_target(self) -> None:
         """quarantine parent 首次 fsync 失败必须恢复 exact inode 并报告 stable error。"""
@@ -1928,6 +1989,113 @@ class InstallRuntimeTests(unittest.TestCase):
         )
         self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.cleanup-*")), ())
         self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*")), ())
+
+    def test_discard_fsyncs_quarantine_destination_before_source_parent(self) -> None:
+        """cross-directory rename 必须先 durable destination entry，再提交 source removal。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        real_fsync = runtime_module._fsync_directory
+        calls: list[Path] = []
+
+        def record_fsync(path: Path) -> None:
+            """记录正常 recovery transaction 的目录 fsync 顺序。"""
+            calls.append(path)
+            real_fsync(path)
+
+        with mock.patch.object(
+            runtime_module,
+            "_fsync_directory",
+            side_effect=record_fsync,
+        ):
+            self.assertTrue(discard_unactivated_runtime(self.layout, lock))
+
+        self.assertGreaterEqual(len(calls), 3)
+        self.assertEqual(calls[0].parent, self.layout.runtimes_dir)
+        self.assertTrue(calls[0].name.startswith(".0.7.0.quarantine-"))
+        self.assertEqual(calls[1], self.layout.runtimes_dir)
+
+    def test_discard_destination_fsync_failure_restores_exact_target(self) -> None:
+        """destination quarantine fsync 失败必须在 source commit 前恢复 exact Runtime。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        identity = (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino)
+        real_fsync = runtime_module._fsync_directory
+        failed = False
+
+        def fail_destination_once(path: Path) -> None:
+            """只中断 private quarantine directory 的首次 fsync。"""
+            nonlocal failed
+            if (
+                path.parent == self.layout.runtimes_dir
+                and path.name.startswith(".0.7.0.quarantine-")
+                and not failed
+            ):
+                failed = True
+                raise OSError("injected destination fsync failure")
+            real_fsync(path)
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=fail_destination_once,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        self.assertTrue(failed)
+        self.assertEqual(
+            (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino),
+            identity,
+        )
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*")), ())
+
+    def test_discard_reference_restore_rechecks_lock_after_final_facts(self) -> None:
+        """restore 后 final ref facts 读取期间 lock 漂移必须报错，不能返回 False。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        real_facts = runtime_module._stable_runtime_reference_facts
+        drifted = False
+
+        def publish_reference(layout: InstallLayout) -> None:
+            """在 durable quarantine 后发布指向目标版本的 current。"""
+            layout.current.symlink_to("runtimes/0.7.0")
+
+        def drift_after_final_facts(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """final facts 完整读取后替换 lock pathname inode。"""
+            nonlocal drifted
+            facts = real_facts(layout, verify_links=verify_links)
+            if layout.runtime.exists() and layout.current.is_symlink() and not drifted:
+                payload = layout.lock.read_bytes()
+                layout.lock.unlink()
+                layout.lock.write_bytes(payload)
+                layout.lock.chmod(0o600)
+                drifted = True
+            return facts
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_commit_hook",
+                side_effect=publish_reference,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=drift_after_final_facts,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        self.assertTrue(drifted)
+        self.assertTrue(self.layout.runtime.is_dir())
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
 
     def test_discard_postcommit_gc_failure_is_idempotent_success(self) -> None:
         """durable quarantine 后 private GC 失败只能留 0700 evidence，删除仍算成功。"""
