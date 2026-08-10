@@ -1,50 +1,55 @@
 /*
- * Design tokens ported from LobsterAI (netease-youdao/LobsterAI, MIT License),
- * theme "classic-light". Lobster0 Desktop follows LobsterAI as its visual baseline,
- * so token names are kept identical to ease future alignment.
+ * Design tokens originally ported from LobsterAI (netease-youdao/LobsterAI, MIT License),
+ * theme "classic-light". Token names are kept from that baseline to ease future alignment,
+ * but the values below have been repainted to match Claude's product visual language (warm
+ * white background, Claude-orange accent, warm grays) instead of LobsterAI's cool blue-gray.
+ * See docs/superpowers/specs/2026-08-11-desktop-visual-refresh-claude-inspired-design.md for
+ * the color values (measured from claude.ai via getComputedStyle, not eyeballed) and the
+ * explicit boundary: this repaints color/radius/typography language only — no Anthropic
+ * proprietary web fonts, logo, or brand assets are copied.
  */
 
 :root {
   color-scheme: light;
 
-  --lobster-primary: #3b82f6;
+  --lobster-primary: #875645;
   --lobster-primary-foreground: #ffffff;
-  --lobster-primary-hover: #2563eb;
-  --lobster-primary-muted: rgba(59, 130, 246, 0.1);
-  --lobster-accent: #3b82f6;
+  --lobster-primary-hover: #6f4739;
+  --lobster-primary-muted: rgba(135, 86, 69, 0.1);
+  --lobster-accent: #875645;
   --lobster-accent-foreground: #ffffff;
-  --lobster-background: #f8f9fb;
-  --lobster-foreground: #0d0d0d;
+  --lobster-background: #faf9f5;
+  --lobster-foreground: #0b0b0b;
   --lobster-surface: #ffffff;
-  --lobster-surface-foreground: #0d0d0d;
-  --lobster-surface-raised: #f0f1f4;
-  --lobster-surface-overlay: rgba(240, 241, 244, 0.92);
-  --lobster-chat-user: #dbeafe;
-  --lobster-chat-user-foreground: #1e3a8a;
-  --lobster-chat-bot: #f0f1f4;
-  --lobster-chat-bot-foreground: #0d0d0d;
-  --lobster-text-primary: #0d0d0d;
-  --lobster-text-secondary: #6b7280;
-  --lobster-text-muted: #9ca3af;
-  --lobster-border: rgba(224, 226, 231, 0.6);
-  --lobster-border-subtle: rgba(224, 226, 231, 0.3);
-  --lobster-input-border: rgba(224, 226, 231, 0.6);
-  --lobster-scroll-thumb: #9ca3af;
-  --lobster-scroll-thumb-hover: #6b7280;
+  --lobster-surface-foreground: #0b0b0b;
+  --lobster-surface-raised: #f1efe9;
+  --lobster-surface-overlay: rgba(241, 239, 233, 0.92);
+  --lobster-chat-user: #f2ebe8;
+  --lobster-chat-user-foreground: #634136;
+  --lobster-chat-bot: #f1efe9;
+  --lobster-chat-bot-foreground: #0b0b0b;
+  --lobster-text-primary: #0b0b0b;
+  --lobster-text-secondary: #65635b;
+  --lobster-text-muted: #8a887f;
+  --lobster-border: rgba(224, 218, 206, 0.6);
+  --lobster-border-subtle: rgba(224, 218, 206, 0.3);
+  --lobster-input-border: rgba(224, 218, 206, 0.6);
+  --lobster-scroll-thumb: #8a887f;
+  --lobster-scroll-thumb-hover: #65635b;
   --lobster-destructive: #ef4444;
   --lobster-destructive-foreground: #ffffff;
   --lobster-success: #22c55e;
   --lobster-warning: #f59e0b;
-  --lobster-gray-1: #f8f9fb;
-  --lobster-gray-2: #f0f1f4;
-  --lobster-gray-3: #ebedf0;
-  --lobster-gray-4: #e0e2e7;
-  --lobster-gray-5: #9ca3af;
-  --lobster-gray-6: #6b7280;
-  --lobster-gray-7: #4b5563;
-  --lobster-gray-8: #374151;
-  --lobster-gray-9: #1f2937;
-  --lobster-radius: 0.5rem;
+  --lobster-gray-1: #faf9f5;
+  --lobster-gray-2: #f1efe9;
+  --lobster-gray-3: #e9e6df;
+  --lobster-gray-4: #ddd9cf;
+  --lobster-gray-5: #8a887f;
+  --lobster-gray-6: #65635b;
+  --lobster-gray-7: #4a4841;
+  --lobster-gray-8: #322f2a;
+  --lobster-gray-9: #1a1916;
+  --lobster-radius: 0.625rem;
 
   --lobster-ui-font-size: 14px;
   --lobster-code-font-size: 12px;
@@ -73,6 +78,7 @@
   --lobster-font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans CJK SC",
     "Helvetica Neue", Inter, system-ui, "Segoe UI", Roboto, sans-serif;
+  --lobster-font-serif: "New York", Georgia, "Songti SC", "STSong", serif;
   --lobster-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
