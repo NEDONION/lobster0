@@ -11,6 +11,7 @@ import shutil
 import signal
 import stat
 import subprocess
+import sys
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -85,6 +86,7 @@ _CONTAINMENT_PROGRAM = (
     "except OSError:\n print('network-denied')\n"
     "else:\n print('network-open')\n"
 )
+_INSTALLER_RECEIPT_SEAL = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +106,33 @@ class _SandboxArtifactReceipt:
     platform: PlatformKey
     path: Path
     container_image: str
+
+
+@dataclass(frozen=True, slots=True)
+class _InstallerArtifactReceipt:
+    """绑定当前加载 zipapp 的 manifest、pathname 与 inode 快照。
+
+    Args:
+        manifest: 选择 installer artifact 的 strict manifest。
+        artifact_filename: manifest 中的 installer filename 快照。
+        artifact_size: manifest 中的 installer size 快照。
+        artifact_sha256: manifest 中的 installer hash 快照。
+        platform: artifact 选择所绑定的平台。
+        path: 从 ``sys.argv[0]`` 内部派生的 absolute current zipapp。
+        parent_identity: owner-only parent 的 device/inode/mode/uid 快照。
+        file_identity: current zipapp 的 device/inode/mode/uid/nlink/size 快照。
+        seal: 只由本模块 loader 持有的内部 seal。
+    """
+
+    manifest: ReleaseManifest
+    artifact_filename: str
+    artifact_size: int
+    artifact_sha256: str
+    platform: PlatformKey
+    path: Path
+    parent_identity: tuple[int, int, int, int]
+    file_identity: tuple[int, int, int, int, int, int]
+    seal: object
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,6 +369,14 @@ class PrivilegeAction:
             or self.reason != _privilege_reason(self.category, self.argv)
         ):
             raise InstallError("system_dependency_missing", "system_argvs")
+
+
+# ponytail: installer 进程短生命周期内只保留少量 action；长期驻留时再换 weak registry。
+_SYSTEM_PREFIX_ACTION_RECEIPTS: dict[int, tuple[PrivilegeAction, _InstallerArtifactReceipt]] = {}
+_INTERNAL_INSTALLER_RECEIPTS: dict[
+    int,
+    tuple[_InstallerArtifactReceipt, tuple[object, ...]],
+] = {}
 
 
 def node_version_supported(version: object) -> bool:
@@ -591,17 +628,28 @@ def build_dependency_actions(
     Raises:
         InstallError: 本地 readiness、账号、artifact 或请求不安全。
     """
-    if type(request) is InstallRequest and request.system_prefix:
-        raise InstallError("privilege_denied", "system_argvs")
     effective_uid, original_user, original_uid = _production_identity()
+    installer_receipt: _InstallerArtifactReceipt | None = None
+    if type(request) is InstallRequest and request.system_prefix:
+        if effective_uid != 0:
+            raise InstallError("privilege_denied", "system_argvs")
+        installer_receipt = _load_current_installer_receipt(manifest, platform)
+    probe_manifest = (
+        None
+        if installer_receipt is not None
+        and type(platform) is DetectedPlatform
+        and platform.os == "macos"
+        else manifest
+    )
     return _build_dependency_actions_with_probe(
         platform,
         request,
         probe=LocalPlatformProbe(
             platform,
-            manifest=manifest,
+            manifest=probe_manifest,
             sandbox_artifact_path=sandbox_artifact_path,
         ),
+        installer_receipt=installer_receipt,
         effective_uid=effective_uid,
         original_user=original_user,
         original_uid=original_uid,
@@ -613,6 +661,7 @@ def _build_dependency_actions_with_probe(
     request: InstallRequest,
     *,
     probe: _BackendProbe,
+    installer_receipt: object | None = None,
     effective_uid: int | None = None,
     original_user: str | None = None,
     original_uid: int | None = None,
@@ -625,6 +674,7 @@ def _build_dependency_actions_with_probe(
         platform: 已通过 Tier 1 校验的平台。
         request: 控制 package/service/system-prefix 的不可变安装请求。
         probe: 显式验证 backend 并提供 no-follow lstat 的本地 adapter。
+        installer_receipt: production 内部创建的 current zipapp receipt。
         effective_uid: 当前进程有效 UID。
         original_user: root 调用的原始非 root 用户。
         original_uid: root 调用的原始非 root UID。
@@ -653,7 +703,11 @@ def _build_dependency_actions_with_probe(
         getpwnam=getpwnam,
     )
     if request.system_prefix:
-        # Task 12 bootstrap 尚未提供 trusted current-loaded installer receipt；一律 fail closed。
+        if selected_uid != 0:
+            raise InstallError("privilege_denied", "system_argvs")
+        receipt = _require_installer_receipt(installer_receipt)
+        _revalidate_installer_receipt(receipt)
+    elif installer_receipt is not None:
         raise InstallError("privilege_denied", "system_argvs")
     actions: list[PrivilegeAction] = []
     try:
@@ -704,7 +758,10 @@ def _build_dependency_actions_with_probe(
                 _LINGER_REASON,
             )
         )
-    return DependencyPlan(tuple(actions))
+    plan = DependencyPlan(tuple(actions))
+    if request.system_prefix:
+        _bind_installer_actions(plan.actions, receipt)
+    return plan
 
 
 def verify_privilege_action(
@@ -733,15 +790,39 @@ def verify_privilege_action(
         InstallError: 任一绑定或本地证据不安全。
     """
     effective_uid, original_user, original_uid = _production_identity()
+    installer_receipt = _bound_installer_receipt(action)
+    if installer_receipt is None:
+        if type(request) is InstallRequest and request.system_prefix:
+            raise InstallError("privilege_denied", "system_argvs")
+    else:
+        if (
+            type(request) is not InstallRequest
+            or not request.system_prefix
+            or effective_uid != 0
+        ):
+            raise InstallError("privilege_denied", "system_argvs")
+        _revalidate_installer_receipt(
+            installer_receipt,
+            manifest=manifest,
+            platform=platform,
+        )
+    probe_manifest = (
+        None
+        if installer_receipt is not None
+        and type(platform) is DetectedPlatform
+        and platform.os == "macos"
+        else manifest
+    )
     return _verify_privilege_action_with_probe(
         action,
         platform,
         request,
         probe=LocalPlatformProbe(
             platform,
-            manifest=manifest,
+            manifest=probe_manifest,
             sandbox_artifact_path=sandbox_artifact_path,
         ),
+        installer_receipt=installer_receipt,
         effective_uid=effective_uid,
         original_user=original_user,
         original_uid=original_uid,
@@ -755,6 +836,7 @@ def _verify_privilege_action_with_probe(
     request: InstallRequest,
     *,
     probe: _BackendProbe,
+    installer_receipt: object | None = None,
     effective_uid: int | None = None,
     original_user: str | None = None,
     original_uid: int | None = None,
@@ -769,6 +851,7 @@ def _verify_privilege_action_with_probe(
         platform: 绑定动作的 Tier 1 平台。
         request: 绑定动作的安装请求。
         probe: 与 build 共用的本地证据 adapter。
+        installer_receipt: 与 build action identity 绑定的 internal receipt。
         effective_uid: 当前进程有效 UID。
         original_user: root 调用的原始非 root 用户。
         original_uid: root 调用的原始非 root UID。
@@ -789,6 +872,18 @@ def _verify_privilege_action_with_probe(
     ):
         raise InstallError("system_dependency_missing", "system_argvs")
     selected_uid = os.geteuid() if effective_uid is None else effective_uid
+    bound_receipt = _bound_installer_receipt(action)
+    receipt: _InstallerArtifactReceipt | None = None
+    if bound_receipt is None:
+        if request.system_prefix or installer_receipt is not None:
+            raise InstallError("privilege_denied", "system_argvs")
+    else:
+        if not request.system_prefix or selected_uid != 0:
+            raise InstallError("privilege_denied", "system_argvs")
+        receipt = _require_installer_receipt(installer_receipt)
+        if bound_receipt is not receipt:
+            raise InstallError("privilege_denied", "system_argvs")
+        _revalidate_installer_receipt(receipt)
     account = _resolve_invoking_user(
         selected_uid,
         original_user,
@@ -850,7 +945,8 @@ def _verify_privilege_action_with_probe(
             return None
         except InstallError:
             if action.argv == _APT_UPDATE:
-                return (_action("system-package", _APT_INSTALL, _APT_REASON),)
+                followups = (_action("system-package", _APT_INSTALL, _APT_REASON),)
+                return _bind_installer_actions(followups, receipt)
             if action.argv == _APT_INSTALL:
                 tool = _select_setup_tool(probe.lstat, account)
                 if tool is None:
@@ -864,7 +960,7 @@ def _verify_privilege_action_with_probe(
                         "--",
                         *setup_argv,
                     )
-                return (
+                followups = (
                     PrivilegeAction(
                         category="system-package",
                         argv=setup_argv,
@@ -872,6 +968,7 @@ def _verify_privilege_action_with_probe(
                         reason=_SETUP_REASON,
                     ),
                 )
+                return _bind_installer_actions(followups, receipt)
             raise
     return None
 
@@ -1716,6 +1813,333 @@ def _lexical_absolute(path: Path) -> bool:
         and ".." not in path.parts
         and str(path) == os.path.normpath(str(path))
     )
+
+
+def _load_current_installer_receipt(
+    manifest: ReleaseManifest | None,
+    platform: DetectedPlatform,
+) -> _InstallerArtifactReceipt:
+    """从 current ``sys.argv[0]`` 与 manifest 内部派生 root-only receipt。
+
+    Args:
+        manifest: 已由 installer bootstrap 验证的 strict manifest。
+        platform: 当前已验证 Tier 1 平台。
+
+    Returns:
+        与 current pathname/inode/hash 绑定的内部 receipt。
+
+    Raises:
+        InstallError: 身份、manifest、path 或本地 metadata/bytes 不可信。
+    """
+    try:
+        if (
+            os.geteuid() != 0
+            or type(manifest) is not ReleaseManifest
+            or type(platform) is not DetectedPlatform
+            or not sys.argv
+            or type(sys.argv[0]) is not str
+        ):
+            raise OSError
+        path = Path(sys.argv[0])
+        if not _lexical_absolute(path):
+            raise OSError
+        artifact = manifest.require_artifact("installer", platform.artifact_platform)
+        parent_identity, file_identity = _read_verified_installer_file(
+            path,
+            artifact_filename=artifact.filename,
+            artifact_size=artifact.size,
+            artifact_sha256=artifact.sha256,
+        )
+        receipt = _InstallerArtifactReceipt(
+            manifest,
+            artifact.filename,
+            artifact.size,
+            artifact.sha256,
+            platform.artifact_platform,
+            path,
+            parent_identity,
+            file_identity,
+            _INSTALLER_RECEIPT_SEAL,
+        )
+        _INTERNAL_INSTALLER_RECEIPTS[id(receipt)] = (
+            receipt,
+            _installer_receipt_snapshot(receipt),
+        )
+        return receipt
+    except Exception:
+        raise InstallError("privilege_denied", "system_argvs") from None
+
+
+def _require_installer_receipt(receipt: object) -> _InstallerArtifactReceipt:
+    """只接受由 current installer loader 密封的 private receipt。
+
+    Args:
+        receipt: private seam 收到的候选值。
+
+    Returns:
+        类型与 seal 都匹配的内部 receipt。
+
+    Raises:
+        InstallError: caller 尝试伪造或缺失 receipt。
+    """
+    if type(receipt) is not _InstallerArtifactReceipt:
+        raise InstallError("privilege_denied", "system_argvs")
+    registered = _INTERNAL_INSTALLER_RECEIPTS.get(id(receipt))
+    if (
+        registered is None
+        or registered[0] is not receipt
+        or receipt.seal is not _INSTALLER_RECEIPT_SEAL
+        or registered[1] != _installer_receipt_snapshot(receipt)
+    ):
+        raise InstallError("privilege_denied", "system_argvs")
+    return receipt
+
+
+def _installer_receipt_snapshot(receipt: _InstallerArtifactReceipt) -> tuple[object, ...]:
+    """复制 receipt 的 canonical scalar facts，阻断 object-level mutation。
+
+    Args:
+        receipt: loader 刚创建或 private seam 待重验的 receipt。
+
+    Returns:
+        不共享 manifest/artifact 可变字段的 identity/canonical 快照。
+    """
+    return (
+        id(receipt.manifest),
+        receipt.artifact_filename,
+        receipt.artifact_size,
+        receipt.artifact_sha256,
+        receipt.platform.os,
+        receipt.platform.arch,
+        str(receipt.path),
+        receipt.parent_identity,
+        receipt.file_identity,
+        id(receipt.seal),
+    )
+
+
+def _bind_installer_actions(
+    actions: tuple[PrivilegeAction, ...],
+    receipt: _InstallerArtifactReceipt | None,
+) -> tuple[PrivilegeAction, ...]:
+    """把 system-prefix action object identity 绑定到 private receipt。
+
+    Args:
+        actions: build 或 post-action 产生的 exact capabilities。
+        receipt: 当前 system-prefix receipt；普通安装为 ``None``。
+
+    Returns:
+        原 action tuple，不公开任何 receipt 字段。
+    """
+    if receipt is None:
+        return actions
+    trusted = _require_installer_receipt(receipt)
+    for action in actions:
+        _SYSTEM_PREFIX_ACTION_RECEIPTS[id(action)] = (action, trusted)
+    return actions
+
+
+def _bound_installer_receipt(action: object) -> _InstallerArtifactReceipt | None:
+    """按 action object identity 查询 build 时的 private receipt。
+
+    Args:
+        action: 待执行的 public capability object。
+
+    Returns:
+        build 阶段绑定的内部 receipt；普通 action 返回 ``None``。
+
+    Raises:
+        InstallError: 已绑定的 receipt 被替换或篡改。
+    """
+    binding = _SYSTEM_PREFIX_ACTION_RECEIPTS.get(id(action))
+    if binding is None or binding[0] is not action:
+        return None
+    return _require_installer_receipt(binding[1])
+
+
+def _revalidate_installer_receipt(
+    receipt: object,
+    *,
+    manifest: ReleaseManifest | None = None,
+    platform: DetectedPlatform | None = None,
+) -> None:
+    """在 action probe/执行前重验 current path、manifest 与 inode/bytes。
+
+    Args:
+        receipt: build 阶段内部创建并密封的 receipt。
+        manifest: public verifier 收到的同一个 strict manifest。
+        platform: public verifier 收到的同一个 Tier 1 platform。
+
+    Raises:
+        InstallError: 任一对象、current path、metadata 或 bytes 漂移。
+    """
+    try:
+        trusted = _require_installer_receipt(receipt)
+        if (
+            os.geteuid() != 0
+            or not sys.argv
+            or type(sys.argv[0]) is not str
+            or Path(sys.argv[0]) != trusted.path
+        ):
+            raise OSError
+        if manifest is not None or platform is not None:
+            if (
+                manifest is not trusted.manifest
+                or type(platform) is not DetectedPlatform
+                or platform.artifact_platform != trusted.platform
+            ):
+                raise OSError
+            artifact = manifest.require_artifact("installer", platform.artifact_platform)
+            if (
+                artifact.filename != trusted.artifact_filename
+                or artifact.size != trusted.artifact_size
+                or artifact.sha256 != trusted.artifact_sha256
+            ):
+                raise OSError
+        parent_identity, file_identity = _read_verified_installer_file(
+            trusted.path,
+            artifact_filename=trusted.artifact_filename,
+            artifact_size=trusted.artifact_size,
+            artifact_sha256=trusted.artifact_sha256,
+        )
+        if (
+            parent_identity != trusted.parent_identity
+            or file_identity != trusted.file_identity
+        ):
+            raise OSError
+    except Exception:
+        raise InstallError("privilege_denied", "system_argvs") from None
+
+
+def _read_verified_installer_file(
+    path: Path,
+    *,
+    artifact_filename: str,
+    artifact_size: int,
+    artifact_sha256: str,
+) -> tuple[tuple[int, int, int, int], tuple[int, int, int, int, int, int]]:
+    """用 no-follow descriptor 精确读取并 hash root-owned current zipapp。
+
+    Args:
+        path: 从 ``sys.argv[0]`` 派生的 absolute lexical path。
+        artifact_filename: manifest installer 的 exact filename。
+        artifact_size: manifest installer 的 exact size。
+        artifact_sha256: manifest installer 的 exact SHA-256。
+
+    Returns:
+        parent 与文件的不可变 metadata identity 快照。
+
+    Raises:
+        InstallError: path、owner、mode、link、size、hash 或 inode 不一致。
+    """
+    descriptor = -1
+    try:
+        if (
+            not _lexical_absolute(path)
+            or path.name != artifact_filename
+            or type(artifact_size) is not int
+            or artifact_size <= 0
+            or type(artifact_sha256) is not str
+            or not hasattr(os, "O_NOFOLLOW")
+        ):
+            raise OSError
+        parent_before = os.lstat(path.parent)
+        parent_identity = _installer_parent_identity(parent_before)
+        before = os.lstat(path)
+        file_identity = _installer_file_identity(before)
+        if file_identity[-1] != artifact_size:
+            raise OSError
+        descriptor = os.open(
+            path,
+            os.O_RDONLY | os.O_NOFOLLOW | getattr(os, "O_CLOEXEC", 0),
+        )
+        if _installer_file_identity(os.fstat(descriptor)) != file_identity:
+            raise OSError
+        digest = hashlib.sha256()
+        count = 0
+        while chunk := os.read(descriptor, min(1_048_576, artifact_size - count + 1)):
+            count += len(chunk)
+            if count > artifact_size:
+                raise OSError
+            digest.update(chunk)
+        if (
+            count != artifact_size
+            or digest.hexdigest() != artifact_sha256
+            or _installer_file_identity(os.fstat(descriptor)) != file_identity
+            or _installer_file_identity(os.lstat(path)) != file_identity
+            or _installer_parent_identity(os.lstat(path.parent)) != parent_identity
+        ):
+            raise OSError
+        return parent_identity, file_identity
+    except Exception:
+        raise InstallError("privilege_denied", "system_argvs") from None
+    finally:
+        if descriptor >= 0:
+            try:
+                os.close(descriptor)
+            except Exception:
+                pass
+
+
+def _installer_parent_identity(value: object) -> tuple[int, int, int, int]:
+    """返回 exact root-owned 0700 parent identity，否则拒绝。
+
+    Args:
+        value: ``lstat`` 返回的 parent metadata。
+
+    Returns:
+        device、inode、mode 与 uid 快照。
+
+    Raises:
+        OSError: parent 不是 root-owned 0700 no-follow directory。
+    """
+    try:
+        identity = (value.st_dev, value.st_ino, value.st_mode, value.st_uid)  # type: ignore[attr-defined]
+    except Exception:
+        raise OSError from None
+    if (
+        any(type(item) is not int for item in identity)
+        or not stat.S_ISDIR(identity[2])
+        or stat.S_IMODE(identity[2]) != 0o700
+        or identity[3] != 0
+    ):
+        raise OSError
+    return identity
+
+
+def _installer_file_identity(value: object) -> tuple[int, int, int, int, int, int]:
+    """返回 root-owned private regular zipapp identity，否则拒绝。
+
+    Args:
+        value: ``lstat`` 或 ``fstat`` 返回的文件 metadata。
+
+    Returns:
+        device、inode、mode、uid、link count 与 size 快照。
+
+    Raises:
+        OSError: 文件类型、owner、mode、link 或 size 不安全。
+    """
+    try:
+        identity = (
+            value.st_dev,  # type: ignore[attr-defined]
+            value.st_ino,  # type: ignore[attr-defined]
+            value.st_mode,  # type: ignore[attr-defined]
+            value.st_uid,  # type: ignore[attr-defined]
+            value.st_nlink,  # type: ignore[attr-defined]
+            value.st_size,  # type: ignore[attr-defined]
+        )
+    except Exception:
+        raise OSError from None
+    if (
+        any(type(item) is not int for item in identity)
+        or not stat.S_ISREG(identity[2])
+        or stat.S_IMODE(identity[2]) not in {0o600, 0o700}
+        or identity[3] != 0
+        or identity[4] != 1
+        or identity[5] <= 0
+    ):
+        raise OSError
+    return identity
 
 
 def _read_verified_sandbox_artifact(

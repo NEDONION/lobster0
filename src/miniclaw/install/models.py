@@ -578,17 +578,17 @@ class InstallRequest:
                 continue
             if not _absolute_path_is_safe(path):
                 raise InstallError("request_invalid", name)
-        for name in (
-            "system_prefix",
-            "onboard",
-            "allow_system_packages",
-            "dry_run",
-            "json_output",
-            "verbose",
-            "purge_data",
-            "confirm_data_loss",
+        for name, value in (
+            ("system_prefix", self.system_prefix),
+            ("onboard", self.onboard),
+            ("allow_system_packages", self.allow_system_packages),
+            ("dry_run", self.dry_run),
+            ("json_output", self.json_output),
+            ("verbose", self.verbose),
+            ("purge_data", self.purge_data),
+            ("confirm_data_loss", self.confirm_data_loss),
         ):
-            if type(getattr(self, name)) is not bool:
+            if type(value) is not bool:
                 raise InstallError("request_invalid", name)
         if self.service is not None and type(self.service) is not bool:
             raise InstallError("request_invalid", "service")

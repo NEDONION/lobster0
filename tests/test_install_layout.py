@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+import gc
 import json
 import os
 import pwd
@@ -10,6 +12,8 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import weakref
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
@@ -254,6 +258,277 @@ class InstallLayoutTests(unittest.TestCase):
         layout.lock.write_text('{"pid":999,"uid":999,"start":"2026-01-01T00:00:00Z"}\n')
         first.close()
         self.assertTrue(layout.lock.exists())
+
+    def test_lock_owns_only_live_exact_instance_for_same_layout_and_process(self) -> None:
+        """公开 ownership 只能由 acquire 返回的原实例和当前进程 identity 证明。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        lock = InstallLock.acquire(layout)
+        other_home = self.home / "other"
+        other_home.mkdir(mode=0o700)
+        other_layout = InstallLayout.user(other_home, version="0.7.0")
+
+        self.assertTrue(lock.owns(layout))
+        self.assertFalse(lock.owns(other_layout))
+        forged = InstallLock(lock._path, lock._payload, lock._identity, lock._descriptor)
+        copied = copy.copy(lock)
+        self.assertFalse(forged.owns(layout))
+        self.assertFalse(copied.owns(layout))
+        real_fstat = os.fstat
+
+        def report_foreign_owner(descriptor: int) -> os.stat_result:
+            """仅把 held descriptor 的 owner 模拟成另一个 UID。"""
+            metadata = real_fstat(descriptor)
+            values = list(metadata)
+            values[4] = os.geteuid() + 1
+            return os.stat_result(values)
+
+        with mock.patch.object(layout_module.os, "fstat", side_effect=report_foreign_owner):
+            self.assertFalse(lock.owns(layout))
+        with mock.patch.object(
+            layout_module,
+            "_probe_process",
+            return_value=("alive", "2026-01-01T00:00:00Z"),
+        ):
+            self.assertFalse(lock.owns(layout))
+        with mock.patch.object(layout_module.os, "geteuid", return_value=os.geteuid() + 1):
+            self.assertFalse(lock.owns(layout))
+        self.assertTrue(layout.lock.exists())
+
+        forged._closed = True
+        copied._closed = True
+        lock.close()
+        self.assertFalse(lock.owns(layout))
+
+    def test_lock_owns_rejects_replaced_or_mutated_path_without_deleting_it(self) -> None:
+        """inode、payload、mode 或 nlink 漂移必须 fail closed 且不得删除 lock。"""
+        for mutation in ("replacement", "payload", "mode", "nlink"):
+            with self.subTest(mutation=mutation):
+                layout = InstallLayout.user(self.home, version="0.7.0")
+                lock = InstallLock.acquire(layout)
+                try:
+                    if mutation == "replacement":
+                        payload = layout.lock.read_bytes()
+                        layout.lock.unlink()
+                        layout.lock.write_bytes(payload)
+                        layout.lock.chmod(0o600)
+                    elif mutation == "payload":
+                        layout.lock.write_bytes(b"{}\n")
+                        layout.lock.chmod(0o600)
+                    elif mutation == "mode":
+                        layout.lock.chmod(0o644)
+                    else:
+                        os.link(layout.lock, layout.lock.with_suffix(".alias"))
+
+                    self.assertFalse(lock.owns(layout))
+                    self.assertTrue(layout.lock.exists())
+                finally:
+                    lock.close()
+                    if layout.lock.exists():
+                        layout.lock.unlink()
+                    alias = layout.lock.with_suffix(".alias")
+                    if alias.exists():
+                        alias.unlink()
+
+    def test_lock_owns_rejects_closed_and_reused_descriptor_for_same_inode(self) -> None:
+        """原 fd 关闭后即使编号被同一路径复用，也不再是 acquire 的 open description。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        lock = InstallLock.acquire(layout)
+        descriptor = lock._descriptor
+        os.close(descriptor)
+        reused = os.open(layout.lock, os.O_WRONLY)
+        self.assertEqual(reused, descriptor)
+        try:
+            self.assertFalse(lock.owns(layout))
+            self.assertTrue(layout.lock.exists())
+        finally:
+            os.close(reused)
+            lock.close()
+
+    def test_lock_owns_rechecks_payload_and_mode_after_final_read_race(self) -> None:
+        """final payload read 后同 inode 内容或 mode 漂移也必须 fail closed。"""
+        for mutation in ("payload", "mode"):
+            with self.subTest(mutation=mutation):
+                layout = InstallLayout.user(self.home, version="0.7.0")
+                lock = InstallLock.acquire(layout)
+                real_read = layout_module._read_lock_bytes
+                calls = {"count": 0}
+
+                def mutate_after_read(
+                    path: Path,
+                    uid: int,
+                    *,
+                    read: Callable[[Path, int], bytes] = real_read,
+                    selected: str = mutation,
+                    counter: dict[str, int] = calls,
+                ) -> bytes:
+                    """在首轮 snapshot 后的第二次 payload read 制造同 inode 漂移。"""
+                    payload = read(path, uid)
+                    counter["count"] += 1
+                    if counter["count"] < 2:
+                        return payload
+                    if selected == "payload":
+                        path.write_bytes(b"{}\n")
+                        path.chmod(0o600)
+                    else:
+                        path.chmod(0o644)
+                    return payload
+
+                try:
+                    with mock.patch.object(
+                        layout_module,
+                        "_read_lock_bytes",
+                        side_effect=mutate_after_read,
+                    ):
+                        self.assertFalse(lock.owns(layout))
+                    self.assertEqual(calls["count"], 2)
+                    self.assertTrue(layout.lock.exists())
+                finally:
+                    lock.close()
+                    if layout.lock.exists():
+                        layout.lock.unlink()
+
+    def test_lock_gc_finalizer_removes_owned_path_and_closes_both_descriptors(self) -> None:
+        """遗失 live lock 对象时 finalizer 必须释放路径和原始/proof fd。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        lock = InstallLock.acquire(layout)
+        descriptor = lock._descriptor
+        proof_descriptor = layout_module._LOCK_OWNERS[lock].proof_descriptor
+        reference = weakref.ref(lock)
+
+        del lock
+        gc.collect()
+
+        self.assertIsNone(reference())
+        self.assertFalse(layout.lock.exists())
+        for held in (descriptor, proof_descriptor):
+            with self.subTest(descriptor=held), self.assertRaises(OSError):
+                os.fstat(held)
+        replacement = InstallLock.acquire(layout)
+        replacement.close()
+
+    def test_lock_gc_finalizer_requires_exact_creator_process_identity(self) -> None:
+        """pid、euid、process start 漂移或不可读时仅关闭 fd，不得删除 lock 路径。"""
+        original_pid = os.getpid()
+        original_uid = os.geteuid()
+        cases = (
+            ("pid", mock.patch.object(layout_module.os, "getpid", return_value=original_pid + 1)),
+            ("euid", mock.patch.object(layout_module.os, "geteuid", return_value=original_uid + 1)),
+            (
+                "start",
+                mock.patch.object(
+                    layout_module,
+                    "_probe_process",
+                    return_value=("alive", "2026-01-01T00:00:00Z"),
+                ),
+            ),
+            (
+                "unavailable",
+                mock.patch.object(layout_module, "_probe_process", return_value=("alive", None)),
+            ),
+        )
+        for drift, identity_patch in cases:
+            with self.subTest(drift=drift):
+                layout = InstallLayout.user(self.home, version="0.7.0")
+                lock = InstallLock.acquire(layout)
+                descriptors = (
+                    lock._descriptor,
+                    layout_module._LOCK_OWNERS[lock].proof_descriptor,
+                )
+                reference = weakref.ref(lock)
+
+                with identity_patch:
+                    del lock
+                    gc.collect()
+
+                self.assertIsNone(reference())
+                self.assertTrue(layout.lock.exists())
+                for held in descriptors:
+                    with self.subTest(descriptor=held), self.assertRaises(OSError):
+                        os.fstat(held)
+                layout.lock.unlink()
+
+    @unittest.skipUnless(hasattr(os, "fork"), "requires os.fork")
+    def test_lock_child_cleanup_preserves_parent_lock_and_closes_inherited_fds(self) -> None:
+        """fork child 的 GC 或显式 close 只能关闭子进程 fd，不能删除父进程 lock。"""
+        program = """
+import gc
+import os
+import sys
+from pathlib import Path
+
+from miniclaw.install.layout import InstallLayout, InstallLock, _LOCK_OWNERS
+
+layout = InstallLayout.user(Path(sys.argv[1]), version="0.7.0")
+cleanup = sys.argv[2]
+lock = InstallLock.acquire(layout)
+descriptors = (lock._descriptor, _LOCK_OWNERS[lock].proof_descriptor)
+child_pid = os.fork()
+if child_pid == 0:
+    try:
+        if cleanup == "gc":
+            del lock
+            gc.collect()
+        else:
+            lock.close()
+        outcomes = [layout.lock.exists()]
+        for held in descriptors:
+            try:
+                os.fstat(held)
+            except OSError:
+                outcomes.append(True)
+            else:
+                outcomes.append(False)
+        os._exit(0 if all(outcomes) else 2)
+    except BaseException:
+        os._exit(3)
+
+_, child_status = os.waitpid(child_pid, 0)
+try:
+    if os.waitstatus_to_exitcode(child_status) != 0 or not lock.owns(layout):
+        raise SystemExit(4)
+finally:
+    lock.close()
+"""
+        for cleanup in ("gc", "close"):
+            with self.subTest(cleanup=cleanup):
+                result = subprocess.run(
+                    (sys.executable, "-c", program, str(self.home), cleanup),
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_lock_finalizer_cannot_delete_replacement_or_replay_after_close(self) -> None:
+        """stale GC callback 与 explicit close 后 callback 都不能删除新的 lock instance。"""
+        layout = InstallLayout.user(self.home, version="0.7.0")
+        stale = InstallLock.acquire(layout)
+        stale_descriptors = (
+            stale._descriptor,
+            layout_module._LOCK_OWNERS[stale].proof_descriptor,
+        )
+        stale_reference = weakref.ref(stale)
+        layout.lock.unlink()
+        replacement = InstallLock.acquire(layout)
+
+        del stale
+        gc.collect()
+        self.assertIsNone(stale_reference())
+        for held in stale_descriptors:
+            with self.subTest(descriptor=held), self.assertRaises(OSError):
+                os.fstat(held)
+        self.assertTrue(replacement.owns(layout))
+
+        replacement.close()
+        replacement_reference = weakref.ref(replacement)
+        current = InstallLock.acquire(layout)
+        del replacement
+        gc.collect()
+        self.assertIsNone(replacement_reference())
+        self.assertTrue(current.owns(layout))
+        current.close()
 
     def test_lock_requires_real_process_start_before_creating_path(self) -> None:
         """把 wall clock 冒充 process start 会把活锁误判成 PID reuse stale。"""

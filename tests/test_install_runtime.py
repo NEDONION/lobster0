@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import ast
 import errno
 import hashlib
+import inspect
 import json
 import os
 import shutil
@@ -11,16 +13,19 @@ import stat
 import subprocess
 import sys
 import tempfile
+import textwrap
 import time
 import unittest
 import warnings
 import zipfile
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
+from miniclaw.install import layout as layout_module
 from miniclaw.install import runtime as runtime_module
-from miniclaw.install.layout import InstallLayout
+from miniclaw.install.layout import InstallLayout, InstallLock
 from miniclaw.install.models import (
     Artifact,
     InstallError,
@@ -36,6 +41,8 @@ from miniclaw.install.runtime import (
     RuntimeInputs,
     RuntimeReceipt,
     activate_runtime,
+    discard_interrupted_runtime_staging,
+    discard_unactivated_runtime,
     retain_current_and_previous,
 )
 
@@ -54,6 +61,9 @@ class FakeRunner:
         self.python_executable: Path | None = None
         self.install_smoke = b'{"status":"ok","version":"0.7.0"}\n'
         self.tui_smoke = b'{"component":"pi-tui","status":"ok","version":"0.7.0"}\n'
+        self.before_run: Callable[[tuple[str, ...]], None] | None = None
+        self.venv_symlink_target: str | None = None
+        self.miniclaw_mode: int | None = 0o700
 
     def run(
         self,
@@ -65,6 +75,8 @@ class FakeRunner:
         """记录 argv/env，并为 venv、版本和 smoke 命令返回 deterministic 结果。"""
         del timeout
         self.calls.append((argv, dict(env)))
+        if self.before_run is not None:
+            self.before_run(argv)
         if self.fail_token is not None and self.fail_token in argv:
             return CommandResult(7, b"", b"secret-sentinel")
         if len(argv) >= 2 and argv[1] == "venv":
@@ -79,6 +91,16 @@ class FakeRunner:
                 encoding="utf-8",
             )
             (python.parents[1] / "pyvenv.cfg").chmod(0o600)
+            if self.venv_symlink_target is not None:
+                (python.parent / "escape").symlink_to(self.venv_symlink_target)
+        if len(argv) >= 3 and argv[1:3] == ("pip", "install") and "--no-deps" in argv:
+            python = Path(argv[argv.index("--python") + 1])
+            if self.miniclaw_mode is not None:
+                (python.parent / "miniclaw").write_text(
+                    "#!/bin/sh\nexit 0\n",
+                    encoding="utf-8",
+                )
+                (python.parent / "miniclaw").chmod(self.miniclaw_mode)
         if argv[-1:] == ("--version",) and "/node/" in argv[0]:
             return CommandResult(0, self.node_version, b"")
         if len(argv) >= 3 and argv[-2] == "-c":
@@ -142,6 +164,7 @@ class InstallRuntimeTests(unittest.TestCase):
         self.node.mkdir(mode=0o700)
         (self.node / "bin").mkdir(mode=0o700)
         self._write_private(self.node / "bin" / "node", b"#!/bin/sh\nexit 0\n", 0o700)
+        self._write_private(self.node / "README.md", b"verified node data\n")
         self.tui = self.sources / "tui"
         self.tui.mkdir(mode=0o700)
         (self.tui / "dist").mkdir(mode=0o700)
@@ -156,6 +179,7 @@ class InstallRuntimeTests(unittest.TestCase):
         (self.managed_python / "bin" / "python3.12").chmod(0o700)
         (self.managed_python / "bin" / "python3").symlink_to("python3.12")
         (self.managed_python / "lib").mkdir(mode=0o700)
+        self._write_private(self.managed_python / "lib" / "python-data.txt", b"python data\n")
         self.managed_python_executable = self.managed_python / "bin" / "python3.12"
         self.platform = PlatformKey("linux", "x86_64")
         self.manifest = self._manifest()
@@ -178,6 +202,74 @@ class InstallRuntimeTests(unittest.TestCase):
         """写入测试用 owner-only regular file。"""
         path.write_bytes(payload)
         path.chmod(mode)
+
+    def _acquire_live_lock(self, layout: InstallLayout | None = None) -> InstallLock:
+        """在 sandbox 无 process-start probe 时创建仍验证真实 fd/inode 的 lock。"""
+        probe = mock.patch.object(
+            layout_module,
+            "_probe_process",
+            return_value=("alive", "2026-08-10T00:00:00Z"),
+        )
+        probe.start()
+        self.addCleanup(probe.stop)
+        lock = InstallLock.acquire(self.layout if layout is None else layout)
+        self.addCleanup(lock.close)
+        return lock
+
+    def _write_private_staging(self, layout: InstallLayout | None = None) -> tuple[int, int]:
+        """写入可代表任意 interrupted build 阶段的完整 private staging facts。"""
+        selected = self.layout if layout is None else layout
+        if not selected.program_prefix.exists():
+            selected.program_prefix.mkdir(mode=0o700)
+        if not selected.runtimes_dir.exists():
+            selected.runtimes_dir.mkdir(mode=0o700)
+        selected.staging.mkdir(mode=0o700)
+        partial = selected.staging / "partial"
+        partial.mkdir(mode=0o700)
+        self._write_private(partial / "data", b"partial build data\n")
+        self._write_private(partial / "program", b"#!/bin/sh\nexit 0\n", 0o700)
+        metadata = selected.staging.lstat()
+        return metadata.st_dev, metadata.st_ino
+
+    def _write_owned_staging(
+        self,
+        layout: InstallLayout | None = None,
+        manifest: ReleaseManifest | None = None,
+    ) -> tuple[int, int]:
+        """写入与 builder canonical manifest 和 exact staging inode 绑定的 fixture。"""
+        selected = self.layout if layout is None else layout
+        selected_manifest = self.manifest if manifest is None else manifest
+        identity = self._write_private_staging(selected)
+        marker = {
+            "git_commit": selected_manifest.git_commit,
+            "manifest_schema_version": selected_manifest.schema_version,
+            "manifest_sha256": hashlib.sha256(
+                runtime_module._manifest_bytes(selected_manifest)
+            ).hexdigest(),
+            "schema_version": 1,
+            "staging_device": identity[0],
+            "staging_inode": identity[1],
+            "staging_relative": selected.staging.relative_to(
+                selected.program_prefix
+            ).as_posix(),
+            "version": selected_manifest.version,
+        }
+        self._write_private(
+            selected.staging / ".runtime-recovery.json",
+            (json.dumps(marker, sort_keys=True, separators=(",", ":")) + "\n").encode(),
+        )
+        return identity
+
+    def _discard_interrupted_staging(
+        self,
+        layout: InstallLayout,
+        lock: InstallLock,
+        manifest: ReleaseManifest,
+    ) -> bool:
+        """调用 Task8D public API，并断言其封闭 bool 结果。"""
+        result = discard_interrupted_runtime_staging(layout, lock, manifest)
+        self.assertIs(type(result), bool)
+        return result
 
     def _write_wheel(
         self,
@@ -316,6 +408,74 @@ class InstallRuntimeTests(unittest.TestCase):
             minimum_readable_schema=5,
         )
 
+    def test_runtime_receipt_serialization_has_static_closed_world_field_access(self) -> None:
+        """zipapp AST 必须看到全部 receipt 字段的显式 self attribute access。"""
+        tree = ast.parse(textwrap.dedent(inspect.getsource(RuntimeReceipt.to_bytes)))
+        dynamic_getattr = tuple(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Name) and node.id == "getattr"
+        )
+        explicit_fields = {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == "self"
+        }
+
+        self.assertEqual(dynamic_getattr, ())
+        self.assertEqual(
+            explicit_fields,
+            {
+                "executables_sha256",
+                "git_commit",
+                "installer_sha256",
+                "node_sha256",
+                "node_version",
+                "python_version",
+                "requirements_sha256",
+                "runtime_relative",
+                "tui_sha256",
+                "tui_version",
+                "version",
+                "wheel_sha256",
+            },
+        )
+
+    def test_runtime_receipt_static_serialization_preserves_every_field_token(self) -> None:
+        """显式字段序列化必须保持 current 全字段及 legacy omission 的 exact bytes。"""
+        receipt = RuntimeReceipt(
+            version="1.2.3",
+            git_commit="1" * 40,
+            runtime_relative="runtimes/1.2.3",
+            python_version="3.12.99",
+            node_version="22.1.0",
+            tui_version="1.2.3",
+            wheel_sha256="a" * 64,
+            requirements_sha256="b" * 64,
+            node_sha256="c" * 64,
+            tui_sha256="d" * 64,
+            installer_sha256="e" * 64,
+            executables_sha256="f" * 64,
+        )
+        expected = (
+            b'{"executables_sha256":"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",'
+            b'"git_commit":"1111111111111111111111111111111111111111",'
+            b'"installer_sha256":"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",'
+            b'"node_sha256":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",'
+            b'"node_version":"22.1.0","python_version":"3.12.99",'
+            b'"requirements_sha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",'
+            b'"runtime_relative":"runtimes/1.2.3",'
+            b'"tui_sha256":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",'
+            b'"tui_version":"1.2.3","version":"1.2.3",'
+            b'"wheel_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}\n'
+        )
+
+        self.assertEqual(receipt.to_bytes(), expected)
+        legacy = replace(receipt, executables_sha256=None).to_bytes()
+        self.assertEqual(legacy, b"{" + expected.split(b",", 1)[1])
+
     def test_exported_lock_has_only_exact_hashed_logical_requirements(self) -> None:
         """每个非注释 logical requirement 都必须 exact/direct 且带 SHA-256。"""
         logical: list[str] = []
@@ -429,6 +589,10 @@ class InstallRuntimeTests(unittest.TestCase):
                 installer_sha256=self.manifest.require_artifact(
                     "installer", self.platform
                 ).sha256,
+                executables_sha256=hashlib.sha256(
+                    b'{"executables":["miniclaw-installer.pyz","node/bin/node",'
+                    b'"python/bin/python3.12","venv/bin/miniclaw"]}\n'
+                ).hexdigest(),
             ),
         )
         self.assertTrue(self.layout.runtime.is_dir())
@@ -462,6 +626,619 @@ class InstallRuntimeTests(unittest.TestCase):
             f"home = {self.layout.runtime / 'python' / 'bin'}",
             (self.layout.runtime / "venv" / "pyvenv.cfg").read_text(encoding="utf-8"),
         )
+
+    def test_build_writes_manifest_bound_recovery_marker_before_staging_content(
+        self,
+    ) -> None:
+        """builder 必须在空 staging 中先 durable 写入 data-only ownership marker。"""
+        real_write = runtime_module._write_exclusive
+        marker_seen = False
+
+        def observe_marker(
+            path: Path,
+            payload: bytes,
+            mode: int,
+        ) -> runtime_module._FileToken:
+            """在 marker 写入边界观察真实 staging 目录，而不替换写入行为。"""
+            nonlocal marker_seen
+            if path.name == ".runtime-recovery.json":
+                self.assertEqual(tuple(path.parent.iterdir()), ())
+                marker_seen = True
+            return real_write(path, payload, mode)
+
+        with mock.patch.object(
+            runtime_module,
+            "_write_exclusive",
+            side_effect=observe_marker,
+        ):
+            RuntimeBuilder(self.runner).build(self.inputs)
+
+        marker = self.layout.runtime / ".runtime-recovery.json"
+        self.assertTrue(marker_seen)
+        self.assertEqual(stat.S_IMODE(marker.lstat().st_mode), 0o600)
+        document = json.loads(marker.read_text(encoding="utf-8"))
+        runtime_identity = self.layout.runtime.lstat()
+        self.assertEqual(
+            document,
+            {
+                "git_commit": self.manifest.git_commit,
+                "manifest_schema_version": 1,
+                "manifest_sha256": hashlib.sha256(
+                    (self.layout.runtime / "release-manifest.json").read_bytes()
+                ).hexdigest(),
+                "schema_version": 1,
+                "staging_device": runtime_identity.st_dev,
+                "staging_inode": runtime_identity.st_ino,
+                "staging_relative": "runtimes/.0.7.0.staging",
+                "version": "0.7.0",
+            },
+        )
+        executable_document = json.loads(
+            (self.layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertNotIn(
+            ".runtime-recovery.json",
+            executable_document["executables"],
+        )
+
+    def test_system_runtime_is_root_owned_public_program_data_and_activates(self) -> None:
+        """system Runtime 的 0700/0600 发布树会让目标用户无法启动。"""
+        (self.node / "README.md").chmod(0o700)
+        system_prefix = self.root / "usr-local-lib" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "usr-local-bin" / "miniclaw"
+        state_home = self.home / "system-state"
+        state_home.mkdir(mode=0o700)
+        secret = state_home / "secrets.env"
+        self._write_private(secret, b"MINICLAW_TEST_SECRET=preserved\n")
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            inputs = replace(self.inputs, layout=layout)
+            with mock.patch.object(
+                runtime_module, "_is_root_builder", return_value=True, create=True
+            ):
+                receipt = RuntimeBuilder(self.runner).build(inputs)
+                activate_runtime(layout, receipt)
+
+            executable_paths = {
+                layout.runtime / "miniclaw-installer.pyz",
+                layout.runtime / "node" / "bin" / "node",
+                layout.runtime / "python" / "bin" / "python3.12",
+                layout.runtime / "venv" / "bin" / "miniclaw",
+            }
+            for directory, names, files in os.walk(
+                layout.runtime, topdown=True, followlinks=False
+            ):
+                current = Path(directory)
+                metadata = current.lstat()
+                self.assertEqual(metadata.st_uid, os.geteuid(), current)
+                self.assertEqual(stat.S_IMODE(metadata.st_mode), 0o755, current)
+                self.assertEqual(stat.S_IMODE(metadata.st_mode) & 0o005, 0o005, current)
+                for name in (*names, *files):
+                    path = current / name
+                    item = path.lstat()
+                    self.assertEqual(item.st_uid, os.geteuid(), path)
+                    if stat.S_ISLNK(item.st_mode):
+                        self.assertFalse(Path(os.readlink(path)).is_absolute(), path)
+                        self.assertTrue(
+                            path.resolve(strict=True).is_relative_to(
+                                layout.runtime.resolve(strict=True)
+                            ),
+                            path,
+                        )
+                        continue
+                    if stat.S_ISREG(item.st_mode):
+                        expected = 0o755 if path in executable_paths else 0o644
+                        mode = stat.S_IMODE(item.st_mode)
+                        self.assertEqual(mode, expected, path)
+                        self.assertEqual(mode & 0o022, 0, path)
+                        self.assertEqual(mode & 0o004, 0o004, path)
+                        if path in executable_paths:
+                            self.assertEqual(mode & 0o001, 0o001, path)
+
+            self.assertEqual(
+                json.loads(
+                    (layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
+                        encoding="utf-8"
+                    )
+                )["executables"],
+                [
+                    "miniclaw-installer.pyz",
+                    "node/bin/node",
+                    "python/bin/python3.12",
+                    "venv/bin/miniclaw",
+                ],
+            )
+            self.assertEqual(os.readlink(layout.current), "runtimes/0.7.0")
+            self.assertEqual(
+                RuntimeReceipt.load(
+                    layout.runtime / "install-receipt.json", expected_mode=0o644
+                ),
+                receipt,
+            )
+            self.assertEqual(stat.S_IMODE(state_home.stat().st_mode), 0o700)
+            self.assertEqual(stat.S_IMODE(secret.stat().st_mode), 0o600)
+            self.assertEqual(secret.read_bytes(), b"MINICLAW_TEST_SECRET=preserved\n")
+
+    def test_user_runtime_keeps_exact_private_modes(self) -> None:
+        """system 权限分支不得把默认用户 Runtime 扩大成 public-readable。"""
+        (self.node / "README.md").chmod(0o700)
+        RuntimeBuilder(self.runner).build(self.inputs)
+        executable_paths = {
+            self.layout.runtime / "miniclaw-installer.pyz",
+            self.layout.runtime / "node" / "bin" / "node",
+            self.layout.runtime / "python" / "bin" / "python3.12",
+            self.layout.runtime / "venv" / "bin" / "miniclaw",
+        }
+        for directory, names, files in os.walk(
+            self.layout.runtime, topdown=True, followlinks=False
+        ):
+            current = Path(directory)
+            self.assertEqual(stat.S_IMODE(current.lstat().st_mode), 0o700, current)
+            for name in (*names, *files):
+                path = current / name
+                item = path.lstat()
+                if stat.S_ISREG(item.st_mode):
+                    expected = 0o700 if path in executable_paths else 0o600
+                    self.assertEqual(stat.S_IMODE(item.st_mode), expected, path)
+        self.assertEqual(
+            json.loads(
+                (self.layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
+                    encoding="utf-8"
+                )
+            )["executables"],
+            [
+                "miniclaw-installer.pyz",
+                "node/bin/node",
+                "python/bin/python3.12",
+                "venv/bin/miniclaw",
+            ],
+        )
+
+    def test_user_runtime_requires_executable_miniclaw_entrypoint(self) -> None:
+        """user Runtime 的必需 miniclaw entry script 为 0600 时必须拒绝。"""
+        runner = FakeRunner()
+        runner.miniclaw_mode = 0o600
+
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(runner).build(self.inputs)
+
+        self.assertFalse(self.layout.staging.exists())
+        self.assertFalse(self.layout.runtime.exists())
+
+    def test_user_runtime_accepts_safe_initial_entry_mode_and_hardens_it(self) -> None:
+        """uv 生成 owner-x 且不可写的 0711 entry 应在发布前收敛为 0700。"""
+        runner = FakeRunner()
+        runner.miniclaw_mode = 0o711
+
+        RuntimeBuilder(runner).build(self.inputs)
+
+        entry = self.layout.runtime / "venv" / "bin" / "miniclaw"
+        self.assertEqual(stat.S_IMODE(entry.stat().st_mode), 0o700)
+        executable_manifest = json.loads(
+            (self.layout.runtime / runtime_module._EXECUTABLES_FILENAME).read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(
+            executable_manifest["executables"],
+            [
+                "miniclaw-installer.pyz",
+                "node/bin/node",
+                "python/bin/python3.12",
+                "venv/bin/miniclaw",
+            ],
+        )
+
+    def test_user_runtime_rejects_writable_initial_entry_mode(self) -> None:
+        """uv entry 的 group/world 写位必须在任何 harden 或发布前拒绝。"""
+        runner = FakeRunner()
+        runner.miniclaw_mode = 0o722
+
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(runner).build(self.inputs)
+
+        self.assertFalse(self.layout.staging.exists())
+        self.assertFalse(self.layout.runtime.exists())
+
+    def test_system_runtime_requires_present_miniclaw_entrypoint(self) -> None:
+        """system Runtime 也不能在缺少必需 miniclaw entry script 时发布。"""
+        system_prefix = self.root / "missing-entry-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "missing-entry-bin" / "miniclaw"
+        state_home = self.home / "missing-entry-state"
+        state_home.mkdir(mode=0o700)
+        runner = FakeRunner()
+        runner.miniclaw_mode = None
+
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            with (
+                mock.patch.object(runtime_module, "_is_root_builder", return_value=True),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                RuntimeBuilder(runner).build(replace(self.inputs, layout=layout))
+
+        self.assertFalse(layout.staging.exists())
+        self.assertFalse(layout.runtime.exists())
+
+    def test_system_runtime_rejects_non_root_before_write(self) -> None:
+        """非 root builder 即使持有 system layout 也不能创建任何程序目录。"""
+        system_prefix = self.root / "system-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "system-bin" / "miniclaw"
+        state_home = self.home / "system-state"
+        state_home.mkdir(mode=0o700)
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            with (
+                mock.patch.object(
+                    runtime_module, "_is_root_builder", return_value=False, create=True
+                ),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                RuntimeBuilder(self.runner).build(replace(self.inputs, layout=layout))
+
+        self.assertEqual(self.runner.calls, [])
+        self.assertFalse(system_prefix.exists())
+
+    def test_system_runtime_failure_cleans_public_staging(self) -> None:
+        """system build 失败仍须清理本轮 0755 staging，不能留下半成品。"""
+        system_prefix = self.root / "failed-system-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "failed-system-bin" / "miniclaw"
+        state_home = self.home / "failed-system-state"
+        state_home.mkdir(mode=0o700)
+        runner = FakeRunner()
+        runner.fail_token = "install-smoke"
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            with (
+                mock.patch.object(
+                    runtime_module, "_is_root_builder", return_value=True, create=True
+                ),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                RuntimeBuilder(runner).build(replace(self.inputs, layout=layout))
+
+            self.assertFalse(layout.staging.exists())
+            self.assertFalse(layout.runtime.exists())
+
+    def test_system_staging_and_transient_inputs_stay_private_during_smoke(self) -> None:
+        """system staging 在最终发布前不得让目标用户读取输入或半成品。"""
+        system_prefix = self.root / "private-staging-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "private-staging-bin" / "miniclaw"
+        state_home = self.home / "private-staging-state"
+        state_home.mkdir(mode=0o700)
+        observed: list[tuple[str, str, int]] = []
+
+        def capture_staging_modes(argv: tuple[str, ...]) -> None:
+            """在首个 Python smoke 前记录 staging 的真实权限。"""
+            if observed or "-c" not in argv or not argv[0].startswith(str(layout.staging)):
+                return
+            for directory, names, files in os.walk(
+                layout.staging, topdown=True, followlinks=False
+            ):
+                current = Path(directory)
+                relative = current.relative_to(layout.staging).as_posix()
+                observed.append((relative, "directory", stat.S_IMODE(current.stat().st_mode)))
+                for name in (*names, *files):
+                    path = current / name
+                    metadata = path.lstat()
+                    if stat.S_ISREG(metadata.st_mode):
+                        observed.append(
+                            (
+                                path.relative_to(layout.staging).as_posix(),
+                                "file",
+                                stat.S_IMODE(metadata.st_mode),
+                            )
+                        )
+
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            runner = FakeRunner()
+            runner.before_run = capture_staging_modes
+            with mock.patch.object(runtime_module, "_is_root_builder", return_value=True):
+                RuntimeBuilder(runner).build(replace(self.inputs, layout=layout))
+
+        self.assertTrue(observed)
+        self.assertTrue(
+            {".home", ".tmp", ".uv-cache", ".inputs"}.issubset(
+                {path for path, kind, _mode in observed if kind == "directory"}
+            )
+        )
+        for path, kind, mode in observed:
+            with self.subTest(path=path):
+                if kind == "directory":
+                    self.assertEqual(mode, 0o700)
+                else:
+                    self.assertIn(mode, {0o600, 0o700})
+
+    def test_system_cleanup_rename_failure_leaves_same_staging_inode_private(self) -> None:
+        """cleanup quarantine 失败时公开 staging 至少必须撤回到 owner-only。"""
+        system_prefix = self.root / "cleanup-failure-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "cleanup-failure-bin" / "miniclaw"
+        state_home = self.home / "cleanup-failure-state"
+        state_home.mkdir(mode=0o700)
+        runner = FakeRunner()
+        runner.fail_token = "install-smoke"
+        real_rename = runtime_module._rename_no_replace
+
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+
+            def fail_cleanup_rename(source: Path, destination: Path) -> None:
+                """只阻断本轮 staging 到 private quarantine 的 rename。"""
+                if source == layout.staging and ".cleanup-" in destination.name:
+                    raise OSError("cleanup rename failed")
+                real_rename(source, destination)
+
+            with (
+                mock.patch.object(runtime_module, "_is_root_builder", return_value=True),
+                mock.patch.object(
+                    runtime_module, "_rename_no_replace", side_effect=fail_cleanup_rename
+                ),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                RuntimeBuilder(runner).build(replace(self.inputs, layout=layout))
+
+            self.assertTrue(layout.staging.is_dir())
+            self.assertEqual(stat.S_IMODE(layout.staging.stat().st_mode), 0o700)
+
+    def test_system_final_verifier_failure_revokes_public_runtime_before_cleanup(self) -> None:
+        """final verify 与 quarantine 都失败时，同 inode Runtime 必须先撤回 0700。"""
+        system_prefix = self.root / "final-failure-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "final-failure-bin" / "miniclaw"
+        state_home = self.home / "final-failure-state"
+        state_home.mkdir(mode=0o700)
+        real_rename = runtime_module._rename_no_replace
+
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+
+            def fail_cleanup_rename(source: Path, destination: Path) -> None:
+                """允许 publish，只阻断 final Runtime quarantine。"""
+                if source == layout.runtime and ".cleanup-" in destination.name:
+                    raise OSError("cleanup rename failed")
+                real_rename(source, destination)
+
+            with (
+                mock.patch.object(runtime_module, "_is_root_builder", return_value=True),
+                mock.patch.object(
+                    runtime_module,
+                    "_verify_runtime_directory",
+                    side_effect=InstallError("runtime_install_failed", "manifest"),
+                ),
+                mock.patch.object(
+                    runtime_module, "_rename_no_replace", side_effect=fail_cleanup_rename
+                ),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                RuntimeBuilder(FakeRunner()).build(replace(self.inputs, layout=layout))
+
+            self.assertTrue(layout.runtime.is_dir())
+            self.assertEqual(stat.S_IMODE(layout.runtime.stat().st_mode), 0o700)
+
+    def test_runtime_rejects_every_escaping_venv_symlink(self) -> None:
+        """只验证 venv Python link 会放过其他指向 Runtime 外部的 symlink。"""
+        runner = FakeRunner()
+        runner.venv_symlink_target = "/etc/passwd"
+
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            RuntimeBuilder(runner).build(self.inputs)
+
+        self.assertFalse(self.layout.staging.exists())
+        self.assertFalse(self.layout.runtime.exists())
+
+    def test_runtime_symlink_target_parent_swap_fails_closed(self) -> None:
+        """symlink resolve 后替换内部父目录时，full-tree verifier 不能接受外部目标。"""
+        runtime = self.root / "symlink-race-runtime"
+        runtime.mkdir(mode=0o700)
+        inside = runtime / "inside"
+        inside.mkdir(mode=0o700)
+        target = inside / "target"
+        self._write_private(target, b"inside\n")
+        alias = runtime / "alias"
+        alias.symlink_to("inside/target")
+        outside = self.root / "symlink-race-outside"
+        outside.mkdir(mode=0o700)
+        self._write_private(outside / "target", b"outside\n")
+        retired = runtime / "inside.retired"
+        real_resolve = Path.resolve
+        swapped = False
+
+        def swap_after_alias_resolve(
+            path: Path,
+            strict: bool = False,
+        ) -> Path:
+            """首次解析 alias 后把其内部 target parent 换成外部目录 link。"""
+            nonlocal swapped
+            resolved = real_resolve(path, strict=strict)
+            if path == alias and not swapped:
+                swapped = True
+                inside.rename(retired)
+                inside.symlink_to(outside, target_is_directory=True)
+            return resolved
+
+        with (
+            mock.patch.object(Path, "resolve", autospec=True, side_effect=swap_after_alias_resolve),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            runtime_module._verify_runtime_tree(runtime, program_mode=0o700)
+
+        self.assertTrue(swapped)
+
+    def test_activation_rejects_invalid_program_mode_without_switching_current(self) -> None:
+        """activation 必须重验完整树，不能接受被 chmod 0777 的 Node。"""
+        receipt = RuntimeBuilder(self.runner).build(self.inputs)
+        self._write_runtime_receipt("0.6.0")
+        self.layout.current.symlink_to("runtimes/0.6.0")
+        (self.layout.runtime / "node" / "bin" / "node").chmod(0o777)
+
+        with self.assertRaisesRegex(InstallError, "activation_failed"):
+            activate_runtime(self.layout, receipt)
+
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.6.0")
+
+    def test_retention_ignores_but_never_deletes_invalid_runtime_tree(self) -> None:
+        """invalid N-1 不能被当成 managed 候选，也不能被 retention 删除。"""
+        valid_previous = self._write_runtime_receipt("0.5.0")
+        invalid = self._write_runtime_receipt("0.6.0")
+        current = self._write_runtime_receipt("0.7.0")
+        invalid_node = invalid / "node" / "bin" / "node"
+        invalid_node.write_bytes(b"invalid mode\n")
+        invalid_node.chmod(0o777)
+        self.layout.current.symlink_to("runtimes/0.7.0")
+
+        retained = retain_current_and_previous(self.layout)
+
+        self.assertEqual(retained, (Path("runtimes/0.5.0"), Path("runtimes/0.7.0")))
+        self.assertTrue(valid_previous.is_dir())
+        self.assertTrue(current.is_dir())
+        self.assertTrue(invalid.is_dir())
+
+    def test_retention_rejects_metadata_marked_as_executable(self) -> None:
+        """receipt-bound executable 清单也不能把 release metadata 升成 program。"""
+        valid_previous = self._write_runtime_receipt("0.5.0")
+        invalid = self._write_runtime_receipt("0.6.0")
+        current = self._write_runtime_receipt("0.7.0")
+        executable_manifest = (
+            b'{"executables":["miniclaw-installer.pyz","node/bin/node",'
+            b'"python/bin/python3.12","release-manifest.json","venv/bin/miniclaw"]}\n'
+        )
+        (invalid / runtime_module._EXECUTABLES_FILENAME).write_bytes(executable_manifest)
+        (invalid / runtime_module._EXECUTABLES_FILENAME).chmod(0o600)
+        receipt_document = json.loads(
+            (invalid / "install-receipt.json").read_text(encoding="utf-8")
+        )
+        receipt_document["executables_sha256"] = hashlib.sha256(
+            executable_manifest
+        ).hexdigest()
+        (invalid / "install-receipt.json").write_text(
+            json.dumps(receipt_document, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        (invalid / "install-receipt.json").chmod(0o600)
+        (invalid / "release-manifest.json").chmod(0o700)
+        self.layout.current.symlink_to("runtimes/0.7.0")
+
+        retained = retain_current_and_previous(self.layout)
+
+        self.assertEqual(retained, (Path("runtimes/0.5.0"), Path("runtimes/0.7.0")))
+        self.assertTrue(valid_previous.is_dir())
+        self.assertTrue(current.is_dir())
+        self.assertTrue(invalid.is_dir())
+
+    def test_activation_accepts_verified_legacy_current_without_exec_manifest(self) -> None:
+        """升级激活必须兼容上一版 exact receipt，且不能要求旧树凭空已有 exec manifest。"""
+        legacy = self._write_runtime_receipt("0.6.0")
+        legacy_receipt = json.loads(
+            (legacy / "install-receipt.json").read_text(encoding="utf-8")
+        )
+        legacy_receipt.pop("executables_sha256")
+        (legacy / "install-receipt.json").write_text(
+            json.dumps(legacy_receipt, sort_keys=True, separators=(",", ":")) + "\n",
+            encoding="utf-8",
+        )
+        (legacy / "install-receipt.json").chmod(0o600)
+        (legacy / runtime_module._EXECUTABLES_FILENAME).unlink()
+        self.layout.current.symlink_to("runtimes/0.6.0")
+        receipt = RuntimeBuilder(self.runner).build(self.inputs)
+
+        activate_runtime(self.layout, receipt)
+
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+        self.assertEqual(retain_current_and_previous(self.layout), (Path("runtimes/0.7.0"),))
+        self.assertTrue(legacy.is_dir())
 
     def test_prerelease_runtime_uses_pep440_only_inside_wheel(self) -> None:
         """Runtime保留SemVer，wheel路径与METADATA只使用唯一PEP440映射。"""
@@ -568,11 +1345,39 @@ class InstallRuntimeTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(len(result.stdout), 64 * 1024)
 
+    def test_subprocess_runner_uses_private_child_umask(self) -> None:
+        """uv 子进程创建 staging 内容前必须固定 umask 077，而非继承调用者 022。"""
+        output = self.root / "child-umask"
+        script = (
+            "import os,sys;"
+            "os.mkdir(sys.argv[1],0o777);"
+            "fd=os.open(sys.argv[1]+'/data',os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o666);"
+            "os.close(fd)"
+        )
+
+        result = runtime_module._SubprocessRunner().run(
+            (sys.executable, "-c", script, str(output)),
+            env={"PATH": "/usr/bin:/bin"},
+            timeout=2.0,
+        )
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(stat.S_IMODE(output.stat().st_mode), 0o700)
+        self.assertEqual(stat.S_IMODE((output / "data").stat().st_mode), 0o600)
+
     def test_default_runner_builds_with_offline_fake_uv(self) -> None:
         """production subprocess runner 必须能在 closed-world env 中完成离线 fake build。"""
         self._write_private(
             self.uv,
-            Path("tests/install/fake_uv.py").read_bytes(),
+            Path("tests/install/fake_uv.py")
+            .read_bytes()
+            .replace(
+                b'(package / "__main__.py").write_bytes(_MINICLAW_MAIN)\n',
+                b'(package / "__main__.py").write_bytes(_MINICLAW_MAIN)\n'
+                b'            entry = python.parent / "miniclaw"\n'
+                b'            entry.write_bytes(b"#!/bin/sh\\nexit 0\\n")\n'
+                b'            entry.chmod(0o700)\n',
+            ),
             0o700,
         )
         self._write_private(
@@ -833,6 +1638,1369 @@ class InstallRuntimeTests(unittest.TestCase):
             activate_runtime(self.layout, receipt)
         self.assertEqual(os.readlink(self.layout.current), "runtimes/0.6.0")
 
+    def test_discard_interrupted_staging_returns_false_when_absent_without_writes(
+        self,
+    ) -> None:
+        """目标 staging 不存在时返回 False，且 recovery 不创建 runtimes namespace。"""
+        lock = self._acquire_live_lock()
+
+        self.assertFalse(
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+        )
+
+        self.assertFalse(self.layout.runtimes_dir.exists())
+
+    def test_discard_interrupted_staging_rejects_unmarked_empty_and_malformed_trees(
+        self,
+    ) -> None:
+        """合法 foreign、空目录或 malformed marker 都必须保留并 stable fail。"""
+        lock = self._acquire_live_lock()
+
+        for case in ("empty", "unmarked", "malformed"):
+            with self.subTest(case=case):
+                if case == "empty":
+                    self.layout.runtimes_dir.mkdir(parents=True, mode=0o700)
+                    self.layout.staging.mkdir(mode=0o700)
+                else:
+                    self._write_private_staging()
+                    if case == "malformed":
+                        self._write_private(
+                            self.layout.staging / ".runtime-recovery.json",
+                            b"{}\n",
+                        )
+                identity = self.layout.staging.lstat()
+                try:
+                    with self.assertRaisesRegex(
+                        InstallError,
+                        "runtime_install_failed",
+                    ):
+                        self._discard_interrupted_staging(
+                            self.layout,
+                            lock,
+                            self.manifest,
+                        )
+                    after = self.layout.staging.lstat()
+                    self.assertEqual(
+                        (after.st_dev, after.st_ino),
+                        (identity.st_dev, identity.st_ino),
+                    )
+                finally:
+                    if self.layout.staging.exists():
+                        shutil.rmtree(self.layout.staging)
+
+    def test_discard_interrupted_staging_rejects_same_version_different_manifest(
+        self,
+    ) -> None:
+        """同 SemVer 但 commit/artifact closure 不同的事务不得消费旧 marker。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        different_manifest = replace(self.manifest, git_commit="f" * 40)
+
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            self._discard_interrupted_staging(
+                self.layout,
+                lock,
+                different_manifest,
+            )
+
+        after = self.layout.staging.lstat()
+        self.assertEqual((after.st_dev, after.st_ino), identity)
+
+    def test_discard_interrupted_staging_rejects_marker_replaced_during_full_scan(
+        self,
+    ) -> None:
+        """marker 必须围绕 full-tree scan 稳定双读，漂移时不得 quarantine。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        real_read = runtime_module._read_runtime_recovery_marker
+        marker_reads = 0
+
+        def replace_after_first_read(
+            path: Path,
+        ) -> tuple[bytes, runtime_module._FileToken]:
+            """首轮 stable read 后把 marker 换成同权限 malformed regular。"""
+            nonlocal marker_reads
+            result = real_read(path)
+            if path.name == ".runtime-recovery.json":
+                marker_reads += 1
+                if marker_reads == 1:
+                    path.write_bytes(b"{}\n")
+                    path.chmod(0o600)
+            return result
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_read_runtime_recovery_marker",
+                side_effect=replace_after_first_read,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertGreaterEqual(marker_reads, 2)
+        after = self.layout.staging.lstat()
+        self.assertEqual((after.st_dev, after.st_ino), identity)
+
+    def test_discard_interrupted_staging_rejects_same_bytes_marker_inode_replacement(
+        self,
+    ) -> None:
+        """exact marker bytes 不能掩盖 full scan 后 pathname 已换成新 inode。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        real_verify = runtime_module._verified_private_staging_tree
+        replaced = False
+
+        def replace_after_first_full_scan(
+            path: Path,
+            *,
+            marker: bytes,
+            identity: tuple[int, int],
+            executables: tuple[str, ...] | None = None,
+            marker_token: runtime_module._FileToken | None = None,
+        ) -> tuple[tuple[int, int], tuple[str, ...], runtime_module._FileToken]:
+            """首次真实 full scan 后用同 bytes/0600 regular 替换 marker inode。"""
+            nonlocal replaced
+            result = real_verify(
+                path,
+                marker=marker,
+                identity=identity,
+                executables=executables,
+                marker_token=marker_token,
+            )
+            if not replaced:
+                marker = path / ".runtime-recovery.json"
+                payload = marker.read_bytes()
+                before = marker.lstat()
+                marker.unlink()
+                marker.write_bytes(payload)
+                marker.chmod(0o600)
+                after = marker.lstat()
+                self.assertNotEqual(
+                    (after.st_dev, after.st_ino),
+                    (before.st_dev, before.st_ino),
+                )
+                replaced = True
+            return result
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_verified_private_staging_tree",
+                side_effect=replace_after_first_full_scan,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertTrue(replaced)
+        after = self.layout.staging.lstat()
+        self.assertEqual((after.st_dev, after.st_ino), identity)
+
+    def test_discard_interrupted_staging_removes_only_verified_private_tree(self) -> None:
+        """live lock 只清理 target Release 的完整 private partial staging。"""
+        self._write_owned_staging()
+        lock = self._acquire_live_lock()
+
+        self.assertTrue(
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+        )
+
+        self.assertFalse(self.layout.staging.exists())
+        self.assertEqual(
+            tuple(self.layout.runtimes_dir.glob("..0.7.0.staging.quarantine-*")),
+            (),
+        )
+
+    def test_discard_interrupted_staging_requires_matching_release_and_live_lock(
+        self,
+    ) -> None:
+        """wrong Release、closed lock 或另一 layout 的真实 lock 都不得授权清理。"""
+        identity = self._write_owned_staging()
+        closed = self._acquire_live_lock()
+        closed.close()
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            self._discard_interrupted_staging(self.layout, closed, self.manifest)
+
+        lock = self._acquire_live_lock()
+        wrong_manifest = self._manifest_for_version("0.8.0")
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            self._discard_interrupted_staging(self.layout, lock, wrong_manifest)
+
+        other_layout = InstallLayout._build(
+            self.home / "other-program",
+            self.home / "other-state",
+            self.home / ".local" / "bin" / "miniclaw",
+            "0.7.0",
+        )
+        other_lock = self._acquire_live_lock(other_layout)
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            self._discard_interrupted_staging(self.layout, other_lock, self.manifest)
+
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+
+    def test_discard_interrupted_staging_preserves_every_target_release_reference(
+        self,
+    ) -> None:
+        """current/current.next/root receipt 的 target Release 引用都保护 staging。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        target = "runtimes/0.7.0"
+
+        for link in (self.layout.current, self.layout.current.with_name("current.next")):
+            with self.subTest(reference=link.name):
+                link.symlink_to(target)
+                self.assertFalse(
+                    self._discard_interrupted_staging(self.layout, lock, self.manifest)
+                )
+                link.unlink()
+
+        receipt = InstallReceipt(
+            schema_version=1,
+            version="0.7.0",
+            git_commit=self.manifest.git_commit,
+            platform=self.platform,
+            installed_at="2026-08-10T00:00:00Z",
+            managed_files=(("bin/miniclaw", "f" * 64),),
+            current_runtime=target,
+            previous_runtime=None,
+            service_label=None,
+            service_file=None,
+            service_file_sha256=None,
+        )
+        receipt.write(self.layout.receipt)
+        self.assertFalse(
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+        )
+        self.layout.receipt.unlink()
+
+        self._write_runtime_receipt("0.8.0")
+        replace(
+            receipt,
+            version="0.8.0",
+            current_runtime="runtimes/0.8.0",
+            previous_runtime=target,
+        ).write(self.layout.receipt)
+        self.assertFalse(
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+        )
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+
+    def test_discard_interrupted_staging_rejects_untrusted_tree_facts(self) -> None:
+        """foreign type、mode、symlink 与 special staging facts 均失败关闭并原样保留。"""
+        lock = self._acquire_live_lock()
+        external = self.root / "external-staging"
+        external.mkdir(mode=0o700)
+        cases = ("regular-root", "root-symlink", "data-mode", "escape", "special")
+
+        for case in cases:
+            with self.subTest(case=case):
+                if case == "regular-root":
+                    self.layout.runtimes_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+                    self._write_private(self.layout.staging, b"foreign regular\n")
+                elif case == "root-symlink":
+                    self.layout.runtimes_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+                    self.layout.staging.symlink_to(external, target_is_directory=True)
+                else:
+                    self._write_owned_staging()
+                    if case == "data-mode":
+                        (self.layout.staging / "partial" / "data").chmod(0o644)
+                    elif case == "escape":
+                        (self.layout.staging / "escape").symlink_to(external)
+                    else:
+                        os.mkfifo(self.layout.staging / "pipe", 0o600)
+
+                try:
+                    with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                        self._discard_interrupted_staging(self.layout, lock, self.manifest)
+                    self.assertTrue(os.path.lexists(self.layout.staging))
+                finally:
+                    if self.layout.staging.is_symlink() or self.layout.staging.is_file():
+                        self.layout.staging.unlink()
+                    elif self.layout.staging.exists():
+                        shutil.rmtree(self.layout.staging)
+
+    def test_discard_interrupted_staging_preserves_check_to_rename_replacement(
+        self,
+    ) -> None:
+        """full scan 后的 concurrent replacement 不能被当成 verified staging 删除。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        original = self.layout.staging.with_name(".0.7.0.staging.original")
+
+        def replace_before_rename(path: Path) -> None:
+            """在 quarantine rename 前发布 foreign replacement。"""
+            path.rename(original)
+            path.mkdir(mode=0o700)
+            self._write_private(path / "marker", b"replacement\n")
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_race_hook",
+                side_effect=replace_before_rename,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertEqual(
+            (original.lstat().st_dev, original.lstat().st_ino),
+            identity,
+        )
+        self.assertEqual(
+            (self.layout.staging / "marker").read_bytes(),
+            b"replacement\n",
+        )
+
+    def test_discard_interrupted_staging_restores_when_reference_appears_after_quarantine(
+        self,
+    ) -> None:
+        """durable quarantine 后新 target 引用必须恢复 exact staging 并返回 False。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+
+        def publish_reference(layout: InstallLayout) -> None:
+            """在 public staging 消失后发布 target Release current。"""
+            self.assertFalse(layout.staging.exists())
+            layout.current.symlink_to("runtimes/0.7.0")
+
+        with mock.patch.object(
+            runtime_module,
+            "_runtime_quarantine_commit_hook",
+            side_effect=publish_reference,
+        ):
+            self.assertFalse(
+                self._discard_interrupted_staging(self.layout, lock, self.manifest)
+            )
+
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+
+    def test_discard_interrupted_staging_lock_drift_fails_without_deletion(self) -> None:
+        """reference facts 读取期间 lock pathname 漂移必须报错并恢复 staging。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        real_references = runtime_module._stable_runtime_reference_facts
+        calls = 0
+
+        def replace_lock(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """post-quarantine final facts 后用同 bytes 新 inode 替换 lock path。"""
+            nonlocal calls
+            references = real_references(layout, verify_links=verify_links)
+            calls += 1
+            if calls == 5:
+                payload = layout.lock.read_bytes()
+                layout.lock.unlink()
+                layout.lock.write_bytes(payload)
+                layout.lock.chmod(0o600)
+            return references
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=replace_lock,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+
+    def test_discard_interrupted_staging_rechecks_marker_after_final_references(
+        self,
+    ) -> None:
+        """成功分支 final refs 期间替换 private marker 时必须报错并保留 tree。"""
+        identity = self._write_owned_staging()
+        original_marker = self.layout.staging / ".runtime-recovery.json"
+        marker_identity = (original_marker.lstat().st_dev, original_marker.lstat().st_ino)
+        lock = self._acquire_live_lock()
+        real_references = runtime_module._stable_runtime_reference_facts
+        calls = 0
+        replacement_identity: tuple[int, int] | None = None
+
+        def replace_private_marker(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """第 5 次 final facts 完成后原子发布 same-bytes/new-inode marker。"""
+            nonlocal calls, replacement_identity
+            references = real_references(layout, verify_links=verify_links)
+            calls += 1
+            if calls == 5:
+                entries = tuple(
+                    layout.runtimes_dir.glob("..0.7.0.staging.quarantine-*/entry")
+                )
+                self.assertEqual(len(entries), 1)
+                marker = entries[0] / ".runtime-recovery.json"
+                replacement = marker.with_name(".runtime-recovery.replacement")
+                self._write_private(replacement, marker.read_bytes())
+                os.replace(replacement, marker)
+                replacement_identity = (marker.lstat().st_dev, marker.lstat().st_ino)
+                self.assertNotEqual(replacement_identity, marker_identity)
+            return references
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=replace_private_marker,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertEqual(calls, 5)
+        self.assertIsNotNone(replacement_identity)
+        preserved = (
+            (self.layout.staging,)
+            if self.layout.staging.exists()
+            else tuple(
+                self.layout.runtimes_dir.glob("..0.7.0.staging.quarantine-*/entry")
+            )
+        )
+        self.assertEqual(len(preserved), 1)
+        self.assertEqual(
+            (preserved[0].lstat().st_dev, preserved[0].lstat().st_ino),
+            identity,
+        )
+        marker = preserved[0] / ".runtime-recovery.json"
+        self.assertEqual((marker.lstat().st_dev, marker.lstat().st_ino), replacement_identity)
+
+    def test_discard_interrupted_staging_restore_rechecks_marker_after_final_references(
+        self,
+    ) -> None:
+        """恢复分支 restored refs 期间替换 public marker 时必须报错而非 False。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        identity = self._write_owned_staging()
+        original_marker = self.layout.staging / ".runtime-recovery.json"
+        marker_identity = (original_marker.lstat().st_dev, original_marker.lstat().st_ino)
+        lock = self._acquire_live_lock()
+        real_references = runtime_module._stable_runtime_reference_facts
+        calls = 0
+        replacement_identity: tuple[int, int] | None = None
+
+        def publish_reference(layout: InstallLayout) -> None:
+            """在 durable quarantine 后发布 target Release current。"""
+            layout.current.symlink_to("runtimes/0.7.0")
+
+        def replace_restored_marker(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """第 6 次 restored facts 完成后原子发布 same-bytes/new-inode marker。"""
+            nonlocal calls, replacement_identity
+            references = real_references(layout, verify_links=verify_links)
+            calls += 1
+            if calls == 6:
+                marker = layout.staging / ".runtime-recovery.json"
+                replacement = marker.with_name(".runtime-recovery.replacement")
+                self._write_private(replacement, marker.read_bytes())
+                os.replace(replacement, marker)
+                replacement_identity = (marker.lstat().st_dev, marker.lstat().st_ino)
+                self.assertNotEqual(replacement_identity, marker_identity)
+            return references
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_commit_hook",
+                side_effect=publish_reference,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=replace_restored_marker,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertEqual(calls, 6)
+        self.assertIsNotNone(replacement_identity)
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+        marker = self.layout.staging / ".runtime-recovery.json"
+        self.assertEqual((marker.lstat().st_dev, marker.lstat().st_ino), replacement_identity)
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+
+    def test_discard_interrupted_staging_fsync_failure_restores_exact_inode(self) -> None:
+        """quarantine destination fsync 失败必须恢复 exact staging 并稳定报错。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        real_fsync = runtime_module._fsync_directory
+        failed = False
+
+        def fail_destination_once(path: Path) -> None:
+            """只中断 staging private quarantine directory 的首次 fsync。"""
+            nonlocal failed
+            if (
+                path.parent == self.layout.runtimes_dir
+                and path.name.startswith("..0.7.0.staging.quarantine-")
+                and not failed
+            ):
+                failed = True
+                raise OSError("injected staging destination fsync failure")
+            real_fsync(path)
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=fail_destination_once,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertTrue(failed)
+        self.assertEqual(
+            (self.layout.staging.lstat().st_dev, self.layout.staging.lstat().st_ino),
+            identity,
+        )
+
+    def test_discard_verified_unactivated_runtime_allows_same_version_retry(self) -> None:
+        """live lock 可清理完整未激活 Runtime，并解除同版本重试 collision。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+
+        lock = self._acquire_live_lock()
+        self.assertTrue(discard_unactivated_runtime(self.layout, lock))
+        self.assertFalse(discard_unactivated_runtime(self.layout, lock))
+
+        self.assertFalse(self.layout.runtime.exists())
+        self.assertEqual(RuntimeBuilder(FakeRunner()).build(self.inputs).version, "0.7.0")
+
+    def test_discard_preserves_every_current_and_receipt_reference(self) -> None:
+        """current/current.next/install receipt 的 current/previous 均保护目标 Runtime。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        target = "runtimes/0.7.0"
+
+        for link in (self.layout.current, self.layout.current.with_name("current.next")):
+            with self.subTest(link=link.name):
+                link.symlink_to(target)
+                self.assertFalse(discard_unactivated_runtime(self.layout, lock))
+                link.unlink()
+
+        current_receipt = InstallReceipt(
+            schema_version=1,
+            version="0.7.0",
+            git_commit=self.manifest.git_commit,
+            platform=self.platform,
+            installed_at="2026-08-10T00:00:00Z",
+            managed_files=(("bin/miniclaw", "f" * 64),),
+            current_runtime=target,
+            previous_runtime=None,
+            service_label=None,
+            service_file=None,
+            service_file_sha256=None,
+        )
+        current_receipt.write(self.layout.receipt)
+        self.assertFalse(discard_unactivated_runtime(self.layout, lock))
+
+        self._write_runtime_receipt("0.8.0")
+        replace(
+            current_receipt,
+            version="0.8.0",
+            current_runtime="runtimes/0.8.0",
+            previous_runtime=target,
+        ).write(self.layout.receipt)
+        self.assertFalse(discard_unactivated_runtime(self.layout, lock))
+        self.assertTrue(self.layout.runtime.is_dir())
+
+    def test_discard_rejects_foreign_reference_paths_without_following(self) -> None:
+        """regular current、missing current.next 与 symlink receipt 均 fail closed。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        external = self.root / "foreign-receipt"
+        self._write_private(external, b"foreign\n")
+        cases = (
+            (self.layout.current, "regular"),
+            (self.layout.current.with_name("current.next"), "missing-link"),
+            (self.layout.receipt, "receipt-link"),
+        )
+        for path, case in cases:
+            with self.subTest(case=case):
+                if case == "regular":
+                    path.write_text("foreign", encoding="utf-8")
+                    path.chmod(0o600)
+                elif case == "missing-link":
+                    path.symlink_to("runtimes/9.9.9")
+                else:
+                    path.symlink_to(external)
+                with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                    discard_unactivated_runtime(self.layout, lock)
+                path.unlink()
+        self.assertTrue(self.layout.runtime.is_dir())
+
+    def test_discard_requires_same_live_lock_instance(self) -> None:
+        """closed 或另一 layout 的真实 lock 不能授权删除目标 Runtime。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        closed = self._acquire_live_lock()
+        closed.close()
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            discard_unactivated_runtime(self.layout, closed)
+
+        other_layout = InstallLayout._build(
+            self.home / "other-program",
+            self.home / "other-state",
+            self.home / ".local" / "bin" / "miniclaw",
+            "0.7.0",
+        )
+        other = self._acquire_live_lock(other_layout)
+        with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+            discard_unactivated_runtime(self.layout, other)
+        self.assertTrue(self.layout.runtime.is_dir())
+
+    def test_discard_rechecks_receipt_reference_before_quarantine(self) -> None:
+        """首次检查后新发布的 managed receipt 引用仍必须阻止删除。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        real_identity = runtime_module._directory_identity
+        calls = 0
+
+        def publish_reference(path: Path, *, expected_mode: int = 0o700) -> tuple[int, int]:
+            """在删除前最后一次 target inode check 后发布 current receipt。"""
+            nonlocal calls
+            identity = real_identity(path, expected_mode=expected_mode)
+            calls += 1
+            if calls == 2:
+                InstallReceipt(
+                    schema_version=1,
+                    version="0.7.0",
+                    git_commit=self.manifest.git_commit,
+                    platform=self.platform,
+                    installed_at="2026-08-10T00:00:00Z",
+                    managed_files=(("bin/miniclaw", "f" * 64),),
+                    current_runtime="runtimes/0.7.0",
+                    previous_runtime=None,
+                    service_label=None,
+                    service_file=None,
+                    service_file_sha256=None,
+                ).write(self.layout.receipt)
+            return identity
+
+        with mock.patch.object(
+            runtime_module,
+            "_directory_identity",
+            side_effect=publish_reference,
+        ):
+            self.assertFalse(discard_unactivated_runtime(self.layout, lock))
+        self.assertTrue(self.layout.runtime.is_dir())
+
+    def test_discard_rejects_foreign_legacy_or_damaged_runtime(self) -> None:
+        """foreign、legacy、坏 receipt/manifest/mode/symlink/executable 均原样保留。"""
+        lock = self._acquire_live_lock()
+        cases = (
+            "foreign",
+            "legacy",
+            "receipt",
+            "manifest",
+            "mode",
+            "symlink",
+            "executable",
+        )
+        for case in cases:
+            with self.subTest(case=case):
+                runtime = self.layout.runtime
+                if case == "foreign":
+                    runtime.mkdir(parents=True, mode=0o700)
+                    (runtime / "marker").write_text("foreign", encoding="utf-8")
+                else:
+                    runtime = self._write_runtime_receipt("0.7.0")
+                    if case == "legacy":
+                        document = json.loads(
+                            (runtime / "install-receipt.json").read_text(encoding="utf-8")
+                        )
+                        document.pop("executables_sha256")
+                        (runtime / "install-receipt.json").write_text(
+                            json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n",
+                            encoding="utf-8",
+                        )
+                        (runtime / runtime_module._EXECUTABLES_FILENAME).unlink()
+                    elif case == "receipt":
+                        (runtime / "install-receipt.json").write_text("{}\n", encoding="utf-8")
+                    elif case == "manifest":
+                        (runtime / "release-manifest.json").chmod(0o644)
+                    elif case == "mode":
+                        runtime.chmod(0o755)
+                    elif case == "symlink":
+                        (runtime / "escape").symlink_to("/etc/passwd")
+                    elif case == "executable":
+                        (runtime / "node" / "bin" / "node").chmod(0o600)
+
+                with self.assertRaisesRegex(InstallError, "runtime_install_failed"):
+                    discard_unactivated_runtime(self.layout, lock)
+                self.assertTrue(runtime.is_dir())
+                shutil.rmtree(runtime)
+
+    def test_discard_never_deletes_concurrent_runtime_replacement(self) -> None:
+        """full verify 后被替换的目标 pathname 必须保留 replacement。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        original = self.layout.runtime.with_name("0.7.0.original")
+        real_verify = runtime_module._verified_runtime_target
+
+        def replace_after_verify(layout: InstallLayout, target: str) -> RuntimeReceipt:
+            """返回 verified receipt 前把公开 target 换成 foreign directory。"""
+            receipt = real_verify(layout, target)
+            layout.runtime.rename(original)
+            layout.runtime.mkdir(mode=0o700)
+            (layout.runtime / "marker").write_text("replacement", encoding="utf-8")
+            return receipt
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_verified_runtime_target",
+                side_effect=replace_after_verify,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+        self.assertEqual(
+            (self.layout.runtime / "marker").read_text(encoding="utf-8"),
+            "replacement",
+        )
+
+    def test_discard_rechecks_lock_after_final_reference_scan(self) -> None:
+        """最后一次 reference scan 中丢失 lock ownership 时不得继续删除。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        real_references = runtime_module._stable_runtime_reference_facts
+        calls = 0
+
+        def replace_lock(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """第二次 reference scan 后用相同 bytes 的新 inode 替换 lock。"""
+            nonlocal calls
+            references = real_references(layout, verify_links=verify_links)
+            calls += 1
+            if calls == 2:
+                payload = layout.lock.read_bytes()
+                layout.lock.unlink()
+                layout.lock.write_bytes(payload)
+                layout.lock.chmod(0o600)
+            return references
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=replace_lock,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+        self.assertTrue(self.layout.runtime.is_dir())
+
+    def test_discard_rechecks_full_tree_after_reference_scans(self) -> None:
+        """reference scan 期间发生的 Runtime child 漂移必须在删除前被发现。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        real_references = runtime_module._stable_runtime_reference_facts
+        calls = 0
+
+        def damage_runtime(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """首次 reference scan 后破坏必需 executable mode。"""
+            nonlocal calls
+            references = real_references(layout, verify_links=verify_links)
+            calls += 1
+            if calls == 1:
+                (layout.runtime / "node" / "bin" / "node").chmod(0o600)
+            return references
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=damage_runtime,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+        self.assertTrue(self.layout.runtime.is_dir())
+
+    def test_discard_restores_target_when_reference_appears_after_quarantine(self) -> None:
+        """目标隔离并 durable 后新发布的引用必须恢复 exact Runtime，不能留下 dangling link。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        published = False
+
+        def publish_reference(layout: InstallLayout) -> None:
+            """在 public target 已隔离后发布受管 current 引用。"""
+            nonlocal published
+            self.assertFalse(layout.runtime.exists())
+            layout.current.symlink_to("runtimes/0.7.0")
+            published = True
+
+        with mock.patch.object(
+            runtime_module,
+            "_runtime_quarantine_commit_hook",
+            side_effect=publish_reference,
+            create=True,
+        ):
+            self.assertFalse(discard_unactivated_runtime(self.layout, lock))
+
+        self.assertTrue(published)
+        self.assertTrue(self.layout.runtime.is_dir())
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.cleanup-*")), ())
+
+    def test_discard_postquarantine_foreign_reference_restores_and_fails(self) -> None:
+        """隔离后出现的 missing foreign link 必须 fail closed，并恢复 exact target。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        identity = (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino)
+
+        def publish_foreign_reference(layout: InstallLayout) -> None:
+            """在 target 已隔离后发布无法 full-tree 验证的 current.next。"""
+            layout.current.with_name("current.next").symlink_to("runtimes/9.9.9")
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_commit_hook",
+                side_effect=publish_foreign_reference,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        self.assertEqual(
+            (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino),
+            identity,
+        )
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.cleanup-*")), ())
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*")), ())
+
+    def test_discard_absent_and_referenced_false_require_still_owned_lock(self) -> None:
+        """absent/referenced 的正常 False 也必须在返回前重验 exact live lock。"""
+        lock = self._acquire_live_lock()
+        real_owns = InstallLock.owns
+
+        for state in ("absent", "referenced"):
+            with self.subTest(state=state):
+                if state == "referenced":
+                    RuntimeBuilder(self.runner).build(self.inputs)
+                    self.layout.current.symlink_to("runtimes/0.7.0")
+                calls = 0
+
+                def lose_after_first_check(instance: InstallLock, layout: InstallLayout) -> bool:
+                    """只允许入口 ownership check，模拟随后发生的进程身份漂移。"""
+                    nonlocal calls
+                    calls += 1
+                    return calls == 1 and real_owns(instance, layout)
+
+                with (
+                    mock.patch.object(
+                        InstallLock,
+                        "owns",
+                        autospec=True,
+                        side_effect=lose_after_first_check,
+                    ),
+                    self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+                ):
+                    discard_unactivated_runtime(self.layout, lock)
+                self.assertGreaterEqual(calls, 2)
+
+                if state == "referenced":
+                    self.layout.current.unlink()
+                    shutil.rmtree(self.layout.runtime)
+
+    def test_discard_quarantine_restores_check_to_rename_replacement(self) -> None:
+        """check 与 rename 间的 foreign replacement 必须 no-clobber 恢复而非被清理。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        original = self.layout.runtime.with_name("0.7.0.original")
+        raced = False
+
+        def replace_before_rename(path: Path) -> None:
+            """在 quarantine rename 前把 verified target 替换为 foreign directory。"""
+            nonlocal raced
+            path.rename(original)
+            path.mkdir(mode=0o700)
+            (path / "marker").write_text("replacement", encoding="utf-8")
+            raced = True
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_race_hook",
+                side_effect=replace_before_rename,
+                create=True,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        self.assertTrue(raced)
+        self.assertEqual(
+            (self.layout.runtime / "marker").read_text(encoding="utf-8"),
+            "replacement",
+        )
+        self.assertTrue(original.is_dir())
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.cleanup-*")), ())
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*")), ())
+
+    def test_discard_quarantine_keeps_private_evidence_when_restore_has_competitor(
+        self,
+    ) -> None:
+        """foreign restore 遇到 competitor 时保留 0700 evidence，且绝不覆盖 public path。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        original = self.layout.runtime.with_name("0.7.0.original")
+        fsync_calls: list[Path] = []
+        real_fsync = runtime_module._fsync_directory
+
+        def replace_before_rename(path: Path) -> None:
+            """让 quarantine 原子移动一个 foreign replacement。"""
+            path.rename(original)
+            path.mkdir(mode=0o700)
+            (path / "marker").write_text("replacement", encoding="utf-8")
+
+        def publish_competitor(path: Path) -> None:
+            """在 no-replace restore 前占用 public target。"""
+            path.mkdir(mode=0o700)
+            (path / "marker").write_text("competitor", encoding="utf-8")
+
+        def record_fsync(path: Path) -> None:
+            """记录 competitor evidence 的 directory durability 边界。"""
+            fsync_calls.append(path)
+            real_fsync(path)
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_race_hook",
+                side_effect=replace_before_rename,
+                create=True,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_restore_hook",
+                side_effect=publish_competitor,
+                create=True,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=record_fsync,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        self.assertEqual(
+            (self.layout.runtime / "marker").read_text(encoding="utf-8"),
+            "competitor",
+        )
+        evidence = tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*"))
+        self.assertEqual(len(evidence), 1)
+        self.assertIn(evidence[0], fsync_calls)
+        self.assertEqual(stat.S_IMODE(evidence[0].lstat().st_mode), 0o700)
+        self.assertEqual(
+            (evidence[0] / "entry" / "marker").read_text(encoding="utf-8"),
+            "replacement",
+        )
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.cleanup-*")), ())
+
+    def test_discard_quarantine_fsyncs_regular_mismatch_evidence(self) -> None:
+        """regular replacement 无法恢复时也必须 durable 保留 private evidence。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        original = self.layout.runtime.with_name("0.7.0.original")
+        fsync_calls: list[Path] = []
+        real_fsync = runtime_module._fsync_directory
+
+        def replace_before_rename(path: Path) -> None:
+            """让 quarantine 原子移动一个 foreign regular file。"""
+            path.rename(original)
+            path.write_text("replacement", encoding="utf-8")
+            path.chmod(0o600)
+
+        def publish_competitor(path: Path) -> None:
+            """阻止 foreign regular file 恢复到 public target。"""
+            path.mkdir(mode=0o700)
+
+        def record_fsync(path: Path) -> None:
+            """记录 generic mismatch evidence 的 directory durability。"""
+            fsync_calls.append(path)
+            real_fsync(path)
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_race_hook",
+                side_effect=replace_before_rename,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_restore_hook",
+                side_effect=publish_competitor,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=record_fsync,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        evidence = tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*"))
+        self.assertEqual(len(evidence), 1)
+        self.assertIn(evidence[0], fsync_calls)
+        self.assertEqual((evidence[0] / "entry").read_text(encoding="utf-8"), "replacement")
+
+    def test_discard_precommit_fsync_failure_restores_exact_target(self) -> None:
+        """quarantine parent 首次 fsync 失败必须恢复 exact inode 并报告 stable error。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        identity = (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino)
+        real_fsync = runtime_module._fsync_directory
+        failed = False
+
+        def fail_first_runtime_parent(path: Path) -> None:
+            """只中断 quarantine rename 后的首次 runtimes parent fsync。"""
+            nonlocal failed
+            if path == self.layout.runtimes_dir and not failed:
+                failed = True
+                raise OSError("injected precommit fsync failure")
+            real_fsync(path)
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=fail_first_runtime_parent,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        self.assertTrue(failed)
+        self.assertEqual(
+            (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino),
+            identity,
+        )
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.cleanup-*")), ())
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*")), ())
+
+    def test_discard_fsyncs_quarantine_destination_before_source_parent(self) -> None:
+        """cross-directory rename 必须先 durable destination entry，再提交 source removal。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        real_fsync = runtime_module._fsync_directory
+        calls: list[Path] = []
+
+        def record_fsync(path: Path) -> None:
+            """记录正常 recovery transaction 的目录 fsync 顺序。"""
+            calls.append(path)
+            real_fsync(path)
+
+        with mock.patch.object(
+            runtime_module,
+            "_fsync_directory",
+            side_effect=record_fsync,
+        ):
+            self.assertTrue(discard_unactivated_runtime(self.layout, lock))
+
+        self.assertGreaterEqual(len(calls), 3)
+        self.assertEqual(calls[0].parent, self.layout.runtimes_dir)
+        self.assertTrue(calls[0].name.startswith(".0.7.0.quarantine-"))
+        self.assertEqual(calls[1], self.layout.runtimes_dir)
+
+    def test_discard_destination_fsync_failure_restores_exact_target(self) -> None:
+        """destination quarantine fsync 失败必须在 source commit 前恢复 exact Runtime。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        identity = (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino)
+        real_fsync = runtime_module._fsync_directory
+        failed = False
+
+        def fail_destination_once(path: Path) -> None:
+            """只中断 private quarantine directory 的首次 fsync。"""
+            nonlocal failed
+            if (
+                path.parent == self.layout.runtimes_dir
+                and path.name.startswith(".0.7.0.quarantine-")
+                and not failed
+            ):
+                failed = True
+                raise OSError("injected destination fsync failure")
+            real_fsync(path)
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_fsync_directory",
+                side_effect=fail_destination_once,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        self.assertTrue(failed)
+        self.assertEqual(
+            (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino),
+            identity,
+        )
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*")), ())
+
+    def test_discard_reference_restore_rechecks_lock_after_final_facts(self) -> None:
+        """restore 后 final ref facts 读取期间 lock 漂移必须报错，不能返回 False。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        real_facts = runtime_module._stable_runtime_reference_facts
+        drifted = False
+
+        def publish_reference(layout: InstallLayout) -> None:
+            """在 durable quarantine 后发布指向目标版本的 current。"""
+            layout.current.symlink_to("runtimes/0.7.0")
+
+        def drift_after_final_facts(
+            layout: InstallLayout,
+            *,
+            verify_links: bool,
+        ) -> runtime_module._RuntimeReferenceFacts:
+            """final facts 完整读取后替换 lock pathname inode。"""
+            nonlocal drifted
+            facts = real_facts(layout, verify_links=verify_links)
+            if layout.runtime.exists() and layout.current.is_symlink() and not drifted:
+                payload = layout.lock.read_bytes()
+                layout.lock.unlink()
+                layout.lock.write_bytes(payload)
+                layout.lock.chmod(0o600)
+                drifted = True
+            return facts
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_runtime_quarantine_commit_hook",
+                side_effect=publish_reference,
+            ),
+            mock.patch.object(
+                runtime_module,
+                "_stable_runtime_reference_facts",
+                side_effect=drift_after_final_facts,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            discard_unactivated_runtime(self.layout, lock)
+
+        self.assertTrue(drifted)
+        self.assertTrue(self.layout.runtime.is_dir())
+        self.assertEqual(os.readlink(self.layout.current), "runtimes/0.7.0")
+
+    def test_discard_postcommit_gc_failure_is_idempotent_success(self) -> None:
+        """durable quarantine 后 private GC 失败只能留 0700 evidence，删除仍算成功。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        identity = (self.layout.runtime.lstat().st_dev, self.layout.runtime.lstat().st_ino)
+
+        with mock.patch.object(
+            runtime_module,
+            "_remove_owned_tree",
+            side_effect=OSError("injected private gc failure"),
+        ):
+            self.assertTrue(discard_unactivated_runtime(self.layout, lock))
+
+        self.assertFalse(self.layout.runtime.exists())
+        evidence = tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*"))
+        self.assertEqual(len(evidence), 1)
+        self.assertEqual(stat.S_IMODE(evidence[0].lstat().st_mode), 0o700)
+        self.assertEqual(
+            (
+                (evidence[0] / "entry").lstat().st_dev,
+                (evidence[0] / "entry").lstat().st_ino,
+            ),
+            identity,
+        )
+
+    def test_discard_postcommit_final_fsync_failure_still_succeeds(self) -> None:
+        """private tree 已删除后的末次 parent fsync 失败不得回报可恢复失败。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        lock = self._acquire_live_lock()
+        real_fsync = runtime_module._fsync_directory
+        calls = 0
+
+        def fail_second_runtime_parent(path: Path) -> None:
+            """允许 quarantine commit fsync，只中断 private GC 后的末次 fsync。"""
+            nonlocal calls
+            if path == self.layout.runtimes_dir:
+                calls += 1
+                if calls == 2:
+                    raise OSError("injected postcommit fsync failure")
+            real_fsync(path)
+
+        with mock.patch.object(
+            runtime_module,
+            "_fsync_directory",
+            side_effect=fail_second_runtime_parent,
+        ):
+            self.assertTrue(discard_unactivated_runtime(self.layout, lock))
+
+        self.assertEqual(calls, 2)
+        self.assertFalse(self.layout.runtime.exists())
+        self.assertEqual(tuple(self.layout.runtimes_dir.glob(".0.7.0.quarantine-*")), ())
+
+    def test_discard_recovers_runtime_after_lock_owner_process_crash(self) -> None:
+        """前一 installer 进程崩溃后，fresh owned lock 可恢复 verified stale target。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        script = (
+            "import os,sys;"
+            "from pathlib import Path;"
+            "from miniclaw.install import layout as module;"
+            "from miniclaw.install.layout import InstallLayout,InstallLock;"
+            "module._probe_process=lambda _pid:('alive','2026-08-10T00:00:00Z');"
+            "layout=InstallLayout._build(Path(sys.argv[1]),Path(sys.argv[2]),"
+            "Path(sys.argv[3]),'0.7.0');"
+            "InstallLock.acquire(layout);"
+            "os.write(1,str(os.getpid()).encode());"
+            "os._exit(0)"
+        )
+        crashed = subprocess.run(
+            (
+                sys.executable,
+                "-c",
+                script,
+                str(self.layout.program_prefix),
+                str(self.layout.state_home),
+                str(self.layout.command_link),
+            ),
+            check=True,
+            capture_output=True,
+            env={
+                "LC_ALL": "C",
+                "PATH": "/usr/bin:/bin",
+                "PYTHONNOUSERSITE": "1",
+                "PYTHONPATH": str(Path("src").resolve()),
+            },
+        )
+        crashed_pid = int(crashed.stdout)
+
+        def process_state(pid: int) -> tuple[str, str | None]:
+            """只把已 wait 的 child 判为 dead，当前测试进程保持稳定 identity。"""
+            if pid == crashed_pid:
+                return "dead", None
+            return "alive", "2026-08-10T00:00:00Z"
+
+        with mock.patch.object(layout_module, "_probe_process", side_effect=process_state):
+            with InstallLock.acquire(self.layout) as lock:
+                self.assertTrue(discard_unactivated_runtime(self.layout, lock))
+        self.assertFalse(self.layout.runtime.exists())
+
+    def test_discard_system_precommit_failure_restores_exact_public_runtime(self) -> None:
+        """system Runtime quarantine fsync 失败必须恢复 exact inode 与 0755 root。"""
+        system_prefix = self.root / "recovery-system-prefix" / "miniclaw"
+        system_prefix.parent.mkdir(mode=0o755)
+        system_prefix.parent.chmod(0o755)
+        system_command = self.root / "recovery-system-bin" / "miniclaw"
+        state_home = self.home / "recovery-system-state"
+        state_home.mkdir(mode=0o700)
+        real_fsync = runtime_module._fsync_directory
+        failed = False
+
+        with (
+            mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", system_command),
+            mock.patch.object(layout_module, "_validate_system_prefix"),
+        ):
+            layout = InstallLayout._build(
+                system_prefix,
+                state_home,
+                system_command,
+                "0.7.0",
+                owner_uid=os.geteuid(),
+                user_home=self.home,
+            )
+            with mock.patch.object(runtime_module, "_is_root_builder", return_value=True):
+                RuntimeBuilder(FakeRunner()).build(replace(self.inputs, layout=layout))
+            lock = self._acquire_live_lock(layout)
+            self.assertTrue(discard_unactivated_runtime(layout, lock))
+            with mock.patch.object(runtime_module, "_is_root_builder", return_value=True):
+                RuntimeBuilder(FakeRunner()).build(replace(self.inputs, layout=layout))
+            identity = (layout.runtime.lstat().st_dev, layout.runtime.lstat().st_ino)
+
+            def fail_quarantine_fsync(path: Path) -> None:
+                """只中断公开 target 已被隔离后的第一次 parent fsync。"""
+                nonlocal failed
+                if path == layout.runtimes_dir and not layout.runtime.exists() and not failed:
+                    failed = True
+                    raise OSError("injected recovery fsync failure")
+                real_fsync(path)
+
+            with (
+                mock.patch.object(
+                    runtime_module,
+                    "_fsync_directory",
+                    side_effect=fail_quarantine_fsync,
+                ),
+                self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+            ):
+                discard_unactivated_runtime(layout, lock)
+
+            self.assertTrue(failed)
+            self.assertEqual(
+                (layout.runtime.lstat().st_dev, layout.runtime.lstat().st_ino),
+                identity,
+            )
+            self.assertEqual(stat.S_IMODE(layout.runtime.lstat().st_mode), 0o755)
+            self.assertEqual(tuple(layout.runtimes_dir.glob(".0.7.0.cleanup-*")), ())
+            self.assertEqual(tuple(layout.runtimes_dir.glob(".0.7.0.quarantine-*")), ())
+
+    def test_discard_never_accesses_user_state_paths(self) -> None:
+        """Runtime recovery 不能读取 config/Secret/DB/Memory/Skills/Workspace/logs。"""
+        RuntimeBuilder(self.runner).build(self.inputs)
+        self.layout.state_home.mkdir(mode=0o700)
+        sentinel = self.layout.state_home / "secrets.env"
+        sentinel.write_text("NAME=fixture\n", encoding="utf-8")
+        sentinel.chmod(0o600)
+        lock = self._acquire_live_lock()
+        real_lstat = Path.lstat
+
+        def reject_state(path: Path) -> os.stat_result:
+            """任何 state_home 内的 lstat 都直接暴露越界访问。"""
+            if path == self.layout.state_home or path.is_relative_to(self.layout.state_home):
+                raise AssertionError("state path accessed")
+            return real_lstat(path)
+
+        with mock.patch.object(Path, "lstat", autospec=True, side_effect=reject_state):
+            self.assertTrue(discard_unactivated_runtime(self.layout, lock))
+        self.assertEqual(sentinel.read_text(encoding="utf-8"), "NAME=fixture\n")
+
     def test_activation_fsync_failure_restores_old_current(self) -> None:
         """existing current 切换后的 parent fsync 失败必须原子恢复旧 link。"""
         self._write_runtime_receipt("0.6.0")
@@ -970,6 +3138,29 @@ class InstallRuntimeTests(unittest.TestCase):
         runtime.mkdir(mode=0o700)
         manifest = self._manifest_for_version(version)
         artifacts = {artifact.kind: artifact for artifact in manifest.artifacts}
+        executable_paths = (
+            "miniclaw-installer.pyz",
+            "node/bin/node",
+            "python/bin/python3.12",
+            "venv/bin/miniclaw",
+        )
+        for relative in executable_paths:
+            executable = runtime.joinpath(*relative.split("/"))
+            executable.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            for parent in executable.parents:
+                if parent == runtime:
+                    break
+                parent.chmod(0o700)
+            executable.write_bytes(b"fixture executable\n")
+            executable.chmod(0o700)
+        executable_manifest = (
+            json.dumps(
+                {"executables": list(executable_paths)},
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode()
         receipt = RuntimeReceipt(
             version=version,
             git_commit=manifest.git_commit,
@@ -982,7 +3173,10 @@ class InstallRuntimeTests(unittest.TestCase):
             node_sha256=artifacts["node"].sha256,
             tui_sha256=artifacts["tui"].sha256,
             installer_sha256=artifacts["installer"].sha256,
+            executables_sha256=hashlib.sha256(executable_manifest).hexdigest(),
         )
+        (runtime / runtime_module._EXECUTABLES_FILENAME).write_bytes(executable_manifest)
+        (runtime / runtime_module._EXECUTABLES_FILENAME).chmod(0o600)
         (runtime / "install-receipt.json").write_bytes(receipt.to_bytes())
         (runtime / "install-receipt.json").chmod(0o600)
         (runtime / "release-manifest.json").write_bytes(runtime_module._manifest_bytes(manifest))

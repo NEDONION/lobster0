@@ -1,6 +1,7 @@
 """MiniClaw fresh-install 的交互配置与 owner-only Secret 写入。"""
 
 import getpass
+import io
 import json
 import os
 import re
@@ -8,6 +9,7 @@ import stat
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import TracebackType
 from typing import TextIO
 
 from miniclaw.bootstrap import InitResult, initialize_state, render_default_config
@@ -22,6 +24,142 @@ _DISCORD_SECRET = "MINICLAW_DISCORD_BOT_TOKEN"
 
 class SetupError(ValueError):
     """表示 fresh setup 输入或目标状态不满足安全约束。"""
+
+
+class _DuplexTty(io.TextIOBase):
+    """独占终端 fd，并把文本读写委托给不拥有 fd 的双工 wrapper。"""
+
+    def __init__(self) -> None:
+        """创建尚未打开终端、可安全清理的空 owner。"""
+        super().__init__()
+        self._descriptors: list[int] = []
+        self._reader_descriptor: int | None = None
+        self._stream: io.TextIOWrapper | None = None
+        self._closed = False
+
+    def initialize(self) -> None:
+        """打开、校验并包装 controlling TTY；失败时由调用方关闭 owner。"""
+        flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+        descriptor = self._own_open(flags)
+        if not stat.S_ISCHR(os.fstat(descriptor).st_mode):
+            raise OSError("not a character device")
+        reader_descriptor = self._own_dup(descriptor)
+        writer_descriptor = self._own_dup(descriptor)
+        self._reader_descriptor = reader_descriptor
+        self._close_owned(descriptor)
+
+        reader = io.FileIO(reader_descriptor, "rb", closefd=False)
+        writer = io.FileIO(writer_descriptor, "wb", closefd=False)
+        buffer = io.BufferedRWPair(reader, writer)
+        stream = io.TextIOWrapper(
+            buffer,
+            encoding="utf-8",
+            line_buffering=True,
+            write_through=True,
+        )
+        self._stream = stream
+
+    def _own_open(self, flags: int) -> int:
+        """打开终端 fd 并立即登记为当前 owner 的资源。"""
+        descriptor = os.open("/dev/tty", flags)
+        self._descriptors.append(descriptor)
+        return descriptor
+
+    def _own_dup(self, descriptor: int) -> int:
+        """复制 fd 并立即登记为当前 owner 的资源。"""
+        duplicated = os.dup(descriptor)
+        self._descriptors.append(duplicated)
+        return duplicated
+
+    def _close_owned(self, descriptor: int) -> None:
+        """先撤销 ownership 再关闭一个 fd，禁止错误后的编号重试。"""
+        self._descriptors.remove(descriptor)
+        os.close(descriptor)
+
+    def _require_stream(self) -> io.TextIOWrapper:
+        """返回已初始化且未关闭的文本流，否则抛出标准 closed 错误。"""
+        if self._closed or self._stream is None:
+            raise ValueError("I/O operation on closed file")
+        return self._stream
+
+    @property
+    def closed(self) -> bool:
+        """返回 owner 是否已经完成幂等关闭。"""
+        return self._closed
+
+    @property
+    def encoding(self) -> str:
+        """返回固定 UTF-8 文本编码。"""
+        return "utf-8"
+
+    def readable(self) -> bool:
+        """说明当前流支持读取。"""
+        return not self._closed
+
+    def writable(self) -> bool:
+        """说明当前流支持写入。"""
+        return not self._closed
+
+    def seekable(self) -> bool:
+        """说明 controlling TTY 不支持 seek。"""
+        return False
+
+    def readline(self, size: int = -1, /) -> str:
+        """从委托文本流读取一行，可选限制字符数。"""
+        return self._require_stream().readline(size)
+
+    def write(self, value: str, /) -> int:
+        """向委托文本流写入文本并返回字符数。"""
+        return self._require_stream().write(value)
+
+    def flush(self) -> None:
+        """刷新委托文本流的待写数据。"""
+        self._require_stream().flush()
+
+    def fileno(self) -> int:
+        """返回仍由当前 owner 独占的读取终端 fd。"""
+        if self._closed or self._reader_descriptor is None:
+            raise ValueError("I/O operation on closed file")
+        return self._reader_descriptor
+
+    def isatty(self) -> bool:
+        """返回读取 fd 当前是否仍连接字符终端。"""
+        return os.isatty(self.fileno())
+
+    def __enter__(self) -> "_DuplexTty":
+        """进入文本流上下文并返回当前 owner。"""
+        self._require_stream()
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        """退出上下文时幂等关闭 wrapper 与全部 owned fd。"""
+        del exc_type, exc_value, traceback
+        self.close()
+
+    def close(self) -> None:
+        """先断开公开状态，再关闭 wrapper，最后各关闭 owned fd 一次。"""
+        if self._closed:
+            return
+        self._closed = True
+        stream = self._stream
+        descriptors = tuple(self._descriptors)
+        self._stream = None
+        self._reader_descriptor = None
+        self._descriptors.clear()
+        try:
+            if stream is not None:
+                stream.close()
+        finally:
+            for descriptor in descriptors:
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -362,10 +500,18 @@ def _open_tty() -> TextIO:
     Raises:
         SetupError: 当前进程没有可用控制终端。
     """
+    stream = _DuplexTty()
     try:
-        return open("/dev/tty", "r+", encoding="utf-8", buffering=1)
-    except OSError as error:
-        raise SetupError("interactive terminal is unavailable") from error
+        stream.initialize()
+        return stream
+    except BaseException as error:
+        try:
+            stream.close()
+        except BaseException:
+            pass
+        if not isinstance(error, Exception):
+            raise
+        raise SetupError("interactive terminal is unavailable") from None
 
 
 def _ask_yes_no(tty: TextIO, prompt: str) -> bool:

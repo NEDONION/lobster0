@@ -5,7 +5,9 @@ import json
 import re
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from miniclaw.install import models as install_models
 from miniclaw.install.models import (
     InstallError,
     InstallEvent,
@@ -453,6 +455,27 @@ class InstallModelsTest(unittest.TestCase):
         ):
             with self.subTest(changes=changes), self.assertRaises(InstallError):
                 self.request(**changes)
+
+    def test_request_bool_fields_use_static_values_and_exact_errors(self) -> None:
+        """所有 bool 字段必须绕过同名动态 lookup 并返回精确字段错误。"""
+        fields = (
+            "system_prefix",
+            "onboard",
+            "service",
+            "allow_system_packages",
+            "dry_run",
+            "json_output",
+            "verbose",
+            "purge_data",
+            "confirm_data_loss",
+        )
+
+        with mock.patch.object(install_models, "getattr", return_value=False, create=True):
+            for field in fields:
+                with self.subTest(field=field), self.assertRaises(InstallError) as caught:
+                    self.request(**{field: 0})
+                self.assertEqual(caught.exception.code, "request_invalid")
+                self.assertEqual(caught.exception.detail, field)
 
     def test_plan_summary_excludes_config_secrets_and_state_home(self) -> None:
         """计划摘要仅展示安全字段，不得泄漏输入配置和 Secret 路径。"""
