@@ -159,8 +159,19 @@ select:focus-visible {
 .sidebar-recent-list {
   display: grid;
   min-height: 0;
+  align-content: start;
   gap: 1px;
   overflow-y: auto;
+}
+
+.sidebar-recent-group {
+  display: grid;
+  gap: 1px;
+}
+
+/* 组间留白比组内条目之间大，让时间分段一眼可辨；首组不额外留白。 */
+.sidebar-recent-group + .sidebar-recent-group {
+  margin-top: 10px;
 }
 
 .sidebar-recent-list button {

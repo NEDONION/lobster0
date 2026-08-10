@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isPermissionMode, type PermissionMode } from "@lobster0/pi-tui/protocol";
 
 import type {
@@ -8,6 +8,7 @@ import type {
   SessionSummary,
 } from "../common/api";
 import { NAV_ITEMS, type ViewId } from "./navigation";
+import { SESSION_GROUP_LABELS, groupSessionsByRecency } from "./session-groups";
 import { TaskWorkbench } from "./task-workbench";
 
 const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }> = {
@@ -60,6 +61,8 @@ export function App(): React.JSX.Element {
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
   const copy = VIEW_COPY[view];
+  // 只在 Session 列表变化时重新分组；跨越午夜后的下一次列表刷新会自然更新分组。
+  const sessionGroups = useMemo(() => groupSessionsByRecency(sessions, new Date()), [sessions]);
 
   useEffect(() => {
     let active = true;
@@ -212,7 +215,6 @@ export function App(): React.JSX.Element {
           ))}
         </nav>
         <section className="sidebar-recent" aria-label="最近对话">
-          <span className="sidebar-recent-heading">最近对话</span>
           {sessionsError ? (
             <p className="sidebar-recent-error" role="alert">{sessionsError}</p>
           ) : null}
@@ -220,22 +222,29 @@ export function App(): React.JSX.Element {
             <p className="sidebar-recent-empty">还没有历史对话。</p>
           ) : (
             <div className="sidebar-recent-list">
-              {sessions.map((session) => (
-                <button
-                  aria-current={session.sessionKey === sessionKey ? "page" : undefined}
-                  data-active={session.sessionKey === sessionKey}
-                  disabled={taskBusy}
-                  key={session.sessionKey}
-                  onClick={() => void openSession(session.sessionKey)}
-                  type="button"
-                >
-                  <strong>{session.title}</strong>
-                  {sessionStatusLabel(session.status) ? (
-                    <small data-status={session.status}>
-                      {sessionStatusLabel(session.status)}
-                    </small>
-                  ) : null}
-                </button>
+              {sessionGroups.map((group) => (
+                <div className="sidebar-recent-group" key={group.key}>
+                  <span className="sidebar-recent-heading">
+                    {SESSION_GROUP_LABELS[group.key]}
+                  </span>
+                  {group.sessions.map((session) => (
+                    <button
+                      aria-current={session.sessionKey === sessionKey ? "page" : undefined}
+                      data-active={session.sessionKey === sessionKey}
+                      disabled={taskBusy}
+                      key={session.sessionKey}
+                      onClick={() => void openSession(session.sessionKey)}
+                      type="button"
+                    >
+                      <strong>{session.title}</strong>
+                      {sessionStatusLabel(session.status) ? (
+                        <small data-status={session.status}>
+                          {sessionStatusLabel(session.status)}
+                        </small>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           )}
