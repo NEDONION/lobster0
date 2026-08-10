@@ -74,8 +74,10 @@ test('reduced motion renders the final trace and static tab state immediately', 
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/#memory');
 
-  await expect(page.locator('.claw-trace li').last()).toHaveAttribute('aria-current', 'step');
-  await expect(page.locator('.claw-trace li').last()).toHaveAttribute('data-state', 'active');
+  // Scope to the trace list: `.claw-trace li` also matches the four surface cards.
+  const lastTraceStep = page.locator('.hero-network__trace li').last();
+  await expect(lastTraceStep).toHaveAttribute('aria-current', 'step');
+  await expect(lastTraceStep).toHaveAttribute('data-state', 'active');
   await expect(page.locator('#memory-panel')).toHaveAttribute('data-reduced-motion', 'true');
   const signalDuration = await page
     .locator('.hero-network__signal')

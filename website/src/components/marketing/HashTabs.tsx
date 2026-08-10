@@ -22,16 +22,22 @@ export function HashTabs({ ariaLabel, items }: HashTabsProps) {
   const [selectedId, setSelectedId] = useState(firstId);
   const reducedMotion = useReducedMotionPreference();
 
+  // Depend on the stable id list, not the freshly-built `items` array: a new array
+  // identity on every parent render would re-run this effect and clobber the user's
+  // current tab back to the default.
+  const itemIds = items.map((item) => item.id).join('|');
+
   useEffect(() => {
+    const ids = itemIds.split('|');
     const syncFromHash = () => {
       const hashId = decodeURIComponent(window.location.hash.slice(1));
-      setSelectedId(items.some((item) => item.id === hashId) ? hashId : firstId);
+      if (ids.includes(hashId)) setSelectedId(hashId);
     };
 
-    queueMicrotask(syncFromHash);
+    syncFromHash();
     window.addEventListener('hashchange', syncFromHash);
     return () => window.removeEventListener('hashchange', syncFromHash);
-  }, [firstId, items]);
+  }, [itemIds]);
 
   if (!firstId) return null;
   const selectedItem = items.find((item) => item.id === selectedId) ?? items[0];

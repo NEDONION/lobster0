@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 
-test('publishes the arrow brand in social and browser metadata', async ({ page, request }) => {
+test('publishes the lobster brand in social and browser metadata', async ({ page, request }) => {
   await page.goto('/en');
 
   await expect(page.locator('meta[property="og:image:alt"]')).toHaveAttribute(
@@ -17,5 +17,5 @@ test('publishes the arrow brand in social and browser metadata', async ({ page, 
   expect(iconHref).toBeTruthy();
   const icon = await request.get(iconHref!);
   expect(icon.ok()).toBe(true);
-  expect(await icon.text()).toContain('M14 17 29 32 14 47');
+  expect(await icon.text()).toContain('\u{1F99E}');
 });
