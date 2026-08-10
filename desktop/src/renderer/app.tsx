@@ -11,14 +11,9 @@ import { NAV_ITEMS, type ViewId } from "./navigation";
 import { TaskWorkbench } from "./task-workbench";
 
 const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }> = {
-  home: {
-    eyebrow: "GENERAL AGENT WORKSPACE",
-    title: "把一件事，完整地交给 MiniClaw",
-    body: "选择工作目录，描述目标，然后在同一个任务里查看过程、审批动作和最终结果。",
-  },
   task: {
-    eyebrow: "TASK WORKBENCH",
-    title: "任务工作台",
+    eyebrow: "CONVERSATION",
+    title: "对话",
     body: "Python Core 接通后，这里会显示真实对话、工具过程和审批状态。",
   },
   automation: {
@@ -36,7 +31,7 @@ const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }
 const PERMISSION_MODES: readonly PermissionMode[] = ["safe", "smart", "autopilot", "yolo"];
 
 export function App(): React.JSX.Element {
-  const [view, setView] = useState<ViewId>("home");
+  const [view, setView] = useState<ViewId>("task");
   const [bootstrap, setBootstrap] = useState<DesktopBootstrap | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
@@ -68,7 +63,7 @@ export function App(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    if (!bootstrap || view !== "home") {
+    if (!bootstrap) {
       return;
     }
     let active = true;
@@ -79,13 +74,13 @@ export function App(): React.JSX.Element {
       }
     }).catch(() => {
       if (active) {
-        setSessionsError("最近任务读取失败，请稍后重试。");
+        setSessionsError("最近对话读取失败，请稍后重试。");
       }
     });
     return () => {
       active = false;
     };
-  }, [bootstrap, view]);
+  }, [bootstrap]);
 
   useEffect(() => {
     if (!bootstrap || view !== "automation") {
@@ -127,7 +122,7 @@ export function App(): React.JSX.Element {
       setHistory(loaded);
       setView("task");
     } catch {
-      setSessionsError("任务历史读取失败，请稍后重试。");
+      setSessionsError("对话历史读取失败，请稍后重试。");
     }
   }
 
@@ -171,11 +166,21 @@ export function App(): React.JSX.Element {
 
   return (
     <div className="app-shell min-h-screen">
+      <div className="app-drag-region" aria-hidden="true" />
       <aside className="sidebar">
         <div className="brand" aria-label="MiniClaw Desktop">
           <span className="brand-mark" aria-hidden="true">M</span>
           <span>MiniClaw</span>
         </div>
+        <button
+          className="button-primary sidebar-create"
+          disabled={bootstrap === null || taskBusy}
+          onClick={createTask}
+          type="button"
+        >
+          <span className="nav-mark" aria-hidden="true">＋</span>
+          <span>新建对话</span>
+        </button>
         <nav className="navigation" aria-label="主导航">
           {NAV_ITEMS.map((item) => (
             <button
@@ -191,6 +196,31 @@ export function App(): React.JSX.Element {
             </button>
           ))}
         </nav>
+        <section className="sidebar-recent" aria-label="最近对话">
+          <span className="sidebar-recent-heading">最近对话</span>
+          {sessionsError ? (
+            <p className="sidebar-recent-error" role="alert">{sessionsError}</p>
+          ) : null}
+          {sessions.length === 0 && !sessionsError ? (
+            <p className="sidebar-recent-empty">还没有历史对话。</p>
+          ) : (
+            <div className="sidebar-recent-list">
+              {sessions.map((session) => (
+                <button
+                  aria-current={session.sessionKey === sessionKey ? "page" : undefined}
+                  data-active={session.sessionKey === sessionKey}
+                  disabled={taskBusy}
+                  key={session.sessionKey}
+                  onClick={() => void openSession(session.sessionKey)}
+                  type="button"
+                >
+                  <strong>{session.title}</strong>
+                  <small>{session.status}</small>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
         <div className="sidebar-status">
           <span className="pulse-dot" data-ready={bootstrap !== null} aria-hidden="true" />
           <span>{bootstrap ? "Core ready" : "Core offline"}</span>
@@ -209,10 +239,8 @@ export function App(): React.JSX.Element {
             bootstrapError={bootstrapError}
             initialHistory={history}
             key={sessionKey}
-            onSelectSession={(selected) => void openSession(selected)}
             onBusyChange={setTaskBusy}
             sessionKey={sessionKey}
-            sessions={sessions}
           />
         ) : (
           <>
@@ -225,11 +253,7 @@ export function App(): React.JSX.Element {
               automations={automations}
               automationError={automationError}
               onChooseWorkspace={() => void chooseWorkspace()}
-              onCreateTask={createTask}
-              onOpenSession={(selected) => void openSession(selected)}
               onSetPermissionMode={(mode) => void setPermissionMode(mode)}
-              sessions={sessions}
-              sessionsError={sessionsError}
               settingsBusy={settingsBusy}
               settingsError={settingsError}
               taskBusy={taskBusy}
@@ -247,74 +271,22 @@ function ViewPreview({
   bootstrap,
   automations,
   automationError,
-  sessions,
-  sessionsError,
   settingsBusy,
   settingsError,
   taskBusy,
   onChooseWorkspace,
-  onCreateTask,
-  onOpenSession,
   onSetPermissionMode,
 }: {
   view: Exclude<ViewId, "task">;
   bootstrap: DesktopBootstrap | null;
   automations: AutomationList | null;
   automationError: string | null;
-  sessions: SessionSummary[];
-  sessionsError: string | null;
   settingsBusy: boolean;
   settingsError: string | null;
   taskBusy: boolean;
   onChooseWorkspace: () => void;
-  onCreateTask: () => void;
-  onOpenSession: (sessionKey: string) => void;
   onSetPermissionMode: (mode: PermissionMode) => void;
 }): React.JSX.Element {
-  if (view === "home") {
-    return (
-      <div className="home-grid">
-        <section className="draft-card" aria-label="新任务入口">
-          <span>新任务</span>
-          <p>创建一个独立任务，在工作台里描述目标、查看过程并处理审批。</p>
-          <button
-            className="button-primary home-create-button"
-            disabled={bootstrap === null || taskBusy}
-            onClick={onCreateTask}
-            type="button"
-          >
-            新建任务
-          </button>
-        </section>
-        <section className="recent-card" aria-label="最近任务">
-          <div className="recent-heading">
-            <span>最近任务</span>
-            <strong>{sessions.length}</strong>
-          </div>
-          {sessionsError ? <p className="recent-error" role="alert">{sessionsError}</p> : null}
-          {sessions.length === 0 && !sessionsError ? (
-            <p className="recent-empty">还没有任务，先创建一个。</p>
-          ) : (
-            <div className="recent-list">
-              {sessions.map((session) => (
-                <button
-                  key={session.sessionKey}
-                  onClick={() => onOpenSession(session.sessionKey)}
-                  type="button"
-                >
-                  <span>
-                    <strong>{session.title}</strong>
-                    <small>{session.status}</small>
-                  </span>
-                  <time>{new Date(session.updatedAt).toLocaleDateString("zh-CN")}</time>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
-      </div>
-    );
-  }
   if (view === "automation") {
     return (
       <section className="data-panel" aria-label="自动化列表">

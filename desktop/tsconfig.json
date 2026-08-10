@@ -11,5 +11,11 @@
     "skipLibCheck": true,
     "types": ["node", "vite/client", "vitest/globals"]
   },
-  "include": ["electron.vite.config.ts", "src/**/*.ts", "src/**/*.tsx", "test/**/*.ts"]
+  "include": [
+    "electron.vite.config.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "test/**/*.ts",
+    "test/**/*.tsx"
+  ]
 }

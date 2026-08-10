@@ -322,7 +322,7 @@ class InstallRuntimeTests(unittest.TestCase):
                     artifact,
                     filename=filename,
                     url=(
-                        "https://github.com/NEDONION/miniclaw/releases/"
+                        "https://github.com/NEDONION/mini-claw/releases/"
                         f"download/v{version}/{filename}"
                     ),
                     sha256=sha256,
@@ -354,7 +354,7 @@ class InstallRuntimeTests(unittest.TestCase):
         return Artifact(
             kind=kind,  # type: ignore[arg-type]
             filename=filename,
-            url=f"https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/{filename}",
+            url=f"https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/{filename}",
             sha256=value,
             size=path.stat().st_size if path.is_file() else 1,
             media_type={
@@ -369,7 +369,7 @@ class InstallRuntimeTests(unittest.TestCase):
             source_repository=(
                 "https://github.com/nodejs/node"
                 if is_node
-                else "https://github.com/NEDONION/miniclaw"
+                else "https://github.com/NEDONION/mini-claw"
             ),
             license_ref="MIT",
             upstream_sha256="e" * 64 if is_node else None,

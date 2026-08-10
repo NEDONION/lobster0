@@ -1,0 +1,39 @@
+---
+title: 运行时
+description: 理解同一个 AgentRuntime 如何服务 TUI 与三个消息平台。
+---
+
+## 一个 Core，多种入口
+
+MiniClaw 的 Agent Core 不知道消息来自哪个平台。TUI、飞书、Telegram 和 Discord 把外部消息
+转换成内部消息，再交给同一个 AgentRuntime。模型与 Tool Loop 因而保持一套心智模型。
+
+```text
+TUI / Feishu / Telegram / Discord
+                  ↓
+            AgentRuntime
+                  ↓
+      Provider → Policy → Tool
+                  ↓
+        result → original surface
+```
+
+## 共享与隔离
+
+四个入口共享 AgentRuntime，但每个平台的 Transport、Delivery、Manager、queue 和运行期故障状态
+相互隔离。一个 Channel 的重连或投递问题不应该改变另一个 Channel 的状态。
+
+## Provider 边界
+
+当前范围使用一个 OpenAI-compatible Provider。Provider 负责模型协议；它不负责 Channel 身份、
+Workspace 授权或 Tool 安全策略。
+
+## 一次请求的执行顺序
+
+1. Channel 或 TUI 接收消息并确定会话身份。
+2. Agent 规划是否需要 Tool。
+3. Policy 检查 Workspace、网络或命令边界。
+4. 需要时生成绑定具体参数的 Approval。
+5. Tool 执行，结果回到原会话。
+
+详细模块职责见[系统架构](https://github.com/NEDONION/mini-claw/blob/main/docs/architecture/20260807_%E7%B3%BB%E7%BB%9F%E6%9E%B6%E6%9E%84.md)。

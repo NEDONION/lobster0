@@ -73,7 +73,7 @@ New installations and older configurations without `tools.mode` default to `auto
 ### Install and run
 
 ```bash
-git clone https://github.com/NEDONION/miniclaw.git
+git clone https://github.com/NEDONION/mini-claw.git
 cd miniclaw
 
 uv sync --extra dev --extra channels

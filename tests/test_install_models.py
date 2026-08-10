@@ -53,7 +53,7 @@ class InstallModelsTest(unittest.TestCase):
 
     def release_url(self, version: str, filename: str) -> str:
         """返回 fixture 使用的 immutable MiniClaw Release asset URL。"""
-        return f"https://github.com/NEDONION/miniclaw/releases/download/v{version}/{filename}"
+        return f"https://github.com/NEDONION/mini-claw/releases/download/v{version}/{filename}"
 
     def request(self, **changes: object) -> InstallRequest:
         """构造一个不含 Secret 值的有效安装请求。"""
@@ -179,10 +179,10 @@ class InstallModelsTest(unittest.TestCase):
     def test_manifest_rejects_untrusted_urls_and_repositories(self) -> None:
         """artifact URL 必须是无附加信息的 allowlisted HTTPS 来源。"""
         cases = (
-            "http://github.com/NEDONION/miniclaw/releases/download/v0.7.0/a.whl",
-            "https://user@github.com/NEDONION/miniclaw/releases/download/v0.7.0/a.whl",
-            "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/a.whl?x=1",
-            "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/a.whl#x",
+            "http://github.com/NEDONION/mini-claw/releases/download/v0.7.0/a.whl",
+            "https://user@github.com/NEDONION/mini-claw/releases/download/v0.7.0/a.whl",
+            "https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/a.whl?x=1",
+            "https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/a.whl#x",
             "https://github.com/OTHER/miniclaw/releases/download/v0.7.0/a.whl",
             "https://github.com/NEDONION/other/releases/download/v0.7.0/a.whl",
         )
@@ -237,7 +237,7 @@ class InstallModelsTest(unittest.TestCase):
                 "filename": wheel["filename"],
                 "url": node["url"].replace(node["filename"], wheel["filename"]),
             },
-            {**node, "source_repository": "https://github.com/NEDONION/miniclaw"},
+            {**node, "source_repository": "https://github.com/NEDONION/mini-claw"},
             {**node, "platform": {"os": "any", "arch": "any"}},
             {**node, "media_type": "application/zip"},
             {**node, "upstream_sha256": None},
@@ -572,7 +572,7 @@ class InstallModelsTest(unittest.TestCase):
 
     def test_parser_error_keeps_code_and_field_without_raw_value(self) -> None:
         """parser 错误只输出稳定 code 与字段名，不回显恶意字段值。"""
-        raw_url = "https://user:TOPSECRET@github.com/NEDONION/miniclaw/releases/raw"
+        raw_url = "https://user:TOPSECRET@github.com/NEDONION/mini-claw/releases/raw"
 
         with self.assertRaises(InstallError) as caught:
             ReleaseManifest.from_bytes(self.artifact_mutation(url=raw_url))

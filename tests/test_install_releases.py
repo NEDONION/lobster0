@@ -57,12 +57,12 @@ def release(tag: str, *, draft: bool = False, prerelease: bool = True) -> dict[s
         "tag_name": f"v{tag}",
         "draft": draft,
         "prerelease": prerelease,
-        "html_url": f"https://github.com/NEDONION/miniclaw/releases/tag/v{tag}",
+        "html_url": f"https://github.com/NEDONION/mini-claw/releases/tag/v{tag}",
         "assets": [
             {
                 "name": "release-manifest.json",
                 "browser_download_url": (
-                    "https://github.com/NEDONION/miniclaw/releases/download/"
+                    "https://github.com/NEDONION/mini-claw/releases/download/"
                     f"v{tag}/release-manifest.json"
                 ),
             }
@@ -86,7 +86,7 @@ class InstallReleaseTests(unittest.TestCase):
                 "stable",
                 "0.7.0",
                 (
-                    "https://github.com/NEDONION/miniclaw/releases/download/"
+                    "https://github.com/NEDONION/mini-claw/releases/download/"
                     "v0.7.0/release-manifest.json"
                 ),
                 None,
@@ -94,7 +94,7 @@ class InstallReleaseTests(unittest.TestCase):
         )
         self.assertEqual(
             stable.manifest_url,
-            "https://github.com/NEDONION/miniclaw/releases/latest/download/release-manifest.json",
+            "https://github.com/NEDONION/mini-claw/releases/latest/download/release-manifest.json",
         )
         self.assertEqual(opener.urls, [])
 
@@ -144,14 +144,14 @@ class InstallReleaseTests(unittest.TestCase):
 
         self.assertEqual(
             opener.urls,
-            ["https://api.github.com/repos/NEDONION/miniclaw/releases?per_page=20"],
+            ["https://api.github.com/repos/NEDONION/mini-claw/releases?per_page=20"],
         )
         self.assertEqual(source.channel, "dev")
         self.assertEqual(source.requested_version, "0.8.0-rc.10")
         self.assertEqual(
             source.manifest_url,
             (
-                "https://github.com/NEDONION/miniclaw/releases/download/"
+                "https://github.com/NEDONION/mini-claw/releases/download/"
                 "v0.8.0-rc.10/release-manifest.json"
             ),
         )
@@ -214,9 +214,9 @@ class InstallReleaseTests(unittest.TestCase):
         """API origin 不得借 redirect 获得 asset host 权限或携带不可信 URL parts。"""
         locations = (
             "https://release-assets.githubusercontent.com/api-confusion",
-            "https://user:pass@api.github.com/repos/NEDONION/miniclaw/releases?per_page=20",
-            "https://api.github.com/repos/NEDONION/miniclaw/releases?per_page=19",
-            "https://api.github.com/repos/NEDONION/miniclaw/releases?per_page=20#fragment",
+            "https://user:pass@api.github.com/repos/NEDONION/mini-claw/releases?per_page=20",
+            "https://api.github.com/repos/NEDONION/mini-claw/releases?per_page=19",
+            "https://api.github.com/repos/NEDONION/mini-claw/releases?per_page=20#fragment",
         )
         for location in locations:
             with self.subTest(location=location), self.assertRaises(InstallError) as caught:
@@ -237,7 +237,7 @@ class InstallReleaseTests(unittest.TestCase):
     def test_release_source_constructor_rejects_untrusted_fields(self) -> None:
         """调用方不能绕过 resolver 构造任意 manifest URL 或 hash。"""
         latest = (
-            "https://github.com/NEDONION/miniclaw/releases/latest/download/"
+            "https://github.com/NEDONION/mini-claw/releases/latest/download/"
             "release-manifest.json"
         )
         for values in (

@@ -12,7 +12,7 @@ from miniclaw.install.models import InstallError, _parse_semver
 
 _API_BYTES = 1_048_576
 _API_ROWS = 20
-_API_URL = "https://api.github.com/repos/NEDONION/miniclaw/releases?per_page=20"
+_API_URL = "https://api.github.com/repos/NEDONION/mini-claw/releases?per_page=20"
 _HASH = re.compile(r"^[0-9a-f]{64}$")
 _MAX_VERSION_CHARS = 128
 _MAX_NUMERIC_IDENTIFIER_DIGITS = 18
@@ -45,7 +45,7 @@ class ReleaseSource:
             if self.channel != "stable":
                 _invalid()
             expected_url = (
-                "https://github.com/NEDONION/miniclaw/releases/latest/download/"
+                "https://github.com/NEDONION/mini-claw/releases/latest/download/"
                 "release-manifest.json"
             )
         else:
@@ -56,7 +56,7 @@ class ReleaseSource:
             ):
                 _invalid()
             expected_url = (
-                "https://github.com/NEDONION/miniclaw/releases/download/"
+                "https://github.com/NEDONION/mini-claw/releases/download/"
                 f"v{self.requested_version}/release-manifest.json"
             )
         if type(self.manifest_url) is not str or self.manifest_url != expected_url:
@@ -95,7 +95,7 @@ def resolve_release_source(
             channel,
             version,
             (
-                "https://github.com/NEDONION/miniclaw/releases/download/"
+                "https://github.com/NEDONION/mini-claw/releases/download/"
                 f"v{version}/release-manifest.json"
             ),
             None,
@@ -104,7 +104,7 @@ def resolve_release_source(
         return ReleaseSource(
             "stable",
             None,
-            "https://github.com/NEDONION/miniclaw/releases/latest/download/release-manifest.json",
+            "https://github.com/NEDONION/mini-claw/releases/latest/download/release-manifest.json",
             None,
         )
     data = _read_bounded_url(
@@ -181,7 +181,7 @@ def _parse_candidate(row: object) -> tuple[str, str] | None:
         _invalid()
     if draft or not prerelease_flag:
         return None
-    expected_html = f"https://github.com/NEDONION/miniclaw/releases/tag/{tag}"
+    expected_html = f"https://github.com/NEDONION/mini-claw/releases/tag/{tag}"
     if type(row["html_url"]) is not str or row["html_url"] != expected_html:
         _invalid()
     assets = row["assets"]
@@ -197,7 +197,7 @@ def _parse_candidate(row: object) -> tuple[str, str] | None:
         _invalid()
     url = manifests[0]["browser_download_url"]
     expected_url = (
-        "https://github.com/NEDONION/miniclaw/releases/download/"
+        "https://github.com/NEDONION/mini-claw/releases/download/"
         f"{tag}/release-manifest.json"
     )
     if type(url) is not str or url != expected_url:

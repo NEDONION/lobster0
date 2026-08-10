@@ -581,7 +581,7 @@ class TargetHandoffTests(unittest.TestCase):
                 "kind": "installer",
                 "filename": "miniclaw-installer.pyz",
                 "url": (
-                    "https://github.com/NEDONION/miniclaw/releases/download/"
+                    "https://github.com/NEDONION/mini-claw/releases/download/"
                     "v0.7.0/miniclaw-installer.pyz"
                 ),
                 "sha256": hashlib.sha256(installer).hexdigest(),
@@ -589,7 +589,7 @@ class TargetHandoffTests(unittest.TestCase):
                 "media_type": "application/zip",
                 "platform": {"os": "any", "arch": "any"},
                 "component_version": "0.7.0",
-                "source_repository": "https://github.com/NEDONION/miniclaw",
+                "source_repository": "https://github.com/NEDONION/mini-claw",
                 "license_ref": "MIT",
                 "upstream_sha256": None,
             }
@@ -915,7 +915,7 @@ class DependencyPreparationTests(unittest.TestCase):
                 "kind": "sandbox-image",
                 "filename": "miniclaw-sandbox-image-0.7.0.txt",
                 "url": (
-                    "https://github.com/NEDONION/miniclaw/releases/download/"
+                    "https://github.com/NEDONION/mini-claw/releases/download/"
                     "v0.7.0/miniclaw-sandbox-image-0.7.0.txt"
                 ),
                 "sha256": hashlib.sha256(self.image).hexdigest(),
@@ -923,7 +923,7 @@ class DependencyPreparationTests(unittest.TestCase):
                 "media_type": "text/plain",
                 "platform": {"os": "any", "arch": "any"},
                 "component_version": "0.7.0",
-                "source_repository": "https://github.com/NEDONION/miniclaw",
+                "source_repository": "https://github.com/NEDONION/mini-claw",
                 "license_ref": "MIT",
                 "upstream_sha256": None,
             }
