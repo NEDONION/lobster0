@@ -63,7 +63,8 @@ test('marketing page keeps its dense three-screen interaction contract', async (
     expect(viewportHeights).toBeLessThanOrEqual(3.2);
   }
 
-  await page.getByRole('link', { exact: true, name: 'English' }).click();
+  await page.locator('.language-switch__toggle').click();
+  await page.getByRole('option', { exact: true, name: 'English' }).click();
   await expect(page).toHaveURL('/en');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Your local agent, ready to act.');
   expect(pageErrors).toEqual([]);

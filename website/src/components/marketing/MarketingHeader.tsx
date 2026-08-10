@@ -4,10 +4,10 @@ import { marketingCopy, siteFacts, type Locale } from '@/content/site';
 import { localizedPath } from '@/lib/i18n';
 
 import { BrandMark } from './BrandMark';
+import { LanguageSwitcher } from './LanguageSwitcher';
 
 export function MarketingHeader({ locale }: { locale: Locale }) {
   const copy = marketingCopy[locale];
-  const alternateLocale: Locale = locale === 'zh-CN' ? 'en' : 'zh-CN';
 
   return (
     <header className="marketing-header">
@@ -22,9 +22,7 @@ export function MarketingHeader({ locale }: { locale: Locale }) {
           <Link href={localizedPath(locale, '/docs')}>{copy.nav.docs}</Link>
         </nav>
         <div className="marketing-header__actions">
-          <Link className="language-link" href={localizedPath(alternateLocale, '/')}>
-            {copy.nav.language}
-          </Link>
+          <LanguageSwitcher label={copy.nav.language} locale={locale} />
           <a className="header-github" href={siteFacts.links.github}>
             {copy.nav.github}
             <span aria-hidden="true">↗</span>

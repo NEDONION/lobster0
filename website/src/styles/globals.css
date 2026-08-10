@@ -118,7 +118,6 @@ pre {
 }
 
 .marketing-nav a,
-.language-link,
 .marketing-footer a {
   color: var(--muted);
   font-size: 0.9rem;
@@ -127,7 +126,6 @@ pre {
 }
 
 .marketing-nav a:hover,
-.language-link:hover,
 .marketing-footer a:hover {
   color: var(--ink);
 }
@@ -135,6 +133,68 @@ pre {
 .marketing-header__actions {
   justify-content: flex-end;
   gap: 16px;
+}
+
+.language-switch {
+  position: relative;
+}
+
+.language-switch__toggle {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 14px;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 650;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+
+.language-switch__toggle:hover,
+.language-switch__toggle[aria-expanded='true'] {
+  border-color: color-mix(in srgb, var(--signal) 45%, var(--line));
+  color: var(--ink);
+}
+
+.language-switch__menu {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 140px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 6px;
+  background: var(--surface);
+  box-shadow: 0 18px 40px rgb(16 19 26 / 14%);
+  list-style: none;
+}
+
+.language-switch__menu a {
+  display: block;
+  border-radius: 9px;
+  padding: 9px 12px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  text-decoration: none;
+}
+
+.language-switch__menu a:hover {
+  background: color-mix(in srgb, var(--signal) 8%, transparent);
+  color: var(--ink);
+}
+
+.language-switch__menu a[aria-current='true'] {
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  color: var(--signal);
+  font-weight: 650;
 }
 
 .header-github {
@@ -496,7 +556,6 @@ pre {
 .evidence-strip {
   display: grid;
   grid-column: 1 / -1;
-  grid-template-columns: minmax(0, 7fr) minmax(260px, 5fr);
   align-items: stretch;
   border: 1px solid var(--line);
   border-radius: 20px;
@@ -1577,9 +1636,8 @@ pre {
     display: none;
   }
 
-  .language-link {
+  .language-switch__toggle {
     min-height: 44px;
-    align-content: center;
   }
 
   .header-github {

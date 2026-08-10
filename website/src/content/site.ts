@@ -161,7 +161,7 @@ export const marketingCopy = {
       workbench: '演示',
       docs: '文档',
       github: 'GitHub',
-      language: 'English',
+      language: '切换语言',
     },
     hero: {
       eyebrow: '本地优先 · 开源 · 边界可检查',
@@ -314,7 +314,7 @@ export const marketingCopy = {
       workbench: 'Demo',
       docs: 'Docs',
       github: 'GitHub',
-      language: '简体中文',
+      language: 'Switch language',
     },
     hero: {
       eyebrow: 'LOCAL-FIRST / OPEN SOURCE',
