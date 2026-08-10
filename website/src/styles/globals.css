@@ -100,13 +100,6 @@ pre {
   width: 34px;
   height: 34px;
   place-items: center;
-  border-radius: 10px;
-  background: var(--signal);
-  color: white;
-  font-family: var(--font-mono);
-  font-size: 0.82rem;
-  font-weight: 700;
-  box-shadow: 0 2px 6px color-mix(in srgb, var(--signal) 22%, transparent);
 }
 
 .marketing-nav,

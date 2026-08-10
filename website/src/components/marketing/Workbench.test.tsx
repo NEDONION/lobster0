@@ -13,7 +13,7 @@ describe('Workbench', () => {
     expect(screen.getByRole('list', { name: /所有者决定/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /CLI/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /多入口/ })).toBeInTheDocument();
-    expect(screen.getByText('真实执行链路')).toBeInTheDocument();
+    expect(screen.getByText('01 / 真实执行机制')).toBeInTheDocument();
     expect(screen.getByText('exact argv')).toBeInTheDocument();
   });
 

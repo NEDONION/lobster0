@@ -20,11 +20,6 @@ function FlowWorkflow({ locale, workflow, index }: { locale: Locale; workflow: W
         <span>0{index + 1} / {zh ? '真实执行机制' : 'REAL MECHANISM'}</span>
         <h3>{workflow.title}</h3>
         <p>{workflow.summary}</p>
-        <dl>
-          <div><dt>{zh ? '步骤' : 'STEPS'}</dt><dd>{workflow.flow.length}</dd></div>
-          <div><dt>{zh ? '来源' : 'SOURCE'}</dt><dd>{zh ? '真实执行链路' : 'real execution path'}</dd></div>
-          <div><dt>{zh ? '状态' : 'STATE'}</dt><dd>{zh ? '实现证据' : 'implementation evidence'}</dd></div>
-        </dl>
       </div>
       <FlowDiagram
         ariaLabel={workflow.id === 'approval'
@@ -57,7 +52,6 @@ export function Workbench({ locale, workflows }: WorkbenchProps) {
             <p className="section-kicker">{copy.workbench.eyebrow}</p>
             <h2 id="workbench-title">{copy.workbench.title}</h2>
           </div>
-          <p className="section-lead">{copy.workbench.lead}</p>
         </div>
         <HashTabs ariaLabel={copy.nav.workbench} items={items} />
         <QuickStartClose locale={locale} />
