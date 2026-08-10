@@ -203,6 +203,85 @@ class InstallRuntimeTests(unittest.TestCase):
         path.write_bytes(payload)
         path.chmod(mode)
 
+    def _private_ambient_python_root(self) -> Path:
+        """把当前解释器的 prefix 复制成 owner-only、mode 与大小写都归一化的私有 tree。
+
+        真实 subprocess build 需要一个能执行的完整 CPython，所以只能取
+        ``sys.base_prefix``。但那棵树的位置、权限和内容完全由环境决定，
+        installer 的 trusted-tree 校验会——正确地——拒绝其中好几种形态：
+
+        - GitHub runner 上解释器位于 world-writable 的 ``/opt/hostedtoolcache``
+          之下，整条祖先链不可信；
+        - uv 在 Linux 上装的 managed CPython 带 ``share/terminfo``，里面存在
+          ``P`` 与 ``p`` 这类仅大小写不同的条目，会命中 casefold 去重拒绝。
+
+        维护者 macOS 上的 uv managed python 恰好躲开了这两点，用例因此只在本机
+        通过。复制进测试自己的 0700 sandbox、归一化 mode、并丢弃 casefold 重复项
+        之后，这条用例在任何平台上验证的都是同一件事：production subprocess
+        runner 能在 closed-world env 里完成离线 build。
+
+        注意：这里丢弃 casefold 重复项只是让 fixture 稳定，并不代表产品能接受
+        真实的 uv managed Linux Python——那是一个独立的、已记录的产品缺陷。
+
+        Returns:
+            sandbox 内可直接作为 ``managed_python_root`` 使用的私有 prefix 副本。
+        """
+        source = Path(sys.base_prefix).resolve(strict=True)
+        destination = self.sources / "ambient-python"
+        destination.mkdir(mode=0o700)
+        seen: set[str] = set()
+        for current, directories, files in os.walk(source):
+            relative = Path(current).relative_to(source)
+            links = [name for name in directories if (Path(current) / name).is_symlink()]
+            kept: list[str] = []
+            for name in sorted(directories):
+                if name in links or not self._claim_case(seen, relative / name):
+                    continue
+                kept.append(name)
+                (destination / relative / name).mkdir(mode=0o700)
+            directories[:] = kept
+            for name in sorted((*files, *links)):
+                item = Path(current) / name
+                if not self._claim_case(seen, relative / name):
+                    continue
+                target = destination / relative / name
+                if item.is_symlink():
+                    target.symlink_to(os.readlink(item))
+                    continue
+                shutil.copyfile(item, target)
+                target.chmod(0o700 if item.stat().st_mode & 0o111 else 0o600)
+        self._prune_dangling_symlinks(destination)
+        return destination
+
+    @staticmethod
+    def _prune_dangling_symlinks(root: Path) -> None:
+        """反复删除悬空 symlink，直到 tree 里只剩指向自身内部的有效 alias。
+
+        丢弃 casefold 重复项会顺带带走某些 terminfo alias 的目标，剩下的 symlink
+        就成了悬空链接，而 installer 只接受 non-dangling 的 root 内相对 alias。
+        循环是为了处理 alias 链：一次删除可能让下一层也变成悬空。
+        """
+        while True:
+            dangling = [
+                Path(current) / name
+                for current, directories, files in os.walk(root)
+                for name in (*directories, *files)
+                if (Path(current) / name).is_symlink() and not (Path(current) / name).exists()
+            ]
+            if not dangling:
+                return
+            for item in dangling:
+                item.unlink()
+
+    @staticmethod
+    def _claim_case(seen: set[str], relative: Path) -> bool:
+        """记录相对路径的 casefold 形式，重复出现时返回 false。"""
+        key = relative.as_posix().casefold()
+        if key in seen:
+            return False
+        seen.add(key)
+        return True
+
     def _acquire_live_lock(self, layout: InstallLayout | None = None) -> InstallLock:
         """在 sandbox 无 process-start probe 时创建仍验证真实 fd/inode 的 lock。"""
         probe = mock.patch.object(
@@ -1395,9 +1474,9 @@ class InstallRuntimeTests(unittest.TestCase):
             0o700,
         )
 
+        managed_root = self._private_ambient_python_root()
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
-            managed_root = Path(sys.base_prefix).resolve(strict=True)
             receipt = RuntimeBuilder().build(
                 replace(
                     self.inputs,
@@ -1772,14 +1851,19 @@ class InstallRuntimeTests(unittest.TestCase):
                 marker = path / ".runtime-recovery.json"
                 payload = marker.read_bytes()
                 before = marker.lstat()
-                marker.unlink()
-                marker.write_bytes(payload)
-                marker.chmod(0o600)
-                after = marker.lstat()
+                # 必须在原 marker 还挂在目录里时先建好 sibling，再原子 rename 顶上。
+                # 先 unlink 再原地重建的话，Linux 会立刻把刚释放的 inode 号复用给
+                # 新文件，根本构造不出本用例要的"同 bytes、不同 inode"场景；macOS
+                # 通常不复用，所以旧写法只在 macOS 上碰巧成立。
+                staged = path / ".runtime-recovery.json.replacement"
+                staged.write_bytes(payload)
+                staged.chmod(0o600)
+                after = staged.lstat()
                 self.assertNotEqual(
                     (after.st_dev, after.st_ino),
                     (before.st_dev, before.st_ino),
                 )
+                os.replace(staged, marker)
                 replaced = True
             return result
 

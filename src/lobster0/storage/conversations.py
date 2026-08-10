@@ -10,7 +10,6 @@ from datetime import UTC, datetime
 from lobster0.providers.base import JsonValue, ModelMessage
 from lobster0.storage.database import Database
 
-
 CONTEXT_RESET_SUMMARY = (
     "【会话上下文已由 Owner 重置】\n"
     "这条摘要之前的对话历史已归档，不再作为上下文。当前没有待办任务、没有待续的代码改动、"

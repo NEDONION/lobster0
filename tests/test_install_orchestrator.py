@@ -1421,10 +1421,12 @@ class RetryRecoveryTests(unittest.TestCase):
         """事务 cleanup 只能删除 download 时绑定的 exact inode。"""
         downloads = self.layout.runtimes_dir / ".0.7.0.downloads"
         downloads.mkdir(mode=0o700)
-        metadata = downloads.lstat()
+        descriptor = os.open(downloads, os.O_RDONLY | os.O_DIRECTORY)
+        metadata = os.fstat(descriptor)
         self.operations._download_roots[self.layout.program_prefix] = (
             downloads,
             (metadata.st_dev, metadata.st_ino),
+            descriptor,
         )
         with mock.patch(
             "lobster0.install.layout._probe_process",
@@ -1435,17 +1437,26 @@ class RetryRecoveryTests(unittest.TestCase):
         self.assertFalse(downloads.exists())
 
     def test_cleanup_preserves_replaced_downloads_inode(self) -> None:
-        """同路径 foreign replacement 不得被事务 finally 当作 staging 删除。"""
+        """同路径 foreign replacement 不得被事务 finally 当作 staging 删除。
+
+        按 `download` 的真实契约持有 downloads root 的目录描述符：inode 号被钉住
+        之后，rmdir + mkdir 出来的 foreign 目录在 Linux 与 macOS 上都必然拿到另一个
+        inode 号。不钉住的话 Linux 会把刚释放的 inode 号立刻复用给这个 foreign
+        目录，记录下来的 identity 就会错误匹配，cleanup 会把它整棵删掉。
+        """
         downloads = self.layout.runtimes_dir / ".0.7.0.downloads"
         downloads.mkdir(mode=0o700)
-        metadata = downloads.lstat()
+        descriptor = os.open(downloads, os.O_RDONLY | os.O_DIRECTORY)
+        metadata = os.fstat(descriptor)
         downloads.rmdir()
         downloads.mkdir(mode=0o700)
+        self.assertNotEqual(downloads.lstat().st_ino, metadata.st_ino)
         marker = downloads / "foreign"
         marker.write_bytes(b"foreign")
         self.operations._download_roots[self.layout.program_prefix] = (
             downloads,
             (metadata.st_dev, metadata.st_ino),
+            descriptor,
         )
         with mock.patch(
             "lobster0.install.layout._probe_process",

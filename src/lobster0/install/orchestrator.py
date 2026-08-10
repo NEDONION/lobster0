@@ -679,7 +679,9 @@ class _SystemOperations:
         self.interactive_runner = _InteractiveSubprocessRunner()
         self._platform: DetectedPlatform | None = None
         self._downloaded: dict[Path, _Downloaded] = {}
-        self._download_roots: dict[Path, tuple[Path, tuple[int, int]]] = {}
+        # (root, identity, descriptor)：descriptor 在整个事务里保持打开，用来钉住
+        # downloads root 的 inode 号，详见 `download` 与 `cleanup` 的说明。
+        self._download_roots: dict[Path, tuple[Path, tuple[int, int], int]] = {}
         self._previous: dict[Path, str | None] = {}
         self._prior_receipts: dict[Path, InstallReceipt | None] = {}
         self._launcher_existed: dict[Path, bool] = {}
@@ -877,10 +879,24 @@ class _SystemOperations:
             layout.runtimes_dir.mkdir(mode=runtime_parent_mode, parents=True, exist_ok=True)
             root = layout.runtimes_dir / f".{plan.manifest.version}.downloads"
             root.mkdir(mode=0o700)
-            root_metadata = root.lstat()
+            # 事务全程持有 downloads root 的 no-follow 目录描述符。`cleanup` 只凭
+            # 记录下来的 (st_dev, st_ino) 判断"这还是不是我建的那棵树"；描述符
+            # 一旦不在，Linux 会立刻把该 inode 号复用给新建目录，同路径上出现的
+            # foreign 目录就可能顶着同一个 inode 号被我们递归删掉。描述符钉住
+            # inode 号后，这个 identity 判断才重新成立。
+            root_descriptor = os.open(
+                root,
+                os.O_RDONLY
+                | getattr(os, "O_DIRECTORY", 0)
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0),
+            )
+            root_metadata = os.fstat(root_descriptor)
+            self._close_download_root(layout.program_prefix)
             self._download_roots[layout.program_prefix] = (
                 root,
                 (root_metadata.st_dev, root_metadata.st_ino),
+                root_descriptor,
             )
             selected = {
                 kind: plan.manifest.require_artifact(kind, plan.platform)
@@ -1276,7 +1292,7 @@ class _SystemOperations:
             _unlink_ephemeral(sandbox)
         if download_receipt is None:
             return
-        download_root, identity = download_receipt
+        download_root, identity, descriptor = download_receipt
         try:
             if download_root.parent == layout.runtimes_dir and download_root.name == (
                 f".{layout.runtime.name}.downloads"
@@ -1284,6 +1300,24 @@ class _SystemOperations:
                 _discard_downloads_tree(layout, download_root, identity, lock)
         except (InstallError, OSError):
             pass
+        finally:
+            # 描述符要活到删除动作真正结束：在此之前它一直在阻止内核回收本次
+            # downloads root 的 inode 号，identity 判断才不会认领到别人的目录。
+            _close_descriptor(descriptor)
+
+    def _close_download_root(self, program_prefix: Path) -> None:
+        """释放同一 prefix 上遗留的 downloads root 描述符，避免泄漏。"""
+        previous = self._download_roots.pop(program_prefix, None)
+        if previous is not None:
+            _close_descriptor(previous[2])
+
+
+def _close_descriptor(descriptor: int) -> None:
+    """关闭已持有的描述符，忽略重复关闭这类无后果的失败。"""
+    try:
+        os.close(descriptor)
+    except OSError:
+        pass
 
 
 def _discard_stale_downloads(layout: InstallLayout, lock: InstallLock) -> bool:

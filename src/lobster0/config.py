@@ -1619,16 +1619,22 @@ def resolve_permission_roots(
         read_candidates.extend(
             Path(value) for value in ("/Applications", "/opt/homebrew", "/usr/local")
         )
-        write_candidates.extend(
-            owner_home / name
-            for name in (
-                "Desktop",
-                "Documents",
-                "Downloads",
-                "PycharmProjects",
-                "WebstormProjects",
-            )
+    # 默认可写根对所有 POSIX 平台一致：Desktop/Documents/Downloads 正是 Linux
+    # xdg-user-dirs 的默认英文名，PycharmProjects/WebstormProjects 是 JetBrains
+    # 在各平台相同的默认目录。之前这段被关在 darwin 分支里，Linux 上 personal
+    # profile 因此解析出空的 write_roots——用户能读整个 Home，却在 Workspace
+    # 之外一处都不能写。`_existing_unique_roots` 已经会剔除不存在的目录，所以
+    # 这份清单在任何平台上都自动收敛为真实存在的那几个。
+    write_candidates.extend(
+        owner_home / name
+        for name in (
+            "Desktop",
+            "Documents",
+            "Downloads",
+            "PycharmProjects",
+            "WebstormProjects",
         )
+    )
     write_candidates.extend(permissions.write_roots)
     return ResolvedPermissionRoots(
         owner_home,
