@@ -108,6 +108,8 @@ D1 不增加 Bridge 请求、数据库迁移或依赖。当前 `task.start`、Se
 
 ## 5. D2：附件、模型、Workspace 与 Agent 选择
 
+独立设计：[D2 附件/模型/Workspace/Agent 控件设计](../../superpowers/specs/2026-08-10-desktop-d2-composer-controls-design.md)（`DRAFT FOR REVIEW`）。
+
 ### 5.1 用户结果
 
 Composer 下方出现四类真实控件：
