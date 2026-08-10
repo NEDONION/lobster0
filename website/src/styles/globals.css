@@ -822,8 +822,8 @@ pre {
   justify-content: center;
   background-color: var(--surface);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px);
   background-size: 26px 26px;
   padding: 20px 24px 22px;
   gap: 0;
@@ -953,8 +953,8 @@ pre {
   padding: 40px 24px 34px;
   background-color: var(--surface);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px);
   background-size: 26px 26px;
 }
 
@@ -1082,8 +1082,8 @@ pre {
   padding: 30px 24px;
   background-color: color-mix(in srgb, var(--canvas) 70%, white);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--line) 38%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 38%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--line) 22%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 22%, transparent) 1px, transparent 1px);
   background-size: 26px 26px;
 }
 
@@ -1261,8 +1261,8 @@ pre {
   gap: 0;
   background-color: var(--surface);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px);
   background-size: 26px 26px;
   padding: 20px;
 }
@@ -1545,8 +1545,8 @@ pre {
   padding: 44px 30px;
   background-color: var(--surface);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px);
   background-size: 26px 26px;
 }
 
@@ -1692,8 +1692,8 @@ pre {
   padding: 30px;
   background-color: var(--surface);
   background-image:
-    linear-gradient(color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in srgb, var(--line) 42%, transparent) 1px, transparent 1px);
+    linear-gradient(color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, var(--line) 24%, transparent) 1px, transparent 1px);
   background-size: 26px 26px;
 }
 
