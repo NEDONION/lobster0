@@ -76,7 +76,43 @@ def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
         ValueError: 发现 dynamic import、eval/exec/compile 或简单 alias 绕过。
     """
     nodes = tuple(ast.walk(tree))
+    direct_getattr: set[int] = set()
+    unsafe_getattr = False
     for node in nodes:
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+        ):
+            if (
+                len(node.args) not in {2, 3}
+                or node.keywords
+                or not isinstance(node.args[1], ast.Constant)
+                or type(node.args[1].value) is not str
+                or node.args[1].value in _DYNAMIC_NAMES
+            ):
+                unsafe_getattr = True
+            else:
+                direct_getattr.add(id(node.func))
+        elif isinstance(node, ast.arg) and node.arg == "getattr":
+            unsafe_getattr = True
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and (
+            node.name == "getattr"
+        ):
+            unsafe_getattr = True
+        elif isinstance(node, ast.alias) and (
+            node.asname == "getattr"
+            or node.asname is None
+            and node.name == "getattr"
+        ):
+            unsafe_getattr = True
+    for node in nodes:
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "getattr"
+            and id(node) not in direct_getattr
+        ):
+            unsafe_getattr = True
         if isinstance(node, ast.Name) and node.id in _DYNAMIC_NAMES:
             raise ValueError(f"unsafe dynamic {node.id} in {path.name}")
         if isinstance(node, ast.Attribute) and node.attr in _DYNAMIC_ATTRIBUTES:
@@ -106,6 +142,10 @@ def _require_safe_syntax(tree: ast.AST, path: Path) -> None:
         )
         if blocked is not None:
             raise ValueError(f"unsafe dynamic {blocked} in {path.name}")
+    if unsafe_getattr:
+        raise ValueError(f"unsafe dynamic getattr in {path.name}")
+
+
 def build_zipapp(source: Path, output: Path) -> Path:
     """只复制 install package 并生成 byte-reproducible stdlib-only pyz。
 

@@ -43,7 +43,7 @@ class InstallerZipappTests(unittest.TestCase):
             source = Path(temporary) / "install"
             source.mkdir()
             (source / "__init__.py").write_text(
-                "import json\nimport sys\nprint(sys.argv[0])\n"
+                "import json\nimport sys\nprint(getattr(sys, 'argv')[0])\n"
                 "from . import models\nfrom miniclaw.install import models\n",
                 encoding="utf-8",
             )
@@ -141,6 +141,26 @@ class InstallerZipappTests(unittest.TestCase):
                 source.mkdir()
                 (source / "__init__.py").write_text(payload, encoding="utf-8")
                 with self.assertRaisesRegex(ValueError, detail):
+                    builder.validate_imports(source)
+
+    def test_ast_boundary_rejects_computed_and_escaped_getattr(self) -> None:
+        """computed attribute name 与 escaped builtin getattr 均必须 fail closed。"""
+        cases = (
+            "import sys\ngetattr(sys, 'mod' + 'ules')\n",
+            "import sys\ngetattr(sys, ''.join(('mod', 'ules')))\n",
+            "import sys\nlookup = getattr\nlookup(sys, 'argv')\n",
+            "def consume(value):\n    return value\nconsume(getattr)\n",
+            "import sys\ndef use(getattr):\n    return getattr(sys, 'argv')\n",
+            "import sys\ndef getattr(value, name):\n    return None\ngetattr(sys, 'argv')\n",
+            "import sys\nfrom operator import attrgetter as getattr\ngetattr(sys, 'argv')\n",
+        )
+        builder = _load_builder()
+        for payload in cases:
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as temporary:
+                source = Path(temporary) / "install"
+                source.mkdir()
+                (source / "__init__.py").write_text(payload, encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "getattr"):
                     builder.validate_imports(source)
 
     def test_archive_contains_only_install_package_with_fixed_timestamps(self) -> None:
