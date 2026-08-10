@@ -4,6 +4,11 @@ import type { Locale } from '@/content/site';
 
 export const locales = ['zh-CN', 'en'] as const satisfies readonly Locale[];
 
+export const localeNames: Record<Locale, string> = {
+  'zh-CN': '简体中文',
+  en: 'English',
+};
+
 const i18nBypassPaths = new Set([
   '/favicon.svg',
   '/opengraph-image',

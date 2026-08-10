@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest';
 import { MarketingHome } from './MarketingHome';
 
 describe('MarketingHome', () => {
-  it('renders exactly three product sections with localized navigation', () => {
+  it('renders exactly three product sections with localized navigation', async () => {
+    const user = userEvent.setup();
     const { container } = render(<MarketingHome locale="zh-CN" />);
 
     expect(container.querySelectorAll('main > section')).toHaveLength(3);
@@ -13,7 +14,9 @@ describe('MarketingHome', () => {
     expect(container.querySelector('#product')).toBeInTheDocument();
     expect(container.querySelector('#workbench')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '文档' })).toHaveAttribute('href', '/docs');
-    expect(screen.getByRole('link', { name: 'English' })).toHaveAttribute('href', '/en');
+
+    await user.click(screen.getByRole('button', { name: '切换语言' }));
+    expect(screen.getByRole('option', { name: 'English' })).toHaveAttribute('href', '/en');
   });
 
   it('uses the three-arrow brand and localized surface cards', () => {
