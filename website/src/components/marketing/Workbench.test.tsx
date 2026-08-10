@@ -6,18 +6,15 @@ import { marketingCopy } from '@/content/site';
 import { Workbench } from './Workbench';
 
 describe('Workbench', () => {
-  it('uses two real screenshots and one multi-channel diagram', () => {
+  it('uses two animated flow diagrams and one multi-channel diagram', () => {
     render(<Workbench locale="zh-CN" workflows={marketingCopy['zh-CN'].workflows} />);
 
     expect(screen.getByRole('tab', { name: /SAFE/ })).toBeInTheDocument();
-    expect(screen.getByRole('img', { name: /审批/ })).toHaveAttribute(
-      'src',
-      expect.stringContaining('approval'),
-    );
+    expect(screen.getByRole('list', { name: /所有者决定/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /CLI/ })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /多入口/ })).toBeInTheDocument();
-    expect(screen.getByText('仓库真实图片')).toBeInTheDocument();
-    expect(screen.getByText('可观察步骤')).toBeInTheDocument();
+    expect(screen.getByText('真实执行链路')).toBeInTheDocument();
+    expect(screen.getByText('exact argv')).toBeInTheDocument();
   });
 
   it('keeps the close inside the third section with real install actions', () => {

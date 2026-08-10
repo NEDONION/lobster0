@@ -11,17 +11,22 @@ export interface CapabilityCopy {
   facts: readonly string[];
 }
 
+export type FlowIcon = 'intent' | 'argv' | 'gate' | 'run' | 'result' | 'program';
+export type FlowState = 'default' | 'waiting' | 'active' | 'done';
+
+export interface FlowStepCopy {
+  icon: FlowIcon;
+  label: string;
+  detail: string;
+  state: FlowState;
+}
+
 export interface WorkflowCopy {
   id: WorkflowId;
   label: string;
   title: string;
   summary: string;
-  image?: {
-    src: string;
-    alt: string;
-    width: number;
-    height: number;
-  };
+  flow?: readonly FlowStepCopy[];
 }
 
 export interface TraceStepCopy {
@@ -254,8 +259,8 @@ export const marketingCopy = {
     ],
     workbench: {
       eyebrow: '演示 / 03',
-      title: '看真实执行，不看概念渲染。',
-      lead: '两张仓库内 TUI 截图，加上一张多入口结构图，展示 MiniClaw 今天已经验证的工作方式。',
+      title: '看真实机制，不看功能截图。',
+      lead: '两条动画化的真实执行链路，加上一张多入口结构图，展示 MiniClaw 今天已经验证的工作方式——开发中持续变化，截图只会过时。',
     },
     workflows: [
       {
@@ -263,24 +268,25 @@ export const marketingCopy = {
         label: 'SAFE 审批',
         title: '高风险动作先展示影响与 exact argv。',
         summary: 'Owner 看到目标与参数后再决定，授权不会转移给另一组参数。',
-        image: {
-          src: '/images/miniclaw-tui-approval-warp.webp',
-          alt: 'MiniClaw TUI 中的 SAFE 模式工具审批界面',
-          width: 2784,
-          height: 1824,
-        },
+        flow: [
+          { icon: 'intent', label: '用户请求', detail: '"帮我发一条安全问候"', state: 'default' },
+          { icon: 'argv', label: 'exact argv', detail: 'printf "Hello, MiniClaw!"', state: 'default' },
+          { icon: 'gate', label: 'Owner 审批', detail: '参数已锁定，等待确认', state: 'waiting' },
+          { icon: 'run', label: '隔离执行', detail: '仅这组 argv 可以运行', state: 'active' },
+          { icon: 'result', label: '结果返回', detail: '回到同一对话', state: 'done' },
+        ],
       },
       {
         id: 'external-cli',
         label: '外部 CLI',
         title: '程序与参数结构化传递。',
         summary: '外部 CLI 执行结果回到原会话，执行顺序和失败位置保持可观察。',
-        image: {
-          src: '/images/miniclaw-tui-external-cli-warp.webp',
-          alt: 'MiniClaw TUI 中执行 exact-argv 外部 CLI 的界面',
-          width: 2696,
-          height: 1736,
-        },
+        flow: [
+          { icon: 'program', label: '程序', detail: 'git log --oneline -5', state: 'default' },
+          { icon: 'argv', label: 'argv[]', detail: '["git","log","--oneline","-5"]', state: 'default' },
+          { icon: 'run', label: '隔离子进程', detail: '独立 stdout / stderr', state: 'active' },
+          { icon: 'result', label: '结构化结果', detail: '返回原会话', state: 'done' },
+        ],
       },
       {
         id: 'multi-channel',
@@ -407,8 +413,8 @@ export const marketingCopy = {
     ],
     workbench: {
       eyebrow: 'DEMO / 03',
-      title: 'Inspect real execution—not a concept render.',
-      lead: 'Two repository-owned TUI captures and one channel diagram show the workflows MiniClaw can substantiate today.',
+      title: 'Inspect the real mechanism—not a feature screenshot.',
+      lead: 'Two animated execution paths, plus one channel diagram, show the workflows MiniClaw can substantiate today—actively evolving, so a screenshot would just go stale.',
     },
     workflows: [
       {
@@ -416,24 +422,25 @@ export const marketingCopy = {
         label: 'SAFE Approval',
         title: 'Risky actions show impact and exact argv first.',
         summary: 'The Owner decides with the target and parameters visible; approval never transfers to different arguments.',
-        image: {
-          src: '/images/miniclaw-tui-approval-warp.webp',
-          alt: 'Tool approval in the MiniClaw TUI SAFE mode',
-          width: 2784,
-          height: 1824,
-        },
+        flow: [
+          { icon: 'intent', label: 'User request', detail: '"send a safe greeting"', state: 'default' },
+          { icon: 'argv', label: 'exact argv', detail: 'printf "Hello, MiniClaw!"', state: 'default' },
+          { icon: 'gate', label: 'Owner approval', detail: 'arguments locked, awaiting confirm', state: 'waiting' },
+          { icon: 'run', label: 'Isolated execution', detail: 'only this exact argv runs', state: 'active' },
+          { icon: 'result', label: 'Result delivered', detail: 'back to the same conversation', state: 'done' },
+        ],
       },
       {
         id: 'external-cli',
         label: 'External CLI',
         title: 'Programs and arguments stay structured.',
         summary: 'External CLI results return to the same conversation with execution order and failures visible.',
-        image: {
-          src: '/images/miniclaw-tui-external-cli-warp.webp',
-          alt: 'Exact-argv external CLI execution in the MiniClaw TUI',
-          width: 2696,
-          height: 1736,
-        },
+        flow: [
+          { icon: 'program', label: 'Program', detail: 'git log --oneline -5', state: 'default' },
+          { icon: 'argv', label: 'argv[]', detail: '["git","log","--oneline","-5"]', state: 'default' },
+          { icon: 'run', label: 'Isolated subprocess', detail: 'separate stdout / stderr', state: 'active' },
+          { icon: 'result', label: 'Structured result', detail: 'returned to the conversation', state: 'done' },
+        ],
       },
       {
         id: 'multi-channel',
