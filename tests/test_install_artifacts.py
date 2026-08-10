@@ -99,7 +99,7 @@ class InstallArtifactTests(unittest.TestCase):
             kind="tui",
             filename="miniclaw-tui-0.7.0-linux-x86_64.tar.gz",
             url=(
-                "https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/"
+                "https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/"
                 "miniclaw-tui-0.7.0-linux-x86_64.tar.gz"
             ),
             sha256=sha256 or hashlib.sha256(body).hexdigest(),
@@ -107,7 +107,7 @@ class InstallArtifactTests(unittest.TestCase):
             media_type="application/gzip",
             platform=PlatformKey("linux", "x86_64"),
             component_version="0.7.0",
-            source_repository="https://github.com/NEDONION/miniclaw",
+            source_repository="https://github.com/NEDONION/mini-claw",
             license_ref="MIT",
             upstream_sha256=None,
         )
@@ -675,7 +675,7 @@ class InstallArtifactTests(unittest.TestCase):
                         status=302,
                         headers={
                             "Location": (
-                                "https://github.com/NEDONION/miniclaw/releases/download/"
+                                "https://github.com/NEDONION/mini-claw/releases/download/"
                                 "v0.7.0/next"
                             )
                         },

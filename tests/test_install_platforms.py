@@ -142,14 +142,14 @@ class InstallPlatformsTest(unittest.TestCase):
                     "kind": kind,
                     "filename": path.name,
                     "url": (
-                        f"https://github.com/NEDONION/miniclaw/releases/download/v0.7.0/{path.name}"
+                        f"https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/{path.name}"
                     ),
                     "sha256": hashlib.sha256(body).hexdigest(),
                     "size": len(body),
                     "media_type": media_type,
                     "platform": {"os": "any", "arch": "any"},
                     "component_version": "0.7.0",
-                    "source_repository": "https://github.com/NEDONION/miniclaw",
+                    "source_repository": "https://github.com/NEDONION/mini-claw",
                     "license_ref": "MIT",
                     "upstream_sha256": None,
                 }
