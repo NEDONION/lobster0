@@ -521,6 +521,45 @@ class SetupTest(unittest.TestCase):
             with self.subTest(descriptor=value), self.assertRaises(OSError):
                 os.fstat(value)
 
+    def test_open_tty_does_not_retry_a_reused_descriptor_after_close_error(self) -> None:
+        """close 已释放 fd 后即使报错也不得再次关闭复用该编号的外部 fd。"""
+        real_open = os.open
+        real_close = os.close
+        descriptor = real_open(os.devnull, os.O_RDWR)
+        foreign: int | None = None
+
+        def close_if_open(value: int) -> None:
+            try:
+                real_close(value)
+            except OSError:
+                pass
+
+        self.addCleanup(close_if_open, descriptor)
+
+        def close_with_reuse(value: int) -> None:
+            nonlocal foreign
+            if value == descriptor and foreign is None:
+                real_close(value)
+                foreign = real_open(os.devnull, os.O_RDONLY)
+                self.addCleanup(close_if_open, foreign)
+                raise OSError("close reported failure after releasing fd")
+            real_close(value)
+
+        with (
+            mock.patch("miniclaw.setup.os.open", return_value=descriptor),
+            mock.patch("miniclaw.setup.os.close", side_effect=close_with_reuse),
+            self.assertRaisesRegex(SetupError, "interactive terminal is unavailable"),
+        ):
+            setup_module._open_tty()
+
+        self.assertEqual(foreign, descriptor)
+        assert foreign is not None
+        try:
+            metadata = os.fstat(foreign)
+        except OSError:
+            self.fail("foreign descriptor was closed by cleanup retry")
+        self.assertTrue(stat.S_ISCHR(metadata.st_mode))
+
 
 if __name__ == "__main__":
     unittest.main()

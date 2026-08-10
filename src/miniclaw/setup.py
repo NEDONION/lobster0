@@ -397,24 +397,33 @@ def _open_tty() -> TextIO:
             raise OSError("not a character device")
         read_descriptor = os.dup(descriptor)
         write_descriptor = os.dup(descriptor)
-        os.close(descriptor)
+        acquired = descriptor
         descriptor = None
+        os.close(acquired)
 
         reader = io.FileIO(read_descriptor, "rb", closefd=True)
         read_descriptor = None
         writer = io.FileIO(write_descriptor, "wb", closefd=True)
         write_descriptor = None
+        tty_descriptor = reader.fileno()
         buffer = io.BufferedRWPair(reader, writer)
-        stream = _DuplexTty(buffer, reader.fileno())
+        reader = None
+        writer = None
+        stream = _DuplexTty(buffer, tty_descriptor)
+        buffer = None
         return stream
     except BaseException as error:
-        for resource in (stream, buffer, writer, reader):
+        resources = (stream, buffer, writer, reader)
+        stream = buffer = writer = reader = None
+        for resource in resources:
             if resource is not None:
                 try:
                     resource.close()
                 except Exception:
                     pass
-        for acquired in (write_descriptor, read_descriptor, descriptor):
+        descriptors = (write_descriptor, read_descriptor, descriptor)
+        write_descriptor = read_descriptor = descriptor = None
+        for acquired in descriptors:
             if acquired is not None:
                 try:
                     os.close(acquired)
