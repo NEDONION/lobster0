@@ -25,7 +25,7 @@ from email.parser import BytesParser
 from pathlib import Path, PurePosixPath
 from typing import Never, Protocol
 
-from miniclaw.install.layout import InstallLayout, _program_mode
+from miniclaw.install.layout import InstallLayout, InstallLock, _program_mode
 from miniclaw.install.models import (
     Artifact,
     InstallError,
@@ -864,6 +864,60 @@ def activate_runtime(layout: InstallLayout, receipt: RuntimeReceipt) -> None:
                 published_absent=published_absent,
             )
         raise InstallError("activation_failed", "manifest") from error
+
+
+def discard_unactivated_runtime(layout: InstallLayout, lock: InstallLock) -> bool:
+    """清理完整、未被引用且尚未激活的目标 Runtime。
+
+    Args:
+        layout: 与待清理版本绑定的 validated layout。
+        lock: 当前进程通过 `InstallLock.acquire` 持有的原始实例。
+
+    Returns:
+        删除目标 Runtime 时返回 true；目标不存在或仍被受管引用时返回 false。
+
+    Raises:
+        InstallError: lock、Runtime、引用、inode 或持久化事实不可信。
+    """
+    try:
+        if (
+            type(layout) is not InstallLayout
+            or type(lock) is not InstallLock
+            or not lock.owns(layout)
+        ):
+            _runtime_failed()
+        if not _lexists(layout.runtime):
+            return False
+        program_mode, _data_mode = _runtime_modes(layout)
+        identity = _directory_identity(layout.runtime, expected_mode=program_mode)
+        target = f"runtimes/{layout.runtime.name}"
+        receipt = _verified_runtime_target(layout, target)
+        if receipt.executables_sha256 is None:
+            _runtime_failed()
+        if target in _runtime_references(layout):
+            return False
+        if (
+            not lock.owns(layout)
+            or _directory_identity(layout.runtime, expected_mode=program_mode) != identity
+        ):
+            _runtime_failed()
+        if target in _runtime_references(layout):
+            return False
+        if (
+            _verified_runtime_target(layout, target) != receipt
+            or not lock.owns(layout)
+            or _directory_identity(layout.runtime, expected_mode=program_mode) != identity
+            or not _revoke_tree_root_private(layout.runtime, identity)
+            or not _quarantine_and_remove(layout.runtime, identity)
+        ):
+            _runtime_failed()
+        return True
+    except InstallError as error:
+        if error.code == "runtime_install_failed":
+            raise
+        raise InstallError("runtime_install_failed", "manifest") from error
+    except BaseException as error:
+        raise InstallError("runtime_install_failed", "manifest") from error
 
 
 def retain_current_and_previous(layout: InstallLayout) -> tuple[Path, ...]:
@@ -2304,19 +2358,63 @@ def _verified_runtime_target(layout: InstallLayout, target: str) -> RuntimeRecei
 
 def _validated_current(layout: InstallLayout) -> str | None:
     """返回 validated relative current target；不存在时返回 None。"""
-    if not _lexists(layout.current):
+    return _validated_runtime_link(layout, layout.current)
+
+
+def _runtime_references(layout: InstallLayout) -> set[str]:
+    """读取受管 Runtime 引用。
+
+    Args:
+        layout: 与待清理版本绑定的 validated layout。
+
+    Returns:
+        `current`、`current.next` 与根 receipt 中的全部 Runtime 相对路径。
+
+    Raises:
+        InstallError: 任一存在的引用不是完整、稳定且受管的事实。
+    """
+    references = {
+        reference
+        for reference in (
+            _validated_current(layout),
+            _validated_runtime_link(layout, layout.current.with_name("current.next")),
+        )
+        if reference is not None
+    }
+    if _lexists(layout.receipt):
+        install_receipt = InstallReceipt.load(layout.receipt)
+        references.add(install_receipt.current_runtime)
+        if install_receipt.previous_runtime is not None:
+            references.add(install_receipt.previous_runtime)
+    return references
+
+
+def _validated_runtime_link(layout: InstallLayout, path: Path) -> str | None:
+    """no-follow 验证一个受管 Runtime reference symlink。
+
+    Args:
+        layout: 用于解析受管 Runtime target 的 validated layout。
+        path: 待检查的 symlink 路径。
+
+    Returns:
+        不存在时返回 None；否则返回完整验证后的相对 Runtime target。
+
+    Raises:
+        InstallError: 路径、symlink metadata、target tree 或稳定性不可信。
+    """
+    if not _lexists(path):
         return None
     try:
-        metadata = layout.current.lstat()
+        metadata = path.lstat()
         if (
             not stat.S_ISLNK(metadata.st_mode)
             or metadata.st_uid != os.geteuid()
             or metadata.st_nlink != 1
         ):
             _activation_failed()
-        target = os.readlink(layout.current)
+        target = os.readlink(path)
         _verified_runtime_target(layout, target)
-        after = layout.current.lstat()
+        after = path.lstat()
         if _metadata_snapshot(after) != _metadata_snapshot(metadata):
             _activation_failed()
         return target
