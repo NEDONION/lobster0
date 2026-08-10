@@ -195,3 +195,11 @@ Core。当前为 `TARGET CONFIRMED / D1-D5 IMPLEMENTATION PENDING`。
 | [Phase 7 计划](../superpowers/plans/2026-08-08-phase-7-controlled-evolution-and-memory-v2.md) | Feedback、Proposal、Eval、Apply/Rollback。 | 依赖 Memory A～E 与 Phase 6。 |
 | [Phase 8 计划](../superpowers/plans/2026-08-08-phase-8-skills-mcp-provider-resilience.md) | Skill trust、MCP、Provider fallback、预算。 | 依赖 Phase 7。 |
 | [Phase 9 计划](../superpowers/plans/2026-08-08-phase-9-subagents-and-multimodal.md) | depth-1 Sub-agent、附件、Vision、可选语音。 | 依赖 Phase 6 与 Phase 8。 |
+
+## 跨 Phase 的可用性修复
+
+真实使用后发现、不归属某个架构 Phase 的独立修复，按日期倒序：
+
+| 文档 | 修复内容 | 状态 |
+| --- | --- | --- |
+| [交互式 setup 补齐 Owner ID 获取指引](20260811_交互式setup补齐OwnerID获取指引.md) | 首次配置向导问飞书 open_id / Telegram / Discord user ID 却不说去哪找，用户卡在第一步；三处提问前补获取指引。 | `IMPLEMENTED`（2026-08-11） |
