@@ -53,6 +53,8 @@ _PUBLIC_INSTALL_URL = (
     "https://github.com/NEDONION/lobster0/releases/latest/download/install.sh"
 )
 _DESIGN_CASE_COUNT = 15
+_DESKTOP_JOB = "desktop-bundles"
+_DESKTOP_ARTIFACT_PREFIX = "lobster0-desktop-"
 
 
 def _load(path: Path) -> dict[str, object]:
@@ -596,6 +598,94 @@ class PublishTrustTest(unittest.TestCase):
         subjects = "\n".join(str(block.get("subject-path", "")) for block in with_blocks)
         for name in ("release-manifest.json", "SHA256SUMS", "install.sh"):
             self.assertIn(name, subjects)
+
+
+class DesktopReleaseArtifactTest(unittest.TestCase):
+    """桌面分发产物必须与既有产物共用同一批发布门禁，不另起一条通路。
+
+    桌面包不进入 `release-manifest.json`：manifest 是安装器的封闭世界事实源，
+    `.dmg`/`.AppImage` 不是安装器的输入。因此桌面包必须靠另外两道既有门禁兜住
+    ——摘要 sidecar 复核与 attestation ——否则它就是唯一一类能未经校验就随
+    Release 转正到达用户的产物。
+    """
+
+    def setUp(self) -> None:
+        """加载 Release 工作流与桌面打包作业。"""
+        self.workflow = _load(_RELEASE_WORKFLOW)
+        self.jobs = _jobs(self.workflow)
+        self.desktop = self.jobs[_DESKTOP_JOB]
+
+    def _attest_subjects(self) -> str:
+        """返回 attestation 作业声明的全部 subject-path 文本。"""
+        return "\n".join(
+            str(step.get("with", {}).get("subject-path", ""))
+            for step in _steps(self.jobs["attestation"])
+            if str(step.get("uses", "")).startswith("actions/attest@")
+        )
+
+    def test_desktop_job_covers_both_supported_desktop_operating_systems(self) -> None:
+        """桌面打包必须在 macOS 与 Linux 各自的托管 runner 上真实构建。"""
+        strategy = self.desktop.get("strategy")
+        self.assertEqual(type(strategy), dict)
+        self.assertEqual(strategy.get("fail-fast"), "true")
+        include = strategy["matrix"]["include"]
+        self.assertEqual(
+            {str(entry["runner"]) for entry in include}, {"macos-14", "ubuntu-24.04"}
+        )
+        self.assertIn("timeout-minutes", self.desktop)
+
+    def test_desktop_job_runs_only_after_the_offline_gate(self) -> None:
+        """桌面打包不得早于离线门禁，避免为一个注定失败的 tag 烧构建。"""
+        self.assertLessEqual(
+            {"guard", "offline-gate", "draft-release"}, set(_needs(self.desktop))
+        )
+
+    def test_desktop_packaging_can_never_publish_by_itself(self) -> None:
+        """electron-builder 必须显式 ``--publish never``，且构建步骤看不到 token。
+
+        electron-builder 只要在环境里发现 ``GH_TOKEN``/``GITHUB_TOKEN`` 就可能
+        自行往 GitHub Release 上传，从而绕开本工作流的全部门禁。
+        """
+        text = _run_text(self.desktop)
+        self.assertIn("--publish never", text)
+        self.assertNotIn("GH_TOKEN", str(self.desktop.get("env", "")))
+        for step in _steps(self.desktop):
+            if "electron-builder" not in str(step.get("run", "")):
+                continue
+            with self.subTest(step=str(step.get("name", ""))):
+                self.assertNotIn("TOKEN", str(step.get("env", "")))
+
+    def test_desktop_build_is_explicitly_unsigned(self) -> None:
+        """没有证书就必须明确未签名，不得依赖 runner keychain 的偶然状态。"""
+        self.assertEqual(
+            str(self.desktop.get("env", {}).get("CSC_IDENTITY_AUTO_DISCOVERY")), "false"
+        )
+
+    def test_desktop_artifacts_are_handed_over_with_a_digest_sidecar(self) -> None:
+        """桌面产物必须与 Node/TUI bundle 一样带 ``.sha256`` 摘要交接。"""
+        text = _run_text(self.desktop)
+        self.assertIn(".sha256", text)
+        self.assertIn("gh release upload", text)
+        self.assertIn(_DESKTOP_ARTIFACT_PREFIX, text)
+
+    def test_desktop_artifacts_are_rechecked_and_attested(self) -> None:
+        """attestation 必须先按 sidecar 复核桌面产物，再把它们纳入 subject。"""
+        attestation = self.jobs["attestation"]
+        self.assertIn(_DESKTOP_JOB, _needs(attestation))
+        self.assertIn(_DESKTOP_ARTIFACT_PREFIX, _run_text(attestation))
+        self.assertIn("sha256sum -c -", _run_text(attestation))
+        self.assertIn(_DESKTOP_ARTIFACT_PREFIX, self._attest_subjects())
+
+    def test_publish_verifies_every_desktop_artifact_before_promoting(self) -> None:
+        """publish 必须重新复核桌面产物摘要与 attestation 后才把 Release 转正。"""
+        self.assertIn(_DESKTOP_JOB, _reachable(self.jobs, "publish"))
+        text = _run_text(self.jobs["publish"])
+        self.assertIn(_DESKTOP_ARTIFACT_PREFIX, text)
+        self.assertIn("gh attestation verify", text)
+
+    def test_guard_binds_the_desktop_package_version_to_the_same_constant(self) -> None:
+        """guard 必须把 ``desktop/package.json`` 的版本绑进同一个事实。"""
+        self.assertIn("desktop/package.json", _run_text(self.jobs["guard"]))
 
 
 class PostPublishSmokeTest(unittest.TestCase):
