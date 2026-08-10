@@ -6,15 +6,15 @@ import { marketingCopy } from '@/content/site';
 import { Workbench } from './Workbench';
 
 describe('Workbench', () => {
-  it('uses two animated flow diagrams and one multi-channel diagram', () => {
+  it('shows the three boundary-moment scenarios', () => {
     render(<Workbench locale="zh-CN" workflows={marketingCopy['zh-CN'].workflows} />);
 
-    expect(screen.getByRole('tab', { name: /SAFE/ })).toBeInTheDocument();
-    expect(screen.getByRole('list', { name: /所有者决定/ })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /CLI/ })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /多入口/ })).toBeInTheDocument();
-    expect(screen.getByText('01 / 真实执行机制')).toBeInTheDocument();
-    expect(screen.getByText('exact argv')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /审批被拒/ })).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: /终止/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /执行失败/ })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /故障隔离/ })).toBeInTheDocument();
+    expect(screen.getByText('01 / 边界时刻')).toBeInTheDocument();
+    expect(screen.getByText('rm -rf /tmp/*')).toBeInTheDocument();
   });
 
   it('keeps the close inside the third section with real install actions', () => {

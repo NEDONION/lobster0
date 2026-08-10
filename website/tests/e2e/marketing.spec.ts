@@ -40,9 +40,9 @@ test('marketing page keeps its dense three-screen interaction contract', async (
   await expect(page).toHaveURL(/#channels$/);
   await expect(page.locator('#channels-tab')).toHaveAttribute('aria-selected', 'true');
 
-  await page.locator('#external-cli-tab').click();
-  await expect(page.locator('#external-cli-panel')).toBeVisible();
-  await expect(page).toHaveURL(/#external-cli$/);
+  await page.locator('#crash-tab').click();
+  await expect(page.locator('#crash-panel')).toBeVisible();
+  await expect(page).toHaveURL(/#crash$/);
 
   await page.locator('.command-copy button').first().click();
   await expect(page.locator('.command-copy button').first()).toContainText('已复制');
