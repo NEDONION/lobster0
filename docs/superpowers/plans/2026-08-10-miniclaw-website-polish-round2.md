@@ -127,6 +127,77 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
 - `npx vitest run`：28/28 通过
 - 可视化：Playwright + 系统 Chrome 截图确认（详见上文），不再依赖坏掉的 Browser 面板
 
-### 待办（未开始）
+### 待办
 
-`多入口` / `安全边界` / `记忆` / `自动化` 四个能力面板的视觉统一——Round 3 因面板故障搁置，本轮时间优先给了截图空白 bug、语言切换器和演示区域动画化。现在可视化验证方式已经恢复，下一轮可以直接做。
+`安全边界` / `记忆` / `自动化` 三个能力面板的视觉统一还没做。
+
+## Round 5（2026-08-10，进行中）
+
+### `多入口`（ChannelsPanel）重做：卡片网格 → 暗色 hub-and-spoke 拓扑图
+
+- **设计**：改成和 `FlowDiagram`（演示区域）同一套暗色终端视觉语言——中心 `AgentRuntime` 胶囊节点，向下用树形连接线（主干 → 横向汇流线 + 4 条支线）分别连到 4 个入口节点；入口节点直接复用 `SurfaceIcon.tsx` 的真实品牌图标（飞书/Telegram/Discord 官方 SVG + TUI 终端图标），而不是纯文字。汇流线上叠加一条常驻的流动光效（复用已有的 `flowPulse` keyframe）。核心节点和入口节点都有入场动效（缩放淡入 / 交错上滑淡入），尊重 reduced motion。
+- **踩的坑（供以后同类改动参考）**：
+  1. 最初用一个 `<svg viewBox="0 0 100 62" preserveAspectRatio="none">` 画连接线，实测发现**非等比缩放会把 `stroke-dasharray` 的虚线段严重拉伸变形**（横向拉伸约 8 倍、纵向约 5.8 倍，虚线段变成一坨坨色块），而且线条颜色只有 16% 透明度白色，在截图里几乎完全看不见——两个问题叠加导致连接线实质上"不存在"。改成纯 CSS 定位的 `<span>` 元素（主干/汇流线/支线各自 `position:absolute` + `top/bottom/left/right` 精确计算），彻底避开 SVG 非等比缩放的坑，颜色也提到 30% 透明度、线宽 1.5px 保证可读。
+  2. Framer Motion 的 `animate={{ y: ... }}` 会接管元素的 `transform` 属性，**和 CSS 里写的 `transform: translateX(-50%)` 会冲突**（谁的 transform 生效取决于内联样式覆盖顺序，实测 CSS 的会被 Framer 直接吃掉）。改成把居中偏移也交给 Framer 自己管：`style={{ left: '12%', x: '-50%' }}`，让 Framer 把静态的 `x` 和动画的 `y` 合并进同一个 transform。
+  3. **最隐蔽的一个**：改完背景色一直不生效，实测 `getComputedStyle` 发现 `.channels-map` 的背景色是浅色 `rgb(247,249,252)`，不是我写的 `var(--terminal)`。根因是 `MarketingHome.module.css` 里有一条 `.root :global(.runtime-map), .root :global(.channels-map), .root :global(.safety-map), .root :global(.memory-map), .root :global(.automation-map) { background-color: #f7f9fc; ... }`——CSS Module 的 `:global()` 选择器因为多了 `.root` 祖先类，**优先级天然比 `globals.css` 里的同名单类选择器高**，不管源码顺序谁在后面都会赢。这是本轮会话里第三次踩到同一类型的坑（前两次是 `.evidence-strip` 和 `.runtime-map`），说明这个 module CSS 文件里还有大量"影子样式"，以后每次重做一个 `*-map` 组件之前，应该**先搜一遍 `MarketingHome.module.css` 里同名的 `:global(...)` 规则**，而不是等改完发现不生效再排查。已经把 `.channels-map` 从这条共享浅色背景规则里摘出来，单独给了一条深色边框规则；顺带删掉了两条只会匹配旧 `> div` 结构（现在改成了 `> li`）、永远不会再命中的死规则（`nth-child` 描边色、hover 效果）。
+- **可视化验证**：Playwright + 系统 Chrome 截图确认，中心节点、四条品牌图标入口节点、树形连接线（含流动光效）全部按预期渲染；和下方演示区域的暗色面板视觉语言一致。
+- **文件**：`website/src/components/marketing/capabilities/ChannelsPanel.tsx`、`website/src/styles/globals.css`、`website/src/components/marketing/MarketingHome.module.css`
+
+### 验证
+
+- `npx tsc --noEmit`：通过
+- `npx eslint src/`：通过
+- `npx vitest run`：28/28 通过
+
+### 待办
+
+`安全边界` / `记忆` / `自动化` 三个能力面板还没做。用户中途提出一个新的更大范围的需求（项目改名，仓库地址换成 NEDONION/lobster0，需要同步改 README 和官网），本轮时间优先处理改名调研，这三个面板的重做顺延到改名之后。
+
+## Round 6（2026-08-11）
+
+### 触发反馈
+
+用户提出三件事：项目改名为 `lobster0`（GitHub 仓库已经从 `NEDONION/mini-claw` 重命名为 `NEDONION/lobster0`，确认过展示名就用小写 `lobster0`，和仓库 slug 一致）；参照 claw-x.com / openagents.org / lobsterai.youdao.com 三个站点重做设计，圆角太多、"能力/特性"板块精度不够；域名换成对应的。
+
+设计方向上，先出了三版静态提案（深海终端 / 龙虾蓝图 / 真实界面剧场），用户选了**方向 C：真实界面剧场**——保留现有浅色系统和字体，把抽象节点图/连线图换成真实产品界面模拟（聊天窗口、终端窗口），让访客一眼看懂"这是真产品在跑"。
+
+### 已完成
+
+#### 1. 域名：新增 lobster0.jchu.tech
+
+`npx vercel domains add lobster0.jchu.tech miniclaw`，DNS 已验证通过（`vercel domains verify` 返回 `status: ok`）。沿用 `miniclaw.jchu.tech` 那次的操作方式，域名指向同一个 Vercel 项目（miniclaw 项目暂未改名，产品名和项目名解耦，不互相依赖）。
+
+#### 2. 全局圆角系统性收紧
+
+参照 claw-x.com（10–16px）和 openagents.org（5–16px）的实测圆角值，把 `globals.css` + `MarketingHome.module.css` 里散落的圆角从 18–28px（含多处 999px 胶囊按钮）统一收紧到 8–12px。**保留**了小徽标/标签（`.claw-trace__status`、`.runtime-map__state`、`.flow-diagram__icon` 等）的 999px/50% 圆形——这类小尺寸 pill 在两个参考站点里也是标准用法，不属于"滥用"，真正需要收紧的是大容器和主按钮。改动是纯字符串精确匹配替换（`border-radius: 18px;` → `12px;` 等），没有动其他属性，风险低。
+
+#### 3. 特性板块 03/04/05 从抽象图改成"真实界面剧场"
+
+- **03 安全边界**：改成飞书聊天窗口模拟——用户请求高风险操作 → Agent 提示需要确认 exact argv → `POLICY_CHECK` 卡片展示真实命令 `rm -rf /tmp/miniclaw-cache-2026` 和四档权限模式按钮（SAFE 高亮）→ `RESULT_DELIVERED` 卡片展示四项检查通过。新建 `.chat-scene` / `.chat-bubble` / `.chat-card` / `.chat-modes` 系列样式，复用 `SurfaceIcon.tsx` 的真实飞书图标做窗口顶栏。
+- **04 记忆**：改成深色终端窗口，左栏是 `facts.md` 的真实 Markdown 片段（帯简单语法高亮），右栏是对应的 SQL 查询与格式化表格结果，中间"投影"箭头用已有的 `flowPulse` 光效动画连接。直接展示"Markdown 是 Truth，SQLite 是 Projection"这句话在真实文件/查询层面是什么样子，比两个方块加箭头有说服力。
+- **05 自动化**：改成 Discord 聊天窗口模拟——定时任务触发 → `AUTOMATION_GATE` 拦截卡片，带一个真实的 iOS 风格开关组件（当前关闭态）+ "默认关闭"文字 → 绿色"一旦开启"卡片展示 所有者启用→策略门禁→15 条版本化场景 的流程 → 底部 `Implementation PASS ≠ Live PASS` 免责声明条。复用 `SurfaceIcon.tsx` 的 Discord 图标。
+- 03/05 两个聊天窗口共享同一套 `.chat-scene` 系列样式（只是 app 图标、消息内容、卡片状态不同），04 记忆单独一套 `.memory-scene` 终端样式。三个面板都用 IntersectionObserver 触发的交错入场动画（复用已经验证过的“进入视口再播放”模式），尊重 reduced motion。
+- 旧的 `.safety-map` / `.memory-map` / `.automation-map` 系列 CSS（含 `globals.css` 和 `MarketingHome.module.css` 两处）全部删除，没有留死代码。
+- 同步更新了 `MarketingHome.test.tsx` 里断言"默认状态"文字的用例，改成断言新文案"默认关闭"。
+
+**02 多入口没有改成聊天窗口**——这是有意的技术判断：多入口面板讲的是"一个 AgentRuntime 同时连接四个平台"，这是架构关系，不是单次交互，塞进一个聊天窗口反而讲不清楚。Round 5 刚做的深色 hub-and-spoke 拓扑图保留，且和这轮新增的 `.chat-scene` / `.memory-scene` 深色终端窗口在视觉基调上是统一的（都是浅色外壳 + 深色终端/窗口展示关键机制），不违和。
+
+#### 4. 出过一版静态设计提案（未采纳的两版记录在案，供以后参考）
+
+在动代码之前，先用 Artifact 出了三版静态 HTML 提案给用户选：
+
+- **方向 A 深海终端**：延续已验证的深色终端节点图语言精修，圆角收紧，风险最低。
+- **方向 B 龙虾蓝图**（未采纳，但认为是三版里最独特的一版）：暖白图纸底 + 蓝图网格线 + 龙虾壳橙红强调色，工程图纸美学（裁切标记、刻度尺、图纸标注），直接呼应新名字"lobster0"和产品"结构化、可审查"的叙事，市面上 AI Agent 官网基本没人这么做。
+- **方向 C 真实界面剧场**（用户选中）：如上。
+
+第一次发布的 Artifact 链接用户点开显示 404（怀疑是权限问题——Artifact 默认私有，只有发布账号能直接打开），改用 `SendUserFile` 直接把 HTML 文件发过去解决。
+
+### 验证
+
+- `npx tsc --noEmit` / `npx eslint src/` / `npx vitest run`（28/28）：全部通过
+- `npx playwright test tests/e2e/marketing.spec.ts`：2 个失败，和 Round 3/4 记录的**同一组**预先存在的 flaky（`#safety-tab` 时序、`.claw-trace` reduced-motion 断言）一致，与本轮改动无关
+- 可视化：Playwright + 系统 Chrome 截图，03/04/05 三个面板桌面端逐一截图确认
+
+### 待办
+
+项目改名（README.md / README_EN.md / 官网品牌名 MiniClaw → lobster0，含 `siteFacts.install` 里写死的旧仓库地址）还没做，是这轮最后剩下的一项。
