@@ -777,9 +777,9 @@ pre {
 .runtime-scene {
   align-self: stretch;
   margin: 24px;
-  border: 1px solid rgb(255 255 255 / 10%);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--terminal);
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -788,8 +788,9 @@ pre {
   align-items: center;
   gap: 10px;
   padding: 11px 16px;
-  border-bottom: 1px solid rgb(255 255 255 / 9%);
-  color: #a6aec0;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--canvas) 60%, var(--surface));
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.72rem;
 }
@@ -803,7 +804,7 @@ pre {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #6a7180;
+  background: #d3d9e3;
 }
 
 .runtime-scene__dots i:nth-child(2) {
@@ -842,7 +843,7 @@ pre {
   bottom: 0;
   left: 3px;
   width: 1px;
-  background: rgb(255 255 255 / 12%);
+  background: var(--line);
 }
 
 .runtime-map > li:first-child::before {
@@ -862,9 +863,9 @@ pre {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #6f7789;
+  background: #b9c0cc;
   transform: translateY(-50%);
-  box-shadow: 0 0 0 3px var(--terminal);
+  box-shadow: 0 0 0 3px var(--surface);
 }
 
 .runtime-map > li[data-state='allowed']::after,
@@ -881,14 +882,14 @@ pre {
 }
 
 .runtime-map__index {
-  color: #5b6272;
+  color: #9aa3b2;
   font-family: var(--font-mono);
   font-size: 0.64rem;
 }
 
 .runtime-map__detail {
   grid-column: 2;
-  color: #8792a6;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.63rem;
   line-height: 1.5;
@@ -899,8 +900,8 @@ pre {
   grid-column: 3;
   border-radius: 999px;
   padding: 2px 9px;
-  background: rgb(255 255 255 / 8%);
-  color: #8792a6;
+  background: color-mix(in srgb, var(--muted) 12%, transparent);
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.6rem;
   font-style: normal;
@@ -909,18 +910,18 @@ pre {
 
 .runtime-map > li[data-state='allowed'] .runtime-map__state,
 .runtime-map > li[data-state='succeeded'] .runtime-map__state {
-  background: rgb(44 175 136 / 18%);
-  color: #6fe0b8;
+  background: rgb(44 175 136 / 13%);
+  color: #1d8967;
 }
 
 .runtime-map > li[data-state='waiting'] .runtime-map__state {
-  background: rgb(228 169 61 / 20%);
-  color: #f0c674;
+  background: rgb(228 169 61 / 16%);
+  color: #9a6f14;
 }
 
 .runtime-map > li[data-state='running'] .runtime-map__state {
-  background: color-mix(in srgb, var(--signal) 22%, transparent);
-  color: #b9c4ff;
+  background: color-mix(in srgb, var(--signal) 12%, transparent);
+  color: var(--signal);
 }
 
 .runtime-map strong,
@@ -930,7 +931,7 @@ pre {
 
 .runtime-map strong {
   overflow-wrap: anywhere;
-  color: #f5f7fb;
+  color: var(--ink);
   font-size: 0.72rem;
   line-height: 1.35;
 }
@@ -945,7 +946,7 @@ pre {
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 40px 24px 34px;
-  background: var(--terminal);
+  background: var(--surface);
 }
 
 .channels-map__wires {
@@ -956,7 +957,7 @@ pre {
 
 .channels-map__wire {
   position: absolute;
-  background: rgb(255 255 255 / 30%);
+  background: color-mix(in srgb, var(--muted) 40%, transparent);
 }
 
 .channels-map__wire--trunk {
@@ -1003,11 +1004,11 @@ pre {
   margin: 0 auto;
   flex-direction: column;
   align-items: center;
-  border: 1px solid rgb(255 255 255 / 16%);
+  border: 1px solid color-mix(in srgb, var(--signal) 28%, var(--line));
   border-radius: 999px;
   padding: 20px 16px;
-  background: #0d1017;
-  box-shadow: 0 0 0 6px rgb(66 103 245 / 8%), 0 6px 16px rgb(0 0 0 / 22%);
+  background: color-mix(in srgb, var(--signal) 6%, var(--surface));
+  box-shadow: 0 0 0 6px rgb(66 103 245 / 6%);
   text-align: center;
 }
 
@@ -1017,13 +1018,13 @@ pre {
 
 .channels-map__core strong {
   margin-top: 7px;
-  color: #f5f7fb;
+  color: var(--ink);
   font-size: 0.86rem;
 }
 
 .channels-map small {
   margin-top: 6px;
-  color: #8792a6;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.56rem;
   line-height: 1.4;
@@ -1053,14 +1054,14 @@ pre {
   width: 40px;
   height: 40px;
   place-items: center;
-  border: 1.5px solid rgb(255 255 255 / 16%);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .channels-map__edges strong {
   margin-top: 8px;
-  color: #f5f7fb;
+  color: var(--ink);
   font-size: 0.74rem;
 }
 
@@ -1215,9 +1216,9 @@ pre {
 .memory-scene {
   align-self: stretch;
   margin: 24px;
-  border: 1px solid rgb(255 255 255 / 10%);
+  border: 1px solid var(--line);
   border-radius: 12px;
-  background: var(--terminal);
+  background: var(--surface);
   overflow: hidden;
 }
 
@@ -1227,14 +1228,15 @@ pre {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 16px;
-  border-bottom: 1px solid rgb(255 255 255 / 9%);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--canvas) 60%, var(--surface));
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: #cfd6e6;
+  color: var(--ink);
 }
 
 .memory-scene__bar em {
-  color: #6f7789;
+  color: var(--muted);
   font-size: 0.62rem;
   font-style: normal;
 }
@@ -1285,7 +1287,7 @@ pre {
 }
 
 .memory-list b {
-  color: #8792a6;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.6rem;
   font-weight: 500;
@@ -1293,7 +1295,7 @@ pre {
 }
 
 .memory-list span {
-  color: #e6eaf2;
+  color: var(--ink);
   font-size: 0.76rem;
   line-height: 1.45;
 }
@@ -1301,7 +1303,7 @@ pre {
 .memory-pane pre {
   margin: 0;
   overflow-x: auto;
-  color: #cfd6e6;
+  color: var(--ink);
   font-family: var(--font-mono);
   font-size: 0.68rem;
   line-height: 1.7;
@@ -1327,7 +1329,7 @@ pre {
   justify-content: center;
   gap: 8px;
   padding: 0 22px;
-  color: #6f7789;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.6rem;
   white-space: nowrap;
@@ -1520,10 +1522,10 @@ pre {
   justify-content: center;
   min-width: 0;
   margin: 22px;
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 44px 30px;
-  background: var(--terminal);
-  box-shadow: 0 8px 20px rgb(16 19 26 / 14%);
+  background: var(--surface);
 }
 
 .flow-diagram__nodes {
@@ -1547,7 +1549,7 @@ pre {
 }
 
 .flow-diagram__nodes::before {
-  background: rgb(255 255 255 / 14%);
+  background: var(--line);
 }
 
 .flow-diagram__nodes::after {
@@ -1578,15 +1580,15 @@ pre {
   width: 44px;
   height: 44px;
   place-items: center;
-  border: 1.5px solid rgb(255 255 255 / 16%);
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: #0d1017;
-  color: #8792a6;
+  background: var(--surface);
+  color: var(--muted);
   transition: border-color 200ms ease, color 200ms ease, background 200ms ease;
 }
 
 .flow-diagram__nodes > li strong {
-  color: #f5f7fb;
+  color: var(--ink);
   font-family: var(--font-sans);
   font-size: 0.72rem;
   font-weight: 620;
@@ -1595,16 +1597,16 @@ pre {
 .flow-diagram__nodes > li code {
   max-width: 118px;
   overflow-wrap: anywhere;
-  color: #8792a6;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.6rem;
   line-height: 1.4;
 }
 
 .flow-diagram__nodes > li[data-state='waiting'] .flow-diagram__icon {
-  border-color: color-mix(in srgb, var(--warn) 60%, transparent);
-  background: color-mix(in srgb, var(--warn) 20%, #0d1017);
-  color: var(--warn);
+  border-color: color-mix(in srgb, var(--warn) 55%, transparent);
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  color: #9a6f14;
   animation: flowWaitingPulse 1.8s ease-in-out infinite;
 }
 
@@ -1613,15 +1615,15 @@ pre {
 }
 
 .flow-diagram__nodes > li[data-state='active'] .flow-diagram__icon {
-  border-color: color-mix(in srgb, var(--signal) 65%, transparent);
-  background: color-mix(in srgb, var(--signal) 22%, #0d1017);
-  color: #b9c4ff;
+  border-color: color-mix(in srgb, var(--signal) 55%, transparent);
+  background: color-mix(in srgb, var(--signal) 12%, var(--surface));
+  color: var(--signal);
 }
 
 .flow-diagram__nodes > li[data-state='done'] .flow-diagram__icon {
-  border-color: color-mix(in srgb, var(--safe) 65%, transparent);
-  background: color-mix(in srgb, var(--safe) 20%, #0d1017);
-  color: var(--safe);
+  border-color: color-mix(in srgb, var(--safe) 55%, transparent);
+  background: color-mix(in srgb, var(--safe) 13%, var(--surface));
+  color: #1d8967;
 }
 
 @keyframes flowPulse {
@@ -1652,10 +1654,10 @@ pre {
   align-items: center;
   gap: 28px;
   margin: 22px;
-  border: 1px solid rgb(255 255 255 / 10%);
+  border: 1px solid var(--line);
   border-radius: 12px;
   padding: 30px;
-  background: var(--terminal);
+  background: var(--surface);
 }
 
 .multi-channel-map__runtime {
@@ -1664,12 +1666,12 @@ pre {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgb(255 255 255 / 16%);
+  border: 1px solid color-mix(in srgb, var(--signal) 28%, var(--line));
   border-radius: 50%;
   padding: 26px;
-  background: #0d1017;
+  background: color-mix(in srgb, var(--signal) 6%, var(--surface));
   text-align: center;
-  box-shadow: 0 0 0 6px rgb(66 103 245 / 8%), 0 6px 16px rgb(0 0 0 / 24%);
+  box-shadow: 0 0 0 6px rgb(66 103 245 / 6%);
 }
 
 .multi-channel-map__runtime span {
@@ -1685,13 +1687,13 @@ pre {
 
 .multi-channel-map__runtime strong {
   margin-top: 10px;
-  color: #f5f7fb;
+  color: var(--ink);
   font-size: 0.9rem;
 }
 
 .multi-channel-map__runtime small {
   margin-top: 10px;
-  color: #8792a6;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.57rem;
   line-height: 1.45;
@@ -1704,10 +1706,10 @@ pre {
 }
 
 .multi-channel-map__surfaces > div {
-  border: 1px solid rgb(255 255 255 / 10%);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 14px;
-  background: #0d1017;
+  background: color-mix(in srgb, var(--canvas) 45%, var(--surface));
 }
 
 .multi-channel-map__surfaces header {
@@ -1722,9 +1724,9 @@ pre {
   width: 24px;
   height: 24px;
   place-items: center;
-  border: 1px solid rgb(255 255 255 / 14%);
+  border: 1px solid var(--line);
   border-radius: 7px;
-  background: #fff;
+  background: var(--surface);
 }
 
 .multi-channel-map__icon svg {
@@ -1733,7 +1735,7 @@ pre {
 }
 
 .multi-channel-map__surfaces header strong {
-  color: #f5f7fb;
+  color: var(--ink);
   font-size: 0.7rem;
 }
 
@@ -1753,20 +1755,20 @@ pre {
 .multi-channel-map__surfaces dl div {
   display: flex;
   justify-content: space-between;
-  border-top: 1px solid rgb(255 255 255 / 8%);
+  border-top: 1px solid var(--line);
   padding-top: 6px;
 }
 
 .multi-channel-map__surfaces dt,
 .multi-channel-map__surfaces dd {
   margin: 0;
-  color: #6f7789;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.52rem;
 }
 
 .multi-channel-map__surfaces dd {
-  color: #6fe0b8;
+  color: #1d8967;
 }
 
 .quick-start-close {
