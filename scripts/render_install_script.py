@@ -15,7 +15,7 @@ _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _FILENAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _UV_URL_PREFIX = "https://github.com/astral-sh/uv/releases/download/"
 _PLATFORM_KEYS = ("linux-x86_64", "linux-arm64", "macos-x86_64", "macos-arm64")
-_REPO_BASE_URL = "https://github.com/NEDONION/miniclaw/releases/download"
+_REPO_BASE_URL = "https://github.com/NEDONION/mini-claw/releases/download"
 _DEFAULT_TEMPLATE = Path("release/install.sh.tmpl")
 _DEFAULT_RUNTIME_VERSIONS = Path("release/runtime-versions.json")
 
