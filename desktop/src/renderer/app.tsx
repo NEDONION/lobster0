@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { isPermissionMode, type PermissionMode } from "@lobster0/pi-tui/protocol";
 
 import type {
@@ -8,6 +8,7 @@ import type {
   SessionSummary,
 } from "../common/api";
 import { NAV_ITEMS, type ViewId } from "./navigation";
+import { SESSION_GROUP_LABELS, groupSessionsByRecency } from "./session-groups";
 import { TaskWorkbench } from "./task-workbench";
 
 const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }> = {
@@ -19,7 +20,7 @@ const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }
   automation: {
     eyebrow: "AUTOMATION",
     title: "自动化",
-    body: "查看 Lobster0 Core 已有的定时任务和下次运行时间。W1 仅提供只读信息。",
+    body: "查看 Lobster0 Core 已有的定时任务和下次运行时间，当前为只读。",
   },
   settings: {
     eyebrow: "LOCAL CONTROL",
@@ -29,6 +30,22 @@ const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }
 };
 
 const PERMISSION_MODES: readonly PermissionMode[] = ["safe", "smart", "autopilot", "yolo"];
+
+// 侧栏历史列表只标注需要用户注意的状态。`completed` 是绝大多数会话的常态，
+// 每条都标反而变成噪音，所以映射为 null 表示不展示。
+const SESSION_STATUS_LABELS: Record<string, string | null> = {
+  completed: null,
+  running: "运行中",
+  queued: "排队中",
+  waiting_approval: "待审批",
+  failed: "失败",
+  cancelled: "已取消",
+};
+
+export function sessionStatusLabel(status: string): string | null {
+  // 未知状态原样透出，便于发现 Core 新增的状态，而不是静默吞掉。
+  return status in SESSION_STATUS_LABELS ? SESSION_STATUS_LABELS[status] ?? null : status;
+}
 
 export function App(): React.JSX.Element {
   const [view, setView] = useState<ViewId>("task");
@@ -44,6 +61,8 @@ export function App(): React.JSX.Element {
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
   const copy = VIEW_COPY[view];
+  // 只在 Session 列表变化时重新分组；跨越午夜后的下一次列表刷新会自然更新分组。
+  const sessionGroups = useMemo(() => groupSessionsByRecency(sessions, new Date()), [sessions]);
 
   useEffect(() => {
     let active = true;
@@ -169,7 +188,6 @@ export function App(): React.JSX.Element {
       <div className="app-drag-region" aria-hidden="true" />
       <aside className="sidebar">
         <div className="brand" aria-label="Lobster0 Desktop">
-          <span className="brand-mark" aria-hidden="true">M</span>
           <span>Lobster0</span>
         </div>
         <button
@@ -197,7 +215,6 @@ export function App(): React.JSX.Element {
           ))}
         </nav>
         <section className="sidebar-recent" aria-label="最近对话">
-          <span className="sidebar-recent-heading">最近对话</span>
           {sessionsError ? (
             <p className="sidebar-recent-error" role="alert">{sessionsError}</p>
           ) : null}
@@ -205,26 +222,36 @@ export function App(): React.JSX.Element {
             <p className="sidebar-recent-empty">还没有历史对话。</p>
           ) : (
             <div className="sidebar-recent-list">
-              {sessions.map((session) => (
-                <button
-                  aria-current={session.sessionKey === sessionKey ? "page" : undefined}
-                  data-active={session.sessionKey === sessionKey}
-                  disabled={taskBusy}
-                  key={session.sessionKey}
-                  onClick={() => void openSession(session.sessionKey)}
-                  type="button"
-                >
-                  <strong>{session.title}</strong>
-                  <small>{session.status}</small>
-                </button>
+              {sessionGroups.map((group) => (
+                <div className="sidebar-recent-group" key={group.key}>
+                  <span className="sidebar-recent-heading">
+                    {SESSION_GROUP_LABELS[group.key]}
+                  </span>
+                  {group.sessions.map((session) => (
+                    <button
+                      aria-current={session.sessionKey === sessionKey ? "page" : undefined}
+                      data-active={session.sessionKey === sessionKey}
+                      disabled={taskBusy}
+                      key={session.sessionKey}
+                      onClick={() => void openSession(session.sessionKey)}
+                      type="button"
+                    >
+                      <strong>{session.title}</strong>
+                      {sessionStatusLabel(session.status) ? (
+                        <small data-status={session.status}>
+                          {sessionStatusLabel(session.status)}
+                        </small>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
               ))}
             </div>
           )}
         </section>
         <div className="sidebar-status">
           <span className="pulse-dot" data-ready={bootstrap !== null} aria-hidden="true" />
-          <span>{bootstrap ? "Core ready" : "Core offline"}</span>
-          <strong>W1</strong>
+          <span>{bootstrap ? "已连接本地 Core" : "未连接本地 Core"}</span>
         </div>
       </aside>
 

@@ -65,8 +65,8 @@ select:focus-visible {
   display: flex;
   min-height: 0;
   flex-direction: column;
-  gap: 14px;
-  padding: 40px 12px 12px;
+  gap: 8px;
+  padding: 40px 10px 12px;
   border-right: 1px solid var(--lobster-border);
   background: var(--lobster-background);
 }
@@ -74,23 +74,13 @@ select:focus-visible {
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 6px;
-  font-size: var(--lobster-text-sm);
+  height: 36px;
+  margin-bottom: 4px;
+  padding: 0 10px;
+  color: var(--lobster-text-primary);
+  font-size: var(--lobster-text-base);
   font-weight: 600;
   letter-spacing: -0.01em;
-}
-
-.brand-mark {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border-radius: var(--lobster-radius);
-  color: var(--lobster-primary-foreground);
-  background: var(--lobster-primary);
-  font-size: var(--lobster-text-xs);
-  font-weight: 600;
 }
 
 .navigation {
@@ -98,27 +88,27 @@ select:focus-visible {
   gap: 1px;
 }
 
+/* 侧栏所有条目共享同一套尺寸节奏；视觉保持克制，默认无背景色块，
+   只有 hover 和选中态才出现中性浅灰底，强调色不用于大面积填充。 */
 .nav-item,
 .sidebar-create {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 10px;
   width: 100%;
-  height: 32px;
-  padding: 0 8px;
+  height: 36px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 6px;
-  font-size: var(--lobster-text-sidebarCompact);
+  border-radius: 8px;
+  color: var(--lobster-text-secondary);
+  background: transparent;
+  font-size: var(--lobster-text-sm);
   cursor: pointer;
   text-align: left;
 }
 
-.nav-item {
-  color: var(--lobster-text-secondary);
-  background: transparent;
-}
-
-.nav-item:hover:not(:disabled) {
+.nav-item:hover:not(:disabled),
+.sidebar-create:hover:not(:disabled) {
   color: var(--lobster-foreground);
   background: var(--lobster-hover);
 }
@@ -130,19 +120,15 @@ select:focus-visible {
 }
 
 .nav-item[data-active="true"] {
-  color: var(--lobster-primary);
-  background: var(--lobster-primary-muted);
+  color: var(--lobster-foreground);
+  background: var(--lobster-surface-raised);
   font-weight: var(--lobster-ui-font-weight-medium);
 }
 
+/* 新建对话是主操作，但靠位置和字重区分即可，不需要整块填色。 */
 .sidebar-create {
-  color: var(--lobster-primary-foreground);
-  background: var(--lobster-primary);
+  color: var(--lobster-foreground);
   font-weight: var(--lobster-ui-font-weight-medium);
-}
-
-.sidebar-create:hover:not(:disabled) {
-  background: var(--lobster-primary-hover);
 }
 
 .nav-mark {
@@ -170,8 +156,19 @@ select:focus-visible {
 .sidebar-recent-list {
   display: grid;
   min-height: 0;
+  align-content: start;
   gap: 1px;
   overflow-y: auto;
+}
+
+.sidebar-recent-group {
+  display: grid;
+  gap: 1px;
+}
+
+/* 组间留白比组内条目之间大，让时间分段一眼可辨；首组不额外留白。 */
+.sidebar-recent-group + .sidebar-recent-group {
+  margin-top: 10px;
 }
 
 .sidebar-recent-list button {
@@ -212,12 +209,35 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+/* 只有需要注意的状态才会渲染这个标记（completed 不渲染），做成小胶囊以示区分。 */
 .sidebar-recent-list small {
+  justify-self: start;
   overflow: hidden;
-  color: var(--lobster-text-muted);
-  font-size: 11px;
+  max-width: 100%;
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--lobster-text-secondary);
+  background: var(--lobster-surface-raised);
+  font-size: 10px;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-recent-list small[data-status="failed"] {
+  color: var(--lobster-destructive);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.sidebar-recent-list small[data-status="waiting_approval"] {
+  color: var(--lobster-warning);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.sidebar-recent-list small[data-status="running"],
+.sidebar-recent-list small[data-status="queued"] {
+  color: var(--lobster-primary);
+  background: var(--lobster-primary-muted);
 }
 
 .sidebar-recent-empty,
@@ -233,8 +253,7 @@ select:focus-visible {
 }
 
 .sidebar-status {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
   align-items: center;
   gap: 7px;
   margin-top: auto;
@@ -242,12 +261,6 @@ select:focus-visible {
   border-top: 1px solid var(--lobster-border);
   color: var(--lobster-text-muted);
   font-size: var(--lobster-text-xs);
-}
-
-.sidebar-status strong {
-  color: var(--lobster-text-secondary);
-  font-family: var(--lobster-font-mono);
-  font-weight: var(--lobster-ui-font-weight-normal);
 }
 
 .pulse-dot {
@@ -491,8 +504,9 @@ select:focus-visible {
   background: var(--lobster-surface);
 }
 
+/* 空态没有 header，整块区域交给居中的邀请区。 */
 .conversation-panel[data-mode="empty"] {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .conversation-header {
@@ -594,8 +608,7 @@ select:focus-visible {
   gap: 5px;
 }
 
-.message > span,
-.activity-item > span {
+.message > span {
   color: var(--lobster-text-muted);
   font-size: var(--lobster-text-xs);
 }
@@ -760,42 +773,18 @@ select:focus-visible {
   font-weight: 600;
 }
 
-.activity-item {
-  position: relative;
+/* ---------- Process block（聚合的思考与工具调用） ---------- */
+
+.process-block {
   display: grid;
-  gap: 3px;
-  margin-left: 6px;
-  padding-left: 14px;
-  color: var(--lobster-text-secondary);
-  font-size: var(--lobster-text-xs);
+  gap: 4px;
 }
 
-.activity-item::before {
-  position: absolute;
-  top: 3px;
-  bottom: 3px;
-  left: 0;
-  width: 2px;
-  border-radius: 2px;
-  background: var(--lobster-gray-4);
-  content: "";
-}
-
-.tool-activity small {
-  width: fit-content;
-  border-radius: 4px;
-  padding: 1px 5px;
-  color: var(--lobster-text-secondary);
-  background: var(--lobster-surface-raised);
-  font-family: var(--lobster-font-mono);
-  font-size: 10px;
-}
-
-.reasoning-toggle {
+.process-toggle {
   display: flex;
   width: fit-content;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   margin: 0;
   padding: 0;
   border: 0;
@@ -805,18 +794,75 @@ select:focus-visible {
   font-size: var(--lobster-text-xs);
 }
 
-.reasoning-toggle:hover {
+.process-toggle:hover {
   color: var(--lobster-text-secondary);
 }
 
-.reasoning-caret {
+.process-caret {
   display: inline-block;
   width: 8px;
   font-size: 9px;
 }
 
-.reasoning-item .markdown {
-  margin-top: 2px;
+.process-count {
+  color: var(--lobster-text-muted);
+  font-family: var(--lobster-font-mono);
+  font-size: 10px;
+}
+
+/* 展开后用一条细竖线把整段过程收拢成一块，而不是每条各自成段。 */
+.process-items {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin-left: 4px;
+  padding-left: 12px;
+}
+
+.process-items::before {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 0;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--lobster-gray-4);
+  content: "";
+}
+
+.process-item {
+  display: grid;
+  gap: 2px;
+  color: var(--lobster-text-secondary);
+  font-size: var(--lobster-text-xs);
+}
+
+.process-item-kind,
+.process-tool-name {
+  color: var(--lobster-text-muted);
+  font-size: 11px;
+}
+
+.process-tool-name {
+  font-family: var(--lobster-font-mono);
+}
+
+.process-tool-detail {
+  color: var(--lobster-text-secondary);
+  font-size: var(--lobster-text-xs);
+}
+
+.process-tool small {
+  width: fit-content;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--lobster-text-secondary);
+  background: var(--lobster-surface-raised);
+  font-family: var(--lobster-font-mono);
+  font-size: 10px;
+}
+
+.process-item .markdown {
   font-size: 11px;
   line-height: 1.5;
 }

@@ -26,7 +26,7 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
         setStarted(true);
         observer.disconnect();
       },
-      { threshold: 0.4 },
+      { threshold: [0, 0.4] },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -62,18 +62,27 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             initial={reducedMotion ? false : { opacity: 0, x: -10 }}
             transition={{ duration: 0.4, ease: 'easeOut' }}
           >
-            <div className="memory-pane__label">facts.md · {zh ? '事实源' : 'TRUTH'}</div>
-            <pre>
-              <span className="tok-h"># deploy</span>
-              {'\n'}
-              <span className="tok-b">- owner:</span> ned
-              {'\n'}
-              <span className="tok-b">- target:</span> vercel
-              {'\n'}
-              <span className="tok-b">- domain:</span> lobster0.jchu.tech
-              {'\n'}
-              <span className="tok-b">- released:</span> 2026-08-10
-            </pre>
+            <div className="memory-pane__label">
+              {zh ? '长期记忆 · 一直记得' : 'LONG-TERM · always remembered'}
+            </div>
+            <ul className="memory-list">
+              <li>
+                <b>{zh ? '称呼' : 'Name'}</b>
+                <span>{zh ? '叫我 Ned' : 'Call me Ned'}</span>
+              </li>
+              <li>
+                <b>{zh ? '语言' : 'Language'}</b>
+                <span>{zh ? '默认用中文回复' : 'Reply in Chinese'}</span>
+              </li>
+              <li>
+                <b>{zh ? '习惯' : 'Habit'}</b>
+                <span>{zh ? '删文件前先问我' : 'Ask before deleting files'}</span>
+              </li>
+              <li>
+                <b>{zh ? '项目' : 'Project'}</b>
+                <span>{zh ? '主力仓库是 lobster0' : 'Main repo is lobster0'}</span>
+              </li>
+            </ul>
           </motion.div>
           <motion.div
             animate={play ? { opacity: 1 } : undefined}
@@ -81,7 +90,7 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             initial={reducedMotion ? false : { opacity: 0 }}
             transition={{ delay: reducedMotion ? 0 : 0.35, duration: 0.3 }}
           >
-            <span>{zh ? '投影' : 'projection'}</span>
+            <span>{zh ? '沉淀' : 'promote'}</span>
             <i aria-hidden="true" />
           </motion.div>
           <motion.div
@@ -90,20 +99,23 @@ export function MemoryPanel({ copy, locale }: { copy: CapabilityCopy; locale: Lo
             initial={reducedMotion ? false : { opacity: 0, x: 10 }}
             transition={{ delay: reducedMotion ? 0 : 0.15, duration: 0.4, ease: 'easeOut' }}
           >
-            <div className="memory-pane__label">SQLite · {zh ? '控制面' : 'CONTROL PLANE'}</div>
-            <pre>
-              <span className="tok-k">SELECT</span> key, value <span className="tok-k">FROM</span> facts;
-              {'\n\n'}
-              key      value
-              {'\n'}
-              -------- -------------------
-              {'\n'}
-              owner    ned
-              {'\n'}
-              target   vercel
-              {'\n'}
-              domain   lobster0.jchu.tech
-            </pre>
+            <div className="memory-pane__label memory-pane__label--short">
+              {zh ? '短期记忆 · 本次对话' : 'SHORT-TERM · this session'}
+            </div>
+            <ul className="memory-list memory-list--short">
+              <li>
+                <b>{zh ? '正在做' : 'Doing'}</b>
+                <span>{zh ? '改官网 Logo' : 'Reworking the site logo'}</span>
+              </li>
+              <li>
+                <b>{zh ? '刚提到' : 'Just said'}</b>
+                <span>{zh ? '钳子要从胸口伸出' : 'Claws should come from the chest'}</span>
+              </li>
+              <li>
+                <b>{zh ? '会话结束' : 'On session end'}</b>
+                <span>{zh ? '重要的沉淀为长期' : 'Important bits promoted'}</span>
+              </li>
+            </ul>
           </motion.div>
         </div>
       </div>

@@ -39,6 +39,8 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/evals/releases/v0.6.1.md"),
     Path("docs/evals/releases/v0.7.0.md"),
     Path("docs/evals/releases/v0.6.5.md"),
+    Path("docs/engineering/operations/20260809_install-release-operations.md"),
+    Path("docs/evals/releases/v0.7.0-install.md"),
 )
 FACT_RELATIVE_DOCS = (
     Path("README.md"),
@@ -65,6 +67,131 @@ REQUIRED_FACTS = (
     "15-CASE LIVE PENDING",
     "PRODUCTION SOAK PENDING",
 )
+INSTALL_URL = "https://github.com/NEDONION/lobster0/releases/latest/download/install.sh"
+INSTALL_CURL = "curl -fsSL --proto '=https' --tlsv1.2"
+CANDIDATE_LABEL = "RELEASE CANDIDATE / PUBLIC GATES PENDING"
+_README_INSTALL_FACTS = (
+    INSTALL_URL,
+    INSTALL_CURL,
+    CANDIDATE_LABEL,
+    "lobster0-agent",
+    "Ubuntu",
+    "22.04",
+    "24.04",
+    "Debian",
+    "Rocky",
+    "Alma",
+    "macOS",
+    "x86_64",
+    "arm64",
+    "systemd user",
+    "LaunchAgent",
+    "unsupported_platform",
+    "Windows",
+    "WSL",
+    "Alpine",
+    "22.22.3",
+    "24.15.0",
+    "24.18.0",
+    "lobster0 service install",
+    "lobster0 service logs",
+    "lobster0 service uninstall",
+    "lobster0 uninstall",
+    "--purge-data",
+    "--yes-i-understand-data-loss",
+    "--no-onboard",
+    "--no-install-service",
+    "--dry-run",
+    "--json",
+    "update_requires_bootstrap",
+    "uv sync",
+    "pnpm --dir tui",
+)
+# 每个入口文档必须自己说清一行安装、支持矩阵、Node 策略、服务/卸载语义与
+# 候选状态；缺任何一条都视为文档回归。
+INSTALL_REQUIRED_FACTS: tuple[tuple[Path, tuple[str, ...]], ...] = (
+    (Path("README.md"), _README_INSTALL_FACTS),
+    (Path("README_EN.md"), _README_INSTALL_FACTS),
+    (
+        Path("docs/getting-started/20260807_本地运行指南.md"),
+        (
+            INSTALL_URL,
+            INSTALL_CURL,
+            CANDIDATE_LABEL,
+            "lobster0-agent",
+            "22.22.3",
+            "24.18.0",
+            "update_requires_bootstrap",
+            "lobster0 service status",
+            "--purge-data",
+            "--dry-run",
+            "uv sync",
+        ),
+    ),
+    (
+        Path("docs/engineering/operations/20260809_install-release-operations.md"),
+        (
+            INSTALL_URL,
+            CANDIDATE_LABEL,
+            "release-evidence.json",
+            "Trusted Publisher",
+            "ghcr.io/nedonion/lobster0",
+            "LOBSTER0_REQUIRE_NATIVE_BUNDLES=1",
+            "rollback_conflict",
+            "update_requires_bootstrap",
+            "draft",
+            "yank",
+            "0.7.1",
+        ),
+    ),
+    (
+        Path("docs/evals/releases/v0.7.0-install.md"),
+        (
+            INSTALL_URL,
+            CANDIDATE_LABEL,
+            "release-evidence.json",
+            "actions/runners",
+            "tier1-install",
+            "update_requires_bootstrap",
+            "LOBSTER0_REQUIRE_NATIVE_BUNDLES",
+            "lobster0-agent",
+        ),
+    ),
+    (
+        Path("docs/product/20260807_产品需求文档.md"),
+        (INSTALL_URL, CANDIDATE_LABEL, "lobster0-agent"),
+    ),
+    (
+        Path("docs/architecture/20260807_系统架构.md"),
+        (
+            "install.sh",
+            "lobster0-installer.pyz",
+            "release-manifest.json",
+            "runtimes/<version>",
+            "lobster0-agent",
+        ),
+    ),
+    (
+        Path("docs/progress/index.html"),
+        (INSTALL_URL, CANDIDATE_LABEL, "lobster0-agent"),
+    ),
+)
+# 一行安装范围内的文档不得复活旧命名、旧 Node 门槛或全局 pnpm 前置条件。
+FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("legacy_distribution_name", re.compile(r"name\s*=\s*\"?lobster0\"?(?![-\w])")),
+    ("legacy_node_floor", re.compile(r"(?:>=|≥)\s*`?22\.19|22\.19(?:\.\d+)?\s*\+")),
+    (
+        "global_pnpm_requirement",
+        re.compile(r"(?:全局(?:安装)?\s*pnpm|globally\s+install(?:ed)?\s+pnpm|global\s+pnpm)"),
+    ),
+)
+# 只要一行同时谈到公共发布门禁主体和 PASS，就必须在同一行说明它仍是 PENDING。
+PENDING_SUBJECT = re.compile(
+    r"(?i)(?:tier\s*1|tier1-install|self-hosted|PyPI|GHCR|ghcr\.io|attestation|"
+    r"release-evidence|Trusted Publisher|install\.sh)"
+)
+PASS_TOKEN = re.compile(r"(?<![A-Za-z])PASS(?![A-Za-z])")
+INSTALL_SCOPE_RELATIVE_DOCS = frozenset(relative for relative, _ in INSTALL_REQUIRED_FACTS)
 LINK = re.compile(r"(?<!!)\[[^\]]+\]\(([^)]+)\)")
 FENCE = re.compile(r"^\s*```([^`]*)$")
 VOID_TAGS = frozenset(
@@ -144,6 +271,7 @@ def main(argv: list[str] | None = None) -> int:
             for marker in ("DESIGN READY", "IMPLEMENTATION PENDING"):
                 if marker in content:
                     failures.append(f"draft:{_display(root, path)}:{marker}")
+    failures.extend(_install_documentation_failures(root))
     html_paths = [root / "docs/progress/index.html", *arguments.html]
     for html in html_paths:
         failure = _html_failure(html)
@@ -160,6 +288,37 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("Documentation validation: PASS")
     return 0
+
+
+def _install_documentation_failures(root: Path) -> list[str]:
+    """校验一行安装文档契约：必需事实、被禁表述与 PENDING 门禁的诚实标注。"""
+    failures: list[str] = []
+    for relative, facts in INSTALL_REQUIRED_FACTS:
+        path = root / relative
+        if not path.is_file():
+            failures.append(f"missing:{relative.as_posix()}")
+            continue
+        content = path.read_text(encoding="utf-8")
+        for fact in facts:
+            if fact not in content:
+                failures.append(f"install_fact:{relative.as_posix()}:{fact}")
+        for label, pattern in FORBIDDEN_PATTERNS:
+            if pattern.search(content) is not None:
+                failures.append(f"forbidden:{relative.as_posix()}:{label}")
+        failures.extend(_pending_claim_failures(relative, content))
+    return failures
+
+
+def _pending_claim_failures(relative: Path, content: str) -> list[str]:
+    """拒绝把尚未执行的公共发布门禁写成已经通过。"""
+    failures: list[str] = []
+    for line_number, line in enumerate(content.splitlines(), 1):
+        if PENDING_SUBJECT.search(line) is None or PASS_TOKEN.search(line) is None:
+            continue
+        if "PENDING" in line:
+            continue
+        failures.append(f"pending_claimed_pass:{relative.as_posix()}:{line_number}")
+    return failures
 
 
 def _broken_links(root: Path, path: Path, content: str) -> list[str]:

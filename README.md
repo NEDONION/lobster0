@@ -68,15 +68,89 @@ Lobster0 不是“把聊天框接到 Shell”——模型只提出 Tool Call，C
 
 ## 快速开始
 
-### 环境要求
+### 一行安装
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/)
-- Node.js 22.22.3–<23 或 24.15.0–<25 与 pnpm（默认 pi-tui；managed 默认 24.18.0）
-- Chrome/Chromium 与 Playwright（仅在启用 Browser Agent 时需要）
-- 一个 OpenAI-compatible 模型端点；默认配置为 `deepseek-v4-pro`
+```bash
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash
+```
 
-### 安装与启动
+> [!IMPORTANT]
+> 这条命令描述的是 v0.7.0 Release 发布**之后**的行为。本仓库目前还没有任何 Release 或 tag，
+> 该 URL 现在会 404。一行安装链路的状态是 **RELEASE CANDIDATE / PUBLIC GATES PENDING**：
+> 真机安装矩阵、包发布与镜像摘要冒烟一次都没有执行过。逐项证据见
+> [v0.7.0 一行安装候选记录](docs/evals/releases/v0.7.0-install.md)。
+> 在正式发布之前，请使用下面的[源码开发安装](#源码开发安装)。
+
+安装器自带 pinned uv、受管 Python 3.12、受管 Node.js 与平台 pi-tui bundle，因此**不需要预装
+Python、Node.js 或 pnpm**。默认安装到 `~/.lobster0`，命令入口是 `~/.local/bin/lobster0`，
+默认安装过程不请求 sudo；需要系统包、linger 或系统级前缀时会先展示精确计划再单独确认。
+Python 分发名是 `lobster0-agent`，CLI、import 与状态根仍是 `lobster0`。
+
+先看计划、零写入、零下载：
+
+```bash
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash -s -- --dry-run
+```
+
+完全非交互安装（需要事先准备好配置模板与 owner-only Secret 文件）：
+
+```bash
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh \
+  | bash -s -- --no-onboard --no-install-service --json \
+      --config /absolute/path/to/config.toml \
+      --secrets-file /absolute/path/to/secrets.env
+```
+
+其余参数：`--version <semver>`、`--channel stable|dev`、`--prefix <绝对路径>`、`--system-prefix`、
+`--install-service`、`--allow-system-packages`、`--verbose`。stdin 不是 TTY 且参数不足时 fail closed；
+Secret 只从 `/dev/tty` 隐藏输入、owner-only Secret 文件或现有进程环境读取，不接受命令行明文。
+
+### 支持矩阵
+
+| 平台 | 版本 | 架构 | 常驻服务 |
+| --- | --- | --- | --- |
+| Ubuntu | 22.04、24.04 | x86_64、arm64 | systemd user |
+| Debian | 12、13 | x86_64、arm64 | systemd user |
+| RHEL / Rocky / Alma | 9、10 | x86_64、arm64 | systemd user |
+| macOS | 13 及以上 | Intel（x86_64）、Apple Silicon（arm64） | LaunchAgent |
+
+明确不支持、且在任何写入前就返回 `unsupported_platform`：Windows 原生与 WSL、Alpine/musl、
+NixOS 声明式安装、Android/Termux、32 位架构，以及没有 systemd 的 Linux 常驻服务宿主。
+
+上表是设计上的 Tier 1 范围，不是已验证结论——这些组合目前都还没有跑过真机安装矩阵。
+
+### Node 策略
+
+受管 Node.js 默认 24.18.0。只接受 `22.22.3 <= version < 23.0.0` 或 `24.15.0 <= version < 25.0.0`，
+Node 20/23/25/26 一律拒绝。一行安装会自己下载并校验受管 Node，不使用也不要求机器上已有的 Node。
+
+### 服务、升级与卸载
+
+| 命令 | 用途 |
+| --- | --- |
+| `lobster0 service install` | 安装并启用受管 Gateway 用户服务（systemd user / LaunchAgent） |
+| `lobster0 service status` | 查看受管服务状态 |
+| `lobster0 service logs` | 读取受管服务日志 |
+| `lobster0 service restart` | 重启受管服务 |
+| `lobster0 service uninstall` | 只移除受管服务，保留安装与数据 |
+| `lobster0 uninstall` | 移除受管 Runtime、launcher 与 receipt，**保留 `~/.lobster0` 下全部用户数据** |
+| `lobster0 uninstall --purge-data --yes-i-understand-data-loss` | 额外删除枚举出来的状态；`workspace/` 仍然保留 |
+
+**升级的方式是重新运行上面的一行安装命令。** 已安装 CLI 上的 `lobster0 update` 目前会打印
+`update_requires_bootstrap` 并以退出码 2 结束：升级流水线需要 bootstrap 建立的信任根（pinned uv 与
+受管 Python），而受管 Runtime 在激活时按设计删除 `.inputs`，所以它 fail closed，而不是退化到
+`PATH` 上的不可信 uv。升级中途失败会自动回滚；若迁移之后已经产生新写入，则返回 `rollback_conflict`
+并保留现场，人工恢复步骤见[安装与发布运维手册](docs/engineering/operations/20260809_install-release-operations.md)。
+
+### 源码开发安装
+
+开发与贡献走源码路径，需要本机自备 Python 3.12+、[uv](https://docs.astral.sh/uv/)、
+Node.js 22.22.3–<23 或 24.15.0–<25 与 pnpm（默认 pi-tui；受管默认 24.18.0）；启用 Browser Agent 时
+另需 Chrome/Chromium 与 Playwright；对话需要一个 OpenAI-compatible 模型端点，默认配置为
+`deepseek-v4-pro`。
 
 ```bash
 git clone https://github.com/NEDONION/lobster0.git
@@ -117,7 +191,7 @@ LOBSTER0_TUI=textual uv run lobster0
 | `uv run lobster0 init` | 幂等初始化 owner-only 状态、配置、Memory、Skills 和 SQLite。 |
 | `uv run lobster0 doctor` | 检查配置、目录权限、Provider、TUI 和数据库状态。 |
 | `uv run lobster0 gateway` | 启动已配置的 Feishu/Telegram/Discord Gateway。 |
-| `lobster0 service install/status/restart/uninstall` | 管理 Feishu-only macOS LaunchAgent；生产 runtime 使用独立 managed Python 3.12。 |
+| `lobster0 service install/status/logs/restart/uninstall` | 管理受管 Gateway 用户服务（Linux systemd user / macOS LaunchAgent）；service 永远指向稳定 launcher。 |
 | `uv run lobster0 task list` | 查看 durable ScheduledTask；`show/runs/pause/resume/run/cancel/halt/unhalt` 提供完整控制面。 |
 | `uv run lobster0 eval validate --root evals/scenarios` | 校验版本化 JSONL 场景。 |
 | `uv run lobster0 eval run --suite offline --root evals/scenarios` | 跑真实 Core/Policy/Tool/SQLite 离线回归。 |
@@ -132,7 +206,7 @@ Channel 的 allowlist、Owner 身份与平台凭据配置见[本地运行指南]
 Desktop 当前是开发构建，不是已签名安装包。它复用同一 Python Core、Policy、SQLite 与 Automation，不在
 Renderer 中复制 Agent 逻辑或直接访问本机能力。
 
-macOS 已安装 `uv`、Node.js `>=22.19.0` 和 Corepack 后，首选直接在 Finder 双击根目录的
+macOS 已安装 `uv`、满足 22.22.3–<23 或 24.15.0–<25 的 Node.js 和 Corepack 后，首选直接在 Finder 双击根目录的
 `start-desktop.command`，或从终端执行：
 
 ```bash
@@ -312,10 +386,14 @@ Policy；截图和下载只返回私有 Artifact ID。当前状态为 **IMPLEMEN
 | Telegram / Discord | Implementation PASS；真实平台 Live Gate 仍 pending |
 | Memory Autopilot | A～E IMPLEMENTATION PASS；真实 IM Live 结论沿用各平台 gate |
 | Phase 6 | **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING**；生产 Gate tooling 完成，严格 25-case 与 24h 尚未完成 |
+| 一行安装与发布 | **RELEASE CANDIDATE / PUBLIC GATES PENDING**；真机安装矩阵、包发布、镜像摘要冒烟与 attestation 校验均未执行，仓库尚无 Release 或 tag |
 
 本地 fake SDK、离线场景和 660/660 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
 Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；Memory v0.6.0 的历史基线为
 666 Python、35 TypeScript、39/39 Agent；Phase 6 历史基线为 798 Python。当前发布数字以上表和 v0.6.5 为准。
+上表的 1005 是 Phase 6.5 的 Python 计数基线；安装/发布链路新增的测试尚未并入该数字，本机全量
+`unittest discover` 当前为 1547 项，逐项结果见
+[v0.7.0 一行安装候选记录](docs/evals/releases/v0.7.0-install.md)。
 
 ### 验证命令
 
@@ -383,6 +461,8 @@ tests/           # Python unittest
 | [产品需求文档](docs/product/20260807_产品需求文档.md) | 产品范围、非目标和验收标准 |
 | [系统架构](docs/architecture/20260807_系统架构.md) | 模块边界、数据流与安全原则 |
 | [本地运行指南](docs/getting-started/20260807_本地运行指南.md) | 安装、配置、TUI、Gateway 与排障 |
+| [安装与发布运维手册](docs/engineering/operations/20260809_install-release-operations.md) | 草稿 Release 提升、PyPI/GHCR 核对、`rollback_conflict` 恢复与撤销流程 |
+| [v0.7.0 一行安装候选记录](docs/evals/releases/v0.7.0-install.md) | 一行安装链路的真实门禁状态与最终 PASS 所需外部证据（当前 PENDING） |
 | [工程文档索引](docs/engineering/README.md) | 已实现模块与规划文档的边界 |
 | [开发与交付时间线](docs/engineering/20260809_development-timeline.md) | 架构 Phase、真实版本顺序与证据状态的对应关系 |
 | [开发进度页](docs/progress/index.html) | 当前 Phase、证据和下一步 |

@@ -39,7 +39,7 @@ export function ClawTrace({ copy, surfaces }: ClawTraceProps) {
         setStarted(true);
         observer.disconnect();
       },
-      { threshold: 0.35 },
+      { threshold: [0, 0.35] },
     );
     observer.observe(node);
     return () => observer.disconnect();
