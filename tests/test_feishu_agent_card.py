@@ -3,12 +3,12 @@
 import json
 import unittest
 
-from miniclaw.channels.feishu_cards import (
+from lobster0.channels.feishu_cards import (
     _safe_markdown_prefix_length,
     render_agent_progress_card,
     render_compact_progress,
 )
-from miniclaw.channels.progress import AgentProgress, ProgressStep
+from lobster0.channels.progress import AgentProgress, ProgressStep
 
 
 def _progress(*, status: str = "completed", answer: str = "你有 327 个飞书文档。") -> AgentProgress:
@@ -50,7 +50,7 @@ class FeishuAgentCardTest(unittest.TestCase):
 
         self.assertEqual(card["schema"], "2.0")
         self.assertEqual(card["header"]["template"], "green")
-        self.assertEqual(card["header"]["title"]["content"], "MiniClaw · 已完成")
+        self.assertEqual(card["header"]["title"]["content"], "Lobster0 · 已完成")
         self.assertIn("Claw Trail", rendered)
         self.assertIn("查询飞书云空间", rendered)
         self.assertIn("你有 327 个飞书文档", rendered)
@@ -61,10 +61,10 @@ class FeishuAgentCardTest(unittest.TestCase):
     def test_statuses_map_to_distinct_headers(self) -> None:
         """运行、完成、未完成和等待态必须有稳定的颜色与标题。"""
         expected = {
-            "running": ("blue", "MiniClaw · 执行中"),
-            "completed": ("green", "MiniClaw · 已完成"),
-            "incomplete": ("red", "MiniClaw · 未完成"),
-            "waiting": ("orange", "MiniClaw · 等待中"),
+            "running": ("blue", "Lobster0 · 执行中"),
+            "completed": ("green", "Lobster0 · 已完成"),
+            "incomplete": ("red", "Lobster0 · 未完成"),
+            "waiting": ("orange", "Lobster0 · 等待中"),
         }
         for status, (template, title) in expected.items():
             with self.subTest(status=status):

@@ -1,12 +1,12 @@
-"""MiniClaw 本地状态初始化的行为测试。"""
+"""Lobster0 本地状态初始化的行为测试。"""
 
 import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.bootstrap import BootstrapError, initialize_state, render_default_config
-from miniclaw.config import ConfigError, load_config
-from miniclaw.paths import build_state_paths
+from lobster0.bootstrap import BootstrapError, initialize_state, render_default_config
+from lobster0.config import ConfigError, load_config
+from lobster0.paths import build_state_paths
 
 
 class BootstrapTest(unittest.TestCase):
@@ -30,7 +30,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(config.agent.max_tool_iterations_hard, 64)
         self.assertEqual(config.agent.max_no_progress_iterations, 3)
         self.assertEqual(config.provider.base_url, "https://api.deepseek.com")
-        self.assertEqual(config.provider.api_key_env, "MINICLAW_MODEL_API_KEY")
+        self.assertEqual(config.provider.api_key_env, "LOBSTER0_MODEL_API_KEY")
         self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.workspace.path, self.paths.workspace)
         self.assertEqual(config.permissions.profile, "personal")
@@ -46,19 +46,19 @@ class BootstrapTest(unittest.TestCase):
         self.assertIn("max_no_progress_iterations = 3", template)
         self.assertIn('[tools]\nmode = "autopilot"', template)
         self.assertIn("# [channels.feishu]", template)
-        self.assertIn('# app_id_env = "MINICLAW_FEISHU_APP_ID"', template)
-        self.assertIn('# app_secret_env = "MINICLAW_FEISHU_APP_SECRET"', template)
+        self.assertIn('# app_id_env = "LOBSTER0_FEISHU_APP_ID"', template)
+        self.assertIn('# app_secret_env = "LOBSTER0_FEISHU_APP_SECRET"', template)
         self.assertIn("# [channels.telegram]", template)
-        self.assertIn('# bot_token_env = "MINICLAW_TELEGRAM_BOT_TOKEN"', template)
+        self.assertIn('# bot_token_env = "LOBSTER0_TELEGRAM_BOT_TOKEN"', template)
         self.assertIn("# owner_user_id = 0", template)
         self.assertIn("# [channels.discord]", template)
-        self.assertIn('# bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"', template)
+        self.assertIn('# bot_token_env = "LOBSTER0_DISCORD_BOT_TOKEN"', template)
         self.assertIn("[automation]\nenabled = false", template)
         self.assertIn("[heartbeat]\nenabled = false", template)
         self.assertIn('[sandbox]\nbackend = "docker"', template)
         self.assertIn("[checkpoint]\nenabled = true", template)
         self.assertIn("[browser]\nenabled = false", template)
-        self.assertIn('profile = "miniclaw"', template)
+        self.assertIn('profile = "lobster0"', template)
         self.assertFalse(config.browser.enabled)
         for path in (self.paths.browser, self.paths.artifacts, self.paths.downloads):
             self.assertTrue(path.is_dir())
@@ -67,8 +67,8 @@ class BootstrapTest(unittest.TestCase):
         env_example = (Path(__file__).resolve().parents[1] / ".env.example").read_text(
             encoding="utf-8"
         )
-        self.assertIn("MINICLAW_TELEGRAM_BOT_TOKEN=\n", env_example)
-        self.assertIn("MINICLAW_DISCORD_BOT_TOKEN=\n", env_example)
+        self.assertIn("LOBSTER0_TELEGRAM_BOT_TOKEN=\n", env_example)
+        self.assertIn("LOBSTER0_DISCORD_BOT_TOKEN=\n", env_example)
         self.assertEqual(
             set(result.created_files),
             {
@@ -139,8 +139,8 @@ class BootstrapTest(unittest.TestCase):
             initialize_state(self.paths)
 
     def test_pinned_sandbox_image_is_rendered_and_strictly_validated(self) -> None:
-        """安装器只可覆盖为 MiniClaw GHCR 的 lowercase sha256 digest。"""
-        pinned = "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64
+        """安装器只可覆盖为 Lobster0 GHCR 的 lowercase sha256 digest。"""
+        pinned = "ghcr.io/nedonion/lobster0-sandbox@sha256:" + "a" * 64
 
         result = initialize_state(self.paths, sandbox_image=pinned)
 
@@ -151,9 +151,9 @@ class BootstrapTest(unittest.TestCase):
             render_default_config(self.paths, sandbox_image=pinned),
         )
         for invalid in (
-            "miniclaw-sandbox:latest",
-            "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "A" * 64,
-            "ghcr.io/other/miniclaw-sandbox@sha256:" + "a" * 64,
+            "lobster0-sandbox:latest",
+            "ghcr.io/nedonion/lobster0-sandbox@sha256:" + "A" * 64,
+            "ghcr.io/other/lobster0-sandbox@sha256:" + "a" * 64,
         ):
             with self.subTest(invalid=invalid), self.assertRaisesRegex(
                 ConfigError, "digest-pinned"

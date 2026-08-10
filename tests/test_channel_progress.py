@@ -3,8 +3,8 @@
 import json
 import unittest
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.channels.progress import (
+from lobster0.agent.events import RunEvent
+from lobster0.channels.progress import (
     ProgressProjector,
     progress_from_metadata,
     progress_to_metadata,

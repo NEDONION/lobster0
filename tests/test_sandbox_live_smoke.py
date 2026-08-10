@@ -8,8 +8,8 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
-from miniclaw.sandbox.docker import RootlessClientTransport
+from lobster0.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxPlanError
+from lobster0.sandbox.docker import RootlessClientTransport
 from scripts import sandbox_live_smoke
 
 
@@ -82,7 +82,7 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             backend="docker",
             engine=None,
             confirm_live=True,
-            image="example/miniclaw@sha256:" + "a" * 64,
+            image="example/lobster0@sha256:" + "a" * 64,
             executable=None,
         )
         error = io.StringIO()
@@ -99,7 +99,7 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             backend="docker",
             engine="podman-rootless",
             confirm_live=True,
-            image="example/miniclaw@sha256:" + "a" * 64,
+            image="example/lobster0@sha256:" + "a" * 64,
             executable=None,
         )
         backend = _SuccessfulDockerBackend()
@@ -132,7 +132,7 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             backend="docker",
             engine="docker-rootless",
             confirm_live=True,
-            image="example/miniclaw@sha256:" + "a" * 64,
+            image="example/lobster0@sha256:" + "a" * 64,
             executable=None,
         )
         backend = _PermissionAwareDockerBackend()
@@ -172,7 +172,7 @@ class SandboxLiveSmokeTest(unittest.IsolatedAsyncioTestCase):
             backend="docker",
             engine="podman-rootless",
             confirm_live=True,
-            image="example/miniclaw@sha256:" + "a" * 64,
+            image="example/lobster0@sha256:" + "a" * 64,
             executable=None,
         )
 

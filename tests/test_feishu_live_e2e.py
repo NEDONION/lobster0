@@ -14,11 +14,11 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.doctor import CheckResult, CheckStatus
-from miniclaw.gateway_lease import GatewayProvenance
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.database import Database
+from lobster0.bootstrap import initialize_state
+from lobster0.doctor import CheckResult, CheckStatus
+from lobster0.gateway_lease import GatewayProvenance
+from lobster0.paths import build_state_paths
+from lobster0.storage.database import Database
 
 
 class FeishuDatabaseProbeTest(unittest.TestCase):
@@ -264,7 +264,7 @@ class FeishuDatabaseProbeTest(unittest.TestCase):
     def _api(self) -> ModuleType:
         """导入真实生产模块；缺失功能时转成清晰的 RED failure。"""
         try:
-            return importlib.import_module("miniclaw.evals.feishu_live")
+            return importlib.import_module("lobster0.evals.feishu_live")
         except ModuleNotFoundError as error:
             self.fail(f"Feishu Live evidence module is missing: {error.name}")
 
@@ -429,7 +429,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
     """保证各平台受管 Gateway 启停有界，且输出永远被持续排空。"""
 
     def setUp(self) -> None:
-        """创建隔离的项目目录与 MiniClaw Home。"""
+        """创建隔离的项目目录与 Lobster0 Home。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.root = Path(self.temporary_directory.name).resolve()
@@ -446,7 +446,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
             import time
 
             signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-            print("MiniClaw gateway ready: feishu/default", flush=True)
+            print("Lobster0 gateway ready: feishu/default", flush=True)
             while True:
                 time.sleep(0.05)
             """
@@ -473,7 +473,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
                 import time
 
                 signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-                print("MiniClaw gateway ready: feishu/default")
+                print("Lobster0 gateway ready: feishu/default")
                 while True:
                     time.sleep(0.05)
                 """
@@ -486,7 +486,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
             process = await api.ManagedGateway.start(
                 project_root=self.root,
                 home=self.home,
-                ready_line="MiniClaw gateway ready: feishu/default",
+                ready_line="Lobster0 gateway ready: feishu/default",
                 commit="c" * 40,
                 ready_timeout=0.5,
                 command=(sys.executable, str(script)),
@@ -505,7 +505,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
             import time
 
             signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-            print("prefix MiniClaw gateway ready: feishu/default suffix", flush=True)
+            print("prefix Lobster0 gateway ready: feishu/default suffix", flush=True)
             while True:
                 time.sleep(0.05)
             """
@@ -515,7 +515,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
             await api.ManagedGateway.start(
                 project_root=self.root,
                 home=self.home,
-                ready_line="MiniClaw gateway ready: feishu/default",
+                ready_line="Lobster0 gateway ready: feishu/default",
                 commit="c" * 40,
                 ready_timeout=0.1,
                 command=command,
@@ -539,7 +539,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
             await api.ManagedGateway.start(
                 project_root=self.root,
                 home=self.home,
-                ready_line="MiniClaw gateway ready: feishu/default",
+                ready_line="Lobster0 gateway ready: feishu/default",
                 commit="c" * 40,
                 ready_timeout=1.0,
                 command=command,
@@ -560,7 +560,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
             for index in range(300):
                 print(f"diagnostic-{index:03d}-" + "x" * 5000, file=sys.stderr)
             sys.stderr.flush()
-            print("MiniClaw gateway ready: feishu/default", flush=True)
+            print("Lobster0 gateway ready: feishu/default", flush=True)
             while True:
                 time.sleep(0.05)
             """,
@@ -590,7 +590,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
                     sys.exit(0)
 
             signal.signal(signal.SIGTERM, stop_after_second)
-            print("MiniClaw gateway ready: feishu/default", flush=True)
+            print("Lobster0 gateway ready: feishu/default", flush=True)
             while True:
                 time.sleep(0.05)
             """
@@ -604,7 +604,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
         process = await api.ManagedGateway.start(
             project_root=self.root,
             home=self.home,
-            ready_line="MiniClaw gateway ready: feishu/default",
+            ready_line="Lobster0 gateway ready: feishu/default",
             commit="c" * 40,
             ready_timeout=2.0,
             secret_values=("EARLY_SECRET_SENTINEL",),
@@ -619,7 +619,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
                 for index in range(300):
                     print(f"safe-{index}", file=sys.stderr)
                 sys.stderr.flush()
-                print("MiniClaw gateway ready: feishu/default", flush=True)
+                print("Lobster0 gateway ready: feishu/default", flush=True)
                 while True:
                     time.sleep(0.05)
                 """
@@ -648,7 +648,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
                 file=sys.stderr,
                 flush=True,
             )
-            print("MiniClaw gateway ready: feishu/default", flush=True)
+            print("Lobster0 gateway ready: feishu/default", flush=True)
             while True:
                 time.sleep(0.05)
             """
@@ -663,7 +663,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
         return await api.ManagedGateway.start(
             project_root=self.root,
             home=self.home,
-            ready_line="MiniClaw gateway ready: feishu/default",
+            ready_line="Lobster0 gateway ready: feishu/default",
             commit="c" * 40,
             ready_timeout=ready_timeout,
             command=self._command(source),
@@ -678,7 +678,7 @@ class ManagedGatewayProcessTest(unittest.IsolatedAsyncioTestCase):
 
     def _api(self) -> ModuleType:
         """导入真实生产模块，并明确要求 ManagedGateway 存在。"""
-        api = importlib.import_module("miniclaw.evals.gateway_process")
+        api = importlib.import_module("lobster0.evals.gateway_process")
         if not hasattr(api, "ManagedGateway"):
             self.fail("ManagedGateway is missing")
         return api
@@ -954,7 +954,7 @@ class FeishuEvidenceReportTest(unittest.TestCase):
 
     def _api(self) -> ModuleType:
         """导入真实生产模块，并要求报告接口已存在。"""
-        api = importlib.import_module("miniclaw.evals.feishu_live")
+        api = importlib.import_module("lobster0.evals.feishu_live")
         required = (
             "FeishuCaseResult",
             "build_evidence_report",
@@ -1073,7 +1073,7 @@ class FeishuLiveHarnessSafetyTest(unittest.TestCase):
 
     def _api(self, required: str) -> ModuleType:
         """导入模块并把缺失入口转换成清晰 RED。"""
-        api = importlib.import_module("miniclaw.evals.feishu_live")
+        api = importlib.import_module("lobster0.evals.feishu_live")
         if not hasattr(api, required):
             self.fail(f"Feishu Live harness API is missing: {required}")
         return api
@@ -1089,7 +1089,7 @@ class FeishuCaseOrchestrationTest(unittest.IsolatedAsyncioTestCase):
         self.root = Path(self.temporary_directory.name).resolve()
         self.workspace = self.root / "workspace"
         self.workspace.mkdir()
-        self.database = self.root / "miniclaw.db"
+        self.database = self.root / "lobster0.db"
 
     async def test_checkpoint_precedes_action_and_local_failure_skips_human_override(self) -> None:
         """自动失败后不再询问 human pass，避免人工把失败强制改成通过。"""
@@ -1344,7 +1344,7 @@ class FeishuCaseOrchestrationTest(unittest.IsolatedAsyncioTestCase):
 
     def _api(self, required: str) -> ModuleType:
         """导入模块并把缺失编排接口转换成清晰 RED。"""
-        api = importlib.import_module("miniclaw.evals.feishu_live")
+        api = importlib.import_module("lobster0.evals.feishu_live")
         if not hasattr(api, required):
             self.fail(f"Feishu case orchestration API is missing: {required}")
         return api
@@ -1376,7 +1376,7 @@ class FeishuLiveHarnessIntegrationTest(unittest.TestCase):
                 commit="b" * 40,
                 paths=SimpleNamespace(
                     home=root / "home",
-                    database=root / "miniclaw.db",
+                    database=root / "lobster0.db",
                     logs=logs,
                 ),
                 config=SimpleNamespace(
@@ -1437,7 +1437,7 @@ class FeishuLiveHarnessIntegrationTest(unittest.TestCase):
 
     def _api(self) -> ModuleType:
         """导入模块并要求集成编排数据结构存在。"""
-        api = importlib.import_module("miniclaw.evals.feishu_live")
+        api = importlib.import_module("lobster0.evals.feishu_live")
         for required in ("LiveExecution", "run_feishu_live_harness"):
             if not hasattr(api, required):
                 self.fail(f"Feishu Live integration API is missing: {required}")

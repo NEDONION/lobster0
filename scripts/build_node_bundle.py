@@ -44,7 +44,7 @@ def build_node_bundle(
         output_directory: 新 artifact 的父目录。
 
     Returns:
-        已生成的 `miniclaw-node-<version>-<platform>.tar.gz`。
+        已生成的 `lobster0-node-<version>-<platform>.tar.gz`。
 
     Raises:
         NodeBundleError: pin、archive、Node probe 或输出不满足严格契约。
@@ -60,7 +60,7 @@ def build_node_bundle(
     if archive.name != expected_name or PurePosixPath(urlsplit(url).path).name != expected_name:
         raise NodeBundleError("archive filename mismatch")
 
-    with tempfile.TemporaryDirectory(prefix="miniclaw-node-bundle-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="lobster0-node-bundle-") as temporary:
         staging = Path(temporary)
         node_root = staging / "node"
         (node_root / "bin").mkdir(parents=True)
@@ -77,7 +77,7 @@ def build_node_bundle(
             "version": version,
         }
         (node_root / "release-component.json").write_bytes(_canonical_json(component))
-        destination = Path(output_directory) / f"miniclaw-node-{version}-{platform}.tar.gz"
+        destination = Path(output_directory) / f"lobster0-node-{version}-{platform}.tar.gz"
         return write_deterministic_tar(staging, destination)
 
 

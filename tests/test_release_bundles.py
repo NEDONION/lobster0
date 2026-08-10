@@ -83,7 +83,7 @@ class NodeBundleTest(unittest.TestCase):
         first = build_node_bundle(self.pins, self.archive, PLATFORM, self.root / "a")
         second = build_node_bundle(self.pins, self.archive, PLATFORM, self.root / "b")
 
-        self.assertEqual(first.name, "miniclaw-node-24.18.0-macos-arm64.tar.gz")
+        self.assertEqual(first.name, "lobster0-node-24.18.0-macos-arm64.tar.gz")
         self.assertEqual(first.read_bytes(), second.read_bytes())
         self.assertEqual(first.read_bytes()[4:8], b"\0\0\0\0")
         with tarfile.open(first, "r:gz") as bundle:
@@ -298,7 +298,7 @@ class TuiBundleTest(unittest.TestCase):
 
     def test_tui_bundle_is_byte_reproducible(self) -> None:
         """不同 staging/output 目录不得改变 gzip bytes。"""
-        self.assertEqual(self.first.name, "miniclaw-tui-0.7.0-macos-arm64.tar.gz")
+        self.assertEqual(self.first.name, "lobster0-tui-0.7.0-macos-arm64.tar.gz")
         self.assertEqual(self.first.read_bytes(), self.second.read_bytes())
         self.assertEqual(self.first.read_bytes()[4:8], b"\0\0\0\0")
 
@@ -321,10 +321,10 @@ class TuiBundleTest(unittest.TestCase):
             [str(managed_node), str(entry), "--smoke"],
             cwd=self.root,
             env={
-                "MINICLAW_HOME": str(home),
-                "MINICLAW_NODE": str(managed_node),
-                "MINICLAW_PYTHON": sys.executable,
-                "MINICLAW_TUI_ENTRY": str(entry),
+                "LOBSTER0_HOME": str(home),
+                "LOBSTER0_NODE": str(managed_node),
+                "LOBSTER0_PYTHON": sys.executable,
+                "LOBSTER0_TUI_ENTRY": str(entry),
             },
             capture_output=True,
             text=True,

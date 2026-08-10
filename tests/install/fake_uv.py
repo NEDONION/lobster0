@@ -6,13 +6,13 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-_MINICLAW_MAIN = b"""from __future__ import annotations
+_LOBSTER0_MAIN = b"""from __future__ import annotations
 
 import json
 import sys
 
 if sys.argv[1:] == [\"--version\"]:
-    print(\"miniclaw 0.7.0\")
+    print(\"lobster0 0.7.0\")
 elif sys.argv[1:] == [\"install-smoke\", \"--json\"]:
     print(json.dumps({\"status\": \"ok\", \"version\": \"0.7.0\"}, separators=(\",\", \":\")))
 else:
@@ -45,10 +45,10 @@ def main(argv: list[str] | None = None) -> int:
     if len(values) >= 5 and values[:2] == ["pip", "install"] and "--python" in values:
         if "--no-deps" in values:
             python = Path(values[values.index("--python") + 1])
-            package = python.parents[1] / "lib" / "python3.12" / "site-packages" / "miniclaw"
+            package = python.parents[1] / "lib" / "python3.12" / "site-packages" / "lobster0"
             package.mkdir(parents=True)
             (package / "__init__.py").write_bytes(b"")
-            (package / "__main__.py").write_bytes(_MINICLAW_MAIN)
+            (package / "__main__.py").write_bytes(_LOBSTER0_MAIN)
         return 0
     return 2
 

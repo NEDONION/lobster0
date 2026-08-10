@@ -5,7 +5,7 @@ import unittest
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from miniclaw.channels.supervisor import (
+from lobster0.channels.supervisor import (
     ChannelRuntime,
     GatewayConfigError,
     GatewaySecrets,
@@ -13,7 +13,7 @@ from miniclaw.channels.supervisor import (
     collect_enabled_channels,
     validate_gateway_preflight,
 )
-from miniclaw.config import (
+from lobster0.config import (
     AgentConfig,
     AppConfig,
     DiscordConfig,
@@ -21,7 +21,7 @@ from miniclaw.config import (
     TelegramConfig,
     WorkspaceConfig,
 )
-from miniclaw.gateway import create_gateway_supervisor
+from lobster0.gateway import create_gateway_supervisor
 
 
 @dataclass(slots=True)
@@ -102,7 +102,7 @@ class GatewayPreflightTest(unittest.TestCase):
         base = AppConfig(
             agent=AgentConfig(),
             provider=ProviderConfig(),
-            workspace=WorkspaceConfig(Path("/tmp/miniclaw-supervisor-test")),
+            workspace=WorkspaceConfig(Path("/tmp/lobster0-supervisor-test")),
         )
         self.config = replace(
             base,
@@ -130,11 +130,11 @@ class GatewayPreflightTest(unittest.TestCase):
             ),
         )
         self.environment = {
-            "MINICLAW_MODEL_API_KEY": "model-private",
-            "MINICLAW_FEISHU_APP_ID": "cli_private",
-            "MINICLAW_FEISHU_APP_SECRET": "feishu-private",
-            "MINICLAW_TELEGRAM_BOT_TOKEN": "telegram-private",
-            "MINICLAW_DISCORD_BOT_TOKEN": "discord-private",
+            "LOBSTER0_MODEL_API_KEY": "model-private",
+            "LOBSTER0_FEISHU_APP_ID": "cli_private",
+            "LOBSTER0_FEISHU_APP_SECRET": "feishu-private",
+            "LOBSTER0_TELEGRAM_BOT_TOKEN": "telegram-private",
+            "LOBSTER0_DISCORD_BOT_TOKEN": "discord-private",
         }
 
     def test_enabled_order_and_secret_bundle_are_fixed_and_redacted(self) -> None:
@@ -172,9 +172,9 @@ class GatewayPreflightTest(unittest.TestCase):
             (empty, self.environment, {"feishu": True}, "no_channels_enabled"),
             (
                 self.config,
-                {**self.environment, "MINICLAW_DISCORD_BOT_TOKEN": ""},
+                {**self.environment, "LOBSTER0_DISCORD_BOT_TOKEN": ""},
                 {"feishu": True, "telegram": True, "discord": True},
-                "MINICLAW_DISCORD_BOT_TOKEN",
+                "LOBSTER0_DISCORD_BOT_TOKEN",
             ),
             (
                 self.config,
@@ -255,7 +255,7 @@ class GatewaySupervisorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             ready,
             [
-                "MiniClaw gateway ready: "
+                "Lobster0 gateway ready: "
                 "feishu/default, telegram/default, discord/default"
             ],
         )
@@ -353,7 +353,7 @@ class GatewaySupervisorTest(unittest.IsolatedAsyncioTestCase):
         base = AppConfig(
             agent=AgentConfig(),
             provider=ProviderConfig(),
-            workspace=WorkspaceConfig(Path("/tmp/miniclaw-factory-test")),
+            workspace=WorkspaceConfig(Path("/tmp/lobster0-factory-test")),
         )
         config = replace(
             base,

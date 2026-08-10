@@ -4,10 +4,10 @@ import unittest
 from dataclasses import replace
 from datetime import UTC, datetime
 
-from miniclaw.memory.context import MemoryContextSelector
-from miniclaw.memory.models import SourceRef
-from miniclaw.memory.repository import MemoryUnit
-from miniclaw.memory.retrieval import MemoryHit, MemorySearchResult
+from lobster0.memory.context import MemoryContextSelector
+from lobster0.memory.models import SourceRef
+from lobster0.memory.repository import MemoryUnit
+from lobster0.memory.retrieval import MemoryHit, MemorySearchResult
 
 
 class MemoryContextSelectorTest(unittest.TestCase):

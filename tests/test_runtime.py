@@ -9,13 +9,13 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.config import load_config
-from miniclaw.memory.models import DisclosureContext
-from miniclaw.paths import build_state_paths
-from miniclaw.runtime import create_channel_manager, create_runtime, limits_for_channel
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
+from lobster0.bootstrap import initialize_state
+from lobster0.config import load_config
+from lobster0.memory.models import DisclosureContext
+from lobster0.paths import build_state_paths
+from lobster0.runtime import create_channel_manager, create_runtime, limits_for_channel
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
 
 
 class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
@@ -44,7 +44,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             [
                 sys.executable,
                 "-c",
-                "import sys; import miniclaw.runtime; "
+                "import sys; import lobster0.runtime; "
                 "raise SystemExit(any(name in sys.modules "
                 "for name in ('lark_channel', 'telegram', 'discord')))",
             ],
@@ -219,7 +219,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 )
             config = load_config(paths)
 
-            with mock.patch("miniclaw.runtime.Path.home", return_value=owner_home):
+            with mock.patch("lobster0.runtime.Path.home", return_value=owner_home):
                 runtime = create_runtime(config, paths, "test-key")
             try:
                 context = runtime.service._tool_context(
@@ -259,7 +259,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 automation=replace(base.automation, enabled=True),
                 sandbox=replace(
                     base.sandbox,
-                    image="example/miniclaw@sha256:" + "a" * 64,
+                    image="example/lobster0@sha256:" + "a" * 64,
                 ),
             )
             enabled = create_runtime(enabled_config, paths, "test-key")
@@ -289,7 +289,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 automation=replace(base.automation, enabled=True),
                 sandbox=replace(
                     base.sandbox,
-                    image="example/miniclaw@sha256:" + "b" * 64,
+                    image="example/lobster0@sha256:" + "b" * 64,
                 ),
             )
             runtime = create_runtime(config, paths, "test-key")

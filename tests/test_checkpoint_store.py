@@ -5,10 +5,10 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.checkpoints.store import CheckpointError, CheckpointStore
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.database import Database
+from lobster0.bootstrap import initialize_state
+from lobster0.checkpoints.store import CheckpointError, CheckpointStore
+from lobster0.paths import build_state_paths
+from lobster0.storage.database import Database
 
 
 class CheckpointStoreTest(unittest.TestCase):

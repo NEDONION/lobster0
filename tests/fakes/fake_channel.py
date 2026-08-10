@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
 
-from miniclaw.channels.base import OutboundMessage, SendReceipt
+from lobster0.channels.base import OutboundMessage, SendReceipt
 
 
 @dataclass(frozen=True, slots=True)

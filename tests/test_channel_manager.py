@@ -10,36 +10,36 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.agent.runner import AgentLoopLimitError, AgentNoProgressError
-from miniclaw.agent.turn import TurnResult
-from miniclaw.channels.approvals import (
+from lobster0.agent.events import RunEvent
+from lobster0.agent.runner import AgentLoopLimitError, AgentNoProgressError
+from lobster0.agent.turn import TurnResult
+from lobster0.channels.approvals import (
     ApprovalCommandOutcome,
     ApprovalEnvelope,
     approval_delivery_payload,
 )
-from miniclaw.channels.base import InboundMessage, SendReceipt
-from miniclaw.channels.capabilities import ChannelCapabilities
-from miniclaw.channels.manager import ChannelManager
-from miniclaw.channels.observability import ChannelObserver
-from miniclaw.channels.progress import ProgressProjector, progress_to_metadata
-from miniclaw.policy.approvals import ApprovalDecision
-from miniclaw.policy.modes import PermissionMode, PermissionState
-from miniclaw.providers.base import ProviderProtocolError
-from miniclaw.storage.channels import (
+from lobster0.channels.base import InboundMessage, SendReceipt
+from lobster0.channels.capabilities import ChannelCapabilities
+from lobster0.channels.manager import ChannelManager
+from lobster0.channels.observability import ChannelObserver
+from lobster0.channels.progress import ProgressProjector, progress_to_metadata
+from lobster0.policy.approvals import ApprovalDecision
+from lobster0.policy.modes import PermissionMode, PermissionState
+from lobster0.providers.base import ProviderProtocolError
+from lobster0.storage.channels import (
     ChannelIdentityRepository,
     DeliveryRepository,
     InboundEventRepository,
 )
-from miniclaw.storage.conversations import (
+from lobster0.storage.conversations import (
     ConversationStateError,
     MessageRepository,
     SessionRepository,
     TurnRepository,
 )
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 
 
 @dataclass(slots=True)
@@ -274,7 +274,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.database = Database(
-            Path(self.temporary_directory.name).resolve() / "miniclaw.db"
+            Path(self.temporary_directory.name).resolve() / "lobster0.db"
         )
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()
@@ -601,8 +601,8 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             ).fetchone()
         self.assertIsNone(delivery)
         self.assertGreaterEqual(len(transport.cards), 2)
-        self.assertIn("MiniClaw · 执行中", repr(transport.cards[0]))
-        self.assertIn("MiniClaw · 未完成", repr(transport.cards[-1]))
+        self.assertIn("Lobster0 · 执行中", repr(transport.cards[0]))
+        self.assertIn("Lobster0 · 未完成", repr(transport.cards[-1]))
         self.assertIn("处理失败", repr(transport.cards[-1]))
 
     async def test_provider_protocol_failure_has_actionable_redacted_card(self) -> None:
@@ -837,7 +837,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         await manager.stop(drain_timeout=0.01)
 
         final = repr(transport.cards[-1])
-        self.assertIn("MiniClaw · 未完成", final)
+        self.assertIn("Lobster0 · 未完成", final)
         self.assertIn("失败阶段", final)
         self.assertIn("Gateway 运行期", final)
         self.assertIn("channel_turn_interrupted", final)
@@ -944,8 +944,8 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             approval_delivery_payload(controller.prompt(user_id=self.owner.id, approval_id=7)),
         )
         self.assertEqual(len(waiting_transport.cards), 2)
-        self.assertIn("MiniClaw · 执行中", repr(waiting_transport.cards[0]))
-        self.assertIn("MiniClaw · 未完成", repr(waiting_transport.cards[-1]))
+        self.assertIn("Lobster0 · 执行中", repr(waiting_transport.cards[0]))
+        self.assertIn("Lobster0 · 未完成", repr(waiting_transport.cards[-1]))
 
     async def test_approval_controller_failure_creates_safe_durable_notice(self) -> None:
         """控制层异常不能杀死 Worker，也不能让原始异常进入 SQLite。"""

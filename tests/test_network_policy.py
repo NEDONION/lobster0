@@ -3,15 +3,15 @@
 import unittest
 from pathlib import Path
 
-from miniclaw.policy.engine import PolicyAction, PolicyEngine
-from miniclaw.policy.network import (
+from lobster0.policy.engine import PolicyAction, PolicyEngine
+from lobster0.policy.network import (
     NetworkPolicyError,
     NetworkRule,
     normalize_network_rule,
     validate_https_target,
 )
-from miniclaw.tools.base import ToolContext
-from miniclaw.tools.web import HttpGetTool
+from lobster0.tools.base import ToolContext
+from lobster0.tools.web import HttpGetTool
 
 
 class NetworkPolicyTest(unittest.TestCase):

@@ -3,7 +3,7 @@
 import asyncio
 import unittest
 
-from miniclaw.memory.worker import MemoryWorker
+from lobster0.memory.worker import MemoryWorker
 
 
 class FakeCoordinator:

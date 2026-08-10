@@ -1,4 +1,4 @@
-"""MiniClaw SQLite migration 与 Owner Repository 的行为测试。"""
+"""Lobster0 SQLite migration 与 Owner Repository 的行为测试。"""
 
 import sqlite3
 import tempfile
@@ -7,9 +7,9 @@ from importlib import resources
 from pathlib import Path
 from unittest.mock import patch
 
-from miniclaw.storage.database import Database, DatabaseError
-from miniclaw.storage.migrations import MigrationError, apply_migrations, current_schema_version
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.storage.database import Database, DatabaseError
+from lobster0.storage.migrations import MigrationError, apply_migrations, current_schema_version
+from lobster0.storage.repositories import OwnerRepository
 
 EXPECTED_TABLES = {
     "approvals",
@@ -53,7 +53,7 @@ class StorageTest(unittest.TestCase):
         """为每个测试创建独立的磁盘 SQLite 数据库路径。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.database_path = Path(self.temporary_directory.name) / "miniclaw.db"
+        self.database_path = Path(self.temporary_directory.name) / "lobster0.db"
 
     def test_migration_creates_complete_schema_once_with_required_pragmas(self) -> None:
         """第一次迁移应创建完整 Schema，第二次不得重复应用。"""
@@ -170,7 +170,7 @@ class StorageTest(unittest.TestCase):
         """已有 v1 消息、事件和 Delivery 必须在 v2 迁移后完整保留。"""
         database = Database(self.database_path)
         schema = (
-            resources.files("miniclaw.storage")
+            resources.files("lobster0.storage")
             .joinpath("schema.sql")
             .read_text(encoding="utf-8")
         )
@@ -274,7 +274,7 @@ class StorageTest(unittest.TestCase):
         """一个版本中后续 SQL 失败时，前面的表修改和版本账本都必须回滚。"""
         database = Database(self.database_path)
         schema = (
-            resources.files("miniclaw.storage")
+            resources.files("lobster0.storage")
             .joinpath("schema.sql")
             .read_text(encoding="utf-8")
         )
@@ -284,7 +284,7 @@ class StorageTest(unittest.TestCase):
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (1, 'now')"
             )
         with patch(
-            "miniclaw.storage.migrations._load_migration",
+            "lobster0.storage.migrations._load_migration",
             return_value="CREATE TABLE partial_v2 (id INTEGER); INVALID SQL;",
         ):
             with self.assertRaisesRegex(MigrationError, "migration 2"):

@@ -7,8 +7,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.install import models as install_models
-from miniclaw.install.models import (
+from lobster0.install import models as install_models
+from lobster0.install.models import (
     InstallError,
     InstallEvent,
     InstallPlan,
@@ -52,8 +52,8 @@ class InstallModelsTest(unittest.TestCase):
         return json.dumps(document, separators=(",", ":")).encode()
 
     def release_url(self, version: str, filename: str) -> str:
-        """返回 fixture 使用的 immutable MiniClaw Release asset URL。"""
-        return f"https://github.com/NEDONION/mini-claw/releases/download/v{version}/{filename}"
+        """返回 fixture 使用的 immutable Lobster0 Release asset URL。"""
+        return f"https://github.com/NEDONION/lobster0/releases/download/v{version}/{filename}"
 
     def request(self, **changes: object) -> InstallRequest:
         """构造一个不含 Secret 值的有效安装请求。"""
@@ -61,8 +61,8 @@ class InstallModelsTest(unittest.TestCase):
             "action": "install",
             "version": "0.7.0",
             "channel": "stable",
-            "prefix": Path("/opt/miniclaw"),
-            "state_home": Path("/var/lib/miniclaw"),
+            "prefix": Path("/opt/lobster0"),
+            "state_home": Path("/var/lib/lobster0"),
             "system_prefix": False,
             "onboard": True,
             "config_file": Path("/private/import-config.toml"),
@@ -89,9 +89,9 @@ class InstallModelsTest(unittest.TestCase):
             "distro_id": "ubuntu",
             "distro_version": "24.04",
             "service_manager": "systemd-user",
-            "program_prefix": Path("/opt/miniclaw"),
+            "program_prefix": Path("/opt/lobster0"),
             "state_home": selected_request.state_home,
-            "artifact_filenames": ("miniclaw-tui-0.7.0-linux-x86_64.tar.gz",),
+            "artifact_filenames": ("lobster0-tui-0.7.0-linux-x86_64.tar.gz",),
             "system_argvs": (("apt-get", "install", "-y", "libsqlite3-0"),),
             "install_service": True,
             "run_onboarding": True,
@@ -127,8 +127,8 @@ class InstallModelsTest(unittest.TestCase):
             ReleaseManifest.from_bytes(self.manifest_bytes())
 
         duplicate = self.fixture.read_text(encoding="utf-8").replace(
-            '"product": "miniclaw",',
-            '"product": "miniclaw", "product": "miniclaw",',
+            '"product": "lobster0",',
+            '"product": "lobster0", "product": "lobster0",',
             1,
         )
         with self.assertRaisesRegex(InstallError, "manifest_invalid"):
@@ -147,7 +147,7 @@ class InstallModelsTest(unittest.TestCase):
             (
                 {**self.document, "artifacts": [artifact]},
                 {**self.document, "features": [{"unhashable": True}]},
-                {**self.document, "product": ["miniclaw"]},
+                {**self.document, "product": ["lobster0"]},
             )
         )
         for document in documents:
@@ -179,11 +179,11 @@ class InstallModelsTest(unittest.TestCase):
     def test_manifest_rejects_untrusted_urls_and_repositories(self) -> None:
         """artifact URL 必须是无附加信息的 allowlisted HTTPS 来源。"""
         cases = (
-            "http://github.com/NEDONION/mini-claw/releases/download/v0.7.0/a.whl",
-            "https://user@github.com/NEDONION/mini-claw/releases/download/v0.7.0/a.whl",
-            "https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/a.whl?x=1",
-            "https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/a.whl#x",
-            "https://github.com/OTHER/miniclaw/releases/download/v0.7.0/a.whl",
+            "http://github.com/NEDONION/lobster0/releases/download/v0.7.0/a.whl",
+            "https://user@github.com/NEDONION/lobster0/releases/download/v0.7.0/a.whl",
+            "https://github.com/NEDONION/lobster0/releases/download/v0.7.0/a.whl?x=1",
+            "https://github.com/NEDONION/lobster0/releases/download/v0.7.0/a.whl#x",
+            "https://github.com/OTHER/lobster0/releases/download/v0.7.0/a.whl",
             "https://github.com/NEDONION/other/releases/download/v0.7.0/a.whl",
         )
         for url in cases:
@@ -194,7 +194,7 @@ class InstallModelsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(InstallError, "manifest_invalid"):
             ReleaseManifest.from_bytes(
-                self.artifact_mutation(source_repository="https://github.com/OTHER/miniclaw")
+                self.artifact_mutation(source_repository="https://github.com/OTHER/lobster0")
             )
 
     def test_url_mutation_corpus_is_rejected_by_python_and_json_schema(self) -> None:
@@ -237,7 +237,7 @@ class InstallModelsTest(unittest.TestCase):
                 "filename": wheel["filename"],
                 "url": node["url"].replace(node["filename"], wheel["filename"]),
             },
-            {**node, "source_repository": "https://github.com/NEDONION/mini-claw"},
+            {**node, "source_repository": "https://github.com/NEDONION/lobster0"},
             {**node, "platform": {"os": "any", "arch": "any"}},
             {**node, "media_type": "application/zip"},
             {**node, "upstream_sha256": None},
@@ -261,7 +261,7 @@ class InstallModelsTest(unittest.TestCase):
             filename: str,
             media_type: str,
         ) -> dict[str, object]:
-            """从有效 wheel 派生一个 MiniClaw universal artifact。"""
+            """从有效 wheel 派生一个 Lobster0 universal artifact。"""
             return {
                 **wheel,
                 "kind": kind,
@@ -272,14 +272,14 @@ class InstallModelsTest(unittest.TestCase):
 
         artifacts = [
             wheel,
-            universal("sdist", "miniclaw_agent-0.7.0.tar.gz", "application/gzip"),
+            universal("sdist", "lobster0_agent-0.7.0.tar.gz", "application/gzip"),
             universal("requirements", "requirements-all.lock", "text/plain"),
             node,
             tui,
-            universal("sandbox-image", "miniclaw-sandbox-image-digest.txt", "text/plain"),
-            universal("runtime-image", "miniclaw-runtime-image-digest.txt", "text/plain"),
-            universal("installer", "miniclaw-installer.pyz", "application/zip"),
-            universal("sbom", "miniclaw-0.7.0.cdx.json", "application/vnd.cyclonedx+json"),
+            universal("sandbox-image", "lobster0-sandbox-image-digest.txt", "text/plain"),
+            universal("runtime-image", "lobster0-runtime-image-digest.txt", "text/plain"),
+            universal("installer", "lobster0-installer.pyz", "application/zip"),
+            universal("sbom", "lobster0-0.7.0.cdx.json", "application/vnd.cyclonedx+json"),
         ]
 
         manifest = ReleaseManifest.from_bytes(self.release_bytes("0.7.0", artifacts))
@@ -306,12 +306,12 @@ class InstallModelsTest(unittest.TestCase):
             self.fail(f"missing schema rule for {kind}")
 
         correct = (
-            ("wheel", "miniclaw_agent-0.8.0rc1-py3-none-any.whl", "application/zip"),
-            ("sdist", "miniclaw_agent-0.8.0rc1.tar.gz", "application/gzip"),
+            ("wheel", "lobster0_agent-0.8.0rc1-py3-none-any.whl", "application/zip"),
+            ("sdist", "lobster0_agent-0.8.0rc1.tar.gz", "application/gzip"),
         )
         wrong = (
-            ("wheel", "miniclaw_agent-0.8.0-rc.1-py3-none-any.whl", "application/zip"),
-            ("sdist", "miniclaw_agent-0.8.0-rc.1.tar.gz", "application/gzip"),
+            ("wheel", "lobster0_agent-0.8.0-rc.1-py3-none-any.whl", "application/zip"),
+            ("sdist", "lobster0_agent-0.8.0-rc.1.tar.gz", "application/gzip"),
         )
         for kind, filename, media_type in correct:
             artifact = {
@@ -423,7 +423,7 @@ class InstallModelsTest(unittest.TestCase):
                 )
 
         universal_tui = dict(self.document["artifacts"][2])
-        universal_tui["filename"] = "miniclaw-tui-0.7.0-any-any.tar.gz"
+        universal_tui["filename"] = "lobster0-tui-0.7.0-any-any.tar.gz"
         universal_tui["platform"] = {"os": "any", "arch": "any"}
         with self.assertRaisesRegex(InstallError, "manifest_invalid"):
             ReleaseManifest.from_bytes(
@@ -445,13 +445,13 @@ class InstallModelsTest(unittest.TestCase):
             {"version": "v0.7.0"},
             {"version": "0.8.0-rc.1", "channel": "stable"},
             {"prefix": Path("relative")},
-            {"prefix": Path("/opt/miniclaw\nSECRET_SENTINEL")},
+            {"prefix": Path("/opt/lobster0\nSECRET_SENTINEL")},
             {"state_home": Path("relative")},
             {"config_file": Path("relative.toml")},
             {"secrets_file": Path("relative.env")},
             {"dry_run": 1},
             {"service": 1},
-            {"prefix": Path("/opt/miniclaw"), "system_prefix": True},
+            {"prefix": Path("/opt/lobster0"), "system_prefix": True},
         ):
             with self.subTest(changes=changes), self.assertRaises(InstallError):
                 self.request(**changes)
@@ -491,14 +491,14 @@ class InstallModelsTest(unittest.TestCase):
             summary,
             "version=0.7.0 platform=linux/x86_64 service=True onboarding=True",
         )
-        self.assertNotIn("/opt/miniclaw", summary)
+        self.assertNotIn("/opt/lobster0", summary)
         self.assertNotIn("CONFIG_SENTINEL", summary)
         self.assertNotIn("SECRET_SENTINEL", summary)
         self.assertNotIn("STATE_SENTINEL", summary)
         with self.assertRaisesRegex(InstallError, "plan_invalid"):
             dataclasses.replace(plan, platform="linux")  # type: ignore[arg-type]
         with self.assertRaisesRegex(InstallError, "plan_invalid"):
-            dataclasses.replace(plan, program_prefix=Path("/opt/miniclaw\nSECRET_SENTINEL"))
+            dataclasses.replace(plan, program_prefix=Path("/opt/lobster0\nSECRET_SENTINEL"))
         with self.assertRaisesRegex(InstallError, "plan_invalid"):
             dataclasses.replace(
                 plan,
@@ -572,7 +572,7 @@ class InstallModelsTest(unittest.TestCase):
 
     def test_parser_error_keeps_code_and_field_without_raw_value(self) -> None:
         """parser 错误只输出稳定 code 与字段名，不回显恶意字段值。"""
-        raw_url = "https://user:TOPSECRET@github.com/NEDONION/mini-claw/releases/raw"
+        raw_url = "https://user:TOPSECRET@github.com/NEDONION/lobster0/releases/raw"
 
         with self.assertRaises(InstallError) as caught:
             ReleaseManifest.from_bytes(self.artifact_mutation(url=raw_url))

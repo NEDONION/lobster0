@@ -8,9 +8,9 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.channels.observability import ChannelObserver
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
+from lobster0.channels.observability import ChannelObserver
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
 
 
 class ChannelObservabilityTest(unittest.TestCase):
@@ -21,7 +21,7 @@ class ChannelObservabilityTest(unittest.TestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.database = Database(
-            Path(self.temporary_directory.name).resolve() / "miniclaw.db"
+            Path(self.temporary_directory.name).resolve() / "lobster0.db"
         )
         apply_migrations(self.database)
         timestamp = datetime(2026, 8, 8, 9, 0, tzinfo=UTC).isoformat()
@@ -47,7 +47,7 @@ class ChannelObservabilityTest(unittest.TestCase):
                 """
             )
         self.stream = io.StringIO()
-        self.logger = logging.Logger(f"miniclaw.channel.test.{id(self)}")
+        self.logger = logging.Logger(f"lobster0.channel.test.{id(self)}")
         self.logger.setLevel(logging.INFO)
         handler = logging.StreamHandler(self.stream)
         handler.setFormatter(logging.Formatter("%(message)s"))
@@ -120,7 +120,7 @@ class ChannelObservabilityTest(unittest.TestCase):
 
         log_lines = [json.loads(line) for line in self.stream.getvalue().splitlines()]
         self.assertEqual(len(log_lines), 3)
-        self.assertTrue(all(line["source"] == "miniclaw.channel" for line in log_lines))
+        self.assertTrue(all(line["source"] == "lobster0.channel" for line in log_lines))
         self.assertTrue(all("timestamp" in line for line in log_lines))
         combined = "\n".join(
             [self.stream.getvalue(), *(row["metadata_json"] for row in rows)]

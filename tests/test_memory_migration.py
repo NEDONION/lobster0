@@ -5,13 +5,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.markdown_store import MemoryMarkdownStore
-from miniclaw.memory.migration import LegacyMemoryImporter
-from miniclaw.memory.repository import MemoryManifestRepository, MemoryUnitRepository
-from miniclaw.memory.store import MemoryStore
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.database import Database
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.markdown_store import MemoryMarkdownStore
+from lobster0.memory.migration import LegacyMemoryImporter
+from lobster0.memory.repository import MemoryManifestRepository, MemoryUnitRepository
+from lobster0.memory.store import MemoryStore
+from lobster0.paths import build_state_paths
+from lobster0.storage.database import Database
 
 
 class LegacyMemoryMigrationTest(unittest.TestCase):
@@ -76,12 +76,12 @@ class LegacyMemoryMigrationTest(unittest.TestCase):
 
     def test_repeated_initialization_imports_changed_legacy_file(self) -> None:
         """真实 bootstrap 重启会扫描 legacy 新 hash，不要求手工迁移命令。"""
-        original = "# Long-term Memory\n\n- 用户正在开发 MiniClaw\n"
+        original = "# Long-term Memory\n\n- 用户正在开发 Lobster0\n"
         self.paths.memory_file.write_text(original, encoding="utf-8")
 
         initialize_state(self.paths)
 
-        imported = self.units.find_by_text(self.owner.id, "用户正在开发 MiniClaw")
+        imported = self.units.find_by_text(self.owner.id, "用户正在开发 Lobster0")
         self.assertIsNotNone(imported)
         self.assertEqual(self.paths.memory_file.read_text(encoding="utf-8"), original)
 

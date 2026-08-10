@@ -1,4 +1,4 @@
-"""``miniclaw eval`` 离线场景门禁的 CLI 测试。"""
+"""``lobster0 eval`` 离线场景门禁的 CLI 测试。"""
 
 import contextlib
 import io
@@ -12,7 +12,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIO_ROOT = PROJECT_ROOT / "evals" / "scenarios"
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from miniclaw.cli import main  # noqa: E402
+from lobster0.cli import main  # noqa: E402
 
 
 def run_cli(arguments: list[str]) -> tuple[int, str, str]:
@@ -49,7 +49,7 @@ class CliEvalTest(unittest.TestCase):
         self.assertTrue(any(line.startswith("BROWSER-001 active browser_agent ") for line in lines))
 
     def test_validate_reports_case_count_without_initializing_state(self) -> None:
-        """validate 只读场景目录，不创建或要求 MiniClaw home。"""
+        """validate 只读场景目录，不创建或要求 Lobster0 home。"""
         with tempfile.TemporaryDirectory() as directory:
             missing_home = Path(directory) / "must-not-exist"
             code, output, error = run_cli(

@@ -3,10 +3,10 @@
 import unittest
 from pathlib import Path
 
-from miniclaw.browser.policy import classify_browser_action
-from miniclaw.policy.engine import PolicyAction, PolicyEngine
-from miniclaw.tools.base import ToolContext, ToolRisk
-from miniclaw.tools.browser import browser_tools
+from lobster0.browser.policy import classify_browser_action
+from lobster0.policy.engine import PolicyAction, PolicyEngine
+from lobster0.tools.base import ToolContext, ToolRisk
+from lobster0.tools.browser import browser_tools
 
 
 class _Client:

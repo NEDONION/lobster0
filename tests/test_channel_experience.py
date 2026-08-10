@@ -5,15 +5,15 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.channels.base import ChannelTransportError
-from miniclaw.channels.experience import (
+from lobster0.agent.events import RunEvent
+from lobster0.channels.base import ChannelTransportError
+from lobster0.channels.experience import (
     ChannelExperience,
     ChannelExperienceTransport,
     ProgressReceipt,
 )
-from miniclaw.channels.progress import AgentProgress
-from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
+from lobster0.channels.progress import AgentProgress
+from lobster0.storage.channels import InboundEventKey, StoredInboundEvent
 
 
 @dataclass(slots=True)

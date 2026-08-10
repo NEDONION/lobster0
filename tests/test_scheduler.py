@@ -6,7 +6,7 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.automation.models import (
+from lobster0.automation.models import (
     DeliveryTarget,
     RunStatus,
     ScheduledTask,
@@ -15,15 +15,15 @@ from miniclaw.automation.models import (
     TaskBudget,
     TaskStatus,
 )
-from miniclaw.automation.repository import (
+from lobster0.automation.repository import (
     AutomationControlRepository,
     ScheduledTaskRepository,
     TaskRunRepository,
 )
-from miniclaw.automation.scheduler import Scheduler
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.automation.scheduler import Scheduler
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 
 
 class SchedulerTest(unittest.IsolatedAsyncioTestCase):
@@ -33,7 +33,7 @@ class SchedulerTest(unittest.IsolatedAsyncioTestCase):
         """创建带一条到期 interval Task 的独立数据库。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        database = Database(Path(self.temporary_directory.name) / "miniclaw.db")
+        database = Database(Path(self.temporary_directory.name) / "lobster0.db")
         apply_migrations(database)
         owner = OwnerRepository(database).get_or_create()
         self.owner_id = owner.id

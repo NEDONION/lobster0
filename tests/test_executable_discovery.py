@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.policy.executables import discover_executables
+from lobster0.policy.executables import discover_executables
 
 
 class ExecutableDiscoveryTest(unittest.TestCase):

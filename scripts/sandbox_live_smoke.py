@@ -8,10 +8,10 @@ import tempfile
 from pathlib import Path
 from typing import cast
 
-from miniclaw.policy.command import SAFE_EXECUTABLE_PATH
-from miniclaw.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxBackendName
-from miniclaw.sandbox.docker import DockerSandbox, discover_rootless_client_transport
-from miniclaw.sandbox.seatbelt import SeatbeltSandbox
+from lobster0.policy.command import SAFE_EXECUTABLE_PATH
+from lobster0.sandbox.base import ExecutionPlan, ExecutionReceipt, SandboxBackendName
+from lobster0.sandbox.docker import DockerSandbox, discover_rootless_client_transport
+from lobster0.sandbox.seatbelt import SeatbeltSandbox
 
 
 def _arguments() -> argparse.Namespace:
@@ -35,14 +35,14 @@ async def _run(args: argparse.Namespace) -> int:
     if args.backend == "docker" and args.engine is None:
         print("--engine is required for Docker", file=sys.stderr)
         return 2
-    with tempfile.TemporaryDirectory(prefix="miniclaw-sandbox-smoke-") as directory:
+    with tempfile.TemporaryDirectory(prefix="lobster0-sandbox-smoke-") as directory:
         root = Path(directory).resolve()
         workspace = root / "workspace"
         workspace.mkdir()
         if args.backend == "docker":
             workspace.chmod(0o703)
         secret = root / "outside-secret"
-        secret.write_text("MINICLAW_SMOKE_SECRET", encoding="utf-8")
+        secret.write_text("LOBSTER0_SMOKE_SECRET", encoding="utf-8")
         probe = workspace / "probe.py"
         result = workspace / "result.txt"
         probe.write_text(_probe_source(), encoding="utf-8")
@@ -87,7 +87,7 @@ async def _run(args: argparse.Namespace) -> int:
             and result.read_text(encoding="utf-8") == "workspace-write-ok"
             and "outside-secret-denied" in receipt.stdout
             and "network-denied" in receipt.stdout
-            and "MINICLAW_SMOKE_SECRET" not in receipt.canonical_json
+            and "LOBSTER0_SMOKE_SECRET" not in receipt.canonical_json
         )
         print(_stable_status(backend_name, safe))
         return 0 if safe else 1

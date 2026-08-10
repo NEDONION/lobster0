@@ -23,12 +23,12 @@ from types import SimpleNamespace
 from unittest import mock
 from urllib.request import Request
 
-from miniclaw.config import ConfigError, load_config
-from miniclaw.install import __main__ as installer_cli
-from miniclaw.install import orchestrator as install_orchestrator
-from miniclaw.install.__main__ import _public_argv, main
-from miniclaw.install.layout import InstallLayout, InstallLock
-from miniclaw.install.models import (
+from lobster0.config import ConfigError, load_config
+from lobster0.install import __main__ as installer_cli
+from lobster0.install import orchestrator as install_orchestrator
+from lobster0.install.__main__ import _public_argv, main
+from lobster0.install.layout import InstallLayout, InstallLock
+from lobster0.install.models import (
     InstallError,
     InstallEvent,
     InstallPlan,
@@ -36,7 +36,7 @@ from miniclaw.install.models import (
     PlatformKey,
     ReleaseManifest,
 )
-from miniclaw.install.orchestrator import (
+from lobster0.install.orchestrator import (
     BootstrapInputs,
     Installer,
     InstallResult,
@@ -52,11 +52,11 @@ from miniclaw.install.orchestrator import (
     emit_event,
     verify_bootstrap_inputs,
 )
-from miniclaw.install.platforms import DependencyPlan, DetectedPlatform, PrivilegeAction
-from miniclaw.install.receipt import InstallReceipt, managed_file_sha256
-from miniclaw.install.runtime import CommandResult
-from miniclaw.install.service import ServicePlatform
-from miniclaw.paths import build_state_paths
+from lobster0.install.platforms import DependencyPlan, DetectedPlatform, PrivilegeAction
+from lobster0.install.receipt import InstallReceipt, managed_file_sha256
+from lobster0.install.runtime import CommandResult
+from lobster0.install.service import ServicePlatform
+from lobster0.paths import build_state_paths
 
 
 class _Manifest:
@@ -291,7 +291,7 @@ class InstallerStateMachineTests(unittest.TestCase):
             version=None,
             channel="stable",
             prefix=None,
-            state_home=Path("/tmp/miniclaw-state"),
+            state_home=Path("/tmp/lobster0-state"),
             system_prefix=False,
             onboard=True,
             config_file=None,
@@ -379,7 +379,7 @@ class InstallerStateMachineTests(unittest.TestCase):
         ):
             with self.subTest(action=action, dry_run=dry_run, hop=hop):
                 operations = _Operations()
-                environment = {} if hop is None else {"MINICLAW_INSTALLER_HOPS": hop}
+                environment = {} if hop is None else {"LOBSTER0_INSTALLER_HOPS": hop}
                 with self.assertRaises(InstallError) as raised:
                     Installer(
                         self.bootstrap,
@@ -399,7 +399,7 @@ class InstallerStateMachineTests(unittest.TestCase):
             Installer(
                 self.bootstrap,
                 operations=operations,
-                environ={"MINICLAW_INSTALLER_HOPS": "1"},
+                environ={"LOBSTER0_INSTALLER_HOPS": "1"},
             ).run(replace(self.request, action="update"))
         self.assertEqual(operations.calls, ["preflight"])
 
@@ -418,7 +418,7 @@ class InstallerStateMachineTests(unittest.TestCase):
         handoff = (
             "/managed/python",
             ("/managed/python", "/bootstrap/target.pyz", "update"),
-            {"PATH": "/usr/bin:/bin", "MINICLAW_INSTALLER_HOPS": "1"},
+            {"PATH": "/usr/bin:/bin", "LOBSTER0_INSTALLER_HOPS": "1"},
         )
         operations.handoff = handoff
         calls: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
@@ -518,7 +518,7 @@ class InstallerStateMachineTests(unittest.TestCase):
         operations.handoff = (
             python,
             (python, "/private/bootstrap/target.pyz", "install"),
-            {"PATH": "/usr/bin:/bin", "MINICLAW_INSTALLER_HOPS": "1"},
+            {"PATH": "/usr/bin:/bin", "LOBSTER0_INSTALLER_HOPS": "1"},
         )
         calls: list[tuple[str, tuple[str, ...], dict[str, str]]] = []
 
@@ -538,7 +538,7 @@ class InstallerStateMachineTests(unittest.TestCase):
             Installer(
                 self.bootstrap,
                 operations=operations,
-                environ={"MINICLAW_INSTALLER_HOPS": "1"},
+                environ={"LOBSTER0_INSTALLER_HOPS": "1"},
             ).run(self.request)
         self.assertEqual(operations.calls, ["preflight", "select_target"])
 
@@ -550,7 +550,7 @@ class InstallerStateMachineTests(unittest.TestCase):
             _Plan(),  # type: ignore[arg-type]
             self.bootstrap,
             (),
-            {"MINICLAW_INSTALLER_HOPS": "1"},
+            {"LOBSTER0_INSTALLER_HOPS": "1"},
         )
         self.assertIsNone(selected)
 
@@ -579,17 +579,17 @@ class TargetHandoffTests(unittest.TestCase):
         document["artifacts"].append(
             {
                 "kind": "installer",
-                "filename": "miniclaw-installer.pyz",
+                "filename": "lobster0-installer.pyz",
                 "url": (
-                    "https://github.com/NEDONION/mini-claw/releases/download/"
-                    "v0.7.0/miniclaw-installer.pyz"
+                    "https://github.com/NEDONION/lobster0/releases/download/"
+                    "v0.7.0/lobster0-installer.pyz"
                 ),
                 "sha256": hashlib.sha256(installer).hexdigest(),
                 "size": len(installer),
                 "media_type": "application/zip",
                 "platform": {"os": "any", "arch": "any"},
                 "component_version": "0.7.0",
-                "source_repository": "https://github.com/NEDONION/mini-claw",
+                "source_repository": "https://github.com/NEDONION/lobster0",
                 "license_ref": "MIT",
                 "upstream_sha256": None,
             }
@@ -601,7 +601,7 @@ class TargetHandoffTests(unittest.TestCase):
             version="0.7.0",
             channel="stable",
             prefix=None,
-            state_home=Path("/home/alice/.miniclaw"),
+            state_home=Path("/home/alice/.lobster0"),
             system_prefix=True,
             onboard=True,
             config_file=None,
@@ -633,7 +633,7 @@ class TargetHandoffTests(unittest.TestCase):
             )
             operations = _SystemOperations(bootstrap, opener=opener)
             with mock.patch(
-                "miniclaw.install.orchestrator._invoking_account",
+                "lobster0.install.orchestrator._invoking_account",
                 return_value=account,
             ):
                 selected = operations.select_target(
@@ -658,13 +658,13 @@ class TargetHandoffTests(unittest.TestCase):
                 environment,
                 {
                     "PATH": "/usr/local/bin:/usr/bin:/bin",
-                    "MINICLAW_INSTALLER_HOPS": "1",
+                    "LOBSTER0_INSTALLER_HOPS": "1",
                     "SUDO_USER": "alice",
                     "SUDO_UID": "1001",
                 },
             )
             target_manifest = root / "release-manifest-0.7.0.json"
-            target_installer = root / "target-0.7.0" / "miniclaw-installer.pyz"
+            target_installer = root / "target-0.7.0" / "lobster0-installer.pyz"
             self.assertEqual(target_manifest.read_bytes(), manifest)
             self.assertEqual(target_installer.read_bytes(), installer)
 
@@ -679,7 +679,7 @@ class DependencyActionTests(unittest.TestCase):
             version="0.7.0",
             channel="stable",
             prefix=None,
-            state_home=Path("/home/alice/.miniclaw"),
+            state_home=Path("/home/alice/.lobster0"),
             system_prefix=False,
             onboard=True,
             config_file=None,
@@ -742,11 +742,11 @@ class DependencyActionTests(unittest.TestCase):
         )
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.verify_privilege_action",
+                "lobster0.install.orchestrator.verify_privilege_action",
                 verifier,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator._invoking_account",
+                "lobster0.install.orchestrator._invoking_account",
                 return_value=account,
             ),
         ):
@@ -808,7 +808,7 @@ class DependencyActionTests(unittest.TestCase):
         verifier = mock.Mock(return_value=None)
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.verify_privilege_action",
+                "lobster0.install.orchestrator.verify_privilege_action",
                 verifier,
             ),
             self.assertRaisesRegex(InstallError, "privilege_denied"),
@@ -862,11 +862,11 @@ class DependencyActionTests(unittest.TestCase):
         runner = Runner()
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.verify_privilege_action",
+                "lobster0.install.orchestrator.verify_privilege_action",
                 return_value=None,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator._invoking_account",
+                "lobster0.install.orchestrator._invoking_account",
                 return_value=account,
             ),
             mock.patch.dict(
@@ -908,22 +908,22 @@ class DependencyPreparationTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
         self.root.chmod(0o700)
-        self.image = b"example/miniclaw@sha256:" + b"a" * 64 + b"\n"
+        self.image = b"example/lobster0@sha256:" + b"a" * 64 + b"\n"
         document = json.loads(Path("tests/install/manifest_v1.json").read_text(encoding="utf-8"))
         document["artifacts"].append(
             {
                 "kind": "sandbox-image",
-                "filename": "miniclaw-sandbox-image-0.7.0.txt",
+                "filename": "lobster0-sandbox-image-0.7.0.txt",
                 "url": (
-                    "https://github.com/NEDONION/mini-claw/releases/download/"
-                    "v0.7.0/miniclaw-sandbox-image-0.7.0.txt"
+                    "https://github.com/NEDONION/lobster0/releases/download/"
+                    "v0.7.0/lobster0-sandbox-image-0.7.0.txt"
                 ),
                 "sha256": hashlib.sha256(self.image).hexdigest(),
                 "size": len(self.image),
                 "media_type": "text/plain",
                 "platform": {"os": "any", "arch": "any"},
                 "component_version": "0.7.0",
-                "source_repository": "https://github.com/NEDONION/mini-claw",
+                "source_repository": "https://github.com/NEDONION/lobster0",
                 "license_ref": "MIT",
                 "upstream_sha256": None,
             }
@@ -987,11 +987,11 @@ class DependencyPreparationTests(unittest.TestCase):
         operations = _SystemOperations(self.bootstrap, opener=_Opener(self.image))
         operations._platform = self.platform
         with mock.patch(
-            "miniclaw.install.orchestrator.build_dependency_actions",
+            "lobster0.install.orchestrator.build_dependency_actions",
             return_value=DependencyPlan(()),
         ) as built:
             prepared = operations.prepare_dependencies(self.plan, self.bootstrap)
-        sandbox = self.root / "miniclaw-sandbox-image-0.7.0.txt"
+        sandbox = self.root / "lobster0-sandbox-image-0.7.0.txt"
         self.assertEqual(sandbox.read_bytes(), self.image)
         self.assertEqual(prepared.system_argvs, ())
         built.assert_called_once_with(
@@ -1007,13 +1007,13 @@ class DependencyPreparationTests(unittest.TestCase):
         operations._platform = self.platform
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.build_dependency_actions",
+                "lobster0.install.orchestrator.build_dependency_actions",
                 side_effect=InstallError("system_dependency_missing", "platform"),
             ),
             self.assertRaisesRegex(InstallError, "system_dependency_missing"),
         ):
             operations.prepare_dependencies(self.plan, self.bootstrap)
-        self.assertFalse((self.root / "miniclaw-sandbox-image-0.7.0.txt").exists())
+        self.assertFalse((self.root / "lobster0-sandbox-image-0.7.0.txt").exists())
 
 
 class CommitRollbackTests(unittest.TestCase):
@@ -1027,11 +1027,11 @@ class CommitRollbackTests(unittest.TestCase):
             command_dir = root / "command"
             bin_dir.mkdir()
             command_dir.mkdir()
-            launcher = bin_dir / "miniclaw"
+            launcher = bin_dir / "lobster0"
             launcher.write_bytes(b"launcher")
             launcher.chmod(0o700)
-            command = command_dir / "miniclaw"
-            command.symlink_to(Path("../bin/miniclaw"))
+            command = command_dir / "lobster0"
+            command.symlink_to(Path("../bin/lobster0"))
             layout = SimpleNamespace(launcher=launcher, command_link=command)
             _remove_created_install_metadata(
                 layout,  # type: ignore[arg-type]
@@ -1047,7 +1047,7 @@ class CommitRollbackTests(unittest.TestCase):
         """foreign replacement 不能被 cleanup 当成本事务文件删除。"""
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
-            launcher = root / "miniclaw"
+            launcher = root / "lobster0"
             launcher.write_bytes(b"foreign")
             launcher.chmod(0o700)
             layout = SimpleNamespace(launcher=launcher, command_link=root / "command")
@@ -1087,11 +1087,11 @@ class RetryRecoveryTests(unittest.TestCase):
             git_commit="a" * 40,
             platform=PlatformKey("macos", "arm64"),
             installed_at="2026-08-10T00:00:00Z",
-            managed_files=(("bin/miniclaw", "b" * 64),),
+            managed_files=(("bin/lobster0", "b" * 64),),
             current_runtime="runtimes/0.7.0",
             previous_runtime=None,
-            service_label="io.miniclaw.gateway" if service else None,
-            service_file="Library/LaunchAgents/io.miniclaw.gateway.plist" if service else None,
+            service_label="io.lobster0.gateway" if service else None,
+            service_file="Library/LaunchAgents/io.lobster0.gateway.plist" if service else None,
             service_file_sha256="c" * 64 if service else None,
         )
 
@@ -1101,7 +1101,7 @@ class RetryRecoveryTests(unittest.TestCase):
         fresh_home.mkdir(mode=0o700)
         layout = InstallLayout.user(fresh_home, version="0.7.0")
         with mock.patch(
-            "miniclaw.install.layout._probe_process",
+            "lobster0.install.layout._probe_process",
             return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
             with InstallLock.acquire(layout) as lock:
@@ -1137,15 +1137,15 @@ class RetryRecoveryTests(unittest.TestCase):
 
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.discard_interrupted_runtime_staging",
+                "lobster0.install.orchestrator.discard_interrupted_runtime_staging",
                 side_effect=discard_staging,
             ) as recover_staging,
             mock.patch(
-                "miniclaw.install.orchestrator.discard_unactivated_runtime",
+                "lobster0.install.orchestrator.discard_unactivated_runtime",
                 side_effect=discard_runtime,
             ) as recover_runtime,
             mock.patch(
-                "miniclaw.install.layout._probe_process",
+                "lobster0.install.layout._probe_process",
                 return_value=("alive", "2026-08-10T00:00:00Z"),
             ),
         ):
@@ -1177,7 +1177,7 @@ class RetryRecoveryTests(unittest.TestCase):
                     marker.write_bytes(b"foreign")
                     layout.staging.symlink_to(external, target_is_directory=True)
                 with mock.patch(
-                    "miniclaw.install.layout._probe_process",
+                    "lobster0.install.layout._probe_process",
                     return_value=("alive", "2026-08-10T00:00:00Z"),
                 ):
                     lock = InstallLock.acquire(layout)
@@ -1198,15 +1198,15 @@ class RetryRecoveryTests(unittest.TestCase):
         (stale / "partial").write_bytes(b"partial")
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.discard_interrupted_runtime_staging",
+                "lobster0.install.orchestrator.discard_interrupted_runtime_staging",
                 return_value=False,
             ) as discard_staging,
             mock.patch(
-                "miniclaw.install.orchestrator.discard_unactivated_runtime",
+                "lobster0.install.orchestrator.discard_unactivated_runtime",
                 return_value=True,
             ) as discard_runtime,
             mock.patch(
-                "miniclaw.install.layout._probe_process",
+                "lobster0.install.layout._probe_process",
                 return_value=("alive", "2026-08-10T00:00:00Z"),
             ),
         ):
@@ -1228,7 +1228,7 @@ class RetryRecoveryTests(unittest.TestCase):
         marker.write_bytes(b"preserve")
         identity = (stale.lstat().st_dev, stale.lstat().st_ino)
         with mock.patch(
-            "miniclaw.install.layout._probe_process",
+            "lobster0.install.layout._probe_process",
             return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
             lock = InstallLock.acquire(self.layout)
@@ -1247,7 +1247,7 @@ class RetryRecoveryTests(unittest.TestCase):
         marker.write_bytes(b"preserve")
         identity = (stale.lstat().st_dev, stale.lstat().st_ino)
         with mock.patch(
-            "miniclaw.install.layout._probe_process",
+            "lobster0.install.layout._probe_process",
             return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
             lock = InstallLock.acquire(self.layout)
@@ -1282,7 +1282,7 @@ class RetryRecoveryTests(unittest.TestCase):
                 self.layout.lock.chmod(0o600)
 
         with mock.patch(
-            "miniclaw.install.layout._probe_process",
+            "lobster0.install.layout._probe_process",
             return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
             lock = InstallLock.acquire(self.layout)
@@ -1315,7 +1315,7 @@ class RetryRecoveryTests(unittest.TestCase):
         stale = self.layout.runtimes_dir / ".0.7.0.downloads"
         stale.symlink_to(external, target_is_directory=True)
         with mock.patch(
-            "miniclaw.install.layout._probe_process",
+            "lobster0.install.layout._probe_process",
             return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
             with InstallLock.acquire(self.layout) as lock:
@@ -1334,7 +1334,7 @@ class RetryRecoveryTests(unittest.TestCase):
             (metadata.st_dev, metadata.st_ino),
         )
         with mock.patch(
-            "miniclaw.install.layout._probe_process",
+            "lobster0.install.layout._probe_process",
             return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
             with InstallLock.acquire(self.layout) as lock:
@@ -1355,7 +1355,7 @@ class RetryRecoveryTests(unittest.TestCase):
             (metadata.st_dev, metadata.st_ino),
         )
         with mock.patch(
-            "miniclaw.install.layout._probe_process",
+            "lobster0.install.layout._probe_process",
             return_value=("alive", "2026-08-10T00:00:00Z"),
         ):
             with InstallLock.acquire(self.layout) as lock:
@@ -1369,7 +1369,7 @@ class RetryRecoveryTests(unittest.TestCase):
         before = self.layout.receipt.read_bytes()
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.discard_unactivated_runtime",
+                "lobster0.install.orchestrator.discard_unactivated_runtime",
             ) as discard,
             self.assertRaisesRegex(InstallError, "request_invalid"),
         ):
@@ -1413,7 +1413,7 @@ class ServiceTransactionTests(unittest.TestCase):
             git_commit="a" * 40,
             platform=PlatformKey("linux", "x86_64"),
             installed_at="2026-08-10T00:00:00Z",
-            managed_files=(("bin/miniclaw", "b" * 64),),
+            managed_files=(("bin/lobster0", "b" * 64),),
             current_runtime="runtimes/0.7.0",
             previous_runtime=None,
             service_label=None,
@@ -1429,8 +1429,8 @@ class ServiceTransactionTests(unittest.TestCase):
             ("alice", "x", os.geteuid(), os.getegid(), "Alice", str(self.home), "/bin/sh")
         )
         self.spec = SimpleNamespace(
-            label="miniclaw-gateway.service",
-            path=self.home / ".config/systemd/user/miniclaw-gateway.service",
+            label="lobster0-gateway.service",
+            path=self.home / ".config/systemd/user/lobster0-gateway.service",
         )
 
     def test_receipt_write_failure_uninstalls_new_service_with_exact_hash(self) -> None:
@@ -1438,19 +1438,19 @@ class ServiceTransactionTests(unittest.TestCase):
         digest = "d" * 64
         with (
             mock.patch(
-                "miniclaw.install.orchestrator._invoking_account",
+                "lobster0.install.orchestrator._invoking_account",
                 return_value=self.account,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator.render_service_spec",
+                "lobster0.install.orchestrator.render_service_spec",
                 return_value=self.spec,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator.service_install",
+                "lobster0.install.orchestrator.service_install",
                 return_value=digest,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator.service_uninstall",
+                "lobster0.install.orchestrator.service_uninstall",
             ) as uninstall,
             mock.patch.object(
                 InstallReceipt,
@@ -1473,15 +1473,15 @@ class ServiceTransactionTests(unittest.TestCase):
         """目标用户或相对路径无法验证时不得先创建无 receipt 的 service。"""
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.render_service_spec",
+                "lobster0.install.orchestrator.render_service_spec",
                 return_value=self.spec,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator._invoking_account",
+                "lobster0.install.orchestrator._invoking_account",
                 side_effect=InstallError("privilege_denied", "platform"),
             ),
             mock.patch(
-                "miniclaw.install.orchestrator.service_install",
+                "lobster0.install.orchestrator.service_install",
             ) as install,
             self.assertRaisesRegex(InstallError, "privilege_denied"),
         ):
@@ -1502,15 +1502,15 @@ class ServiceTransactionTests(unittest.TestCase):
         order: list[str] = []
         with (
             mock.patch(
-                "miniclaw.install.orchestrator.render_service_spec",
+                "lobster0.install.orchestrator.render_service_spec",
                 return_value=self.spec,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator.service_uninstall",
+                "lobster0.install.orchestrator.service_uninstall",
                 side_effect=lambda *_args, **_kwargs: order.append("service"),
             ) as uninstall,
             mock.patch(
-                "miniclaw.install.orchestrator._restore_current",
+                "lobster0.install.orchestrator._restore_current",
                 side_effect=lambda *_args: order.append("metadata"),
             ),
         ):
@@ -1700,7 +1700,7 @@ class InstallerCliTests(unittest.TestCase):
                 installer_factory=CapturingInstaller,
             )
         self.assertEqual(code, 0)
-        self.assertEqual(requests[0].state_home, Path("/home/alice/.miniclaw"))
+        self.assertEqual(requests[0].state_home, Path("/home/alice/.lobster0"))
         self.assertEqual(stdout.getvalue(), "")
 
     def test_non_tty_requires_complete_import_or_onboarding(self) -> None:
@@ -1841,20 +1841,20 @@ class SystemPrefixCommandTests(unittest.TestCase):
                     payload = json.dumps(
                         [
                             "a" * 64,
-                            "miniclaw.service",
-                            "/home/alice/.config/systemd/user/miniclaw.service",
+                            "lobster0.service",
+                            "/home/alice/.config/systemd/user/lobster0.service",
                         ]
                     ).encode()
                     return CommandResult(0, payload, b"")
                 return CommandResult(0, b"", b"")
 
-        runtime = Path("/usr/local/lib/miniclaw/runtimes/0.7.0")
+        runtime = Path("/usr/local/lib/lobster0/runtimes/0.7.0")
         layout = SimpleNamespace(
-            program_prefix=Path("/usr/local/lib/miniclaw"),
-            state_home=Path("/home/alice/.miniclaw"),
-            command_link=Path("/usr/local/bin/miniclaw"),
+            program_prefix=Path("/usr/local/lib/lobster0"),
+            state_home=Path("/home/alice/.lobster0"),
+            command_link=Path("/usr/local/bin/lobster0"),
             runtime=runtime,
-            secrets_file=Path("/home/alice/.miniclaw/secrets.env"),
+            secrets_file=Path("/home/alice/.lobster0/secrets.env"),
         )
         account = pwd.struct_passwd(
             ("alice", "x", 1001, 1001, "Alice", "/home/alice", "/bin/sh")
@@ -1862,13 +1862,13 @@ class SystemPrefixCommandTests(unittest.TestCase):
         runner = Runner()
         python = runtime / "venv" / "bin" / "python"
         with mock.patch(
-            "miniclaw.install.orchestrator._invoking_account",
+            "lobster0.install.orchestrator._invoking_account",
             return_value=account,
         ):
             for command in ("setup", "doctor"):
                 _checked_owner_command(
                     runner,  # type: ignore[arg-type]
-                    (str(python), "-I", "-m", "miniclaw", command),
+                    (str(python), "-I", "-m", "lobster0", command),
                     layout,  # type: ignore[arg-type]
                     system_prefix=True,
                 )
@@ -1877,8 +1877,8 @@ class SystemPrefixCommandTests(unittest.TestCase):
                 ServicePlatform.SYSTEMD_USER,
                 runner,  # type: ignore[arg-type]
             )
-        self.assertEqual((digest, label), ("a" * 64, "miniclaw.service"))
-        self.assertEqual(relative, ".config/systemd/user/miniclaw.service")
+        self.assertEqual((digest, label), ("a" * 64, "lobster0.service"))
+        self.assertEqual(relative, ".config/systemd/user/lobster0.service")
         base_environment = {
             "HOME": "/home/alice",
             "LOGNAME": "alice",
@@ -1908,8 +1908,8 @@ class SystemPrefixCommandTests(unittest.TestCase):
             if index < 2:
                 expected.update(
                     {
-                        "MINICLAW_ENV_FILE": "/home/alice/.miniclaw/secrets.env",
-                        "MINICLAW_HOME": "/home/alice/.miniclaw",
+                        "LOBSTER0_ENV_FILE": "/home/alice/.lobster0/secrets.env",
+                        "LOBSTER0_HOME": "/home/alice/.lobster0",
                     }
                 )
             self.assertEqual(environment, expected)
@@ -1936,7 +1936,7 @@ class InteractiveSetupRunnerTests(unittest.TestCase):
         )
         operations._downloaded[layout.program_prefix] = SimpleNamespace(
             root=Path("/scratch"),
-            sandbox_image="example/miniclaw@sha256:" + "a" * 64,
+            sandbox_image="example/lobster0@sha256:" + "a" * 64,
         )
         plan = SimpleNamespace(
             request=SimpleNamespace(
@@ -1954,10 +1954,10 @@ class InteractiveSetupRunnerTests(unittest.TestCase):
             state = Path(temporary) / "state"
             code = (
                 "import sys;from pathlib import Path;"
-                "from miniclaw.paths import build_state_paths;"
-                "from miniclaw.setup import run_interactive_setup;"
+                "from lobster0.paths import build_state_paths;"
+                "from lobster0.setup import run_interactive_setup;"
                 "run_interactive_setup(build_state_paths(Path(sys.argv[1])),"
-                "sandbox_image='ghcr.io/nedonion/miniclaw-sandbox@sha256:"
+                "sandbox_image='ghcr.io/nedonion/lobster0-sandbox@sha256:"
                 + "a" * 64
                 + "')"
             )
@@ -2027,7 +2027,7 @@ class InteractiveSetupRunnerTests(unittest.TestCase):
     def test_noninteractive_init_keeps_closed_stdin_runner(self) -> None:
         """init 不能误用继承 controlling TTY 的交互 runner。"""
         operations, layout, plan = self._setup_case(run_onboarding=False)
-        with mock.patch("miniclaw.install.orchestrator._checked_owner_command") as checked:
+        with mock.patch("lobster0.install.orchestrator._checked_owner_command") as checked:
             operations.setup(
                 plan,  # type: ignore[arg-type]
                 layout,  # type: ignore[arg-type]
@@ -2039,7 +2039,7 @@ class InteractiveSetupRunnerTests(unittest.TestCase):
     def test_interactive_setup_uses_controlling_tty_runner(self) -> None:
         """setup 必须显式选择保留 controlling TTY 的 runner。"""
         operations, layout, plan = self._setup_case(run_onboarding=True)
-        with mock.patch("miniclaw.install.orchestrator._checked_owner_command") as checked:
+        with mock.patch("lobster0.install.orchestrator._checked_owner_command") as checked:
             operations.setup(
                 plan,  # type: ignore[arg-type]
                 layout,  # type: ignore[arg-type]
@@ -2092,27 +2092,27 @@ class InteractiveSetupRunnerTests(unittest.TestCase):
             wait=mock.Mock(return_value=0),
         )
         with (
-            mock.patch("miniclaw.install.orchestrator.os.open", return_value=9),
-            mock.patch("miniclaw.install.orchestrator.os.close") as close,
-            mock.patch("miniclaw.install.orchestrator.os.tcgetpgrp", return_value=77),
+            mock.patch("lobster0.install.orchestrator.os.open", return_value=9),
+            mock.patch("lobster0.install.orchestrator.os.close") as close,
+            mock.patch("lobster0.install.orchestrator.os.tcgetpgrp", return_value=77),
             mock.patch(
-                "miniclaw.install.orchestrator.os.set_blocking",
+                "lobster0.install.orchestrator.os.set_blocking",
                 side_effect=KeyboardInterrupt,
             ),
-            mock.patch("miniclaw.install.orchestrator.os.killpg") as killpg,
+            mock.patch("lobster0.install.orchestrator.os.killpg") as killpg,
             mock.patch(
-                "miniclaw.install.orchestrator.subprocess.Popen",
+                "lobster0.install.orchestrator.subprocess.Popen",
                 return_value=process,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator.selectors.DefaultSelector",
+                "lobster0.install.orchestrator.selectors.DefaultSelector",
                 return_value=Selector(),
             ),
-            mock.patch("miniclaw.install.orchestrator._set_foreground_process_group") as fg,
+            mock.patch("lobster0.install.orchestrator._set_foreground_process_group") as fg,
             self.assertRaises(KeyboardInterrupt),
         ):
             install_orchestrator._InteractiveSubprocessRunner().run(
-                ("/runtime/bin/miniclaw", "setup"),
+                ("/runtime/bin/lobster0", "setup"),
                 env={"HOME": "/home/alice", "PATH": "/usr/bin:/bin"},
                 timeout=10.0,
             )
@@ -2205,7 +2205,7 @@ class ImportSafetyTests(unittest.TestCase):
         )
         with (
             mock.patch(
-                "miniclaw.install.orchestrator._invoking_account",
+                "lobster0.install.orchestrator._invoking_account",
                 return_value=foreign,
             ),
             self.assertRaisesRegex(InstallError, "request_invalid"),
@@ -2220,7 +2220,7 @@ class ImportSafetyTests(unittest.TestCase):
             )
 
         secrets = self.root / "secrets.env"
-        secrets.write_text("MINICLAW_MODEL_API_KEY=value\n", encoding="utf-8")
+        secrets.write_text("LOBSTER0_MODEL_API_KEY=value\n", encoding="utf-8")
         secrets.chmod(0o644)
         with self.assertRaisesRegex(InstallError, "request_invalid"):
             _import_secrets(
@@ -2230,7 +2230,7 @@ class ImportSafetyTests(unittest.TestCase):
                 mock.sentinel.runner,  # type: ignore[arg-type]
                 system_prefix=False,
             )
-        secrets.write_text('MINICLAW_MODEL_API_KEY="SECRET_SENTINEL"\n', encoding="utf-8")
+        secrets.write_text('LOBSTER0_MODEL_API_KEY="SECRET_SENTINEL"\n', encoding="utf-8")
         secrets.chmod(0o600)
         with self.assertRaisesRegex(InstallError, "doctor_blocked"):
             _import_secrets(
@@ -2264,7 +2264,7 @@ class ImportSafetyTests(unittest.TestCase):
         config.write_text("[channels.telegram]\nenabled=false\n", encoding="utf-8")
         config.chmod(0o600)
         secrets = self.root / "valid.env"
-        secrets.write_text("MINICLAW_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
+        secrets.write_text("LOBSTER0_MODEL_API_KEY=SECRET_SENTINEL\n", encoding="utf-8")
         secrets.chmod(0o600)
         stdout = io.StringIO()
         stderr = io.StringIO()
@@ -2304,8 +2304,8 @@ class ImportSafetyTests(unittest.TestCase):
         )
         for index, payload in enumerate(
             (
-                "MINICLAW_MODEL_API_KEY=first\nMINICLAW_MODEL_API_KEY=second\n",
-                'MINICLAW_MODEL_API_KEY="quoted-secret"\n',
+                "LOBSTER0_MODEL_API_KEY=first\nLOBSTER0_MODEL_API_KEY=second\n",
+                'LOBSTER0_MODEL_API_KEY="quoted-secret"\n',
             )
         ):
             with self.subTest(index=index):
@@ -2318,7 +2318,7 @@ class ImportSafetyTests(unittest.TestCase):
                 )
                 with (
                     mock.patch(
-                        "miniclaw.install.orchestrator._invoking_account",
+                        "lobster0.install.orchestrator._invoking_account",
                         return_value=account,
                     ),
                     self.assertRaisesRegex(InstallError, "doctor_blocked"),
@@ -2350,7 +2350,7 @@ class ImportSafetyTests(unittest.TestCase):
         )
         with (
             mock.patch(
-                "miniclaw.install.orchestrator._invoking_account",
+                "lobster0.install.orchestrator._invoking_account",
                 return_value=account,
             ),
             self.assertRaisesRegex(InstallError, "doctor_blocked"),
@@ -2389,17 +2389,17 @@ class ServiceReadinessTests(unittest.TestCase):
         """Telegram enabled 时模型 key 与 bot token name 缺一不可。"""
         self._write(
             "[channels.telegram]\nenabled=true\n"
-            'bot_token_env="MINICLAW_TELEGRAM_BOT_TOKEN"\n',
-            "MINICLAW_MODEL_API_KEY=model\nMINICLAW_TELEGRAM_BOT_TOKEN=token\n",
+            'bot_token_env="LOBSTER0_TELEGRAM_BOT_TOKEN"\n',
+            "LOBSTER0_MODEL_API_KEY=model\nLOBSTER0_TELEGRAM_BOT_TOKEN=token\n",
         )
         self.assertTrue(_service_inputs_complete(self.config, self.secrets))
-        self.secrets.write_text("MINICLAW_MODEL_API_KEY=model\n", encoding="utf-8")
+        self.secrets.write_text("LOBSTER0_MODEL_API_KEY=model\n", encoding="utf-8")
         self.secrets.chmod(0o600)
         self.assertFalse(_service_inputs_complete(self.config, self.secrets))
 
     def test_zero_enabled_channel_never_creates_service(self) -> None:
         """仅有模型 Secret、没有 enabled Channel 时 readiness 为 false。"""
-        self._write("[channels.telegram]\nenabled=false\n", "MINICLAW_MODEL_API_KEY=model\n")
+        self._write("[channels.telegram]\nenabled=false\n", "LOBSTER0_MODEL_API_KEY=model\n")
         self.assertFalse(_service_inputs_complete(self.config, self.secrets))
 
     def test_provider_custom_api_key_environment_name_is_required(self) -> None:
@@ -2407,8 +2407,8 @@ class ServiceReadinessTests(unittest.TestCase):
         self._write(
             "[provider]\napi_key_env=\"CUSTOM_MODEL_KEY\"\n"
             "[channels.telegram]\nenabled=true\n"
-            'bot_token_env="MINICLAW_TELEGRAM_BOT_TOKEN"\n',
-            "CUSTOM_MODEL_KEY=model\nMINICLAW_TELEGRAM_BOT_TOKEN=token\n",
+            'bot_token_env="LOBSTER0_TELEGRAM_BOT_TOKEN"\n',
+            "CUSTOM_MODEL_KEY=model\nLOBSTER0_TELEGRAM_BOT_TOKEN=token\n",
         )
         self.assertTrue(_service_inputs_complete(self.config, self.secrets))
 
@@ -2436,7 +2436,7 @@ class ServiceReadinessTests(unittest.TestCase):
         runner = Runner()
         account = pwd.struct_passwd(("alice", "x", 1001, 1001, "Alice", "/home/alice", "/bin/sh"))
         with mock.patch(
-            "miniclaw.install.orchestrator._invoking_account",
+            "lobster0.install.orchestrator._invoking_account",
             return_value=account,
         ):
             ready = _service_inputs_complete_as_owner(
@@ -2467,14 +2467,14 @@ class ServiceReadinessTests(unittest.TestCase):
         account = pwd.struct_passwd(("alice", "x", 1001, 1001, "Alice", "/home/alice", "/bin/sh"))
         with (
             mock.patch(
-                "miniclaw.install.orchestrator._invoking_account",
+                "lobster0.install.orchestrator._invoking_account",
                 return_value=account,
             ),
             mock.patch(
-                "miniclaw.install.orchestrator._read_import_file",
+                "lobster0.install.orchestrator._read_import_file",
                 side_effect=AssertionError("root opened config"),
             ),
-            mock.patch("miniclaw.install.orchestrator._import_config_as_owner") as imported,
+            mock.patch("lobster0.install.orchestrator._import_config_as_owner") as imported,
         ):
             _validate_and_import_config(
                 Path("/source/config.toml"),

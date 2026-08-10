@@ -2,8 +2,8 @@
 
 import unittest
 
-from miniclaw.memory.models import DisclosureContext, MemoryScope, MemoryStatus, SourceRef
-from miniclaw.memory.policy import MemoryDisclosurePolicy, MemoryPolicyError
+from lobster0.memory.models import DisclosureContext, MemoryScope, MemoryStatus, SourceRef
+from lobster0.memory.policy import MemoryDisclosurePolicy, MemoryPolicyError
 
 
 class MemoryDisclosurePolicyTest(unittest.TestCase):

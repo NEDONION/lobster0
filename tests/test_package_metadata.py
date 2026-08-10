@@ -1,10 +1,10 @@
-"""验证 MiniClaw 的 Python 分发元数据契约。"""
+"""验证 Lobster0 的 Python 分发元数据契约。"""
 
 import tomllib
 import unittest
 from pathlib import Path
 
-from miniclaw import __version__
+from lobster0 import __version__
 
 
 class PackageMetadataTest(unittest.TestCase):
@@ -14,13 +14,13 @@ class PackageMetadataTest(unittest.TestCase):
         """版本应由唯一 Python 模块提供给构建元数据和运行时。"""
         metadata = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-        self.assertEqual(metadata["project"]["name"], "miniclaw-agent")
+        self.assertEqual(metadata["project"]["name"], "lobster0-agent")
         self.assertEqual(metadata["project"]["dynamic"], ["version"])
         self.assertNotIn("version", metadata["project"])
         self.assertEqual(metadata["build-system"]["requires"], ["setuptools==80.9.0"])
         self.assertEqual(
             metadata["tool"]["setuptools"]["dynamic"]["version"]["attr"],
-            "miniclaw._version.__version__",
+            "lobster0._version.__version__",
         )
         self.assertEqual(__version__, "0.7.0")
 
@@ -34,6 +34,6 @@ class PackageMetadataTest(unittest.TestCase):
             "discord.py>=2.4,<3",
         ]
 
-        self.assertEqual(project["scripts"]["miniclaw"], "miniclaw.cli:main")
+        self.assertEqual(project["scripts"]["lobster0"], "lobster0.cli:main")
         self.assertEqual(optional_dependencies["channels"], expected_channels)
         self.assertEqual(optional_dependencies["all"], expected_channels)

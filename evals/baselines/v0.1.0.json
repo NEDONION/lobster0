@@ -27,7 +27,7 @@
   "commands": [
     ".venv/bin/python -m unittest discover -s tests -v",
     ".venv/bin/ruff check --no-cache .",
-    ".venv/bin/miniclaw eval validate --root evals/scenarios",
-    ".venv/bin/miniclaw eval run --suite offline --root evals/scenarios"
+    ".venv/bin/lobster0 eval validate --root evals/scenarios",
+    ".venv/bin/lobster0 eval run --suite offline --root evals/scenarios"
   ]
 }

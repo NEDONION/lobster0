@@ -11,20 +11,20 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.checkpoints.store import CheckpointStore
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import ApprovalDecision, ApprovalError
-from miniclaw.policy.engine import PolicyEngine
-from miniclaw.providers.base import JsonValue, ToolCall
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import (
+from lobster0.bootstrap import initialize_state
+from lobster0.checkpoints.store import CheckpointStore
+from lobster0.paths import build_state_paths
+from lobster0.policy.approvals import ApprovalDecision, ApprovalError
+from lobster0.policy.engine import PolicyEngine
+from lobster0.providers.base import JsonValue, ToolCall
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import (
     ApprovalRepository,
     PolicyRuleRepository,
     ToolRunRepository,
 )
-from miniclaw.tools.base import (
+from lobster0.tools.base import (
     Tool,
     ToolContext,
     ToolDefinition,
@@ -32,11 +32,11 @@ from miniclaw.tools.base import (
     ToolRisk,
     ToolValidationError,
 )
-from miniclaw.tools.command import RunCommandTool
-from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.filesystem import WriteFileTool
-from miniclaw.tools.registry import ToolRegistry
-from miniclaw.tools.web import HttpGetTool
+from lobster0.tools.command import RunCommandTool
+from lobster0.tools.executor import ToolExecutor
+from lobster0.tools.filesystem import WriteFileTool
+from lobster0.tools.registry import ToolRegistry
+from lobster0.tools.web import HttpGetTool
 
 
 class _EchoTool:
@@ -1010,7 +1010,7 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
             ).fetchone()
         self.assertEqual(approval.execution_plan_hash, row["plan_hash"])
         self.assertIsNone(row["receipt_json"])
-        self.assertNotIn("MINICLAW_MODEL_API_KEY", row["plan_json"])
+        self.assertNotIn("LOBSTER0_MODEL_API_KEY", row["plan_json"])
 
     async def test_approved_command_rejects_tampered_plan_before_side_effect(self) -> None:
         """批准后 plan JSON 被改动时，恢复必须失败且不能重新生成命令执行。"""

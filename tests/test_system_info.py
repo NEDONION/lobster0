@@ -7,9 +7,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-import miniclaw.tools.system as system_module
-from miniclaw.tools.base import ToolContext, ToolValidationError
-from miniclaw.tools.system import SystemInfoTool, _mac_hardware
+import lobster0.tools.system as system_module
+from lobster0.tools.base import ToolContext, ToolValidationError
+from lobster0.tools.system import SystemInfoTool, _mac_hardware
 
 
 class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
@@ -30,15 +30,15 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
         """macOS 结果必须包含可用配置，同时排除设备和用户身份字段。"""
         tool = SystemInfoTool()
         with (
-            mock.patch("miniclaw.tools.system.platform.system", return_value="Darwin"),
+            mock.patch("lobster0.tools.system.platform.system", return_value="Darwin"),
             mock.patch(
-                "miniclaw.tools.system.platform.mac_ver",
+                "lobster0.tools.system.platform.mac_ver",
                 return_value=("15.1", ("", "", ""), "arm64"),
             ),
-            mock.patch("miniclaw.tools.system.platform.machine", return_value="arm64"),
-            mock.patch("miniclaw.tools.system.os.cpu_count", return_value=10),
+            mock.patch("lobster0.tools.system.platform.machine", return_value="arm64"),
+            mock.patch("lobster0.tools.system.os.cpu_count", return_value=10),
             mock.patch(
-                "miniclaw.tools.system._mac_hardware",
+                "lobster0.tools.system._mac_hardware",
                 return_value={
                     "chip": "Apple M4",
                     "memory_bytes": 17_179_869_184,
@@ -46,7 +46,7 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
                 },
             ),
             mock.patch(
-                "miniclaw.tools.system.shutil.disk_usage",
+                "lobster0.tools.system.shutil.disk_usage",
                 return_value=SimpleNamespace(total=1000, used=400, free=600),
             ),
         ):
@@ -97,9 +97,9 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
         tool = SystemInfoTool()
         self.assertTrue(hasattr(system_module, "_mac_applications"))
         with (
-            mock.patch("miniclaw.tools.system.platform.system", return_value="Darwin"),
+            mock.patch("lobster0.tools.system.platform.system", return_value="Darwin"),
             mock.patch(
-                "miniclaw.tools.system._mac_applications",
+                "lobster0.tools.system._mac_applications",
                 return_value=["Lark", "Notes"],
             ),
         ):
@@ -132,8 +132,8 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
         """单个平台查询失败时仍返回成功，并明确哪些分区不可用。"""
         tool = SystemInfoTool()
         with (
-            mock.patch("miniclaw.tools.system.platform.system", return_value="Darwin"),
-            mock.patch("miniclaw.tools.system._mac_hardware", side_effect=OSError("blocked")),
+            mock.patch("lobster0.tools.system.platform.system", return_value="Darwin"),
+            mock.patch("lobster0.tools.system._mac_hardware", side_effect=OSError("blocked")),
         ):
             result = await tool.execute(
                 self.context,
@@ -159,7 +159,7 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
                 "SPDisplaysDataType": [{"sppci_model": "Apple M4 GPU"}],
             }
         )
-        with mock.patch("miniclaw.tools.system.subprocess.run") as run:
+        with mock.patch("lobster0.tools.system.subprocess.run") as run:
             run.side_effect = [
                 SimpleNamespace(returncode=0, stdout=profiler_output),
                 SimpleNamespace(returncode=0, stdout="17179869184\n"),
@@ -192,9 +192,9 @@ class SystemInfoToolTest(unittest.IsolatedAsyncioTestCase):
         """Linux 读取不到 CPU 型号时不能只返回 unknown 而假装分区完整。"""
         tool = SystemInfoTool()
         with (
-            mock.patch("miniclaw.tools.system.platform.system", return_value="Linux"),
-            mock.patch("miniclaw.tools.system._linux_cpu_model", return_value=None),
-            mock.patch("miniclaw.tools.system.os.cpu_count", return_value=4),
+            mock.patch("lobster0.tools.system.platform.system", return_value="Linux"),
+            mock.patch("lobster0.tools.system._linux_cpu_model", return_value=None),
+            mock.patch("lobster0.tools.system.os.cpu_count", return_value=4),
         ):
             result = await tool.execute(
                 self.context,

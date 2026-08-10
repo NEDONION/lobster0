@@ -4,8 +4,8 @@ import re
 import unittest
 from pathlib import Path
 
-from miniclaw.evals.cases import load_cases
-from miniclaw.evals.channel import run_channel_suite
+from lobster0.evals.cases import load_cases
+from lobster0.evals.channel import run_channel_suite
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCENARIO_ROOT = PROJECT_ROOT / "evals" / "scenarios"

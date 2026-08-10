@@ -1,6 +1,6 @@
 """提供 LaunchAgent lifecycle 的离线 exact runner。"""
 
-from miniclaw.install.runtime import CommandResult
+from lobster0.install.runtime import CommandResult
 
 
 class FakeLaunchctlRunner:
@@ -60,7 +60,7 @@ class FakeLaunchctlRunner:
         if action == "bootstrap":
             if self.active_target is not None:
                 return 36
-            self.active_target = f"{argv[2]}/io.miniclaw.gateway"
+            self.active_target = f"{argv[2]}/io.lobster0.gateway"
             return 0
         if action == "print":
             return 0 if len(argv) == 3 and argv[2] == self.active_target else 3

@@ -7,14 +7,14 @@ from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
-from miniclaw.agent.turn import TurnResult
-from miniclaw.channels.approvals import (
+from lobster0.agent.turn import TurnResult
+from lobster0.channels.approvals import (
     ApprovalCommandOutcome,
     ApprovalEnvelope,
     approval_delivery_payload,
 )
-from miniclaw.channels.feishu_approval import FeishuApprovalActionHandler
-from miniclaw.policy.approvals import ApprovalDecision
+from lobster0.channels.feishu_approval import FeishuApprovalActionHandler
+from lobster0.policy.approvals import ApprovalDecision
 
 
 def _result(
@@ -203,7 +203,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
             actor_open_id="ou_owner",
             value={
                 "version": 2,
-                "miniclaw_action": "approval",
+                "lobster0_action": "approval",
                 "approval_id": 7,
                 "decision": "once",
             },
@@ -249,7 +249,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
                     actor_open_id="ou_owner",
                     value={
                         "version": 2,
-                        "miniclaw_action": "approval",
+                        "lobster0_action": "approval",
                         "approval_id": 7,
                         "decision": "once",
                     },
@@ -277,7 +277,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
             actor_open_id="ou_owner",
             value={
                 "version": 2,
-                "miniclaw_action": "approval",
+                "lobster0_action": "approval",
                 "approval_id": 7,
                 "decision": "once",
             },
@@ -307,7 +307,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
             actor_open_id="ou_owner",
             value={
                 "version": 2,
-                "miniclaw_action": "approval",
+                "lobster0_action": "approval",
                 "approval_id": 7,
                 "decision": "deny",
             },
@@ -326,7 +326,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
                 "ou_friend",
                 {
                     "version": 2,
-                    "miniclaw_action": "approval",
+                    "lobster0_action": "approval",
                     "approval_id": 7,
                     "decision": "once",
                 },
@@ -366,7 +366,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
             actor_open_id="ou_owner",
             value={
                 "version": 2,
-                "miniclaw_action": "approval",
+                "lobster0_action": "approval",
                 "approval_id": 7,
                 "decision": "once",
             },
@@ -387,7 +387,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
             actor_open_id="ou_owner",
             value={
                 "version": 2,
-                "miniclaw_action": "approval",
+                "lobster0_action": "approval",
                 "approval_id": 7,
                 "decision": "once",
             },
@@ -423,7 +423,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
             actor_open_id="ou_owner",
             value={
                 "version": 2,
-                "miniclaw_action": "approval",
+                "lobster0_action": "approval",
                 "approval_id": 7,
                 "decision": "once",
             },
@@ -451,7 +451,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
                 actor_open_id="ou_owner",
                 value={
                     "version": 2,
-                    "miniclaw_action": "approval",
+                    "lobster0_action": "approval",
                     "approval_id": 7,
                     "decision": "once",
                 },
@@ -489,7 +489,7 @@ class FeishuApprovalActionHandlerTest(unittest.IsolatedAsyncioTestCase):
                 actor_open_id="ou_owner",
                 value={
                     "version": 2,
-                    "miniclaw_action": "approval",
+                    "lobster0_action": "approval",
                     "approval_id": 7,
                     "decision": "once",
                 },

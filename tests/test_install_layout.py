@@ -17,14 +17,14 @@ from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.install import layout as layout_module
-from miniclaw.install.layout import (
+from lobster0.install import layout as layout_module
+from lobster0.install.layout import (
     InstallLayout,
     InstallLock,
     install_launcher,
     render_launcher,
 )
-from miniclaw.install.models import (
+from lobster0.install.models import (
     InstallError,
     InstallPlan,
     InstallRequest,
@@ -64,7 +64,7 @@ class InstallLayoutTests(unittest.TestCase):
             "version": "0.7.0",
             "channel": "stable",
             "prefix": None,
-            "state_home": self.home / ".miniclaw",
+            "state_home": self.home / ".lobster0",
             "system_prefix": False,
             "onboard": True,
             "config_file": None,
@@ -94,7 +94,7 @@ class InstallLayoutTests(unittest.TestCase):
             service_manager="systemd-user",
             program_prefix=program_prefix,
             state_home=request.state_home,
-            artifact_filenames=("miniclaw-tui-0.7.0-linux-x86_64.tar.gz",),
+            artifact_filenames=("lobster0-tui-0.7.0-linux-x86_64.tar.gz",),
             system_argvs=(),
             install_service=False,
             run_onboarding=True,
@@ -104,12 +104,12 @@ class InstallLayoutTests(unittest.TestCase):
         """错误的默认根或把 runtime 混进状态树会破坏升级和数据保留。"""
         layout = InstallLayout.user(self.home, version="0.7.0")
 
-        self.assertEqual(layout.program_prefix, self.home / ".miniclaw")
-        self.assertEqual(layout.state_home, self.home / ".miniclaw")
+        self.assertEqual(layout.program_prefix, self.home / ".lobster0")
+        self.assertEqual(layout.state_home, self.home / ".lobster0")
         self.assertEqual(layout.runtime, layout.program_prefix / "runtimes" / "0.7.0")
         self.assertEqual(layout.secrets_file, layout.state_home / "secrets.env")
-        self.assertEqual(layout.command_link, self.home / ".local" / "bin" / "miniclaw")
-        self.assertEqual(layout.launcher, layout.program_prefix / "bin" / "miniclaw")
+        self.assertEqual(layout.command_link, self.home / ".local" / "bin" / "lobster0")
+        self.assertEqual(layout.launcher, layout.program_prefix / "bin" / "lobster0")
 
     def test_layout_rejects_broad_relative_or_noncanonical_roots(self) -> None:
         """允许 `/`、Home、相对路径或 `..` 会扩大后续写入/删除边界。"""
@@ -142,10 +142,10 @@ class InstallLayoutTests(unittest.TestCase):
         unsafe.mkdir(mode=0o770)
         unsafe.chmod(0o770)
         with self.assertRaisesRegex(InstallError, "request_invalid"):
-            InstallLayout.for_request(self.request(prefix=unsafe / "miniclaw"), self.account)
+            InstallLayout.for_request(self.request(prefix=unsafe / "lobster0"), self.account)
         unsafe.chmod(0o707)
         with self.assertRaisesRegex(InstallError, "request_invalid"):
-            InstallLayout.for_request(self.request(prefix=unsafe / "miniclaw"), self.account)
+            InstallLayout.for_request(self.request(prefix=unsafe / "lobster0"), self.account)
 
     def test_home_and_roots_reject_symlink_in_any_ancestor_component(self) -> None:
         """只 lstat Home 自身会漏掉更上层 symlink ancestor，后续根仍可被重定向。"""
@@ -168,9 +168,9 @@ class InstallLayoutTests(unittest.TestCase):
                 self.account,
             )
 
-        self.assertEqual(system.program_prefix, Path("/usr/local/lib/miniclaw"))
-        self.assertEqual(system.state_home, self.home / ".miniclaw")
-        self.assertEqual(system.command_link, Path("/usr/local/bin/miniclaw"))
+        self.assertEqual(system.program_prefix, Path("/usr/local/lib/lobster0"))
+        self.assertEqual(system.state_home, self.home / ".lobster0")
+        self.assertEqual(system.command_link, Path("/usr/local/bin/lobster0"))
         with self.assertRaisesRegex(InstallError, "privilege_denied"):
             InstallLayout.for_request(self.request(), _account(self.home, uid=os.geteuid() + 1))
 
@@ -187,7 +187,7 @@ class InstallLayoutTests(unittest.TestCase):
             "import json, os, sys\n"
             "payload = {\n"
             "  'argv': sys.argv[1:],\n"
-            "  'env': {k: v for k, v in os.environ.items() if k.startswith('MINICLAW_')},\n"
+            "  'env': {k: v for k, v in os.environ.items() if k.startswith('LOBSTER0_')},\n"
             "}\n"
             "open(os.environ['CAPTURE_FILE'], 'w', encoding='utf-8').write(json.dumps(payload))\n",
             encoding="utf-8",
@@ -206,15 +206,15 @@ class InstallLayoutTests(unittest.TestCase):
 
         self.assertEqual(
             payload["argv"],
-            ["-m", "miniclaw", "plain", "two words", "quote'arg", "$(never)"],
+            ["-m", "lobster0", "plain", "two words", "quote'arg", "$(never)"],
         )
         self.assertEqual(
             payload["env"],
             {
-                "MINICLAW_HOME": str(layout.state_home),
-                "MINICLAW_NODE": str(layout.current / "node" / "bin" / "node"),
-                "MINICLAW_TUI_ENTRY": str(layout.current / "tui" / "dist" / "main.js"),
-                "MINICLAW_ENV_FILE": str(layout.secrets_file),
+                "LOBSTER0_HOME": str(layout.state_home),
+                "LOBSTER0_NODE": str(layout.current / "node" / "bin" / "node"),
+                "LOBSTER0_TUI_ENTRY": str(layout.current / "tui" / "dist" / "main.js"),
+                "LOBSTER0_ENV_FILE": str(layout.secrets_file),
             },
         )
 
@@ -456,7 +456,7 @@ import os
 import sys
 from pathlib import Path
 
-from miniclaw.install.layout import InstallLayout, InstallLock, _LOCK_OWNERS
+from lobster0.install.layout import InstallLayout, InstallLock, _LOCK_OWNERS
 
 layout = InstallLayout.user(Path(sys.argv[1]), version="0.7.0")
 cleanup = sys.argv[2]
@@ -705,9 +705,9 @@ finally:
         self.assertEqual(stat.S_IMODE(user_layout.bin_dir.stat().st_mode), 0o700)
         self.assertEqual(stat.S_IMODE(user_layout.launcher.stat().st_mode), 0o700)
 
-        system_prefix = self.root / "usr-local-lib" / "miniclaw"
-        system_command = self.root / "usr-local-bin" / "miniclaw"
-        state_home = self.home / ".miniclaw-system"
+        system_prefix = self.root / "usr-local-lib" / "lobster0"
+        system_command = self.root / "usr-local-bin" / "lobster0"
+        state_home = self.home / ".lobster0-system"
         state_home.mkdir(mode=0o700)
         with (
             mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
@@ -809,14 +809,14 @@ finally:
         with self.assertRaisesRegex(InstallError, "request_invalid"):
             InstallLayout._build(
                 linked,
-                self.home / ".miniclaw",
-                self.home / ".local" / "bin" / "miniclaw",
+                self.home / ".lobster0",
+                self.home / ".local" / "bin" / "lobster0",
                 "0.7.0",
             )
 
     def test_for_plan_update_uses_user_home_not_existing_install_root(self) -> None:
-        """已有 ~/.miniclaw 0700 是 update 目标，不得被误当成 forbidden Home root。"""
-        prefix = self.home / ".miniclaw"
+        """已有 ~/.lobster0 0700 是 update 目标，不得被误当成 forbidden Home root。"""
+        prefix = self.home / ".lobster0"
         prefix.mkdir(mode=0o700)
         request = self.request(prefix=prefix, state_home=prefix, onboard=True)
 
@@ -837,12 +837,12 @@ finally:
             layout = InstallLayout.for_plan(self.plan(request, prefix))
 
         self.assertEqual(layout.program_prefix, prefix)
-        self.assertEqual(layout.command_link, self.home / ".local" / "bin" / "miniclaw")
+        self.assertEqual(layout.command_link, self.home / ".local" / "bin" / "lobster0")
 
     def test_for_plan_system_state_binds_real_target_passwd_home(self) -> None:
         """system plan 的 state UID 还必须绑定 passwd Home，不能只信最近 ancestor。"""
-        system_prefix = self.root / "system" / "miniclaw"
-        state_home = self.home / ".miniclaw-system"
+        system_prefix = self.root / "system" / "lobster0"
+        state_home = self.home / ".lobster0-system"
         state_home.mkdir(mode=0o700)
         request = self.request(
             prefix=None,
@@ -853,7 +853,7 @@ finally:
         plan = self.plan(request, system_prefix)
         with (
             mock.patch.object(layout_module, "_SYSTEM_PREFIX", system_prefix),
-            mock.patch.object(layout_module, "_SYSTEM_COMMAND", self.root / "bin" / "miniclaw"),
+            mock.patch.object(layout_module, "_SYSTEM_COMMAND", self.root / "bin" / "lobster0"),
             mock.patch.object(layout_module, "_validate_system_prefix"),
             mock.patch.object(
                 layout_module,
@@ -898,14 +898,14 @@ finally:
         ):
             layout = InstallLayout.for_plan(self.plan(request, prefix))
 
-        self.assertEqual(layout.command_link, identity_home / ".local" / "bin" / "miniclaw")
+        self.assertEqual(layout.command_link, identity_home / ".local" / "bin" / "lobster0")
         production.assert_called_once_with()
         resolver.assert_called_once_with(0, "alice", os.geteuid())
 
     def test_launcher_updates_are_inode_stable_or_fail_without_enoent_window(self) -> None:
         """成功重入保持目录项；内容/target 变化 fail closed，不能 remove-then-publish。"""
         prefix = self.home / "program"
-        command = self.home / ".local" / "bin" / "miniclaw"
+        command = self.home / ".local" / "bin" / "lobster0"
         first = InstallLayout._build(prefix, self.home / "state-a", command, "0.7.0")
         launcher_hash, link_hash = install_launcher(first)
         launcher_before = first.launcher.lstat()

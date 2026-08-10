@@ -3,7 +3,7 @@
 import unittest
 from dataclasses import FrozenInstanceError
 
-from miniclaw.providers.base import (
+from lobster0.providers.base import (
     ModelMessage,
     ModelRequest,
     ModelResponse,

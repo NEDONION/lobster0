@@ -10,8 +10,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from miniclaw.tools.base import ToolContext, ToolValidationError
-from miniclaw.tools.command import RunCommandTool, _safe_environment
+from lobster0.tools.base import ToolContext, ToolValidationError
+from lobster0.tools.command import RunCommandTool, _safe_environment
 
 
 class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
@@ -36,7 +36,7 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
         helper.write_text(
             "import os, sys\n"
             "print('cwd=' + os.getcwd())\n"
-            "print('secret=' + os.environ.get('MINICLAW_TEST_SECRET', 'missing'))\n"
+            "print('secret=' + os.environ.get('LOBSTER0_TEST_SECRET', 'missing'))\n"
             "print('stdin=' + str(len(sys.stdin.read())))\n"
             "print('separate-error', file=sys.stderr)\n",
             encoding="utf-8",
@@ -48,7 +48,7 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
 
         with mock.patch.dict(
             os.environ,
-            {"MINICLAW_TEST_SECRET": "super-secret"},
+            {"LOBSTER0_TEST_SECRET": "super-secret"},
             clear=False,
         ):
             result = await tool.execute(self.context, arguments)
@@ -70,7 +70,7 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
         with mock.patch.dict(
             os.environ,
             {
-                "MINICLAW_MODEL_API_KEY": "secret",
+                "LOBSTER0_MODEL_API_KEY": "secret",
                 "HTTP_PROXY": "http://private",
                 "PYTHONPATH": "/private/python",
                 "COOKIE": "private-cookie",
@@ -203,7 +203,7 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
         )
         tool = RunCommandTool(
             automation_backend="docker",
-            sandbox_image="example/miniclaw@sha256:" + "a" * 64,
+            sandbox_image="example/lobster0@sha256:" + "a" * 64,
             sandbox_memory_mib=1024,
             sandbox_cpu_seconds=120,
             sandbox_pids_limit=256,
@@ -259,7 +259,7 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
             owner_home=owner_home,
             automation_backend="docker",
             container_engine="docker-rootless",
-            sandbox_image="example/miniclaw@sha256:" + "a" * 64,
+            sandbox_image="example/lobster0@sha256:" + "a" * 64,
         )
         plan = tool.build_execution_plan(
             context,
@@ -279,9 +279,9 @@ class RunCommandToolTest(unittest.IsolatedAsyncioTestCase):
                 raise FileNotFoundError(path) from None
 
         with (
-            mock.patch("miniclaw.sandbox.docker.sys.platform", "linux"),
-            mock.patch("miniclaw.sandbox.docker.os.geteuid", return_value=1001),
-            mock.patch("miniclaw.sandbox.docker.os.lstat", side_effect=fake_lstat),
+            mock.patch("lobster0.sandbox.docker.sys.platform", "linux"),
+            mock.patch("lobster0.sandbox.docker.os.geteuid", return_value=1001),
+            mock.patch("lobster0.sandbox.docker.os.lstat", side_effect=fake_lstat),
         ):
             result, receipt = await tool.execute_plan(context, plan)
 

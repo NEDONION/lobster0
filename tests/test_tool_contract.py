@@ -1,26 +1,26 @@
-"""MiniClaw Tool 数据契约与 Registry 行为测试。"""
+"""Lobster0 Tool 数据契约与 Registry 行为测试。"""
 
 import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.memory.store import MemoryStore
-from miniclaw.paths import build_state_paths
-from miniclaw.providers.base import JsonValue
-from miniclaw.tools.base import (
+from lobster0.memory.store import MemoryStore
+from lobster0.paths import build_state_paths
+from lobster0.providers.base import JsonValue
+from lobster0.tools.base import (
     ToolContext,
     ToolDefinition,
     ToolResult,
     ToolRisk,
 )
-from miniclaw.tools.command import RunCommandTool
-from miniclaw.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
-from miniclaw.tools.memory import ProposeMemoryTool, ReadMemoryTool
-from miniclaw.tools.registry import ToolRegistry
-from miniclaw.tools.search import GlobTool, GrepTool
-from miniclaw.tools.system import SystemInfoTool
-from miniclaw.tools.web import HttpGetTool
+from lobster0.tools.command import RunCommandTool
+from lobster0.tools.filesystem import EditFileTool, ReadFileTool, WriteFileTool
+from lobster0.tools.memory import ProposeMemoryTool, ReadMemoryTool
+from lobster0.tools.registry import ToolRegistry
+from lobster0.tools.search import GlobTool, GrepTool
+from lobster0.tools.system import SystemInfoTool
+from lobster0.tools.web import HttpGetTool
 
 
 class _EchoTool:

@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.agent.turn import TurnExecutionProfile, TurnResult
-from miniclaw.automation.models import (
+from lobster0.agent.turn import TurnExecutionProfile, TurnResult
+from lobster0.automation.models import (
     DeliveryTarget,
     RunStatus,
     ScheduleKind,
@@ -17,21 +17,21 @@ from miniclaw.automation.models import (
     TaskResponse,
     TaskRun,
 )
-from miniclaw.automation.repository import (
+from lobster0.automation.repository import (
     AutomationControlRepository,
     AutomationStateError,
     ScheduledTaskRepository,
     TaskRunRepository,
 )
-from miniclaw.automation.runner import TaskDeliveryProjector, TaskRunner
-from miniclaw.policy.engine import PolicyAction, PolicyDecision
-from miniclaw.providers.base import ProviderServerError, ToolCall
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
-from miniclaw.storage.tooling import ApprovalRepository
-from miniclaw.tools.base import ToolContext
+from lobster0.automation.runner import TaskDeliveryProjector, TaskRunner
+from lobster0.policy.engine import PolicyAction, PolicyDecision
+from lobster0.providers.base import ProviderServerError, ToolCall
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
+from lobster0.storage.tooling import ApprovalRepository
+from lobster0.tools.base import ToolContext
 
 
 class _FakeAutomationTurns:
@@ -110,7 +110,7 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         """创建一条已入队 TaskRun 和固定时钟。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.database = Database(Path(self.temporary_directory.name) / "miniclaw.db")
+        self.database = Database(Path(self.temporary_directory.name) / "lobster0.db")
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()
         self.now = datetime(2026, 8, 9, 8, tzinfo=UTC)

@@ -5,23 +5,23 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.buffer import MemoryBufferRepository
-from miniclaw.memory.extractor import ExtractedCandidate
-from miniclaw.memory.flush import FlushCoordinator, FlushSourceMessage, MemoryCapture
-from miniclaw.memory.markdown_store import MemoryMarkdownStore
-from miniclaw.memory.models import DisclosureContext
-from miniclaw.memory.pipeline import MemoryPipelineHandler
-from miniclaw.memory.repository import (
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.buffer import MemoryBufferRepository
+from lobster0.memory.extractor import ExtractedCandidate
+from lobster0.memory.flush import FlushCoordinator, FlushSourceMessage, MemoryCapture
+from lobster0.memory.markdown_store import MemoryMarkdownStore
+from lobster0.memory.models import DisclosureContext
+from lobster0.memory.pipeline import MemoryPipelineHandler
+from lobster0.memory.repository import (
     MemoryCandidateRepository,
     MemoryManifestRepository,
     MemoryReviewRepository,
     MemoryRunRepository,
     MemoryUnitRepository,
 )
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
+from lobster0.paths import build_state_paths
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
 
 
 class PreferenceExtractor:
@@ -161,7 +161,7 @@ class MemoryPipelineTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second.status, "completed")
         self.assertEqual(unit.status, "active")
         self.assertEqual(len(unit.sources), 2)
-        self.assertEqual(markdown.count(f"<!-- miniclaw:unit {unit_id} -->"), 1)
+        self.assertEqual(markdown.count(f"<!-- lobster0:unit {unit_id} -->"), 1)
 
     async def test_secret_and_fabricated_source_never_enter_candidate_or_markdown(self) -> None:
         """拒绝内容只结算 source range，不保存 Candidate、Unit 或 Markdown。"""

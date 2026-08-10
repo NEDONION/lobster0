@@ -4,12 +4,12 @@ import asyncio
 import unittest
 from datetime import UTC, datetime
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
-from miniclaw.channels.progress import AgentProgress, ProgressProjector
-from miniclaw.channels.telegram import TelegramTransport
-from miniclaw.config import TelegramConfig
-from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
+from lobster0.agent.events import RunEvent
+from lobster0.channels.base import ChannelTransportError, InboundMessage, OutboundMessage
+from lobster0.channels.progress import AgentProgress, ProgressProjector
+from lobster0.channels.telegram import TelegramTransport
+from lobster0.config import TelegramConfig
+from lobster0.storage.channels import InboundEventKey, StoredInboundEvent
 from tests.fakes.fake_telegram import (
     BadRequest,
     FakeTelegramApplication,
@@ -105,14 +105,14 @@ class TelegramTransportTest(unittest.IsolatedAsyncioTestCase):
         transport = self._transport(app)
         await transport.connect()
 
-        text = "🙂 @miniclaw_bot 帮我看 @alice"
+        text = "🙂 @lobster0_bot 帮我看 @alice"
         await app.emit(
             fake_update(
                 user_id=300,
                 chat_id=-100123,
                 chat_type="supergroup",
                 text=text,
-                username="miniclaw_bot",
+                username="lobster0_bot",
                 topic_id=42,
             )
         )

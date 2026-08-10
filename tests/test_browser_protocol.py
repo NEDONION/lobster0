@@ -6,8 +6,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.browser.client import BrowserClient
-from miniclaw.browser.models import BrowserAction, BrowserProtocolError
+from lobster0.browser.client import BrowserClient
+from lobster0.browser.models import BrowserAction, BrowserProtocolError
 
 
 class BrowserProtocolTest(unittest.IsolatedAsyncioTestCase):
@@ -29,9 +29,9 @@ class BrowserProtocolTest(unittest.IsolatedAsyncioTestCase):
         """Client 必须等待 ready，并只接受同 ID 的标准响应。"""
         command = self._worker(
             "import json, sys\n"
-            "print(json.dumps({'protocol':'miniclaw.browser.v1','type':'ready'}), flush=True)\n"
+            "print(json.dumps({'protocol':'lobster0.browser.v1','type':'ready'}), flush=True)\n"
             "request = json.loads(sys.stdin.readline())\n"
-            "print(json.dumps({'protocol':'miniclaw.browser.v1','id':request['id'],"
+            "print(json.dumps({'protocol':'lobster0.browser.v1','id':request['id'],"
             "'ok':True,'result':{'accepted':request['action']}}), flush=True)\n"
         )
         client = BrowserClient(command, timeout_seconds=1)
@@ -46,7 +46,7 @@ class BrowserProtocolTest(unittest.IsolatedAsyncioTestCase):
         """Worker 声明未知协议版本时不能继续发送动作。"""
         command = self._worker(
             "import json\n"
-            "print(json.dumps({'protocol':'miniclaw.browser.v2','type':'ready'}), flush=True)\n"
+            "print(json.dumps({'protocol':'lobster0.browser.v2','type':'ready'}), flush=True)\n"
         )
         client = BrowserClient(command, timeout_seconds=1)
 
@@ -71,7 +71,7 @@ class BrowserProtocolTest(unittest.IsolatedAsyncioTestCase):
         """取消等待中的请求必须关闭 Worker，不能留下孤儿进程。"""
         command = self._worker(
             "import json, sys, time\n"
-            "print(json.dumps({'protocol':'miniclaw.browser.v1','type':'ready'}), flush=True)\n"
+            "print(json.dumps({'protocol':'lobster0.browser.v1','type':'ready'}), flush=True)\n"
             "sys.stdin.readline()\n"
             "time.sleep(30)\n"
         )
@@ -92,9 +92,9 @@ class BrowserProtocolTest(unittest.IsolatedAsyncioTestCase):
         """Worker 失败只暴露稳定短码和受限公开消息。"""
         command = self._worker(
             "import json, sys\n"
-            "print(json.dumps({'protocol':'miniclaw.browser.v1','type':'ready'}), flush=True)\n"
+            "print(json.dumps({'protocol':'lobster0.browser.v1','type':'ready'}), flush=True)\n"
             "request = json.loads(sys.stdin.readline())\n"
-            "print(json.dumps({'protocol':'miniclaw.browser.v1','id':request['id'],"
+            "print(json.dumps({'protocol':'lobster0.browser.v1','id':request['id'],"
             "'ok':False,'error':{'code':'browser_action_unavailable',"
             "'message':'Browser action is not available'}}), flush=True)\n"
         )
@@ -112,9 +112,9 @@ class BrowserProtocolTest(unittest.IsolatedAsyncioTestCase):
         """响应 ID 错配后必须关闭协议流，不能继续复用未知状态进程。"""
         command = self._worker(
             "import json, sys, time\n"
-            "print(json.dumps({'protocol':'miniclaw.browser.v1','type':'ready'}), flush=True)\n"
+            "print(json.dumps({'protocol':'lobster0.browser.v1','type':'ready'}), flush=True)\n"
             "sys.stdin.readline()\n"
-            "print(json.dumps({'protocol':'miniclaw.browser.v1','id':'wrong-id',"
+            "print(json.dumps({'protocol':'lobster0.browser.v1','id':'wrong-id',"
             "'ok':True,'result':{}}), flush=True)\n"
             "time.sleep(30)\n"
         )

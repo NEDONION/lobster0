@@ -5,7 +5,7 @@ import logging
 import sys
 import unittest
 
-from miniclaw.channels.sdk_logging import (
+from lobster0.channels.sdk_logging import (
     SafeSdkLogFilter,
     install_feishu_sdk_log_filter,
     redact_sdk_text,

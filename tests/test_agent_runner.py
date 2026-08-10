@@ -8,8 +8,8 @@ import unittest
 from dataclasses import replace
 from pathlib import Path
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.agent.runner import (
+from lobster0.agent.events import RunEvent
+from lobster0.agent.runner import (
     AgentError,
     AgentLoopLimitError,
     AgentNoProgressError,
@@ -18,15 +18,15 @@ from miniclaw.agent.runner import (
     AgentRunStatus,
     EmptyModelResponseError,
 )
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.command import SAFE_EXECUTABLE_PATH
-from miniclaw.policy.engine import PolicyEngine
-from miniclaw.providers.base import JsonValue, ModelMessage, ModelRequest, ModelResponse, ToolCall
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
-from miniclaw.tools.base import (
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
+from lobster0.policy.command import SAFE_EXECUTABLE_PATH
+from lobster0.policy.engine import PolicyEngine
+from lobster0.providers.base import JsonValue, ModelMessage, ModelRequest, ModelResponse, ToolCall
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import ApprovalRepository, ToolRunRepository
+from lobster0.tools.base import (
     Tool,
     ToolContext,
     ToolDefinition,
@@ -34,11 +34,11 @@ from miniclaw.tools.base import (
     ToolRisk,
     ToolValidationError,
 )
-from miniclaw.tools.command import RunCommandTool
-from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.filesystem import ReadFileTool, WriteFileTool
-from miniclaw.tools.registry import ToolRegistry
-from miniclaw.tools.task_completion import CompleteTaskTool
+from lobster0.tools.command import RunCommandTool
+from lobster0.tools.executor import ToolExecutor
+from lobster0.tools.filesystem import ReadFileTool, WriteFileTool
+from lobster0.tools.registry import ToolRegistry
+from lobster0.tools.task_completion import CompleteTaskTool
 from tests.fakes.fake_provider import FakeProvider
 
 

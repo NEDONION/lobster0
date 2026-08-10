@@ -8,13 +8,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from miniclaw.evals.cases import load_cases  # noqa: E402
-from miniclaw.evals.runner import (  # noqa: E402
+from lobster0.evals.cases import load_cases  # noqa: E402
+from lobster0.evals.runner import (  # noqa: E402
     ScriptedProvider,
     run_offline_case,
     run_offline_suite,
 )
-from miniclaw.providers.base import (  # noqa: E402
+from lobster0.providers.base import (  # noqa: E402
     ModelMessage,
     ModelRequest,
     ProviderProtocolError,

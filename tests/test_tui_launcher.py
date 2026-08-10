@@ -1,4 +1,4 @@
-"""裸 miniclaw 在 pi-tui 与 Textual fallback 之间选择的测试。"""
+"""裸 lobster0 在 pi-tui 与 Textual fallback 之间选择的测试。"""
 
 import io
 import os
@@ -8,8 +8,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.paths import build_state_paths
-from miniclaw.tui_launcher import (
+from lobster0.paths import build_state_paths
+from lobster0.tui_launcher import (
     PiTuiInspection,
     TuiLaunchError,
     inspect_pi_tui,
@@ -47,15 +47,15 @@ class TuiLauncherTest(unittest.TestCase):
             with self.subTest(version=version):
                 self.assertFalse(is_supported_node_version(version))
 
-    @mock.patch("miniclaw.tui_launcher.subprocess.run")
+    @mock.patch("lobster0.tui_launcher.subprocess.run")
     def test_node_probe_uses_only_sanitized_caller_environment(self, run) -> None:
         """显式 clean env 必须隔离真实进程中的 Node 注入变量。"""
         entry = self.paths.home / "dist/main.js"
         entry.parent.mkdir(parents=True)
         entry.write_text("// test entry\n", encoding="utf-8")
         clean_environment = {
-            "MINICLAW_NODE": "/opt/miniclaw/node/bin/node",
-            "MINICLAW_TUI_ENTRY": str(entry),
+            "LOBSTER0_NODE": "/opt/lobster0/node/bin/node",
+            "LOBSTER0_TUI_ENTRY": str(entry),
             "SAFE_VALUE": "owned",
         }
         run.return_value = mock.Mock(returncode=0, stdout="v24.15.0\n")
@@ -73,8 +73,8 @@ class TuiLauncherTest(unittest.TestCase):
         self.assertTrue(inspection.ready)
         self.assertEqual(run.call_args.kwargs["env"], clean_environment)
 
-    @mock.patch("miniclaw.tui_launcher.subprocess.run")
-    @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
+    @mock.patch("lobster0.tui_launcher.subprocess.run")
+    @mock.patch("lobster0.tui_launcher.inspect_pi_tui")
     def test_auto_launches_compatible_built_pi_tui_with_argv(
         self,
         inspect_pi_tui,
@@ -104,15 +104,15 @@ class TuiLauncherTest(unittest.TestCase):
         self.assertEqual(args, ["/opt/node/bin/node", str(entry)])
         self.assertFalse(run.call_args.kwargs.get("shell", False))
         child_env = run.call_args.kwargs["env"]
-        self.assertEqual(child_env["MINICLAW_HOME"], str(self.paths.home))
-        self.assertEqual(child_env["MINICLAW_PYTHON"], sys.executable)
-        self.assertEqual(child_env["MINICLAW_NODE"], "/opt/node/bin/node")
-        self.assertEqual(child_env["MINICLAW_TUI_ENTRY"], str(entry))
+        self.assertEqual(child_env["LOBSTER0_HOME"], str(self.paths.home))
+        self.assertEqual(child_env["LOBSTER0_PYTHON"], sys.executable)
+        self.assertEqual(child_env["LOBSTER0_NODE"], "/opt/node/bin/node")
+        self.assertEqual(child_env["LOBSTER0_TUI_ENTRY"], str(entry))
         self.assertNotIn("NODE_OPTIONS", child_env)
         self.assertNotIn("NODE_PATH", child_env)
 
-    @mock.patch("miniclaw.tui_launcher.run_tui", return_value=7)
-    @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
+    @mock.patch("lobster0.tui_launcher.run_tui", return_value=7)
+    @mock.patch("lobster0.tui_launcher.inspect_pi_tui")
     def test_explicit_textual_never_inspects_or_starts_node(
         self,
         inspect_pi_tui,
@@ -121,7 +121,7 @@ class TuiLauncherTest(unittest.TestCase):
         """显式 Textual fallback 必须完全跳过 Node 探测。"""
         result = run_default_tui(
             self.paths,
-            environ={"MINICLAW_TUI": "textual"},
+            environ={"LOBSTER0_TUI": "textual"},
             stderr=io.StringIO(),
         )
 
@@ -129,8 +129,8 @@ class TuiLauncherTest(unittest.TestCase):
         inspect_pi_tui.assert_not_called()
         run_tui.assert_called_once_with(self.paths)
 
-    @mock.patch("miniclaw.tui_launcher.run_tui", return_value=0)
-    @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
+    @mock.patch("lobster0.tui_launcher.run_tui", return_value=0)
+    @mock.patch("lobster0.tui_launcher.inspect_pi_tui")
     def test_auto_uses_textual_onboarding_when_state_is_not_initialized(
         self,
         inspect_pi_tui,
@@ -151,14 +151,14 @@ class TuiLauncherTest(unittest.TestCase):
         with self.assertRaises(TuiLaunchError) as captured:
             run_default_tui(
                 self.paths,
-                environ={"MINICLAW_TUI": "pi"},
+                environ={"LOBSTER0_TUI": "pi"},
                 stderr=io.StringIO(),
             )
 
-        self.assertIn("miniclaw init", str(captured.exception))
+        self.assertIn("lobster0 init", str(captured.exception))
 
-    @mock.patch("miniclaw.tui_launcher.run_tui", return_value=0)
-    @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
+    @mock.patch("lobster0.tui_launcher.run_tui", return_value=0)
+    @mock.patch("lobster0.tui_launcher.inspect_pi_tui")
     def test_auto_reports_problem_and_falls_back_without_crashing(
         self,
         inspect_pi_tui,
@@ -181,7 +181,7 @@ class TuiLauncherTest(unittest.TestCase):
         self.assertIn("22.22.3", stderr.getvalue())
         run_tui.assert_called_once_with(self.paths)
 
-    @mock.patch("miniclaw.tui_launcher.inspect_pi_tui")
+    @mock.patch("lobster0.tui_launcher.inspect_pi_tui")
     def test_explicit_pi_fails_when_runtime_is_not_ready(self, inspect_pi_tui) -> None:
         """显式 pi 模式不能静默换壳，便于部署脚本发现缺失依赖。"""
         self._mark_initialized()
@@ -195,7 +195,7 @@ class TuiLauncherTest(unittest.TestCase):
         with self.assertRaises(TuiLaunchError) as captured:
             run_default_tui(
                 self.paths,
-                environ={"MINICLAW_TUI": "pi"},
+                environ={"LOBSTER0_TUI": "pi"},
                 stderr=io.StringIO(),
             )
 
@@ -206,7 +206,7 @@ class TuiLauncherTest(unittest.TestCase):
         with self.assertRaises(TuiLaunchError):
             run_default_tui(
                 self.paths,
-                environ={"MINICLAW_TUI": "desktop"},
+                environ={"LOBSTER0_TUI": "desktop"},
                 stderr=io.StringIO(),
             )
 

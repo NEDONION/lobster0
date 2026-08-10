@@ -18,9 +18,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 
-from miniclaw.install import platforms as platforms_module
-from miniclaw.install.models import InstallError, InstallRequest, PlatformKey, ReleaseManifest
-from miniclaw.install.platforms import (
+from lobster0.install import platforms as platforms_module
+from lobster0.install.models import InstallError, InstallRequest, PlatformKey, ReleaseManifest
+from lobster0.install.platforms import (
     DependencyPlan,
     DetectedPlatform,
     LocalPlatformProbe,
@@ -33,13 +33,13 @@ from miniclaw.install.platforms import (
     node_version_supported,
     verify_activation_ready,
 )
-from miniclaw.install.platforms import (
+from lobster0.install.platforms import (
     _verify_privilege_action_with_probe as verify_privilege_action,
 )
-from miniclaw.install.platforms import (
+from lobster0.install.platforms import (
     build_dependency_actions as production_build_dependency_actions,
 )
-from miniclaw.install.platforms import (
+from lobster0.install.platforms import (
     verify_privilege_action as production_verify_privilege_action,
 )
 
@@ -119,14 +119,14 @@ class InstallPlatformsTest(unittest.TestCase):
         self.installer_directory = tempfile.TemporaryDirectory(dir=Path.cwd())
         self.addCleanup(self.installer_directory.cleanup)
         self.installer_artifact = (
-            Path(self.installer_directory.name) / "miniclaw-installer.pyz"
+            Path(self.installer_directory.name) / "lobster0-installer.pyz"
         )
         self.installer_artifact.write_bytes(b"verified installer zipapp")
         self.installer_artifact.chmod(0o600)
         self.sandbox_artifact = (
-            Path(self.installer_directory.name) / "miniclaw-sandbox-image-digest.txt"
+            Path(self.installer_directory.name) / "lobster0-sandbox-image-digest.txt"
         )
-        self.sandbox_artifact.write_bytes(b"example/miniclaw@sha256:" + b"a" * 64 + b"\n")
+        self.sandbox_artifact.write_bytes(b"example/lobster0@sha256:" + b"a" * 64 + b"\n")
         self.manifest = self.release_manifest()
 
     def release_manifest(self, *, include_installer: bool = True) -> ReleaseManifest:
@@ -142,21 +142,21 @@ class InstallPlatformsTest(unittest.TestCase):
                     "kind": kind,
                     "filename": path.name,
                     "url": (
-                        f"https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/{path.name}"
+                        f"https://github.com/NEDONION/lobster0/releases/download/v0.7.0/{path.name}"
                     ),
                     "sha256": hashlib.sha256(body).hexdigest(),
                     "size": len(body),
                     "media_type": media_type,
                     "platform": {"os": "any", "arch": "any"},
                     "component_version": "0.7.0",
-                    "source_repository": "https://github.com/NEDONION/mini-claw",
+                    "source_repository": "https://github.com/NEDONION/lobster0",
                     "license_ref": "MIT",
                     "upstream_sha256": None,
                 }
             )
         document = {
             "schema_version": 1,
-            "product": "miniclaw",
+            "product": "lobster0",
             "version": "0.7.0",
             "git_commit": "0" * 40,
             "python": "3.12",
@@ -255,8 +255,8 @@ class InstallPlatformsTest(unittest.TestCase):
             "action": "install",
             "version": "0.7.0",
             "channel": "stable",
-            "prefix": Path("/opt/miniclaw"),
-            "state_home": Path("/var/lib/miniclaw"),
+            "prefix": Path("/opt/lobster0"),
+            "state_home": Path("/var/lib/lobster0"),
             "system_prefix": False,
             "onboard": True,
             "config_file": None,
@@ -366,7 +366,7 @@ class InstallPlatformsTest(unittest.TestCase):
                     "-d",
                     "-m",
                     "0755",
-                    "/usr/local/lib/miniclaw",
+                    "/usr/local/lib/lobster0",
                 ),
                 requires_sudo=True,
                 reason="old direct write",
@@ -796,13 +796,13 @@ class InstallPlatformsTest(unittest.TestCase):
     def test_platform_module_runs_with_install_local_and_stdlib_imports_only(self) -> None:
         """installer zipapp isolation 中不能依赖 policy/sandbox 主包模块。"""
         blocked = {
-            "miniclaw.policy.command": None,
-            "miniclaw.sandbox.base": None,
-            "miniclaw.sandbox.docker": None,
-            "miniclaw.sandbox.seatbelt": None,
+            "lobster0.policy.command": None,
+            "lobster0.sandbox.base": None,
+            "lobster0.sandbox.docker": None,
+            "lobster0.sandbox.seatbelt": None,
         }
         with mock.patch.dict("sys.modules", blocked):
-            runpy.run_path("src/miniclaw/install/platforms.py", run_name="installer_platforms")
+            runpy.run_path("src/lobster0/install/platforms.py", run_name="installer_platforms")
 
     def test_setup_tool_is_derived_from_no_follow_fixed_path_facts(self) -> None:
         """symlink/非执行文件被跳过，只选择第二个真实 executable regular candidate。"""
@@ -1208,12 +1208,12 @@ class InstallPlatformsTest(unittest.TestCase):
                 argv=(
                     "/usr/bin/sudo",
                     "--",
-                    "/tmp/miniclaw-installer.pyz",
+                    "/tmp/lobster0-installer.pyz",
                     "install",
                     "--channel",
                     "stable",
                     "--state-home",
-                    "/var/lib/miniclaw",
+                    "/var/lib/lobster0",
                     "--system-prefix",
                 ),
                 requires_sudo=True,
@@ -1802,7 +1802,7 @@ class InstallPlatformsTest(unittest.TestCase):
             manifest=self.manifest,
             sandbox_artifact_path=self.sandbox_artifact,
         )
-        self.sandbox_artifact.write_bytes(b"example/miniclaw@sha256:" + b"b" * 64 + b"\n")
+        self.sandbox_artifact.write_bytes(b"example/lobster0@sha256:" + b"b" * 64 + b"\n")
         with self.assertRaisesRegex(InstallError, "system_dependency_missing"):
             probe.require_backend(ubuntu, _account())
 

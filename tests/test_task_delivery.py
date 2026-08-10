@@ -5,8 +5,8 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.automation.delivery import TaskDeliveryService
-from miniclaw.automation.models import (
+from lobster0.automation.delivery import TaskDeliveryService
+from lobster0.automation.models import (
     DeliveryTarget,
     RunStatus,
     ScheduleKind,
@@ -14,13 +14,13 @@ from miniclaw.automation.models import (
     TaskBudget,
     TaskResponse,
 )
-from miniclaw.automation.repository import ScheduledTaskRepository, TaskRunRepository
-from miniclaw.channels.base import ChannelTransportError, SendReceipt
-from miniclaw.channels.delivery import DeliveryWorker
-from miniclaw.storage.channels import ChannelStateError, DeliveryRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.automation.repository import ScheduledTaskRepository, TaskRunRepository
+from lobster0.channels.base import ChannelTransportError, SendReceipt
+from lobster0.channels.delivery import DeliveryWorker
+from lobster0.storage.channels import ChannelStateError, DeliveryRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 from tests.fakes.fake_channel import FakeChannelTransport
 
 
@@ -31,7 +31,7 @@ class TaskDeliveryServiceTest(unittest.IsolatedAsyncioTestCase):
         """创建真实 v5 TaskRun、Outbox 和固定 Channel 上限。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.database = Database(Path(self.temporary_directory.name) / "miniclaw.db")
+        self.database = Database(Path(self.temporary_directory.name) / "lobster0.db")
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()
         self.now = datetime(2026, 8, 9, 12, tzinfo=UTC)

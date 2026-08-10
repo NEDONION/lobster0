@@ -6,23 +6,23 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.automation.guard import AutomationPromptGuard
-from miniclaw.automation.repository import ScheduledTaskRepository, TaskRunRepository
-from miniclaw.bootstrap import initialize_state
-from miniclaw.config import ChannelConfig, FeishuConfig
-from miniclaw.memory.models import DisclosureContext
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.engine import PolicyEngine
-from miniclaw.policy.modes import PermissionMode
-from miniclaw.providers.base import ToolCall
-from miniclaw.skills.loader import SkillLoader
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ApprovalRepository, ToolRunRepository
-from miniclaw.tools.automation import ManageTaskTool
-from miniclaw.tools.base import ToolContext, ToolResult, ToolRisk, ToolValidationError
-from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.registry import ToolRegistry
+from lobster0.automation.guard import AutomationPromptGuard
+from lobster0.automation.repository import ScheduledTaskRepository, TaskRunRepository
+from lobster0.bootstrap import initialize_state
+from lobster0.config import ChannelConfig, FeishuConfig
+from lobster0.memory.models import DisclosureContext
+from lobster0.paths import build_state_paths
+from lobster0.policy.engine import PolicyEngine
+from lobster0.policy.modes import PermissionMode
+from lobster0.providers.base import ToolCall
+from lobster0.skills.loader import SkillLoader
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import ApprovalRepository, ToolRunRepository
+from lobster0.tools.automation import ManageTaskTool
+from lobster0.tools.base import ToolContext, ToolResult, ToolRisk, ToolValidationError
+from lobster0.tools.executor import ToolExecutor
+from lobster0.tools.registry import ToolRegistry
 
 
 class ManageTaskToolTest(unittest.IsolatedAsyncioTestCase):

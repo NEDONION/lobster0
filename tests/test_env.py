@@ -1,11 +1,11 @@
-"""MiniClaw 本地 ``.env`` 文件的安全解析测试。"""
+"""Lobster0 本地 ``.env`` 文件的安全解析测试。"""
 
 import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.env import DotEnvError, load_dotenv, resolve_dotenv_path
-from miniclaw.paths import build_state_paths
+from lobster0.env import DotEnvError, load_dotenv, resolve_dotenv_path
+from lobster0.paths import build_state_paths
 
 
 class DotEnvTest(unittest.TestCase):
@@ -26,7 +26,7 @@ class DotEnvTest(unittest.TestCase):
         self.assertEqual(
             resolve_dotenv_path(
                 self.paths,
-                {"MINICLAW_ENV_FILE": str(private)},
+                {"LOBSTER0_ENV_FILE": str(private)},
                 cwd=self.other,
             ),
             private.resolve(),
@@ -34,7 +34,7 @@ class DotEnvTest(unittest.TestCase):
         with self.assertRaisesRegex(DotEnvError, "must be absolute"):
             resolve_dotenv_path(
                 self.paths,
-                {"MINICLAW_ENV_FILE": "relative.env"},
+                {"LOBSTER0_ENV_FILE": "relative.env"},
                 cwd=self.other,
             )
 
@@ -56,29 +56,29 @@ class DotEnvTest(unittest.TestCase):
         path = self.root / ".env"
         path.write_text(
             "# local model\n"
-            "MINICLAW_MODEL_API_KEY='from-file'\n"
-            'MINICLAW_MODEL_NAME="deepseek-v4-pro"\n'
-            "MINICLAW_MODEL_BASE_URL=https://api.deepseek.com\n",
+            "LOBSTER0_MODEL_API_KEY='from-file'\n"
+            'LOBSTER0_MODEL_NAME="deepseek-v4-pro"\n'
+            "LOBSTER0_MODEL_BASE_URL=https://api.deepseek.com\n",
             encoding="utf-8",
         )
         path.chmod(0o600)
-        environ = {"MINICLAW_MODEL_NAME": "from-shell"}
+        environ = {"LOBSTER0_MODEL_NAME": "from-shell"}
 
         loaded = load_dotenv(path, environ)
 
         self.assertEqual(
             loaded,
-            ("MINICLAW_MODEL_API_KEY", "MINICLAW_MODEL_BASE_URL"),
+            ("LOBSTER0_MODEL_API_KEY", "LOBSTER0_MODEL_BASE_URL"),
         )
-        self.assertEqual(environ["MINICLAW_MODEL_API_KEY"], "from-file")
-        self.assertEqual(environ["MINICLAW_MODEL_NAME"], "from-shell")
-        self.assertEqual(environ["MINICLAW_MODEL_BASE_URL"], "https://api.deepseek.com")
+        self.assertEqual(environ["LOBSTER0_MODEL_API_KEY"], "from-file")
+        self.assertEqual(environ["LOBSTER0_MODEL_NAME"], "from-shell")
+        self.assertEqual(environ["LOBSTER0_MODEL_BASE_URL"], "https://api.deepseek.com")
 
     def test_shell_export_syntax_is_rejected_without_exposing_value(self) -> None:
         """解析器不得悄悄接受可执行 Shell 语法，错误也不能回显凭据。"""
         path = self.root / ".env"
         path.write_text(
-            "export MINICLAW_MODEL_API_KEY=never-print-this\n",
+            "export LOBSTER0_MODEL_API_KEY=never-print-this\n",
             encoding="utf-8",
         )
         path.chmod(0o600)
@@ -93,8 +93,8 @@ class DotEnvTest(unittest.TestCase):
     def test_invalid_key_and_unmatched_quote_are_rejected(self) -> None:
         """非法键名和不完整引号必须失败，避免生成调用方无法引用的环境变量。"""
         cases = (
-            "miniclaw_key=value\n",
-            "MINICLAW_MODEL_API_KEY='unfinished\n",
+            "lobster0_key=value\n",
+            "LOBSTER0_MODEL_API_KEY='unfinished\n",
         )
 
         for content in cases:
@@ -110,7 +110,7 @@ class DotEnvTest(unittest.TestCase):
         """文件含 NUL 时不能加载前面部分，避免半配置状态继续调用模型。"""
         path = self.root / ".env"
         path.write_text(
-            "SAFE_VALUE=loaded\nMINICLAW_MODEL_API_KEY=secret\0tail\n",
+            "SAFE_VALUE=loaded\nLOBSTER0_MODEL_API_KEY=secret\0tail\n",
             encoding="utf-8",
         )
         path.chmod(0o600)
@@ -124,7 +124,7 @@ class DotEnvTest(unittest.TestCase):
     def test_group_readable_file_is_rejected(self) -> None:
         """凭据文件对 group 或 other 可见时必须失败，不能只依赖使用说明。"""
         path = self.root / ".env"
-        path.write_text("MINICLAW_MODEL_API_KEY=secret\n", encoding="utf-8")
+        path.write_text("LOBSTER0_MODEL_API_KEY=secret\n", encoding="utf-8")
         path.chmod(0o640)
 
         with self.assertRaisesRegex(DotEnvError, "private"):
@@ -133,7 +133,7 @@ class DotEnvTest(unittest.TestCase):
     def test_symbolic_link_file_is_rejected_before_reading_credentials(self) -> None:
         """即使目标为 0600 regular file，也不能通过 symlink 重定向凭据读取。"""
         target = self.root / "secrets.env"
-        target.write_text("MINICLAW_MODEL_API_KEY=never-load\n", encoding="utf-8")
+        target.write_text("LOBSTER0_MODEL_API_KEY=never-load\n", encoding="utf-8")
         target.chmod(0o600)
         link = self.root / ".env"
         link.symlink_to(target)

@@ -5,27 +5,27 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.markdown_store import MemoryMarkdownStore
-from miniclaw.memory.models import DisclosureContext
-from miniclaw.memory.repository import (
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.markdown_store import MemoryMarkdownStore
+from lobster0.memory.models import DisclosureContext
+from lobster0.memory.repository import (
     MemoryManifestRepository,
     MemoryReviewRepository,
     MemoryUnitRepository,
 )
-from miniclaw.memory.retrieval import MemoryRetrieval
-from miniclaw.memory.review import MemoryReviewService
-from miniclaw.memory.service import MemoryService
-from miniclaw.memory.store import MemoryStore
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.engine import PolicyEngine
-from miniclaw.providers.base import ToolCall
-from miniclaw.storage.conversations import MessageRepository, SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import ToolRunRepository
-from miniclaw.tools.base import ToolContext
-from miniclaw.tools.executor import ToolExecutor
-from miniclaw.tools.memory_v2 import (
+from lobster0.memory.retrieval import MemoryRetrieval
+from lobster0.memory.review import MemoryReviewService
+from lobster0.memory.service import MemoryService
+from lobster0.memory.store import MemoryStore
+from lobster0.paths import build_state_paths
+from lobster0.policy.engine import PolicyEngine
+from lobster0.providers.base import ToolCall
+from lobster0.storage.conversations import MessageRepository, SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import ToolRunRepository
+from lobster0.tools.base import ToolContext
+from lobster0.tools.executor import ToolExecutor
+from lobster0.tools.memory_v2 import (
     MemoryCorrectTool,
     MemoryFlushTool,
     MemoryForgetTool,
@@ -35,7 +35,7 @@ from miniclaw.tools.memory_v2 import (
     MemoryReviewListTool,
     MemorySearchTool,
 )
-from miniclaw.tools.registry import ToolRegistry
+from lobster0.tools.registry import ToolRegistry
 
 
 class MemoryRememberToolTest(unittest.IsolatedAsyncioTestCase):

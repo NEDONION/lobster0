@@ -5,11 +5,11 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.artifacts.store import ArtifactError, ArtifactStore
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import LATEST_SCHEMA_VERSION, current_schema_version
+from lobster0.artifacts.store import ArtifactError, ArtifactStore
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import LATEST_SCHEMA_VERSION, current_schema_version
 
 
 class ArtifactStoreTest(unittest.TestCase):

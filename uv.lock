@@ -504,7 +504,7 @@ wheels = [
 ]
 
 [[package]]
-name = "miniclaw-agent"
+name = "lobster0-agent"
 source = { editable = "." }
 dependencies = [
     { name = "croniter" },

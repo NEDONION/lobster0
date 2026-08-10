@@ -1,4 +1,4 @@
-"""MiniClaw fresh setup 的安全配置与交互测试。"""
+"""Lobster0 fresh setup 的安全配置与交互测试。"""
 
 import contextlib
 import io
@@ -16,11 +16,11 @@ from pathlib import Path
 from types import TracebackType
 from unittest import mock
 
-from miniclaw import setup as setup_module
-from miniclaw.config import load_config
-from miniclaw.env import load_dotenv
-from miniclaw.paths import StatePaths, build_state_paths
-from miniclaw.setup import (
+from lobster0 import setup as setup_module
+from lobster0.config import load_config
+from lobster0.env import load_dotenv
+from lobster0.paths import StatePaths, build_state_paths
+from lobster0.setup import (
     SetupAnswers,
     SetupError,
     run_interactive_setup,
@@ -28,7 +28,7 @@ from miniclaw.setup import (
     write_fresh_setup,
 )
 
-PINNED_IMAGE = "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64
+PINNED_IMAGE = "ghcr.io/nedonion/lobster0-sandbox@sha256:" + "a" * 64
 _PTY_SECRETS = {
     "zero": ("sentinel-zero-model",),
     "all": (
@@ -52,7 +52,7 @@ def _run_setup_child(home: str, name: str) -> None:
         stream.flush()
         return next(values)
 
-    with mock.patch("miniclaw.setup.getpass.getpass", side_effect=hidden_input):
+    with mock.patch("lobster0.setup.getpass.getpass", side_effect=hidden_input):
         run_interactive_setup(build_state_paths(Path(home)), sandbox_image=PINNED_IMAGE)
 
 
@@ -171,12 +171,12 @@ class SetupTest(unittest.TestCase):
             discord_owner_user_id=None,
         )
         secrets = {
-            "MINICLAW_MODEL_API_KEY": "sentinel-model-key",
-            "MINICLAW_FEISHU_APP_ID": "cli_app",
-            "MINICLAW_FEISHU_APP_SECRET": "sentinel-app-secret",
+            "LOBSTER0_MODEL_API_KEY": "sentinel-model-key",
+            "LOBSTER0_FEISHU_APP_ID": "cli_app",
+            "LOBSTER0_FEISHU_APP_SECRET": "sentinel-app-secret",
         }
 
-        with mock.patch("miniclaw.setup.os.fsync", wraps=os.fsync) as fsync:
+        with mock.patch("lobster0.setup.os.fsync", wraps=os.fsync) as fsync:
             result = write_fresh_setup(
                 self.paths,
                 answers,
@@ -195,13 +195,13 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(config.sandbox.image, PINNED_IMAGE)
         config_text = self.paths.config.read_text(encoding="utf-8")
         self.assertNotIn("sentinel", config_text)
-        self.assertIn('app_id_env = "MINICLAW_FEISHU_APP_ID"', config_text)
-        self.assertIn('app_secret_env = "MINICLAW_FEISHU_APP_SECRET"', config_text)
+        self.assertIn('app_id_env = "LOBSTER0_FEISHU_APP_ID"', config_text)
+        self.assertIn('app_secret_env = "LOBSTER0_FEISHU_APP_SECRET"', config_text)
         self.assertEqual(
             self.paths.secrets_file.read_text(encoding="utf-8"),
-            "MINICLAW_MODEL_API_KEY=sentinel-model-key\n"
-            "MINICLAW_FEISHU_APP_ID=cli_app\n"
-            "MINICLAW_FEISHU_APP_SECRET=sentinel-app-secret\n",
+            "LOBSTER0_MODEL_API_KEY=sentinel-model-key\n"
+            "LOBSTER0_FEISHU_APP_ID=cli_app\n"
+            "LOBSTER0_FEISHU_APP_SECRET=sentinel-app-secret\n",
         )
         self.assertGreater(result.owner.id, 0)
 
@@ -213,7 +213,7 @@ class SetupTest(unittest.TestCase):
             write_fresh_setup(
                 self.paths,
                 SetupAnswers.defaults(),
-                {"MINICLAW_MODEL_API_KEY": "x"},
+                {"LOBSTER0_MODEL_API_KEY": "x"},
                 sandbox_image=PINNED_IMAGE,
             )
 
@@ -223,7 +223,7 @@ class SetupTest(unittest.TestCase):
             write_fresh_setup(
                 self.paths,
                 SetupAnswers.defaults(),
-                {"MINICLAW_MODEL_API_KEY": "x"},
+                {"LOBSTER0_MODEL_API_KEY": "x"},
                 sandbox_image=PINNED_IMAGE,
             )
         self.assertFalse(self.paths.config.exists())
@@ -246,7 +246,7 @@ class SetupTest(unittest.TestCase):
                         paths,
                         SetupAnswers.defaults(),
                         {
-                            "MINICLAW_MODEL_API_KEY": (
+                            "LOBSTER0_MODEL_API_KEY": (
                                 f"safe{separator}INJECTED_ENV=owned"
                             )
                         },
@@ -258,13 +258,13 @@ class SetupTest(unittest.TestCase):
         write_fresh_setup(
             safe_paths,
             SetupAnswers.defaults(),
-            {"MINICLAW_MODEL_API_KEY": "safe=value"},
+            {"LOBSTER0_MODEL_API_KEY": "safe=value"},
             PINNED_IMAGE,
         )
         environment: dict[str, str] = {}
         loaded = load_dotenv(safe_paths.secrets_file, environment)
-        self.assertEqual(loaded, ("MINICLAW_MODEL_API_KEY",))
-        self.assertEqual(environment, {"MINICLAW_MODEL_API_KEY": "safe=value"})
+        self.assertEqual(loaded, ("LOBSTER0_MODEL_API_KEY",))
+        self.assertEqual(environment, {"LOBSTER0_MODEL_API_KEY": "safe=value"})
 
     def test_setup_rejects_unsafe_home_and_invalid_answers_before_writing(self) -> None:
         """state home 的 symlink/宽权限与无效 Owner ID 都应 fail closed。"""
@@ -275,7 +275,7 @@ class SetupTest(unittest.TestCase):
             write_fresh_setup(
                 self.paths,
                 SetupAnswers.defaults(),
-                {"MINICLAW_MODEL_API_KEY": "x"},
+                {"LOBSTER0_MODEL_API_KEY": "x"},
                 sandbox_image=PINNED_IMAGE,
             )
         self.paths.home.unlink()
@@ -284,7 +284,7 @@ class SetupTest(unittest.TestCase):
             write_fresh_setup(
                 self.paths,
                 SetupAnswers.defaults(),
-                {"MINICLAW_MODEL_API_KEY": "x"},
+                {"LOBSTER0_MODEL_API_KEY": "x"},
                 sandbox_image=PINNED_IMAGE,
             )
         self.paths.home.unlink()
@@ -293,7 +293,7 @@ class SetupTest(unittest.TestCase):
             write_fresh_setup(
                 self.paths,
                 SetupAnswers.defaults(),
-                {"MINICLAW_MODEL_API_KEY": "x"},
+                {"LOBSTER0_MODEL_API_KEY": "x"},
                 sandbox_image=PINNED_IMAGE,
             )
 
@@ -310,7 +310,7 @@ class SetupTest(unittest.TestCase):
                 write_fresh_setup(
                     self.paths,
                     answers,
-                    {"MINICLAW_MODEL_API_KEY": "x"},
+                    {"LOBSTER0_MODEL_API_KEY": "x"},
                     sandbox_image=PINNED_IMAGE,
                 )
         self.assertFalse(self.paths.config.exists())
@@ -320,9 +320,9 @@ class SetupTest(unittest.TestCase):
         """Telegram/Discord 应使用固定 Token env 名与同一 Owner allowlist。"""
         answers = SetupAnswers(False, None, True, 123, True, 456)
         secrets = {
-            "MINICLAW_MODEL_API_KEY": "model",
-            "MINICLAW_TELEGRAM_BOT_TOKEN": "telegram",
-            "MINICLAW_DISCORD_BOT_TOKEN": "discord",
+            "LOBSTER0_MODEL_API_KEY": "model",
+            "LOBSTER0_TELEGRAM_BOT_TOKEN": "telegram",
+            "LOBSTER0_DISCORD_BOT_TOKEN": "discord",
         }
 
         write_fresh_setup(self.paths, answers, secrets, PINNED_IMAGE)
@@ -333,11 +333,11 @@ class SetupTest(unittest.TestCase):
         self.assertEqual(config.channels.discord.owner_user_id, 456)
         self.assertEqual(config.channels.discord.allowed_user_ids, (456,))
         self.assertIn(
-            'bot_token_env = "MINICLAW_TELEGRAM_BOT_TOKEN"',
+            'bot_token_env = "LOBSTER0_TELEGRAM_BOT_TOKEN"',
             self.paths.config.read_text(encoding="utf-8"),
         )
         self.assertIn(
-            'bot_token_env = "MINICLAW_DISCORD_BOT_TOKEN"',
+            'bot_token_env = "LOBSTER0_DISCORD_BOT_TOKEN"',
             self.paths.config.read_text(encoding="utf-8"),
         )
 
@@ -347,8 +347,8 @@ class SetupTest(unittest.TestCase):
         sentinels = ["model", "app-id", "app-secret", "telegram", "discord"]
 
         with (
-            mock.patch("miniclaw.setup._open_tty", return_value=tty),
-            mock.patch("miniclaw.setup.getpass.getpass", side_effect=sentinels) as hidden,
+            mock.patch("lobster0.setup._open_tty", return_value=tty),
+            mock.patch("lobster0.setup.getpass.getpass", side_effect=sentinels) as hidden,
         ):
             run_interactive_setup(self.paths, sandbox_image=PINNED_IMAGE)
 
@@ -370,11 +370,11 @@ class SetupTest(unittest.TestCase):
         """Secret 文件只接受模型与已启用 Channel 的固定变量名。"""
         answers = SetupAnswers(True, "ou_owner", False, None, False, None)
         cases = (
-            {"MINICLAW_MODEL_API_KEY": "x"},
+            {"LOBSTER0_MODEL_API_KEY": "x"},
             {
-                "MINICLAW_MODEL_API_KEY": "x",
-                "MINICLAW_FEISHU_APP_ID": "id",
-                "MINICLAW_FEISHU_APP_SECRET": "secret",
+                "LOBSTER0_MODEL_API_KEY": "x",
+                "LOBSTER0_FEISHU_APP_ID": "id",
+                "LOBSTER0_FEISHU_APP_SECRET": "secret",
                 "UNEXPECTED_TOKEN": "secret",
             },
         )
@@ -398,8 +398,8 @@ class SetupTest(unittest.TestCase):
         stderr = io.StringIO()
 
         with (
-            mock.patch("miniclaw.setup._open_tty", return_value=tty) as open_tty,
-            mock.patch("miniclaw.setup.getpass.getpass", return_value=sentinel) as hidden,
+            mock.patch("lobster0.setup._open_tty", return_value=tty) as open_tty,
+            mock.patch("lobster0.setup.getpass.getpass", return_value=sentinel) as hidden,
             contextlib.redirect_stdout(stdout),
             contextlib.redirect_stderr(stderr),
         ):
@@ -413,7 +413,7 @@ class SetupTest(unittest.TestCase):
         self.assertFalse(config.channels.discord.enabled)
         self.assertEqual(
             self.paths.secrets_file.read_text(encoding="utf-8"),
-            f"MINICLAW_MODEL_API_KEY={sentinel}\n",
+            f"LOBSTER0_MODEL_API_KEY={sentinel}\n",
         )
         self.assertGreater(result.owner.id, 0)
         visible = tty.output.getvalue() + stdout.getvalue() + stderr.getvalue()
@@ -474,7 +474,7 @@ class SetupTest(unittest.TestCase):
         self.addCleanup(close_if_open, master)
         self.addCleanup(close_if_open, slave)
 
-        with mock.patch("miniclaw.setup.os.open", return_value=slave):
+        with mock.patch("lobster0.setup.os.open", return_value=slave):
             with setup_module._open_tty() as tty:
                 self.assertTrue(tty.isatty())
                 self.assertTrue(os.isatty(tty.fileno()))
@@ -503,7 +503,7 @@ class SetupTest(unittest.TestCase):
         self.addCleanup(os.close, writer)
 
         with (
-            mock.patch("miniclaw.setup.os.open", return_value=reader),
+            mock.patch("lobster0.setup.os.open", return_value=reader),
             self.assertRaises(SetupError) as raised,
         ):
             setup_module._open_tty()
@@ -539,8 +539,8 @@ class SetupTest(unittest.TestCase):
             os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
         )
         with (
-            mock.patch("miniclaw.setup.os.open", return_value=descriptor) as opened,
-            mock.patch("miniclaw.setup.os.dup", side_effect=duplicate),
+            mock.patch("lobster0.setup.os.open", return_value=descriptor) as opened,
+            mock.patch("lobster0.setup.os.dup", side_effect=duplicate),
             mock.patch(
                 "io.BufferedRWPair",
                 side_effect=OSError("dynamic wrapper detail"),
@@ -583,8 +583,8 @@ class SetupTest(unittest.TestCase):
             real_close(value)
 
         with (
-            mock.patch("miniclaw.setup.os.open", return_value=descriptor),
-            mock.patch("miniclaw.setup.os.close", side_effect=close_with_reuse),
+            mock.patch("lobster0.setup.os.open", return_value=descriptor),
+            mock.patch("lobster0.setup.os.close", side_effect=close_with_reuse),
             self.assertRaisesRegex(SetupError, "interactive terminal is unavailable"),
         ):
             setup_module._open_tty()
@@ -689,8 +689,8 @@ class SetupTest(unittest.TestCase):
         stream: io.TextIOBase | None = None
         interrupted = False
         with contextlib.ExitStack() as stack:
-            stack.enter_context(mock.patch("miniclaw.setup.os.open", return_value=descriptor))
-            stack.enter_context(mock.patch("miniclaw.setup.os.dup", side_effect=duplicate))
+            stack.enter_context(mock.patch("lobster0.setup.os.open", return_value=descriptor))
+            stack.enter_context(mock.patch("lobster0.setup.os.dup", side_effect=duplicate))
             if boundary == "fileio":
                 stack.enter_context(mock.patch("io.FileIO", side_effect=interrupt_fileio))
             elif boundary == "pair":

@@ -3,8 +3,8 @@
 import unittest
 from datetime import UTC, datetime
 
-from miniclaw.automation.models import ScheduleKind, ScheduleSpec
-from miniclaw.automation.parser import ScheduleError, next_occurrence, parse_schedule
+from lobster0.automation.models import ScheduleKind, ScheduleSpec
+from lobster0.automation.parser import ScheduleError, next_occurrence, parse_schedule
 
 
 class ScheduleParserTest(unittest.TestCase):

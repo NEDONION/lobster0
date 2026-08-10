@@ -7,15 +7,15 @@ import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.channels.approvals import ApprovalEnvelope, approval_delivery_payload
-from miniclaw.channels.base import ChannelTransportError, SendReceipt
-from miniclaw.channels.delivery import DeliveryWorker, split_message
-from miniclaw.channels.observability import ChannelObserver
-from miniclaw.policy.approvals import ApprovalDecision
-from miniclaw.storage.channels import DeliveryRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.channels.approvals import ApprovalEnvelope, approval_delivery_payload
+from lobster0.channels.base import ChannelTransportError, SendReceipt
+from lobster0.channels.delivery import DeliveryWorker, split_message
+from lobster0.channels.observability import ChannelObserver
+from lobster0.policy.approvals import ApprovalDecision
+from lobster0.storage.channels import DeliveryRepository
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 from tests.fakes.fake_channel import FakeChannelTransport
 
 
@@ -38,7 +38,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
         self.database = Database(
-            Path(self.temporary_directory.name).resolve() / "miniclaw.db"
+            Path(self.temporary_directory.name).resolve() / "lobster0.db"
         )
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()
@@ -256,7 +256,7 @@ class DeliveryTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self._worker(successful_transport).run_once())
         self.assertEqual(self.repository.get(successful_delivery.id).status, "sent")
         rendered_card = successful_transport.cards_sent[0][2]
-        self.assertIn("MiniClaw 审批 #7", json.dumps(rendered_card, ensure_ascii=False))
+        self.assertIn("Lobster0 审批 #7", json.dumps(rendered_card, ensure_ascii=False))
 
         failed_message_id = self._assistant_message()
         failed_delivery = self.repository.create_parts(

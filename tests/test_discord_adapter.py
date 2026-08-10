@@ -4,9 +4,9 @@ import unittest
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
-from miniclaw.channels.base import IgnoredInbound, InboundMessage
-from miniclaw.channels.discord import DiscordAdapter
-from miniclaw.config import DiscordConfig
+from lobster0.channels.base import IgnoredInbound, InboundMessage
+from lobster0.channels.discord import DiscordAdapter
+from lobster0.config import DiscordConfig
 
 
 @dataclass(frozen=True, slots=True)

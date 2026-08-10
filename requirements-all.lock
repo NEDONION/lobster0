@@ -218,11 +218,11 @@ charset-normalizer==3.4.9 \
 croniter==6.2.4 \
     --hash=sha256:8ef3d544107a5c05a150a2d78f8bf5a8eb9c5c4d93405a736b824109574e3f4d \
     --hash=sha256:fc124f751b1b04805c2a04b061898b436b45ab2320b045e1e052ea895de65189
-    # via miniclaw-agent
+    # via lobster0-agent
 discord-py==2.7.1 \
     --hash=sha256:24d5e6a45535152e4b98148a9dd6b550d25dc2c9fb41b6d670319411641249da \
     --hash=sha256:849dca2c63b171146f3a7f3f8acc04248098e9e6203412ce3cf2745f284f7439
-    # via miniclaw-agent
+    # via lobster0-agent
 frozenlist==1.8.0 \
     --hash=sha256:0325024fe97f94c41c08872db482cf8ac4800d80e79222c6b0b7b162d5b13686 \
     --hash=sha256:032efa2674356903cd0261c4317a561a6850f3ac864a63fc1583147fb05a79b0 \
@@ -324,7 +324,7 @@ httpx==0.28.1 \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via
     #   lark-channel-sdk
-    #   miniclaw-agent
+    #   lobster0-agent
     #   python-telegram-bot
 idna==3.18 \
     --hash=sha256:7f952cbe720b688055e3f87de14f5c3e5fdaa8bc3928985c4077ca689de849a2 \
@@ -337,7 +337,7 @@ idna==3.18 \
 lark-channel-sdk==1.2.0 \
     --hash=sha256:5e9e8f275446be13cb1ab2cc5085fb34eb334cab53876acf5fc6207166ca1451 \
     --hash=sha256:c08690572a099377cdeddc3a2a1402d9645879ad137e780d80060053dc8c1570
-    # via miniclaw-agent
+    # via lobster0-agent
 linkify-it-py==2.1.0 \
     --hash=sha256:0d252c1594ecba2ecedc444053db5d3a9b7ec1b0dd929c8f1d74dce89f86c05e \
     --hash=sha256:43360231720999c10e9328dc3691160e27a718e280673d444c38d7d3aaa3b98b
@@ -586,7 +586,7 @@ python-dateutil==2.9.0.post0 \
 python-telegram-bot==22.8 \
     --hash=sha256:42373918097f1b837cc4e717d588c19ea79651497ec712bb5b0c76e5e63c50e1 \
     --hash=sha256:f9d3847fcb23ee603477e442800b33bb4adf851a73e0619d2050be879decf1ef
-    # via miniclaw-agent
+    # via lobster0-agent
 requests==2.34.2 \
     --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \
     --hash=sha256:f288924cae4e29463698d6d60bc6a4da69c89185ad1e0bcc4104f584e960b9ed
@@ -620,7 +620,7 @@ ruff==0.16.1 \
     --hash=sha256:e0d4c20532fca4f7fa609369161d968dd28f65d83dabbd61d8e9c7edbf7001f6 \
     --hash=sha256:fde5a99e2f97479af66edd6622c6d5a2a7592c77cf4153d9e4428f5eeb55b60c \
     --hash=sha256:fedad7c801dabd3fb9741d76aca39246e6ddd9ca446a015875207bf19f1e6bc7
-    # via miniclaw-agent
+    # via lobster0-agent
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
@@ -628,7 +628,7 @@ six==1.17.0 \
 textual==8.2.8 \
     --hash=sha256:267375fd402dc8d981457212efa71f0e3365fd17bba144ba9bb3ed7563cb374a \
     --hash=sha256:3f106a9fbc73e39dd266c9712432087de78a6d644084c7c241d6a25c3169115b
-    # via miniclaw-agent
+    # via lobster0-agent
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5

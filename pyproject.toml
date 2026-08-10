@@ -3,13 +3,13 @@ requires = ["setuptools==80.9.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "miniclaw-agent"
+name = "lobster0-agent"
 dynamic = ["version"]
 description = "A tiny self-hosted personal agent built with Python."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
-authors = [{ name = "MiniClaw contributors" }]
+authors = [{ name = "Lobster0 contributors" }]
 dependencies = [
   "croniter>=6.2,<7",
   "httpx>=0.28,<1",
@@ -41,16 +41,16 @@ all = [
 ]
 
 [project.scripts]
-miniclaw = "miniclaw.cli:main"
+lobster0 = "lobster0.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.dynamic]
-version = {attr = "miniclaw._version.__version__"}
+version = {attr = "lobster0._version.__version__"}
 
 [tool.setuptools.package-data]
-"miniclaw.storage" = ["schema.sql", "migrations/*.sql"]
+"lobster0.storage" = ["schema.sql", "migrations/*.sql"]
 
 [tool.ruff]
 line-length = 100

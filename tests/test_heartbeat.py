@@ -6,23 +6,23 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.automation.heartbeat import HeartbeatReconciler
-from miniclaw.automation.models import (
+from lobster0.automation.heartbeat import HeartbeatReconciler
+from lobster0.automation.models import (
     DeliveryTarget,
     ScheduleKind,
     ScheduleSpec,
     TaskBudget,
     TaskStatus,
 )
-from miniclaw.automation.repository import (
+from lobster0.automation.repository import (
     AutomationStateError,
     ScheduledTaskRepository,
     TaskRunRepository,
 )
-from miniclaw.config import HeartbeatConfig
-from miniclaw.storage.database import Database
-from miniclaw.storage.migrations import apply_migrations
-from miniclaw.storage.repositories import OwnerRepository
+from lobster0.config import HeartbeatConfig
+from lobster0.storage.database import Database
+from lobster0.storage.migrations import apply_migrations
+from lobster0.storage.repositories import OwnerRepository
 
 
 class HeartbeatReconcilerTest(unittest.TestCase):
@@ -32,7 +32,7 @@ class HeartbeatReconcilerTest(unittest.TestCase):
         """创建固定 UTC 数据库和默认上海活跃时段配置。"""
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary_directory.cleanup)
-        self.database = Database(Path(self.temporary_directory.name) / "miniclaw.db")
+        self.database = Database(Path(self.temporary_directory.name) / "lobster0.db")
         apply_migrations(self.database)
         self.owner = OwnerRepository(self.database).get_or_create()
         self.now = datetime(2026, 8, 9, 2, 0, tzinfo=UTC)  # 上海 10:00

@@ -1,4 +1,4 @@
-"""MiniClaw 命令行入口的行为测试。"""
+"""Lobster0 命令行入口的行为测试。"""
 
 import argparse
 import contextlib
@@ -13,19 +13,19 @@ from unittest import mock
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from miniclaw.automation.models import (  # noqa: E402
+from lobster0.automation.models import (  # noqa: E402
     DeliveryTarget,
     ScheduleKind,
     ScheduleSpec,
     TaskBudget,
 )
-from miniclaw.automation.repository import ScheduledTaskRepository  # noqa: E402
-from miniclaw.cli import build_parser, main  # noqa: E402
-from miniclaw.config import load_config  # noqa: E402
-from miniclaw.paths import build_state_paths  # noqa: E402
-from miniclaw.setup import SetupAnswers, write_fresh_setup  # noqa: E402
-from miniclaw.storage.database import Database  # noqa: E402
-from miniclaw.storage.repositories import OwnerRepository  # noqa: E402
+from lobster0.automation.repository import ScheduledTaskRepository  # noqa: E402
+from lobster0.cli import build_parser, main  # noqa: E402
+from lobster0.config import load_config  # noqa: E402
+from lobster0.paths import build_state_paths  # noqa: E402
+from lobster0.setup import SetupAnswers, write_fresh_setup  # noqa: E402
+from lobster0.storage.database import Database  # noqa: E402
+from lobster0.storage.repositories import OwnerRepository  # noqa: E402
 
 
 def run_cli(arguments: list[str]) -> tuple[int, str, str]:
@@ -41,11 +41,11 @@ class CliTest(unittest.TestCase):
     """验证帮助、版本和已有本地状态命令的稳定行为。"""
 
     def test_bare_command_enters_the_only_tui_with_selected_home(self) -> None:
-        """裸 miniclaw 必须进入 TUI，不能打印帮助或跳到另一套聊天循环。"""
+        """裸 lobster0 必须进入 TUI，不能打印帮助或跳到另一套聊天循环。"""
         with (
             tempfile.TemporaryDirectory() as directory,
-            mock.patch("miniclaw.cli._is_tui_terminal", return_value=True),
-            mock.patch("miniclaw.cli.run_default_tui", return_value=0) as run_tui,
+            mock.patch("lobster0.cli._is_tui_terminal", return_value=True),
+            mock.patch("lobster0.cli.run_default_tui", return_value=0) as run_tui,
         ):
             exit_code, output, error = run_cli(["--home", directory])
 
@@ -54,7 +54,7 @@ class CliTest(unittest.TestCase):
 
     def test_bare_command_rejects_non_interactive_terminal(self) -> None:
         """全屏 TUI 不得在 pipe、CI 或 TERM=dumb 中挂起。"""
-        with mock.patch("miniclaw.cli._is_tui_terminal", return_value=False):
+        with mock.patch("lobster0.cli._is_tui_terminal", return_value=False):
             exit_code, output, error = run_cli([])
 
         self.assertEqual(exit_code, 2)
@@ -69,7 +69,7 @@ class CliTest(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "0"):
                 main(["--version"])
 
-        self.assertIn("miniclaw 0.7.0", output.getvalue())
+        self.assertIn("lobster0 0.7.0", output.getvalue())
 
     def test_help_lists_tui_gateway_and_maintenance_commands(self) -> None:
         """帮助包含唯一 TUI、gateway 和维护命令，不恢复 chat/approval 分叉。"""
@@ -143,7 +143,7 @@ class CliTest(unittest.TestCase):
                 budget=TaskBudget(),
             )
             with mock.patch(
-                "miniclaw.runtime.create_runtime",
+                "lobster0.runtime.create_runtime",
                 side_effect=AssertionError("Provider runtime must not load"),
             ) as runtime_factory:
                 listed = run_cli(["task", "--home", directory, "list"])
@@ -218,22 +218,22 @@ class CliTest(unittest.TestCase):
             first_code, first_output, first_error = run_cli(["init", "--home", directory])
             second_code, second_output, second_error = run_cli(["init", "--home", directory])
 
-            self.assertTrue((Path(directory) / "miniclaw.db").is_file())
+            self.assertTrue((Path(directory) / "lobster0.db").is_file())
 
         self.assertEqual((first_code, second_code), (0, 0))
         self.assertEqual((first_error, second_error), ("", ""))
-        self.assertIn("Initialized MiniClaw", first_output)
+        self.assertIn("Initialized Lobster0", first_output)
         self.assertIn("already initialized", second_output)
 
     def test_setup_dispatches_only_home_and_digest_without_secret_output(self) -> None:
         """CLI setup 只转交 state home 与非 Secret image digest。"""
-        pinned = "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64
+        pinned = "ghcr.io/nedonion/lobster0-sandbox@sha256:" + "a" * 64
         fake_result = mock.Mock()
         fake_result.owner.id = 7
         with (
             tempfile.TemporaryDirectory() as directory,
             mock.patch(
-                "miniclaw.cli.run_interactive_setup", return_value=fake_result
+                "lobster0.cli.run_interactive_setup", return_value=fake_result
             ) as interactive,
         ):
             exit_code, output, error = run_cli(
@@ -241,7 +241,7 @@ class CliTest(unittest.TestCase):
             )
 
         self.assertEqual((exit_code, error), (0, ""))
-        self.assertIn("Configured MiniClaw", output)
+        self.assertIn("Configured Lobster0", output)
         self.assertNotIn("key", output.casefold())
         interactive.assert_called_once()
         call = interactive.call_args
@@ -261,12 +261,12 @@ class CliTest(unittest.TestCase):
                 return write_fresh_setup(
                     paths,
                     SetupAnswers.defaults(),
-                    {"MINICLAW_MODEL_API_KEY": "test-only-key"},
+                    {"LOBSTER0_MODEL_API_KEY": "test-only-key"},
                     sandbox_image,
                 )
 
             with mock.patch(
-                "miniclaw.cli.run_interactive_setup",
+                "lobster0.cli.run_interactive_setup",
                 side_effect=setup_without_tty,
             ):
                 exit_code, output, error = run_cli(["setup", "--home", str(link)])
@@ -278,7 +278,7 @@ class CliTest(unittest.TestCase):
 
     def test_init_accepts_digest_pinned_sandbox_image_and_stays_idempotent(self) -> None:
         """init 的唯一新增值参数应写入 pin，重复执行仍不覆盖配置。"""
-        pinned = "ghcr.io/nedonion/miniclaw-sandbox@sha256:" + "a" * 64
+        pinned = "ghcr.io/nedonion/lobster0-sandbox@sha256:" + "a" * 64
         with tempfile.TemporaryDirectory() as directory:
             first = run_cli(["init", "--home", directory, "--sandbox-image", pinned])
             second = run_cli(["init", "--home", directory, "--sandbox-image", pinned])
@@ -321,8 +321,8 @@ class CliTest(unittest.TestCase):
             with mock.patch.dict(
                 "os.environ",
                 {
-                    "MINICLAW_NODE": str(node),
-                    "MINICLAW_TUI_ENTRY": str(entry),
+                    "LOBSTER0_NODE": str(node),
+                    "LOBSTER0_TUI_ENTRY": str(entry),
                 },
                 clear=False,
             ):
@@ -360,8 +360,8 @@ class CliTest(unittest.TestCase):
             secret = "doctor-dotenv-secret"
             dotenv = root / ".env"
             dotenv.write_text(
-                "MINICLAW_FEISHU_APP_ID=cli_test\n"
-                f"MINICLAW_FEISHU_APP_SECRET={secret}\n",
+                "LOBSTER0_FEISHU_APP_ID=cli_test\n"
+                f"LOBSTER0_FEISHU_APP_SECRET={secret}\n",
                 encoding="utf-8",
             )
             dotenv.chmod(0o600)
@@ -372,16 +372,16 @@ class CliTest(unittest.TestCase):
             entry.write_text("// test entry\n", encoding="utf-8")
 
             with (
-                mock.patch("miniclaw.env.Path.cwd", return_value=root),
+                mock.patch("lobster0.env.Path.cwd", return_value=root),
                 mock.patch.dict(
-                    "miniclaw.cli.os.environ",
+                    "lobster0.cli.os.environ",
                     {
-                        "MINICLAW_NODE": str(node),
-                        "MINICLAW_TUI_ENTRY": str(entry),
+                        "LOBSTER0_NODE": str(node),
+                        "LOBSTER0_TUI_ENTRY": str(entry),
                     },
                     clear=True,
                 ),
-                mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()),
+                mock.patch("lobster0.doctor.importlib.util.find_spec", return_value=object()),
             ):
                 exit_code, output, error = run_cli(
                     ["doctor", "--home", str(state)]
@@ -407,8 +407,8 @@ class CliTest(unittest.TestCase):
             secret = "doctor-installed-secret"
             dotenv = state / "secrets.env"
             dotenv.write_text(
-                "MINICLAW_FEISHU_APP_ID=cli_test\n"
-                f"MINICLAW_FEISHU_APP_SECRET={secret}\n",
+                "LOBSTER0_FEISHU_APP_ID=cli_test\n"
+                f"LOBSTER0_FEISHU_APP_SECRET={secret}\n",
                 encoding="utf-8",
             )
             dotenv.chmod(0o600)
@@ -420,15 +420,15 @@ class CliTest(unittest.TestCase):
 
             with (
                 mock.patch.dict(
-                    "miniclaw.cli.os.environ",
+                    "lobster0.cli.os.environ",
                     {
-                        "MINICLAW_ENV_FILE": str(dotenv),
-                        "MINICLAW_NODE": str(node),
-                        "MINICLAW_TUI_ENTRY": str(entry),
+                        "LOBSTER0_ENV_FILE": str(dotenv),
+                        "LOBSTER0_NODE": str(node),
+                        "LOBSTER0_TUI_ENTRY": str(entry),
                     },
                     clear=True,
                 ),
-                mock.patch("miniclaw.doctor.importlib.util.find_spec", return_value=object()),
+                mock.patch("lobster0.doctor.importlib.util.find_spec", return_value=object()),
             ):
                 exit_code, output, error = run_cli(["doctor", "--home", str(state)])
 
@@ -443,8 +443,8 @@ class CliTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             with (
-                mock.patch("miniclaw.cli.prepare_gateway_sdk_runtime"),
-                mock.patch("miniclaw.cli.run_gateway", side_effect=successful),
+                mock.patch("lobster0.cli.prepare_gateway_sdk_runtime"),
+                mock.patch("lobster0.cli.run_gateway", side_effect=successful),
             ):
                 exit_code, output, error = run_cli(["gateway", "--home", directory])
         self.assertEqual((exit_code, output, error), (0, "", ""))
@@ -463,11 +463,11 @@ class CliTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             with (
                 mock.patch(
-                    "miniclaw.cli.prepare_gateway_sdk_runtime",
+                    "lobster0.cli.prepare_gateway_sdk_runtime",
                     create=True,
                     side_effect=prepare,
                 ),
-                mock.patch("miniclaw.cli.run_gateway", side_effect=successful),
+                mock.patch("lobster0.cli.run_gateway", side_effect=successful),
             ):
                 exit_code, output, error = run_cli(
                     ["gateway", "--home", directory]

@@ -5,10 +5,10 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from miniclaw.agent.events import RunEvent
-from miniclaw.channels.base import ChannelTransportError, SendReceipt
-from miniclaw.channels.capabilities import ChannelCapabilities
-from miniclaw.storage.channels import InboundEventKey, StoredInboundEvent
+from lobster0.agent.events import RunEvent
+from lobster0.channels.base import ChannelTransportError, SendReceipt
+from lobster0.channels.capabilities import ChannelCapabilities
+from lobster0.storage.channels import InboundEventKey, StoredInboundEvent
 
 
 @dataclass(slots=True)
@@ -154,7 +154,7 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         await activity.start()
 
         self.assertEqual(len(transport.cards_sent), 1)
-        self.assertIn("MiniClaw · 执行中", repr(transport.cards_sent[0][2]))
+        self.assertIn("Lobster0 · 执行中", repr(transport.cards_sent[0][2]))
 
         await activity.on_event(RunEvent("model_text_delta", 1, {"text": "你"}))
         await activity.on_event(
@@ -198,7 +198,7 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(
             all(message_id == "om_progress_card" for message_id, _ in transport.cards_updated)
         )
-        self.assertIn("MiniClaw · 已完成", repr(transport.cards_updated[-1][1]))
+        self.assertIn("Lobster0 · 已完成", repr(transport.cards_updated[-1][1]))
         self.assertIn("Claw Trail", repr(transport.cards_updated[-1][1]))
         self.assertEqual(
             transport.cards_updated[-1][1]["body"]["elements"][0]["text_size"],
@@ -316,7 +316,7 @@ class ChannelCapabilitiesTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(transport.cards_sent), 1)
         self.assertEqual(len(transport.cards_updated), 1)
         self.assertEqual(transport.cards_updated[0][0], "om_progress_card")
-        self.assertIn("MiniClaw · 未完成", repr(transport.cards_updated[0][1]))
+        self.assertIn("Lobster0 · 未完成", repr(transport.cards_updated[0][1]))
         self.assertNotIn("partial answer", repr(transport.cards_updated[0][1]))
 
 

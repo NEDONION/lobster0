@@ -4,7 +4,7 @@ import unittest
 from dataclasses import FrozenInstanceError
 from datetime import UTC, datetime
 
-from miniclaw.automation.models import (
+from lobster0.automation.models import (
     DeliveryTarget,
     RunStatus,
     ScheduledTask,

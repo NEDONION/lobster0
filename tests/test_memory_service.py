@@ -5,19 +5,19 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.memory.markdown_store import MemoryMarkdownStore
-from miniclaw.memory.models import DisclosureContext, SourceRef
-from miniclaw.memory.repository import (
+from lobster0.bootstrap import initialize_state
+from lobster0.memory.markdown_store import MemoryMarkdownStore
+from lobster0.memory.models import DisclosureContext, SourceRef
+from lobster0.memory.repository import (
     MemoryManifestRepository,
     MemoryReviewRepository,
     MemoryUnitRepository,
 )
-from miniclaw.memory.service import ExplicitMemoryRequest, MemoryService
-from miniclaw.memory.store import MemoryError, MemoryStore
-from miniclaw.paths import build_state_paths
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
+from lobster0.memory.service import ExplicitMemoryRequest, MemoryService
+from lobster0.memory.store import MemoryError, MemoryStore
+from lobster0.paths import build_state_paths
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
 
 
 class MemoryServiceTest(unittest.TestCase):

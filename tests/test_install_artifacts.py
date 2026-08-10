@@ -12,9 +12,9 @@ from pathlib import Path
 from unittest import mock
 from urllib.request import Request
 
-from miniclaw.install import artifacts as artifact_transport
-from miniclaw.install.artifacts import ExtractionLimits, download_artifact, extract_tar_gz
-from miniclaw.install.models import Artifact, InstallError, PlatformKey
+from lobster0.install import artifacts as artifact_transport
+from lobster0.install.artifacts import ExtractionLimits, download_artifact, extract_tar_gz
+from lobster0.install.models import Artifact, InstallError, PlatformKey
 from tests.install.make_archives import make_archive
 
 
@@ -97,17 +97,17 @@ class InstallArtifactTests(unittest.TestCase):
         """构造一个由 strict model 校验的测试 Artifact。"""
         return Artifact(
             kind="tui",
-            filename="miniclaw-tui-0.7.0-linux-x86_64.tar.gz",
+            filename="lobster0-tui-0.7.0-linux-x86_64.tar.gz",
             url=(
-                "https://github.com/NEDONION/mini-claw/releases/download/v0.7.0/"
-                "miniclaw-tui-0.7.0-linux-x86_64.tar.gz"
+                "https://github.com/NEDONION/lobster0/releases/download/v0.7.0/"
+                "lobster0-tui-0.7.0-linux-x86_64.tar.gz"
             ),
             sha256=sha256 or hashlib.sha256(body).hexdigest(),
             size=len(body) if size is None else size,
             media_type="application/gzip",
             platform=PlatformKey("linux", "x86_64"),
             component_version="0.7.0",
-            source_repository="https://github.com/NEDONION/mini-claw",
+            source_repository="https://github.com/NEDONION/lobster0",
             license_ref="MIT",
             upstream_sha256=None,
         )
@@ -675,7 +675,7 @@ class InstallArtifactTests(unittest.TestCase):
                         status=302,
                         headers={
                             "Location": (
-                                "https://github.com/NEDONION/mini-claw/releases/download/"
+                                "https://github.com/NEDONION/lobster0/releases/download/"
                                 "v0.7.0/next"
                             )
                         },

@@ -7,24 +7,24 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from miniclaw.bootstrap import initialize_state
-from miniclaw.paths import build_state_paths
-from miniclaw.policy.approvals import (
+from lobster0.bootstrap import initialize_state
+from lobster0.paths import build_state_paths
+from lobster0.policy.approvals import (
     ApprovalDecision,
     ApprovalError,
     canonical_arguments_hash,
 )
-from miniclaw.policy.engine import PolicyAction, PolicyDecision
-from miniclaw.policy.network import NetworkRule
-from miniclaw.providers.base import JsonValue, ToolCall
-from miniclaw.storage.conversations import SessionRepository, TurnRepository
-from miniclaw.storage.database import Database
-from miniclaw.storage.tooling import (
+from lobster0.policy.engine import PolicyAction, PolicyDecision
+from lobster0.policy.network import NetworkRule
+from lobster0.providers.base import JsonValue, ToolCall
+from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.database import Database
+from lobster0.storage.tooling import (
     ApprovalRepository,
     PolicyRuleRepository,
     ToolRunRepository,
 )
-from miniclaw.tools.base import ToolContext
+from lobster0.tools.base import ToolContext
 
 
 class ApprovalRepositoryTest(unittest.TestCase):

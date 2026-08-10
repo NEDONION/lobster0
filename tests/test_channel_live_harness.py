@@ -9,9 +9,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from miniclaw.evals import live as live_module
-from miniclaw.evals.live import CHECKLIST, LiveHarnessError, run_live_harness
-from miniclaw.gateway_lease import GatewayProvenance
+from lobster0.evals import live as live_module
+from lobster0.evals.live import CHECKLIST, LiveHarnessError, run_live_harness
+from lobster0.gateway_lease import GatewayProvenance
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -75,12 +75,12 @@ class ChannelLiveHarnessTest(unittest.TestCase):
             with (
                 self.subTest(enabled=enabled, commit=commit, dirty=dirty, peer=peer),
                 tempfile.TemporaryDirectory() as directory,
-                patch("miniclaw.evals.live._load_preflight") as preflight,
+                patch("lobster0.evals.live._load_preflight") as preflight,
                 patch(
-                    "miniclaw.evals.live._repository_state",
+                    "lobster0.evals.live._repository_state",
                     return_value=(commit, dirty),
                 ),
-                patch("miniclaw.evals.live.ManagedGateway.start") as start,
+                patch("lobster0.evals.live.ManagedGateway.start") as start,
             ):
                 config = self._config("telegram", enabled=enabled, peer=peer)
                 preflight.return_value = (paths, config, SimpleNamespace())
@@ -126,19 +126,19 @@ class ChannelLiveHarnessTest(unittest.TestCase):
         with (
             tempfile.TemporaryDirectory() as directory,
             patch(
-                "miniclaw.evals.live._load_preflight",
+                "lobster0.evals.live._load_preflight",
                 return_value=(paths, config, secrets),
             ),
             patch(
-                "miniclaw.evals.live._repository_state",
+                "lobster0.evals.live._repository_state",
                 side_effect=(("b" * 40, False), ("b" * 40, False)),
             ),
             patch(
-                "miniclaw.evals.live.ManagedGateway.start",
+                "lobster0.evals.live.ManagedGateway.start",
                 new=AsyncMock(return_value=gateway),
             ),
-            patch("miniclaw.evals.live._database_counts", return_value={"inbox": 2}),
-            patch("miniclaw.evals.live._secret_match_count", return_value=0),
+            patch("lobster0.evals.live._database_counts", return_value={"inbox": 2}),
+            patch("lobster0.evals.live._secret_match_count", return_value=0),
             patch("builtins.input", side_effect=lambda _: next(answers)),
         ):
             output = Path(directory) / "evidence"
@@ -200,7 +200,7 @@ class ChannelLiveHarnessTest(unittest.TestCase):
             root = Path(directory).resolve()
             paths = SimpleNamespace(
                 home=root / "home",
-                database=root / "miniclaw.db",
+                database=root / "lobster0.db",
                 logs=root / "logs",
             )
             config = self._config("discord", account_id="work")
@@ -218,16 +218,16 @@ class ChannelLiveHarnessTest(unittest.TestCase):
             start = AsyncMock(return_value=gateway)
             with (
                 patch(
-                    "miniclaw.evals.live._load_preflight",
+                    "lobster0.evals.live._load_preflight",
                     return_value=(paths, config, SimpleNamespace()),
                 ),
                 patch(
-                    "miniclaw.evals.live._repository_state",
+                    "lobster0.evals.live._repository_state",
                     side_effect=(("c" * 40, False), ("c" * 40, False)),
                 ),
-                patch("miniclaw.evals.live.ManagedGateway.start", new=start),
-                patch("miniclaw.evals.live._secret_match_count", return_value=0),
-                patch("miniclaw.evals.live._database_counts", return_value={}),
+                patch("lobster0.evals.live.ManagedGateway.start", new=start),
+                patch("lobster0.evals.live._secret_match_count", return_value=0),
+                patch("lobster0.evals.live._database_counts", return_value={}),
                 patch("builtins.input", return_value="p"),
             ):
                 code = run_live_harness(
@@ -238,7 +238,7 @@ class ChannelLiveHarnessTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(
             start.await_args.kwargs["ready_line"],
-            "MiniClaw gateway ready: discord/work",
+            "Lobster0 gateway ready: discord/work",
         )
         self.assertEqual(start.await_args.kwargs["commit"], "c" * 40)
         gateway.stop.assert_awaited_once()
@@ -249,7 +249,7 @@ class ChannelLiveHarnessTest(unittest.TestCase):
             root = Path(directory).resolve()
             paths = SimpleNamespace(
                 home=root / "home",
-                database=root / "miniclaw.db",
+                database=root / "lobster0.db",
                 logs=root / "logs",
             )
             gateway = SimpleNamespace(
@@ -265,19 +265,19 @@ class ChannelLiveHarnessTest(unittest.TestCase):
             )
             with (
                 patch(
-                    "miniclaw.evals.live._load_preflight",
+                    "lobster0.evals.live._load_preflight",
                     return_value=(paths, self._config("discord"), SimpleNamespace()),
                 ),
                 patch(
-                    "miniclaw.evals.live._repository_state",
+                    "lobster0.evals.live._repository_state",
                     side_effect=(("d" * 40, False), ("d" * 40, False)),
                 ),
                 patch(
-                    "miniclaw.evals.live.ManagedGateway.start",
+                    "lobster0.evals.live.ManagedGateway.start",
                     new=AsyncMock(return_value=gateway),
                 ),
-                patch("miniclaw.evals.live._secret_match_count", return_value=0),
-                patch("miniclaw.evals.live._database_counts", return_value={}),
+                patch("lobster0.evals.live._secret_match_count", return_value=0),
+                patch("lobster0.evals.live._database_counts", return_value={}),
                 patch("builtins.input", return_value="p"),
             ):
                 output = root / "evidence"

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://github.com/NEDONION/mini-claw/releases/manifest.schema.json",
-  "title": "MiniClaw Release Manifest v1",
+  "$id": "https://github.com/NEDONION/lobster0/releases/manifest.schema.json",
+  "title": "Lobster0 Release Manifest v1",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -19,7 +19,7 @@
   ],
   "properties": {
     "schema_version": {"const": 1},
-    "product": {"const": "miniclaw"},
+    "product": {"const": "lobster0"},
     "version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"},
     "git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
     "python": {"const": "3.12"},
@@ -119,13 +119,13 @@
       "properties": {
         "kind": {"enum": ["wheel", "sdist", "requirements", "node", "tui", "sandbox-image", "runtime-image", "installer", "sbom"]},
         "filename": {"type": "string", "pattern": "^(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$"},
-        "url": {"type": "string", "pattern": "^https://github\\.com/NEDONION/mini-claw/releases/download/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?/(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$"},
+        "url": {"type": "string", "pattern": "^https://github\\.com/NEDONION/lobster0/releases/download/v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?/(?!.*\\.\\.)[A-Za-z0-9][A-Za-z0-9._+-]{0,199}$"},
         "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
         "size": {"type": "integer", "minimum": 1, "maximum": 1073741824},
         "media_type": {"type": "string", "pattern": "^[a-z0-9][a-z0-9.+-]{0,63}/[a-z0-9][a-z0-9.+-]{0,127}$"},
         "platform": {"$ref": "#/$defs/platform"},
         "component_version": {"type": "string", "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-((?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\\+([0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*))?$"},
-        "source_repository": {"enum": ["https://github.com/NEDONION/mini-claw", "https://github.com/nodejs/node"]},
+        "source_repository": {"enum": ["https://github.com/NEDONION/lobster0", "https://github.com/nodejs/node"]},
         "license_ref": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9.+-]{0,127}$"},
         "upstream_sha256": {
           "anyOf": [
@@ -138,22 +138,22 @@
         {
           "if": {"properties": {"kind": {"const": "wheel"}}},
           "then": {"properties": {
-            "filename": {"pattern": "^miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?-py3-none-any\\.whl$"},
-            "url": {"pattern": "/miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?-py3-none-any\\.whl$"},
+            "filename": {"pattern": "^lobster0_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?-py3-none-any\\.whl$"},
+            "url": {"pattern": "/lobster0_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?-py3-none-any\\.whl$"},
             "media_type": {"const": "application/zip"},
             "platform": {"const": {"os": "any", "arch": "any"}},
-            "source_repository": {"const": "https://github.com/NEDONION/mini-claw"},
+            "source_repository": {"const": "https://github.com/NEDONION/lobster0"},
             "upstream_sha256": {"const": null}
           }}
         },
         {
           "if": {"properties": {"kind": {"const": "sdist"}}},
           "then": {"properties": {
-            "filename": {"pattern": "^miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?\\.tar\\.gz$"},
-            "url": {"pattern": "/miniclaw_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?\\.tar\\.gz$"},
+            "filename": {"pattern": "^lobster0_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?\\.tar\\.gz$"},
+            "url": {"pattern": "/lobster0_agent-(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:(?:a|b|rc)(?:0|[1-9][0-9]*))?\\.tar\\.gz$"},
             "media_type": {"const": "application/gzip"},
             "platform": {"const": {"os": "any", "arch": "any"}},
-            "source_repository": {"const": "https://github.com/NEDONION/mini-claw"},
+            "source_repository": {"const": "https://github.com/NEDONION/lobster0"},
             "upstream_sha256": {"const": null}
           }}
         },
@@ -164,15 +164,15 @@
             "url": {"pattern": "/requirements-all\\.lock$"},
             "media_type": {"const": "text/plain"},
             "platform": {"const": {"os": "any", "arch": "any"}},
-            "source_repository": {"const": "https://github.com/NEDONION/mini-claw"},
+            "source_repository": {"const": "https://github.com/NEDONION/lobster0"},
             "upstream_sha256": {"const": null}
           }}
         },
         {
           "if": {"properties": {"kind": {"const": "node"}}},
           "then": {"properties": {
-            "filename": {"pattern": "^miniclaw-node-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
-            "url": {"pattern": "/miniclaw-node-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
+            "filename": {"pattern": "^lobster0-node-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
+            "url": {"pattern": "/lobster0-node-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
             "media_type": {"const": "application/gzip"},
             "platform": {"not": {"const": {"os": "any", "arch": "any"}}},
             "source_repository": {"const": "https://github.com/nodejs/node"},
@@ -182,11 +182,11 @@
         {
           "if": {"properties": {"kind": {"const": "tui"}}},
           "then": {"properties": {
-            "filename": {"pattern": "^miniclaw-tui-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
-            "url": {"pattern": "/miniclaw-tui-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
+            "filename": {"pattern": "^lobster0-tui-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
+            "url": {"pattern": "/lobster0-tui-[0-9A-Za-z.+-]+-(?:linux|macos)-(?:x86_64|arm64)\\.tar\\.gz$"},
             "media_type": {"const": "application/gzip"},
             "platform": {"not": {"const": {"os": "any", "arch": "any"}}},
-            "source_repository": {"const": "https://github.com/NEDONION/mini-claw"},
+            "source_repository": {"const": "https://github.com/NEDONION/lobster0"},
             "upstream_sha256": {"const": null}
           }}
         },
@@ -197,18 +197,18 @@
             "url": {"pattern": "/[A-Za-z0-9][A-Za-z0-9._+-]{0,195}\\.txt$"},
             "media_type": {"const": "text/plain"},
             "platform": {"const": {"os": "any", "arch": "any"}},
-            "source_repository": {"const": "https://github.com/NEDONION/mini-claw"},
+            "source_repository": {"const": "https://github.com/NEDONION/lobster0"},
             "upstream_sha256": {"const": null}
           }}
         },
         {
           "if": {"properties": {"kind": {"const": "installer"}}},
           "then": {"properties": {
-            "filename": {"const": "miniclaw-installer.pyz"},
-            "url": {"pattern": "/miniclaw-installer\\.pyz$"},
+            "filename": {"const": "lobster0-installer.pyz"},
+            "url": {"pattern": "/lobster0-installer\\.pyz$"},
             "media_type": {"const": "application/zip"},
             "platform": {"const": {"os": "any", "arch": "any"}},
-            "source_repository": {"const": "https://github.com/NEDONION/mini-claw"},
+            "source_repository": {"const": "https://github.com/NEDONION/lobster0"},
             "upstream_sha256": {"const": null}
           }}
         },
@@ -219,7 +219,7 @@
             "url": {"pattern": "/[A-Za-z0-9][A-Za-z0-9._+-]{0,194}\\.json$"},
             "media_type": {"enum": ["application/vnd.cyclonedx+json", "application/spdx+json"]},
             "platform": {"const": {"os": "any", "arch": "any"}},
-            "source_repository": {"const": "https://github.com/NEDONION/mini-claw"},
+            "source_repository": {"const": "https://github.com/NEDONION/lobster0"},
             "upstream_sha256": {"const": null}
           }}
         }

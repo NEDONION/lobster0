@@ -5,9 +5,9 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from miniclaw.policy.network import NetworkRule, validate_https_target
-from miniclaw.tools.base import ToolContext, ToolValidationError
-from miniclaw.tools.web import HttpGetTool, PinnedHTTPSConnection
+from lobster0.policy.network import NetworkRule, validate_https_target
+from lobster0.tools.base import ToolContext, ToolValidationError
+from lobster0.tools.web import HttpGetTool, PinnedHTTPSConnection
 
 
 class FakeResponse:
@@ -98,7 +98,7 @@ class HttpGetToolTest(unittest.IsolatedAsyncioTestCase):
         connection = PinnedHTTPSConnection(target, 5, context=tls_context)
 
         with mock.patch(
-            "miniclaw.tools.web.socket.create_connection",
+            "lobster0.tools.web.socket.create_connection",
             return_value=raw_socket,
         ) as create:
             connection.connect()

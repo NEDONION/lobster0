@@ -49,8 +49,8 @@
     "uv run python -m unittest discover -s tests",
     "corepack pnpm --dir tui test",
     "uv run ruff check .",
-    "uv run miniclaw eval run --suite offline --root evals/scenarios",
-    "uv run miniclaw eval run --suite channel --root evals/scenarios",
+    "uv run lobster0 eval run --suite offline --root evals/scenarios",
+    "uv run lobster0 eval run --suite channel --root evals/scenarios",
     "uv build"
   ]
 }
