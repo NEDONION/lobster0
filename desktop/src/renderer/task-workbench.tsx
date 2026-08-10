@@ -197,13 +197,19 @@ export function TaskWorkbench({
   return (
     <section className="task-layout" aria-label="对话工作台">
       <section className="conversation-panel" data-mode={emptyTask ? "empty" : "thread"}>
-        <div className="conversation-header">
-          <div>
-            <span className="eyebrow">CONVERSATION</span>
-            <h1>{emptyTask ? "新对话" : "当前对话"}</h1>
+        {/* 空态下这条 header 会和居中的邀请标题重复，中间还留出一大片空白，
+            所以只在已有对话时显示；空态由 conversation-invite 独占整个区域。 */}
+        {emptyTask ? null : (
+          <div className="conversation-header">
+            <div>
+              <span className="eyebrow">CONVERSATION</span>
+              <h1>当前对话</h1>
+            </div>
+            <span className="task-status" data-status={task.status}>
+              {STATUS_LABELS[task.status]}
+            </span>
           </div>
-          <span className="task-status" data-status={task.status}>{STATUS_LABELS[task.status]}</span>
-        </div>
+        )}
 
         {emptyTask ? (
           <div className="conversation-invite">

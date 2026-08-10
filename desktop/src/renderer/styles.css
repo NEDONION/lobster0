@@ -74,23 +74,12 @@ select:focus-visible {
 .brand {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 0 6px;
+  height: 32px;
+  padding: 0 8px;
+  color: var(--lobster-text-primary);
   font-size: var(--lobster-text-sm);
   font-weight: 600;
   letter-spacing: -0.01em;
-}
-
-.brand-mark {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border-radius: var(--lobster-radius);
-  color: var(--lobster-primary-foreground);
-  background: var(--lobster-primary);
-  font-size: var(--lobster-text-xs);
-  font-weight: 600;
 }
 
 .navigation {
@@ -212,12 +201,35 @@ select:focus-visible {
   white-space: nowrap;
 }
 
+/* 只有需要注意的状态才会渲染这个标记（completed 不渲染），做成小胶囊以示区分。 */
 .sidebar-recent-list small {
+  justify-self: start;
   overflow: hidden;
-  color: var(--lobster-text-muted);
-  font-size: 11px;
+  max-width: 100%;
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--lobster-text-secondary);
+  background: var(--lobster-surface-raised);
+  font-size: 10px;
+  line-height: 16px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sidebar-recent-list small[data-status="failed"] {
+  color: var(--lobster-destructive);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.sidebar-recent-list small[data-status="waiting_approval"] {
+  color: var(--lobster-warning);
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.sidebar-recent-list small[data-status="running"],
+.sidebar-recent-list small[data-status="queued"] {
+  color: var(--lobster-primary);
+  background: var(--lobster-primary-muted);
 }
 
 .sidebar-recent-empty,
@@ -233,8 +245,7 @@ select:focus-visible {
 }
 
 .sidebar-status {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
+  display: flex;
   align-items: center;
   gap: 7px;
   margin-top: auto;
@@ -242,12 +253,6 @@ select:focus-visible {
   border-top: 1px solid var(--lobster-border);
   color: var(--lobster-text-muted);
   font-size: var(--lobster-text-xs);
-}
-
-.sidebar-status strong {
-  color: var(--lobster-text-secondary);
-  font-family: var(--lobster-font-mono);
-  font-weight: var(--lobster-ui-font-weight-normal);
 }
 
 .pulse-dot {
@@ -491,8 +496,9 @@ select:focus-visible {
   background: var(--lobster-surface);
 }
 
+/* 空态没有 header，整块区域交给居中的邀请区。 */
 .conversation-panel[data-mode="empty"] {
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .conversation-header {
