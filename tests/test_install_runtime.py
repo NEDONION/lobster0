@@ -563,13 +563,17 @@ class InstallRuntimeTests(unittest.TestCase):
         real_write = runtime_module._write_exclusive
         marker_seen = False
 
-        def observe_marker(path: Path, payload: bytes, mode: int) -> None:
+        def observe_marker(
+            path: Path,
+            payload: bytes,
+            mode: int,
+        ) -> runtime_module._FileToken:
             """在 marker 写入边界观察真实 staging 目录，而不替换写入行为。"""
             nonlocal marker_seen
             if path.name == ".runtime-recovery.json":
                 self.assertEqual(tuple(path.parent.iterdir()), ())
                 marker_seen = True
-            real_write(path, payload, mode)
+            return real_write(path, payload, mode)
 
         with mock.patch.object(
             runtime_module,
@@ -1637,35 +1641,26 @@ class InstallRuntimeTests(unittest.TestCase):
         """marker 必须围绕 full-tree scan 稳定双读，漂移时不得 quarantine。"""
         identity = self._write_owned_staging()
         lock = self._acquire_live_lock()
-        real_read = runtime_module._read_private_regular
+        real_read = runtime_module._read_runtime_recovery_marker
         marker_reads = 0
 
         def replace_after_first_read(
             path: Path,
-            uid: int,
-            limit: int,
-            *,
-            expected_mode: int = 0o600,
-        ) -> bytes:
+        ) -> tuple[bytes, runtime_module._FileToken]:
             """首轮 stable read 后把 marker 换成同权限 malformed regular。"""
             nonlocal marker_reads
-            payload = real_read(
-                path,
-                uid,
-                limit,
-                expected_mode=expected_mode,
-            )
+            result = real_read(path)
             if path.name == ".runtime-recovery.json":
                 marker_reads += 1
                 if marker_reads == 1:
                     path.write_bytes(b"{}\n")
                     path.chmod(0o600)
-            return payload
+            return result
 
         with (
             mock.patch.object(
                 runtime_module,
-                "_read_private_regular",
+                "_read_runtime_recovery_marker",
                 side_effect=replace_after_first_read,
             ),
             self.assertRaisesRegex(InstallError, "runtime_install_failed"),
@@ -1673,6 +1668,61 @@ class InstallRuntimeTests(unittest.TestCase):
             self._discard_interrupted_staging(self.layout, lock, self.manifest)
 
         self.assertGreaterEqual(marker_reads, 2)
+        after = self.layout.staging.lstat()
+        self.assertEqual((after.st_dev, after.st_ino), identity)
+
+    def test_discard_interrupted_staging_rejects_same_bytes_marker_inode_replacement(
+        self,
+    ) -> None:
+        """exact marker bytes 不能掩盖 full scan 后 pathname 已换成新 inode。"""
+        identity = self._write_owned_staging()
+        lock = self._acquire_live_lock()
+        real_verify = runtime_module._verified_private_staging_tree
+        replaced = False
+
+        def replace_after_first_full_scan(
+            path: Path,
+            *,
+            marker: bytes,
+            identity: tuple[int, int],
+            executables: tuple[str, ...] | None = None,
+            marker_token: runtime_module._FileToken | None = None,
+        ) -> tuple[tuple[int, int], tuple[str, ...], runtime_module._FileToken]:
+            """首次真实 full scan 后用同 bytes/0600 regular 替换 marker inode。"""
+            nonlocal replaced
+            result = real_verify(
+                path,
+                marker=marker,
+                identity=identity,
+                executables=executables,
+                marker_token=marker_token,
+            )
+            if not replaced:
+                marker = path / ".runtime-recovery.json"
+                payload = marker.read_bytes()
+                before = marker.lstat()
+                marker.unlink()
+                marker.write_bytes(payload)
+                marker.chmod(0o600)
+                after = marker.lstat()
+                self.assertNotEqual(
+                    (after.st_dev, after.st_ino),
+                    (before.st_dev, before.st_ino),
+                )
+                replaced = True
+            return result
+
+        with (
+            mock.patch.object(
+                runtime_module,
+                "_verified_private_staging_tree",
+                side_effect=replace_after_first_full_scan,
+            ),
+            self.assertRaisesRegex(InstallError, "runtime_install_failed"),
+        ):
+            self._discard_interrupted_staging(self.layout, lock, self.manifest)
+
+        self.assertTrue(replaced)
         after = self.layout.staging.lstat()
         self.assertEqual((after.st_dev, after.st_ino), identity)
 

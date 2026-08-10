@@ -980,7 +980,7 @@ def discard_interrupted_runtime_staging(
 
         identity = _directory_identity(layout.staging, expected_mode=0o700)
         marker = _runtime_recovery_marker_bytes(layout, manifest, identity)
-        identity, executables = _verified_private_staging_tree(
+        identity, executables, marker_token = _verified_private_staging_tree(
             layout.staging,
             marker=marker,
             identity=identity,
@@ -995,16 +995,18 @@ def discard_interrupted_runtime_staging(
                 marker=marker,
                 identity=identity,
                 executables=executables,
+                marker_token=marker_token,
             )
             if not lock.owns(layout):
                 _runtime_failed()
             return False
 
-        _verified_private_staging_tree(
+        identity, executables, marker_token = _verified_private_staging_tree(
             layout.staging,
             marker=marker,
             identity=identity,
             executables=executables,
+            marker_token=marker_token,
         )
         if not lock.owns(layout):
             _runtime_failed()
@@ -1025,11 +1027,12 @@ def discard_interrupted_runtime_staging(
             _restore_or_preserve_runtime_quarantine(quarantine)
             _runtime_failed()
 
-        _verified_private_staging_tree(
+        identity, executables, marker_token = _verified_private_staging_tree(
             quarantine.private,
             marker=marker,
             identity=identity,
             executables=executables,
+            marker_token=marker_token,
         )
         final_references = _stable_runtime_reference_facts(layout, verify_links=True)
         if target in final_references.targets:
@@ -1040,6 +1043,7 @@ def discard_interrupted_runtime_staging(
                 marker=marker,
                 identity=identity,
                 executables=executables,
+                marker_token=marker_token,
             )
             restored_references = _stable_runtime_reference_facts(
                 layout,
@@ -2532,6 +2536,44 @@ def _runtime_recovery_marker_bytes(
     return (json.dumps(document, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
+def _same_recovery_marker_token(first: _FileToken, second: _FileToken) -> bool:
+    """比较 marker 的完整 inode/metadata/hash facts，允许 quarantine 后 path 改名。"""
+    return (
+        type(first) is _FileToken
+        and type(second) is _FileToken
+        and first.snapshot == second.snapshot
+        and first.mode == second.mode == 0o600
+        and hmac.compare_digest(first.sha256, second.sha256)
+    )
+
+
+def _read_runtime_recovery_marker(path: Path) -> tuple[bytes, _FileToken]:
+    """strict no-follow 读取 marker，并返回 exact payload 与完整 file token。
+
+    Args:
+        path: public staging 或 private quarantine 内的 marker path。
+
+    Returns:
+        bounded payload 与绑定 dev/inode/owner/mode/nlink/size/metadata/hash 的 token。
+
+    Raises:
+        InstallError: marker 不稳定、被替换、权限不严或超过 metadata 预算。
+    """
+    token = _verify_private_file(path, expected_mode=0o600)
+    if token.snapshot[6] > _MAX_METADATA_BYTES:
+        _runtime_failed()
+    payload = _read_private_regular(
+        path,
+        os.geteuid(),
+        _MAX_METADATA_BYTES,
+        expected_mode=0o600,
+    )
+    _revalidate_token(token)
+    if not hmac.compare_digest(hashlib.sha256(payload).hexdigest(), token.sha256):
+        _runtime_failed()
+    return payload, token
+
+
 def _write_runtime_recovery_marker(
     layout: InstallLayout,
     manifest: ReleaseManifest,
@@ -2552,33 +2594,25 @@ def _write_runtime_recovery_marker(
     """
     payload = _runtime_recovery_marker_bytes(layout, manifest, identity)
     marker = layout.staging / _RECOVERY_MARKER_FILENAME
-    _write_exclusive(marker, payload, 0o600)
-    stored = _read_private_regular(
-        marker,
-        os.geteuid(),
-        _MAX_METADATA_BYTES,
-        expected_mode=0o600,
-    )
-    if not hmac.compare_digest(stored, payload):
+    created_token = _write_exclusive(marker, payload, 0o600)
+    stored, stored_token = _read_runtime_recovery_marker(marker)
+    if (
+        not hmac.compare_digest(stored, payload)
+        or not _same_recovery_marker_token(created_token, stored_token)
+    ):
         _runtime_failed()
     _fsync_directory(layout.staging)
+    persisted, persisted_token = _read_runtime_recovery_marker(marker)
     if (
         _directory_identity(layout.staging, expected_mode=0o700) != identity
-        or not hmac.compare_digest(
-            _read_private_regular(
-                marker,
-                os.geteuid(),
-                _MAX_METADATA_BYTES,
-                expected_mode=0o600,
-            ),
-            payload,
-        )
+        or not hmac.compare_digest(persisted, payload)
+        or not _same_recovery_marker_token(created_token, persisted_token)
     ):
         _runtime_failed()
 
 
-def _write_exclusive(path: Path, payload: bytes, mode: int) -> None:
-    """以 O_EXCL、fchmod、fsync 写一个 Runtime metadata file。"""
+def _write_exclusive(path: Path, payload: bytes, mode: int) -> _FileToken:
+    """以 O_EXCL、fchmod、fsync 写 metadata，并返回 created-fd identity token。"""
     descriptor = -1
     try:
         descriptor = os.open(
@@ -2589,6 +2623,24 @@ def _write_exclusive(path: Path, payload: bytes, mode: int) -> None:
         os.fchmod(descriptor, mode)
         _write_all(descriptor, payload)
         os.fsync(descriptor)
+        opened = os.fstat(descriptor)
+        pathname = path.lstat()
+        if (
+            opened.st_uid != os.geteuid()
+            or opened.st_nlink != 1
+            or stat.S_IMODE(opened.st_mode) != mode
+            or opened.st_size != len(payload)
+            or _metadata_snapshot(pathname) != _metadata_snapshot(opened)
+        ):
+            _runtime_failed()
+        return _FileToken(
+            path,
+            _metadata_snapshot(opened),
+            hashlib.sha256(payload).hexdigest(),
+            mode,
+        )
+    except InstallError:
+        raise
     except OSError:
         _runtime_failed()
     finally:
@@ -3398,7 +3450,8 @@ def _verified_private_staging_tree(
     marker: bytes,
     identity: tuple[int, int],
     executables: tuple[str, ...] | None = None,
-) -> tuple[tuple[int, int], tuple[str, ...]]:
+    marker_token: _FileToken | None = None,
+) -> tuple[tuple[int, int], tuple[str, ...], _FileToken]:
     """用稳定 marker 完整验证 owner-only staging tree 与 root inode。
 
     Args:
@@ -3406,9 +3459,10 @@ def _verified_private_staging_tree(
         marker: 与 canonical manifest、relative path 和 root inode 绑定的 exact bytes。
         identity: 先前绑定的 root device/inode token。
         executables: 可选的先前 private executable path 集合。
+        marker_token: 可选的先前 marker inode/metadata/hash token。
 
     Returns:
-        当前稳定 root identity 与完整验证得到的 executable paths。
+        当前稳定 root identity、executable paths 与 exact marker token。
 
     Raises:
         InstallError: marker、tree facts、executable closure 或 root identity 漂移。
@@ -3420,19 +3474,20 @@ def _verified_private_staging_tree(
         or type(identity) is not tuple
         or len(identity) != 2
         or any(type(value) is not int or value < 0 for value in identity)
+        or marker_token is not None
+        and type(marker_token) is not _FileToken
     ):
         _runtime_failed()
     observed_identity = _directory_identity(path, expected_mode=0o700)
     if observed_identity != identity:
         _runtime_failed()
     marker_path = path / _RECOVERY_MARKER_FILENAME
-    first_marker = _read_private_regular(
-        marker_path,
-        os.geteuid(),
-        _MAX_METADATA_BYTES,
-        expected_mode=0o600,
-    )
-    if not hmac.compare_digest(first_marker, marker):
+    first_marker, first_token = _read_runtime_recovery_marker(marker_path)
+    if (
+        not hmac.compare_digest(first_marker, marker)
+        or marker_token is not None
+        and not _same_recovery_marker_token(first_token, marker_token)
+    ):
         _runtime_failed()
     observed_executables = _verify_runtime_tree(
         path,
@@ -3440,19 +3495,17 @@ def _verified_private_staging_tree(
         expected_executables=executables,
         allow_transient=True,
     )
-    second_marker = _read_private_regular(
-        marker_path,
-        os.geteuid(),
-        _MAX_METADATA_BYTES,
-        expected_mode=0o600,
-    )
+    second_marker, second_token = _read_runtime_recovery_marker(marker_path)
     if (
         _directory_identity(path, expected_mode=0o700) != observed_identity
         or not hmac.compare_digest(second_marker, first_marker)
         or not hmac.compare_digest(second_marker, marker)
+        or not _same_recovery_marker_token(second_token, first_token)
+        or marker_token is not None
+        and not _same_recovery_marker_token(second_token, marker_token)
     ):
         _runtime_failed()
-    return observed_identity, observed_executables
+    return observed_identity, observed_executables, second_token
 
 
 def _directory_identity(path: Path, *, expected_mode: int = 0o700) -> tuple[int, int]:
