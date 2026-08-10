@@ -404,7 +404,7 @@ class InstallRuntimeTests(unittest.TestCase):
                 PlatformKey("macos", "arm64"),
             ),
             features=("agent", "tools", "tui", "feishu", "telegram", "discord"),
-            database_schema=5,
+            database_schema=7,
             minimum_readable_schema=5,
         )
 

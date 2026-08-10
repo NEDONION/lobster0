@@ -12,6 +12,8 @@ import zipfile
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
+from lobster0.storage.migrations import LATEST_SCHEMA_VERSION
+
 _SEMVER = re.compile(r"^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$")
 _COMMIT = re.compile(r"^[0-9a-f]{40}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -21,7 +23,6 @@ _METADATA_FIELD = re.compile(r"^([A-Za-z][A-Za-z0-9-]*):[ \t]*(.*)$")
 _DISTRIBUTION = "lobster0-agent"
 _PRODUCT = "lobster0"
 _PYTHON_SERIES = "3.12"
-_DATABASE_SCHEMA = 5
 _MINIMUM_READABLE_SCHEMA = 1
 _MANIFEST_FILENAME = "release-manifest.json"
 _INSTALL_SCRIPT_FILENAME = "install.sh"
@@ -116,7 +117,7 @@ class ReleaseInputs:
         if (
             type(self.minimum_readable_schema) is not int
             or isinstance(self.minimum_readable_schema, bool)
-            or not 1 <= self.minimum_readable_schema <= _DATABASE_SCHEMA
+            or not 1 <= self.minimum_readable_schema <= LATEST_SCHEMA_VERSION
         ):
             raise ReleaseBuildError("invalid minimum readable schema")
         if (
@@ -214,7 +215,7 @@ def build_manifest(inputs: ReleaseInputs) -> bytes:
             for platform in _PLATFORMS
         ],
         "features": list(inputs.features),
-        "database_schema": _DATABASE_SCHEMA,
+        "database_schema": LATEST_SCHEMA_VERSION,
         "minimum_readable_schema": inputs.minimum_readable_schema,
     }
     return _canonical_json(document)
@@ -629,13 +630,20 @@ def _validate_requirements(path: Path) -> None:
 
 
 def _validate_installer(path: Path) -> None:
-    """要求 installer pyz 带固定 shebang 且是合法 zip。"""
+    """要求 installer pyz 带固定 shebang、可执行入口且无损坏 entry。"""
     try:
         with path.open("rb") as source:
             header = source.read(23)
         if header != b"#!/usr/bin/env python3\n" or not zipfile.is_zipfile(path):
             raise ReleaseBuildError("installer pyz is invalid")
-    except OSError as error:
+        with zipfile.ZipFile(path) as archive:
+            if "__main__.py" not in set(archive.namelist()):
+                raise ReleaseBuildError("installer pyz is missing its entry point")
+            if archive.testzip() is not None:
+                raise ReleaseBuildError("installer pyz has a corrupt entry")
+    except ReleaseBuildError:
+        raise
+    except (OSError, ValueError, zipfile.BadZipFile) as error:
         raise ReleaseBuildError("installer pyz is invalid") from error
 
 

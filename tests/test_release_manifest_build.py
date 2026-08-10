@@ -11,7 +11,10 @@ import unittest
 import zipfile
 from pathlib import Path
 
+from lobster0.install import models as install_models
 from lobster0.install.models import ReleaseManifest
+from lobster0.storage import migrations as storage_migrations
+from lobster0.storage.migrations import LATEST_SCHEMA_VERSION
 from scripts.build_release_manifest import (
     ReleaseBuildError,
     ReleaseInputs,
@@ -318,7 +321,7 @@ class ManifestBuildTest(unittest.TestCase):
         self.assertEqual(document["version"], VERSION)
         self.assertEqual(document["git_commit"], COMMIT)
         self.assertEqual(document["python"], "3.12")
-        self.assertEqual(document["database_schema"], 5)
+        self.assertEqual(document["database_schema"], LATEST_SCHEMA_VERSION)
         self.assertEqual(document["minimum_readable_schema"], 1)
         self.assertEqual(tuple(document["features"]), load_features(FEATURES_REGISTRY))
         self.assertEqual(
@@ -329,6 +332,40 @@ class ManifestBuildTest(unittest.TestCase):
         self.assertEqual(parsed.version, VERSION)
         self.assertEqual(len(parsed.artifacts), 16)
 
+    def test_database_schema_tracks_the_migration_source_of_truth(self) -> None:
+        """manifest、strict model 与 JSON schema 必须跟随迁移单一来源。"""
+        document = json.loads(build_manifest(self.inputs).decode("utf-8"))
+        schema = json.loads(SCHEMA.read_text(encoding="utf-8"))
+
+        self.assertEqual(
+            max(storage_migrations._MIGRATION_RESOURCES), LATEST_SCHEMA_VERSION
+        )
+        self.assertEqual(
+            sorted(storage_migrations._MIGRATION_RESOURCES),
+            list(range(1, LATEST_SCHEMA_VERSION + 1)),
+        )
+        self.assertEqual(document["database_schema"], LATEST_SCHEMA_VERSION)
+        self.assertEqual(
+            install_models._DATABASE_SCHEMA_VERSION,
+            LATEST_SCHEMA_VERSION,
+            "install/models.py cannot import migrations across the stdlib-only zipapp "
+            "boundary, so its literal must be updated with every new migration",
+        )
+        self.assertEqual(
+            schema["properties"]["database_schema"]["const"],
+            LATEST_SCHEMA_VERSION,
+            "release/manifest.schema.json is static and must be updated with every "
+            "new migration",
+        )
+        self.assertEqual(
+            schema["properties"]["minimum_readable_schema"]["maximum"],
+            LATEST_SCHEMA_VERSION,
+            "minimum_readable_schema 的上界与 database_schema 同源，漏改会让 schema "
+            "自相矛盾：允许的最早可读版本上限低于本 Runtime 实际写入的版本",
+        )
+        self.assertLessEqual(document["minimum_readable_schema"], LATEST_SCHEMA_VERSION)
+        ReleaseManifest.from_bytes(build_manifest(self.inputs))
+
     def test_manifest_rejects_release_identity_disagreement(self) -> None:
         """tag、version、commit 与 schema 边界不一致必须拒绝。"""
         with self.assertRaisesRegex(ReleaseBuildError, "release tag"):
@@ -338,7 +375,7 @@ class ManifestBuildTest(unittest.TestCase):
         with self.assertRaisesRegex(ReleaseBuildError, "version"):
             self.fixture.inputs(version="0.7", release_tag="v0.7")
         with self.assertRaisesRegex(ReleaseBuildError, "minimum readable schema"):
-            self.fixture.inputs(minimum_readable_schema=6)
+            self.fixture.inputs(minimum_readable_schema=LATEST_SCHEMA_VERSION + 1)
         with self.assertRaisesRegex(ReleaseBuildError, "feature"):
             self.fixture.inputs(features=("agent", "agent"))
         with self.assertRaisesRegex(ReleaseBuildError, "feature"):
