@@ -71,6 +71,17 @@ select:focus-visible {
   background: var(--lobster-background);
 }
 
+/* .sidebar 是 flex column，其直接子元素默认 flex-shrink: 1。历史对话变多、
+   内容超出可用高度时，flex 会按比例压扁这些固定高度的条目，导致「新建对话」
+   比 .navigation 里的导航项矮一截（后者是 grid item，不受影响）。
+   这里显式禁止收缩，只让 .sidebar-recent 吸收多余高度并滚动。 */
+.brand,
+.sidebar-create,
+.navigation,
+.sidebar-status {
+  flex-shrink: 0;
+}
+
 .brand {
   display: flex;
   align-items: center;
