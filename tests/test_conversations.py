@@ -389,6 +389,101 @@ class ConversationRepositoryTest(unittest.TestCase):
             [("user", "只处理当前请求")],
         )
 
+    def test_context_keeps_unrelated_tool_result_when_a_later_batch_is_orphaned(
+        self,
+    ) -> None:
+        """迟落库到 continuation Turn 里的旧 Tool Result 不该被更晚 orphan 的批次连坐删除。
+
+        真实事故：一个 Tool Call 批次跨两轮审批 continuation，前一批次已完整落库的
+        Tool Result 被 Provider-safe 过滤按 Turn ID 误删，导致 DeepSeek 收到带悬空
+        Tool Call 的请求并以 400 拒绝，详见
+        docs/engineering/phase-4/20260810_feishu-provider-protocol-400-incident.md。
+        """
+        session = self.sessions.get_or_create_cli(self.owner.id, "collateral-damage")
+        first = self.turns.create_with_user_message(
+            session.id,
+            "event-first",
+            "deepseek-v4-pro",
+            "查看项目进展",
+        )
+        self.turns.mark_running(first.id)
+        self.turns.append_intermediate_messages(
+            first.id,
+            session.id,
+            (
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(
+                        ToolCall("call_glob", "glob", {}),
+                        ToolCall("call_run_a", "run_command", {}),
+                    ),
+                ),
+            ),
+        )
+        self.turns.append_intermediate_messages(
+            first.id,
+            session.id,
+            (ModelMessage(role="tool", content="{}", tool_call_id="call_glob"),),
+        )
+        self.turns.wait_for_approval(
+            first.id,
+            session.id,
+            1,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-first",
+            iterations=1,
+        )
+        second = self.turns.create_continuation(
+            session.id,
+            approval_id=1,
+            parent_turn_id=first.id,
+            model="deepseek-v4-pro",
+        )
+        self.turns.mark_running(second.id)
+        self.turns.append_intermediate_messages(
+            second.id,
+            session.id,
+            (
+                ModelMessage(role="tool", content="{}", tool_call_id="call_run_a"),
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(ToolCall("call_run_b", "run_command", {}),),
+                ),
+            ),
+        )
+        self.turns.wait_for_approval(
+            second.id,
+            session.id,
+            2,
+            input_tokens=1,
+            output_tokens=1,
+            provider_request_id="req-second",
+            iterations=1,
+        )
+        current = self.turns.create_with_user_message(
+            session.id,
+            "event-current",
+            "deepseek-v4-pro",
+            "你为什么还需要审批",
+        )
+        self.turns.mark_running(current.id)
+
+        context = self.messages.list_context(session.id)
+
+        self.assertEqual(
+            [(message.role, message.tool_call_id) for message in context],
+            [
+                ("user", None),
+                ("assistant", None),
+                ("tool", "call_glob"),
+                ("tool", "call_run_a"),
+                ("user", None),
+            ],
+        )
+
     def test_completion_writes_assistant_usage_and_snapshot_atomically(self) -> None:
         """Assistant Message 与 completed Turn 必须在同一事务中可见。"""
         session = self.sessions.get_or_create_cli(self.owner.id, "default")

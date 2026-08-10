@@ -1011,6 +1011,12 @@ def _failure_profile(error: Exception) -> tuple[str, str, str]:
             "请检查 Claw Trail 与 ToolRun；拆分任务或调整预算配置后重试。",
         )
     if isinstance(error, ProviderProtocolError):
+        if str(error).startswith("model provider rejected the request with status"):
+            return (
+                "模型请求",
+                "模型服务直接拒绝了这次请求（协议或参数校验未通过），未生成任何工具调用。",
+                "请重试；若持续失败，请检查 Turn 的 error_message 获取服务商返回的具体原因。",
+            )
         return (
             "模型响应校验",
             "模型生成的工具参数格式错误，已安全停止。",

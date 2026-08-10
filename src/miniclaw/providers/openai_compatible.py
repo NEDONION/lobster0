@@ -114,7 +114,7 @@ class OpenAICompatibleProvider:
                     json=payload,
                     headers=self._request_headers(),
                 ) as response:
-                    if _status_error(response, attempt):
+                    if await _status_error(response, attempt):
                         delay = _retry_delay(response)
                     else:
                         try:
@@ -188,8 +188,16 @@ def _message_payload(message: ModelMessage) -> dict[str, object]:
     return payload
 
 
-def _status_error(response: httpx.Response, attempt: int) -> bool:
-    """校验 HTTP 状态；成功返回假，可重试返回真，其他情况抛错。"""
+_MAX_ERROR_BODY_CHARS = 500
+
+
+async def _status_error(response: httpx.Response, attempt: int) -> bool:
+    """校验 HTTP 状态；成功返回假，可重试返回真，其他情况抛错。
+
+    非重试状态会把响应正文（有界截断）附带进异常信息，只落库到 Turn 的
+    error_message／日志供事后诊断，绝不会被拼进 Channel 展示给用户的安全文案
+    （见 channels/manager.py 的 ``_failure_diagnostics``）。
+    """
     status = response.status_code
     if 200 <= status < 300:
         return False
@@ -203,7 +211,23 @@ def _status_error(response: httpx.Response, attempt: int) -> bool:
         if attempt + 1 < _MAX_ATTEMPTS:
             return True
         raise ProviderServerError("model provider server error")
-    raise ProviderProtocolError(f"model provider rejected the request with status {status}")
+    detail = await _read_error_body(response)
+    message = f"model provider rejected the request with status {status}"
+    if detail:
+        message = f"{message}: {detail}"
+    raise ProviderProtocolError(message)
+
+
+async def _read_error_body(response: httpx.Response) -> str:
+    """尽力读取并截断错误响应正文；读取失败时静默返回空串。"""
+    try:
+        raw = await response.aread()
+    except Exception:
+        return ""
+    text = raw.decode("utf-8", errors="replace").strip()
+    if len(text) > _MAX_ERROR_BODY_CHARS:
+        text = f"{text[:_MAX_ERROR_BODY_CHARS]}…"
+    return text
 
 
 def _retry_delay(response: httpx.Response) -> float:

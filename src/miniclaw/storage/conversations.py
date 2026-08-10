@@ -996,13 +996,20 @@ def _message_from_row(row: sqlite3.Row) -> StoredMessage:
 def _provider_safe_context(
     messages: tuple[StoredMessage, ...],
 ) -> tuple[StoredMessage, ...]:
-    """移除无法形成 Assistant Tool Call → Tool Result 的完整 Turn。
+    """逐条剔除无法形成 Assistant Tool Call → Tool Result 配对的消息。
+
+    按单条消息 ID 而不是 Turn ID 判定失效范围：一个 Tool Call 批次的执行结果可能因为
+    审批 continuation 被落在和触发它的 Assistant 消息不同的 Turn 里，按 Turn 整体剔除
+    会误删同一 Turn 里其他仍然完整、无关的 Tool Call/Tool Result 配对（真实事故见
+    docs/engineering/phase-4/20260810_feishu-provider-protocol-400-incident.md）。
+    Orphan Tool Call 只连带它紧邻的前一条 User 消息一起剔除——那条消息是它唯一的触发
+    者；再往前的消息属于更早、已经配对完整的交互，不受影响。
 
     Args:
         messages: 按消息 ID 递增排列的持久上下文。
 
     Returns:
-        保留完整审批 continuation，并删除新 User 消息前仍 orphan 的 Tool Turn。
+        保留完整审批 continuation，并删除新 User 消息前仍 orphan 的 Tool Call/Tool Result。
 
     Raises:
         ConversationDataError: Tool Call metadata 或 Tool Message 已损坏。
@@ -1012,36 +1019,53 @@ def _provider_safe_context(
         for message in messages
         if message.metadata.get("channel_notice") is not True
     )
-    invalid_turns: set[int] = set()
+    invalid_message_ids: set[int] = set()
+    invalid_call_ids: set[str] = set()
     pending_calls: dict[str, int] = {}
+    pending_trigger_id: int | None = None
+    previous_message: StoredMessage | None = None
+
+    def _invalidate_pending() -> None:
+        nonlocal pending_trigger_id
+        if not pending_calls:
+            pending_trigger_id = None
+            return
+        invalid_message_ids.update(pending_calls.values())
+        invalid_call_ids.update(pending_calls.keys())
+        if pending_trigger_id is not None:
+            invalid_message_ids.add(pending_trigger_id)
+        pending_calls.clear()
+        pending_trigger_id = None
+
     for message in provider_messages:
         call_ids = _stored_tool_call_ids(message)
         if call_ids:
-            if pending_calls:
-                invalid_turns.update(pending_calls.values())
-                pending_calls.clear()
-            if message.turn_id is None:
-                raise ConversationDataError("tool call message has no Turn")
-            pending_calls.update((call_id, message.turn_id) for call_id in call_ids)
+            _invalidate_pending()
+            pending_calls.update((call_id, message.id) for call_id in call_ids)
+            if previous_message is not None and previous_message.role == "user":
+                pending_trigger_id = previous_message.id
+            previous_message = message
             continue
         if message.role == "tool":
             if message.tool_call_id is None:
                 raise ConversationDataError("tool message has no tool_call_id")
             if message.tool_call_id in pending_calls:
                 pending_calls.pop(message.tool_call_id)
-            elif message.turn_id is not None:
-                invalid_turns.add(message.turn_id)
+                if not pending_calls:
+                    pending_trigger_id = None
+            elif message.tool_call_id in invalid_call_ids:
+                invalid_message_ids.add(message.id)
+            previous_message = message
             continue
-        if pending_calls:
-            invalid_turns.update(pending_calls.values())
-            pending_calls.clear()
-    invalid_turns.update(pending_calls.values())
-    if not invalid_turns:
+        _invalidate_pending()
+        previous_message = message
+    _invalidate_pending()
+    if not invalid_message_ids:
         return provider_messages
     return tuple(
         message
         for message in provider_messages
-        if message.turn_id not in invalid_turns
+        if message.id not in invalid_message_ids
     )
 
 
