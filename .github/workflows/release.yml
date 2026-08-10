@@ -1,7 +1,7 @@
 name: release
 
 # 受保护 v* tag 是唯一的发布入口。装配顺序被 tests/test_install_matrix_contract.py 钉死：
-#   Python/Node/TUI/images/pyz -> build_sbom.py -> build_release_manifest.py manifest
+#   Python/Node/TUI/desktop/images/pyz -> build_sbom.py -> build_release_manifest.py manifest
 #   -> render_install_script.py -> build_release_manifest.py checksums
 #   -> verify_release_artifacts.py -> attest -> draft Release -> Tier 1 gates -> publish
 #
@@ -95,6 +95,10 @@ jobs:
           version="${tag#v}"
           constant="$(python3 -c "import re,pathlib;print(re.search(r'__version__:\s*str\s*=\s*\"([^\"]+)\"',pathlib.Path('src/lobster0/_version.py').read_text(encoding='utf-8')).group(1))")"
           test "${version}" = "${constant}"
+          # 桌面包的产物文件名由 desktop/package.json 的 version 渲染，
+          # 这里把它绑进同一个事实，避免 Release 上出现与 tag 不符的桌面包。
+          desktop="$(python3 -c "import json;print(json.load(open('desktop/package.json'))['version'])")"
+          test "${version}" = "${desktop}"
           printf '%s' "${version}" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
           test -z "$(git status --porcelain)"
           test "$(git rev-parse --verify "${tag}^{commit}")" = "$(git rev-parse HEAD)"
@@ -340,6 +344,112 @@ jobs:
           shasum -a 256 "${bundle}" | cut -d' ' -f1 > "${bundle}.sha256"
           gh release upload "${TAG}" "${bundle}" "${bundle}.sha256" --clobber
 
+  desktop-bundles:
+    name: desktop distributable bundles
+    # 桌面包不进入 release-manifest.json：manifest 是安装器的封闭世界事实源，
+    # `.dmg`/`.AppImage` 不是安装器输入。它们改由 attestation 与 publish 两道
+    # 既有门禁兜住：attestation 先按 `.sha256` sidecar 复核再签名，publish 在
+    # 把 Release 转正之前重新复核摘要并逐个验证 attestation。
+    #
+    # 【未签名】本作业不注入任何签名凭据，CSC_IDENTITY_AUTO_DISCOVERY=false
+    # 让"未签名"成为明确、可复现的结果，而不是 runner keychain 的偶然状态。
+    # macOS 用户首次打开需要显式绕过 Gatekeeper，见 docs 中的桌面分发说明。
+    needs: [guard, offline-gate, draft-release]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # Electron 的每个架构都是官方预编译产物，本应用又没有任何需要
+          # 重新编译的原生依赖（npmRebuild=false），因此一个 runner 即可
+          # 同时产出该 OS 的 x64 与 arm64 包。
+          - platform: macos
+            runner: macos-14
+            target_flag: '--mac'
+            expected_artifacts: 4
+          - platform: linux
+            runner: ubuntu-24.04
+            target_flag: '--linux'
+            expected_artifacts: 2
+    env:
+      TAG: ${{ needs.guard.outputs.tag }}
+      VERSION: ${{ needs.guard.outputs.version }}
+      TARGET_FLAG: ${{ matrix.target_flag }}
+      EXPECTED_ARTIFACTS: ${{ matrix.expected_artifacts }}
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+      - name: Set up the pinned Python series
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405
+        with:
+          python-version: '3.12'
+      - name: Require the desktop package version to equal the tag version
+        run: |
+          set -euo pipefail
+          packaged="$(python3 -c "import json;print(json.load(open('desktop/package.json'))['version'])")"
+          test "${packaged}" = "${VERSION}"
+      - name: Install the default managed Node for this platform
+        run: |
+          set -euo pipefail
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            macOS-ARM64) platform=macos-arm64 ;;
+            macOS-X64) platform=macos-x86_64 ;;
+            Linux-ARM64) platform=linux-arm64 ;;
+            Linux-X64) platform=linux-x86_64 ;;
+            *) echo "unsupported desktop build host" >&2; exit 1 ;;
+          esac
+          mkdir -p "${RUNNER_TEMP}/pins" "${RUNNER_TEMP}/node"
+          pin="$(python3 -c "import json,sys;a=json.load(open('release/runtime-versions.json'))['node']['archives'][sys.argv[1]];print(a['url'],a['sha256'])" "${platform}")"
+          name="$(basename "${pin%% *}")"
+          curl -fsSL --proto '=https' --tlsv1.2 --retry 3 \
+            -o "${RUNNER_TEMP}/pins/${name}" "${pin%% *}"
+          printf '%s  %s\n' "${pin##* }" "${RUNNER_TEMP}/pins/${name}" | shasum -a 256 -c -
+          tar -xzf "${RUNNER_TEMP}/pins/${name}" -C "${RUNNER_TEMP}/node" --strip-components=1
+          echo "${RUNNER_TEMP}/node/bin" >> "${GITHUB_PATH}"
+      # 桌面主进程把 @lobster0/pi-tui 当外部依赖打进 asar，而 tui 包没有
+      # prepare 脚本；不先把 tui/dist 编译出来，打出来的桌面包里 pi-tui 会是空的。
+      - name: Build the pi-tui distribution the desktop main process imports
+        run: |
+          set -euo pipefail
+          node --version | grep -F 'v24.18.0'
+          corepack enable
+          corepack pnpm --dir tui install --frozen-lockfile
+          corepack pnpm --dir tui build
+      - name: Install the locked desktop dependencies and build the app bundle
+        run: |
+          set -euo pipefail
+          corepack pnpm --dir desktop install --frozen-lockfile
+          corepack pnpm --dir desktop build
+      - name: Package the distributable desktop artifacts without publishing them
+        run: |
+          set -euo pipefail
+          corepack pnpm --dir desktop exec electron-builder \
+            --config electron-builder.json \
+            --publish never \
+            "${TARGET_FLAG}"
+      - name: Hand the desktop artifacts over through the draft release with their digests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artifacts=(
+            "desktop/dist/lobster0-desktop-${VERSION}-"*.dmg
+            "desktop/dist/lobster0-desktop-${VERSION}-"*.zip
+            "desktop/dist/lobster0-desktop-${VERSION}-"*.AppImage
+          )
+          test "${#artifacts[@]}" -eq "${EXPECTED_ARTIFACTS}"
+          for artifact in "${artifacts[@]}"; do
+            shasum -a 256 "${artifact}" | cut -d' ' -f1 > "${artifact}.sha256"
+            gh release upload "${TAG}" "${artifact}" "${artifact}.sha256" --clobber
+          done
+
   images:
     name: non-root container images
     needs: [guard, python-build, node-bundles, tui-bundles]
@@ -557,7 +667,7 @@ jobs:
 
   attestation:
     name: attest every release subject
-    needs: [guard, assemble]
+    needs: [guard, assemble, desktop-bundles]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -578,6 +688,15 @@ jobs:
           set -euo pipefail
           mkdir -p subjects
           gh release download "${TAG}" --dir subjects --clobber
+          shopt -s nullglob
+          # 桌面包不在 SHA256SUMS 覆盖范围内，必须先按各自的 sidecar 复核，
+          # 否则下一步就会给一份没被任何门禁看过的产物签发 attestation。
+          desktop=(subjects/lobster0-desktop-*.dmg subjects/lobster0-desktop-*.zip \
+            subjects/lobster0-desktop-*.AppImage)
+          test "${#desktop[@]}" -eq 6
+          for artifact in "${desktop[@]}"; do
+            printf '%s  %s\n' "$(cat "${artifact}.sha256")" "${artifact}" | sha256sum -c -
+          done
           rm -f subjects/*.sha256
           (cd subjects && sha256sum -c SHA256SUMS)
           test "$(sha256sum subjects/release-manifest.json | cut -d' ' -f1)" \
@@ -628,6 +747,9 @@ jobs:
             subjects/lobster0-tui-*.tar.gz
             subjects/lobster0-*-sbom.*.json
             subjects/lobster0-*-image-*.txt
+            subjects/lobster0-desktop-*.dmg
+            subjects/lobster0-desktop-*.zip
+            subjects/lobster0-desktop-*.AppImage
           predicate-type: https://slsa.dev/provenance/v1
           predicate-path: ${{ runner.temp }}/predicate.json
 
@@ -780,6 +902,13 @@ jobs:
           set -euo pipefail
           mkdir -p candidate
           gh release download "${TAG}" --dir candidate --clobber
+          shopt -s nullglob
+          desktop=(candidate/lobster0-desktop-*.dmg candidate/lobster0-desktop-*.zip \
+            candidate/lobster0-desktop-*.AppImage)
+          test "${#desktop[@]}" -eq 6
+          for artifact in "${desktop[@]}"; do
+            printf '%s  %s\n' "$(cat "${artifact}.sha256")" "${artifact}" | sha256sum -c -
+          done
           rm -f candidate/*.sha256
           (cd candidate && sha256sum -c SHA256SUMS)
           test "$(sha256sum candidate/release-manifest.json | cut -d' ' -f1)" \
@@ -787,8 +916,13 @@ jobs:
       - name: Verify the published attestations before anything leaves the repository
         run: |
           set -euo pipefail
+          shopt -s nullglob
+          desktop=(candidate/lobster0-desktop-*.dmg candidate/lobster0-desktop-*.zip \
+            candidate/lobster0-desktop-*.AppImage)
+          test "${#desktop[@]}" -eq 6
           for subject in candidate/release-manifest.json candidate/SHA256SUMS \
-              candidate/install.sh "candidate/${WHEEL}" "candidate/${SDIST}"; do
+              candidate/install.sh "candidate/${WHEEL}" "candidate/${SDIST}" \
+              "${desktop[@]}"; do
             gh attestation verify "${subject}" --repo "${GITHUB_REPOSITORY}"
           done
       - name: Stage exactly the two distributions for trusted publishing

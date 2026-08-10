@@ -1,0 +1,54 @@
+{
+  "appId": "tech.jchu.lobster0.desktop",
+  "productName": "Lobster0",
+  "copyright": "Copyright (c) 2026 Lobster0 contributors",
+  "asar": true,
+  "npmRebuild": false,
+  "removePackageScripts": true,
+  "publish": null,
+  "directories": {
+    "output": "dist",
+    "buildResources": "packaging"
+  },
+  "files": [
+    "out/**/*",
+    "package.json",
+    "!**/*.map"
+  ],
+  "artifactName": "lobster0-desktop-${version}-${os}-${arch}.${ext}",
+  "mac": {
+    "category": "public.app-category.developer-tools",
+    "artifactName": "lobster0-desktop-${version}-macos-${arch}.${ext}",
+    "darkModeSupport": true,
+    "notarize": false,
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["arm64", "x64"]
+      },
+      {
+        "target": "zip",
+        "arch": ["arm64", "x64"]
+      }
+    ]
+  },
+  "dmg": {
+    "artifactName": "lobster0-desktop-${version}-macos-${arch}.${ext}",
+    "writeUpdateInfo": false
+  },
+  "linux": {
+    "category": "Development",
+    "artifactName": "lobster0-desktop-${version}-linux-${arch}.${ext}",
+    "synopsis": "Lobster0 desktop workbench",
+    "description": "Lobster0 desktop workbench. Requires a separately installed lobster0 Python runtime.",
+    "target": [
+      {
+        "target": "AppImage",
+        "arch": ["x64", "arm64"]
+      }
+    ]
+  },
+  "appImage": {
+    "artifactName": "lobster0-desktop-${version}-linux-${arch}.${ext}"
+  }
+}
