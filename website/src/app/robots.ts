@@ -1,5 +1,7 @@
 import type { MetadataRoute } from 'next';
 
+import { siteFacts } from '@/content/site';
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
@@ -7,6 +9,6 @@ export default function robots(): MetadataRoute.Robots {
       disallow: '/api/',
       userAgent: '*',
     },
-    sitemap: 'https://lobster0.vercel.app/sitemap.xml',
+    sitemap: `${siteFacts.siteUrl}/sitemap.xml`,
   };
 }

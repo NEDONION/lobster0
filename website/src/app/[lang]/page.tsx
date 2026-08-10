@@ -2,10 +2,10 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { MarketingHome } from '@/components/marketing/MarketingHome';
-import { marketingCopy } from '@/content/site';
+import { marketingCopy, siteFacts } from '@/content/site';
 import { getLocale, localizedPath } from '@/lib/i18n';
 
-const siteUrl = 'https://lobster0.vercel.app';
+const siteUrl = siteFacts.siteUrl;
 
 export async function generateMetadata({
   params,

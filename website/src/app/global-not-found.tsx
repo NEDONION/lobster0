@@ -9,7 +9,7 @@ import { siteFacts } from '@/content/site';
 
 export const metadata: Metadata = {
   description: 'The requested Lobster0 route could not be found.',
-  metadataBase: new URL('https://lobster0.vercel.app'),
+  metadataBase: new URL(siteFacts.siteUrl),
   robots: { follow: false, index: false },
   title: 'Route not found — Lobster0',
 };

@@ -1,6 +1,8 @@
 import type { MetadataRoute } from 'next';
 
-const siteUrl = 'https://lobster0.vercel.app';
+import { siteFacts } from '@/content/site';
+
+const siteUrl = siteFacts.siteUrl;
 const docsSlugs = ['', 'getting-started', 'runtime', 'security', 'channels', 'memory'];
 
 function absolute(path: string) {

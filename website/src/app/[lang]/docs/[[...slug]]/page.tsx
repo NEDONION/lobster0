@@ -8,10 +8,11 @@ import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 
 import { getMDXComponents } from '@/components/docs/mdx-components';
+import { siteFacts } from '@/content/site';
 import { getLocale, localizedPath } from '@/lib/i18n';
 import { source } from '@/lib/source';
 
-const siteUrl = 'https://lobster0.vercel.app';
+const siteUrl = siteFacts.siteUrl;
 
 interface PageProps {
   params: Promise<{ lang: string; slug?: string[] }>;
@@ -26,7 +27,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const locale = getLocale(lang);
   if (!locale) return {};
   const page = source.getPage(slug, locale);
-  if (!page) return {};
+  // Keep metadataBase even on the not-found path, otherwise Next falls back to
+  // localhost when resolving social image URLs.
+  if (!page) return { metadataBase: new URL(siteUrl) };
   const path = slug?.length ? `/docs/${slug.join('/')}` : '/docs';
   const canonicalPath = localizedPath(locale, path as `/${string}`);
 
