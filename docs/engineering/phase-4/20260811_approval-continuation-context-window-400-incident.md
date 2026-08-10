@@ -176,7 +176,34 @@ Claw Trail 里 3 个 ✕ 全部是 `policy/command.py` 的**硬禁止**，在 `n
 - inline 执行指出命中的具体开关，并要求改为执行脚本文件；
 - 被禁 git 子命令指出是哪个子命令。
 
-## 7. 遗留项（本次未修）
+## 7. 新增 `/reset`：Owner 自助脱离被污染的会话
+
+修完 §6 后 Owner 在同一个会话里再问"你在吗"，Agent 不再重复撞墙（1 步、0 次工具调用），
+但仍然在**汇报早先那个任务的成果**——而且汇报的是一份已经被撤销的改动。原因是上下文里最后
+一条 Assistant 消息还是"我正在改 pipeline.py，还没改完"，任何后续消息都被理解成催进度。
+
+当时**没有任何自助脱离手段**：渠道只支持 `/approve`、`/deny`、`/good`、`/bad`、`/permissions`，
+飞书单聊也没有"新话题"，唯一办法是手改数据库——对 Owner 不合理。
+
+### 7.1 实现
+
+- `MessageRepository.reset_context(session_id)`：写一条覆盖"上次摘要之后 → 当前最后一条消息"
+  的 compaction 摘要（`model` 字段记为 `"reset"`，表示不是模型生成的摘要）。原始消息一条都不删，
+  只是不再进入 `list_context()` 的返回值。已经干净时返回 `None`。
+- 摘要正文 `CONTEXT_RESET_SUMMARY` 明确写出"没有待办任务、不要接续早先的工作、不要主动改文件"，
+  因为它会成为模型看到的唯一历史。
+- `ChannelManager._control_notice()` 统一分发 Owner 控制命令，`/reset` 与 `/permissions` 同样
+  只限 Owner 私聊、不进入模型、直接回一条提示。
+
+### 7.2 用法
+
+```
+/reset
+```
+
+回执：`会话上下文已重置：之前的历史不再进入模型，消息记录、Tool 和文件都没有被改动。`
+
+## 8. 遗留项（本次未修）
 
 1. **审批频率**：`~/.miniclaw/config.toml` 里 `tools.mode = "safe"`，`edit_file` /
    `write_file` / `propose_memory` 这些 MEDIUM Tool 每次调用都要一张卡，`run_command`

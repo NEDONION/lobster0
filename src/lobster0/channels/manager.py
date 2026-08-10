@@ -328,7 +328,7 @@ class ChannelManager:
             )
             if activity is not None:
                 await activity.start()
-            permission_notice = self._permission_notice(event)
+            permission_notice = self._control_notice(event, session.id)
             if permission_notice is not None:
                 final_delivery_required = True
                 if activity is not None:
@@ -578,11 +578,44 @@ class ChannelManager:
             return "group"
         return "unknown"
 
-    def _permission_notice(self, event: StoredInboundEvent) -> str | None:
-        """处理不进入模型的权限查询/切换命令，并返回可投递提示。"""
+    def _control_notice(self, event: StoredInboundEvent, session_id: int) -> str | None:
+        """把 Owner 控制命令分发到不进入模型的处理分支。"""
         parts = event.content.split()
-        if not parts or parts[0] != "/permissions":
+        if not parts:
             return None
+        if parts[0] == "/permissions":
+            return self._permission_notice(parts, event)
+        if parts[0] == "/reset":
+            return self._reset_notice(parts, event, session_id)
+        return None
+
+    def _reset_notice(
+        self,
+        parts: list[str],
+        event: StoredInboundEvent,
+        session_id: int,
+    ) -> str:
+        """重置当前会话的模型上下文，让后续消息从干净历史开始。"""
+        if not self._trusted_owner(event):
+            return "只有 Owner 私聊可以重置会话上下文。"
+        if len(parts) != 1:
+            return "用法：/reset"
+        try:
+            compaction = self._messages.reset_context(session_id)
+        except Exception:  # noqa: BLE001 - 控制命令必须收口为稳定提示
+            return "会话上下文重置失败，历史保持不变。"
+        if compaction is None:
+            return "会话上下文已经是干净的，无需重置。"
+        return (
+            "会话上下文已重置：之前的历史不再进入模型，消息记录、Tool 和文件都没有被改动。"
+        )
+
+    def _permission_notice(
+        self,
+        parts: list[str],
+        event: StoredInboundEvent,
+    ) -> str | None:
+        """处理不进入模型的权限查询/切换命令，并返回可投递提示。"""
         if not self._trusted_owner(event):
             return "只有 Owner 私聊可以查看或切换权限模式。"
         if len(parts) == 1:

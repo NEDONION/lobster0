@@ -306,6 +306,56 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.conversation_kinds, ["direct", "group", "direct"])
         self.assertEqual(service.verified_identity_calls, [True, True, False])
 
+    async def test_reset_command_clears_model_context_without_deleting_history(self) -> None:
+        """Owner 私聊 /reset 必须切断脏上下文、保留原始消息，且不进入模型。
+
+        真实事故：审批与 Provider 400 反复中断后，会话历史里留下"我正在改某个文件、
+        还没改完"的痕迹，之后 Owner 随便说一句"你在吗"都会被当成催进度，Agent 直接
+        接着改文件。当时没有任何自助脱离手段，详见
+        docs/engineering/phase-4/20260811_approval-continuation-context-window-400-incident.md。
+        """
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=6, worker_count=1)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_work", "改一下那个文件"))
+            await manager.wait_idle(timeout=2)
+            await manager.receive(self._message("om_reset", "/reset"))
+            await manager.receive(
+                self._message(
+                    "om_group_reset",
+                    "/reset",
+                    chat_id="oc_group_reset",
+                    chat_type="group",
+                )
+            )
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(len(service.calls), 1)
+        session = self.sessions.get_or_create(
+            self.owner.id,
+            "feishu",
+            "default",
+            "oc_chat",
+        )
+        history = self.messages.list_recent(session.id, limit=50)
+        self.assertTrue(any(message.content == "改一下那个文件" for message in history))
+        context = self.messages.list_context(session.id)
+        self.assertEqual([message.role for message in context], ["system"])
+        self.assertIn("已由 Owner 重置", context[0].content)
+        with self.database.connect_read_only() as connection:
+            notices = {
+                row["reply_to_message_id"]: row["content"]
+                for row in connection.execute(
+                    "SELECT reply_to_message_id, content FROM deliveries "
+                    "WHERE reply_to_message_id IN ('om_reset', 'om_group_reset')"
+                )
+            }
+        self.assertIn("已重置", notices["om_reset"])
+        self.assertIn("Owner 私聊", notices["om_group_reset"])
+
     async def test_permissions_command_is_owner_private_only_and_bypasses_agent(self) -> None:
         """Owner 私聊可切换/查询模式；群聊和其他成员不能切换或进入模型。"""
         service = TrackingTurnService(self.sessions, self.messages, self.turns)

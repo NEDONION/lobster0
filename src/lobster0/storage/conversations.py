@@ -1,5 +1,6 @@
 """CLI Session、Message 与 Turn 的参数化 SQLite Repository。"""
 
+import hashlib
 import json
 import re
 import sqlite3
@@ -8,6 +9,15 @@ from datetime import UTC, datetime
 
 from lobster0.providers.base import JsonValue, ModelMessage
 from lobster0.storage.database import Database
+
+
+CONTEXT_RESET_SUMMARY = (
+    "【会话上下文已由 Owner 重置】\n"
+    "这条摘要之前的对话历史已归档，不再作为上下文。当前没有待办任务、没有待续的代码改动、"
+    "也没有待处理的审批。\n"
+    "此摘要之后的每一条消息都按全新请求处理：不要接续任何早先的工作，不要主动修改文件，"
+    "除非用户在新消息里明确提出要求。用户只是打招呼或提问时，直接回答就好。"
+)
 
 
 class ConversationStateError(RuntimeError):
@@ -422,6 +432,42 @@ class MessageRepository:
             raise ConversationDataError("compaction summary message is missing")
         return _provider_safe_context(
             (_message_from_row(summary_row), *(_message_from_row(row) for row in ordered))
+        )
+
+    def reset_context(self, session_id: int) -> StoredCompaction | None:
+        """写入覆盖全部历史的重置摘要，让后续 Turn 从干净上下文重新开始。
+
+        原始消息一条都不删除，只是不再进入发给 Provider 的上下文——:meth:`list_context`
+        只返回最新摘要及其覆盖范围之后的消息。Owner 因此可以自助脱离一个被半完成任务
+        污染的会话（例如审批中断留下"我正在改某个文件"的痕迹，之后随便说一句话都会被
+        当成催进度），不必去动数据库。
+
+        Args:
+            session_id: 要重置上下文的会话 ID。
+
+        Returns:
+            新写入的摘要；已经没有可压缩消息时返回 None。
+
+        Raises:
+            ConversationStateError: 摘要范围不属于当前 Session 或与已有摘要冲突。
+        """
+        previous = self.latest_compaction(session_id)
+        covered_until = 0 if previous is None else previous.last_message_id
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT MIN(id) AS first, MAX(id) AS last FROM messages "
+                "WHERE session_id = ? AND id > ? AND role != 'system'",
+                (session_id, covered_until),
+            ).fetchone()
+        if row["first"] is None:
+            return None
+        return self.save_compaction(
+            session_id,
+            int(row["first"]),
+            int(row["last"]),
+            CONTEXT_RESET_SUMMARY,
+            "reset",
+            hashlib.sha256(CONTEXT_RESET_SUMMARY.encode()).hexdigest(),
         )
 
     def compaction_candidates(self, session_id: int) -> tuple[StoredMessage, ...]:
