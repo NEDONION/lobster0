@@ -6,7 +6,7 @@ from importlib import resources
 
 from lobster0.storage.database import Database
 
-LATEST_SCHEMA_VERSION = 8
+LATEST_SCHEMA_VERSION = 9
 
 _MIGRATION_RESOURCES = {
     1: "schema.sql",
@@ -17,6 +17,7 @@ _MIGRATION_RESOURCES = {
     6: "migrations/0006_artifacts.sql",
     7: "migrations/0007_controlled_evolution.sql",
     8: "migrations/0008_evolution_approvals.sql",
+    9: "migrations/0009_user_upload_artifacts.sql",
 }
 
 

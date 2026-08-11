@@ -1,9 +1,11 @@
 """Browser Artifact 私有存储、MIME、配额与 TTL 回归。"""
 
+import os
 import tempfile
 import unittest
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from lobster0.artifacts.store import ArtifactError, ArtifactStore
 from lobster0.bootstrap import initialize_state
@@ -39,6 +41,110 @@ class ArtifactStoreTest(unittest.TestCase):
         path.write_bytes(content)
         path.chmod(0o600)
         return path
+
+    def external(self, name: str, content: bytes, mode: int = 0o644) -> Path:
+        """在 staging 之外写一个普通用户文件，默认 0644——这正是现实中的权限。"""
+        directory = Path(self.temporary.name) / "outside"
+        directory.mkdir(exist_ok=True)
+        path = directory / name
+        path.write_bytes(content)
+        path.chmod(mode)
+        return path
+
+    def test_external_file_with_group_readable_mode_is_accepted(self) -> None:
+        """用户从「文稿」选的文件通常是 0644，必须能通过。
+
+        现有的 _read_staging 要求 owner-only，对 Worker 自建文件成立，对用户
+        选的文件不成立——这条正是外部读取需要独立实现的原因。
+        """
+        source = self.external("note.txt", b"hello")
+
+        staged = self.store.stage_from_external_path(source, max_bytes=1024)
+
+        self.assertEqual(staged.parent, self.paths.downloads)
+        self.assertEqual(staged.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(staged.read_bytes(), b"hello")
+        # 源文件不能被移动或删除，它是用户自己的文件。
+        self.assertTrue(source.is_file())
+
+    def test_external_staging_feeds_put_as_a_user_upload(self) -> None:
+        """stage → put 全链路，source 为 user_upload。"""
+        source = self.external("shot.png", png(3, 2))
+
+        staged = self.store.stage_from_external_path(source, max_bytes=1024)
+        artifact = self.store.put(
+            staged, declared_media_type="image/png", source="user_upload"
+        )
+
+        self.assertEqual(artifact.media_type, "image/png")
+        self.assertTrue(artifact.path.is_file())
+        self.assertFalse(staged.exists())
+
+    def test_external_symlink_is_refused(self) -> None:
+        """symlink 是最直接的越权读取手段，必须在 open 阶段就拒绝。"""
+        target = self.external("secret.txt", b"secret")
+        link = Path(self.temporary.name) / "outside" / "link.txt"
+        link.symlink_to(target)
+
+        with self.assertRaises(ArtifactError) as raised:
+            self.store.stage_from_external_path(link, max_bytes=1024)
+
+        self.assertEqual(raised.exception.code, "artifact_source_denied")
+
+    def test_external_directory_is_refused(self) -> None:
+        """目录不是普通文件。"""
+        directory = Path(self.temporary.name) / "outside"
+        directory.mkdir(exist_ok=True)
+
+        with self.assertRaises(ArtifactError) as raised:
+            self.store.stage_from_external_path(directory, max_bytes=1024)
+
+        self.assertEqual(raised.exception.code, "artifact_source_denied")
+
+    def test_external_file_over_the_attachment_limit_is_refused(self) -> None:
+        """附件上限比 Store 上限更小，超过即拒绝。"""
+        source = self.external("big.txt", b"x" * 200)
+
+        with self.assertRaises(ArtifactError) as raised:
+            self.store.stage_from_external_path(source, max_bytes=100)
+
+        self.assertEqual(raised.exception.code, "artifact_too_large")
+
+    def test_failed_external_staging_leaves_no_partial_file(self) -> None:
+        """拒绝路径不能在 staging 里留下垃圾，否则会被下一次 put 误当作输入。"""
+        source = self.external("big.txt", b"x" * 200)
+        before = set(self.paths.downloads.iterdir())
+
+        with self.assertRaises(ArtifactError):
+            self.store.stage_from_external_path(source, max_bytes=100)
+
+        self.assertEqual(set(self.paths.downloads.iterdir()), before)
+
+    def test_external_staging_refuses_a_source_rewritten_mid_read(self) -> None:
+        """读取期间源被原地改写时必须拒绝，而不是落一个内容不确定的文件。
+
+        注意这里是**原地改写**而不是 os.replace：替换换不掉已经打开的 fd，
+        re-fstat 真正能发现的是同一 inode 上的改动。
+        """
+        source = self.external("rewrite.txt", b"y" * 300)
+        original_read = os.read
+        rewritten = False
+
+        def read_then_rewrite(descriptor: int, size: int) -> bytes:
+            nonlocal rewritten
+            chunk = original_read(descriptor, size)
+            if chunk and not rewritten:
+                rewritten = True
+                with open(source, "r+b") as stream:
+                    stream.write(b"CHANGED")
+                os.utime(source, (0, 0))
+            return chunk
+
+        with patch("lobster0.artifacts.store.os.read", side_effect=read_then_rewrite):
+            with self.assertRaises(ArtifactError) as raised:
+                self.store.stage_from_external_path(source, max_bytes=1024)
+
+        self.assertEqual(raised.exception.code, "artifact_source_changed")
 
     def test_png_is_content_addressed_private_and_tool_payload_has_no_path(self) -> None:
         """同内容去重；模型只看到 ID/hash/大小，不看到路径或 base64。"""

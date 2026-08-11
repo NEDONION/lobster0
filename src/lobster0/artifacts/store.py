@@ -22,7 +22,7 @@ _MEDIA_EXTENSIONS = {
     "text/plain": ".txt",
     "text/csv": ".csv",
 }
-_SOURCES = frozenset({"browser_screenshot", "browser_download"})
+_SOURCES = frozenset({"browser_screenshot", "browser_download", "user_upload"})
 _MAX_IMAGE_DIMENSION = 16_384
 _MAX_IMAGE_PIXELS = 64_000_000
 
@@ -179,6 +179,77 @@ class ArtifactStore:
         finally:
             if safe_to_consume:
                 candidate.unlink(missing_ok=True)
+
+    def stage_from_external_path(self, source: Path, *, max_bytes: int) -> Path:
+        """把用户选中的外部文件安全拷进 staging，返回可交给 :meth:`put` 的路径。
+
+        :meth:`put` 只接受 staging 目录里的 0600 文件，而用户从「文稿」选的文件
+        通常是 0644——所以这一步不是优化，是功能能否成立的前提。它保留了
+        :meth:`_read_staging` 的全部边界（symlink、普通文件、大小、TOCTOU），
+        唯独不要求 owner-only：外部文件本就不归 Lobster0 管。
+
+        Args:
+            source: 用户在系统 Dialog 中选定的绝对路径。
+            max_bytes: 附件自己的上限，必须不超过 Store 的 ``max_bytes``。
+
+        Returns:
+            staging 目录内的 0600 文件路径。
+
+        Raises:
+            ArtifactError: 源是 symlink/非普通文件/超限/读取期间被替换。
+            OSError: staging 文件无法写入时原样抛出。
+        """
+        if type(max_bytes) is not int or not 1 <= max_bytes <= self._max_bytes:
+            raise ArtifactError("artifact_too_large", "attachment limit is invalid")
+        data = self._read_external(Path(source), max_bytes)
+        self._staging_root.mkdir(mode=0o700, parents=True, exist_ok=True)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=".upload-", dir=self._staging_root
+        )
+        staged = Path(temporary)
+        try:
+            os.fchmod(descriptor, 0o600)
+            with os.fdopen(descriptor, "wb", closefd=True) as stream:
+                stream.write(data)
+                stream.flush()
+                os.fsync(stream.fileno())
+        except BaseException:
+            # 失败必须不留半个 staging 文件，否则下一次 put 会把它当成输入。
+            staged.unlink(missing_ok=True)
+            raise
+        return staged
+
+    def _read_external(self, source: Path, max_bytes: int) -> bytes:
+        """读取用户选中的外部文件，边界与 staging 相同但不要求 owner-only。"""
+        try:
+            descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        except OSError:
+            raise ArtifactError("artifact_source_denied", "artifact source is denied") from None
+        try:
+            before = os.fstat(descriptor)
+            if not stat.S_ISREG(before.st_mode):
+                raise ArtifactError("artifact_source_denied", "artifact source is denied")
+            if before.st_size > max_bytes:
+                raise ArtifactError("artifact_too_large", "artifact is too large")
+            chunks: list[bytes] = []
+            total = 0
+            # 按 max_bytes + 1 读而不信任 st_size：文件可能在 open 与 read 之间变大。
+            while chunk := os.read(descriptor, min(65_536, max_bytes + 1 - total)):
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ArtifactError("artifact_too_large", "artifact is too large")
+            after = os.fstat(descriptor)
+            if (
+                before.st_dev != after.st_dev
+                or before.st_ino != after.st_ino
+                or after.st_size != total
+                or before.st_mtime_ns != after.st_mtime_ns
+            ):
+                raise ArtifactError("artifact_source_changed", "artifact source changed")
+            return b"".join(chunks)
+        finally:
+            os.close(descriptor)
 
     def read_metadata(self, artifact_id: str) -> Artifact:
         """读取 Owner 当前未过期 Artifact，并重新校验本地文件形状。"""
