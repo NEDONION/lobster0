@@ -13,9 +13,9 @@
   --surface: #ffffff;
   --ink: #121722;
   --terminal: #171b24;
-  --muted: #647087;
+  --muted: #5f6b81;
   --line: #dce3ee;
-  --signal: #4267f5;
+  --signal: #3a5ee8;
   --safe: #2caf88;
   --warn: #e4a93d;
   --coral: #f16c56;
@@ -729,7 +729,7 @@ pre {
 }
 
 .hash-tabs__list button span {
-  color: #98a1b2;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.62rem;
 }
@@ -925,7 +925,7 @@ pre {
 }
 
 .runtime-map__index {
-  color: #9aa3b2;
+  color: var(--muted);
   font-family: var(--font-mono);
   font-size: 0.64rem;
 }
@@ -954,7 +954,7 @@ pre {
 .runtime-map > li[data-state='allowed'] .runtime-map__state,
 .runtime-map > li[data-state='succeeded'] .runtime-map__state {
   background: rgb(44 175 136 / 13%);
-  color: #1d8967;
+  color: #1a7d5f;
 }
 
 .runtime-map > li[data-state='waiting'] .runtime-map__state {
@@ -1220,7 +1220,7 @@ pre {
 }
 
 .chat-card--done .chat-card__label {
-  color: #1d8967;
+  color: #1a7d5f;
 }
 
 .chat-card code {
@@ -1261,7 +1261,7 @@ pre {
   gap: 5px 12px;
   font-family: var(--font-mono);
   font-size: 0.66rem;
-  color: #1d8967;
+  color: #1a7d5f;
 }
 
 .memory-scene {
@@ -1694,7 +1694,7 @@ pre {
 .flow-diagram__nodes > li[data-state='done'] .flow-diagram__icon {
   border-color: color-mix(in srgb, var(--safe) 55%, transparent);
   background: color-mix(in srgb, var(--safe) 13%, var(--surface));
-  color: #1d8967;
+  color: #1a7d5f;
 }
 
 @keyframes flowPulse {
@@ -1843,7 +1843,7 @@ pre {
 }
 
 .multi-channel-map__surfaces dd {
-  color: #1d8967;
+  color: #1a7d5f;
 }
 
 .quick-start-close {

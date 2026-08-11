@@ -70,7 +70,9 @@ export function CommandCopy({ command, label, copiedLabel, title }: CommandCopyP
           <span aria-live="polite">{copied ? copiedLabel : label}</span>
         </button>
       </div>
-      <pre tabIndex={0}>
+      {/* No tabIndex: the block is laid out to never scroll at any width, so a
+          focus stop here would just be an extra Tab press that does nothing. */}
+      <pre>
         <code>{command}</code>
       </pre>
     </div>
