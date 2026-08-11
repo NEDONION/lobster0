@@ -72,7 +72,12 @@ from lobster0.gateway_service import (
 )
 from lobster0.install.orchestrator import resolve_install_facts, run_install_action
 from lobster0.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
-from lobster0.setup import SetupError, run_interactive_setup
+from lobster0.setup import (
+    SetupError,
+    describe_secrets,
+    run_interactive_setup,
+    set_secret_interactively,
+)
 from lobster0.storage.database import Database, DatabaseError
 from lobster0.storage.migrations import (
     LATEST_SCHEMA_VERSION,
@@ -126,6 +131,25 @@ def build_parser() -> argparse.ArgumentParser:
         dest="command_home",
         help="absolute Lobster0 state directory",
     )
+    secret_parser = subparsers.add_parser(
+        "secret",
+        help="update or inspect the Secret file of an already-configured install",
+    )
+    secret_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute Lobster0 state directory",
+    )
+    secret_subparsers = secret_parser.add_subparsers(dest="secret_command", required=True)
+    secret_subparsers.add_parser(
+        "list",
+        help="list Secret names and whether each one is set; values are never printed",
+    )
+    secret_set = secret_subparsers.add_parser(
+        "set",
+        help="replace one Secret in place; the value is read from the terminal only",
+    )
+    secret_set.add_argument("name", help="exact Secret environment variable name")
     gateway_parser = subparsers.add_parser(
         "gateway",
         help="run all enabled IM channels with one long-lived Agent runtime",
@@ -406,6 +430,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.command == "setup":
         return _run_setup(paths, arguments.sandbox_image)
 
+    if arguments.command == "secret":
+        return _run_secret(paths, arguments)
+
     if arguments.command == "task":
         return _run_task(paths, arguments)
 
@@ -532,6 +559,47 @@ def _run_setup(paths: StatePaths, sandbox_image: str | None) -> int:
         return 130
     print(f"Configured Lobster0 at {paths.home} (owner {result.owner.id}).")
     return 0
+
+
+def _run_secret(paths: StatePaths, arguments: argparse.Namespace) -> int:
+    """更新或查看已配置实例的 Secret，不销毁任何既有状态。
+
+    `setup` 是 fresh-only 的，这条路径专门服务"已经在用、只想换一个 Key"的实例：
+    只改 ``secrets.env`` 里目标变量那一行，记忆、会话历史、自动化任务和数据库全部不动。
+    值只从 ``/dev/tty`` 隐藏读取，因此不会进入 argv、``ps`` 或 shell 历史；任何输出都
+    只含变量名。
+
+    Args:
+        paths: 已解析的 Lobster0 状态路径。
+        arguments: argparse 生成且只含子命令与变量名的参数。
+
+    Returns:
+        成功为 0、输入或配置错误为 2、持久化错误为 5、取消为 130。
+    """
+    if paths.home.is_symlink() or not paths.home.is_dir():
+        print("error: Lobster0 state is not initialized", file=sys.stderr)
+        return 2
+    try:
+        if arguments.secret_command == "list":
+            for item in describe_secrets(paths):
+                print(f"[{'SET' if item.configured else 'UNSET'}] {item.name}")
+            return 0
+        if arguments.secret_command == "set":
+            set_secret_interactively(paths, arguments.name)
+            print(f"Updated {arguments.name} in {paths.secrets_file}.")
+            print("Run `lobster0 doctor` to confirm, then restart the Gateway.")
+            return 0
+        raise ValueError("unsupported secret command")
+    except (ConfigError, DotEnvError, SetupError, ValueError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
+    except OSError as error:
+        # OSError 的消息只含 errno 与文件路径，不含被写入的值。
+        print(f"error: {error}", file=sys.stderr)
+        return 5
+    except KeyboardInterrupt:
+        print("Cancelled.", file=sys.stderr)
+        return 130
 
 
 def _run_task(paths: StatePaths, arguments: argparse.Namespace) -> int:

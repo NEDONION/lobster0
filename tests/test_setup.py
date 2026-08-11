@@ -17,13 +17,16 @@ from types import TracebackType
 from unittest import mock
 
 from lobster0 import setup as setup_module
-from lobster0.config import load_config
+from lobster0.config import ProviderConfig, load_config, update_providers
 from lobster0.env import load_dotenv
 from lobster0.paths import StatePaths, build_state_paths
 from lobster0.setup import (
     SetupAnswers,
     SetupError,
+    describe_secrets,
+    known_secret_names,
     run_interactive_setup,
+    set_secret_interactively,
     update_secret,
     validate_secret_value,
     write_fresh_setup,
@@ -88,6 +91,14 @@ class _FakeTty:
 
     def flush(self) -> None:
         """匹配真实 TTY 的 flush 接口。"""
+
+
+class _TerminalStdin(io.StringIO):
+    """isatty 恒为真的 stdin 替身；本身不提供任何 Secret 输入。"""
+
+    def isatty(self) -> bool:
+        """声明当前进程连着交互终端。"""
+        return True
 
 
 class SetupTest(unittest.TestCase):
@@ -850,3 +861,185 @@ class UpdateSecretTest(unittest.TestCase):
         ]
         for item in leftovers:
             self.assertNotIn(sentinel, item.read_text(encoding="utf-8", errors="replace"))
+
+
+class SecretMaintenanceTest(unittest.TestCase):
+    """已配置实例更新单个 Secret：只改一行、绝不回显、非 TTY 时 fail closed。"""
+
+    def setUp(self) -> None:
+        """准备一个已经写好 config 与 secrets 的存量实例。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.paths = build_state_paths(Path(self.temporary_directory.name) / "state")
+        self.paths.home.mkdir(mode=0o700, parents=True)
+
+    def _write_secrets(self, text: str) -> None:
+        """预置一个 owner-only 的 secrets 文件。"""
+        self.paths.secrets_file.write_text(text, encoding="utf-8")
+        self.paths.secrets_file.chmod(0o600)
+
+    def _write_config(self, text: str) -> None:
+        """预置一个 owner-only 的配置文件。"""
+        self.paths.config.write_text(text, encoding="utf-8")
+        self.paths.config.chmod(0o600)
+
+    def _set_secret(self, name: str, values: list[str]) -> _FakeTty:
+        """在受控终端上执行一次 secret 写入，返回记录了回显的 TTY。"""
+        tty = _FakeTty([])
+        with (
+            mock.patch("sys.stdin", new=_TerminalStdin()),
+            mock.patch("lobster0.setup._open_tty", return_value=tty),
+            mock.patch("lobster0.setup.getpass.getpass", side_effect=values),
+        ):
+            set_secret_interactively(self.paths, name)
+        return tty
+
+    def test_known_names_cover_the_model_and_every_channel_baseline(self) -> None:
+        """允许写入的名单必须覆盖模型与三个平台的固定变量名。"""
+        names = known_secret_names(self.paths)
+
+        self.assertEqual(
+            names[:5],
+            (
+                "LOBSTER0_MODEL_API_KEY",
+                "LOBSTER0_FEISHU_APP_ID",
+                "LOBSTER0_FEISHU_APP_SECRET",
+                "LOBSTER0_TELEGRAM_BOT_TOKEN",
+                "LOBSTER0_DISCORD_BOT_TOKEN",
+            ),
+        )
+
+    def test_known_names_include_env_vars_the_local_config_actually_reads(self) -> None:
+        """配置里声明的 Provider Key 变量名也必须可写，否则多 Provider 用户改不了。"""
+        write_fresh_setup(
+            self.paths,
+            SetupAnswers.defaults(),
+            {"LOBSTER0_MODEL_API_KEY": "model"},
+            sandbox_image=PINNED_IMAGE,
+        )
+        update_providers(
+            self.paths,
+            providers=(
+                ProviderConfig(id="default"),
+                ProviderConfig(
+                    id="openrouter",
+                    base_url="https://openrouter.ai/api/v1",
+                    api_key_env="LOBSTER0_PROVIDER_OPENROUTER_KEY",
+                ),
+            ),
+            selected="default",
+            model=load_config(self.paths, {}).agent.model,
+        )
+
+        self.assertIn("LOBSTER0_PROVIDER_OPENROUTER_KEY", known_secret_names(self.paths))
+
+    def test_rejects_unknown_names_without_touching_the_file(self) -> None:
+        """打错的变量名必须被拒绝，不能静默写进一个没人读的变量。"""
+        original = "LOBSTER0_MODEL_API_KEY=keep-me\n"
+        self._write_secrets(original)
+
+        for name in ("LOBSTER0_MODEL_API_KEYY", "LOBSTER0_UNKNOWN", "PATH", ""):
+            with self.subTest(name=name), self.assertRaises(SetupError):
+                self._set_secret(name, ["never-read", "never-read"])
+
+        self.assertEqual(self.paths.secrets_file.read_text(encoding="utf-8"), original)
+
+    def test_fails_closed_when_stdin_is_not_a_terminal(self) -> None:
+        """stdin 是管道时必须报错退出，绝不从管道静默读取 Secret。"""
+        original = "LOBSTER0_MODEL_API_KEY=keep-me\n"
+        self._write_secrets(original)
+
+        with (
+            mock.patch("sys.stdin", new=io.StringIO("piped-secret\npiped-secret\n")),
+            mock.patch("lobster0.setup._open_tty") as open_tty,
+            mock.patch("lobster0.setup.getpass.getpass") as hidden,
+            self.assertRaisesRegex(SetupError, "interactive terminal"),
+        ):
+            set_secret_interactively(self.paths, "LOBSTER0_MODEL_API_KEY")
+
+        self.assertEqual(open_tty.call_count, 0)
+        self.assertEqual(hidden.call_count, 0)
+        self.assertEqual(self.paths.secrets_file.read_text(encoding="utf-8"), original)
+
+    def test_updates_one_variable_and_keeps_every_other_byte(self) -> None:
+        """只有目标那一行变化，注释、空行与其他变量逐字节保持原样。"""
+        self._write_secrets(
+            "# model provider\n"
+            "LOBSTER0_MODEL_API_KEY=old-model\n"
+            "\n"
+            "LOBSTER0_FEISHU_APP_ID=cli_app\n"
+            "LOBSTER0_FEISHU_APP_SECRET=feishu-secret\n"
+        )
+
+        self._set_secret("LOBSTER0_MODEL_API_KEY", ["new-model", "new-model"])
+
+        self.assertEqual(
+            self.paths.secrets_file.read_text(encoding="utf-8"),
+            "# model provider\n"
+            "LOBSTER0_MODEL_API_KEY=new-model\n"
+            "\n"
+            "LOBSTER0_FEISHU_APP_ID=cli_app\n"
+            "LOBSTER0_FEISHU_APP_SECRET=feishu-secret\n",
+        )
+        self.assertEqual(stat.S_IMODE(self.paths.secrets_file.stat().st_mode), 0o600)
+
+    def test_reads_the_value_through_getpass_and_never_echoes_it(self) -> None:
+        """值只能经 getpass 隐藏读取，终端回显里不得出现它。"""
+        self._write_secrets("LOBSTER0_MODEL_API_KEY=old\n")
+        sentinel = "sentinel-rotated-key"
+        tty = _FakeTty([])
+
+        with (
+            mock.patch("sys.stdin", new=_TerminalStdin()),
+            mock.patch("lobster0.setup._open_tty", return_value=tty),
+            mock.patch(
+                "lobster0.setup.getpass.getpass", side_effect=[sentinel, sentinel]
+            ) as hidden,
+        ):
+            set_secret_interactively(self.paths, "LOBSTER0_MODEL_API_KEY")
+
+        self.assertEqual(hidden.call_count, 2)
+        for call in hidden.call_args_list:
+            self.assertIs(call.kwargs["stream"], tty)
+            self.assertNotIn(sentinel, call.args[0])
+        self.assertNotIn(sentinel, tty.output.getvalue())
+        self.assertIn(sentinel, self.paths.secrets_file.read_text(encoding="utf-8"))
+
+    def test_rejects_a_mistyped_confirmation_without_touching_the_file(self) -> None:
+        """两次输入不一致时必须放弃写入，避免把打错的值落盘。"""
+        original = "LOBSTER0_MODEL_API_KEY=keep-me\n"
+        self._write_secrets(original)
+
+        with self.assertRaises(SetupError):
+            self._set_secret("LOBSTER0_MODEL_API_KEY", ["typed-one", "typed-two"])
+
+        self.assertEqual(self.paths.secrets_file.read_text(encoding="utf-8"), original)
+
+    def test_describe_reports_names_and_state_but_never_values(self) -> None:
+        """列表只回答"哪些变量已设置且非空"，不携带任何值。"""
+        self._write_secrets(
+            "LOBSTER0_MODEL_API_KEY=sentinel-listed-value\n"
+            "LOBSTER0_FEISHU_APP_ID=\n"
+            "LOBSTER0_MODEL_API_KEYY=sentinel-typo-value\n"
+        )
+
+        described = describe_secrets(self.paths)
+
+        state = {item.name: item.configured for item in described}
+        self.assertTrue(state["LOBSTER0_MODEL_API_KEY"])
+        self.assertFalse(state["LOBSTER0_FEISHU_APP_ID"])
+        self.assertFalse(state["LOBSTER0_TELEGRAM_BOT_TOKEN"])
+        # 手工编辑留下的错别字也要列出来，否则用户永远发现不了它。
+        self.assertTrue(state["LOBSTER0_MODEL_API_KEYY"])
+        rendered = repr(described)
+        self.assertNotIn("sentinel-listed-value", rendered)
+        self.assertNotIn("sentinel-typo-value", rendered)
+
+    def test_describe_reports_every_known_name_when_no_file_exists(self) -> None:
+        """尚未写过 Secret 的实例也要能看清哪些变量还没配。"""
+        described = describe_secrets(self.paths)
+
+        self.assertEqual(
+            tuple(item.name for item in described), known_secret_names(self.paths)
+        )
+        self.assertFalse(any(item.configured for item in described))

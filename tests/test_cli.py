@@ -4,6 +4,8 @@ import argparse
 import contextlib
 import io
 import json
+import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -678,6 +680,175 @@ class CliTest(unittest.TestCase):
             exit_code, _, _ = run_cli(["web", "--home", directory])
 
         self.assertEqual(exit_code, 0)
+
+
+class _TerminalStdin(io.StringIO):
+    """isatty 恒为真的 stdin 替身；本身不提供任何 Secret 输入。"""
+
+    def isatty(self) -> bool:
+        """声明当前进程连着交互终端。"""
+        return True
+
+
+class _RecordingTty:
+    """记录全部终端回显的最小双工 TTY fake。"""
+
+    def __init__(self) -> None:
+        """准备一个空的回显缓冲。"""
+        self.output = io.StringIO()
+
+    def __enter__(self) -> "_RecordingTty":
+        """把 fake 作为 context manager 返回。"""
+        return self
+
+    def __exit__(self, *arguments: object) -> None:
+        """保持缓冲可读，不吞掉异常。"""
+
+    def write(self, value: str) -> int:
+        """记录不含 Secret 的提示文本。"""
+        return self.output.write(value)
+
+    def flush(self) -> None:
+        """匹配真实 TTY 的 flush 接口。"""
+
+
+class SecretCommandTest(unittest.TestCase):
+    """`lobster0 secret` 必须能在不销毁状态的前提下更新存量实例的密钥。"""
+
+    def setUp(self) -> None:
+        """准备一个已经配置好、带真实状态的存量实例。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.home = Path(self.temporary_directory.name) / "state"
+        self.paths = build_state_paths(self.home)
+        write_fresh_setup(
+            self.paths,
+            SetupAnswers(True, "ou_owner", False, None, False, None),
+            {
+                "LOBSTER0_MODEL_API_KEY": "old-model-key",
+                "LOBSTER0_FEISHU_APP_ID": "cli_app",
+                "LOBSTER0_FEISHU_APP_SECRET": "old-app-secret",
+            },
+            sandbox_image="ghcr.io/nedonion/lobster0-sandbox@sha256:" + "a" * 64,
+        )
+
+    def _run_secret_set(self, name: str, values: list[str]) -> tuple[int, str, str]:
+        """在受控终端上执行一次 `secret set`。"""
+        with (
+            mock.patch("sys.stdin", new=_TerminalStdin()),
+            mock.patch("lobster0.setup._open_tty", return_value=_RecordingTty()),
+            mock.patch("lobster0.setup.getpass.getpass", side_effect=values),
+        ):
+            return run_cli(["secret", "--home", str(self.home), "set", name])
+
+    def test_updates_a_configured_install_without_destroying_state(self) -> None:
+        """存量实例改一个密钥，不需要 rm -rf，其余状态与其他密钥全部保留。"""
+        config_before = self.paths.config.read_bytes()
+        database_before = self.paths.database.read_bytes()
+
+        exit_code, output, error = self._run_secret_set(
+            "LOBSTER0_FEISHU_APP_SECRET", ["rotated-app-secret", "rotated-app-secret"]
+        )
+
+        self.assertEqual((exit_code, error), (0, ""))
+        self.assertIn("LOBSTER0_FEISHU_APP_SECRET", output)
+        self.assertNotIn("rotated-app-secret", output)
+        self.assertEqual(
+            self.paths.secrets_file.read_text(encoding="utf-8"),
+            "LOBSTER0_MODEL_API_KEY=old-model-key\n"
+            "LOBSTER0_FEISHU_APP_ID=cli_app\n"
+            "LOBSTER0_FEISHU_APP_SECRET=rotated-app-secret\n",
+        )
+        self.assertEqual(stat.S_IMODE(self.paths.secrets_file.stat().st_mode), 0o600)
+        self.assertEqual(self.paths.config.read_bytes(), config_before)
+        self.assertEqual(self.paths.database.read_bytes(), database_before)
+
+    def test_rejects_an_unknown_name_with_a_configuration_exit_code(self) -> None:
+        """打错的变量名必须以退出码 2 拒绝，并提示合法名单。"""
+        original = self.paths.secrets_file.read_text(encoding="utf-8")
+
+        exit_code, output, error = self._run_secret_set(
+            "LOBSTER0_FEISHU_APP_SECRETT", ["never-read", "never-read"]
+        )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("LOBSTER0_FEISHU_APP_SECRET", error)
+        self.assertEqual(output, "")
+        self.assertEqual(self.paths.secrets_file.read_text(encoding="utf-8"), original)
+
+    def test_fails_closed_when_stdin_is_not_a_terminal(self) -> None:
+        """stdin 是管道时以退出码 2 失败，绝不从管道读取 Secret。"""
+        original = self.paths.secrets_file.read_text(encoding="utf-8")
+
+        with (
+            mock.patch("sys.stdin", new=io.StringIO("piped-secret\npiped-secret\n")),
+            mock.patch("lobster0.setup.getpass.getpass") as hidden,
+        ):
+            exit_code, output, error = run_cli(
+                ["secret", "--home", str(self.home), "set", "LOBSTER0_MODEL_API_KEY"]
+            )
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("interactive terminal", error)
+        self.assertEqual((output, hidden.call_count), ("", 0))
+        self.assertEqual(self.paths.secrets_file.read_text(encoding="utf-8"), original)
+
+    def test_list_reports_names_and_state_without_any_value(self) -> None:
+        """列表只回答哪些变量已设置，不得输出任何值。"""
+        exit_code, output, error = run_cli(["secret", "--home", str(self.home), "list"])
+
+        self.assertEqual((exit_code, error), (0, ""))
+        self.assertIn("[SET] LOBSTER0_MODEL_API_KEY", output)
+        self.assertIn("[SET] LOBSTER0_FEISHU_APP_SECRET", output)
+        self.assertIn("[UNSET] LOBSTER0_TELEGRAM_BOT_TOKEN", output)
+        self.assertNotIn("old-model-key", output)
+        self.assertNotIn("old-app-secret", output)
+        self.assertNotIn("cli_app", output)
+
+    def test_secret_command_exposes_no_value_bearing_option(self) -> None:
+        """`secret` 族只接受变量名，任何承载值的 flag 都不得存在。"""
+        parser = build_parser()
+        commands = next(
+            action.choices
+            for action in parser._actions
+            if hasattr(action, "choices") and isinstance(action.choices, dict)
+        )
+        self.assertIn("secret", commands)
+        secret_actions = next(
+            action.choices
+            for action in commands["secret"]._actions
+            if hasattr(action, "choices") and isinstance(action.choices, dict)
+        )
+        options = {
+            option
+            for parsers in (commands["secret"], *secret_actions.values())
+            for action in parsers._actions
+            for option in action.option_strings
+        }
+        self.assertEqual(options, {"-h", "--help", "--home"})
+
+    def test_doctor_reflects_a_secret_updated_through_the_command(self) -> None:
+        """更新后的密钥必须被 doctor 读到：由 FAIL 变 PASS，且不回显值。"""
+        self.paths.secrets_file.write_text(
+            "LOBSTER0_MODEL_API_KEY=old-model-key\nLOBSTER0_FEISHU_APP_ID=cli_app\n",
+            encoding="utf-8",
+        )
+        self.paths.secrets_file.chmod(0o600)
+        secret = "doctor-visible-rotated-secret"
+        environment = {"PATH": os.environ.get("PATH", "")}
+
+        with (
+            mock.patch.dict("lobster0.cli.os.environ", environment, clear=True),
+            mock.patch("lobster0.doctor.importlib.util.find_spec", return_value=object()),
+        ):
+            _, before, _ = run_cli(["doctor", "--home", str(self.home)])
+            self._run_secret_set("LOBSTER0_FEISHU_APP_SECRET", [secret, secret])
+            _, after, _ = run_cli(["doctor", "--home", str(self.home)])
+
+        self.assertIn("[FAIL] feishu_runtime", before)
+        self.assertIn("LOBSTER0_FEISHU_APP_SECRET", before)
+        self.assertIn("[PASS] feishu_runtime", after)
+        self.assertNotIn(secret, before + after)
 
 
 if __name__ == "__main__":
