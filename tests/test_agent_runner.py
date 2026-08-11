@@ -17,6 +17,7 @@ from lobster0.agent.runner import (
     AgentRunner,
     AgentRunStatus,
     EmptyModelResponseError,
+    looks_like_unparsed_tool_call,
 )
 from lobster0.bootstrap import initialize_state
 from lobster0.paths import build_state_paths
@@ -950,3 +951,37 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UnparsedToolCallTextTest(unittest.TestCase):
+    """模型把工具调用标记原样吐进正文时，必须判定为失败而不是正常回复。"""
+
+    def test_detects_deepseek_dsml_tool_call_markup(self) -> None:
+        """真实事故文本：DeepSeek 的 U+FF5C 全角竖线标记泄漏进 content。"""
+        leaked = (
+            "<\uff5c\uff5cDSML\uff5c\uff5ctool_calls>\n"
+            '<\uff5c\uff5cDSML\uff5c\uff5cinvoke name="run_command">\n'
+            '<\uff5c\uff5cDSML\uff5c\uff5cparameter name="program" string="true">python3'
+            "</\uff5c\uff5cDSML\uff5c\uff5cparameter>\n"
+            "</\uff5c\uff5cDSML\uff5c\uff5cinvoke>\n"
+            "</\uff5c\uff5cDSML\uff5c\uff5ctool_calls>"
+        )
+        self.assertTrue(looks_like_unparsed_tool_call(leaked))
+
+    def test_detects_plain_ascii_variant(self) -> None:
+        """半角写法同样要拦住，不能只匹配全角。"""
+        self.assertTrue(
+            looks_like_unparsed_tool_call('<|tool_calls|><|invoke name="read_file">')
+        )
+
+    def test_allows_ordinary_answers_that_merely_mention_tools(self) -> None:
+        """正常回答里提到工具名、甚至贴出代码，都不应被误判。"""
+        for text in (
+            "我用 run_command 跑了一下，结果是 3 个文档。",
+            "可以这样调用：`tool_calls` 字段会带回结果。",
+            "```python\nprint('invoke name')\n```",
+            "文档里写了 <invoke> 这个 XML 标签的用法。",
+            "",
+        ):
+            with self.subTest(text=text[:30]):
+                self.assertFalse(looks_like_unparsed_tool_call(text))

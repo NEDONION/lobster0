@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -35,12 +36,41 @@ if TYPE_CHECKING:
 _MAX_AUTOMATION_OUTPUT_BYTES = 256 * 1024
 
 
+# 模型偶尔会把工具调用的内部标记原样写进正文，而不是编码成结构化的
+# ``tool_calls`` 字段。已实测到的一种是 DeepSeek 的 ``<｜｜DSML｜｜tool_calls>``
+# （竖线是 U+FF5C 全角）；半角 ``<|tool_calls|>`` 是同族写法。此时既没有可执行的
+# 工具调用，正文也不是给人看的答案——继续把它当最终回复保存，用户只会看到一串乱码。
+_UNPARSED_TOOL_CALL_MARKUP = re.compile(
+    r"<\s*/?\s*[|｜]{1,2}\s*(?:DSML\s*[|｜]{1,2}\s*)?(?:tool_calls|invoke)\b",
+    re.IGNORECASE,
+)
+
+
+def looks_like_unparsed_tool_call(content: str) -> bool:
+    """判断正文是否是未被解析的工具调用标记。
+
+    只匹配"尖括号 + 竖线"这种模型专用标记，普通文本里提到 ``tool_calls``、
+    甚至贴出 ``<invoke>`` XML 标签都不会命中。
+
+    Args:
+        content: 模型返回的最终正文。
+
+    Returns:
+        正文疑似工具调用标记时返回真。
+    """
+    return bool(_UNPARSED_TOOL_CALL_MARKUP.search(content))
+
+
 class AgentError(RuntimeError):
     """表示 Provider 之外的稳定 Agent Loop 失败。"""
 
 
 class EmptyModelResponseError(AgentError):
     """表示模型没有 Tool Call，也没有可保存的最终文本。"""
+
+
+class UnparsedToolCallError(AgentError):
+    """表示模型把工具调用标记写进了正文，没有产生可执行的工具调用。"""
 
 
 class AgentLoopLimitError(AgentError):
@@ -445,6 +475,10 @@ class AgentRunner:
             if not response.tool_calls:
                 if not response.content.strip():
                     raise EmptyModelResponseError("model returned an empty final response")
+                if looks_like_unparsed_tool_call(response.content):
+                    raise UnparsedToolCallError(
+                        "model emitted tool-call markup as text instead of a tool call"
+                    )
                 if on_text is not None:
                     for chunk in round_chunks:
                         await on_text(chunk)

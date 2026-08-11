@@ -204,4 +204,5 @@ Core。当前为 `TARGET CONFIRMED / D1-D5 IMPLEMENTATION PENDING`。
 
 | 文档 | 修复内容 | 状态 |
 | --- | --- | --- |
+| [未解析工具调用标记泄漏为正文](phase-4/20260811_未解析工具调用标记泄漏为正文.md) | DeepSeek 把工具调用标记原样写进正文，导致空转 32 轮、烧 100 万 token 后输出乱码；改为识别并快速失败，同时上调轮次上限。 | `IMPLEMENTED`（2026-08-11） |
 | [交互式 setup 补齐 Owner ID 获取指引](20260811_交互式setup补齐OwnerID获取指引.md) | 首次配置向导问飞书 open_id / Telegram / Discord user ID 却不说去哪找，用户卡在第一步；三处提问前补获取指引。 | `IMPLEMENTED`（2026-08-11） |

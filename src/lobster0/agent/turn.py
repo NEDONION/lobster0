@@ -22,6 +22,7 @@ from lobster0.agent.runner import (
     AgentRunResult,
     AgentRunStatus,
     EmptyModelResponseError,
+    UnparsedToolCallError,
 )
 from lobster0.automation.models import TaskResponse
 from lobster0.config import WorkspaceConfig
@@ -1126,6 +1127,7 @@ def _error_code(
         (ProviderProtocolError, "provider_protocol"),
         (ProviderServerError, "provider_server"),
         (EmptyModelResponseError, "empty_response"),
+        (UnparsedToolCallError, "unparsed_tool_call"),
         (AgentNoProgressError, "loop_no_progress"),
         (AgentLoopLimitError, "loop_limit"),
         (ConversationDataError, "conversation_data"),
