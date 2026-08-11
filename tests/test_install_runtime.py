@@ -328,22 +328,44 @@ class InstallRuntimeTests(unittest.TestCase):
 
     @staticmethod
     def _prune_dangling_symlinks(root: Path) -> None:
-        """反复删除悬空 symlink，直到 tree 里只剩指向自身内部的有效 alias。
+        """反复删除 installer 不会接受的 symlink，直到只剩合法的内部 alias。
 
-        丢弃 casefold 重复项会顺带带走某些 terminfo alias 的目标，剩下的 symlink
-        就成了悬空链接，而 installer 只接受 non-dangling 的 root 内相对 alias。
-        循环是为了处理 alias 链：一次删除可能让下一层也变成悬空。
+        判定标准直接对齐 ``_safe_internal_symlink`` 的产品规则：target 必须是
+        相对路径、不悬空、且解析后仍落在 root 内。三类会被丢弃：
+
+        - 悬空链接：丢弃 casefold 重复项会顺带带走某些 terminfo alias 的目标；
+        - 绝对链接：宿主 CPython（尤其 GitHub runner 的 hostedtoolcache）常带
+          指向 tree 之外真实文件的绝对 symlink，它们不悬空，躲得过纯 dangling
+          检查；
+        - 逃逸链接：形如 ``../../usr/lib/x`` 的相对链接同样会解析到 root 之外。
+
+        按产品规则筛而不是逐条枚举已知形态，fixture 才不会随宿主布局变化再次
+        失效。循环是为了处理 alias 链：一次删除可能让下一层也变成悬空。
         """
+        resolved_root = root.resolve(strict=True)
+
+        def unacceptable(item: Path) -> bool:
+            """复刻 _safe_internal_symlink 的接受条件。"""
+            if not item.is_symlink():
+                return False
+            target = os.readlink(item)
+            if os.path.isabs(target):
+                return True
+            try:
+                return not item.resolve(strict=True).is_relative_to(resolved_root)
+            except (OSError, RuntimeError):
+                return True
+
         while True:
-            dangling = [
+            rejected = [
                 Path(current) / name
                 for current, directories, files in os.walk(root)
                 for name in (*directories, *files)
-                if (Path(current) / name).is_symlink() and not (Path(current) / name).exists()
+                if unacceptable(Path(current) / name)
             ]
-            if not dangling:
+            if not rejected:
                 return
-            for item in dangling:
+            for item in rejected:
                 item.unlink()
 
     @staticmethod
