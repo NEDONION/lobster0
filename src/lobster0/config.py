@@ -42,6 +42,7 @@ _TOP_LEVEL_KEYS = frozenset(
     {
         "agent",
         "provider",
+        "providers",
         "workspace",
         "permissions",
         "tools",
@@ -57,6 +58,7 @@ _TOP_LEVEL_KEYS = frozenset(
 _AGENT_KEYS = frozenset(
     {
         "model",
+        "provider",
         "max_tool_iterations",
         "max_tool_iterations_hard",
         "max_no_progress_iterations",
@@ -65,6 +67,9 @@ _AGENT_KEYS = frozenset(
     }
 )
 _PROVIDER_KEYS = frozenset({"base_url", "api_key_env", "timeout_seconds"})
+_PROVIDER_ENTRY_KEYS = frozenset({"id", "base_url", "api_key_env", "timeout_seconds"})
+# Provider id 参与密钥环境变量名的推导，必须限定为安全字符集。
+_PROVIDER_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
 _WORKSPACE_KEYS = frozenset({"path", "read_only_roots"})
 _PERMISSION_KEYS = frozenset(
     {
@@ -202,6 +207,8 @@ class AgentConfig:
     """保存 Agent 运行预算与模型名称。"""
 
     model: str = "provider/model"
+    # 当前生效 Provider 的 id。旧配置没有这个字段，加载时补成实际生效的那条。
+    provider: str = "default"
     max_tool_iterations: int = 32
     max_tool_iterations_hard: int = 64
     max_no_progress_iterations: int = 3
@@ -211,8 +218,14 @@ class AgentConfig:
 
 @dataclass(frozen=True, slots=True)
 class ProviderConfig:
-    """保存模型端点和密钥环境变量名，不保存密钥值。"""
+    """保存模型端点和密钥环境变量名，不保存密钥值。
 
+    ``id`` 在多 Provider 并存时用于互相区分，并参与密钥环境变量名的推导，
+    因此限定为小写字母、数字、下划线与连字符。旧的单表配置在加载时被映射成
+    id 为 ``default`` 的一条，磁盘文件不做改写。
+    """
+
+    id: str = "default"
     base_url: str = "https://api.openai.com/v1"
     api_key_env: str = "LOBSTER0_MODEL_API_KEY"
     timeout_seconds: int = 120
@@ -424,8 +437,12 @@ class AppConfig:
     """汇总 Phase 0 已实现的强类型配置。"""
 
     agent: AgentConfig
+    # 当前生效的 Provider，始终等于 providers 中 agent.provider 指向的那条。
+    # 运行时代码继续读这个字段即可，无需感知多 Provider。
     provider: ProviderConfig
     workspace: WorkspaceConfig
+    # 全部已配置 Provider，按文件顺序；旧单表配置会得到长度为 1 的列表。
+    providers: tuple[ProviderConfig, ...] = ()
     permissions: PermissionConfig = PermissionConfig()
     tools: ToolConfig = ToolConfig()
     ui: UIConfig = UIConfig()
@@ -525,16 +542,12 @@ def load_config(
     tool_result_max_chars = _positive_integer(
         agent_raw.get("tool_result_max_chars", 20_000), "agent.tool_result_max_chars"
     )
-    base_url = _provider_url(
-        provider_raw.get("base_url", "https://api.openai.com/v1"), "provider.base_url"
-    )
-    api_key_env = _environment_variable_name(
-        provider_raw.get("api_key_env", "LOBSTER0_MODEL_API_KEY"),
-        "provider.api_key_env",
-    )
-    timeout_seconds = _positive_integer(
-        provider_raw.get("timeout_seconds", 120), "provider.timeout_seconds"
-    )
+    providers = _providers(raw, provider_raw)
+    selected_id = _selected_provider_id(agent_raw, providers)
+    selected = next(item for item in providers if item.id == selected_id)
+    base_url = selected.base_url
+    api_key_env = selected.api_key_env
+    timeout_seconds = selected.timeout_seconds
     workspace_path = _absolute_path(
         workspace_raw.get("path", paths.workspace), "workspace.path"
     )
@@ -1057,17 +1070,15 @@ def load_config(
     return AppConfig(
         agent=AgentConfig(
             model=model,
+            provider=selected_id,
             max_tool_iterations=max_tool_iterations,
             max_tool_iterations_hard=max_tool_iterations_hard,
             max_no_progress_iterations=max_no_progress_iterations,
             context_budget_tokens=context_budget_tokens,
             tool_result_max_chars=tool_result_max_chars,
         ),
-        provider=ProviderConfig(
-            base_url=base_url,
-            api_key_env=api_key_env,
-            timeout_seconds=timeout_seconds,
-        ),
+        provider=selected,
+        providers=providers,
         workspace=WorkspaceConfig(path=workspace_path, read_only_roots=read_only_roots),
         permissions=PermissionConfig(
             profile=permission_profile,
@@ -1655,6 +1666,97 @@ def _existing_unique_roots(candidates: list[Path], workspace: Path) -> tuple[Pat
             continue
         roots.append(root)
     return tuple(roots)
+
+
+def _providers(
+    raw: Mapping[str, object],
+    provider_raw: Mapping[str, object],
+) -> tuple[ProviderConfig, ...]:
+    """解析 Provider 配置，兼容旧单表与新数组表两种写法。
+
+    两种写法**不允许并存**——那种情况下无法判断用户想用哪个，猜测比报错更危险。
+    旧单表在内存中被映射成 id 为 ``default`` 的一条，磁盘上的文件不做任何改写。
+
+    Args:
+        raw: 整个配置文件的顶层映射。
+        provider_raw: 已校验键集的旧 ``[provider]`` 表。
+
+    Returns:
+        至少含一条的 Provider 元组，顺序与文件一致。
+
+    Raises:
+        ConfigError: 两种写法并存、id 非法或重复、条目字段不合法。
+    """
+    entries = raw.get("providers")
+    if entries is not None and provider_raw:
+        raise ConfigError("providers and provider cannot both be set")
+    if entries is None:
+        return (
+            ProviderConfig(
+                id="default",
+                base_url=_provider_url(
+                    provider_raw.get("base_url", "https://api.openai.com/v1"),
+                    "provider.base_url",
+                ),
+                api_key_env=_environment_variable_name(
+                    provider_raw.get("api_key_env", "LOBSTER0_MODEL_API_KEY"),
+                    "provider.api_key_env",
+                ),
+                timeout_seconds=_positive_integer(
+                    provider_raw.get("timeout_seconds", 120), "provider.timeout_seconds"
+                ),
+            ),
+        )
+    if not isinstance(entries, list) or not entries:
+        raise ConfigError("providers must be a non-empty array of tables")
+
+    parsed: list[ProviderConfig] = []
+    seen: set[str] = set()
+    for index, entry in enumerate(entries):
+        label = f"providers[{index}]"
+        if not isinstance(entry, dict):
+            raise ConfigError(f"{label} must be a TOML table")
+        unknown = set(entry) - _PROVIDER_ENTRY_KEYS
+        if unknown:
+            raise ConfigError(f"{label} has unsupported keys: {sorted(unknown)}")
+        identifier = entry.get("id")
+        if not isinstance(identifier, str) or not _PROVIDER_ID.fullmatch(identifier):
+            raise ConfigError(f"{label}.id must match [a-z0-9][a-z0-9_-]*")
+        if identifier in seen:
+            raise ConfigError(f"{label}.id is duplicated: {identifier}")
+        seen.add(identifier)
+        parsed.append(
+            ProviderConfig(
+                id=identifier,
+                base_url=_provider_url(
+                    entry.get("base_url", "https://api.openai.com/v1"),
+                    f"{label}.base_url",
+                ),
+                api_key_env=_environment_variable_name(
+                    entry.get("api_key_env", f"LOBSTER0_PROVIDER_{identifier.upper()}_KEY"),
+                    f"{label}.api_key_env",
+                ),
+                timeout_seconds=_positive_integer(
+                    entry.get("timeout_seconds", 120), f"{label}.timeout_seconds"
+                ),
+            )
+        )
+    return tuple(parsed)
+
+
+def _selected_provider_id(
+    agent_raw: Mapping[str, object],
+    providers: tuple[ProviderConfig, ...],
+) -> str:
+    """确定当前生效的 Provider id，未指定时取第一条。"""
+    selected = agent_raw.get("provider")
+    if selected is None:
+        return providers[0].id
+    if not isinstance(selected, str):
+        raise ConfigError("agent.provider must be a string")
+    if all(item.id != selected for item in providers):
+        raise ConfigError(f"agent.provider references an unknown provider: {selected}")
+    return selected
 
 
 def _provider_url(value: object, name: str) -> str:

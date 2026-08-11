@@ -1,5 +1,6 @@
 """Lobster0 fresh-install 的交互配置与 owner-only Secret 写入。"""
 
+import contextlib
 import getpass
 import io
 import json
@@ -220,6 +221,73 @@ def validate_secret_value(value: str) -> str:
     ):
         raise SetupError("unsafe secret value")
     return value
+
+
+# 可写入 secrets.env 的变量名形状。限定 LOBSTER0_ 前缀的大写标识符，
+# 杜绝通过这条通道写入 PATH 等任意环境变量。
+_SECRET_NAME = re.compile(r"LOBSTER0_[A-Z0-9_]{1,64}\Z")
+
+
+def update_secret(paths: StatePaths, name: str, value: str) -> None:
+    """就地更新 secrets.env 中的一个变量，保留文件里其他所有内容。
+
+    与 fresh-only 的 :func:`write_fresh_setup` 不同，这里面对的是用户已经在用的
+    密钥文件：注释、空行、其他变量的值与顺序都必须原样保留，只替换目标变量那一行；
+    目标不存在时追加到末尾。
+
+    Args:
+        paths: 已初始化的状态路径。
+        name: 目标变量名，必须匹配 ``LOBSTER0_[A-Z0-9_]+``。
+        value: 新的 Secret 明文，按 dotenv 安全规则校验。
+
+    Raises:
+        SetupError: 变量名形状非法，或值无法被受限 dotenv 无损表达。
+        OSError: 文件读取或原子写入失败。
+    """
+    if not isinstance(name, str) or not _SECRET_NAME.fullmatch(name):
+        raise SetupError("unsafe secret name")
+    validate_secret_value(value)
+
+    path = paths.secrets_file
+    try:
+        existing = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        existing = ""
+    except OSError as error:
+        raise SetupError("cannot read local secrets file") from error
+
+    prefix = f"{name}="
+    lines = existing.splitlines()
+    replaced = False
+    for index, line in enumerate(lines):
+        if line.startswith(prefix):
+            lines[index] = f"{name}={value}"
+            replaced = True
+            break
+    if not replaced:
+        lines.append(f"{name}={value}")
+    _write_private_text(path, "".join(f"{line}\n" for line in lines))
+
+
+def _write_private_text(path: Path, text: str) -> None:
+    """用 0600 临时文件 + fsync + os.replace 原子替换一个 owner-only 文件。
+
+    临时文件与目标同目录（``os.replace`` 要求同一文件系统），并在失败时清理，
+    避免把含 Secret 的残片留在状态目录里。
+    """
+    temporary = path.with_name(f"{path.name}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as target:
+            os.fchmod(target.fileno(), 0o600)
+            target.write(text)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
 
 
 def write_fresh_setup(

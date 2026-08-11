@@ -24,6 +24,7 @@ from lobster0.setup import (
     SetupAnswers,
     SetupError,
     run_interactive_setup,
+    update_secret,
     validate_secret_value,
     write_fresh_setup,
 )
@@ -738,3 +739,114 @@ class SetupTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UpdateSecretTest(unittest.TestCase):
+    """就地更新 secrets.env 的单个变量，绝不破坏同文件里的其他变量。"""
+
+    def setUp(self) -> None:
+        """准备一个已初始化的状态目录。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.paths = build_state_paths(Path(self.temporary_directory.name) / "state")
+        self.paths.home.mkdir(mode=0o700, parents=True)
+
+    def _write(self, text: str) -> None:
+        """预置一个 owner-only 的 secrets 文件。"""
+        self.paths.secrets_file.write_text(text, encoding="utf-8")
+        self.paths.secrets_file.chmod(0o600)
+
+    def test_replaces_one_variable_and_keeps_every_other_line(self) -> None:
+        """同名变量就地替换，其余变量的值与顺序都不受影响。"""
+        self._write(
+            "LOBSTER0_MODEL_API_KEY=old-model\n"
+            "LOBSTER0_FEISHU_APP_ID=cli_app\n"
+            "LOBSTER0_FEISHU_APP_SECRET=feishu-secret\n"
+        )
+
+        update_secret(self.paths, "LOBSTER0_MODEL_API_KEY", "new-model")
+
+        self.assertEqual(
+            self.paths.secrets_file.read_text(encoding="utf-8"),
+            "LOBSTER0_MODEL_API_KEY=new-model\n"
+            "LOBSTER0_FEISHU_APP_ID=cli_app\n"
+            "LOBSTER0_FEISHU_APP_SECRET=feishu-secret\n",
+        )
+        self.assertEqual(stat.S_IMODE(self.paths.secrets_file.stat().st_mode), 0o600)
+
+    def test_appends_a_new_variable_without_reordering(self) -> None:
+        """新变量追加到末尾，不重排既有变量。"""
+        self._write("LOBSTER0_MODEL_API_KEY=model\n")
+
+        update_secret(self.paths, "LOBSTER0_PROVIDER_OPENROUTER_KEY", "router-key")
+
+        self.assertEqual(
+            self.paths.secrets_file.read_text(encoding="utf-8"),
+            "LOBSTER0_MODEL_API_KEY=model\n"
+            "LOBSTER0_PROVIDER_OPENROUTER_KEY=router-key\n",
+        )
+
+    def test_creates_an_owner_only_file_when_absent(self) -> None:
+        """文件不存在时以 0600 新建，不依赖调用方先建好。"""
+        update_secret(self.paths, "LOBSTER0_MODEL_API_KEY", "first")
+
+        self.assertEqual(
+            self.paths.secrets_file.read_text(encoding="utf-8"),
+            "LOBSTER0_MODEL_API_KEY=first\n",
+        )
+        self.assertEqual(stat.S_IMODE(self.paths.secrets_file.stat().st_mode), 0o600)
+
+    def test_rejects_unsafe_values_without_touching_the_file(self) -> None:
+        """含换行等危险值会注入第二个变量，必须拒绝且不落盘。"""
+        original = "LOBSTER0_MODEL_API_KEY=keep-me\n"
+        self._write(original)
+
+        for value in ("", " padded", "'quoted", "a\nB=injected", "with\x00nul"):
+            with self.subTest(value=value), self.assertRaises(SetupError):
+                update_secret(self.paths, "LOBSTER0_MODEL_API_KEY", value)
+
+        self.assertEqual(self.paths.secrets_file.read_text(encoding="utf-8"), original)
+
+    def test_rejects_variable_names_outside_the_fixed_shape(self) -> None:
+        """变量名必须是 LOBSTER0_ 前缀的大写标识符，杜绝写入任意环境变量。"""
+        self._write("LOBSTER0_MODEL_API_KEY=keep\n")
+
+        for name in ("", "PATH", "lobster0_model_api_key", "LOBSTER0_A=B", "LOBSTER0_A B"):
+            with self.subTest(name=name), self.assertRaises(SetupError):
+                update_secret(self.paths, name, "value")
+
+    def test_preserves_comments_and_blank_lines(self) -> None:
+        """注释与空行原样保留，只有目标变量那一行被替换。"""
+        self._write(
+            "# model provider\n"
+            "LOBSTER0_MODEL_API_KEY=old\n"
+            "\n"
+            "# feishu\n"
+            "LOBSTER0_FEISHU_APP_ID=cli\n"
+        )
+
+        update_secret(self.paths, "LOBSTER0_MODEL_API_KEY", "new")
+
+        self.assertEqual(
+            self.paths.secrets_file.read_text(encoding="utf-8"),
+            "# model provider\n"
+            "LOBSTER0_MODEL_API_KEY=new\n"
+            "\n"
+            "# feishu\n"
+            "LOBSTER0_FEISHU_APP_ID=cli\n",
+        )
+
+    def test_never_leaves_the_secret_in_temporary_files(self) -> None:
+        """原子替换后目录里不得残留任何含密钥的临时文件。"""
+        self._write("LOBSTER0_MODEL_API_KEY=old\n")
+        sentinel = "sentinel-secret-value"
+
+        update_secret(self.paths, "LOBSTER0_MODEL_API_KEY", sentinel)
+
+        leftovers = [
+            item
+            for item in self.paths.home.iterdir()
+            if item != self.paths.secrets_file and item.is_file()
+        ]
+        for item in leftovers:
+            self.assertNotIn(sentinel, item.read_text(encoding="utf-8", errors="replace"))

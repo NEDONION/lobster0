@@ -679,6 +679,102 @@ class ConfigTest(unittest.TestCase):
             (documents, projects, explicit_write),
         )
 
+    def _write_config(self, body: str) -> None:
+        """写入一份带合法 workspace 的配置。"""
+        self.paths.config.write_text(
+            body + '[workspace]\npath = "' + self.workspace.as_posix() + '"\n',
+            encoding="utf-8",
+        )
+
+    def test_legacy_single_provider_table_still_loads_unchanged(self) -> None:
+        """旧的 [provider] 单表必须继续可用，且不被悄悄改写成新格式。"""
+        self._write_config(
+            '[agent]\nmodel = "legacy-model"\n'
+            '[provider]\nbase_url = "https://legacy.example/v1"\n'
+            'api_key_env = "LOBSTER0_MODEL_API_KEY"\n'
+        )
+        before = self.paths.config.read_text(encoding="utf-8")
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(config.provider.base_url, "https://legacy.example/v1")
+        self.assertEqual(len(config.providers), 1)
+        self.assertEqual(config.providers[0].id, "default")
+        self.assertEqual(config.providers[0].base_url, "https://legacy.example/v1")
+        self.assertEqual(config.agent.provider, "default")
+        # 读取路径永不写盘。
+        self.assertEqual(self.paths.config.read_text(encoding="utf-8"), before)
+
+    def test_provider_array_selects_the_agent_referenced_entry(self) -> None:
+        """有数组表时，agent.provider 决定当前生效的那一条。"""
+        self._write_config(
+            '[agent]\nmodel = "m"\nprovider = "second"\n'
+            '[[providers]]\nid = "first"\n'
+            'base_url = "https://first.example/v1"\n'
+            'api_key_env = "LOBSTER0_PROVIDER_FIRST_KEY"\n'
+            '[[providers]]\nid = "second"\n'
+            'base_url = "https://second.example/v1"\n'
+            'api_key_env = "LOBSTER0_PROVIDER_SECOND_KEY"\n'
+        )
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual([item.id for item in config.providers], ["first", "second"])
+        # config.provider 始终指向当前生效项，运行时代码无需改动。
+        self.assertEqual(config.provider.base_url, "https://second.example/v1")
+        self.assertEqual(config.provider.api_key_env, "LOBSTER0_PROVIDER_SECOND_KEY")
+
+    def test_provider_array_without_selection_uses_the_first_entry(self) -> None:
+        """未指定 agent.provider 时取第一条，不报错。"""
+        self._write_config(
+            '[agent]\nmodel = "m"\n'
+            '[[providers]]\nid = "only"\nbase_url = "https://only.example/v1"\n'
+        )
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(config.provider.base_url, "https://only.example/v1")
+        self.assertEqual(config.agent.provider, "only")
+
+    def test_rejects_both_provider_forms_at_once(self) -> None:
+        """两种写法并存时不猜测意图，直接拒绝。"""
+        self._write_config(
+            '[provider]\nbase_url = "https://old.example/v1"\n'
+            '[[providers]]\nid = "new"\nbase_url = "https://new.example/v1"\n'
+        )
+
+        with self.assertRaisesRegex(ConfigError, "providers"):
+            load_config(self.paths, {})
+
+    def test_rejects_invalid_duplicate_and_dangling_provider_ids(self) -> None:
+        """id 参与环境变量名生成，必须是安全字符集且唯一、可被引用。"""
+        cases = (
+            # 非法字符
+            '[[providers]]\nid = "Bad Id"\nbase_url = "https://a.example/v1"\n',
+            '[[providers]]\nid = "UPPER"\nbase_url = "https://a.example/v1"\n',
+            '[[providers]]\nid = ""\nbase_url = "https://a.example/v1"\n',
+            # 重复 id
+            '[[providers]]\nid = "same"\nbase_url = "https://a.example/v1"\n'
+            '[[providers]]\nid = "same"\nbase_url = "https://b.example/v1"\n',
+            # agent.provider 指向不存在的条目
+            '[agent]\nprovider = "missing"\n'
+            '[[providers]]\nid = "real"\nbase_url = "https://a.example/v1"\n',
+        )
+        for body in cases:
+            with self.subTest(body=body[:40]):
+                self._write_config(body)
+                with self.assertRaises(ConfigError):
+                    load_config(self.paths, {})
+
+    def test_provider_entries_reuse_the_existing_url_validation(self) -> None:
+        """数组表里的 base_url 同样不接受凭据内嵌等不安全形式。"""
+        self._write_config(
+            '[[providers]]\nid = "x"\n'
+            'base_url = "https://user:password@example.com/v1"\n'
+        )
+        with self.assertRaises(ConfigError):
+            load_config(self.paths, {})
+
 
 class TelegramConfigTest(unittest.TestCase):
     """验证 Telegram numeric identity、群聊关系和资源预算。"""
