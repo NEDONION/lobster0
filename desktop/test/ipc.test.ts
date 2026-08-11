@@ -8,6 +8,9 @@ import {
   validateAutomationRunsInput,
   validateApprovalInput,
   validateHaltInput,
+  validateArtifactIdInput,
+  validateArtifactListInput,
+  validateArtifactPreviewInput,
   validateAttachmentPathInput,
   validateProviderIdInput,
   validateProviderSecretInput,
@@ -20,6 +23,51 @@ import {
 } from "../src/main/ipc";
 import { DESKTOP_CHANNELS } from "../src/common/api";
 import type { BridgeService } from "../src/main/bridge-service";
+
+describe("产物查询的 Main 层校验", () => {
+  it("bounds the artifact list", () => {
+    expect(validateArtifactListInput({ sessionKey: "s", limit: 50 })).toEqual({
+      sessionKey: "s",
+      limit: 50,
+    });
+    for (const payload of [
+      { sessionKey: "s", limit: 0 },
+      { sessionKey: "s", limit: 501 },
+      { sessionKey: "", limit: 10 },
+      { sessionKey: "s" },
+    ]) {
+      expect(() => validateArtifactListInput(payload)).toThrowError(DesktopRequestError);
+    }
+  });
+
+  it("rejects artifact ids outside the content-addressed shape", () => {
+    const good = `art_${"a".repeat(64)}`;
+    expect(validateArtifactIdInput({ artifactId: good })).toEqual({ artifactId: good });
+    for (const artifactId of ["", "art_short", "../escape", `art_${"A".repeat(64)}`]) {
+      expect(() => validateArtifactIdInput({ artifactId })).toThrowError(DesktopRequestError);
+    }
+  });
+
+  it("bounds the preview size", () => {
+    const good = `art_${"a".repeat(64)}`;
+    expect(validateArtifactPreviewInput({ artifactId: good, maxBytes: 4096 })).toEqual({
+      artifactId: good,
+      maxBytes: 4096,
+    });
+    // 上限存在的意义是不让 Renderer 让 Core 读一个超大文件进内存。
+    expect(() =>
+      validateArtifactPreviewInput({ artifactId: good, maxBytes: 10_000_000 }),
+    ).toThrowError(DesktopRequestError);
+  });
+
+  it("refuses a caller-supplied path on reveal", () => {
+    // 路径只能由 Core 从 id 解析，否则等于开放任意本地路径的「在访达中显示」。
+    const good = `art_${"a".repeat(64)}`;
+    expect(() =>
+      validateArtifactIdInput({ artifactId: good, path: "/etc/passwd" }),
+    ).toThrowError(DesktopRequestError);
+  });
+});
 
 describe("附件的 Main 层校验", () => {
   it("keeps the chosen absolute path and derives the declared type from the extension", () => {

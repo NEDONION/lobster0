@@ -75,6 +75,16 @@ export function registerDesktopIpc(
   register(DESKTOP_CHANNELS.automationUnhalt, () => bridge.unhaltAutomation());
   register(DESKTOP_CHANNELS.automationCreate, (payload) =>
     bridge.createAutomation(validateAutomationCreateInput(payload)));
+  register(DESKTOP_CHANNELS.artifactsList, (payload) => {
+    const input = validateArtifactListInput(payload);
+    return bridge.listArtifacts(input.sessionKey, input.limit);
+  });
+  register(DESKTOP_CHANNELS.artifactPreview, (payload) => {
+    const input = validateArtifactPreviewInput(payload);
+    return bridge.previewArtifact(input.artifactId, input.maxBytes);
+  });
+  register(DESKTOP_CHANNELS.artifactReveal, (payload) =>
+    bridge.revealArtifact(validateArtifactIdInput(payload).artifactId));
   register(DESKTOP_CHANNELS.attachmentPick, () => chooseAttachment());
   register(DESKTOP_CHANNELS.attachmentStage, (payload) => {
     const input = validateAttachmentPathInput(payload);
@@ -342,6 +352,47 @@ export function validateProviderSecretInput(payload: unknown): { id: string; val
     throw new DesktopRequestError(PROVIDER_CODE, "密钥值不合法");
   }
   return { id: providerId(record.id), value };
+}
+
+const ARTIFACT_CODE = "invalid_artifact_query";
+
+export function validateArtifactListInput(payload: unknown): {
+  sessionKey: string;
+  limit: number;
+} {
+  const record = exactRecord(payload, ["sessionKey", "limit"], ARTIFACT_CODE);
+  if (!boundedString(record.sessionKey, 128)) {
+    throw new DesktopRequestError(ARTIFACT_CODE, "会话标识无效");
+  }
+  return {
+    sessionKey: record.sessionKey,
+    limit: integerBetween(record.limit, 1, 500, ARTIFACT_CODE),
+  };
+}
+
+export function validateArtifactIdInput(payload: unknown): { artifactId: string } {
+  // 只收 id：路径必须由 Core 从 id 解析，接受调用方给路径等于开放任意本地
+  // 路径的「在访达中显示」。
+  const record = exactRecord(payload, ["artifactId"], ARTIFACT_CODE);
+  return { artifactId: artifactId(record.artifactId) };
+}
+
+export function validateArtifactPreviewInput(payload: unknown): {
+  artifactId: string;
+  maxBytes: number;
+} {
+  const record = exactRecord(payload, ["artifactId", "maxBytes"], ARTIFACT_CODE);
+  return {
+    artifactId: artifactId(record.artifactId),
+    maxBytes: integerBetween(record.maxBytes, 1, 1_048_576, ARTIFACT_CODE),
+  };
+}
+
+function artifactId(value: unknown): string {
+  if (typeof value !== "string" || !ARTIFACT_ID.test(value)) {
+    throw new DesktopRequestError(ARTIFACT_CODE, "产物标识无效");
+  }
+  return value;
 }
 
 function providerId(value: unknown): string {

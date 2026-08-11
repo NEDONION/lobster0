@@ -180,7 +180,7 @@ jobs:
             --archive "${RUNNER_TEMP}/pins/node-v24.18.0-linux-x64.tar.gz" \
             --platform linux-x86_64 \
             --output-dir "${RUNNER_TEMP}/bundles"
-          python3 scripts/build_tui_bundle.py \
+          PYTHONPATH=src python3 scripts/build_tui_bundle.py \
             --platform linux-x86_64 \
             --version 0.7.0 \
             --node "${RUNNER_TEMP}/node/bin/node" \
@@ -232,6 +232,11 @@ jobs:
           export SOURCE_DATE_EPOCH
           uv build --out-dir "${RUNNER_TEMP}/dist-a"
           uv build --out-dir "${RUNNER_TEMP}/dist-b"
+          # setuptools 的 sdist 无视 SOURCE_DATE_EPOCH，按 PAX 写入构建时刻，
+          # 因此必须先归一化到与 Node/TUI bundle 同一套确定性规则再比较；
+          # release.yml 发布前走的是同一个脚本，两边证明的是同一构造。
+          python3 scripts/normalize_sdist.py "${RUNNER_TEMP}"/dist-a/*.tar.gz
+          python3 scripts/normalize_sdist.py "${RUNNER_TEMP}"/dist-b/*.tar.gz
           (cd "${RUNNER_TEMP}/dist-a" && sha256sum ./*) > "${RUNNER_TEMP}/a.sha"
           (cd "${RUNNER_TEMP}/dist-b" && sha256sum ./*) > "${RUNNER_TEMP}/b.sha"
           diff -u "${RUNNER_TEMP}/a.sha" "${RUNNER_TEMP}/b.sha"

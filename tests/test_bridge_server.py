@@ -13,16 +13,16 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from lobster0.agent.events import RunEvent
+from lobster0.artifacts.store import ArtifactError
 from lobster0.bootstrap import initialize_state
 from lobster0.bridge.__main__ import build_parser
 from lobster0.bridge.conversations import ConversationQueryError
-from lobster0.artifacts.store import ArtifactError
-from lobster0.storage.database import Database
-from lobster0.config import ProviderConfig, load_config
 from lobster0.bridge.server import BridgeServer
+from lobster0.config import ProviderConfig, load_config
 from lobster0.paths import build_state_paths
 from lobster0.policy.approvals import ApprovalDecision
 from lobster0.policy.modes import PermissionMode, PermissionState
+from lobster0.storage.database import Database
 
 
 def _request(request_id: str, request_type: str, payload: dict) -> bytes:
@@ -198,6 +198,12 @@ class FakeConversationConsole:
         if session_key == "missing":
             raise ConversationQueryError("session_not_found", "任务不存在")
         return {"session_key": session_key, "turns": [], "messages": []}
+
+
+def _fake_sessions(database: object) -> SimpleNamespace:
+    """把 session_key 解析成固定 ID，避开测试桩里没有真实数据库的问题。"""
+    del database
+    return SimpleNamespace(get_or_create_cli=lambda owner_id, key: SimpleNamespace(id=7))
 
 
 def _runtime(service) -> SimpleNamespace:
@@ -823,6 +829,70 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         await task
 
         self.assertEqual(response["payload"]["code"], "attachment_unknown")
+
+    async def test_artifact_preview_never_returns_a_filesystem_path(self) -> None:
+        """Renderer 拿不到路径，也就无从构造任意本地读取。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(RecordingTurnService())
+        artifact_id = "art_" + "a" * 64
+        secret_path = "/Users/someone/private/report.txt"
+        runtime.artifact_store = SimpleNamespace(
+            list_for_session=lambda session_id, *, limit: [
+                SimpleNamespace(
+                    artifact_id=artifact_id,
+                    media_type="text/plain",
+                    byte_size=5,
+                    origin="user_upload",
+                    message_id=None,
+                    filename="report.txt",
+                    created_at=datetime(2026, 8, 11, tzinfo=UTC),
+                )
+            ],
+            read_metadata=lambda value: SimpleNamespace(
+                artifact_id=value,
+                media_type="text/plain",
+                byte_size=5,
+                path=Path(secret_path),
+            ),
+        )
+        with patch("lobster0.bridge.server.SessionRepository", _fake_sessions):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(
+                _request("list-1", "artifacts.list", {"session_key": "s", "limit": 20})
+            )
+            listed = await writer.wait_for_id("list-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            await task
+
+        self.assertEqual(listed["payload"]["artifacts"][0]["filename"], "report.txt")
+        self.assertNotIn(secret_path, json.dumps(listed, ensure_ascii=False))
+
+    async def test_artifact_preview_refuses_an_artifact_outside_the_session(self) -> None:
+        """预览只覆盖当前会话的产物，跨会话即拒绝。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(RecordingTurnService())
+        runtime.artifact_store = SimpleNamespace(
+            list_for_session=lambda session_id, *, limit: [],
+            read_metadata=lambda value: SimpleNamespace(),
+        )
+        with patch("lobster0.bridge.server.SessionRepository", _fake_sessions):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(
+                _request(
+                    "prev-1",
+                    "artifacts.preview",
+                    {"artifact_id": "art_" + "c" * 64, "max_bytes": 4096},
+                )
+            )
+            response = await writer.wait_for_id("prev-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            await task
+
+        self.assertEqual(response["payload"]["code"], "artifact_not_found")
 
     async def test_attachment_stage_maps_store_errors_to_stable_codes(self) -> None:
         """Store 的拒绝理由要如实传给界面，但不带路径细节。"""

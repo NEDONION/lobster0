@@ -36,6 +36,9 @@ _REQUEST_TYPES = frozenset(
         "providers.select",
         "providers.set_secret",
         "attachment.stage",
+        "artifacts.list",
+        "artifacts.preview",
+        "artifacts.reveal",
         "bridge.shutdown",
     }
 )
@@ -56,6 +59,8 @@ _PROVIDER_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
 # 免得任意字符串被带进 Store 查询。
 _ARTIFACT_ID = re.compile(r"art_[0-9a-f]{64}\Z")
 _MAX_ATTACHMENTS = 10
+_MAX_ARTIFACT_LIST = 500
+_MAX_PREVIEW_BYTES = 1_048_576
 _PERMISSION_MODES = frozenset({"safe", "smart", "autopilot", "yolo"})
 _MEMORY_ACTIONS = frozenset(
     {
@@ -207,6 +212,30 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
             raise ProtocolError("invalid_turn", "Turn 请求字段不合法")
         if "attachment_ids" in payload and not _valid_artifact_ids(payload["attachment_ids"]):
             raise ProtocolError("invalid_turn", "Turn 请求字段不合法")
+        return
+    if request_type == "artifacts.list":
+        if (
+            set(payload) != {"session_key", "limit"}
+            or not _bounded_string(payload.get("session_key"), 1, 128)
+            or not _integer_between(payload.get("limit"), 1, _MAX_ARTIFACT_LIST)
+        ):
+            raise ProtocolError("invalid_artifact_query", "产物查询字段不合法")
+        return
+    if request_type == "artifacts.preview":
+        if (
+            set(payload) != {"artifact_id", "max_bytes"}
+            or not _valid_artifact_ids([payload.get("artifact_id")])
+            or not _integer_between(payload.get("max_bytes"), 1, _MAX_PREVIEW_BYTES)
+        ):
+            raise ProtocolError("invalid_artifact_query", "产物查询字段不合法")
+        return
+    if request_type == "artifacts.reveal":
+        # 只收 id：路径必须由 Core 从 id 解析，接受调用方给路径等于开放任意
+        # 本地路径的「在访达中显示」。
+        if set(payload) != {"artifact_id"} or not _valid_artifact_ids(
+            [payload.get("artifact_id")]
+        ):
+            raise ProtocolError("invalid_artifact_query", "产物查询字段不合法")
         return
     if request_type == "attachment.stage":
         path = payload.get("path")

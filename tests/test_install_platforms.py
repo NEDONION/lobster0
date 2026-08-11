@@ -42,6 +42,7 @@ from lobster0.install.platforms import (
 from lobster0.install.platforms import (
     verify_privilege_action as production_verify_privilege_action,
 )
+from lobster0.storage.migrations import LATEST_SCHEMA_VERSION
 
 
 def _account(name: str = "alice", uid: int = 1001) -> pwd.struct_passwd:
@@ -175,7 +176,7 @@ class InstallPlatformsTest(unittest.TestCase):
                 {"os": "macos", "arch": "arm64"},
             ],
             "features": [],
-            "database_schema": 10,
+            "database_schema": LATEST_SCHEMA_VERSION,
             "minimum_readable_schema": 5,
         }
         return ReleaseManifest.from_bytes(json.dumps(document).encode("utf-8"))

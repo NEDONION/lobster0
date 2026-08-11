@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { isPermissionMode, type PermissionMode } from "@lobster0/pi-tui/protocol";
+import type { PermissionMode } from "@lobster0/pi-tui/protocol";
 
 import type {
   AutomationCreateInput,
@@ -14,6 +14,7 @@ import type {
 import { AutomationPanel } from "./automation-panel";
 import { ModelsPanel } from "./models-panel";
 import { NAV_ITEMS, type ViewId } from "./navigation";
+import { PERMISSION_MODE_OPTIONS } from "./permission-modes";
 import { SESSION_GROUP_LABELS, groupSessionsByRecency } from "./session-groups";
 import { TaskWorkbench } from "./task-workbench";
 
@@ -26,7 +27,7 @@ const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }
   automation: {
     eyebrow: "AUTOMATION",
     title: "自动化",
-    body: "查看 Lobster0 Core 已有的定时任务和下次运行时间，当前为只读。",
+    body: "查看、暂停、立即运行或新建 Lobster0 Core 的定时任务。",
   },
   settings: {
     eyebrow: "LOCAL CONTROL",
@@ -34,8 +35,6 @@ const VIEW_COPY: Record<ViewId, { eyebrow: string; title: string; body: string }
     body: "查看本地 Core 配置，切换权限模式或选择新的工作目录。",
   },
 };
-
-const PERMISSION_MODES: readonly PermissionMode[] = ["safe", "smart", "autopilot", "yolo"];
 
 // 侧栏历史列表只标注需要用户注意的状态。`completed` 是绝大多数会话的常态，
 // 每条都标反而变成噪音，所以映射为 null 表示不展示。
@@ -502,20 +501,34 @@ function ViewPreview({
             选择目录
           </button>
         </SettingsRow>
-        <div className="settings-row">
+        <div className="settings-row settings-row-modes">
           <span>权限模式</span>
-          <select
-            aria-label="权限模式"
-            disabled={!bootstrap || taskBusy || settingsBusy}
-            onChange={(event) => {
-              if (isPermissionMode(event.target.value)) {
-                onSetPermissionMode(event.target.value);
-              }
-            }}
-            value={bootstrap?.permissionMode ?? "safe"}
-          >
-            {PERMISSION_MODES.map((mode) => <option key={mode}>{mode}</option>)}
-          </select>
+          {/* 四个单词说明不了该选哪个，所以每档都直接把行为写在旁边，
+              而不是塞进一个需要悬停才看得到的 title。 */}
+          <div className="permission-modes" role="radiogroup" aria-label="权限模式">
+            {PERMISSION_MODE_OPTIONS.map((option) => {
+              const active = (bootstrap?.permissionMode ?? "safe") === option.mode;
+              return (
+                <button
+                  aria-checked={active}
+                  className="permission-mode"
+                  data-active={active}
+                  data-risky={option.risky}
+                  disabled={!bootstrap || taskBusy || settingsBusy}
+                  key={option.mode}
+                  onClick={() => onSetPermissionMode(option.mode)}
+                  role="radio"
+                  type="button"
+                >
+                  <span className="permission-mode-label">
+                    {option.label}
+                    {option.risky ? <span className="permission-mode-flag">需谨慎</span> : null}
+                  </span>
+                  <span className="permission-mode-summary">{option.summary}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
         <SettingsRow label="工具" value={bootstrap?.tools.join(" · ") || "未连接"} />
         <SettingsRow label="能力" value={bootstrap?.capabilities.join(" · ") || "未连接"} />

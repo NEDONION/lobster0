@@ -352,7 +352,11 @@ class BridgeProtocolTest(unittest.TestCase):
         """新增/更新只接受 id、base_url、timeout，且 id 必须是安全字符集。"""
         request = self._decode(
             "providers.upsert",
-            {"id": "openrouter", "base_url": "https://openrouter.ai/api/v1", "timeout_seconds": 120},
+            {
+                "id": "openrouter",
+                "base_url": "https://openrouter.ai/api/v1",
+                "timeout_seconds": 120,
+            },
         )
         self.assertEqual(request.payload["id"], "openrouter")
 
@@ -513,6 +517,60 @@ class AttachmentProtocolTest(unittest.TestCase):
                     )
                 )
             self.assertEqual(raised.exception.code, "invalid_turn", ids)
+
+
+class ArtifactProtocolTest(unittest.TestCase):
+    """产物查询与预览的字段边界。"""
+
+    def test_list_requires_a_bounded_limit(self) -> None:
+        """列表必须有界，避免一次把整个会话的产物读进内存。"""
+        request = decode_request(
+            _frame("artifacts.list", {"session_key": "s", "limit": 50})
+        )
+        self.assertEqual(request.payload["limit"], 50)
+
+        for payload in (
+            {"session_key": "s", "limit": 0},
+            {"session_key": "s", "limit": 501},
+            {"session_key": "s", "limit": True},
+            {"session_key": "s"},
+            {"session_key": "", "limit": 10},
+            {"session_key": "s", "limit": 10, "extra": 1},
+        ):
+            with self.assertRaises(ProtocolError) as raised:
+                decode_request(_frame("artifacts.list", payload))
+            self.assertEqual(raised.exception.code, "invalid_artifact_query", payload)
+
+    def test_preview_bounds_the_requested_bytes(self) -> None:
+        """预览字节数有上限：Renderer 不能让 Core 读一个超大文件进内存。"""
+        artifact_id = "art_" + "a" * 64
+        request = decode_request(
+            _frame("artifacts.preview", {"artifact_id": artifact_id, "max_bytes": 4096})
+        )
+        self.assertEqual(request.payload["artifact_id"], artifact_id)
+
+        for payload in (
+            {"artifact_id": artifact_id, "max_bytes": 0},
+            {"artifact_id": artifact_id, "max_bytes": 10_000_000},
+            {"artifact_id": "art_short", "max_bytes": 4096},
+            {"artifact_id": "../escape", "max_bytes": 4096},
+            {"artifact_id": artifact_id},
+        ):
+            with self.assertRaises(ProtocolError) as raised:
+                decode_request(_frame("artifacts.preview", payload))
+            self.assertEqual(raised.exception.code, "invalid_artifact_query", payload)
+
+    def test_reveal_takes_only_an_artifact_id(self) -> None:
+        """reveal 不接受任何路径——路径只能由 Core 从 id 解析。"""
+        artifact_id = "art_" + "b" * 64
+        request = decode_request(_frame("artifacts.reveal", {"artifact_id": artifact_id}))
+        self.assertEqual(set(request.payload), {"artifact_id"})
+
+        with self.assertRaises(ProtocolError) as raised:
+            decode_request(
+                _frame("artifacts.reveal", {"artifact_id": artifact_id, "path": "/tmp"})
+            )
+        self.assertEqual(raised.exception.code, "invalid_artifact_query")
 
 
 if __name__ == "__main__":

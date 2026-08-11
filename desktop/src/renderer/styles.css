@@ -1485,3 +1485,198 @@ select:focus-visible {
   cursor: default;
   opacity: 0.5;
 }
+
+/* --- 右侧共享产物 ------------------------------------------------------ */
+
+/* 右栏按需出现，所以列宽写在有产物时的容器上，而不是给空面板长期留位置。 */
+.task-layout:has(.artifact-panel) {
+  grid-template-columns: minmax(0, 1fr) 260px;
+}
+
+.artifact-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  border-left: 1px solid var(--lobster-border);
+  background: var(--lobster-gray-1);
+}
+
+.artifact-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lobster-text-muted);
+}
+
+.artifact-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--lobster-text-muted);
+}
+
+.artifact-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.artifact-card {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--lobster-border);
+  border-radius: 10px;
+  padding: 10px;
+  background: var(--lobster-surface);
+}
+
+.artifact-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.artifact-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--lobster-text-primary);
+  overflow-wrap: anywhere;
+}
+
+.artifact-origin {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--lobster-text-muted);
+}
+
+.artifact-meta,
+.artifact-error {
+  margin: 0;
+  font-size: 11px;
+  color: var(--lobster-text-muted);
+}
+
+.artifact-error {
+  color: var(--lobster-destructive);
+}
+
+.artifact-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.artifact-actions button {
+  padding: 3px 8px;
+  font-size: 11px;
+}
+
+.artifact-preview {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--lobster-border);
+  padding-top: 8px;
+}
+
+.artifact-image {
+  max-width: 100%;
+  border-radius: 6px;
+}
+
+.artifact-text {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 6px;
+  font-family: var(--lobster-font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--lobster-text-primary);
+  background: var(--lobster-gray-2);
+}
+
+/* 窄窗口下右栏没有价值，整块隐藏，主对话区恢复单列。 */
+@media (max-width: 980px) {
+  .task-layout:has(.artifact-panel) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .artifact-panel {
+    display: none;
+  }
+}
+
+/* --- 权限模式选择 ------------------------------------------------------ */
+
+.settings-row-modes {
+  align-items: start;
+}
+
+.permission-modes {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  max-width: 460px;
+}
+
+.permission-mode {
+  display: grid;
+  gap: 2px;
+  text-align: left;
+  border: 1px solid var(--lobster-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font: inherit;
+  background: var(--lobster-surface);
+}
+
+.permission-mode:hover:not(:disabled) {
+  background: var(--lobster-hover);
+}
+
+.permission-mode[data-active="true"] {
+  border-color: var(--lobster-primary);
+  background: var(--lobster-primary-muted);
+}
+
+.permission-mode:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.permission-mode-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--lobster-text-primary);
+}
+
+.permission-mode-flag {
+  border-radius: 999px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--lobster-destructive);
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.permission-mode-summary {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--lobster-text-secondary);
+}

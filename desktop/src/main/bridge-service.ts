@@ -16,6 +16,8 @@ import type {
   AutomationList,
   AutomationRun,
   AutomationSummary,
+  ArtifactPreview,
+  ArtifactSummary,
   AttachmentRef,
   DesktopBootstrap,
   ProviderList,
@@ -260,6 +262,42 @@ export class BridgeService {
     return automationTask(recordValue(requiredValue(response.task)));
   }
 
+  public async listArtifacts(sessionKey: string, limit: number): Promise<ArtifactSummary[]> {
+    const response = await this.requireClient().request("artifacts.list", {
+      session_key: sessionKey,
+      limit,
+    });
+    const entries = response.artifacts;
+    if (!Array.isArray(entries)) {
+      throw new BridgeRequestError("bridge_protocol", "产物列表格式无效");
+    }
+    return entries.map((value) => artifactSummary(recordValue(value)));
+  }
+
+  public async previewArtifact(artifactId: string, maxBytes: number): Promise<ArtifactPreview> {
+    const record = await this.requireClient().request("artifacts.preview", {
+      artifact_id: artifactId,
+      max_bytes: maxBytes,
+    });
+    const preview: ArtifactPreview = {
+      artifactId: stringValue(record.artifact_id),
+      mediaType: stringValue(record.media_type),
+      sizeBytes: positiveInteger(record.byte_size),
+      truncated: booleanValue(record.truncated),
+    };
+    if (typeof record.text === "string") {
+      preview.text = record.text;
+    }
+    if (typeof record.data_uri === "string") {
+      preview.dataUri = record.data_uri;
+    }
+    return preview;
+  }
+
+  public async revealArtifact(artifactId: string): Promise<void> {
+    await this.requireClient().request("artifacts.reveal", { artifact_id: artifactId });
+  }
+
   public async stageAttachment(path: string, declaredMediaType: string): Promise<AttachmentRef> {
     const response = await this.requireClient().request("attachment.stage", {
       path,
@@ -480,6 +518,17 @@ function nullableString(value: JsonValue | undefined): string | null {
 }
 
 /** 把一条 Task 响应投影成 Renderer 类型；与只读列表共用，避免字段集漂移。 */
+function artifactSummary(record: Record<string, JsonValue>): ArtifactSummary {
+  return {
+    artifactId: stringValue(record.artifact_id),
+    filename: typeof record.filename === "string" ? record.filename : null,
+    mediaType: stringValue(record.media_type),
+    sizeBytes: positiveInteger(record.byte_size),
+    origin: stringValue(record.origin),
+    createdAt: stringValue(record.created_at),
+  };
+}
+
 function providerSummary(record: Record<string, JsonValue>): ProviderSummary {
   return {
     id: stringValue(record.id),

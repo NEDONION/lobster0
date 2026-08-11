@@ -243,6 +243,9 @@ jobs:
           uv build --out-dir dist
           test -f "dist/${WHEEL}"
           test -f "dist/${SDIST}"
+          # 与 CI 的可复现门禁走同一个脚本：setuptools 的 sdist 会把构建时刻
+          # 写进 PAX 头，不归一化就无法从源码树重建出同一字节的发布产物。
+          python3 scripts/normalize_sdist.py "dist/${SDIST}"
           wheel_sha256="$(sha256sum "dist/${WHEEL}" | cut -d' ' -f1)"
           sdist_sha256="$(sha256sum "dist/${SDIST}" | cut -d' ' -f1)"
           {
@@ -359,7 +362,7 @@ jobs:
           corepack enable
           corepack prepare "$(python3 -c "import json;print(json.load(open('tui/package.json'))['packageManager'])")" --activate
           mkdir -p "${RUNNER_TEMP}/bundles"
-          python3 scripts/build_tui_bundle.py \
+          PYTHONPATH=src python3 scripts/build_tui_bundle.py \
             --platform "${PLATFORM}" \
             --version "${VERSION}" \
             --node "${RUNNER_TEMP}/node/bin/node" \

@@ -19,6 +19,7 @@ from unittest import mock
 import scripts.build_tui_bundle as tui_bundle_module
 from scripts.build_node_bundle import NodeBundleError, build_node_bundle
 from scripts.build_tui_bundle import TuiBundleError, build_tui_bundle, materialize_tree
+from scripts.normalize_sdist import SdistNormalizeError, normalize_sdist
 
 ROOT = Path(__file__).resolve().parents[1]
 PLATFORM = "macos-arm64"
@@ -401,6 +402,124 @@ class SymlinkMaterializationTest(unittest.TestCase):
         (self.source / "b").symlink_to("a")
         with self.assertRaisesRegex(TuiBundleError, "symlink"):
             materialize_tree(self.source, self.destination)
+
+
+class SdistNormalizationTest(unittest.TestCase):
+    """验证 sdist 归一化既消除构建时刻差异，又不改变任何内容。"""
+
+    def setUp(self) -> None:
+        """准备一个独立的 scratch 目录。"""
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+
+    def _write_sdist(self, destination: Path, *, mtime: float) -> dict[str, bytes]:
+        """按 setuptools 的方式写一个带 PAX 高精度 mtime 的 sdist。
+
+        Args:
+            destination: 输出的 `.tar.gz` 路径。
+            mtime: 写入每个成员的构建时刻，用来模拟两次构建的时间差。
+
+        Returns:
+            成员相对路径到内容的映射，供归一化后比对无损。
+        """
+        payload = {
+            "PKG-INFO": b"Metadata-Version: 2.4\nName: lobster0-agent\n",
+            "pyproject.toml": b"[project]\nname = 'lobster0-agent'\n",
+            "src/lobster0/__init__.py": b'"""package"""\n',
+            "src/lobster0/storage/schema.sql": b"CREATE TABLE t (id INTEGER);\n",
+        }
+        with tarfile.open(destination, "w:gz", format=tarfile.PAX_FORMAT) as archive:
+            for name, content in sorted(payload.items()):
+                member = tarfile.TarInfo(f"lobster0_agent-0.7.0/{name}")
+                member.size = len(content)
+                member.mtime = mtime
+                member.uid = member.gid = 501
+                member.uname = member.gname = "builder"
+                archive.addfile(member, io.BytesIO(content))
+        return payload
+
+    def test_normalization_makes_two_build_times_byte_identical(self) -> None:
+        """同一棵源码树、不同构建时刻，归一化后必须得到同一份字节。
+
+        这正是 CI 上 artifact-build 失败的形态：setuptools 无视
+        SOURCE_DATE_EPOCH，把构建时刻写进每个成员的 PAX 头。
+        """
+        first = self.root / "first.tar.gz"
+        second = self.root / "second.tar.gz"
+        self._write_sdist(first, mtime=1_700_000_000.123456)
+        self._write_sdist(second, mtime=1_700_000_042.987654)
+        self.assertNotEqual(first.read_bytes(), second.read_bytes())
+
+        normalize_sdist(first)
+        normalize_sdist(second)
+
+        self.assertEqual(first.read_bytes(), second.read_bytes())
+        self.assertEqual(first.read_bytes()[4:8], b"\0\0\0\0")
+
+    def test_normalization_preserves_every_member_and_byte(self) -> None:
+        """归一化只允许改 metadata，成员集合与内容必须逐字节不变。"""
+        sdist = self.root / "dist.tar.gz"
+        payload = self._write_sdist(sdist, mtime=1_700_000_000.5)
+
+        normalize_sdist(sdist)
+
+        with tarfile.open(sdist, "r:gz") as archive:
+            members = archive.getmembers()
+            extracted = {
+                member.name: archive.extractfile(member).read()
+                for member in members
+                if member.isreg()
+            }
+        self.assertEqual(
+            extracted, {f"lobster0_agent-0.7.0/{name}": body for name, body in payload.items()}
+        )
+        self.assertTrue(all(member.uid == member.gid == member.mtime == 0 for member in members))
+        self.assertTrue(all(member.uname == member.gname == "" for member in members))
+
+    def test_normalization_rejects_unsafe_and_malformed_sdists(self) -> None:
+        """link/special 成员、逃逸路径与多顶层目录都必须失败，而不是被重写。"""
+        symlinked = self.root / "symlink.tar.gz"
+        with tarfile.open(symlinked, "w:gz") as archive:
+            member = tarfile.TarInfo("lobster0_agent-0.7.0/link")
+            member.type = tarfile.SYMTYPE
+            member.linkname = "/etc/passwd"
+            archive.addfile(member)
+        with self.assertRaisesRegex(SdistNormalizeError, "non-regular"):
+            normalize_sdist(symlinked)
+
+        escaping = self.root / "escape.tar.gz"
+        with tarfile.open(escaping, "w:gz") as archive:
+            member = tarfile.TarInfo("lobster0_agent-0.7.0/../outside")
+            member.size = 0
+            archive.addfile(member, io.BytesIO(b""))
+        with self.assertRaisesRegex(SdistNormalizeError, "escaping"):
+            normalize_sdist(escaping)
+
+        forked = self.root / "forked.tar.gz"
+        with tarfile.open(forked, "w:gz") as archive:
+            for root in ("lobster0_agent-0.7.0", "other-0.1.0"):
+                member = tarfile.TarInfo(f"{root}/PKG-INFO")
+                member.size = 0
+                archive.addfile(member, io.BytesIO(b""))
+        with self.assertRaisesRegex(SdistNormalizeError, "top-level"):
+            normalize_sdist(forked)
+
+    def test_normalization_leaves_the_sdist_untouched_when_it_fails(self) -> None:
+        """失败路径不得留下半成品：原 sdist 必须逐字节保持原样。"""
+        unsafe = self.root / "unsafe.tar.gz"
+        with tarfile.open(unsafe, "w:gz") as archive:
+            member = tarfile.TarInfo("lobster0_agent-0.7.0/link")
+            member.type = tarfile.SYMTYPE
+            member.linkname = "target"
+            archive.addfile(member)
+        before = unsafe.read_bytes()
+
+        with self.assertRaises(SdistNormalizeError):
+            normalize_sdist(unsafe)
+
+        self.assertEqual(unsafe.read_bytes(), before)
+        self.assertEqual(sorted(path.name for path in self.root.iterdir()), ["unsafe.tar.gz"])
 
 
 if __name__ == "__main__":
