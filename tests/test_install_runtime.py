@@ -310,7 +310,16 @@ class InstallRuntimeTests(unittest.TestCase):
                     continue
                 target = destination / relative / name
                 if item.is_symlink():
-                    target.symlink_to(os.readlink(item))
+                    # installer 只接受 root 内部的相对 alias。宿主上的 CPython
+                    # （尤其是 GitHub runner 的 /opt/hostedtoolcache）常带绝对
+                    # symlink 指向 tree 之外的真实文件——它们不悬空，所以躲得过
+                    # 下面的 dangling 清理，却会被 _safe_internal_symlink 正确
+                    # 拒绝。fixture 只保留相对 alias，验证的才是产品真正支持的
+                    # 那种形态。
+                    link_target = os.readlink(item)
+                    if os.path.isabs(link_target):
+                        continue
+                    target.symlink_to(link_target)
                     continue
                 shutil.copyfile(item, target)
                 target.chmod(0o700 if item.stat().st_mode & 0o111 else 0o600)
