@@ -711,6 +711,43 @@ class ConfigTest(unittest.TestCase):
         # 读取路径永不写盘。
         self.assertEqual(self.paths.config.read_text(encoding="utf-8"), before)
 
+    def test_attachment_limit_defaults_below_the_artifact_store_bound(self) -> None:
+        """未配置时给一个比 Store 上限更小的默认值。"""
+        self._write_config('[agent]\nmodel = "m"\n')
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(config.attachments.max_bytes, 10 * 1024 * 1024)
+        self.assertLessEqual(config.attachments.max_bytes, config.browser.download_max_bytes)
+
+    def test_attachment_limit_above_the_store_bound_is_refused(self) -> None:
+        """附件上限不能超过 Store 的硬边界。
+
+        静默取 min 会让用户以为自己设的值生效了，所以这里拒绝加载而不是降级。
+        """
+        self._write_config(
+            '[agent]\nmodel = "m"\n'
+            "[browser]\ndownload_max_bytes = 1048576\n"
+            "[attachments]\nmax_bytes = 2097152\n"
+        )
+
+        with self.assertRaises(ConfigError) as raised:
+            load_config(self.paths, {})
+
+        self.assertIn("attachments.max_bytes", str(raised.exception))
+
+    def test_attachment_limit_within_the_store_bound_is_accepted(self) -> None:
+        """不超过 Store 上限时按用户设置生效。"""
+        self._write_config(
+            '[agent]\nmodel = "m"\n'
+            "[browser]\ndownload_max_bytes = 8388608\n"
+            "[attachments]\nmax_bytes = 4194304\n"
+        )
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(config.attachments.max_bytes, 4 * 1024 * 1024)
+
     def test_provider_array_selects_the_agent_referenced_entry(self) -> None:
         """有数组表时，agent.provider 决定当前生效的那一条。"""
         self._write_config(

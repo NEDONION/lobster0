@@ -55,6 +55,7 @@ _TOP_LEVEL_KEYS = frozenset(
         "sandbox",
         "checkpoint",
         "browser",
+        "attachments",
     }
 )
 _AGENT_KEYS = frozenset(
@@ -180,6 +181,7 @@ _SANDBOX_KEYS = frozenset(
 _CHECKPOINT_KEYS = frozenset(
     {"enabled", "max_entries", "max_total_bytes", "max_file_bytes", "max_count"}
 )
+_ATTACHMENTS_KEYS = frozenset({"max_bytes"})
 _BROWSER_KEYS = frozenset(
     {
         "enabled",
@@ -420,6 +422,18 @@ class CheckpointConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class AttachmentsConfig:
+    """用户上传附件的边界。
+
+    与 ``browser.download_max_bytes`` 分开，因为二者语义无关：一个是浏览器下载
+    的配额，一个是用户手动选文件的上限。附件走同一个 ArtifactStore，所以这里的
+    值必须落在 Store 的硬边界之内。
+    """
+
+    max_bytes: int = 10 * 1024 * 1024
+
+
+@dataclass(frozen=True, slots=True)
 class BrowserConfig:
     """保存专用 Browser Worker 的开关、Profile 和资源预算。"""
 
@@ -454,6 +468,7 @@ class AppConfig:
     sandbox: SandboxConfig = SandboxConfig()
     checkpoint: CheckpointConfig = CheckpointConfig()
     browser: BrowserConfig = BrowserConfig()
+    attachments: AttachmentsConfig = AttachmentsConfig()
 
 
 def load_config(
@@ -494,6 +509,7 @@ def load_config(
     sandbox_raw = _section(raw, "sandbox", _SANDBOX_KEYS)
     checkpoint_raw = _section(raw, "checkpoint", _CHECKPOINT_KEYS)
     browser_raw = _section(raw, "browser", _BROWSER_KEYS)
+    attachments_raw = _section(raw, "attachments", _ATTACHMENTS_KEYS)
     feishu_raw = _section(
         channels_raw,
         "feishu",
@@ -1014,12 +1030,29 @@ def load_config(
         minimum=30,
         maximum=3600,
     )
+    attachments_max_bytes = _bounded_integer(
+        attachments_raw.get("max_bytes", 10 * 1024 * 1024),
+        "attachments.max_bytes",
+        minimum=1024,
+        maximum=100 * 1024 * 1024,
+    )
     browser_download_max_bytes = _bounded_integer(
         browser_raw.get("download_max_bytes", 20 * 1024 * 1024),
         "browser.download_max_bytes",
         minimum=1024 * 1024,
         maximum=100 * 1024 * 1024,
     )
+    # 附件与浏览器下载共用同一个 ArtifactStore，Store 的 max_bytes 是外层硬边界。
+    # 用户显式写下的值超界就拒绝——静默取 min 会让他以为自己设的值生效了；
+    # 但**默认值**只是我们的选择，它超界时收敛即可，不能让一份没写过
+    # [attachments] 的配置因此加载失败。
+    if "max_bytes" in attachments_raw:
+        if attachments_max_bytes > browser_download_max_bytes:
+            raise ConfigError(
+                "attachments.max_bytes must not exceed browser.download_max_bytes"
+            )
+    else:
+        attachments_max_bytes = min(attachments_max_bytes, browser_download_max_bytes)
 
     model = _environment_string(source, "LOBSTER0_MODEL_NAME", model)
     max_tool_iterations = _environment_integer(
@@ -1193,6 +1226,7 @@ def load_config(
             inactivity_timeout_seconds=browser_inactivity_timeout_seconds,
             download_max_bytes=browser_download_max_bytes,
         ),
+        attachments=AttachmentsConfig(max_bytes=attachments_max_bytes),
     )
 
 

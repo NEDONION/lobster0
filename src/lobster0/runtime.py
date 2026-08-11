@@ -131,6 +131,9 @@ class AgentRuntime:
     # 这两项是它需要的唯一入口，故随 Runtime 一起下发。
     paths: StatePaths = field(repr=False)
     config: AppConfig = field(repr=False)
+    artifact_store: ArtifactStore = field(repr=False)
+    # 附件自己的上限，落在 artifact_store 的 max_bytes 之内。
+    attachment_max_bytes: int
     browser_client: BrowserClient | None = field(default=None, repr=False)
     _started: bool = field(default=False, init=False, repr=False)
     _background_started: bool = field(default=False, init=False, repr=False)
@@ -437,19 +440,17 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         if config.browser.enabled
         else None
     )
-    artifact_store = (
-        ArtifactStore(
-            database,
-            owner_id=owner.id,
-            root=paths.artifacts,
-            staging_root=paths.downloads,
-            max_bytes=config.browser.download_max_bytes,
-        )
-        if browser_client is not None
-        else None
+    # 无条件构造：附件与浏览器是两件无关的事，而 browser.enabled 默认为 False。
+    # delete_expired 随之改为始终执行——过期 Artifact 本来就该回收，不该因为
+    # 用户关了浏览器就一直留着。
+    artifact_store = ArtifactStore(
+        database,
+        owner_id=owner.id,
+        root=paths.artifacts,
+        staging_root=paths.downloads,
+        max_bytes=config.browser.download_max_bytes,
     )
-    if artifact_store is not None:
-        artifact_store.delete_expired()
+    artifact_store.delete_expired()
     browser_toolset = (
         browser_tools(
             browser_client,
@@ -587,6 +588,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         provider=provider,
         paths=paths,
         config=config,
+        artifact_store=artifact_store,
+        attachment_max_bytes=config.attachments.max_bytes,
         browser_client=browser_client,
     )
 

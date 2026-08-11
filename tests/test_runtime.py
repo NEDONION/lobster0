@@ -55,6 +55,25 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(imported.returncode, 0, imported.stderr)
 
+    async def test_artifact_store_exists_even_when_the_browser_is_disabled(self) -> None:
+        """附件与浏览器无关，Store 不能被 browser.enabled 挡住。
+
+        browser.enabled 默认是 False，若 Store 仍随浏览器一起构造，默认配置下的
+        用户就永远发不了附件。
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            initialize_state(paths)
+            config = load_config(paths)
+            self.assertFalse(config.browser.enabled)
+
+            runtime = create_runtime(config, paths, "test-key")
+            try:
+                self.assertIsNotNone(runtime.artifact_store)
+                self.assertEqual(runtime.attachment_max_bytes, config.attachments.max_bytes)
+            finally:
+                await runtime.aclose()
+
     async def test_create_runtime_exposes_memory_autopilot_tools_and_closes(self) -> None:
         """Runtime 应装配明确 remember Tool，并拥有统一 Provider 生命周期。"""
         with tempfile.TemporaryDirectory() as directory:
