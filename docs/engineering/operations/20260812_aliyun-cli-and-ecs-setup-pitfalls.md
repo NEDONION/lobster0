@@ -3,6 +3,8 @@
 日期：2026-08-12
 范围：`aliyun` CLI 初始化、RAM 子用户与授权、ECS 实例从零到可用的常见坑
 
+> **与 [实机部署踩坑实录](../../getting-started/20260811_实机部署踩坑实录.md) 的分工**：那份是**腾讯云轻量 + Ubuntu 24.04** 上把 Lobster0 真正跑起来的现场记录（sudo PATH、clone GitHub、换源装依赖）；本文是**阿里云**侧、「服务器能 SSH 之前」的那一段（凭证、授权、安全组、公网、磁盘）。两者是接力关系——本文结束的地方就是那份开始的地方。
+
 ---
 
 ## 一、`aliyun configure` 初始化
@@ -197,6 +199,8 @@ chmod 600 ~/.aliyun/config.json
 
 **中国内地地域**的 ECS，对外提供 HTTP/HTTPS 服务必须完成 ICP 备案，否则 80/443 会被阻断。这跟安全组无关，改配置改不出来。
 
+> **对 Lobster0 部署不适用。** 飞书渠道走 WebSocket **出站**长连接，程序主动连出去、不接受入站回调，因此不需要公网回调地址、域名、证书或备案，入方向只放行 SSH 22 即可（见[实机部署踩坑实录](../../getting-started/20260811_实机部署踩坑实录.md)的「防火墙」一节）。只有当你额外要把 Web 控制台暴露到公网时，这条才会咬人。
+
 规避方式：
 - 用非标准端口（如 8080）临时验证
 - 把地域选在**中国香港**或海外，不需要备案
@@ -224,6 +228,8 @@ chmod 600 ~/.aliyun/config.json
 ```bash
 timedatectl set-timezone Asia/Shanghai
 ```
+
+> **别跟另一个长得很像的坑搞混。** Lobster0 启动时报 `heartbeat.timezone must be a valid IANA timezone` **不是**系统时区没设，而是 uv 安装的 Python 不带时区数据库（已通过补 `tzdata` 依赖修复）。系统时区正确也照样会报——两者根因无关，见[实机部署踩坑实录](../../getting-started/20260811_实机部署踩坑实录.md)的「已知问题速查」。
 
 ### 坑 14：内存小的实例没有 swap
 
