@@ -2,7 +2,9 @@
 
 > 日期：2026-08-10
 > 文档类型：Phase D2 产品、界面与协议设计
-> 状态：`DRAFT FOR REVIEW / IMPLEMENTATION PENDING`
+> 状态：`SUPERSEDED`（2026-08-11）——见 [D2c 附件与 Composer 控件（修订版）](2026-08-11-desktop-d2c-attachments-design.md)
+>
+> 其中 `models.list`/`agents.list` 两项已被推翻，另有两条现状描述与代码不符，理由见修订版 §1。
 > 上位需求：[桌面多 Agent 工作台开发需求](../../product/20260810_桌面多Agent工作台开发需求.md)
 > 总体架构：[LobsterAI-first 桌面多 Agent 设计](../../architecture/20260810_LobsterAI-first桌面多Agent设计.md)
 > 大纲来源：[D1～D5 分 Phase 落地文档 §5](../../engineering/desktop/20260810_桌面多Agent分Phase落地.md)
