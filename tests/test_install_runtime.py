@@ -342,19 +342,23 @@ class InstallRuntimeTests(unittest.TestCase):
         按产品规则筛而不是逐条枚举已知形态，fixture 才不会随宿主布局变化再次
         失效。循环是为了处理 alias 链：一次删除可能让下一层也变成悬空。
         """
-        resolved_root = root.resolve(strict=True)
-
         def unacceptable(item: Path) -> bool:
-            """复刻 _safe_internal_symlink 的接受条件。"""
+            """直接用产品函数当判据，避免 fixture 与产品规则漂移。
+
+            此前手写复刻只覆盖了"绝对路径"和"逃逸 root"两条，漏掉了
+            ``str(PurePosixPath(target)) != target``（``./x``、``x/``、``a//b``
+            这类写法）以及 NFC 规范化与可打印性检查，CI 因此仍然失败。调用
+            ``_safe_internal_symlink`` 本身就不可能再漏。
+            """
             if not item.is_symlink():
                 return False
-            target = os.readlink(item)
-            if os.path.isabs(target):
-                return True
             try:
-                return not item.resolve(strict=True).is_relative_to(resolved_root)
+                runtime_module._safe_internal_symlink(root, item)
+            except InstallError:
+                return True
             except (OSError, RuntimeError):
                 return True
+            return False
 
         while True:
             rejected = [
