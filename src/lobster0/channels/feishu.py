@@ -510,10 +510,16 @@ def _official_message_view(message: Any) -> _OfficialMessageView:
 def _parent_message_id(message: Any) -> str:
     """读取"这条消息回复了哪条消息"的平台 message ID。
 
-    飞书 ``im.message.receive_v1`` 在 ``event.message.parent_id`` 上给出被回复消息的 ID；
-    这里先按属性读取，再回退到原始事件 JSON。任何一步取不到都返回空字符串——不是回复时
-    本来就该为空，调用方据此判定"这不是一条回复"。
+    ``lark_channel`` 已经把飞书的回复关系解析成 ``message.reply``（``ReplyRef``，
+    含 ``message_id``），这是权威来源。随后依次回退到 ``parent_id`` 属性与原始事件 JSON
+    的 ``event.message.parent_id``，兼容 SDK 未填充 ``reply`` 的情况。
+
+    任何一步取不到都返回空字符串——不是回复时本来就该为空，调用方据此判定"这不是一条回复"。
     """
+    reply = getattr(message, "reply", None)
+    reply_id = getattr(reply, "message_id", None)
+    if isinstance(reply_id, str) and reply_id:
+        return reply_id
     direct = getattr(message, "parent_id", None)
     if isinstance(direct, str) and direct:
         return direct

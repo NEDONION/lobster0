@@ -171,6 +171,7 @@ class ChannelFeedbackControllerTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(outcome.handled)
         self.assertEqual(outcome.error_code, "not_a_reply")
+        self.assertIn("回复", outcome.notice)
         self.assertEqual(self.feedback.calls, [])
 
     async def test_reply_to_unknown_message_is_rejected(self) -> None:

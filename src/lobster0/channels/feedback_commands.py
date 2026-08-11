@@ -11,6 +11,10 @@ from lobster0.evolution.repository import EvolutionError
 _GOOD = re.compile(r"/good\Z")
 _BAD = re.compile(r"/bad(?:[ \t]+(.+))?\Z", re.DOTALL)
 _USAGE = "用法：回复一条 Lobster0 的回答，发送 /good 或 /bad <原因>。"
+_NOT_A_REPLY = (
+    "请先长按并「回复」某一条 Lobster0 的回答，再发送 /good 或 /bad <原因>——"
+    "否则无法确定你在评价哪一条。"
+)
 
 
 class FeedbackLedger(Protocol):
@@ -126,7 +130,9 @@ class ChannelFeedbackController:
                 error_code="not_owner",
             )
         if not reply_to_platform_message_id:
-            return FeedbackCommandOutcome(True, notice=_USAGE, error_code="not_a_reply")
+            return FeedbackCommandOutcome(
+                True, notice=_NOT_A_REPLY, error_code="not_a_reply"
+            )
 
         delivery = self._deliveries.find_sent_by_platform_message_id(
             channel=channel,

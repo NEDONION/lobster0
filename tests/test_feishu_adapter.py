@@ -165,3 +165,53 @@ class FeishuRepliedToMessageTest(unittest.TestCase):
                 )
                 assert isinstance(result, InboundMessage)
                 self.assertEqual(result.replied_to_message_id, "")
+
+
+class FeishuReplyRefExtractionTest(unittest.TestCase):
+    """锁定真实 SDK 的回复来源：``message.reply.message_id``。
+
+    真实事故：首版按飞书 OpenAPI 文档猜的 ``parent_id``，但 ``lark_channel`` 已经把回复
+    关系解析成了 ``reply: ReplyRef``，``parent_id`` 属性根本不存在，导致飞书里 /good
+    永远提示"不是回复"。这条测试固定住真实 SDK 的字段来源。
+    """
+
+    def test_reply_ref_is_preferred_over_parent_id(self) -> None:
+        """SDK 提供 reply.message_id 时必须优先使用它。"""
+        from lobster0.channels.feishu import _parent_message_id
+
+        class _ReplyRef:
+            message_id = "om_from_reply_ref"
+
+        class _Message:
+            reply = _ReplyRef()
+            parent_id = "om_from_parent_id"
+            raw = None
+
+        self.assertEqual(_parent_message_id(_Message()), "om_from_reply_ref")
+
+    def test_falls_back_to_parent_id_then_raw_event(self) -> None:
+        """SDK 未填充 reply 时依次回退到 parent_id 与原始事件 JSON。"""
+        from lobster0.channels.feishu import _parent_message_id
+
+        class _OnlyParent:
+            reply = None
+            parent_id = "om_from_parent_id"
+            raw = None
+
+        class _OnlyRaw:
+            reply = None
+            raw = {"event": {"message": {"parent_id": "om_from_raw"}}}
+
+        self.assertEqual(_parent_message_id(_OnlyParent()), "om_from_parent_id")
+        self.assertEqual(_parent_message_id(_OnlyRaw()), "om_from_raw")
+
+    def test_no_reply_anywhere_degrades_to_empty(self) -> None:
+        """三个来源都取不到时必须安全退化为空，而不是抛异常。"""
+        from lobster0.channels.feishu import _parent_message_id
+
+        class _Nothing:
+            reply = None
+            raw = None
+
+        self.assertEqual(_parent_message_id(_Nothing()), "")
+        self.assertEqual(_parent_message_id(object()), "")
