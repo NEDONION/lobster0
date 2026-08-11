@@ -532,6 +532,7 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
                 "state",
                 "skills",
                 "tools",
+                "controlled_evolution",
             },
         )
         self.assertTrue(

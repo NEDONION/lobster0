@@ -1,6 +1,6 @@
 # Lobster0 Agent 回归场景集
 
-Active offline gate: 39 cases
+Active offline gate: 54 cases
 Active channel gate: 12 cases
 
 这里保存随代码版本化的 Claw-like 使用场景。它回答两个问题：

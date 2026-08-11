@@ -231,7 +231,7 @@ Provider 并存与切换**，不是请求级的自动路由/fallback/负载均�
 两个决定已分别落到独立设计文档：
 
 - [D2a 定时任务从只读变可控（含表单新建）](2026-08-11-desktop-d2a-automation-control-design.md)
-- [D2b 多 Provider 模型配置与密钥写入](2026-08-11-desktop-d2b-model-and-secret-config-design.md)
+- [D2b 多 Provider 模型配置与密钥写入](2026-08-11-desktop-d2b-model-provider-config-design.md)
 
 其中 D2b 的风险明显高于另外两个 milestone：它同时引入配置写入（Core 此前**从未**写回过
 `config.toml`）、单数→复数的数据结构变更、密钥写入、以及不能破坏既有用户的配置迁移。因此实施顺序

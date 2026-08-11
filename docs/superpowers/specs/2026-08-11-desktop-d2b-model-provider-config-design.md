@@ -2,7 +2,7 @@
 
 > 日期：2026-08-11
 > 文档类型：Phase D2b 产品、配置与协议设计
-> 状态：`DRAFT FOR REVIEW / IMPLEMENTATION PENDING`
+> 状态：`IMPLEMENTED`（2026-08-11；退出条件 6 的真机 smoke 待补）
 > 上位规划：[对标 ClawX 能力差距与 Milestone 规划 §5](2026-08-11-desktop-clawx-capability-gap-and-roadmap.md)
 > 前置实现：[D2a 定时任务可控](2026-08-11-desktop-d2a-automation-control-design.md)（已实现）
 
@@ -165,6 +165,25 @@ Desktop：IPC 校验、密钥框不回显、capability 缺失时只读、删除�
 4. 密钥明文不出现在界面、日志、Turn 记录、Bridge 响应中（有测试证明）；
 5. 写入失败或校验不通过时不留下损坏的配置文件；
 6. Python + Desktop 全量门禁通过，真实 Electron + Bridge smoke 覆盖一次"新增 Provider → 设默认 → 重启"。
+
+## 8.1 落地记录（2026-08-11）
+
+按设计实现，与文档的差异只有一处：**API Key 输入框放在 Provider 卡片主层**，而不是
+藏在「编辑」折叠里。填密钥是这页最主要的动作，折叠一层等于给最常用的操作加了一道门。
+
+安全边界最终落在**两道独立关卡**上，Main 层与 Core 协议层各拒绝一次：
+
+- `providers.upsert` 两层都拒绝调用方传 `api_key_env`；
+- `providers.set_secret` 的 payload 只有 `{id, value}`，变量名由 `config.provider_secret_env()`
+  从 id 推导——Renderer 在结构上就没有指定写哪个环境变量的能力；
+- 密钥值不做 trim 后转发（必须逐字节保真），只判定合法性；
+- 写失败时只回固定文案，不透传异常文本（可能带上路径或值）。
+
+`StatePaths` 与 `AppConfig` 随 `AgentRuntime` 一起下发给 Bridge，这是 Provider 写操作
+需要的唯一入口。
+
+退出条件 1-5 已由测试覆盖（Python 111 项、Desktop 96 项全绿）；第 6 条的真实
+Electron + Bridge smoke（新增 Provider → 设默认 → 重启）尚未执行。
 
 ## 9. 明确不做
 
