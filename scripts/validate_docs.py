@@ -31,6 +31,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/superpowers/specs/2026-08-09-phase-6-autonomy-sandbox-design.md"),
     Path("docs/superpowers/plans/2026-08-09-phase-6-autonomy-sandbox.md"),
     Path("docs/getting-started/20260807_本地运行指南.md"),
+    Path("docs/getting-started/20260811_Linux服务器部署指南.md"),
     Path("docs/evals/README.md"),
     Path("docs/evals/releases/v0.5.0.md"),
     Path("docs/evals/releases/v0.5.1.md"),
