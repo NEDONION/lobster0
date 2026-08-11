@@ -1,4 +1,12 @@
 @import 'tailwindcss';
+/* Fumadocs must be pulled in as a preset here rather than via its prebuilt
+   `fumadocs-ui/style.css`: that bundle ships a complete Tailwind build of its
+   own, so importing both concatenated two `@layer utilities` blocks into one
+   layer. Same layer means source order decides, and the second build's plain
+   `.flex` silently beat the first build's `md:hidden` — every responsive
+   hide in the docs chrome stopped working. */
+@import 'fumadocs-ui/css/neutral.css';
+@import 'fumadocs-ui/css/preset.css';
 
 :root {
   --canvas: #f4f7fb;
@@ -14,6 +22,30 @@
   --violet: #7567d9;
   --font-sans: 'Instrument Sans Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
   --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+/* Repoint Fumadocs' neutral-gray tokens at the marketing palette, so the docs
+   read as the same product rather than a stock template bolted on the side.
+   Overriding the tokens covers sidebar, TOC, search, popovers and buttons in
+   one place — far more durable than chasing individual Fumadocs classes. */
+@theme {
+  --color-fd-background: var(--surface);
+  --color-fd-foreground: var(--ink);
+  --color-fd-muted: var(--canvas);
+  --color-fd-muted-foreground: var(--muted);
+  --color-fd-popover: var(--surface);
+  --color-fd-popover-foreground: var(--ink);
+  --color-fd-card: var(--canvas);
+  --color-fd-card-foreground: var(--ink);
+  --color-fd-border: var(--line);
+  --color-fd-primary: var(--signal);
+  --color-fd-primary-foreground: #ffffff;
+  --color-fd-secondary: var(--canvas);
+  --color-fd-secondary-foreground: var(--ink);
+  --color-fd-accent: color-mix(in srgb, var(--signal) 9%, transparent);
+  --color-fd-accent-foreground: var(--ink);
+  --color-fd-ring: color-mix(in srgb, var(--signal) 55%, white);
+  --color-fd-overlay: color-mix(in srgb, var(--ink) 22%, transparent);
 }
 
 * {
@@ -1906,6 +1938,11 @@ pre {
   font-size: 0.78rem;
 }
 
+/* ===== Docs shell =====================================================
+   Fumadocs ships its own visual language; these rules bend it toward the
+   marketing site's typography and terminal treatment. Anything that can be
+   expressed as a token lives in the @theme block near the top instead. */
+
 .docs-brand {
   display: inline-flex;
   align-items: center;
@@ -1914,17 +1951,149 @@ pre {
   letter-spacing: -0.025em;
 }
 
-.docs-brand > span {
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: 8px;
-  background: var(--signal);
-  color: white;
+/* Float the reading column as a white sheet on the canvas, the same
+   surface-on-canvas language the marketing page uses for its panels. */
+#nd-sidebar {
+  background: var(--canvas);
+}
+
+#nd-page {
+  border-right: 1px solid var(--line);
+  background: var(--surface);
+}
+
+/* Sidebar nav items: quieter at rest, brand-blue when active. */
+#nd-sidebar a {
+  border-radius: 7px;
+  font-size: 0.875rem;
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+#nd-sidebar a[data-active='true'] {
+  background: color-mix(in srgb, var(--signal) 10%, transparent);
+  color: var(--signal);
+  font-weight: 600;
+}
+
+/* Docs headings inherit the marketing site's tight, heavy display voice
+   instead of Fumadocs' softer defaults. */
+#nd-page h1 {
+  font-size: clamp(2.1rem, 3.2vw, 2.6rem);
+  font-weight: 700;
+  letter-spacing: -0.045em;
+  line-height: 1.12;
+}
+
+#nd-page article h2 {
+  margin-top: 2.6em;
+  font-size: 1.45rem;
+  font-weight: 680;
+  letter-spacing: -0.03em;
+}
+
+#nd-page article h3 {
+  font-size: 1.1rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+#nd-page article p,
+#nd-page article li {
+  line-height: 1.78;
+}
+
+/* Prose links get the underline treatment; nav/UI links inside the page
+   (breadcrumb, pagination, cards) must keep their own styling. */
+#nd-page article :where(p, li, td) a {
+  color: var(--signal);
+  text-decoration-color: color-mix(in srgb, var(--signal) 35%, transparent);
+  text-underline-offset: 3px;
+}
+
+#nd-page article :where(p, li, td) a:hover {
+  text-decoration-color: var(--signal);
+}
+
+/* Inline code reads as a chip, not as body text. */
+#nd-page article :not(pre) > code {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--canvas);
+  color: var(--ink);
+  font-size: 0.86em;
+}
+
+/* Code blocks share the hero's terminal, so a command looks the same on the
+   landing page and in the docs. */
+#nd-page figure:has(pre),
+#nd-page pre {
+  border-radius: 10px;
+  background: var(--terminal);
+}
+
+#nd-page figure:has(pre) {
+  border: 1px solid rgb(255 255 255 / 10%);
+  box-shadow: 0 8px 20px rgb(16 19 26 / 10%);
+}
+
+#nd-page figure:has(pre) figcaption {
+  border-bottom: 1px solid rgb(255 255 255 / 8%);
+  color: color-mix(in srgb, white 62%, transparent);
   font-family: var(--font-mono);
-  font-size: 0.65rem;
-  box-shadow: 0 3px 8px color-mix(in srgb, var(--signal) 18%, transparent);
+  font-size: 0.74rem;
+}
+
+#nd-page pre code {
+  font-size: 0.84rem;
+  line-height: 1.7;
+}
+
+/* Copy button sits on a dark surface now, so its neutral tokens would vanish. */
+#nd-page figure:has(pre) button {
+  border-color: rgb(255 255 255 / 14%);
+  background: rgb(255 255 255 / 6%);
+  color: color-mix(in srgb, white 78%, transparent);
+}
+
+#nd-page figure:has(pre) button:hover {
+  background: rgb(255 255 255 / 12%);
+  color: white;
+}
+
+/* The two MDX constructs the docs actually use. Fumadocs renders blockquotes
+   as bold italic with no marker, which reads as shouting rather than quoting. */
+#nd-page article blockquote {
+  border-left: 2px solid color-mix(in srgb, var(--signal) 55%, transparent);
+  padding-left: 18px;
+  color: var(--muted);
+  font-style: normal;
+  font-weight: 400;
+}
+
+#nd-page article blockquote p {
+  font-size: 0.95rem;
+}
+
+#nd-page article table {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 0.875rem;
+}
+
+#nd-page article th {
+  background: var(--canvas);
+  color: var(--ink);
+  font-weight: 600;
+}
+
+#nd-page article :where(th, td) {
+  border-color: var(--line);
+}
+
+/* Clerk-style TOC: mono kicker + brand-blue active rail. */
+#nd-toc a[data-active='true'] {
+  color: var(--ink);
+  font-weight: 550;
 }
 
 .not-found-page {

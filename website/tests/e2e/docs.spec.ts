@@ -1,9 +1,22 @@
 import { expect, test, type Locator } from '@playwright/test';
 
+/**
+ * Playwright counts `opacity: 0` as visible, but Fumadocs keeps a collapsed-
+ * sidebar toolbar permanently mounted that way, stacked under the real header.
+ * Picking it yields an element that can never be clicked, so walk the ancestor
+ * chain and skip anything faded out.
+ */
 async function firstVisible(locator: Locator): Promise<Locator> {
   for (let index = 0; index < (await locator.count()); index += 1) {
     const candidate = locator.nth(index);
-    if (await candidate.isVisible()) return candidate;
+    if (!(await candidate.isVisible())) continue;
+    const faded = await candidate.evaluate((element) => {
+      for (let node: Element | null = element; node; node = node.parentElement) {
+        if (getComputedStyle(node).opacity === '0') return true;
+      }
+      return false;
+    });
+    if (!faded) return candidate;
   }
   throw new Error('No visible locator matched');
 }
@@ -28,7 +41,11 @@ test('Chinese docs expose navigation, search, and evidence boundaries', async ({
     await expect(await firstVisible(page.getByRole('link', { exact: true, name: '运行时' }))).toBeVisible();
   }
 
-  const searchButton = await firstVisible(page.getByRole('button', { name: '打开搜索' }));
+  // Desktop shows a full search box in the sidebar; only the mobile header
+  // collapses it to an icon button with an aria-label.
+  const searchButton = await firstVisible(
+    page.getByRole('button', { name: isMobile ? '打开搜索' : /^搜索/ }),
+  );
   await searchButton.click();
   const searchDialog = page.getByRole('dialog');
   await searchDialog.getByRole('textbox').fill('安全');
@@ -54,7 +71,9 @@ test('English docs keep locale-specific navigation and search results', async ({
     await expect(await firstVisible(page.getByRole('link', { exact: true, name: 'Runtime' }))).toBeVisible();
   }
 
-  const searchButton = await firstVisible(page.getByRole('button', { name: 'Open Search' }));
+  const searchButton = await firstVisible(
+    page.getByRole('button', { name: isMobile ? 'Open Search' : /^Search/ }),
+  );
   await searchButton.click();
   const searchDialog = page.getByRole('dialog');
   await searchDialog.getByRole('textbox').fill('Runtime');
