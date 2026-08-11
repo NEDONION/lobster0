@@ -132,6 +132,70 @@ class FakeRunner:
         return CommandResult(0, b"", b"")
 
 
+
+class CaseCollisionDestinationTests(unittest.TestCase):
+    """验证大小写冲突判定看的是目标文件系统，而不是一刀切拒绝。
+
+    Linux 上 uv 提供的 CPython 自带 `share/terminfo`，其中存在仅大小写不同
+    的条目（实测 cpython-3.12.13-linux 有 33 处）。此前无条件拒绝会让每一次
+    Linux 一行安装都以 `runtime_install_failed` 失败；而在大小写不敏感的目标
+    上这些条目会互相静默覆盖，必须继续拒绝。
+    """
+
+    def setUp(self) -> None:
+        """建一棵含真实大小写冲突条目的源树。"""
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.source = self.root / "src"
+        (self.source / "share").mkdir(mode=0o700, parents=True)
+        self.source.chmod(0o700)
+        (self.source / "share").chmod(0o700)
+
+    def _write(self, name: str) -> None:
+        """写入一个 owner-only 普通文件。"""
+        target = self.source / "share" / name
+        target.write_bytes(b"x")
+        target.chmod(0o600)
+
+    def test_case_sensitive_destination_accepts_case_only_duplicates(self) -> None:
+        """目标大小写敏感时，仅大小写不同的条目是两个独立文件，必须放行。"""
+        self._write("A")
+        try:
+            self._write("a")
+        except OSError:
+            self.skipTest("本机文件系统大小写不敏感，无法构造该场景")
+        if (self.source / "share" / "A").read_bytes() != b"x" or len(
+            list((self.source / "share").iterdir())
+        ) != 2:
+            self.skipTest("本机文件系统大小写不敏感，无法构造该场景")
+        manifest = runtime_module._validate_source_tree(
+            self.source, set(), case_insensitive_destination=False
+        )
+        self.assertIn("share/A", manifest)
+        self.assertIn("share/a", manifest)
+
+    def test_case_insensitive_destination_still_rejects_duplicates(self) -> None:
+        """目标大小写不敏感时必须继续拒绝，否则条目会被静默覆盖。"""
+        self._write("A")
+        try:
+            self._write("a")
+        except OSError:
+            self.skipTest("本机文件系统大小写不敏感，无法构造该场景")
+        if len(list((self.source / "share").iterdir())) != 2:
+            self.skipTest("本机文件系统大小写不敏感，无法构造该场景")
+        with self.assertRaises(InstallError):
+            runtime_module._validate_source_tree(
+                self.source, set(), case_insensitive_destination=True
+            )
+
+    def test_probe_reports_this_filesystem_consistently(self) -> None:
+        """探测结果必须与该目录能否共存同名异例文件一致。"""
+        probed = runtime_module._case_insensitive_directory(self.source)
+        (self.source / "PROBE").write_bytes(b"x")
+        coexist = not (self.source / "probe").exists()
+        self.assertEqual(probed, not coexist)
+
+
 class InstallRuntimeTests(unittest.TestCase):
     """覆盖 Runtime 构建的信任边界、原子切换和 retention。"""
 

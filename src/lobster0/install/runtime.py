@@ -1293,14 +1293,24 @@ def _preflight(
         )
     if inputs.node.name != "node" or inputs.tui.name != "tui":
         _runtime_failed()
-    _validate_source_tree(inputs.node, {"bin/node"})
-    _validate_source_tree(inputs.tui, set())
+    # 预检与后续复制必须用同一个目标事实：探测安装 prefix 所在文件系统。
+    # 目录不存在或探测失败时保守视为大小写不敏感（fail closed）。
+    case_insensitive = _case_insensitive_directory(
+        _nearest_existing_directory(inputs.layout.program_prefix)
+    )
+    _validate_source_tree(
+        inputs.node, {"bin/node"}, case_insensitive_destination=case_insensitive
+    )
+    _validate_source_tree(
+        inputs.tui, set(), case_insensitive_destination=case_insensitive
+    )
     tokens["uv"] = _verify_private_file(inputs.uv, expected_mode=0o700)
     _validate_source_tree(
         inputs.managed_python_root,
         {"bin/python3.12"},
         allow_internal_symlinks=True,
         allow_public_read=True,
+        case_insensitive_destination=case_insensitive,
     )
     python_mode = stat.S_IMODE(inputs.managed_python_executable.lstat().st_mode)
     if python_mode not in {0o700, 0o755}:
@@ -1898,14 +1908,64 @@ def _safe_archive_name(value: str) -> bool:
     )
 
 
+def _nearest_existing_directory(path: Path) -> Path:
+    """返回 path 自身或其最近的已存在祖先目录，用于探测目标文件系统。"""
+    current = path
+    while True:
+        if current.is_dir():
+            return current
+        parent = current.parent
+        if parent == current:
+            return current
+        current = parent
+
+
+def _case_insensitive_directory(directory: Path) -> bool:
+    """探测 directory 所在文件系统是否大小写不敏感。
+
+    大小写折叠后重复的条目只有在**目标**文件系统大小写不敏感时才会互相
+    静默覆盖；在大小写敏感的文件系统上它们是两个独立文件，可以共存。
+    因此归属判断必须看目标而不是一刀切拒绝。
+
+    Args:
+        directory: 已存在、当前用户可写的目录。
+
+    Returns:
+        大小写不敏感为 True；无法判定时保守返回 True（按更严格处理）。
+    """
+    probe = None
+    try:
+        descriptor, name = tempfile.mkstemp(prefix=".lobster0-CASE", dir=directory)
+        os.close(descriptor)
+        probe = Path(name)
+        return probe.with_name(probe.name.replace("CASE", "case")).exists()
+    except OSError:
+        return True
+    finally:
+        if probe is not None:
+            try:
+                probe.unlink()
+            except OSError:
+                pass
+
+
 def _validate_source_tree(
     root: Path,
     required_executables: set[str],
     *,
     allow_internal_symlinks: bool = False,
     allow_public_read: bool = False,
+    case_insensitive_destination: bool = True,
 ) -> dict[str, tuple[tuple[int, ...], str | None]]:
-    """完整扫描 safe-extracted tree，仅按需允许 root 内部相对 alias link。"""
+    """完整扫描 safe-extracted tree，仅按需允许 root 内部相对 alias link。
+
+    ``case_insensitive_destination`` 为 True（默认，fail closed）时拒绝任何
+    大小写折叠后重复的相对路径，避免复制到大小写不敏感的目标时条目被静默
+    合并。目标经探测确认大小写敏感时可以放行：此时两个条目在目标上是独立
+    文件，不存在合并风险。Linux 上 uv 提供的 CPython 自带 `share/terminfo`，
+    其中就有仅大小写不同的条目（`A`/`a` 等），一刀切拒绝会让每一次 Linux
+    一行安装都以 `runtime_install_failed` 失败。
+    """
     seen: set[str] = set()
     entries = 0
     total = 0
@@ -1922,7 +1982,7 @@ def _validate_source_tree(
                 _runtime_failed()
             path = current / name
             relative = path.relative_to(root).as_posix()
-            if relative.casefold() in seen:
+            if case_insensitive_destination and relative.casefold() in seen:
                 _runtime_failed()
             seen.add(relative.casefold())
             metadata = path.lstat()
@@ -1966,11 +2026,14 @@ def _copy_verified_tree(
     if program_mode not in {0o700, 0o755}:
         _runtime_failed()
     data_mode = 0o644 if program_mode == 0o755 else 0o600
+    # 目标目录尚未创建，探测其父目录所在的同一文件系统。
+    case_insensitive = _case_insensitive_directory(destination.parent)
     manifest = _validate_source_tree(
         source,
         required,
         allow_internal_symlinks=allow_internal_symlinks,
         allow_public_read=allow_public_read,
+        case_insensitive_destination=case_insensitive,
     )
     os.mkdir(destination, program_mode)
     for directory, names, files in os.walk(source, topdown=True, followlinks=False):
@@ -2036,6 +2099,7 @@ def _copy_verified_tree(
         required,
         allow_internal_symlinks=allow_internal_symlinks,
         allow_public_read=allow_public_read,
+        case_insensitive_destination=case_insensitive,
     ):
         _runtime_failed()
 
