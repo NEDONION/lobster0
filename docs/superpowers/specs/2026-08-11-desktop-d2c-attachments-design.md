@@ -2,7 +2,7 @@
 
 > 日期：2026-08-11
 > 文档类型：Phase D2c 产品、协议与安全设计
-> 状态：`DRAFT FOR REVIEW / IMPLEMENTATION PENDING`
+> 状态：`IMPLEMENTED`（2026-08-11）
 > 取代：[2026-08-10 D2 附件/模型/Workspace/Agent 控件设计](2026-08-10-desktop-d2-composer-controls-design.md)
 > 前置实现：[D2a 定时任务可控](2026-08-11-desktop-d2a-automation-control-design.md)、[D2b 多 Provider 配置](2026-08-11-desktop-d2b-model-provider-config-design.md)（均已 `IMPLEMENTED`）
 
@@ -174,6 +174,27 @@ Desktop：附件 chip 的增删纯函数、IPC 校验、capability 缺失时附�
 4. 不支持类型/过大/symlink 有明确提示，不静默失败；
 5. Python + Desktop 全量门禁通过；
 6. 真 Bridge 子进程端到端覆盖「stage → turn.start 携带 id」全链路。
+
+## 6.1 落地记录（2026-08-11）
+
+按设计实现，退出条件全部覆盖。实施中多出三件设计时没预料到的事：
+
+**（a）`artifacts.source` 有 SQLite CHECK 约束。** 加 `user_upload` 需要迁移 0009；
+SQLite 改不了 CHECK，只能重建表搬数据。设计文档说的「不做 schema 迁移」指的是不为
+附件↔消息的关联新建表，那一条仍然成立。
+
+**（b）附件默认上限与用户调低的浏览器上限会冲突。** 最初的规则是「附件上限超过 Store
+上限就拒绝加载」，结果一份把 `browser.download_max_bytes` 调到 1MB、根本没写过
+`[attachments]` 的配置直接加载失败。规则收敛为：**用户显式写下的值**超界才拒绝，
+默认值超界时收敛即可。
+
+**（c）一条 TOCTOU 测试最初断言错了。** 我用 `os.replace` 模拟「读取期间源被换掉」，
+但替换换不掉已经打开的 fd，所以 re-fstat 什么也发现不了——这不是实现漏洞，是测试
+搞错了防线的位置。re-fstat 真正能发现的是同一 inode 上的**原地改写**，测试已改为
+验证后者。
+
+端到端 smoke 走真 Bridge 子进程，同时兑现退出条件 2、3、6，并断言完整路径不出现在
+响应里。
 
 ## 7. 与原文档的差异汇总
 
