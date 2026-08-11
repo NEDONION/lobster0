@@ -1,39 +1,45 @@
 """把 protocol v1 请求编排到唯一 Python Agent Runtime。"""
 
 import asyncio
+import base64
 import os
 from collections.abc import Coroutine
-from pathlib import Path
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Protocol
 from uuid import uuid4
 
 from lobster0 import __version__
 from lobster0.agent.events import RunEvent
-from lobster0.automation.models import DeliveryTarget, TaskBudget
 from lobster0.artifacts.store import ArtifactError
+from lobster0.automation.models import DeliveryTarget, TaskBudget
 from lobster0.automation.parser import ScheduleError, parse_schedule
-from lobster0.config import (
-    ConfigError,
-    load_config,
-    ProviderConfig,
-    provider_secret_env,
-    update_providers,
-)
 from lobster0.automation.repository import (
     AutomationDataError,
     AutomationStateError,
     ScheduledTaskRepository,
     TaskRunRepository,
 )
+from lobster0.config import (
+    ConfigError,
+    ProviderConfig,
+    load_config,
+    provider_secret_env,
+    update_providers,
+)
 from lobster0.memory.store import MemoryError
 from lobster0.policy.approvals import ApprovalDecision
 from lobster0.providers.base import JsonValue
 from lobster0.runtime import AgentRuntime
 from lobster0.setup import SetupError, update_secret
+from lobster0.storage.conversations import SessionRepository
 
 from .conversations import ConversationQueryError
 from .protocol import BridgeFrame, BridgeRequest, ProtocolError, decode_request, encode_frame
+
+_MAX_ARTIFACT_SCAN = 500
+_PREVIEW_TEXT_TYPES = frozenset({"text/plain", "text/csv", "application/json"})
+_PREVIEW_IMAGE_TYPES = frozenset({"image/png", "image/jpeg"})
 
 
 class AsyncLineReader(Protocol):
@@ -72,6 +78,8 @@ class BridgeServer:
         # 已 stage、尚未被某次 turn 使用的附件。内存态即可：staging 本就不是
         # 持久语义，进程重启后重新选文件即可。
         self._staged_attachments: dict[str, dict[str, JsonValue]] = {}
+        # 最近一次 reveal 请求的真实路径，只供 Main 进程读取，不进 Renderer。
+        self._pending_reveal: str | None = None
 
     async def run(self) -> int:
         """处理请求直到 stdin EOF 或 `bridge.shutdown`。
@@ -129,6 +137,7 @@ class BridgeServer:
                         "automation_write",
                         "providers_write",
                         "attachments",
+                        "artifacts_read",
                     ],
                     "automation_enabled": self._runtime.automation_enabled,
                 },
@@ -229,6 +238,8 @@ class BridgeServer:
             return True
         if request.type.startswith("automation.") and request.type != "automation.list":
             return await self._handle_automation_write(request)
+        if request.type.startswith("artifacts."):
+            return await self._handle_artifacts(request)
         if request.type == "attachment.stage":
             return await self._handle_attachment_stage(request)
         if request.type.startswith("providers."):
@@ -273,6 +284,90 @@ class BridgeServer:
         await self._cancel_active()
         await self._ok(request.request_id, {})
         return False
+
+    async def _handle_artifacts(self, request: BridgeRequest) -> bool:
+        """列出、预览或定位当前会话的产物。
+
+        三条都以「已关联到当前会话」为前提，同 Owner 的其他会话产物也拒绝。
+        响应里**永远不含文件系统路径**——Renderer 拿不到路径，也就无从构造任意
+        本地读取；``reveal`` 由 Main 进程凭 Core 返回的路径执行，见 §4。
+        """
+        store = self._runtime.artifact_store
+        if store is None:
+            await self._error(
+                request.request_id, "artifact_unavailable", "产物功能不可用", retryable=False
+            )
+            return True
+        session_id = self._current_session_id()
+        if request.type == "artifacts.list":
+            limit = request.payload["limit"]
+            assert isinstance(limit, int) and not isinstance(limit, bool)
+            links = store.list_for_session(session_id, limit=limit)
+            await self._ok(
+                request.request_id,
+                {"artifacts": [_artifact_summary(item) for item in links]},
+            )
+            return True
+
+        artifact_id = request.payload["artifact_id"]
+        assert isinstance(artifact_id, str)
+        # 归属判定走 link 表，与 read_artifact Tool 同一套规则。
+        if not any(
+            item.artifact_id == artifact_id
+            for item in store.list_for_session(session_id, limit=_MAX_ARTIFACT_SCAN)
+        ):
+            await self._error(
+                request.request_id, "artifact_not_found", "产物不可用", retryable=False
+            )
+            return True
+        try:
+            artifact = store.read_metadata(artifact_id)
+        except ArtifactError as error:
+            await self._error(request.request_id, error.code, "产物不可用", retryable=False)
+            return True
+
+        if request.type == "artifacts.reveal":
+            # 路径只到 Main 进程，不进 Renderer；Renderer 只知道「已请求定位」。
+            self._pending_reveal = str(artifact.path)
+            await self._ok(request.request_id, {"revealed": True})
+            return True
+
+        max_bytes = request.payload["max_bytes"]
+        assert isinstance(max_bytes, int) and not isinstance(max_bytes, bool)
+        try:
+            raw = artifact.path.read_bytes()[:max_bytes]
+        except OSError:
+            await self._error(
+                request.request_id, "artifact_unreadable", "产物无法读取", retryable=False
+            )
+            return True
+        payload: dict[str, JsonValue] = {
+            "artifact_id": artifact.artifact_id,
+            "media_type": artifact.media_type,
+            "byte_size": artifact.byte_size,
+            "truncated": artifact.byte_size > max_bytes,
+        }
+        if artifact.media_type in _PREVIEW_TEXT_TYPES:
+            try:
+                # 不用 errors="replace"：替换字符会让用户以为文件本来就是乱码。
+                payload["text"] = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                await self._error(
+                    request.request_id, "artifact_not_text", "产物不是文本", retryable=False
+                )
+                return True
+        elif artifact.media_type in _PREVIEW_IMAGE_TYPES:
+            # data URI 而不是自定义 scheme：预览不该为此放宽 CSP。
+            encoded = base64.b64encode(raw).decode("ascii")
+            payload["data_uri"] = f"data:{artifact.media_type};base64,{encoded}"
+        await self._ok(request.request_id, payload)
+        return True
+
+    def _current_session_id(self) -> int:
+        """把当前 session_key 解析成内部会话 ID。"""
+        return SessionRepository(self._runtime.database).get_or_create_cli(
+            self._runtime.owner_id, self._session_key
+        ).id
 
     async def _handle_attachment_stage(self, request: BridgeRequest) -> bool:
         """把用户选中的文件拷进 ArtifactStore 并登记为"可用于下一次 turn"。
@@ -694,6 +789,22 @@ class _ProviderError(ConfigError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+def _artifact_summary(link: object) -> dict[str, JsonValue]:
+    """把一条产物关联压成可安全下发的摘要。
+
+    刻意不含 ``path``：那是本机信息，界面不需要它，给出去只会多一条越权读取的
+    可能路径。
+    """
+    return {
+        "artifact_id": link.artifact_id,
+        "filename": link.filename,
+        "media_type": link.media_type,
+        "byte_size": link.byte_size,
+        "origin": link.origin,
+        "created_at": link.created_at.isoformat(),
+    }
 
 
 def _provider_summary(entry: ProviderConfig, selected: str) -> dict[str, JsonValue]:
