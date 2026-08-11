@@ -5,7 +5,13 @@ import unittest
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 
-from lobster0.config import ConfigError, load_config, resolve_permission_roots
+from lobster0.config import (
+    ConfigError,
+    ProviderConfig,
+    load_config,
+    resolve_permission_roots,
+    update_providers,
+)
 from lobster0.paths import build_state_paths
 
 
@@ -774,6 +780,76 @@ class ConfigTest(unittest.TestCase):
         )
         with self.assertRaises(ConfigError):
             load_config(self.paths, {})
+
+
+    def test_update_providers_rewrites_only_provider_and_agent_fields(self) -> None:
+        """就地更新只动 providers 与 agent 的两个字段，其余段落原样保留。"""
+        self._write_config(
+            '[agent]\nmodel = "old-model"\nmax_tool_iterations = 7\n'
+            '[ui]\nlanguage = "zh-CN"\n'
+            '[provider]\nbase_url = "https://old.example/v1"\n'
+            '[tools]\nmode = "safe"\n'
+        )
+
+        update_providers(
+            self.paths,
+            providers=(
+                ProviderConfig(id="a", base_url="https://a.example/v1"),
+                ProviderConfig(id="b", base_url="https://b.example/v1"),
+            ),
+            selected="b",
+            model="new-model",
+        )
+
+        config = load_config(self.paths, {})
+        self.assertEqual([item.id for item in config.providers], ["a", "b"])
+        self.assertEqual(config.provider.base_url, "https://b.example/v1")
+        self.assertEqual(config.agent.model, "new-model")
+        # 其他段落与字段必须存活。
+        self.assertEqual(config.agent.max_tool_iterations, 7)
+        self.assertEqual(config.ui.language, "zh-CN")
+        self.assertEqual(config.tools.mode, "safe")
+        # 旧的单表被数组表取代，不能两者并存（并存会导致加载直接失败）。
+        text = self.paths.config.read_text(encoding="utf-8")
+        self.assertIn("[[providers]]", text)
+        self.assertNotIn("\n[provider]\n", text)
+
+    def test_update_providers_keeps_file_intact_when_result_would_not_load(self) -> None:
+        """写入前先验证新内容能被加载，校验不过就不落盘。"""
+        self._write_config('[agent]\nmodel = "keep"\n[provider]\nbase_url = "https://k.example/v1"\n')
+        before = self.paths.config.read_text(encoding="utf-8")
+
+        with self.assertRaises(ConfigError):
+            update_providers(
+                self.paths,
+                providers=(ProviderConfig(id="a", base_url="https://a.example/v1"),),
+                selected="does-not-exist",
+                model="m",
+            )
+
+        self.assertEqual(self.paths.config.read_text(encoding="utf-8"), before)
+
+    def test_update_providers_backs_up_the_previous_file(self) -> None:
+        """覆盖前留一份备份，便于用户回滚。"""
+        self._write_config('[agent]\nmodel = "v1"\n[provider]\nbase_url = "https://k.example/v1"\n')
+
+        update_providers(
+            self.paths,
+            providers=(ProviderConfig(id="a", base_url="https://a.example/v1"),),
+            selected="a",
+            model="v2",
+        )
+
+        backup = self.paths.config.with_suffix(".toml.bak")
+        self.assertTrue(backup.is_file())
+        self.assertIn('model = "v1"', backup.read_text(encoding="utf-8"))
+
+    def test_update_providers_requires_at_least_one_entry(self) -> None:
+        """空列表会让应用没有可用模型端点，直接拒绝。"""
+        self._write_config('[agent]\nmodel = "m"\n[provider]\nbase_url = "https://k.example/v1"\n')
+
+        with self.assertRaises(ConfigError):
+            update_providers(self.paths, providers=(), selected="a", model="m")
 
 
 class TelegramConfigTest(unittest.TestCase):

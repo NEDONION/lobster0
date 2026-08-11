@@ -1,10 +1,12 @@
 """Lobster0 的 TOML 配置、环境变量覆盖与边界校验。"""
 
+import contextlib
+import json
 import os
 import re
 import tomllib
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import isfinite
 from pathlib import Path
 from typing import cast
@@ -1666,6 +1668,139 @@ def _existing_unique_roots(candidates: list[Path], workspace: Path) -> tuple[Pat
             continue
         roots.append(root)
     return tuple(roots)
+
+
+def update_providers(
+    paths: StatePaths,
+    *,
+    providers: tuple[ProviderConfig, ...],
+    selected: str,
+    model: str,
+) -> None:
+    """就地更新配置文件里的 Provider 列表与当前选择。
+
+    做法是"读原文 → 剥掉 provider 相关段落 → 追加新段落 → 校验能否加载 → 原子写"，
+    而不是对 TOML 做字符串级 patch（正则改 TOML 极易写坏）。写入前会用
+    :func:`load_config` 真正解析一遍新内容，**校验不过就不落盘**，避免产生一个让
+    应用起不来的配置。覆盖前把原文件备份为 ``config.toml.bak``。
+
+    已知取舍：其余段落按原文逐行保留，但被移除的 ``[provider]``/``[[providers]]``
+    段落内的用户注释会丢失。保留它们需要引入 round-trip TOML 库，判断新依赖的
+    风险高于这点代价；调用方应在界面上告知用户。
+
+    Args:
+        paths: 已初始化的状态路径。
+        providers: 新的完整 Provider 列表，至少一条。
+        selected: 当前生效的 Provider id，必须存在于 ``providers`` 中。
+        model: 当前生效的模型名。
+
+    Raises:
+        ConfigError: 列表为空、选择项不存在，或新内容无法被加载。
+        OSError: 读取或原子写入失败。
+    """
+    if not providers:
+        raise ConfigError("at least one provider is required")
+    if all(item.id != selected for item in providers):
+        raise ConfigError(f"selected provider is not in the list: {selected}")
+
+    original = paths.config.read_text(encoding="utf-8")
+    body = _strip_provider_sections(original)
+    body = _replace_agent_fields(body, selected=selected, model=model)
+    rendered = body.rstrip("\n") + "\n\n" + _render_providers(providers)
+
+    # 先落到临时文件并真正加载一次，确认不会写出起不来的配置。
+    probe = paths.config.with_name(f"{paths.config.name}.probe")
+    probe.write_text(rendered, encoding="utf-8")
+    probe.chmod(0o600)
+    try:
+        load_config(replace(paths, config=probe), {})
+    finally:
+        with contextlib.suppress(OSError):
+            probe.unlink()
+
+    with contextlib.suppress(OSError):
+        paths.config.with_suffix(".toml.bak").write_text(original, encoding="utf-8")
+        paths.config.with_suffix(".toml.bak").chmod(0o600)
+    _write_private_config(paths.config, rendered)
+
+
+def _strip_provider_sections(text: str) -> str:
+    """删除旧的 ``[provider]`` 表与全部 ``[[providers]]`` 数组表。"""
+    lines = text.splitlines()
+    kept: list[str] = []
+    skipping = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            skipping = stripped in {"[provider]", "[[providers]]"}
+        if not skipping:
+            kept.append(line)
+    return "\n".join(kept)
+
+
+def _replace_agent_fields(text: str, *, selected: str, model: str) -> str:
+    """把 ``[agent]`` 段里的 model/provider 换成新值，没有就补上。"""
+    lines = text.splitlines()
+    in_agent = False
+    seen_model = False
+    seen_provider = False
+    result: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("["):
+            if in_agent:
+                # 离开 agent 段前补齐缺失字段。
+                if not seen_model:
+                    result.append(f"model = {json.dumps(model, ensure_ascii=False)}")
+                if not seen_provider:
+                    result.append(f"provider = {json.dumps(selected)}")
+            in_agent = stripped == "[agent]"
+        if in_agent and stripped.startswith("model") and "=" in stripped:
+            result.append(f"model = {json.dumps(model, ensure_ascii=False)}")
+            seen_model = True
+            continue
+        if in_agent and stripped.startswith("provider") and "=" in stripped:
+            result.append(f"provider = {json.dumps(selected)}")
+            seen_provider = True
+            continue
+        result.append(line)
+    if in_agent:
+        if not seen_model:
+            result.append(f"model = {json.dumps(model, ensure_ascii=False)}")
+        if not seen_provider:
+            result.append(f"provider = {json.dumps(selected)}")
+    return "\n".join(result)
+
+
+def _render_providers(providers: tuple[ProviderConfig, ...]) -> str:
+    """把 Provider 列表渲染成 TOML 数组表。"""
+    blocks = []
+    for item in providers:
+        blocks.append(
+            "[[providers]]\n"
+            f"id = {json.dumps(item.id)}\n"
+            f"base_url = {json.dumps(item.base_url)}\n"
+            f"api_key_env = {json.dumps(item.api_key_env)}\n"
+            f"timeout_seconds = {item.timeout_seconds}\n"
+        )
+    return "\n".join(blocks)
+
+
+def _write_private_config(path: Path, text: str) -> None:
+    """以 0600 原子替换配置文件，失败时不留临时残片。"""
+    temporary = path.with_name(f"{path.name}.tmp")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as target:
+            os.fchmod(target.fileno(), 0o600)
+            target.write(text)
+            target.flush()
+            os.fsync(target.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(temporary)
+        raise
 
 
 def _providers(
