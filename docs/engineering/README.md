@@ -168,6 +168,7 @@ Core。当前为 `TARGET CONFIRMED / D1-D5 IMPLEMENTATION PENDING`。
 | [D1 跟进修复：拖拽/命名/Markdown](desktop/20260810_D1跟进修复-拖拽命名与Markdown渲染.md) | 窗口拖拽区域、对话命名对齐、Markdown 渲染。 |
 | [空态与侧边栏可用性修复](desktop/20260811_空态与侧边栏可用性修复.md) | 空态双层标题、遗留 M Logo、侧栏状态枚举与内部徽标。 |
 | [桌面应用分发打包](desktop/20260811_桌面应用分发打包.md) | electron-builder 固定版本、dmg/zip/AppImage 产物、版本绑定、发布链路与**未签名**姿态。 |
+| [对标 ClawX 能力差距与 Milestone 规划](../superpowers/specs/2026-08-11-desktop-clawx-capability-gap-and-roadmap.md) | 逐项查证 ClawX 的 Models/Agents/Channels/Skills/Cron 五页与我方 Core 能力的差距，重排 D2a（定时任务可控）→ D2b（模型与密钥配置）→ D2c（原 D2）。`DRAFT FOR REVIEW`。 |
 | [D2 附件/模型/Workspace/Agent 控件设计](../superpowers/specs/2026-08-10-desktop-d2-composer-controls-design.md) | Composer 四控件、Bridge 协议新增、ArtifactStore 附件 admission。`DRAFT FOR REVIEW`。 |
 | [W0/W1 实施计划](../superpowers/plans/2026-08-09-desktop-workbench-w0-w1.md) | RED→GREEN 施工与最终门禁。 |
 | `desktop/` | Electron Main、固定 Preload、React 四界面和 Desktop 测试。 |

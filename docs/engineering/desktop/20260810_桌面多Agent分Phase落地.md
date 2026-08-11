@@ -106,7 +106,25 @@ D1 不增加 Bridge 请求、数据库迁移或依赖。当前 `task.start`、Se
 视觉基准在实施中调整为直接采用 [LobsterAI](https://github.com/netease-youdao/LobsterAI)（MIT）的
 `classic-light` 设计系统，取代设计初稿的自定义墨绿方案，详见 D1 设计文档 §5。
 
-## 5. D2：附件、模型、Workspace 与 Agent 选择
+## 4.6 路线调整（2026-08-11）
+
+用户提出对标 [ClawX](https://github.com/ValueCell-ai/ClawX) 并点名「定时任务」「配置模型/换模型/
+填 API Key」两项。盘点后发现这两项的 Core 能力**早已具备**（定时任务的 pause/resume/run/cancel/
+halt 全在，只是 Bridge 只开了只读的 `automation.list`），属于"桌面端没有入口"而非"功能缺失"。
+
+因此在原 D2 之前插入两个投入产出比更高的 milestone，详见
+[对标 ClawX 能力差距与 Milestone 规划](../../superpowers/specs/2026-08-11-desktop-clawx-capability-gap-and-roadmap.md)：
+
+| Milestone | 目标 | 性质 |
+| --- | --- | --- |
+| D2a | 定时任务从只读变可控（暂停/恢复/立即运行/取消/运行历史/急停） | 纯接线，Core 全有 |
+| D2b | 模型名、base_url、API Key 可在界面配置 | 小幅后端 + UI |
+| D2c | 原 D2：附件与 Composer 控件 | 原计划顺延 |
+
+原 D2 的「模型选择器」「Agent 选择器」两项按该文档结论调整：前者在 D2b 后改为跳转设置页，
+后者因 Core 无多 Agent 概念仍保持只读，真正的选择器等 D4。
+
+## 5. D2c：附件、模型、Workspace 与 Agent 选择（原 D2）
 
 独立设计：[D2 附件/模型/Workspace/Agent 控件设计](../../superpowers/specs/2026-08-10-desktop-d2-composer-controls-design.md)（`DRAFT FOR REVIEW`）。
 
