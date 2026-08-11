@@ -15,6 +15,7 @@ from lobster0.agent.events import RunEvent
 from lobster0.bootstrap import initialize_state
 from lobster0.bridge.__main__ import build_parser
 from lobster0.bridge.conversations import ConversationQueryError
+from lobster0.artifacts.store import ArtifactError
 from lobster0.config import ProviderConfig, load_config
 from lobster0.bridge.server import BridgeServer
 from lobster0.paths import build_state_paths
@@ -90,6 +91,17 @@ class CaptureWriter:
                     return found
                 self.changed.clear()
                 await self.changed.wait()
+
+
+class RecordingTurnService:
+    """只记录是否被调用，用于证明"拒绝时不产生副作用"。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+        self.calls.append((text, conversation_id))
+        await on_event(RunEvent("turn_completed", 21, {"text": "ok"}))
 
 
 class EventTurnService:
@@ -203,6 +215,8 @@ def _runtime(service) -> SimpleNamespace:
         database=object(),
         paths=SimpleNamespace(home=Path("/nonexistent")),
         config=_stub_config(),
+        artifact_store=None,
+        attachment_max_bytes=1024,
     )
 
 
@@ -695,6 +709,140 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         await task
 
         self.assertEqual(response["payload"]["code"], "turn_busy")
+
+    async def test_turn_start_with_unknown_attachment_is_refused_without_side_effects(
+        self,
+    ) -> None:
+        """未知附件 id 必须整体拒绝，且不能已经把回合跑起来。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        service = RecordingTurnService()
+        runtime = _runtime(service)
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+        await reader.feed(
+            _request(
+                "start-1",
+                "turn.start",
+                {
+                    "session_key": "s",
+                    "text": "看看这个",
+                    "attachment_ids": ["art_" + "b" * 64],
+                },
+            )
+        )
+        response = await writer.wait_for_id("start-1")
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        self.assertEqual(await task, 0)
+
+        self.assertEqual(response["type"], "response.error")
+        self.assertEqual(response["payload"]["code"], "attachment_unknown")
+        # 关键：不能只是回了错误却已经把回合跑起来。
+        self.assertEqual(service.calls, [])
+
+    async def test_staged_attachment_can_then_be_used_by_turn_start(self) -> None:
+        """stage 过的 id 才能被 turn.start 接受。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        service = RecordingTurnService()
+        runtime = _runtime(service)
+        artifact_id = "art_" + "c" * 64
+        runtime.artifact_store = SimpleNamespace(
+            stage_from_external_path=lambda source, *, max_bytes: Path("/staged"),
+            put=lambda staged, *, declared_media_type, source: SimpleNamespace(
+                artifact_id=artifact_id,
+                media_type=declared_media_type,
+                byte_size=5,
+            ),
+        )
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+        await reader.feed(
+            _request(
+                "stage-1",
+                "attachment.stage",
+                {"path": "/tmp/note.txt", "declared_media_type": "text/plain"},
+            )
+        )
+        staged = await writer.wait_for_id("stage-1")
+        await reader.feed(
+            _request(
+                "start-1",
+                "turn.start",
+                {"session_key": "s", "text": "看看", "attachment_ids": [artifact_id]},
+            )
+        )
+        accepted = await writer.wait_for_id("start-1")
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        await task
+
+        self.assertEqual(staged["payload"]["attachment"]["artifact_id"], artifact_id)
+        self.assertEqual(staged["payload"]["attachment"]["filename"], "note.txt")
+        self.assertEqual(accepted["type"], "response.ok")
+        self.assertEqual(len(service.calls), 1)
+
+    async def test_switching_session_drops_staged_attachments(self) -> None:
+        """附件属于当前会话的草稿，换会话就该失效。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(RecordingTurnService())
+        artifact_id = "art_" + "d" * 64
+        runtime.artifact_store = SimpleNamespace(
+            stage_from_external_path=lambda source, *, max_bytes: Path("/staged"),
+            put=lambda staged, *, declared_media_type, source: SimpleNamespace(
+                artifact_id=artifact_id, media_type=declared_media_type, byte_size=5
+            ),
+        )
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+        await reader.feed(
+            _request(
+                "stage-1",
+                "attachment.stage",
+                {"path": "/tmp/note.txt", "declared_media_type": "text/plain"},
+            )
+        )
+        await writer.wait_for_id("stage-1")
+        await reader.feed(_request("new-1", "session.new", {"session_key": "other"}))
+        await writer.wait_for_id("new-1")
+        await reader.feed(
+            _request(
+                "start-1",
+                "turn.start",
+                {"session_key": "other", "text": "看看", "attachment_ids": [artifact_id]},
+            )
+        )
+        response = await writer.wait_for_id("start-1")
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        await task
+
+        self.assertEqual(response["payload"]["code"], "attachment_unknown")
+
+    async def test_attachment_stage_maps_store_errors_to_stable_codes(self) -> None:
+        """Store 的拒绝理由要如实传给界面，但不带路径细节。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(RecordingTurnService())
+
+        def refuse(source: Path, *, max_bytes: int) -> Path:
+            raise ArtifactError("artifact_too_large", "artifact is too large")
+
+        runtime.artifact_store = SimpleNamespace(stage_from_external_path=refuse)
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+        await reader.feed(
+            _request(
+                "stage-1",
+                "attachment.stage",
+                {"path": "/tmp/big.bin", "declared_media_type": "text/plain"},
+            )
+        )
+        response = await writer.wait_for_id("stage-1")
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        await task
+
+        self.assertEqual(response["payload"]["code"], "artifact_too_large")
+        self.assertNotIn("/tmp/big.bin", json.dumps(response, ensure_ascii=False))
 
     async def test_memory_command_routes_only_validated_core_arguments(self) -> None:
         """Bridge 把已验证 action/query/limit 路由到 Runtime Console。"""

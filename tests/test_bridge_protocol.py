@@ -443,5 +443,77 @@ class BridgeProtocolTest(unittest.TestCase):
         self.assertEqual(captured.exception.code, "invalid_frame")
 
 
+def _frame(request_type: str, payload: dict) -> bytes:
+    """把类型与 payload 编成一条合法的 NDJSON 请求帧。"""
+    return (
+        json.dumps(
+            {"v": 1, "id": "req-1", "type": request_type, "payload": payload},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
+
+
+class AttachmentProtocolTest(unittest.TestCase):
+    """附件请求的字段边界。"""
+
+    def test_stage_requires_an_absolute_path_and_declared_type(self) -> None:
+        """路径必须绝对：相对路径的含义取决于 Core 的 cwd，不可控。"""
+        request = decode_request(
+            _frame(
+                "attachment.stage",
+                {"path": "/tmp/note.txt", "declared_media_type": "text/plain"},
+            )
+        )
+
+        self.assertEqual(request.payload["path"], "/tmp/note.txt")
+
+        for payload in (
+            {"path": "note.txt", "declared_media_type": "text/plain"},
+            {"path": "", "declared_media_type": "text/plain"},
+            {"path": "/tmp/a\x00b", "declared_media_type": "text/plain"},
+            {"path": "/tmp/note.txt"},
+            {"path": "/tmp/note.txt", "declared_media_type": "text/plain", "extra": 1},
+        ):
+            with self.assertRaises(ProtocolError) as raised:
+                decode_request(_frame("attachment.stage", payload))
+            self.assertEqual(raised.exception.code, "invalid_attachment")
+
+    def test_turn_start_accepts_optional_attachment_ids(self) -> None:
+        """附件字段可选：不带它的旧客户端必须继续可用。"""
+        without = decode_request(
+            _frame("turn.start", {"session_key": "s", "text": "hi"})
+        )
+        self.assertNotIn("attachment_ids", without.payload)
+
+        with_ids = decode_request(
+            _frame(
+                "turn.start",
+                {"session_key": "s", "text": "hi", "attachment_ids": ["art_" + "a" * 64]},
+            )
+        )
+        self.assertEqual(len(with_ids.payload["attachment_ids"]), 1)
+
+    def test_turn_start_refuses_malformed_attachment_ids(self) -> None:
+        """id 形状固定，越界的一律拒绝，避免把任意字符串带进 Store 查询。"""
+        for ids in (
+            "not-a-list",
+            [1],
+            ["../escape"],
+            ["art_" + "a" * 63],
+            ["art_" + "A" * 64],
+            [],
+            ["art_" + "a" * 64] * 11,
+        ):
+            with self.assertRaises(ProtocolError) as raised:
+                decode_request(
+                    _frame(
+                        "turn.start",
+                        {"session_key": "s", "text": "hi", "attachment_ids": ids},
+                    )
+                )
+            self.assertEqual(raised.exception.code, "invalid_turn", ids)
+
+
 if __name__ == "__main__":
     unittest.main()

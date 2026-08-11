@@ -35,6 +35,7 @@ _REQUEST_TYPES = frozenset(
         "providers.remove",
         "providers.select",
         "providers.set_secret",
+        "attachment.stage",
         "bridge.shutdown",
     }
 )
@@ -51,6 +52,10 @@ _CREATABLE_SCHEDULE_KINDS = frozenset({"once", "interval", "cron"})
 _MIN_INTERVAL_SECONDS = 300
 # Provider id 参与密钥环境变量名推导，必须与 config 层同一套字符集。
 _PROVIDER_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
+# Artifact id 的形状由 Store 决定：art_ + sha256 十六进制。固定住它，
+# 免得任意字符串被带进 Store 查询。
+_ARTIFACT_ID = re.compile(r"art_[0-9a-f]{64}\Z")
+_MAX_ATTACHMENTS = 10
 _PERMISSION_MODES = frozenset({"safe", "smart", "autopilot", "yolo"})
 _MEMORY_ACTIONS = frozenset(
     {
@@ -193,12 +198,25 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
             raise ProtocolError("invalid_hello", "客户端握手字段不合法")
         return
     if request_type == "turn.start":
+        # attachment_ids 可选：不带它的旧客户端必须继续可用。
         if (
-            set(payload) != {"session_key", "text"}
+            set(payload) - {"attachment_ids"} != {"session_key", "text"}
             or not _bounded_string(payload.get("session_key"), 1, 128)
             or not _bounded_string(payload.get("text"), 1, MAX_FRAME_BYTES)
         ):
             raise ProtocolError("invalid_turn", "Turn 请求字段不合法")
+        if "attachment_ids" in payload and not _valid_artifact_ids(payload["attachment_ids"]):
+            raise ProtocolError("invalid_turn", "Turn 请求字段不合法")
+        return
+    if request_type == "attachment.stage":
+        path = payload.get("path")
+        if (
+            set(payload) != {"path", "declared_media_type"}
+            or not _bounded_string(path, 1, 4096)
+            or not str(path).startswith("/")
+            or not _bounded_string(payload.get("declared_media_type"), 1, 128)
+        ):
+            raise ProtocolError("invalid_attachment", "附件请求字段不合法")
         return
     if request_type == "approval.resolve":
         approval_id = payload.get("approval_id")
@@ -326,6 +344,15 @@ def _bounded_string(value: JsonValue, minimum: int, maximum: int) -> bool:
 def _integer_between(value: JsonValue, minimum: int, maximum: int) -> bool:
     """判断 JSON 值是否为指定闭区间内的非 bool 整数。"""
     return type(value) is int and minimum <= value <= maximum
+
+
+def _valid_artifact_ids(value: JsonValue) -> bool:
+    """判断附件 id 列表是否是非空、有界、形状正确的 Artifact id。"""
+    return (
+        isinstance(value, list)
+        and 1 <= len(value) <= _MAX_ATTACHMENTS
+        and all(isinstance(item, str) and _ARTIFACT_ID.fullmatch(item) for item in value)
+    )
 
 
 def _valid_provider_id(value: JsonValue) -> bool:

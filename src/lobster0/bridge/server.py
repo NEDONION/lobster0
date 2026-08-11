@@ -3,6 +3,7 @@
 import asyncio
 import os
 from collections.abc import Coroutine
+from pathlib import Path
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import uuid4
@@ -10,6 +11,7 @@ from uuid import uuid4
 from lobster0 import __version__
 from lobster0.agent.events import RunEvent
 from lobster0.automation.models import DeliveryTarget, TaskBudget
+from lobster0.artifacts.store import ArtifactError
 from lobster0.automation.parser import ScheduleError, parse_schedule
 from lobster0.config import (
     ConfigError,
@@ -67,6 +69,9 @@ class BridgeServer:
         self._active_task: asyncio.Task[None] | None = None
         self._pending_approval_id: int | None = None
         self._session_key = "default"
+        # 已 stage、尚未被某次 turn 使用的附件。内存态即可：staging 本就不是
+        # 持久语义，进程重启后重新选文件即可。
+        self._staged_attachments: dict[str, dict[str, JsonValue]] = {}
 
     async def run(self) -> int:
         """处理请求直到 stdin EOF 或 `bridge.shutdown`。
@@ -123,6 +128,7 @@ class BridgeServer:
                         "automation_read",
                         "automation_write",
                         "providers_write",
+                        "attachments",
                     ],
                     "automation_enabled": self._runtime.automation_enabled,
                 },
@@ -145,7 +151,21 @@ class BridgeServer:
                     retryable=True,
                 )
                 return True
+            attachment_ids = request.payload.get("attachment_ids") or []
+            assert isinstance(attachment_ids, list)
+            # 校验必须在 _ok 之前：一旦回了 ok 再拒绝，界面会以为回合已经开始。
+            if any(item not in self._staged_attachments for item in attachment_ids):
+                await self._error(
+                    request.request_id,
+                    "attachment_unknown",
+                    "附件已失效，请重新添加",
+                    retryable=False,
+                )
+                return True
             await self._ok(request.request_id, {})
+            for item in attachment_ids:
+                # 一个附件只能用一次，避免旧 id 被无限重放。
+                self._staged_attachments.pop(item, None)
             text = request.payload["text"]
             session_key = request.payload["session_key"]
             assert isinstance(text, str) and isinstance(session_key, str)
@@ -206,6 +226,8 @@ class BridgeServer:
             return True
         if request.type.startswith("automation.") and request.type != "automation.list":
             return await self._handle_automation_write(request)
+        if request.type == "attachment.stage":
+            return await self._handle_attachment_stage(request)
         if request.type.startswith("providers."):
             return await self._handle_providers(request)
         if request.type == "session.new":
@@ -220,6 +242,8 @@ class BridgeServer:
             session_key = request.payload["session_key"]
             assert isinstance(session_key, str)
             self._session_key = session_key
+            # 附件属于当前会话的草稿，换会话即失效。
+            self._staged_attachments.clear()
             await self._ok(request.request_id, {"session_key": session_key})
             return True
         if request.type == "memory.command":
@@ -246,6 +270,47 @@ class BridgeServer:
         await self._cancel_active()
         await self._ok(request.request_id, {})
         return False
+
+    async def _handle_attachment_stage(self, request: BridgeRequest) -> bool:
+        """把用户选中的文件拷进 ArtifactStore 并登记为"可用于下一次 turn"。
+
+        真正的安全边界（symlink、大小、magic byte、TOCTOU）全在 Store 里，这里
+        只做路由与错误码映射。错误消息用固定文案，不回传路径。
+        """
+        store = self._runtime.artifact_store
+        if store is None:
+            await self._error(
+                request.request_id, "attachment_unavailable", "附件功能不可用", retryable=False
+            )
+            return True
+        source = Path(str(request.payload["path"]))
+        declared = request.payload["declared_media_type"]
+        assert isinstance(declared, str)
+        try:
+            staged = store.stage_from_external_path(
+                source, max_bytes=self._runtime.attachment_max_bytes
+            )
+            artifact = store.put(
+                staged, declared_media_type=declared, source="user_upload"
+            )
+        except ArtifactError as error:
+            await self._error(request.request_id, error.code, "附件未通过校验", retryable=False)
+            return True
+        except OSError:
+            await self._error(
+                request.request_id, "attachment_unavailable", "附件读取失败", retryable=False
+            )
+            return True
+        summary: dict[str, JsonValue] = {
+            "artifact_id": artifact.artifact_id,
+            # 文件名只取 basename：完整路径是用户本机信息，没有理由回给界面。
+            "filename": source.name,
+            "media_type": artifact.media_type,
+            "size_bytes": artifact.byte_size,
+        }
+        self._staged_attachments[artifact.artifact_id] = summary
+        await self._ok(request.request_id, {"attachment": summary})
+        return True
 
     async def _handle_providers(self, request: BridgeRequest) -> bool:
         """处理 Provider 配置的读写。
