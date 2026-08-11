@@ -1,7 +1,7 @@
 """Feedback、Proposal、Eval 与 ActiveRevision 的事务化 Repository。"""
 
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from lobster0.evolution.models import (
     ActiveRevision,
@@ -9,6 +9,9 @@ from lobster0.evolution.models import (
     EvalCaseStatus,
     EvalRun,
     EvalRunStatus,
+    EvolutionAction,
+    EvolutionApproval,
+    EvolutionApprovalStatus,
     Feedback,
     FeedbackRating,
     FeedbackStatus,
@@ -646,6 +649,219 @@ class ActiveRevisionRepository:
                 (owner_id, target_type.value, target_name),
             ).fetchone()
         return _active_revision_from_row(result_row)
+
+
+class EvolutionApprovalRepository:
+    """以条件更新保存 pending → approved → consumed 的 Evolution 审批生命周期。
+
+    这里没有复用 Core 的 ``approvals`` 表：那张表的 ``turn_id`` 与 ``tool_run_id`` 都是
+    NOT NULL，结构上绑定"某个对话 Turn 里的某次工具调用"，而 ``evolution.apply`` 是 CLI
+    发起、不属于任何 Turn 的动作；伪造一个合成 Turn/ToolRun 去满足 NOT NULL 会污染会话账本
+    与 Tool 审计计数。改为follow 仓库里已有的 ``memory_reviews`` 先例：域内审批表 + 精确
+    hash 绑定 + 单次消费，复用 Core Approval 的语义而不是它的表。
+    """
+
+    def __init__(self, database: Database, *, clock: type[datetime] = datetime) -> None:
+        """绑定已迁移到 v8 的数据库与可替换的时钟。"""
+        self._database = database
+        self._clock = clock
+
+    def request(
+        self,
+        *,
+        owner_id: int,
+        proposal_version_id: int,
+        eval_run_id: int | None,
+        action: EvolutionAction,
+        binding_hash: str,
+        summary: str,
+        ttl_seconds: int,
+    ) -> EvolutionApproval:
+        """创建一条 pending 审批；同一 Owner 的同一绑定只能存在一条。
+
+        Raises:
+            EvolutionError: TTL 非法、apply 缺少 eval_run，或该绑定已经请求过。
+        """
+        if type(ttl_seconds) is not int or ttl_seconds <= 0:
+            raise EvolutionError("invalid_ttl", "approval ttl must be a positive integer")
+        if action is EvolutionAction.APPLY and eval_run_id is None:
+            raise EvolutionError(
+                "eval_receipt_required", "apply approval requires a passing eval run"
+            )
+        now = self._clock.now(UTC)
+        expires_at = now + timedelta(seconds=ttl_seconds)
+        with self._database.connect() as connection:
+            try:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO evolution_approvals (
+                        owner_id, proposal_version_id, eval_run_id, action,
+                        binding_hash, summary, status, expires_at, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                    """,
+                    (
+                        owner_id,
+                        proposal_version_id,
+                        eval_run_id,
+                        action.value,
+                        binding_hash,
+                        summary,
+                        expires_at.isoformat(),
+                        now.isoformat(),
+                    ),
+                )
+            except sqlite3.IntegrityError as error:
+                raise EvolutionError(
+                    "approval_already_requested",
+                    "an approval for this exact binding already exists",
+                ) from error
+            row = connection.execute(
+                "SELECT * FROM evolution_approvals WHERE id = ?", (cursor.lastrowid,)
+            ).fetchone()
+        return _approval_from_row(row)
+
+    def get(self, owner_id: int, approval_id: int) -> EvolutionApproval:
+        """读取一条审批，先结算到期状态，再区分不存在与 Owner 不匹配。"""
+        self._expire_due(owner_id)
+        with self._database.connect_read_only() as connection:
+            row = connection.execute(
+                "SELECT * FROM evolution_approvals WHERE id = ?", (approval_id,)
+            ).fetchone()
+        if row is None:
+            raise EvolutionError("approval_not_found", "approval was not found")
+        if row["owner_id"] != owner_id:
+            raise EvolutionError("not_owner", "approval belongs to a different owner")
+        return _approval_from_row(row)
+
+    def decide(
+        self, owner_id: int, approval_id: int, *, approved: bool
+    ) -> EvolutionApproval:
+        """把未过期 pending 审批原子改为 approved 或 denied。
+
+        Raises:
+            EvolutionError: 审批不存在、非本人、已决定或已过期。
+        """
+        now = self._clock.now(UTC)
+        target = (
+            EvolutionApprovalStatus.APPROVED if approved else EvolutionApprovalStatus.DENIED
+        )
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM evolution_approvals WHERE id = ?", (approval_id,)
+            ).fetchone()
+            _require_owned_approval(row, owner_id)
+            if row["status"] != EvolutionApprovalStatus.PENDING.value:
+                raise EvolutionError("approval_already_decided", "approval is not pending")
+            if datetime.fromisoformat(row["expires_at"]) <= now:
+                connection.execute(
+                    "UPDATE evolution_approvals SET status = 'expired' WHERE id = ?",
+                    (approval_id,),
+                )
+                raise EvolutionError("approval_expired", "approval has expired")
+            connection.execute(
+                """
+                UPDATE evolution_approvals SET status = ?, decided_at = ?
+                WHERE id = ? AND owner_id = ? AND status = 'pending'
+                """,
+                (target.value, now.isoformat(), approval_id, owner_id),
+            )
+            updated = connection.execute(
+                "SELECT * FROM evolution_approvals WHERE id = ?", (approval_id,)
+            ).fetchone()
+        return _approval_from_row(updated)
+
+    def consume(
+        self, owner_id: int, approval_id: int, *, expected_binding_hash: str
+    ) -> EvolutionApproval:
+        """原子消费一条 approved 审批；同一条审批只能成功消费一次。
+
+        Args:
+            expected_binding_hash: 执行方在真正动手前重新计算出的绑定哈希。
+
+        Raises:
+            EvolutionError: 审批不是 approved、已过期，或绑定哈希与执行目标不一致。
+        """
+        now = self._clock.now(UTC)
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM evolution_approvals WHERE id = ?", (approval_id,)
+            ).fetchone()
+            _require_owned_approval(row, owner_id)
+            if row["binding_hash"] != expected_binding_hash:
+                raise EvolutionError(
+                    "approval_binding_mismatch",
+                    "approval does not bind the action being executed",
+                )
+            if row["status"] != EvolutionApprovalStatus.APPROVED.value:
+                raise EvolutionError(
+                    "approval_not_approved", "approval is not in an approved state"
+                )
+            if datetime.fromisoformat(row["expires_at"]) <= now:
+                connection.execute(
+                    "UPDATE evolution_approvals SET status = 'expired' WHERE id = ?",
+                    (approval_id,),
+                )
+                raise EvolutionError("approval_expired", "approval has expired")
+            updated = connection.execute(
+                """
+                UPDATE evolution_approvals SET status = 'consumed', consumed_at = ?
+                WHERE id = ? AND owner_id = ? AND status = 'approved'
+                """,
+                (now.isoformat(), approval_id, owner_id),
+            )
+            if updated.rowcount != 1:
+                raise EvolutionError(
+                    "approval_not_approved", "approval was consumed concurrently"
+                )
+            row = connection.execute(
+                "SELECT * FROM evolution_approvals WHERE id = ?", (approval_id,)
+            ).fetchone()
+        return _approval_from_row(row)
+
+    def _expire_due(self, owner_id: int) -> None:
+        """把当前 Owner 已到期的 pending/approved 审批结算为 expired。"""
+        now = self._clock.now(UTC)
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                UPDATE evolution_approvals SET status = 'expired'
+                WHERE owner_id = ? AND status IN ('pending', 'approved')
+                  AND expires_at <= ?
+                """,
+                (owner_id, now.isoformat()),
+            )
+
+
+def _require_owned_approval(row: sqlite3.Row | None, owner_id: int) -> None:
+    """把缺失行与 Owner 不匹配区分成两种稳定错误。"""
+    if row is None:
+        raise EvolutionError("approval_not_found", "approval was not found")
+    if row["owner_id"] != owner_id:
+        raise EvolutionError("not_owner", "approval belongs to a different owner")
+
+
+def _approval_from_row(row: sqlite3.Row) -> EvolutionApproval:
+    """把一行 evolution_approvals 反序列化为不可变模型。"""
+    return EvolutionApproval(
+        id=row["id"],
+        owner_id=row["owner_id"],
+        proposal_version_id=row["proposal_version_id"],
+        eval_run_id=row["eval_run_id"],
+        action=EvolutionAction(row["action"]),
+        binding_hash=row["binding_hash"],
+        summary=row["summary"],
+        status=EvolutionApprovalStatus(row["status"]),
+        expires_at=datetime.fromisoformat(row["expires_at"]),
+        created_at=datetime.fromisoformat(row["created_at"]),
+        decided_at=(
+            None if row["decided_at"] is None else datetime.fromisoformat(row["decided_at"])
+        ),
+        consumed_at=(
+            None if row["consumed_at"] is None else datetime.fromisoformat(row["consumed_at"])
+        ),
+    )
 
 
 def _insert_version(

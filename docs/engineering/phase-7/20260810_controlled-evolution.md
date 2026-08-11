@@ -1,8 +1,8 @@
 # Phase 7 Controlled Evolution 工程落地方案
 
 > 文档日期：2026-08-10（施工状态更新于 2026-08-11）  
-> 状态：**IMPLEMENTATION IN PROGRESS（Task 1/6 完成；Task 2、3、4 部分完成——飞书命令未接线、
-> Memory candidate 仅支持 forget、评测缺 failure case 与 baseline/candidate 差分）**  
+> 状态：**IMPLEMENTATION IN PROGRESS（Task 1/6 完成；Task 2～5 部分完成——飞书命令未接线、
+> Memory candidate 仅支持 forget、评测缺 failure case 与差分、apply/rollback 仅 Prompt 目标可用）**  
 > 前置条件：Phase 6 生产验收通过；Memory Autopilot A～E 已实现  
 > 施工偏离说明：Phase 6 生产验收（真实 Seatbelt 2/2、飞书 15/15、Automation 10/10、24 小时 soak）截至
 > 2026-08-11 仍是 `PRODUCTION SOAK PENDING`，未通过。Owner 明确决定跳过该前置条件、提前开工 Phase 7 第 16
@@ -607,12 +607,44 @@ EvalRun 结算为 passed/failed，Runner 抛错时结算为 `error` 而不会停
 因此当前 receipt 的语义是"该 commit 的确定性全量回归在评测时点全绿且未超时间预算"，
 **不是**"候选修复了那条反馈"。
 
-### Task 5：Approval、Apply 与 Rollback
+### Task 5：Approval、Apply 与 Rollback —— **PARTIAL（2026-08-11）：Prompt 链路完整，Skill/Memory 应用未接**
 
 - 复用 Core Approval；
 - immutable artifact + active pointer CAS；
 - 覆盖全部 crash window；
 - Runtime 每 Turn snapshot active revision。
+
+实现落点：`0008_evolution_approvals.sql`（schema v8）、`evolution/repository.py` 的
+`EvolutionApprovalRepository`、`evolution/revisions.py`、`evolution/service.py`（`EvolutionService`
+Facade）、`tests/test_evolution_apply.py`（17 个 case）。
+
+**Approval 没有复用 Core `approvals` 表——这是一处必须解释的偏离**。那张表的 `turn_id` 与
+`tool_run_id` 都是 `NOT NULL`（且 `tool_run_id` 还是 `UNIQUE`），结构上绑定"某个对话 Turn 里的
+某次工具调用"；而 `evolution.apply` 是本机 CLI 发起、不属于任何 Turn 的动作。伪造一个合成
+Turn/ToolRun 去满足 `NOT NULL` 会污染会话账本与 Tool 审计计数。改为 follow 仓库里已有的
+`memory_reviews` 先例：新建域内审批表 `evolution_approvals`，复用 Core Approval 的**语义**
+（Owner-only、TTL、精确 hash 绑定、durable 状态、单次消费、fail closed）而不是它的表。
+
+**已实现**：`approval_binding_hash` 按文档第 10 节绑定 action / proposal / version ordinal /
+target / base_hash / candidate_hash / eval_receipt_hash，测试逐项验证任一变化都会换绑定；TTL 到期
+自动结算为 `expired` 且不可再批准或消费；同一审批只能消费一次；消费前执行方重算绑定，不一致即
+`approval_binding_mismatch`。apply 采用"不可变 artifact + SQLite active pointer"：候选正文在
+propose 阶段已按内容哈希落盘，apply 只做重校验 + CAS 切指针，因此不存在"写了一半"的中间态。
+`active_prompt_text` 供 Runtime 每 Turn 读取一次，artifact 缺失/被改写/指针指向不可读版本时一律
+回退到 Core 内置 base，绝不加载可疑内容，也绝不让 Evolution 异常导致整个 Turn 失败。
+`recover_active_prompt_revision` 覆盖"DB commit 后 artifact 损坏"这一崩溃窗口（CAS 回退指针）；
+`stale_orphan_artifacts` 覆盖"stage 完成、DB commit 前崩溃"（只报告不自动删除，删除属于 retention
+策略）。
+
+**施工中发现并修掉的一个真 bug**：第一版 `apply()` 先读当前指针、再把它当作 CAS 的期望值传入——
+这样 CAS 必然成功，等于没有比较，"评测后有人抢先切换 base"的攻击面完全敞开。已改为按文档第 11 节
+验证"当前 active 内容哈希仍等于候选的 `base_hash`"（目标从未激活过时与内置 base 的哈希比较），
+并补了对应回归 case。
+
+**未实现**：`apply` / `rollback` 目前只对 `prompt` 目标端到端可用。Skill 目标需要把 staging 目录
+提升为 active 版本目录并让 `SkillLoader` 读取 overlay；Memory 目标需要在 apply 时调用既有
+`MemoryReviewService.decide`。两者都不是"补几行"，各自涉及另一个子系统的加载路径，没有在没想清楚
+其恢复语义前顺手接上。
 
 ### Task 6：管理体验与 Live Evidence
 

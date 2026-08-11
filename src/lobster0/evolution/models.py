@@ -133,6 +133,41 @@ class EvalCaseResult:
     result_hash: str
 
 
+class EvolutionAction(StrEnum):
+    """Owner 可以审批的两种 Evolution 高危动作。"""
+
+    APPLY = "evolution.apply"
+    ROLLBACK = "evolution.rollback"
+
+
+class EvolutionApprovalStatus(StrEnum):
+    """Evolution Approval 的生命周期状态；``consumed`` 表示已经被使用过一次。"""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    DENIED = "denied"
+    EXPIRED = "expired"
+    CONSUMED = "consumed"
+
+
+@dataclass(frozen=True, slots=True)
+class EvolutionApproval:
+    """一次绑定精确 hash、有 TTL 且只能消费一次的 Owner 审批。"""
+
+    id: int
+    owner_id: int
+    proposal_version_id: int
+    eval_run_id: int | None
+    action: EvolutionAction
+    binding_hash: str
+    summary: str
+    status: EvolutionApprovalStatus
+    expires_at: datetime
+    created_at: datetime
+    decided_at: datetime | None
+    consumed_at: datetime | None
+
+
 @dataclass(frozen=True, slots=True)
 class ActiveRevision:
     """一个 (owner, target) 当前生效的 ProposalVersion 指针。"""
