@@ -1397,3 +1397,91 @@ select:focus-visible {
 .models-remove {
   color: var(--lobster-destructive);
 }
+
+/* --- Composer 附件 ---------------------------------------------------- */
+
+.composer-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  border: 1px solid var(--lobster-border);
+  border-radius: 999px;
+  padding: 3px 6px 3px 10px;
+  font-size: 12px;
+  background: var(--lobster-surface-raised);
+}
+
+.attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+  color: var(--lobster-text-primary);
+}
+
+.attachment-size {
+  color: var(--lobster-text-muted);
+  flex-shrink: 0;
+}
+
+.attachment-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--lobster-text-secondary);
+  background: transparent;
+}
+
+.attachment-remove:hover:not(:disabled) {
+  background: var(--lobster-hover);
+  color: var(--lobster-text-primary);
+}
+
+.attachment-remove:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.composer-attach {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border: 1px solid var(--lobster-border);
+  border-radius: 8px;
+  padding: 0 8px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--lobster-text-secondary);
+  background: var(--lobster-surface);
+}
+
+.composer-attach:hover:not(:disabled) {
+  background: var(--lobster-hover);
+}
+
+.composer-attach:disabled {
+  cursor: default;
+  opacity: 0.5;
+}

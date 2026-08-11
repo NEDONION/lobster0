@@ -11,9 +11,16 @@ import type { Telemetry } from "@lobster0/pi-tui/state";
 
 import type {
   ApprovalDecision,
+  AttachmentRef,
   DesktopBootstrap,
   SessionHistory,
 } from "../common/api";
+import {
+  addAttachment,
+  attachmentIds,
+  formatAttachmentSize,
+  removeAttachment,
+} from "./attachment-draft";
 import { resolveComposerKeyAction } from "./composer-keys";
 import { Markdown } from "./markdown";
 import {
@@ -91,6 +98,8 @@ export function TaskWorkbench({
   ));
   const [draft, setDraft] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [attachments, setAttachments] = useState<AttachmentRef[]>([]);
+  const [staging, setStaging] = useState(false);
   const [resolvingApproval, setResolvingApproval] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expandedProcesses, setExpandedProcesses] = useState<ReadonlySet<number>>(new Set());
@@ -130,22 +139,56 @@ export function TaskWorkbench({
     onBusyChange(liveBusy);
   }, [liveBusy, onBusyChange]);
 
+  async function pickAndStageAttachment(): Promise<void> {
+    setActionError(null);
+    let path: string | null;
+    try {
+      path = await window.lobster0.pickAttachment();
+    } catch {
+      setActionError("无法打开文件选择器。");
+      return;
+    }
+    if (path === null) {
+      return;
+    }
+    setStaging(true);
+    try {
+      const staged = await window.lobster0.stageAttachment(path);
+      setAttachments((current) => addAttachment(current, staged));
+    } catch {
+      setActionError("附件未通过校验：可能是类型不支持、体积过大或文件已变化。");
+    } finally {
+      setStaging(false);
+    }
+  }
+
   async function submitDraft(): Promise<void> {
     if (disabled || bootstrap === null || draft.trim().length === 0) {
       return;
     }
     const text = draft;
+    const ids = attachmentIds(attachments);
     setSubmitting(true);
     setActionError(null);
     try {
-      await window.lobster0.startTurn({ sessionKey, text });
+      // 字段可选：没有附件时不能传空数组，Core 是 exact-key 校验。
+      await window.lobster0.startTurn(
+        ids.length > 0 ? { sessionKey, text, attachmentIds: ids } : { sessionKey, text },
+      );
       setTask((current) => ({
         ...appendDesktopUser(current, text),
         status: "running",
       }));
       setDraft("");
+      setAttachments([]);
     } catch {
-      setActionError("任务未能开始，请检查本地 Core 配置。");
+      // 附件在 Core 侧一次性消费，失败后旧 id 已经作废，必须清掉重选。
+      setAttachments([]);
+      setActionError(
+        ids.length > 0
+          ? "任务未能开始，附件已失效，请重新添加后再发送。"
+          : "任务未能开始，请检查本地 Core 配置。",
+      );
     } finally {
       setSubmitting(false);
     }
@@ -189,6 +232,8 @@ export function TaskWorkbench({
     }
   }
 
+  // Core 未开放附件能力时不显示入口，与 D2a/D2b 的做法一致。
+  const canAttach = bootstrap?.capabilities.includes("attachments") ?? false;
   const approvalChoices: ApprovalDecision[] = pendingApproval
     ? ["deny", ...pendingApproval.grantModes]
     : [];
@@ -205,6 +250,26 @@ export function TaskWorkbench({
       {bootstrapError || actionError ? (
         <p className="composer-error" role="alert">{actionError ?? bootstrapError}</p>
       ) : null}
+      {attachments.length > 0 ? (
+        <ul className="composer-attachments">
+          {attachments.map((item) => (
+            <li className="attachment-chip" key={item.artifactId}>
+              <span className="attachment-name">{item.filename}</span>
+              <span className="attachment-size">{formatAttachmentSize(item.sizeBytes)}</span>
+              <button
+                aria-label={`移除附件 ${item.filename}`}
+                className="attachment-remove"
+                disabled={disabled || staging}
+                onClick={() =>
+                  setAttachments((current) => removeAttachment(current, item.artifactId))}
+                type="button"
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <textarea
         aria-label="消息内容"
         disabled={disabled || bootstrap === null}
@@ -215,6 +280,17 @@ export function TaskWorkbench({
         value={draft}
       />
       <div className="composer-actions">
+        {canAttach ? (
+          <button
+            aria-label="添加附件"
+            className="composer-attach"
+            disabled={disabled || bootstrap === null || staging}
+            onClick={() => void pickAndStageAttachment()}
+            type="button"
+          >
+            {staging ? "正在校验…" : "📎"}
+          </button>
+        ) : null}
         <span>
           {bootstrap
             ? `Main Agent · ${bootstrap.model} · ${workspaceBasename(bootstrap.workspace)} · ${bootstrap.permissionMode}`

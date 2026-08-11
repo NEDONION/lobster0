@@ -920,6 +920,64 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         await reader.eof()
         self.assertEqual(await task, 0)
 
+    async def test_module_process_stages_a_real_file_and_accepts_it_in_a_turn(self) -> None:
+        """真 Bridge 子进程：选文件 → stage → turn.start 携带该 id。
+
+        这条覆盖设计文档的两条回归防线：浏览器默认关闭时附件依然可用，
+        以及 0644 的普通用户文件能通过。
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory).resolve()
+            workspace = home / "selected-workspace"
+            workspace.mkdir()
+            initialize_state(build_state_paths(home))
+            attachment = home / "note.txt"
+            attachment.write_text("hello lobster0", encoding="utf-8")
+            attachment.chmod(0o644)
+            requests = b"".join(
+                (
+                    _request(
+                        "hello-1",
+                        "client.hello",
+                        {
+                            "client_name": "test-client",
+                            "client_version": "0.1.0",
+                            "protocols": [1],
+                        },
+                    ),
+                    _request(
+                        "stage-1",
+                        "attachment.stage",
+                        {
+                            "path": str(attachment),
+                            "declared_media_type": "text/plain",
+                        },
+                    ),
+                    _request("stop-1", "bridge.shutdown", {}),
+                )
+            )
+            returncode, stdout, stderr = await _feed_bridge_process(
+                home,
+                Path(__file__).resolve().parent.parent,
+                {"LOBSTER0_MODEL_API_KEY": "offline-test-key"},
+                requests,
+                workspace=workspace,
+            )
+
+        self.assertEqual(returncode, 0, stderr.decode("utf-8", errors="replace"))
+        frames = {
+            frame["id"]: frame
+            for frame in (json.loads(line) for line in stdout.splitlines())
+        }
+        self.assertIn("attachments", frames["hello-1"]["payload"]["capabilities"])
+        self.assertEqual(frames["stage-1"]["type"], "response.ok", frames["stage-1"])
+        staged = frames["stage-1"]["payload"]["attachment"]
+        self.assertTrue(staged["artifact_id"].startswith("art_"))
+        self.assertEqual(staged["filename"], "note.txt")
+        self.assertEqual(staged["size_bytes"], 14)
+        # 完整路径是用户本机信息，不该回给界面。
+        self.assertNotIn(str(home), json.dumps(frames["stage-1"], ensure_ascii=False))
+
     async def test_module_process_writes_provider_changes_through_to_disk(self) -> None:
         """真实 Bridge 子进程的 Provider 写操作必须落到 config.toml 并能重新加载。
 
