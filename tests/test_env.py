@@ -38,9 +38,39 @@ class DotEnvTest(unittest.TestCase):
                 cwd=self.other,
             )
 
-    def test_development_keeps_fixed_cwd_dotenv(self) -> None:
-        """未指定安装态 Secret 文件时保持仅加载 cwd/.env 的开发语义。"""
+    def test_development_keeps_cwd_dotenv_when_state_home_has_no_secrets(self) -> None:
+        """状态目录没有 secrets.env 时，保持加载 cwd/.env 的开发语义。"""
         self.assertEqual(resolve_dotenv_path(self.paths, {}, cwd=self.other), self.other / ".env")
+
+    def test_state_home_secrets_are_loaded_without_an_explicit_env_file(self) -> None:
+        """`setup` 写入的 secrets.env 必须无需额外配置就被运行时读到。
+
+        实机部署中踩到的真实断裂：`lobster0 setup` 把三个凭据写进
+        ``<home>/secrets.env``（文件权限 0600、内容俱全），但运行时默认只看
+        ``cwd/.env``，于是 doctor 报 ``missing environment variable(s)``、
+        gateway 报 ``LOBSTER0_MODEL_API_KEY is not configured``——除非用户
+        自己猜到要设 ``LOBSTER0_ENV_FILE``。配置好的部署因此启动不了。
+        """
+        secrets = Path(self.paths.secrets_file)
+        secrets.write_text("LOBSTER0_MODEL_API_KEY=k\n", encoding="utf-8")
+        secrets.chmod(0o600)
+
+        self.assertEqual(resolve_dotenv_path(self.paths, {}, cwd=self.other), secrets)
+
+    def test_explicit_env_file_still_wins_over_state_home_secrets(self) -> None:
+        """显式 LOBSTER0_ENV_FILE 的优先级高于状态目录回退。"""
+        secrets = Path(self.paths.secrets_file)
+        secrets.write_text("LOBSTER0_MODEL_API_KEY=k\n", encoding="utf-8")
+        secrets.chmod(0o600)
+        self.other.mkdir(parents=True, exist_ok=True)
+        explicit = self.other / "explicit.env"
+        explicit.write_text("LOBSTER0_MODEL_API_KEY=other\n", encoding="utf-8")
+        explicit.chmod(0o600)
+
+        self.assertEqual(
+            resolve_dotenv_path(self.paths, {"LOBSTER0_ENV_FILE": str(explicit)}, cwd=self.other),
+            explicit.resolve(),
+        )
 
     def test_missing_file_loads_nothing(self) -> None:
         """尚未创建 ``.env`` 时应保持环境不变，方便纯 Shell 配置。"""
