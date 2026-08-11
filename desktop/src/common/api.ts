@@ -87,6 +87,24 @@ export interface AttachmentRef {
   sizeBytes: number;
 }
 
+export interface ArtifactSummary {
+  artifactId: string;
+  filename: string | null;
+  mediaType: string;
+  sizeBytes: number;
+  origin: string;
+  createdAt: string;
+}
+
+export interface ArtifactPreview {
+  artifactId: string;
+  mediaType: string;
+  sizeBytes: number;
+  truncated: boolean;
+  text?: string;
+  dataUri?: string;
+}
+
 export interface ProviderSummary {
   id: string;
   baseUrl: string;
@@ -125,6 +143,9 @@ export interface DesktopApi {
   haltAutomation(reason: string): Promise<void>;
   unhaltAutomation(): Promise<void>;
   createAutomation(input: AutomationCreateInput): Promise<AutomationSummary>;
+  listArtifacts(sessionKey: string, limit?: number): Promise<ArtifactSummary[]>;
+  previewArtifact(artifactId: string, maxBytes?: number): Promise<ArtifactPreview>;
+  revealArtifact(artifactId: string): Promise<void>;
   pickAttachment(): Promise<string | null>;
   stageAttachment(path: string): Promise<AttachmentRef>;
   listProviders(): Promise<ProviderList>;
@@ -152,6 +173,9 @@ export const DESKTOP_CHANNELS = {
   automationHalt: "desktop:automations:halt",
   automationUnhalt: "desktop:automations:unhalt",
   automationCreate: "desktop:automations:create",
+  artifactsList: "desktop:artifacts:list",
+  artifactPreview: "desktop:artifacts:preview",
+  artifactReveal: "desktop:artifacts:reveal",
   attachmentPick: "desktop:attachment:pick",
   attachmentStage: "desktop:attachment:stage",
   providersList: "desktop:providers:list",
@@ -201,6 +225,12 @@ export function createDesktopApi(invoke: Invoke, subscribe: Subscribe): DesktopA
     unhaltAutomation: () => invoke(DESKTOP_CHANNELS.automationUnhalt) as Promise<void>,
     createAutomation: (input) =>
       invoke(DESKTOP_CHANNELS.automationCreate, input) as Promise<AutomationSummary>,
+    listArtifacts: (sessionKey, limit = 50) =>
+      invoke(DESKTOP_CHANNELS.artifactsList, { sessionKey, limit }) as Promise<ArtifactSummary[]>,
+    previewArtifact: (artifactId, maxBytes = 65_536) =>
+      invoke(DESKTOP_CHANNELS.artifactPreview, { artifactId, maxBytes }) as Promise<ArtifactPreview>,
+    revealArtifact: (artifactId) =>
+      invoke(DESKTOP_CHANNELS.artifactReveal, { artifactId }) as Promise<void>,
     pickAttachment: () =>
       invoke(DESKTOP_CHANNELS.attachmentPick) as Promise<string | null>,
     stageAttachment: (path) =>

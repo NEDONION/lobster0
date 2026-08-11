@@ -37,6 +37,9 @@ export type RequestType =
   | "providers.select"
   | "providers.set_secret"
   | "attachment.stage"
+  | "artifacts.list"
+  | "artifacts.preview"
+  | "artifacts.reveal"
   | "bridge.shutdown";
 
 export type PermissionMode = "safe" | "smart" | "autopilot" | "yolo";
