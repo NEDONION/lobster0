@@ -280,6 +280,17 @@ class ContinuousIntegrationWorkflowTest(unittest.TestCase):
         self.assertIn("sha256sum", text)
         self.assertIn("--local-offline", text)
 
+    def test_artifact_build_normalizes_the_sdist_before_comparing(self) -> None:
+        """sdist 必须先归一化再比摘要，否则这道门禁永远比不过。
+
+        setuptools 的 sdist 无视 SOURCE_DATE_EPOCH，按 PAX 把构建时刻写进每个
+        成员，同一棵树连续构建两次也不同字节。归一化脚本若从门禁里被摘掉，
+        artifact-build 会立刻回到"必然失败"的状态，所以在这里锁住。
+        """
+        text = _run_text(self.jobs["artifact-build"])
+        self.assertIn("scripts/normalize_sdist.py", text)
+        self.assertIn("SOURCE_DATE_EPOCH", text)
+
 
 class ReleaseTriggerTest(unittest.TestCase):
     """Release 只能由受保护的版本 tag 触发。"""
@@ -412,6 +423,20 @@ class ReleaseObligationTest(unittest.TestCase):
         self.assertEqual(type(outputs), dict)
         self.assertIn("wheel_sha256", outputs)
         self.assertIn("sha256sum", _run_text(python_build))
+
+    def test_published_sdist_is_normalized_before_its_digest_is_taken(self) -> None:
+        """发布的 sdist 必须先归一化，且归一化要排在计算摘要之前。
+
+        CI 的 artifact-build 证明的是"归一化后的 sdist 可复现"。若发布流程
+        不走同一个脚本，或在归一化之前就取了摘要，对外发布的就是另一份带
+        构建时刻的字节，可复现性证明会与产物脱节。
+        """
+        text = _run_text(self.jobs["python-build"])
+        self.assertIn("scripts/normalize_sdist.py", text)
+        self.assertLess(
+            text.index("scripts/normalize_sdist.py"),
+            text.index('sdist_sha256="$('),
+        )
 
     def test_obligation_three_images_are_built_after_the_wheel(self) -> None:
         """义务三：每个镜像构建 job 必须在依赖图上排在 wheel 构建之后。"""
