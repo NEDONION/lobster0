@@ -1,6 +1,7 @@
 """Lobster0 stdio Bridge 的异步请求、事件和生命周期测试。"""
 
 import asyncio
+import hashlib
 import json
 import os
 import sys
@@ -16,6 +17,7 @@ from lobster0.bootstrap import initialize_state
 from lobster0.bridge.__main__ import build_parser
 from lobster0.bridge.conversations import ConversationQueryError
 from lobster0.artifacts.store import ArtifactError
+from lobster0.storage.database import Database
 from lobster0.config import ProviderConfig, load_config
 from lobster0.bridge.server import BridgeServer
 from lobster0.paths import build_state_paths
@@ -938,6 +940,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             attachment = home / "note.txt"
             attachment.write_text("hello lobster0", encoding="utf-8")
             attachment.chmod(0o644)
+            expected_id = "art_" + hashlib.sha256(b"hello lobster0").hexdigest()
             requests = b"".join(
                 (
                     _request(
@@ -957,6 +960,17 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
                             "declared_media_type": "text/plain",
                         },
                     ),
+                    _request(
+                        "start-1",
+                        "turn.start",
+                        {
+                            "session_key": "s-1",
+                            "text": "看看这个",
+                            # Artifact 是内容寻址的，所以 id 可以提前算出来，
+                            # 不必等 stage 的响应——这样一次 stdin 就能走完整条链路。
+                            "attachment_ids": [expected_id],
+                        },
+                    ),
                     _request("stop-1", "bridge.shutdown", {}),
                 )
             )
@@ -967,11 +981,25 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
                 requests,
                 workspace=workspace,
             )
+            # 直接查库：证明附件不只是「被接受」，而是真的落到了会话与消息上。
+            with Database(build_state_paths(home).database).connect_read_only() as connection:
+                link_rows = [
+                    (row["artifact_id"], row["origin"], row["filename"])
+                    for row in connection.execute(
+                        "SELECT artifact_id, origin, filename FROM artifact_links"
+                    ).fetchall()
+                ]
+                message_row = connection.execute(
+                    "SELECT content FROM messages WHERE role = 'user' ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+            stored_message = message_row["content"] if message_row else ""
 
         self.assertEqual(returncode, 0, stderr.decode("utf-8", errors="replace"))
+        # 回合会发出不带 id 的事件帧，取响应时要跳过它们。
         frames = {
             frame["id"]: frame
             for frame in (json.loads(line) for line in stdout.splitlines())
+            if "id" in frame
         }
         self.assertIn("attachments", frames["hello-1"]["payload"]["capabilities"])
         self.assertEqual(frames["stage-1"]["type"], "response.ok", frames["stage-1"])
@@ -979,6 +1007,10 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(staged["artifact_id"].startswith("art_"))
         self.assertEqual(staged["filename"], "note.txt")
         self.assertEqual(staged["size_bytes"], 14)
+        self.assertEqual(staged["artifact_id"], expected_id)
+        self.assertEqual(link_rows, [(staged["artifact_id"], "user_upload", "note.txt")])
+        self.assertIn(staged["artifact_id"], stored_message)
+        self.assertIn("note.txt", stored_message)
         # 完整路径是用户本机信息，不该回给界面。
         self.assertNotIn(str(home), json.dumps(frames["stage-1"], ensure_ascii=False))
 
