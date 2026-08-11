@@ -1,5 +1,6 @@
 """验证 Lobster0 的 Python 分发元数据契约。"""
 
+import re
 import tomllib
 import unittest
 from pathlib import Path
@@ -23,6 +24,35 @@ class PackageMetadataTest(unittest.TestCase):
             "lobster0._version.__version__",
         )
         self.assertEqual(__version__, "0.7.0")
+
+    def test_timezone_database_is_a_runtime_dependency(self) -> None:
+        """必须显式依赖 tzdata，否则纯净 Linux 服务器上 init 会直接失败。
+
+        uv 提供的 python-build-standalone 解释器不自带时区数据库，也不会回退
+        去读系统的 /usr/share/zoneinfo：即便宿主装了系统 tzdata，
+        ``ZoneInfo("Asia/Shanghai")`` 仍抛 ZoneInfoNotFoundError，
+        ``lobster0 init`` 因此以 "heartbeat.timezone must be a valid IANA
+        timezone" 退出。实测于纯净 ubuntu:24.04 + uv managed CPython 3.12。
+        zoneinfo 会自动回退到这个纯 Python 包，所以它必须是运行时依赖，
+        不能只依赖宿主系统。
+        """
+        document = tomllib.loads(
+            Path("pyproject.toml").read_text(encoding="utf-8")
+        )
+        dependencies = document["project"]["dependencies"]
+        self.assertTrue(
+            any(str(entry).startswith("tzdata") for entry in dependencies),
+            "tzdata 必须留在运行时依赖里；移除它会让纯净 Linux 服务器无法完成 init",
+        )
+
+    def test_default_config_timezone_resolves_with_the_declared_dependency(self) -> None:
+        """init 模板写入的时区必须能被当前解释器真实解析。"""
+        from zoneinfo import ZoneInfo
+
+        source = Path("src/lobster0/bootstrap.py").read_text(encoding="utf-8")
+        match = re.search(r"timezone = .([A-Za-z]+/[A-Za-z_]+)", source)
+        self.assertIsNotNone(match, "未能在 init 模板中定位 timezone 默认值")
+        ZoneInfo(match.group(1))
 
     def test_public_names_and_complete_extras_do_not_change(self) -> None:
         """CLI 名称和完整渠道依赖集合应保持公开兼容。"""

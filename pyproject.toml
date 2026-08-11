@@ -13,6 +13,11 @@ authors = [{ name = "Lobster0 contributors" }]
 dependencies = [
   "croniter>=6.2,<7",
   "httpx>=0.28,<1",
+  # uv 提供的 python-build-standalone 解释器不自带时区数据库，也不会回退去读
+  # 系统的 /usr/share/zoneinfo。纯净 Linux 服务器上 `lobster0 init` 因此会以
+  # "heartbeat.timezone must be a valid IANA timezone" 直接失败——即使系统本身
+  # 装了 tzdata 也一样。zoneinfo 会自动回退到这个纯 Python 包，故必须显式依赖。
+  "tzdata>=2025.1",
   "textual>=8.2,<9",
 ]
 
