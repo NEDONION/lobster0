@@ -169,13 +169,29 @@ class GateIntegrityTest(unittest.TestCase):
     """任何门禁都不得被静默弱化。"""
 
     def test_no_workflow_weakens_a_gate(self) -> None:
-        """禁止 ``continue-on-error``、``if: false`` 与 ``always()`` 类逃逸。"""
+        """禁止 ``if: false``、``|| true`` 与 ``always()`` 类逃逸。
+
+        ``continue-on-error`` 只允许出现在 ``desktop-bundles``：桌面包是
+        Release 的可选产物而非安装器输入，一行安装链路交付的是 CLI/TUI/
+        Gateway，`.dmg`/`.AppImage` 构建失败不应连带拖垮整条 Release。
+        可选的只是"有没有"——凡真的产出了的桌面包，attestation 与 publish
+        仍逐个复核 sidecar 摘要并验证 attestation（见
+        ``test_optional_desktop_artifacts_are_still_fully_verified``）。
+        任何其他作业出现该键都必须失败。
+        """
         for path in (_CI_WORKFLOW, _RELEASE_WORKFLOW):
             text = path.read_text(encoding="utf-8")
             with self.subTest(workflow=path.name):
-                self.assertNotIn("continue-on-error", text)
                 self.assertNotIn("if: false", text)
                 self.assertNotIn("|| true", text)
+            for job_id, job in _jobs(_load(path)).items():
+                with self.subTest(workflow=path.name, job=job_id, key="continue-on-error"):
+                    if job_id == "desktop-bundles":
+                        self.assertEqual(job.get("continue-on-error"), "true")
+                    else:
+                        self.assertNotIn("continue-on-error", job)
+                    for step in job.get("steps", []):
+                        self.assertNotIn("continue-on-error", step)
             workflow = _load(path)
             for job_id, job in _jobs(workflow).items():
                 condition = str(job.get("if", ""))
@@ -186,6 +202,21 @@ class GateIntegrityTest(unittest.TestCase):
             for job_id, step in _all_steps(workflow):
                 with self.subTest(workflow=path.name, job=job_id):
                     self.assertNotIn("always(", str(step.get("if", "")))
+
+    def test_optional_desktop_artifacts_are_still_fully_verified(self) -> None:
+        """桌面包可缺席，但存在的每一个仍必须过 sidecar 摘要与 attestation。
+
+        这条是上面放宽 ``continue-on-error`` 的对价：不再断言恰好 6 个产物，
+        因此必须改由这里保证"存在即验证"，否则可选就退化成了免检。
+        """
+        jobs = _jobs(_load(_RELEASE_WORKFLOW))
+        for job_id in ("attestation", "publish"):
+            text = _run_text(jobs[job_id])
+            with self.subTest(job=job_id):
+                self.assertIn("lobster0-desktop-", text)
+                self.assertIn('"${artifact}.sha256"', text)
+                self.assertIn("sha256sum -c -", text)
+        self.assertIn("gh attestation verify", _run_text(jobs["publish"]))
 
     def test_top_level_permissions_are_read_only(self) -> None:
         """默认 token 权限必须是最小只读，写权限只能逐 job 声明。"""
@@ -624,10 +655,16 @@ class DesktopReleaseArtifactTest(unittest.TestCase):
         )
 
     def test_desktop_job_covers_both_supported_desktop_operating_systems(self) -> None:
-        """桌面打包必须在 macOS 与 Linux 各自的托管 runner 上真实构建。"""
+        """桌面打包必须在 macOS 与 Linux 各自的托管 runner 上真实构建。
+
+        ``fail-fast`` 必须为 ``false``：两个平台互不依赖，Linux 构建失败没有
+        理由连带取消已经在跑的 macOS 构建——首次真实发布时就正是这样白白丢掉
+        了一个本可成功的 macOS 产物。让每个平台各自跑完，才能一次看清到底哪些
+        平台真的能出包。
+        """
         strategy = self.desktop.get("strategy")
         self.assertEqual(type(strategy), dict)
-        self.assertEqual(strategy.get("fail-fast"), "true")
+        self.assertEqual(strategy.get("fail-fast"), "false")
         include = strategy["matrix"]["include"]
         self.assertEqual(
             {str(entry["runner"]) for entry in include}, {"macos-14", "ubuntu-24.04"}
