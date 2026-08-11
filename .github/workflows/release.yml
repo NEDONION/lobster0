@@ -359,7 +359,7 @@ jobs:
           corepack enable
           corepack prepare "$(python3 -c "import json;print(json.load(open('tui/package.json'))['packageManager'])")" --activate
           mkdir -p "${RUNNER_TEMP}/bundles"
-          python3 scripts/build_tui_bundle.py \
+          PYTHONPATH=src python3 scripts/build_tui_bundle.py \
             --platform "${PLATFORM}" \
             --version "${VERSION}" \
             --node "${RUNNER_TEMP}/node/bin/node" \

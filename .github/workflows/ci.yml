@@ -180,7 +180,7 @@ jobs:
             --archive "${RUNNER_TEMP}/pins/node-v24.18.0-linux-x64.tar.gz" \
             --platform linux-x86_64 \
             --output-dir "${RUNNER_TEMP}/bundles"
-          python3 scripts/build_tui_bundle.py \
+          PYTHONPATH=src python3 scripts/build_tui_bundle.py \
             --platform linux-x86_64 \
             --version 0.7.0 \
             --node "${RUNNER_TEMP}/node/bin/node" \

@@ -45,6 +45,7 @@ from lobster0.install.runtime import (
     discard_unactivated_runtime,
     retain_current_and_previous,
 )
+from lobster0.storage.migrations import LATEST_SCHEMA_VERSION
 
 
 class FakeRunner:
@@ -582,7 +583,7 @@ class InstallRuntimeTests(unittest.TestCase):
                 PlatformKey("macos", "arm64"),
             ),
             features=("agent", "tools", "tui", "feishu", "telegram", "discord"),
-            database_schema=10,
+            database_schema=LATEST_SCHEMA_VERSION,
             minimum_readable_schema=5,
         )
 
