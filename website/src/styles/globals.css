@@ -1459,16 +1459,6 @@ pre {
   font-style: normal;
 }
 
-.chat-scene__disclosure {
-  margin: 4px 0 0;
-  padding: 9px 12px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--warn) 14%, transparent);
-  color: #74530f;
-  font-family: var(--font-mono);
-  font-size: 0.64rem;
-  text-align: center;
-}
 
 .workbench {
   align-items: start;

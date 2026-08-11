@@ -7,8 +7,6 @@ describe('site content', () => {
     expect(siteFacts.counts).toEqual({
       surfaces: 4,
       tools: 18,
-      channelCases: 33,
-      automationCases: 15,
       permissionModes: 4,
     });
     expect(siteFacts.status.implementationPassIsLivePass).toBe(false);
@@ -31,8 +29,16 @@ describe('site content', () => {
     );
   });
 
-  it('keeps the production-status disclosure in both locales', () => {
-    expect(marketingCopy['zh-CN'].evidence.disclosure).toContain('Live PASS');
-    expect(marketingCopy.en.evidence.disclosure).toContain('Live PASS');
+  // These were internal QA metrics that said nothing to a visitor, and they
+  // survived one removal pass by hiding in a second component. Guard every
+  // locale so they cannot drift back in.
+  it('keeps internal case-count jargon out of every locale', () => {
+    const banned = [/versioned cases/i, /Live PASS/i, /Implementation\s*[≠!]=?\s*Live/i];
+    for (const [locale, copy] of Object.entries(marketingCopy)) {
+      const text = JSON.stringify(copy);
+      for (const pattern of banned) {
+        expect(`${locale}: ${text.match(pattern)?.[0] ?? 'clean'}`).toBe(`${locale}: clean`);
+      }
+    }
   });
 });

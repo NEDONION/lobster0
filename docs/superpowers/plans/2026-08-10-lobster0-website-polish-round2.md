@@ -371,3 +371,40 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
 ### 验证
 
 `tsc` / `eslint` / `vitest` 28 / `build` / `playwright` 11 passed 全绿。
+
+---
+
+## Round 11 — 「Implementation PASS ≠ Live PASS」其实没删干净（2026-08-11）
+
+### 起因
+
+本来打算逐条审 ja/ko/fr 的机翻质量。读日文 `capabilities` 时看到 `'バージョン管理された 33 ケース'` 和 `'Implementation ≠ Live'`——**这正是用户早就要求删掉的那句「很不专业的字」**。
+
+### 实情：只删掉了五分之一
+
+用户原话是「官网上很不专业的字【33 条 versioned Channel cases；15 条 versioned Automation cases。Implementation PASS 不等于 Live PASS。】都给我去掉啊」。当时只把 `evidence.disclosure` 那一条从渲染里摘掉了，同样的内容还活在另外四个地方，**五种语言的首页都在渲染**：
+
+1. `AutomationPanel.tsx:92` —— 一段**硬编码、没走 i18n** 的 `Implementation PASS ≠ Live PASS`（所以五种语言都显示英文原文）
+2. `AutomationPanel.tsx:89` —— 流程图末节点 `{automationCases} {ui.versionedCases}`（「15 条版本化场景」）
+3. `capabilities[].facts` —— channels 的「33 条 versioned cases」、automation 的「15 条 versioned cases」和「Implementation ≠ Live」
+4. `capabilities[].summary` —— 五种语言的 automation 简介都以「再用 versioned cases 验证实现语义」结尾
+
+更糟的是 **`site.test.ts` 里有一条测试在断言这句话必须存在**（`expect(...evidence.disclosure).toContain('Live PASS')`）——测试守着的正好是用户要求删除的东西。
+
+### 处理
+
+- 删掉硬编码段落和流程图末节点（`所有者启用 → 策略门禁` 读起来反而更干净，没有悬空箭头）。
+- 三条 `facts` 换成**已在页面上、用户已审阅过的说法的重述**，不引入新的产品声明：入口之间能力一致 / 触发前仍过 Policy / 可随时关闭。
+- 五种语言的 automation `summary` 结尾从内部 QA 指标改成对访客有意义的性质：「启用一次不等于长期放行，每次触发依然要过 Policy」。
+- 顺带清掉因此变成死代码的：`counts.channelCases`（本来就零引用）、`counts.automationCases`、`ui.versionedCases`（五种语言）、`evidence.disclosure`（类型 + 五种语言）、`.chat-scene__disclosure` CSS 规则。
+- 那条测试反转成**防回归守卫**：遍历全部五种语言的 `marketingCopy`，`versioned cases` / `Live PASS` / `Implementation ≠ Live` 一律不许出现，失败时直接报出是哪个语言命中。
+
+文档 MDX 里的同类表述**保留**——技术文档里说明测试覆盖的边界是合理的，用户的批评针对的是营销首页。守卫的范围也只限 `marketingCopy`。
+
+### 教训
+
+「删掉某段文案」这类要求，不能只搜渲染它的那个组件。这次同一句话散在 4 个位置 × 5 种语言 = 20 处，还有一条测试在反向守护它。**改完要按最终产物（渲染出的 HTML）逐语言复查**，而不是按源码搜索确认。
+
+### 验证
+
+五种语言首页 grep 全部 clean；`tsc` / `eslint` / `vitest` 28 / `build` / `playwright` 11 passed 全绿。
