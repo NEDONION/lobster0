@@ -384,10 +384,15 @@ jobs:
     needs: [guard, offline-gate, draft-release]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    # 桌面包是 Release 的可选产物，不是安装器输入：一行安装链路交付的是
+    # CLI、TUI 与 Gateway，`.dmg`/`.AppImage` 的构建失败不应连带把整条
+    # Release 拖垮。这里只让"缺席"成为允许的结果——凡是真的产出了的桌面包，
+    # attestation 与 publish 仍会逐个复核摘要并验证 attestation，一个都不放过。
+    continue-on-error: true
     permissions:
       contents: write
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           # Electron 的每个架构都是官方预编译产物，本应用又没有任何需要
@@ -720,7 +725,11 @@ jobs:
           # 否则下一步就会给一份没被任何门禁看过的产物签发 attestation。
           desktop=(subjects/lobster0-desktop-*.dmg subjects/lobster0-desktop-*.zip \
             subjects/lobster0-desktop-*.AppImage)
-          test "${#desktop[@]}" -eq 6
+          # 桌面包是可选产物：它不是安装器输入，CLI/TUI/Gateway 的一行安装链路
+          # 不依赖它，因此其构建失败不应连带阻断整个 Release。数量不写死，但
+          # **实际存在的每一个**仍必须逐一通过 sidecar 复核才会被签名——可选的是
+          # "有没有"，不是"要不要验"。publish 会重新核对同一份清单。
+          printf 'desktop artifacts present: %s\n' "${#desktop[@]}"
           for artifact in "${desktop[@]}"; do
             printf '%s  %s\n' "$(cat "${artifact}.sha256")" "${artifact}" | sha256sum -c -
           done
@@ -932,7 +941,9 @@ jobs:
           shopt -s nullglob
           desktop=(candidate/lobster0-desktop-*.dmg candidate/lobster0-desktop-*.zip \
             candidate/lobster0-desktop-*.AppImage)
-          test "${#desktop[@]}" -eq 6
+          # 桌面包可选，见 attestation 作业同处注释：数量不写死，但实际存在的
+          # 每一个都必须重新通过摘要校验。
+          printf 'desktop artifacts present: %s\n' "${#desktop[@]}"
           for artifact in "${desktop[@]}"; do
             printf '%s  %s\n' "$(cat "${artifact}.sha256")" "${artifact}" | sha256sum -c -
           done
@@ -946,7 +957,8 @@ jobs:
           shopt -s nullglob
           desktop=(candidate/lobster0-desktop-*.dmg candidate/lobster0-desktop-*.zip \
             candidate/lobster0-desktop-*.AppImage)
-          test "${#desktop[@]}" -eq 6
+          # 桌面包可选；实际存在的每一个仍必须逐一通过 attestation 验证。
+          printf 'desktop artifacts to verify: %s\n' "${#desktop[@]}"
           for subject in candidate/release-manifest.json candidate/SHA256SUMS \
               candidate/install.sh "candidate/${WHEEL}" "candidate/${SDIST}" \
               "${desktop[@]}"; do
