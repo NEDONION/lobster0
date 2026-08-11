@@ -88,7 +88,7 @@ Channels 与 Skills 两个功能页暂不排期：前者需要先定义「运行
 - 全局 E-stop（急停）可在界面启用与解除，并显示当前是否处于急停；
 - 所有操作都走 Core 既有的 durable ledger，不在前端造状态。
 
-明确不做：在界面上**新建**定时任务。原因见 §4.3。
+~~明确不做：在界面上新建定时任务。~~ **用户 2026-08-11 拍板要做**，已实现表单式新建，见 §4.3。
 
 ### 4.2 Bridge 协议变更
 
@@ -107,18 +107,20 @@ Channels 与 Skills 两个功能页暂不排期：前者需要先定义「运行
 `client.hello` 的 capabilities 追加 `"automation_write"`，Desktop 据此决定是否渲染这些控件——
 capability 缺失时只显示只读列表，不显示假按钮（沿用「后端没有就不显示」的既定原则）。
 
-### 4.3 为什么不做「界面新建定时任务」
+### 4.3 界面新建定时任务（用户拍板：要做）
 
-Core 侧创建任务的入口是 **Agent 工具**（`tools/automation.py` 的 `action: "create"`），要求
-`name`/`schedule`/`prompt` 三个必填字段，其中 `schedule` 是结构化对象、`prompt` 是要跑的完整指令。
-CLI 里**没有** `task create` 子命令——这是刻意的：定时任务的 prompt 应当由 Agent 在对话中理解用户
-意图后生成，而不是让用户在表单里手写。
+初稿建议不做，理由是 Core 的创建入口是 Agent 工具（`tools/automation.py` 的 `action: "create"`），
+CLI 里刻意没有 `task create`——定时任务的 prompt 更适合由 Agent 在对话中理解意图后生成。
 
-ClawX 有 New Task 按钮，但它的模型不同。我们要么原样照搬（做一个 cron 表达式 + prompt 的表单，
-体验差且容易写出跑不通的任务），要么保持「对话里说『每天早上九点给我发昨天的飞书文档摘要』，
-Agent 自己建任务」这条更自然的路径。**本 milestone 选后者**，界面只负责管理已存在的任务。
+**用户 2026-08-11 明确要求实现表单式新建**，已按以下收窄落地：
 
-这一条需要用户确认——如果坚持要表单式新建，是另一个设计课题。
+- 表单只收 `name` / `prompt` / `schedule` 三项，Core 支持的 `skills`/`delivery`/`budget` 不开放，
+  在 protocol 层**拒绝而非忽略**——静默忽略会让调用方误以为生效；
+- 调度类型只允许 `once`/`interval`/`cron`，`heartbeat` 是系统内部心跳不给创建入口（但既有的
+  heartbeat 任务仍能在列表中正常显示）；
+- `interval` 设 5 分钟下限，在界面、IPC、Core protocol 三处各校验一次，防止误配置高频空转烧 token。
+
+对话中让 Agent 建任务这条路径**同时保留**，两者并不互斥。
 
 ### 4.4 安全门禁
 
@@ -154,15 +156,17 @@ Desktop：统计数字的纯函数（从任务列表算 total/active/paused/fail
 - 保存后需要重启 Bridge 才生效，界面明确告知并提供一键重启；
 - 修改前后都有校验：base_url 必须是 https（本地回环可放行）、模型名非空、密钥格式合法。
 
-### 5.2 范围决策：先做「单 Provider 可编辑」，不做「多 Provider 列表」
+### 5.2 范围决策：做「多 Provider 并存」（用户拍板）
 
-ClawX 的 Models 页是多 Provider 并存 + 切换默认。要在我们这边实现，得先把
-`ProviderConfig` 从单条改成列表、给每条分配 id、`AgentConfig.model` 改成引用某条 Provider——
-这是**跨 config/runtime/bridge 的数据结构变更**，还要考虑迁移既有配置。
+初稿建议先做单 Provider 可编辑，把多 Provider 留待以后。**用户 2026-08-11 明确要求做多 Provider**，
+对齐 ClawX 的 Models 页（OpenAI / OpenRouter / MiniMax 并存 + 标记 Default）。
 
-而用户的实际诉求是「配置模型和换模型 和填入 API Key」——**单 Provider 可编辑就能满足**。
-先做这一档，把多 Provider 留到真的需要并存多家时再单独立项。这符合落地文档「不为未来多模型
-建设路由平台」的既定约束。
+这意味着 D2b 的范围显著大于初稿：`ProviderConfig` 要从单条改成有 id 的列表、`AgentConfig.model`
+要能引用具体 Provider、既有 `config.toml` 需要平滑迁移、每个 Provider 各自一个密钥环境变量。
+详细设计见独立文档（见 §5.7），不在本规划文档展开。
+
+注意这与落地文档「不为未来多模型建设路由平台」的既定约束存在张力：本次做的是**配置层的多
+Provider 并存与切换**，不是请求级的自动路由/fallback/负载均衡——后者仍不做。
 
 ### 5.3 安全设计（这是本 milestone 的核心难点）
 

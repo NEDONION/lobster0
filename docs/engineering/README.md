@@ -168,6 +168,7 @@ Core。当前为 `TARGET CONFIRMED / D1-D5 IMPLEMENTATION PENDING`。
 | [D1 跟进修复：拖拽/命名/Markdown](desktop/20260810_D1跟进修复-拖拽命名与Markdown渲染.md) | 窗口拖拽区域、对话命名对齐、Markdown 渲染。 |
 | [空态与侧边栏可用性修复](desktop/20260811_空态与侧边栏可用性修复.md) | 空态双层标题、遗留 M Logo、侧栏状态枚举与内部徽标。 |
 | [桌面应用分发打包](desktop/20260811_桌面应用分发打包.md) | electron-builder 固定版本、dmg/zip/AppImage 产物、版本绑定、发布链路与**未签名**姿态。 |
+| [D2b 多 Provider 模型配置与密钥写入](../superpowers/specs/2026-08-11-desktop-d2b-model-provider-config-design.md) | 多 Provider 并存与切换、配置就地更新、密钥就地写入。本项目第一次让 Core 支持修改已有配置。`DRAFT FOR REVIEW`。 |
 | [对标 ClawX 能力差距与 Milestone 规划](../superpowers/specs/2026-08-11-desktop-clawx-capability-gap-and-roadmap.md) | 逐项查证 ClawX 的 Models/Agents/Channels/Skills/Cron 五页与我方 Core 能力的差距，重排 D2a（定时任务可控）→ D2b（模型与密钥配置）→ D2c（原 D2）。`DRAFT FOR REVIEW`。 |
 | [D2a 定时任务从只读变可控](../superpowers/specs/2026-08-11-desktop-d2a-automation-control-design.md) | 暂停/恢复/立即运行/取消/运行历史/急停，以及表单新建（用户要求纳入）。`DRAFT FOR REVIEW`。 |
 | [D2b 多 Provider 模型配置与密钥写入](../superpowers/specs/2026-08-11-desktop-d2b-model-and-secret-config-design.md) | 多 Provider 数据结构、首次引入配置写入、secrets.env 就地更新。三者中风险最高。`DRAFT FOR REVIEW`。 |
