@@ -22,10 +22,28 @@ _REQUEST_TYPES = frozenset(
         "session.list",
         "session.history",
         "automation.list",
+        "automation.pause",
+        "automation.resume",
+        "automation.run",
+        "automation.cancel",
+        "automation.runs",
+        "automation.halt",
+        "automation.unhalt",
+        "automation.create",
         "bridge.shutdown",
     }
 )
 _APPROVAL_DECISIONS = frozenset({"deny", "once", "session", "always"})
+# 只接受 task_id 一个字段的 Automation 写操作。
+_AUTOMATION_TASK_ACTIONS = frozenset(
+    {"automation.pause", "automation.resume", "automation.run", "automation.cancel"}
+)
+# 桌面端可创建的调度类型。heartbeat 是系统内部心跳，只能由 Core 自己建，
+# 但 automation.list 仍要能显示已存在的 heartbeat 任务。
+_CREATABLE_SCHEDULE_KINDS = frozenset({"once", "interval", "cron"})
+# interval/heartbeat 的 expression 是秒数。5 分钟下限防止误配置导致高频空转烧 token；
+# 这里和界面各校验一次，只在前端做等于没做。
+_MIN_INTERVAL_SECONDS = 300
 _PERMISSION_MODES = frozenset({"safe", "smart", "autopilot", "yolo"})
 _MEMORY_ACTIONS = frozenset(
     {
@@ -210,6 +228,36 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
         if set(payload) != {"limit"} or not _integer_between(payload.get("limit"), 1, 100):
             raise ProtocolError("invalid_automation_query", "Automation 查询字段不合法")
         return
+    if request_type in _AUTOMATION_TASK_ACTIONS:
+        if set(payload) != {"task_id"} or not _integer_between(
+            payload.get("task_id"), 1, 2**31 - 1
+        ):
+            raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+        return
+    if request_type == "automation.runs":
+        if (
+            set(payload) != {"task_id", "limit"}
+            or not _integer_between(payload.get("task_id"), 1, 2**31 - 1)
+            or not _integer_between(payload.get("limit"), 1, 100)
+        ):
+            raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+        return
+    if request_type == "automation.halt":
+        reason = payload.get("reason")
+        if (
+            set(payload) != {"reason"}
+            or not _bounded_string(reason, 1, 500)
+            or not str(reason).strip()
+        ):
+            raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+        return
+    if request_type == "automation.unhalt":
+        if payload:
+            raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+        return
+    if request_type == "automation.create":
+        _validate_automation_create(payload)
+        return
     if request_type == "permissions.set":
         mode = payload.get("mode")
         if set(payload) != {"mode"} or not isinstance(mode, str) or mode not in _PERMISSION_MODES:
@@ -234,6 +282,49 @@ def _bounded_string(value: JsonValue, minimum: int, maximum: int) -> bool:
 def _integer_between(value: JsonValue, minimum: int, maximum: int) -> bool:
     """判断 JSON 值是否为指定闭区间内的非 bool 整数。"""
     return type(value) is int and minimum <= value <= maximum
+
+
+def _validate_automation_create(payload: dict[str, JsonValue]) -> None:
+    """校验桌面端创建定时任务的收窄字段集。
+
+    只接受"什么时候、跑什么"：``name``、``prompt`` 与 ``schedule``。Core 支持的
+    ``skills``/``delivery``/``budget`` 一律拒绝而不是忽略——静默忽略会让调用方以为
+    生效了。``expression`` 的最终合法性仍由 Core 的 ``parse_schedule`` 裁决，这里只挡住
+    明显危险与明显非法的输入。
+
+    Args:
+        payload: 已解码但未校验的请求负载。
+
+    Raises:
+        ProtocolError: 字段集、长度、调度类型或 interval 下限不满足。
+    """
+    if set(payload) != {"name", "prompt", "schedule"}:
+        raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+    if not _bounded_string(payload.get("name"), 1, 64) or not str(payload["name"]).strip():
+        raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+    if not _bounded_string(payload.get("prompt"), 1, 4000) or not str(payload["prompt"]).strip():
+        raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+
+    schedule = payload.get("schedule")
+    if not isinstance(schedule, dict) or set(schedule) - {"kind", "expression", "timezone"}:
+        raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+    kind = schedule.get("kind")
+    if not isinstance(kind, str) or kind not in _CREATABLE_SCHEDULE_KINDS:
+        raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+    expression = schedule.get("expression")
+    if not _bounded_string(expression, 1, 200) or not str(expression).strip():
+        raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+    if "timezone" in schedule and not _bounded_string(schedule.get("timezone"), 1, 64):
+        raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
+    if kind == "interval":
+        try:
+            seconds = int(str(expression).strip())
+        except ValueError as error:
+            raise ProtocolError(
+                "invalid_automation_action", "Automation 操作字段不合法"
+            ) from error
+        if seconds < _MIN_INTERVAL_SECONDS:
+            raise ProtocolError("invalid_automation_action", "Automation 操作字段不合法")
 
 
 def _validate_memory_command(payload: dict[str, JsonValue]) -> None:

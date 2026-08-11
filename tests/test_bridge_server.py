@@ -434,6 +434,119 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         )
         repository.list.assert_called_once_with(owner_id=1, limit=50)
 
+    async def test_automation_pause_reads_current_version_for_optimistic_lock(self) -> None:
+        """写操作必须先读当前 version 再传给 repository，避免覆盖并发修改。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        current = SimpleNamespace(
+            id=4,
+            version=7,
+            name="每日简报",
+            status=SimpleNamespace(value="active"),
+            schedule=SimpleNamespace(
+                kind=SimpleNamespace(value="cron"),
+                next_run_at=datetime(2026, 8, 10, 1, tzinfo=UTC),
+            ),
+        )
+        paused = SimpleNamespace(
+            id=4,
+            version=8,
+            name="每日简报",
+            status=SimpleNamespace(value="paused"),
+            schedule=SimpleNamespace(
+                kind=SimpleNamespace(value="cron"),
+                next_run_at=None,
+            ),
+        )
+        repository = SimpleNamespace(
+            get=Mock(return_value=current),
+            pause=Mock(return_value=paused),
+        )
+        with patch(
+            "lobster0.bridge.server.ScheduledTaskRepository",
+            return_value=repository,
+        ):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(_request("pause-1", "automation.pause", {"task_id": 4}))
+            response = await writer.wait_for_id("pause-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            self.assertEqual(await task, 0)
+
+        repository.get.assert_called_once_with(4, owner_id=1)
+        repository.pause.assert_called_once_with(4, owner_id=1, expected_version=7)
+        self.assertEqual(response["payload"]["task"]["status"], "paused")
+        # 响应沿用只读摘要的字段集，不泄露 prompt/delivery。
+        self.assertEqual(
+            set(response["payload"]["task"]),
+            {"task_id", "name", "status", "schedule_kind", "next_run_at"},
+        )
+
+    async def test_automation_write_is_rejected_while_a_turn_is_active(self) -> None:
+        """有回合在跑时拒绝写操作，避免与正在执行的任务相互干扰。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(BlockingTurnService())
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+        await reader.feed(_request("start-1", "turn.start", {"session_key": "s", "text": "hi"}))
+        await writer.wait_for_id("start-1")
+        await reader.feed(_request("pause-1", "automation.pause", {"task_id": 4}))
+        response = await writer.wait_for_id("pause-1")
+        await reader.feed(_request("cancel-1", "turn.cancel", {}))
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        await task
+
+        self.assertEqual(response["payload"]["code"], "turn_busy")
+
+    async def test_automation_create_passes_only_narrowed_fields_to_core(self) -> None:
+        """创建只透传 name/prompt/schedule，其余由 Core 取默认值。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        created = SimpleNamespace(
+            id=9,
+            version=1,
+            name="每日摘要",
+            status=SimpleNamespace(value="active"),
+            schedule=SimpleNamespace(
+                kind=SimpleNamespace(value="cron"),
+                next_run_at=datetime(2026, 8, 12, 1, tzinfo=UTC),
+            ),
+        )
+        repository = SimpleNamespace(create=Mock(return_value=created))
+        with patch(
+            "lobster0.bridge.server.ScheduledTaskRepository",
+            return_value=repository,
+        ):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(
+                _request(
+                    "create-1",
+                    "automation.create",
+                    {
+                        "name": "每日摘要",
+                        "prompt": "汇总昨天的文档",
+                        "schedule": {
+                            "kind": "cron",
+                            "expression": "0 9 * * *",
+                            "timezone": "Asia/Shanghai",
+                        },
+                    },
+                )
+            )
+            response = await writer.wait_for_id("create-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            self.assertEqual(await task, 0)
+
+        self.assertEqual(response["payload"]["task"]["task_id"], 9)
+        keywords = repository.create.call_args.kwargs
+        self.assertEqual(keywords["owner_id"], 1)
+        self.assertEqual(keywords["name"], "每日摘要")
+        self.assertEqual(keywords["prompt"], "汇总昨天的文档")
+
     async def test_memory_command_routes_only_validated_core_arguments(self) -> None:
         """Bridge 把已验证 action/query/limit 路由到 Runtime Console。"""
         reader = QueueReader()

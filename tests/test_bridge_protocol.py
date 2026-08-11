@@ -220,6 +220,127 @@ class BridgeProtocolTest(unittest.TestCase):
                     )
                 self.assertEqual(captured.exception.code, "invalid_automation_query")
 
+    def _decode(self, request_type: str, payload: object) -> object:
+        """用给定类型与 payload 解码一帧，供 D2a 写操作的边界测试复用。"""
+        return decode_request(
+            json.dumps(
+                {"v": 1, "id": "d2a", "type": request_type, "payload": payload}
+            ).encode("utf-8")
+            + b"\n"
+        )
+
+    def test_automation_task_actions_require_a_positive_integer_task_id(self) -> None:
+        """pause/resume/run/cancel 只接受正整数 task_id，且不接受额外字段。"""
+        for request_type in (
+            "automation.pause",
+            "automation.resume",
+            "automation.run",
+            "automation.cancel",
+        ):
+            with self.subTest(request_type=request_type, case="valid"):
+                request = self._decode(request_type, {"task_id": 7})
+                self.assertEqual(request.payload, {"task_id": 7})
+
+            for payload in (
+                {"task_id": 0},
+                {"task_id": -1},
+                {"task_id": True},
+                {"task_id": 1.0},
+                {"task_id": "1"},
+                {},
+                {"task_id": 1, "reason": "x"},
+            ):
+                with self.subTest(request_type=request_type, payload=payload):
+                    with self.assertRaises(ProtocolError) as captured:
+                        self._decode(request_type, payload)
+                    self.assertEqual(captured.exception.code, "invalid_automation_action")
+
+    def test_automation_runs_bounds_the_history_limit(self) -> None:
+        """运行历史查询必须同时给 task_id 与有界 limit。"""
+        request = self._decode("automation.runs", {"task_id": 3, "limit": 20})
+        self.assertEqual(request.payload, {"task_id": 3, "limit": 20})
+
+        for payload in ({"task_id": 3}, {"task_id": 3, "limit": 0}, {"task_id": 3, "limit": 101}):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ProtocolError) as captured:
+                    self._decode("automation.runs", payload)
+                self.assertEqual(captured.exception.code, "invalid_automation_action")
+
+    def test_automation_halt_requires_a_non_blank_bounded_reason(self) -> None:
+        """急停必须带可审计的原因；空白理由等同没写。"""
+        request = self._decode("automation.halt", {"reason": "误配置刷屏"})
+        self.assertEqual(request.payload, {"reason": "误配置刷屏"})
+        self.assertEqual(self._decode("automation.unhalt", {}).payload, {})
+
+        for payload in ({}, {"reason": ""}, {"reason": "   "}, {"reason": "x" * 501}):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ProtocolError) as captured:
+                    self._decode("automation.halt", payload)
+                self.assertEqual(captured.exception.code, "invalid_automation_action")
+
+    def test_automation_create_enforces_schedule_and_interval_floor(self) -> None:
+        """创建任务的字段收窄到"什么时候、跑什么"，并挡住高频 interval。"""
+        request = self._decode(
+            "automation.create",
+            {
+                "name": "每日摘要",
+                "prompt": "汇总昨天的飞书文档",
+                "schedule": {
+                    "kind": "cron",
+                    "expression": "0 9 * * *",
+                    "timezone": "Asia/Shanghai",
+                },
+            },
+        )
+        self.assertEqual(request.payload["name"], "每日摘要")
+
+        # timezone 可省略，Core 侧默认 UTC。
+        self.assertEqual(
+            self._decode(
+                "automation.create",
+                {
+                    "name": "n",
+                    "prompt": "p",
+                    "schedule": {"kind": "interval", "expression": "300"},
+                },
+            ).payload["schedule"]["expression"],
+            "300",
+        )
+
+        _cron = {"kind": "cron", "expression": "* * * * *"}
+        for payload in (
+            # 名称与 prompt 的边界
+            {"name": "", "prompt": "p", "schedule": _cron},
+            {"name": "n", "prompt": "", "schedule": _cron},
+            {"name": "x" * 65, "prompt": "p", "schedule": _cron},
+            {"name": "n", "prompt": "x" * 4001, "schedule": _cron},
+            # heartbeat 是系统内部用途，不允许从界面创建
+            {"name": "n", "prompt": "p", "schedule": {"kind": "heartbeat", "expression": "60"}},
+            # interval 下限 5 分钟，防止误配置高频空转烧 token
+            {"name": "n", "prompt": "p", "schedule": {"kind": "interval", "expression": "299"}},
+            {"name": "n", "prompt": "p", "schedule": {"kind": "interval", "expression": "abc"}},
+            # schedule 自身的形状
+            {"name": "n", "prompt": "p", "schedule": {"kind": "nope", "expression": "x"}},
+            {"name": "n", "prompt": "p", "schedule": {"kind": "cron"}},
+            {
+                "name": "n",
+                "prompt": "p",
+                "schedule": {"kind": "cron", "expression": "x", "extra": 1},
+            },
+            {"name": "n", "prompt": "p"},
+            # 不开放的字段一律拒绝，避免绕过界面收窄
+            {
+                "name": "n",
+                "prompt": "p",
+                "schedule": _cron,
+                "budget": {"max_turns": 999},
+            },
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ProtocolError) as captured:
+                    self._decode("automation.create", payload)
+                self.assertEqual(captured.exception.code, "invalid_automation_action")
+
     def test_encode_frame_is_one_utf8_json_line_and_rejects_nan(self) -> None:
         """输出必须是一行紧凑 UTF-8 JSON，且不能编码非标准数值。"""
         encoded = encode_frame(
