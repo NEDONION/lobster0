@@ -11,8 +11,8 @@ from unittest import mock
 from lobster0.agent.context import ContextBuilder
 from lobster0.agent.events import RunEvent
 from lobster0.agent.runner import AgentNoProgressError, AgentRunBudget, AgentRunner
-from lobster0.artifacts.store import ArtifactError, ArtifactStore
 from lobster0.agent.turn import TurnExecutionProfile, TurnService, _model_message
+from lobster0.artifacts.store import ArtifactError, ArtifactStore
 from lobster0.bootstrap import initialize_state
 from lobster0.config import WorkspaceConfig, load_config
 from lobster0.paths import build_state_paths

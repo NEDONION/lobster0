@@ -80,6 +80,7 @@ from lobster0.storage.tooling import (
     PolicyRuleRepository,
     ToolRunRepository,
 )
+from lobster0.tools.artifacts import ReadArtifactTool
 from lobster0.tools.automation import ManageTaskTool
 from lobster0.tools.base import ToolDefinition
 from lobster0.tools.browser import browser_tools
@@ -97,7 +98,6 @@ from lobster0.tools.memory_v2 import (
     MemoryReviewListTool,
     MemorySearchTool,
 )
-from lobster0.tools.artifacts import ReadArtifactTool
 from lobster0.tools.registry import ToolRegistry
 from lobster0.tools.search import GlobTool, GrepTool
 from lobster0.tools.system import SystemInfoTool

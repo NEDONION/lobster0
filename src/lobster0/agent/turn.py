@@ -12,7 +12,6 @@ from uuid import uuid4
 
 from lobster0.agent.compaction import ContextCompactor
 from lobster0.agent.context import ContextBuilder, ContextError
-from lobster0.artifacts.store import ArtifactError, ArtifactStore, display_filename
 from lobster0.agent.events import RunEvent, RunEventHandler, emit
 from lobster0.agent.runner import (
     AgentError,
@@ -25,6 +24,7 @@ from lobster0.agent.runner import (
     EmptyModelResponseError,
     UnparsedToolCallError,
 )
+from lobster0.artifacts.store import ArtifactError, ArtifactStore, display_filename
 from lobster0.automation.models import TaskResponse
 from lobster0.config import WorkspaceConfig
 from lobster0.memory.flush import MemoryCapture
