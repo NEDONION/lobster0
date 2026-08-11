@@ -12,9 +12,52 @@
 [![Status](https://img.shields.io/badge/status-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
-[能做什么](#它能帮你做什么) · [快速开始](#快速开始) · [为什么可控](#它为什么可控) · [技术细节](#技术细节) · [项目状态](#项目状态) · [文档](#文档)
+[安装](#安装) · [能做什么](#它能帮你做什么) · [快速开始](#快速开始) · [为什么可控](#它为什么可控) · [技术细节](#技术细节) · [项目状态](#项目状态) · [文档](#文档)
 
 </div>
+
+## 安装
+
+`v0.7.0` 预发布已可直接安装（需要 [uv](https://docs.astral.sh/uv/)）：
+
+```bash
+curl -fL --proto '=https' --tlsv1.2 \
+  -o /tmp/lobster0_agent-0.7.0-py3-none-any.whl \
+  https://github.com/NEDONION/lobster0/releases/download/v0.7.0/lobster0_agent-0.7.0-py3-none-any.whl \
+  && uv tool install --python 3.12 "/tmp/lobster0_agent-0.7.0-py3-none-any.whl[feishu]"
+```
+
+<details>
+<summary><b>中国大陆机器请用这条（加 GitHub 镜像与国内 PyPI 源）</b></summary>
+
+```bash
+curl -fL --proto '=https' --tlsv1.2 \
+  -o /tmp/lobster0_agent-0.7.0-py3-none-any.whl \
+  https://gh-proxy.com/https://github.com/NEDONION/lobster0/releases/download/v0.7.0/lobster0_agent-0.7.0-py3-none-any.whl \
+  && UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
+     uv tool install --python 3.12 "/tmp/lobster0_agent-0.7.0-py3-none-any.whl[feishu]"
+```
+
+不换源的话 `git clone` 与依赖下载会极慢甚至中断，详见[实机部署踩坑实录](docs/getting-started/20260811_实机部署踩坑实录.md)。
+
+</details>
+
+装完即可使用：
+
+```bash
+lobster0 --version     # lobster0 0.7.0
+lobster0 setup         # 交互式配置：模型 API Key、飞书 App ID/Secret、Owner
+lobster0 gateway       # 启动飞书网关（WebSocket 长连接，无需公网端口）
+```
+
+> **文件名必须保持原样**——`uv` 要从中读取版本号，改名会报 `Must have a version`。
+>
+> `v0.7.0` 是**预发布**，整体状态为 **RELEASE CANDIDATE / PUBLIC GATES PENDING**：
+> 可以用来自己部署（已在纯净 Ubuntu 24.04 实机验证到 `doctor` 全绿），
+> 但 Tier 1 真机矩阵、PyPI 发布与镜像 attestation 均未执行，不应视为完整验证过的稳定版。
+> 一行 `install.sh` 安装**尚不可用**，原因见[下文](#一行安装尚不可用)。
+
+服务器完整部署流程见 [Linux 服务器部署指南](docs/getting-started/20260811_Linux服务器部署指南.md)。
 
 ![Lobster0 Desktop 读取会议记录并整理周报](docs/assets/lobster0-desktop-weekly-brief.png)
 
@@ -156,7 +199,34 @@ uv run lobster0 gateway
 
 Owner、allowlist、平台凭据和真实验收步骤见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
 
-### 发布后的一行安装
+### 安装
+
+`v0.7.0` 已作为**预发布**发出，wheel 可以直接匿名下载安装：
+
+```bash
+curl -fL --proto '=https' --tlsv1.2 \
+  -o /tmp/lobster0_agent-0.7.0-py3-none-any.whl \
+  https://github.com/NEDONION/lobster0/releases/download/v0.7.0/lobster0_agent-0.7.0-py3-none-any.whl \
+  && uv tool install --python 3.12 "/tmp/lobster0_agent-0.7.0-py3-none-any.whl[feishu]"
+```
+
+中国大陆的机器建议加镜像与国内源，否则下载会很慢甚至中断：
+
+```bash
+curl -fL --proto '=https' --tlsv1.2 \
+  -o /tmp/lobster0_agent-0.7.0-py3-none-any.whl \
+  https://gh-proxy.com/https://github.com/NEDONION/lobster0/releases/download/v0.7.0/lobster0_agent-0.7.0-py3-none-any.whl \
+  && UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
+     uv tool install --python 3.12 "/tmp/lobster0_agent-0.7.0-py3-none-any.whl[feishu]"
+```
+
+> 文件名必须保持原样——`uv` 要从中读取版本号，改名会报 `Must have a version`。
+
+安装后 `lobster0` 是全局命令，接着执行 `lobster0 setup` 配置、`lobster0 gateway` 启动。
+完整的服务器部署流程见 [Linux 服务器部署指南](docs/getting-started/20260811_Linux服务器部署指南.md)，
+国内网络的坑见[实机部署踩坑实录](docs/getting-started/20260811_实机部署踩坑实录.md)。
+
+### 一行安装（尚不可用）
 
 ```bash
 curl -fsSL --proto '=https' --tlsv1.2 \
@@ -164,8 +234,12 @@ curl -fsSL --proto '=https' --tlsv1.2 \
 ```
 
 > [!WARNING]
-> 仓库目前还没有公开 Release 或 tag，这个 URL 现在会返回 404。安装器已经实现，但真机安装矩阵、
-> 包发布、镜像摘要 smoke 与 attestation 仍是 **PUBLIC GATES PENDING**。正式发布前请使用源码安装。
+> **这个 URL 目前仍返回 404。** `install.sh` 由发布流水线的 `assemble` 阶段生成，
+> 而该阶段目前尚未跑通，因此 Release 里还没有这个文件。请先用上面的 wheel 安装方式。
+>
+> `v0.7.0` 是**预发布**：真机安装矩阵（Tier 1）、包发布到 PyPI、镜像摘要 smoke 与
+> attestation 均**未执行**，状态为 **PUBLIC GATES PENDING**。它可以用来自己部署，
+> 但不应被当作经过完整验证的稳定版。
 
 发布后的安装器会自带 pinned uv、受管 Python 3.12 和受管 Node.js，默认安装到 `~/.lobster0`，
 不要求 sudo。完整参数、升级、回滚和卸载方法见[安装与发布运维手册](docs/engineering/operations/20260809_install-release-operations.md)。
@@ -269,7 +343,9 @@ flowchart LR
 | Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING。 |
 | Telegram / Discord | Implementation PASS；完整真实平台 Live Gate pending。 |
 | Phase 6 | IMPLEMENTATION PASS / PRODUCTION SOAK PENDING。 |
-| 一行安装 | RELEASE CANDIDATE / PUBLIC GATES PENDING。 |
+| wheel 安装 | v0.7.0 预发布可用；已在纯净 Ubuntu 24.04 实机部署至 `doctor` 全绿。 |
+| 一行安装 `install.sh` | **尚未产出**；发布流水线 `assemble` 阶段未跑通。 |
+| Tier 1 真机矩阵 / PyPI / 镜像摘要 | PUBLIC GATES PENDING，均未执行。 |
 
 本地 fake SDK、固定 Provider、离线场景和 soak 只能证明 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。
 逐项证据见 [`docs/evals/releases/`](docs/evals/releases/)。
