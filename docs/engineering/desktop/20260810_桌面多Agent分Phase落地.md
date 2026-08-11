@@ -376,3 +376,36 @@ D1～D5 全部退出后，才能将本路线标记为 `IMPLEMENTATION PASS`：
   用 `getBoundingClientRect` 实测布局（主体 554px、操作区 260px、标题单行），并验证运行历史
   （含失败的 `provider_timeout`）、新建表单字段、下拉中**不含 heartbeat**、以及 interval 低于
   5 分钟时的界面拦截。
+
+## 4.9 D2c 实现记录（2026-08-11）
+
+设计文档：[D2c 附件与 Composer 控件（修订版）](../../superpowers/specs/2026-08-11-desktop-d2c-attachments-design.md)。
+原 2026-08-10 的 D2 设计已标记 `SUPERSEDED`——它写在 D2a/D2b 之前，其中 `models.list`/`agents.list`
+两项在 D2b 落地后失去了存在理由，另有两条现状描述与代码不符。
+
+### 分层落地
+
+1. **ArtifactStore**：新增 `stage_from_external_path()`，保留 `_read_staging` 的全部边界，唯独不
+   要求 owner-only。`artifacts.source` 有 SQLite CHECK 约束，加 `user_upload` 需要迁移 0009。
+2. **Runtime/config**：Store 改为无条件构造并挂到 `AgentRuntime`；新增 `[attachments] max_bytes`。
+3. **Bridge**：`attachment.stage` + `turn.start` 的可选 `attachment_ids`，capability `attachments`。
+4. **Desktop**：`pickAttachment`（Main Dialog）/`stageAttachment`（经 Bridge），Composer 附件 chip。
+
+### 实施中真正花时间的地方
+
+- **`browser.enabled` 默认为 False，而 Store 挂在它下面。** 若不先核查现状就接线，做出来的附件功能
+  在默认配置下根本不可用。这条是读代码发现的，不是测试发现的——设计阶段的现状核查值这个时间。
+- **`_read_staging` 要求源文件 0600。** 用户从「文稿」选的文件是 0644，会被直接拒绝。「拷进 staging」
+  因此是功能前提而非优化。测试里专门写了一条 0644 用例锁住它。
+- **附件默认上限与用户调低的浏览器上限打架。** 最初写成「超过 Store 上限就拒绝加载配置」，结果一份
+  没写过 `[attachments]` 的配置直接加载失败。规则改为只约束用户显式写下的值。
+- **一条 TOCTOU 测试断言错了防线的位置。** 用 `os.replace` 模拟「读取期间源被替换」，但替换换不掉
+  已打开的 fd，re-fstat 什么也发现不了。改为验证同一 inode 上的原地改写。
+
+### 验证
+
+- Python：artifact_store 10/10、bridge 25/25（含真子进程端到端）、config 47/47、runtime 10/10；
+- Desktop：106/106、typecheck、build 通过；
+- 端到端：真 Bridge 子进程完成「stage 一个 0644 的 .txt → 返回 artifact_id」，同时断言
+  `capabilities` 含 `attachments`、完整路径不出现在响应里；
+- 视觉：Composer 附件 chip 在 900px 宽下核对超长文件名省略、大小不被挤掉、移除按钮对齐。
