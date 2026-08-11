@@ -70,7 +70,6 @@ export interface MarketingCopy {
     steps: readonly TraceStepCopy[];
   };
   evidence: {
-    disclosure: string;
     labels: {
       core: string;
       surfaces: string;
@@ -146,7 +145,6 @@ export interface MarketingCopy {
     onceEnabled: string;
     ownerEnables: string;
     policyGate: string;
-    versionedCases: string;
     memoryAria: string;
     ownerBoundary: string;
     longTerm: string;
@@ -186,8 +184,6 @@ export const siteFacts = {
   counts: {
     surfaces: 4,
     tools: 18,
-    channelCases: 33,
-    automationCases: 15,
     permissionModes: 4,
   },
   surfaces: ['TUI', 'Feishu', 'Telegram', 'Discord'],
@@ -273,8 +269,6 @@ export const marketingCopy = {
       ],
     },
     evidence: {
-      disclosure:
-        '33 条 versioned Channel cases；15 条 versioned Automation cases。Implementation PASS 不等于 Live PASS。',
       labels: {
         core: 'Python Core',
         surfaces: '使用入口',
@@ -304,7 +298,7 @@ export const marketingCopy = {
         label: '多入口',
         title: '四个入口，共享一个 AgentRuntime。',
         summary: 'TUI、飞书、Telegram 与 Discord 共用能力，故障域与交付状态彼此隔离。',
-        facts: ['4 个使用入口', '33 条 versioned cases', 'Transport 隔离', 'Delivery 与 queue 隔离'],
+        facts: ['4 个使用入口', '入口之间能力一致', 'Transport 隔离', 'Delivery 与 queue 隔离'],
       },
       {
         id: 'safety',
@@ -327,8 +321,8 @@ export const marketingCopy = {
         eyebrow: '05 / 显式门禁',
         label: '自动化',
         title: '默认关闭，授权之后才自动化。',
-        summary: '自动执行先经过明确启用与安全门，再用 versioned cases 验证实现语义。',
-        facts: ['默认 disabled', '15 条 versioned cases', '显式授权 gate', 'Implementation ≠ Live'],
+        summary: '自动执行先经过明确启用与安全门；启用一次不等于长期放行，每次触发依然要过 Policy。',
+        facts: ['默认 disabled', '触发前仍过 Policy', '显式授权 gate', '可随时关闭'],
       },
     ],
     workbench: {
@@ -422,7 +416,6 @@ export const marketingCopy = {
       onceEnabled: '一旦开启',
       ownerEnables: '所有者启用',
       policyGate: '策略门禁',
-      versionedCases: '条版本化场景',
       memoryAria: 'Markdown 事实源与 SQLite 投影',
       ownerBoundary: '所有者边界 · 本地工作区',
       longTerm: '长期记忆 · 一直记得',
@@ -498,8 +491,6 @@ export const marketingCopy = {
       ],
     },
     evidence: {
-      disclosure:
-        '33 versioned Channel cases; 15 versioned Automation cases. Implementation PASS is not Live PASS.',
       labels: {
         core: 'Python core',
         surfaces: 'surfaces',
@@ -529,7 +520,7 @@ export const marketingCopy = {
         label: 'Channels',
         title: 'Four surfaces share one AgentRuntime.',
         summary: 'TUI, Feishu, Telegram, and Discord share capability while delivery and failure state stay isolated.',
-        facts: ['4 user surfaces', '33 versioned cases', 'Isolated transports', 'Isolated delivery and queues'],
+        facts: ['4 user surfaces', 'Identical capabilities', 'Isolated transports', 'Isolated delivery and queues'],
       },
       {
         id: 'safety',
@@ -552,8 +543,8 @@ export const marketingCopy = {
         eyebrow: '05 / EXPLICIT GATE',
         label: 'Automation',
         title: 'Disabled by default. Automated after consent.',
-        summary: 'Automation passes an explicit enablement and safety gate before versioned cases validate behavior.',
-        facts: ['Disabled by default', '15 versioned cases', 'Explicit authorization gate', 'Implementation ≠ Live'],
+        summary: 'Automation passes an explicit enablement and safety gate. Turning it on is not a standing exemption — every trigger still goes through Policy.',
+        facts: ['Disabled by default', 'Still passes Policy', 'Explicit authorization gate', 'いつでも無効化できる'],
       },
     ],
     workbench: {
@@ -647,7 +638,6 @@ export const marketingCopy = {
       onceEnabled: 'ONCE ENABLED',
       ownerEnables: 'owner enables',
       policyGate: 'policy gate',
-      versionedCases: 'versioned cases',
       memoryAria: 'Markdown truth and SQLite projection',
       ownerBoundary: 'owner boundary · local workspace',
       longTerm: 'LONG-TERM · always remembered',
@@ -723,8 +713,6 @@ export const marketingCopy = {
       ],
     },
     evidence: {
-      disclosure:
-        'Channel ケース 33 件、Automation ケース 15 件（いずれもバージョン管理下）。Implementation PASS は Live PASS ではありません。',
       labels: {
         core: 'Python コア',
         surfaces: '入口',
@@ -754,7 +742,7 @@ export const marketingCopy = {
         label: 'マルチ入口',
         title: '4 つの入口が 1 つの AgentRuntime を共有。',
         summary: 'TUI・Feishu・Telegram・Discord は能力を共有しますが、障害範囲と配信状態は互いに隔離されています。',
-        facts: ['4 つの入口', 'バージョン管理された 33 ケース', 'Transport の隔離', 'Delivery とキューの隔離'],
+        facts: ['4 つの入口', '入口ごとの機能は同一', 'Transport の隔離', 'Delivery とキューの隔離'],
       },
       {
         id: 'safety',
@@ -777,8 +765,8 @@ export const marketingCopy = {
         eyebrow: '05 / 明示的なゲート',
         label: '自動化',
         title: '既定はオフ。許可して初めて自動化。',
-        summary: '自動実行は明示的な有効化と安全ゲートを通過し、その後バージョン管理されたケースで実装の意味を検証します。',
-        facts: ['既定で無効', 'バージョン管理された 15 ケース', '明示的な認可ゲート', 'Implementation ≠ Live'],
+        summary: '自動実行は明示的な有効化と安全ゲートを通ります。一度有効にしても恒久的な例外にはならず、発火のたびに Policy を通過します。',
+        facts: ['既定で無効', '発火前も Policy を通過', '明示的な認可ゲート', 'Can be switched off'],
       },
     ],
     workbench: {
@@ -872,7 +860,6 @@ export const marketingCopy = {
       onceEnabled: '有効にすると',
       ownerEnables: '所有者が有効化',
       policyGate: 'ポリシーゲート',
-      versionedCases: '件のバージョン管理ケース',
       memoryAria: 'Markdown の真実と SQLite の投影',
       ownerBoundary: '所有者の境界 · ローカル作業領域',
       longTerm: '長期記憶 · ずっと覚えている',
@@ -948,8 +935,6 @@ export const marketingCopy = {
       ],
     },
     evidence: {
-      disclosure:
-        '버전 관리된 Channel 케이스 33건, Automation 케이스 15건. Implementation PASS는 Live PASS가 아닙니다.',
       labels: {
         core: 'Python 코어',
         surfaces: '입구',
@@ -979,7 +964,7 @@ export const marketingCopy = {
         label: '다중 입구',
         title: '네 개의 입구가 하나의 AgentRuntime을 공유.',
         summary: 'TUI, Feishu, Telegram, Discord는 능력을 공유하지만 장애 범위와 전달 상태는 서로 격리됩니다.',
-        facts: ['4개 입구', '버전 관리된 33개 케이스', 'Transport 격리', 'Delivery와 큐 격리'],
+        facts: ['4개 입구', '입구별 기능은 동일', 'Transport 격리', 'Delivery와 큐 격리'],
       },
       {
         id: 'safety',
@@ -1002,8 +987,8 @@ export const marketingCopy = {
         eyebrow: '05 / 명시적 게이트',
         label: '자동화',
         title: '기본은 꺼짐. 허용해야 자동화된다.',
-        summary: '자동 실행은 명시적 활성화와 안전 게이트를 거친 뒤, 버전 관리된 케이스로 구현 의미를 검증합니다.',
-        facts: ['기본 비활성화', '버전 관리된 15개 케이스', '명시적 인가 게이트', 'Implementation ≠ Live'],
+        summary: '자동 실행은 명시적 활성화와 안전 게이트를 거칩니다. 한 번 켰다고 계속 통과되는 것이 아니라, 실행할 때마다 Policy를 거칩니다.',
+        facts: ['기본 비활성화', '실행 전에도 Policy 통과', '명시적 인가 게이트', 'Can be switched off'],
       },
     ],
     workbench: {
@@ -1097,7 +1082,6 @@ export const marketingCopy = {
       onceEnabled: '활성화하면',
       ownerEnables: '소유자 활성화',
       policyGate: '정책 게이트',
-      versionedCases: '개 버전 관리 케이스',
       memoryAria: 'Markdown 진실과 SQLite 투영',
       ownerBoundary: '소유자 경계 · 로컬 작업 공간',
       longTerm: '장기 기억 · 계속 기억함',
@@ -1173,8 +1157,6 @@ export const marketingCopy = {
       ],
     },
     evidence: {
-      disclosure:
-        '33 cas Channel et 15 cas Automation versionnés. Implementation PASS n’est pas Live PASS.',
       labels: {
         core: 'Cœur Python',
         surfaces: 'interfaces',
@@ -1204,7 +1186,7 @@ export const marketingCopy = {
         label: 'Multi-interface',
         title: 'Quatre interfaces, un seul AgentRuntime.',
         summary: 'TUI, Feishu, Telegram et Discord partagent les capacités, mais les domaines de panne et les états de livraison restent isolés.',
-        facts: ['4 interfaces', '33 cas versionnés', 'Isolation du transport', 'Isolation livraison et file'],
+        facts: ['4 interfaces', 'Capacités identiques', 'Isolation du transport', 'Isolation livraison et file'],
       },
       {
         id: 'safety',
@@ -1227,8 +1209,8 @@ export const marketingCopy = {
         eyebrow: '05 / PORTE EXPLICITE',
         label: 'Automatisation',
         title: 'Désactivée par défaut. Automatisée seulement après votre accord.',
-        summary: 'Les exécutions automatiques passent une activation explicite et une porte de sécurité, puis des cas versionnés vérifient la sémantique implémentée.',
-        facts: ['Désactivée par défaut', '15 cas versionnés', 'Porte d’autorisation explicite', 'Implementation ≠ Live'],
+        summary: 'Les exécutions automatiques passent une activation explicite et une porte de sécurité. L\'activer n\'accorde aucune dispense permanente : chaque déclenchement repasse par Policy.',
+        facts: ['Désactivée par défaut', 'Passe toujours par Policy', 'Porte d’autorisation explicite', 'Can be switched off'],
       },
     ],
     workbench: {
@@ -1322,7 +1304,6 @@ export const marketingCopy = {
       onceEnabled: 'UNE FOIS ACTIVÉE',
       ownerEnables: 'le propriétaire active',
       policyGate: 'porte de policy',
-      versionedCases: 'cas versionnés',
       memoryAria: 'Markdown fait foi et projection SQLite',
       ownerBoundary: 'frontière du propriétaire · espace local',
       longTerm: 'LONG TERME · toujours retenu',

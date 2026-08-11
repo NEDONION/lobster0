@@ -85,14 +85,8 @@ export function AutomationPanel({ copy, locale }: { copy: CapabilityCopy; locale
                 <span>{ui.ownerEnables}</span>
                 <i aria-hidden="true">→</i>
                 <span>{ui.policyGate}</span>
-                <i aria-hidden="true">→</i>
-                <span>{siteFacts.counts.automationCases} {ui.versionedCases}</span>
               </div>
             </motion.div>
-            <motion.p className="chat-scene__disclosure" {...beat(3)}>
-              Implementation PASS <strong>≠</strong>{' '}
-              Live PASS
-            </motion.p>
           </div>
         </div>
       </div>
