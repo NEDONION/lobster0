@@ -98,9 +98,11 @@ class RecordingTurnService:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
+        self.attachments: tuple = ()
 
-    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None, attachments=()):
         self.calls.append((text, conversation_id))
+        self.attachments = attachments
         await on_event(RunEvent("turn_completed", 21, {"text": "ok"}))
 
 
@@ -110,7 +112,7 @@ class EventTurnService:
     def __init__(self) -> None:
         self.decisions: list[ApprovalDecision] = []
 
-    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None, attachments=()):
         assert owner_id == 1
         assert text == "你好"
         assert conversation_id == "default"
@@ -164,7 +166,7 @@ class BlockingTurnService:
         self.started = asyncio.Event()
         self.cancelled = asyncio.Event()
 
-    async def handle(self, owner_id, text, conversation_id, *, on_event=None):
+    async def handle(self, owner_id, text, conversation_id, *, on_event=None, attachments=()):
         del owner_id, text, conversation_id
         assert on_event is not None
         await on_event(RunEvent("turn_started", 30, {"session_id": 3}))
@@ -780,6 +782,8 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(staged["payload"]["attachment"]["filename"], "note.txt")
         self.assertEqual(accepted["type"], "response.ok")
         self.assertEqual(len(service.calls), 1)
+        # 缺口修补的核心断言：附件必须真的传给了 TurnService，而不是校验完就丢。
+        self.assertEqual(service.attachments, ((artifact_id, "note.txt"),))
 
     async def test_switching_session_drops_staged_attachments(self) -> None:
         """附件属于当前会话的草稿，换会话就该失效。"""

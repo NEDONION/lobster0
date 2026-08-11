@@ -163,9 +163,11 @@ class BridgeServer:
                 )
                 return True
             await self._ok(request.request_id, {})
-            for item in attachment_ids:
+            attachments = tuple(
                 # 一个附件只能用一次，避免旧 id 被无限重放。
-                self._staged_attachments.pop(item, None)
+                (item, str(self._staged_attachments.pop(item)["filename"]))
+                for item in attachment_ids
+            )
             text = request.payload["text"]
             session_key = request.payload["session_key"]
             assert isinstance(text, str) and isinstance(session_key, str)
@@ -176,6 +178,7 @@ class BridgeServer:
                     text,
                     session_key,
                     on_event=self._on_event,
+                    attachments=attachments,
                 )
             )
             return True
