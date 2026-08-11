@@ -26,6 +26,7 @@ _CASE_FIELDS = {
     "memory",
     "automation",
     "browser",
+    "evolution",
 }
 _EXPECTATION_FIELDS = {
     "answer_contains",
@@ -50,6 +51,7 @@ _EXPECTATION_FIELDS = {
     "automation_evidence",
     "forbidden_automation",
     "browser_evidence",
+    "evolution_evidence",
 }
 _RESPONSE_FIELDS = {
     "content",
@@ -175,6 +177,71 @@ _BROWSER_FIXTURES = frozenset(
         "worker_crash",
         "profile_lock",
         "artifact_ttl",
+    }
+)
+_EVOLUTION_FIXTURES = frozenset(
+    {
+        "feedback_owner_binding",
+        "feedback_redaction_and_forget",
+        "prompt_candidate_hard_deny",
+        "skill_candidate_single_target",
+        "memory_candidate_review_only",
+        "gate_runs_full_suite",
+        "gate_safety_blocks",
+        "approval_binds_exact_hashes",
+        "approval_single_consumption",
+        "apply_cas_fails_closed",
+        "apply_switches_runtime_read",
+        "rollback_restores_previous",
+        "recovery_windows_are_deterministic",
+        "agent_cannot_approve_or_apply",
+        "audit_surface_excludes_content",
+    }
+)
+_EVOLUTION_EVIDENCE = frozenset(
+    {
+        "owner_feedback_recorded",
+        "duplicate_rejected",
+        "cross_owner_denied",
+        "reason_redacted",
+        "forget_clears_material",
+        "forget_keeps_hash",
+        "unknown_block_denied",
+        "diff_patch_denied",
+        "control_characters_denied",
+        "tool_policy_language_denied",
+        "safe_candidate_accepted",
+        "empty_staging_denied",
+        "multi_skill_denied",
+        "single_skill_accepted",
+        "candidate_is_review_reference",
+        "manifest_excludes_memory_text",
+        "unknown_unit_denied",
+        "full_suite_green_passes",
+        "empty_suite_denied",
+        "budget_enforced",
+        "safety_failure_blocks",
+        "regression_counted_separately",
+        "preview_binds_three_hashes",
+        "any_hash_change_rebinds",
+        "first_apply_succeeds",
+        "second_apply_denied",
+        "expired_approval_denied",
+        "stale_base_denied",
+        "pointer_unchanged",
+        "base_before_apply",
+        "candidate_after_apply",
+        "previous_restored",
+        "cannot_rollback_twice",
+        "healthy_recovery_is_noop",
+        "corrupted_pointer_rolled_back",
+        "orphans_reported_not_deleted",
+        "no_evolution_tool_exposed",
+        "apply_requires_owner_decision",
+        "approval_summary_excludes_body",
+        "manifest_excludes_body",
+        "only_hashes_persisted",
+        "channel_surface_is_summary_only",
     }
 )
 _BROWSER_EVIDENCE = frozenset(
@@ -354,6 +421,7 @@ class EvalExpectation:
     automation_evidence: tuple[str, ...]
     forbidden_automation: tuple[str, ...]
     browser_evidence: tuple[str, ...]
+    evolution_evidence: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -381,6 +449,7 @@ class EvalCase:
     memory_fixture: str | None
     automation_fixture: str | None
     browser_fixture: str | None
+    evolution_fixture: str | None
 
 
 def load_cases(root: Path) -> tuple[EvalCase, ...]:
@@ -506,6 +575,22 @@ def load_browser_cases(root: Path) -> tuple[EvalCase, ...]:
     return cases
 
 
+def load_evolution_cases(root: Path) -> tuple[EvalCase, ...]:
+    """加载固定十五条 active Controlled Evolution v1 场景。"""
+    cases = tuple(
+        case
+        for case in load_cases(root)
+        if case.status == "active" and case.capability == "controlled_evolution"
+    )
+    if len(cases) != 15:
+        raise EvalCaseError("evolution suite must contain exactly 15 active cases")
+    if any(case.evolution_fixture is None for case in cases):
+        raise EvalCaseError("every evolution case must declare a closed fixture")
+    if len({case.evolution_fixture for case in cases}) != 15:
+        raise EvalCaseError("evolution cases must not reuse a fixture")
+    return cases
+
+
 def _reject_json_constant(value: str) -> None:
     """拒绝 Python JSON 扩展支持的 NaN 与 Infinity。"""
     del value
@@ -544,7 +629,14 @@ def _parse_case(raw: object, source: str) -> EvalCase:
     memory_fixture = _parse_memory(value.get("memory"), source)
     automation_fixture = _parse_automation(value.get("automation"), source)
     browser_fixture = _parse_browser(value.get("browser"), source)
-    if status == "active" and "offline" in layers and not responses and memory_fixture is None:
+    evolution_fixture = _parse_evolution(value.get("evolution"), source)
+    if (
+        status == "active"
+        and "offline" in layers
+        and not responses
+        and memory_fixture is None
+        and evolution_fixture is None
+    ):
         raise EvalCaseError(f"active offline case has no responses at {source}")
     channel_fixture = _parse_channel(value.get("channel"), source)
     if status == "active" and "channel" in layers and channel_fixture is None:
@@ -637,6 +729,7 @@ def _parse_case(raw: object, source: str) -> EvalCase:
         memory_fixture=memory_fixture,
         automation_fixture=automation_fixture,
         browser_fixture=browser_fixture,
+        evolution_fixture=evolution_fixture,
     )
 
 
@@ -689,6 +782,20 @@ def _parse_browser(raw: object, source: str) -> str | None:
     fixture = _string(value.get("fixture"), source, "browser.fixture")
     if fixture not in _BROWSER_FIXTURES:
         raise EvalCaseError(f"invalid browser fixture at {source}")
+    return fixture
+
+
+def _parse_evolution(raw: object, source: str) -> str | None:
+    """解析封闭 Evolution v1 fixture，不接受候选正文、路径或凭据。"""
+    if raw is None:
+        return None
+    value = _object(raw, source, "evolution")
+    _reject_unknown(value, {"schema", "fixture"}, source)
+    if _string(value.get("schema"), source, "evolution.schema") != "evolution.v1":
+        raise EvalCaseError(f"unsupported evolution schema at {source}")
+    fixture = _string(value.get("fixture"), source, "evolution.fixture")
+    if fixture not in _EVOLUTION_FIXTURES:
+        raise EvalCaseError(f"invalid evolution fixture at {source}")
     return fixture
 
 
@@ -859,6 +966,12 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         "browser",
         _BROWSER_EVIDENCE,
     )
+    evolution_evidence = _parse_live_evidence(
+        value.get("evolution_evidence", []),
+        source,
+        "evolution",
+        _EVOLUTION_EVIDENCE,
+    )
     return EvalExpectation(
         answer_contains=_strings(value.get("answer_contains", []), source, "answer_contains"),
         answer_excludes=_strings(value.get("answer_excludes", []), source, "answer_excludes"),
@@ -886,6 +999,7 @@ def _parse_expectation(raw: object, source: str) -> EvalExpectation:
         automation_evidence=automation_evidence,
         forbidden_automation=forbidden_automation,
         browser_evidence=browser_evidence,
+        evolution_evidence=evolution_evidence,
     )
 
 

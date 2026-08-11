@@ -8,6 +8,10 @@ import {
   validateAutomationRunsInput,
   validateApprovalInput,
   validateHaltInput,
+  validateProviderIdInput,
+  validateProviderSecretInput,
+  validateProviderSelectInput,
+  validateProviderUpsertInput,
   validateTaskIdInput,
   validateHistoryInput,
   validateSessionListInput,
@@ -15,6 +19,67 @@ import {
 } from "../src/main/ipc";
 import { DESKTOP_CHANNELS } from "../src/common/api";
 import type { BridgeService } from "../src/main/bridge-service";
+
+describe("Provider 配置的 Main 层校验", () => {
+  it("accepts a well-formed upsert and rejects a caller-supplied env name", () => {
+    expect(
+      validateProviderUpsertInput({
+        id: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        timeoutSeconds: 120,
+      }),
+    ).toEqual({ id: "openrouter", baseUrl: "https://openrouter.ai/api/v1", timeoutSeconds: 120 });
+    // 密钥变量名由 Core 从 id 推导；接受调用方指定等于开放任意环境变量写入。
+    expect(() =>
+      validateProviderUpsertInput({
+        id: "openrouter",
+        baseUrl: "https://openrouter.ai/api/v1",
+        timeoutSeconds: 120,
+        apiKeyEnv: "PATH",
+      }),
+    ).toThrowError(DesktopRequestError);
+  });
+
+  it("rejects provider ids outside the safe character set", () => {
+    for (const id of ["", "Upper", "has space", "../etc", "a".repeat(33), "-leading"]) {
+      expect(() => validateProviderIdInput({ id })).toThrowError(DesktopRequestError);
+    }
+    expect(validateProviderIdInput({ id: "open-router_2" })).toEqual({ id: "open-router_2" });
+  });
+
+  it("rejects non-http base urls", () => {
+    expect(() =>
+      validateProviderUpsertInput({
+        id: "x",
+        baseUrl: "file:///etc/passwd",
+        timeoutSeconds: 120,
+      }),
+    ).toThrowError(DesktopRequestError);
+  });
+
+  it("keeps the secret value byte-exact and never trims it away", () => {
+    expect(validateProviderSecretInput({ id: "default", value: "sk-abc" })).toEqual({
+      id: "default",
+      value: "sk-abc",
+    });
+    // 空白、换行会破坏 dotenv 或注入第二个变量。
+    for (const value of ["", "   ", "sk\nX=1", "sk\u0000"]) {
+      expect(() => validateProviderSecretInput({ id: "default", value })).toThrowError(
+        DesktopRequestError,
+      );
+    }
+  });
+
+  it("requires a model name when selecting a provider", () => {
+    expect(validateProviderSelectInput({ id: "default", model: "gpt-5" })).toEqual({
+      id: "default",
+      model: "gpt-5",
+    });
+    expect(() => validateProviderSelectInput({ id: "default", model: "  " })).toThrowError(
+      DesktopRequestError,
+    );
+  });
+});
 
 describe("Desktop Main IPC validation", () => {
   it("preserves valid task text exactly", () => {

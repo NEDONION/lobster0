@@ -181,7 +181,10 @@ class Phase6DocumentationTest(unittest.TestCase):
         self.assertTrue(path.is_file())
         content = path.read_text(encoding="utf-8")
         self.assertIn("IMPLEMENTATION IN PROGRESS", content)
-        self.assertIn("Task 1/6", content)
+        # 状态头必须同时声明"已完成哪些 Task"和"哪些 Task 只是部分完成"，
+        # 避免把部分完成写成整个 Phase 完成。
+        self.assertIn("部分完成", content)
+        self.assertIn("**未实现**", content)
         self.assertGreaterEqual(content.count("```mermaid"), 5)
         for heading in (
             "SQLite v7 设计",

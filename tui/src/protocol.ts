@@ -31,6 +31,11 @@ export type RequestType =
   | "automation.halt"
   | "automation.unhalt"
   | "automation.create"
+  | "providers.list"
+  | "providers.upsert"
+  | "providers.remove"
+  | "providers.select"
+  | "providers.set_secret"
   | "bridge.shutdown";
 
 export type PermissionMode = "safe" | "smart" | "autopilot" | "yolo";

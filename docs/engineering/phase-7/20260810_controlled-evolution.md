@@ -1,7 +1,7 @@
 # Phase 7 Controlled Evolution 工程落地方案
 
 > 文档日期：2026-08-10（施工状态更新于 2026-08-11）  
-> 状态：**IMPLEMENTATION IN PROGRESS（Task 1/6 完成；Task 2～5 部分完成——飞书命令未接线、
+> 状态：**IMPLEMENTATION IN PROGRESS（Task 1、6 完成；Task 2～5 部分完成——飞书命令与摘要卡未接线、
 > Memory candidate 仅支持 forget、评测缺 failure case 与差分、apply/rollback 仅 Prompt 目标可用）**  
 > 前置条件：Phase 6 生产验收通过；Memory Autopilot A～E 已实现  
 > 施工偏离说明：Phase 6 生产验收（真实 Seatbelt 2/2、飞书 15/15、Automation 10/10、24 小时 soak）截至
@@ -646,12 +646,38 @@ propose 阶段已按内容哈希落盘，apply 只做重校验 + CAS 切指针�
 `MemoryReviewService.decide`。两者都不是"补几行"，各自涉及另一个子系统的加载路径，没有在没想清楚
 其恢复语义前顺手接上。
 
-### Task 6：管理体验与 Live Evidence
+### Task 6：管理体验与 Live Evidence —— **PARTIAL（2026-08-11）：CLI 与 15×20 soak 完成，Live 与飞书卡待接**
 
 - CLI 详情和 Feishu summary card；
 - 15 条 versioned evolution cases × 20 soak；
 - real Provider + Owner Feishu controlled smoke；
 - 发布记录只写实际 PASS。
+
+实现落点：`cli.py` 的 `evolve` 子命令、`src/lobster0/evals/evolution.py`、
+`evals/scenarios/evolution.v1.jsonl`（15 条 EVO-* case）、`tests/test_cli_evolve.py`。
+
+**已实现**：`evolve propose / show / eval / request / approve / deny / apply / rollback`，
+每条命令只做一个动作——**没有**把 propose、eval、approve、apply 串成一条不可中断的"魔法命令"，
+apply/rollback 必须消费一条已经批准且绑定精确哈希的审批。默认输出不含候选正文与被评价的回答。
+
+15 条 versioned case 复用仓库既有的 fixture 模式（Memory/Automation/Browser 都是这样做的）
+接入 `--suite evolution`，覆盖反馈归属与脱敏、三类候选 hard-deny、Gate 判定与安全子集、审批
+hash 绑定与单次消费、CAS fail-closed、Runtime 读取切换、回滚、崩溃恢复、Agent 无审批权限、
+审计面不含正文。20 轮 soak 实测 **300/300**。
+
+**candidate 由 Owner 提供而非模型生成**：`evolve propose` 接收 `--candidate-file`。文档原设想
+是 Provider 返回完整候选 block，但那条路径需要真实模型调用；当前先做 Owner 显式提供，这既能
+把整条审批/应用/回滚链路跑通，也严格不弱于原设计（模型本来就不被允许返回 diff）。
+
+**施工中发现并修掉的第二个真 bug**：`evaluate_proposal_version` 原本把**全部** active case
+（145 条）喂给离线 runner，其中 channel/automation/browser 层的 case 根本不是离线可跑的，
+于是产生 91 条与候选无关的假失败——真实跑一次 `evolve eval` 才暴露出来。已按文档第 9 节
+"所有 versioned **offline** suites"收窄为 offline 层，并补了防回归 case。修复后真实 Gate
+实测 **54/54 PASS**。
+
+**未实现**：飞书 Proposal summary card 未接线，原因与 Task 2 同一处缺口（入站消息模型不携带
+"回复了哪条消息"）；`real Provider + Owner Feishu controlled smoke` 需要真实账号与网络，
+本机无法完成，保持 pending，不写进任何 release 记录。
 
 每个 Task 独立 RED→GREEN、独立 mixed Chinese/English commit；不能把 Phase 7 做成一个无法审查的大提交。
 

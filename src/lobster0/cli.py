@@ -32,15 +32,33 @@ from lobster0.env import DotEnvError, load_dotenv, resolve_dotenv_path
 from lobster0.evals.automation import run_automation_suite
 from lobster0.evals.browser import run_browser_suite
 from lobster0.evals.cases import (
+    EvalCase,
     EvalCaseError,
     load_automation_cases,
     load_browser_cases,
     load_cases,
+    load_evolution_cases,
 )
 from lobster0.evals.channel import run_channel_suite
 from lobster0.evals.runner import run_offline_suite
-from lobster0.evolution.models import Feedback, FeedbackRating
-from lobster0.evolution.repository import EvolutionError, FeedbackRepository
+from lobster0.evolution.evaluator import EvaluationError, evaluate_proposal_version
+from lobster0.evolution.models import (
+    Feedback,
+    FeedbackRating,
+    Proposal,
+    ProposalStatus,
+    ProposalTargetType,
+)
+from lobster0.evolution.proposals import CandidateError, validate_prompt_candidate
+from lobster0.evolution.repository import (
+    ActiveRevisionRepository,
+    EvalRepository,
+    EvolutionApprovalRepository,
+    EvolutionError,
+    FeedbackRepository,
+    ProposalRepository,
+)
+from lobster0.evolution.service import EvolutionService
 from lobster0.gateway import (
     GatewayConfigError,
     GatewayRuntimeError,
@@ -155,6 +173,51 @@ def build_parser() -> argparse.ArgumentParser:
         "forget", help="clear a feedback's reason material"
     )
     feedback_forget.add_argument("feedback_id", type=_positive_cli_id)
+    evolve_parser = subparsers.add_parser(
+        "evolve",
+        help="drive the Controlled Evolution pipeline for one restricted target",
+    )
+    evolve_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute Lobster0 state directory",
+    )
+    evolve_subparsers = evolve_parser.add_subparsers(dest="evolve_command", required=True)
+    evolve_propose = evolve_subparsers.add_parser(
+        "propose", help="create a draft candidate from an owner feedback"
+    )
+    evolve_propose.add_argument("--feedback", type=_positive_cli_id, required=True)
+    evolve_propose.add_argument("--block", default="agent-behavior")
+    evolve_propose.add_argument(
+        "--candidate-file",
+        type=Path,
+        required=True,
+        help="UTF-8 file holding the complete candidate block (never a diff)",
+    )
+    evolve_propose.add_argument("--rationale", default="owner feedback")
+    evolve_show = evolve_subparsers.add_parser("show", help="show one proposal's state")
+    evolve_show.add_argument("proposal_id", type=_positive_cli_id)
+    evolve_eval = evolve_subparsers.add_parser(
+        "eval", help="run the deterministic gate for a proposal's current version"
+    )
+    evolve_eval.add_argument("proposal_id", type=_positive_cli_id)
+    evolve_eval.add_argument(
+        "--root",
+        type=Path,
+        default=Path.cwd() / "evals" / "scenarios",
+        help="directory containing versioned JSONL cases",
+    )
+    evolve_request = evolve_subparsers.add_parser(
+        "request", help="create a pending owner approval bound to exact hashes"
+    )
+    evolve_request.add_argument("proposal_id", type=_positive_cli_id)
+    evolve_request.add_argument("--eval-run", type=_positive_cli_id, required=True)
+    evolve_request.add_argument(
+        "--action", choices=("apply", "rollback"), default="apply"
+    )
+    for name in ("approve", "deny", "apply", "rollback"):
+        child = evolve_subparsers.add_parser(name, help=f"{name} an evolution approval")
+        child.add_argument("approval_id", type=_positive_cli_id)
     service_parser = subparsers.add_parser(
         "service",
         help="manage the owned Lobster0 Gateway user service",
@@ -242,7 +305,7 @@ def build_parser() -> argparse.ArgumentParser:
         )
     eval_run.add_argument(
         "--suite",
-        choices=("offline", "channel", "automation", "browser", "all"),
+        choices=("offline", "channel", "automation", "browser", "evolution", "all"),
         required=True,
     )
     eval_run.add_argument(
@@ -327,6 +390,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.command == "feedback":
         return _run_feedback(paths, arguments)
+
+    if arguments.command == "evolve":
+        return _run_evolve(paths, arguments)
 
     if arguments.command == "service":
         return _run_service(paths, arguments)
@@ -804,6 +870,163 @@ def _task_line(task: ScheduledTask) -> str:
     )
 
 
+
+def _run_evolve(paths: StatePaths, arguments: argparse.Namespace) -> int:
+    """执行 Controlled Evolution 的单步命令；每条命令只做一个动作。
+
+    刻意不把 propose、eval、approve、apply 串成一条"魔法命令"：每一步都要 Owner 显式发起，
+    并且 apply/rollback 必须消费一条已经批准、绑定精确哈希的审批。
+    """
+    if not paths.database.is_file() or paths.database.is_symlink():
+        print("error: Lobster0 state is not initialized", file=sys.stderr)
+        return 2
+    try:
+        database = Database(paths.database)
+        apply_migrations(database)
+        owner = OwnerRepository(database).get_or_create()
+        proposals = ProposalRepository(database)
+        evals = EvalRepository(database)
+        approvals = EvolutionApprovalRepository(database)
+        active = ActiveRevisionRepository(database)
+        service = EvolutionService(
+            proposals=proposals,
+            evals=evals,
+            approvals=approvals,
+            active=active,
+            prompt_versions_root=paths.prompt_versions,
+        )
+        command = arguments.evolve_command
+
+        if command == "propose":
+            text = arguments.candidate_file.read_text(encoding="utf-8")
+            material = validate_prompt_candidate(
+                paths.prompt_versions, arguments.block, text
+            )
+            proposal, version = proposals.create_draft(
+                owner_id=owner.id,
+                feedback_id=arguments.feedback,
+                target_type=ProposalTargetType.PROMPT,
+                target_name=arguments.block,
+                base_hash=material.base_hash,
+                candidate_hash=material.candidate_hash,
+                manifest_json=material.manifest_json,
+                candidate_ref=material.candidate_ref,
+                rationale=arguments.rationale,
+            )
+            print(_proposal_line(proposal))
+            print(f"version={version.id} ordinal={version.ordinal}")
+            print(f"candidate_hash={version.candidate_hash}")
+            return 0
+
+        if command == "show":
+            proposal = proposals.get(owner.id, arguments.proposal_id)
+            print(_proposal_line(proposal))
+            if proposal.current_version_id is not None:
+                version = proposals.get_version(owner.id, proposal.current_version_id)
+                print(
+                    f"version={version.id} ordinal={version.ordinal} "
+                    f"base={version.base_hash[:16]} candidate={version.candidate_hash[:16]}"
+                )
+            pointer = active.get(owner.id, proposal.target_type, proposal.target_name)
+            print(
+                "active="
+                + ("-" if pointer is None else str(pointer.proposal_version_id))
+            )
+            return 0
+
+        if command == "eval":
+            proposal = proposals.get(owner.id, arguments.proposal_id)
+            if proposal.status is ProposalStatus.DRAFT:
+                proposal = proposals.transition(
+                    owner.id,
+                    proposal.id,
+                    expected_status=ProposalStatus.DRAFT,
+                    new_status=ProposalStatus.EVALUATING,
+                )
+            if proposal.current_version_id is None:
+                print("error: proposal_version_missing", file=sys.stderr)
+                return 4
+            receipt = asyncio.run(
+                evaluate_proposal_version(
+                    evals,
+                    proposal_version_id=proposal.current_version_id,
+                    suite_root=arguments.root,
+                )
+            )
+            print(
+                f"gate={'PASS' if receipt.outcome.passed else 'FAIL'} "
+                f"cases={receipt.outcome.passed_cases}/{receipt.outcome.total_cases} "
+                f"safety_failures={receipt.outcome.safety_failures}"
+            )
+            if receipt.outcome.violations:
+                print(f"violations={','.join(receipt.outcome.violations)}")
+            print(f"receipt={receipt.receipt_hash}")
+            return 0 if receipt.outcome.passed else 1
+
+        if command == "request":
+            if arguments.action == "apply":
+                approval = service.request_apply_approval(
+                    owner.id, arguments.proposal_id, eval_run_id=arguments.eval_run
+                )
+            else:
+                approval = service.request_rollback_approval(
+                    owner.id, arguments.proposal_id
+                )
+            print(
+                f"approval={approval.id} action={approval.action.value} "
+                f"status={approval.status.value} expires={approval.expires_at.isoformat()}"
+            )
+            print(f"binding={approval.binding_hash}")
+            return 0
+
+        if command in {"approve", "deny"}:
+            approval = approvals.decide(
+                owner.id, arguments.approval_id, approved=command == "approve"
+            )
+            print(f"approval={approval.id} status={approval.status.value}")
+            return 0
+
+        if command == "apply":
+            receipt = service.apply(owner.id, arguments.approval_id)
+            print(
+                f"applied proposal={receipt.proposal_id} "
+                f"version={receipt.proposal_version_id} "
+                f"target={receipt.target_type.value}:{receipt.target_name}"
+            )
+            return 0
+
+        if command == "rollback":
+            rollback = service.rollback(owner.id, arguments.approval_id)
+            print(
+                f"rolled_back proposal={rollback.proposal_id} "
+                f"restored_version={rollback.restored_version_id}"
+            )
+            return 0
+
+        raise ValueError("unsupported evolve command")
+    except CandidateError as error:
+        print(f"error: {error.code}", file=sys.stderr)
+        return 4
+    except (EvolutionError, EvaluationError) as error:
+        print(f"error: {error.code}", file=sys.stderr)
+        return 4
+    except (OSError, UnicodeDecodeError):
+        print("error: candidate_file_unreadable", file=sys.stderr)
+        return 2
+    except (DatabaseError, MigrationError, sqlite3.Error) as error:
+        print(f"error: {type(error).__name__}", file=sys.stderr)
+        return 5
+
+
+def _proposal_line(proposal: Proposal) -> str:
+    """渲染不含候选正文的单行 Proposal 摘要。"""
+    return (
+        f"proposal={proposal.id} target={proposal.target_type.value}:{proposal.target_name} "
+        f"status={proposal.status.value} feedback={proposal.feedback_id} "
+        f"version={proposal.current_version_id or '-'}"
+    )
+
+
 def _feedback_line(item: Feedback) -> str:
     """渲染不含完整原因正文的单行 Feedback 摘要。"""
     reason_present = " has_reason" if item.redacted_reason else ""
@@ -864,6 +1087,13 @@ def _run_eval(arguments: argparse.Namespace) -> int:
     if arguments.suite in {"browser", "all"}:
         try:
             browser = load_browser_cases(arguments.root)
+        except EvalCaseError as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+    evolution: tuple[EvalCase, ...] = ()
+    if arguments.suite in {"evolution", "all"}:
+        try:
+            evolution = load_evolution_cases(arguments.root)
         except EvalCaseError as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
@@ -1032,6 +1262,46 @@ def _run_eval(arguments: argparse.Namespace) -> int:
                 f"Browser local soak: {browser_passed}/{browser_total} checks passed "
                 f"across {browser_runs}/{arguments.repeat} runs ({browser_duration}ms)."
             )
+    if arguments.suite in {"evolution", "all"}:
+        evolution_passed = 0
+        evolution_total = 0
+        evolution_duration = 0
+        evolution_runs = 0
+        evolution_failed = 0
+        for iteration in range(1, arguments.repeat + 1):
+            evolution_suite = asyncio.run(run_offline_suite(evolution))
+            evolution_passed += evolution_suite.passed
+            evolution_total += evolution_suite.total
+            evolution_duration += evolution_suite.duration_ms
+            passed += evolution_suite.passed
+            checks += evolution_suite.total
+            duration_ms += evolution_suite.duration_ms
+            evolution_runs = iteration
+            if not json_output and (arguments.repeat == 1 or evolution_suite.failed):
+                for result in evolution_suite.cases:
+                    if result.passed:
+                        print(f"PASS {result.case_id} {result.duration_ms}ms")
+                    else:
+                        print(
+                            f"FAIL {result.case_id} {','.join(result.failures)} "
+                            f"run={iteration}"
+                        )
+            evolution_failed += evolution_suite.failed
+            failed += evolution_suite.failed
+            if evolution_suite.failed:
+                break
+        if json_output:
+            pass
+        elif arguments.repeat == 1:
+            print(
+                f"Evolution eval: {evolution_passed}/{evolution_total} passed, "
+                f"{evolution_failed} failed ({evolution_duration}ms)."
+            )
+        else:
+            print(
+                f"Evolution local soak: {evolution_passed}/{evolution_total} checks passed "
+                f"across {evolution_runs}/{arguments.repeat} runs ({evolution_duration}ms)."
+            )
     if json_output:
         selected = (
             offline
@@ -1042,7 +1312,9 @@ def _run_eval(arguments: argparse.Namespace) -> int:
             if arguments.suite == "automation"
             else browser
             if arguments.suite == "browser"
-            else (*offline, *channel, *automation, *browser)
+            else evolution
+            if arguments.suite == "evolution"
+            else (*offline, *channel, *automation, *browser, *evolution)
         )
         print(
             json.dumps(

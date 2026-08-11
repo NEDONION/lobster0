@@ -15,6 +15,7 @@ from lobster0.agent.events import RunEvent
 from lobster0.bootstrap import initialize_state
 from lobster0.bridge.__main__ import build_parser
 from lobster0.bridge.conversations import ConversationQueryError
+from lobster0.config import ProviderConfig
 from lobster0.bridge.server import BridgeServer
 from lobster0.paths import build_state_paths
 from lobster0.policy.approvals import ApprovalDecision
@@ -200,6 +201,12 @@ def _runtime(service) -> SimpleNamespace:
         conversation_console=FakeConversationConsole(),
         automation_enabled=True,
         database=object(),
+        paths=SimpleNamespace(home=Path("/nonexistent")),
+        config=SimpleNamespace(
+            agent=SimpleNamespace(model="deepseek-v4-pro", provider="default"),
+            provider=ProviderConfig(),
+            providers=(ProviderConfig(),),
+        ),
     )
 
 
@@ -558,6 +565,91 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(keywords["owner_id"], 1)
         self.assertEqual(keywords["name"], "每日摘要")
         self.assertEqual(keywords["prompt"], "汇总昨天的文档")
+
+    async def test_providers_list_never_exposes_secret_values(self) -> None:
+        """只读列表只给出是否已配置，绝不返回密钥本身或其片段。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        sentinel = "sk-sentinel-must-not-leak"
+        with patch.dict(os.environ, {"LOBSTER0_MODEL_API_KEY": sentinel}, clear=False):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(_request("pl-1", "providers.list", {}))
+            response = await writer.wait_for_id("pl-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            self.assertEqual(await task, 0)
+
+        entries = response["payload"]["providers"]
+        self.assertEqual(entries[0]["id"], "default")
+        self.assertTrue(entries[0]["secret_configured"])
+        self.assertEqual(
+            set(entries[0]),
+            {"id", "base_url", "timeout_seconds", "secret_configured", "selected"},
+        )
+        self.assertNotIn(sentinel, json.dumps(response, ensure_ascii=False))
+
+    async def test_provider_secret_write_never_echoes_the_value(self) -> None:
+        """写密钥的响应与任何输出里都不得出现明文。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        sentinel = "sk-write-sentinel"
+        recorded: list[tuple[str, str]] = []
+
+        def fake_update(paths: object, name: str, value: str) -> None:
+            del paths
+            recorded.append((name, value))
+
+        with patch("lobster0.bridge.server.update_secret", side_effect=fake_update):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(
+                _request("ps-1", "providers.set_secret", {"id": "default", "value": sentinel})
+            )
+            response = await writer.wait_for_id("ps-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            self.assertEqual(await task, 0)
+
+        # 变量名由 Core 从 id 推导，不来自请求。
+        self.assertEqual(recorded, [("LOBSTER0_MODEL_API_KEY", sentinel)])
+        self.assertNotIn(sentinel, json.dumps(response, ensure_ascii=False))
+        self.assertNotIn(sentinel, json.dumps(writer.frames, ensure_ascii=False))
+
+    async def test_provider_remove_refuses_to_delete_the_selected_entry(self) -> None:
+        """删除当前默认项会留下悬空引用，必须拒绝。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(EventTurnService())
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+        await reader.feed(_request("pr-1", "providers.remove", {"id": "default"}))
+        response = await writer.wait_for_id("pr-1")
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        self.assertEqual(await task, 0)
+
+        self.assertEqual(response["payload"]["code"], "provider_selected")
+
+    async def test_provider_write_is_rejected_while_a_turn_is_active(self) -> None:
+        """回合运行中不允许改动 Provider 配置。"""
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(BlockingTurnService())
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+        await reader.feed(_request("start-1", "turn.start", {"session_key": "s", "text": "hi"}))
+        await writer.wait_for_id("start-1")
+        await reader.feed(
+            _request("pu-1", "providers.upsert", {
+                "id": "new", "base_url": "https://new.example/v1", "timeout_seconds": 120,
+            })
+        )
+        response = await writer.wait_for_id("pu-1")
+        await reader.feed(_request("cancel-1", "turn.cancel", {}))
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        await task
+
+        self.assertEqual(response["payload"]["code"], "turn_busy")
 
     async def test_memory_command_routes_only_validated_core_arguments(self) -> None:
         """Bridge 把已验证 action/query/limit 路由到 Runtime Console。"""

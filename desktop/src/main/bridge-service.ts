@@ -17,6 +17,9 @@ import type {
   AutomationRun,
   AutomationSummary,
   DesktopBootstrap,
+  ProviderList,
+  ProviderSummary,
+  ProviderUpsertInput,
   SessionHistory,
   SessionSummary,
   StartTurnInput,
@@ -256,6 +259,40 @@ export class BridgeService {
     return automationTask(recordValue(requiredValue(response.task)));
   }
 
+  public async listProviders(): Promise<ProviderList> {
+    const response = await this.requireClient().request("providers.list", {});
+    const entries = response.providers;
+    if (!Array.isArray(entries)) {
+      throw new BridgeRequestError("bridge_protocol", "Provider 列表格式无效");
+    }
+    return {
+      providers: entries.map((value) => providerSummary(recordValue(value))),
+      model: stringValue(response.model),
+    };
+  }
+
+  public async upsertProvider(input: ProviderUpsertInput): Promise<void> {
+    await this.requireClient().request("providers.upsert", {
+      id: input.id,
+      base_url: input.baseUrl,
+      timeout_seconds: input.timeoutSeconds,
+    });
+  }
+
+  public async removeProvider(id: string): Promise<void> {
+    await this.requireClient().request("providers.remove", { id });
+  }
+
+  public async selectProvider(id: string, model: string): Promise<void> {
+    await this.requireClient().request("providers.select", { id, model });
+  }
+
+  public async setProviderSecret(id: string, value: string): Promise<void> {
+    // 只发不收：Core 的响应里没有密钥，这里也刻意不返回任何东西，
+    // 免得密钥经由返回值进入 Renderer 或日志。
+    await this.requireClient().request("providers.set_secret", { id, value });
+  }
+
   /** pause/resume/cancel 的响应形状一致，共用同一条校验路径。 */
   private async mutateAutomationTask(
     requestType: "automation.pause" | "automation.resume" | "automation.cancel",
@@ -428,6 +465,16 @@ function nullableString(value: JsonValue | undefined): string | null {
 }
 
 /** 把一条 Task 响应投影成 Renderer 类型；与只读列表共用，避免字段集漂移。 */
+function providerSummary(record: Record<string, JsonValue>): ProviderSummary {
+  return {
+    id: stringValue(record.id),
+    baseUrl: stringValue(record.base_url),
+    timeoutSeconds: positiveInteger(record.timeout_seconds),
+    secretConfigured: booleanValue(record.secret_configured),
+    selected: booleanValue(record.selected),
+  };
+}
+
 function automationTask(record: Record<string, JsonValue>): AutomationSummary {
   return {
     taskId: positiveInteger(record.task_id),

@@ -13,6 +13,7 @@ from lobster0.agent.turn import TurnService
 from lobster0.bootstrap import initialize_state
 from lobster0.config import AppConfig, load_config, resolve_permission_roots
 from lobster0.evals.cases import EvalCase
+from lobster0.evals.evolution import run_evolution_fixture
 from lobster0.evals.memory import run_memory_fixture
 from lobster0.memory.markdown_store import MemoryMarkdownStore
 from lobster0.memory.repository import (
@@ -62,6 +63,7 @@ class EvalCaseResult:
     approval_statuses: tuple[str, ...]
     request_count: int
     memory_evidence: tuple[str, ...]
+    evolution_evidence: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,6 +113,8 @@ async def run_offline_case(case: EvalCase) -> EvalCaseResult:
     started = time.monotonic()
     if case.memory_fixture is not None:
         return await _run_memory_case(case, started)
+    if case.evolution_fixture is not None:
+        return await _run_evolution_case(case, started)
     with TemporaryDirectory(prefix="lobster0-eval-") as directory:
         fixture_root = Path(directory).resolve()
         paths = build_state_paths(fixture_root / "state")
@@ -241,6 +245,35 @@ async def _run_memory_case(case: EvalCase, started: float) -> EvalCaseResult:
         approval_statuses=(),
         request_count=0,
         memory_evidence=evidence,
+    )
+
+
+async def _run_evolution_case(case: EvalCase, started: float) -> EvalCaseResult:
+    """运行一个固定 Evolution fixture，并只暴露 evidence key 与稳定短码。"""
+    evidence: tuple[str, ...] = ()
+    failures: tuple[str, ...] = ()
+    try:
+        assert case.evolution_fixture is not None
+        with TemporaryDirectory(prefix="lobster0-evolution-eval-") as directory:
+            outcome = await run_evolution_fixture(
+                case.evolution_fixture, Path(directory).resolve()
+            )
+        evidence = outcome.evidence
+        if evidence != case.expected.evolution_evidence:
+            failures = ("evolution_evidence_mismatch",)
+    except Exception:  # noqa: BLE001 - eval 边界不得回显候选正文或内部路径
+        failures = ("execution_error",)
+    return EvalCaseResult(
+        case_id=case.id,
+        passed=not failures,
+        duration_ms=max(0, round((time.monotonic() - started) * 1000)),
+        failures=failures,
+        tool_runs=(),
+        audit_events=(),
+        approval_statuses=(),
+        request_count=0,
+        memory_evidence=(),
+        evolution_evidence=evidence,
     )
 
 

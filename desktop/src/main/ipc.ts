@@ -74,6 +74,19 @@ export function registerDesktopIpc(
   register(DESKTOP_CHANNELS.automationUnhalt, () => bridge.unhaltAutomation());
   register(DESKTOP_CHANNELS.automationCreate, (payload) =>
     bridge.createAutomation(validateAutomationCreateInput(payload)));
+  register(DESKTOP_CHANNELS.providersList, () => bridge.listProviders());
+  register(DESKTOP_CHANNELS.providerUpsert, (payload) =>
+    bridge.upsertProvider(validateProviderUpsertInput(payload)));
+  register(DESKTOP_CHANNELS.providerRemove, (payload) =>
+    bridge.removeProvider(validateProviderIdInput(payload).id));
+  register(DESKTOP_CHANNELS.providerSelect, (payload) => {
+    const input = validateProviderSelectInput(payload);
+    return bridge.selectProvider(input.id, input.model);
+  });
+  register(DESKTOP_CHANNELS.providerSecret, (payload) => {
+    const input = validateProviderSecretInput(payload);
+    return bridge.setProviderSecret(input.id, input.value);
+  });
   register(DESKTOP_CHANNELS.workspaceChoose, async () => {
     const selected = await chooseWorkspace();
     if (selected === null) {
@@ -218,6 +231,74 @@ export function validateAutomationCreateInput(payload: unknown): AutomationCreat
     input.timezone = record.timezone;
   }
   return input;
+}
+
+// 与 Core 的 config._PROVIDER_ID 保持同一套字符集：它要参与密钥环境变量名的
+// 推导，任何越界字符都可能变成写入其他环境变量的手段。
+const PROVIDER_ID = /^[a-z0-9][a-z0-9_-]{0,31}$/;
+const PROVIDER_CODE = "invalid_provider_action";
+
+export function validateProviderIdInput(payload: unknown): { id: string } {
+  const record = exactRecord(payload, ["id"], PROVIDER_CODE);
+  return { id: providerId(record.id) };
+}
+
+export function validateProviderUpsertInput(payload: unknown): {
+  id: string;
+  baseUrl: string;
+  timeoutSeconds: number;
+} {
+  // apiKeyEnv 刻意不在字段集里，exactRecord 会因多出一个键而整体拒绝。
+  const record = exactRecord(payload, ["id", "baseUrl", "timeoutSeconds"], PROVIDER_CODE);
+  const baseUrl = record.baseUrl;
+  if (!boundedString(baseUrl, 500) || !isHttpUrl(baseUrl)) {
+    throw new DesktopRequestError(PROVIDER_CODE, "Provider 地址必须是 http(s) URL");
+  }
+  return {
+    id: providerId(record.id),
+    baseUrl,
+    timeoutSeconds: integerBetween(record.timeoutSeconds, 1, 3600, PROVIDER_CODE),
+  };
+}
+
+export function validateProviderSelectInput(payload: unknown): { id: string; model: string } {
+  const record = exactRecord(payload, ["id", "model"], PROVIDER_CODE);
+  const model = record.model;
+  if (!boundedString(model, 200) || model.trim().length === 0) {
+    throw new DesktopRequestError(PROVIDER_CODE, "模型名不能为空");
+  }
+  return { id: providerId(record.id), model };
+}
+
+export function validateProviderSecretInput(payload: unknown): { id: string; value: string } {
+  const record = exactRecord(payload, ["id", "value"], PROVIDER_CODE);
+  const value = record.value;
+  // 边缘空白与任何换行都会破坏 dotenv 或注入第二个变量；值本身不做 trim 后转发，
+  // 因为密钥必须逐字节保真，只做合法性判定。
+  if (
+    !boundedString(value, 4096)
+    || value.trim().length === 0
+    || value !== value.trim()
+    || /[\r\n\u2028\u2029]/.test(value)
+  ) {
+    throw new DesktopRequestError(PROVIDER_CODE, "密钥值不合法");
+  }
+  return { id: providerId(record.id), value };
+}
+
+function providerId(value: unknown): string {
+  if (typeof value !== "string" || !PROVIDER_ID.test(value)) {
+    throw new DesktopRequestError(PROVIDER_CODE, "Provider 标识不合法");
+  }
+  return value;
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    return ["http:", "https:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
 }
 
 function exactRecord(

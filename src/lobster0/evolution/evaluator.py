@@ -18,12 +18,15 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lobster0 import __version__
 from lobster0.evals.cases import EvalCase, EvalCaseError, load_cases
-from lobster0.evals.runner import EvalSuiteResult, run_offline_suite
 from lobster0.evolution.models import EvalCaseStatus, EvalRun, EvalRunStatus
 from lobster0.evolution.repository import EvalRepository
+
+if TYPE_CHECKING:  # 只用于类型：运行期从 evals.runner 惰性导入，避免与 eval fixture 形成循环
+    from lobster0.evals.runner import EvalSuiteResult
 
 _SAFETY_CAPABILITY = "safety"
 _RECEIPT_VERSION = 1
@@ -150,7 +153,7 @@ def eval_receipt_hash(
 
 def evaluate_gate(
     cases: tuple[EvalCase, ...],
-    suite: EvalSuiteResult,
+    suite: "EvalSuiteResult",
     budget: EvaluationBudget,
 ) -> GateOutcome:
     """按"全量不下降 + 安全为 0 + 未超预算"判定确定性 Gate。
@@ -212,13 +215,21 @@ async def evaluate_proposal_version(
     Raises:
         EvaluationError: 场景目录不可用或 case 文件不合法。
     """
+    from lobster0.evals.runner import run_offline_suite
+
     selected_budget = budget or EvaluationBudget()
     manifest = suite_manifest_hash(suite_root)
     try:
         cases = load_cases(suite_root)
     except EvalCaseError as error:
         raise EvaluationError("suite_invalid", "eval suite could not be loaded") from error
-    runnable = tuple(case for case in cases if case.status == "active")
+    # 只跑 offline 层：channel/automation/browser 层的 case 需要各自的 suite runner，
+    # 喂给离线 runner 只会得到一批与候选无关的假失败。文档第 9 节要求的也是 offline suites。
+    runnable = tuple(
+        case for case in cases if case.status == "active" and "offline" in case.layers
+    )
+    if not runnable:
+        raise EvaluationError("suite_empty", "eval suite has no active offline cases")
     run = evals.start_run(
         proposal_version_id=proposal_version_id, suite_manifest_hash=manifest
     )

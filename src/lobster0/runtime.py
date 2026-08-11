@@ -127,6 +127,10 @@ class AgentRuntime:
     database: Database = field(repr=False)
     tool_definitions: tuple[ToolDefinition, ...]
     provider: OpenAICompatibleProvider = field(repr=False)
+    # Bridge 的 Provider 配置写操作要读当前配置、写回配置文件与密钥文件，
+    # 这两项是它需要的唯一入口，故随 Runtime 一起下发。
+    paths: StatePaths = field(repr=False)
+    config: AppConfig = field(repr=False)
     browser_client: BrowserClient | None = field(default=None, repr=False)
     _started: bool = field(default=False, init=False, repr=False)
     _background_started: bool = field(default=False, init=False, repr=False)
@@ -581,6 +585,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             tool.definition for tool in sorted(tools, key=lambda tool: tool.definition.name)
         ),
         provider=provider,
+        paths=paths,
+        config=config,
         browser_client=browser_client,
     )
 

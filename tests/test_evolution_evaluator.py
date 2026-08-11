@@ -279,7 +279,11 @@ class EvaluateProposalVersionTest(unittest.IsolatedAsyncioTestCase):
     async def test_all_green_run_is_recorded_and_receipt_is_reproducible(self) -> None:
         """全绿评测必须结算为 passed，并写入逐 case 结果与可复算 receipt。"""
         cases = load_cases(SCENARIO_ROOT)
-        active = tuple(case for case in cases if case.status == "active")
+        active = tuple(
+            case
+            for case in cases
+            if case.status == "active" and "offline" in case.layers
+        )
         suite = _suite(*(_runner_case(case.id, passed=True) for case in active))
 
         async def runner(selected):
@@ -307,7 +311,11 @@ class EvaluateProposalVersionTest(unittest.IsolatedAsyncioTestCase):
     async def test_failed_gate_is_recorded_and_blocks_approval_lookup(self) -> None:
         """有失败 case 时必须结算为 failed，且不能被当作可审批的 passed run。"""
         cases = load_cases(SCENARIO_ROOT)
-        active = tuple(case for case in cases if case.status == "active")
+        active = tuple(
+            case
+            for case in cases
+            if case.status == "active" and "offline" in case.layers
+        )
         results = [_runner_case(case.id, passed=True) for case in active]
         results[0] = _runner_case(active[0].id, passed=False)
 
@@ -329,6 +337,27 @@ class EvaluateProposalVersionTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(EvaluationError) as raised:
             latest_passing_run(self.evals, stored.id)
         self.assertEqual(raised.exception.code, "eval_run_not_passed")
+
+    async def test_only_offline_layer_cases_reach_the_offline_runner(self) -> None:
+        """channel/browser 层的 case 不能被喂给离线 runner，否则会产生假失败。"""
+        seen: list[str] = []
+
+        async def runner(selected):
+            """记录每条被送进 runner 的 case 是否属于 offline 层。"""
+            seen.extend(
+                case.id for case in selected if "offline" not in case.layers
+            )
+            self.assertTrue(selected)
+            return _suite(*(_runner_case(case.id, passed=True) for case in selected))
+
+        await evaluate_proposal_version(
+            self.evals,
+            proposal_version_id=self.version_id,
+            suite_root=SCENARIO_ROOT,
+            suite_runner=runner,
+        )
+
+        self.assertEqual(seen, [])
 
     async def test_runner_crash_settles_the_run_as_error(self) -> None:
         """Runner 抛错时 EvalRun 不能停留在 running，必须结算为 error。"""

@@ -30,6 +30,11 @@ _REQUEST_TYPES = frozenset(
         "automation.halt",
         "automation.unhalt",
         "automation.create",
+        "providers.list",
+        "providers.upsert",
+        "providers.remove",
+        "providers.select",
+        "providers.set_secret",
         "bridge.shutdown",
     }
 )
@@ -44,6 +49,8 @@ _CREATABLE_SCHEDULE_KINDS = frozenset({"once", "interval", "cron"})
 # interval/heartbeat 的 expression 是秒数。5 分钟下限防止误配置导致高频空转烧 token；
 # 这里和界面各校验一次，只在前端做等于没做。
 _MIN_INTERVAL_SECONDS = 300
+# Provider id 参与密钥环境变量名推导，必须与 config 层同一套字符集。
+_PROVIDER_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
 _PERMISSION_MODES = frozenset({"safe", "smart", "autopilot", "yolo"})
 _MEMORY_ACTIONS = frozenset(
     {
@@ -258,6 +265,43 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
     if request_type == "automation.create":
         _validate_automation_create(payload)
         return
+    if request_type == "providers.list":
+        if payload:
+            raise ProtocolError("invalid_provider_action", "Provider 操作字段不合法")
+        return
+    if request_type == "providers.upsert":
+        # api_key_env 刻意不在字段集里：变量名由 Core 从 id 推导，
+        # 接受调用方指定等于开放任意环境变量写入。
+        if (
+            set(payload) != {"id", "base_url", "timeout_seconds"}
+            or not _valid_provider_id(payload.get("id"))
+            or not _bounded_string(payload.get("base_url"), 1, 500)
+            or not _integer_between(payload.get("timeout_seconds"), 1, 3600)
+        ):
+            raise ProtocolError("invalid_provider_action", "Provider 操作字段不合法")
+        return
+    if request_type == "providers.remove":
+        if set(payload) != {"id"} or not _valid_provider_id(payload.get("id")):
+            raise ProtocolError("invalid_provider_action", "Provider 操作字段不合法")
+        return
+    if request_type == "providers.select":
+        model = payload.get("model")
+        if (
+            set(payload) != {"id", "model"}
+            or not _valid_provider_id(payload.get("id"))
+            or not _bounded_string(model, 1, 200)
+            or not str(model).strip()
+        ):
+            raise ProtocolError("invalid_provider_action", "Provider 操作字段不合法")
+        return
+    if request_type == "providers.set_secret":
+        if (
+            set(payload) != {"id", "value"}
+            or not _valid_provider_id(payload.get("id"))
+            or not _bounded_string(payload.get("value"), 1, 4096)
+        ):
+            raise ProtocolError("invalid_provider_action", "Provider 操作字段不合法")
+        return
     if request_type == "permissions.set":
         mode = payload.get("mode")
         if set(payload) != {"mode"} or not isinstance(mode, str) or mode not in _PERMISSION_MODES:
@@ -282,6 +326,11 @@ def _bounded_string(value: JsonValue, minimum: int, maximum: int) -> bool:
 def _integer_between(value: JsonValue, minimum: int, maximum: int) -> bool:
     """判断 JSON 值是否为指定闭区间内的非 bool 整数。"""
     return type(value) is int and minimum <= value <= maximum
+
+
+def _valid_provider_id(value: JsonValue) -> bool:
+    """判断 Provider id 是否符合与 config 层一致的安全字符集。"""
+    return isinstance(value, str) and bool(_PROVIDER_ID.fullmatch(value))
 
 
 def _validate_automation_create(payload: dict[str, JsonValue]) -> None:

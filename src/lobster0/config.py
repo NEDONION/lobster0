@@ -1670,6 +1670,20 @@ def _existing_unique_roots(candidates: list[Path], workspace: Path) -> tuple[Pat
     return tuple(roots)
 
 
+def provider_secret_env(identifier: str) -> str:
+    """由 Provider id 推导它的密钥环境变量名。
+
+    这是唯一的推导入口：调用方（含 Bridge）永远不能自己指定变量名，否则等于
+    开放任意环境变量写入。``default`` 沿用历史变量名，避免用户已有的
+    ``secrets.env`` 一次改名就全部失效。
+    """
+    if not _PROVIDER_ID.fullmatch(identifier):
+        raise ConfigError(f"非法的 Provider id: {identifier!r}")
+    if identifier == "default":
+        return "LOBSTER0_MODEL_API_KEY"
+    return f"LOBSTER0_PROVIDER_{identifier.upper()}_KEY"
+
+
 def update_providers(
     paths: StatePaths,
     *,
@@ -1868,7 +1882,7 @@ def _providers(
                     f"{label}.base_url",
                 ),
                 api_key_env=_environment_variable_name(
-                    entry.get("api_key_env", f"LOBSTER0_PROVIDER_{identifier.upper()}_KEY"),
+                    entry.get("api_key_env", provider_secret_env(identifier)),
                     f"{label}.api_key_env",
                 ),
                 timeout_seconds=_positive_integer(

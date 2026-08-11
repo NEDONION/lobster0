@@ -78,6 +78,26 @@ export interface AutomationList {
   tasks: AutomationSummary[];
 }
 
+export interface ProviderSummary {
+  id: string;
+  baseUrl: string;
+  timeoutSeconds: number;
+  /** 只表示密钥是否已配置；密钥值本身永远不跨进程回流。 */
+  secretConfigured: boolean;
+  selected: boolean;
+}
+
+export interface ProviderList {
+  providers: ProviderSummary[];
+  model: string;
+}
+
+export interface ProviderUpsertInput {
+  id: string;
+  baseUrl: string;
+  timeoutSeconds: number;
+}
+
 export interface DesktopApi {
   bootstrap(): Promise<DesktopBootstrap>;
   startTurn(input: StartTurnInput): Promise<void>;
@@ -96,6 +116,11 @@ export interface DesktopApi {
   haltAutomation(reason: string): Promise<void>;
   unhaltAutomation(): Promise<void>;
   createAutomation(input: AutomationCreateInput): Promise<AutomationSummary>;
+  listProviders(): Promise<ProviderList>;
+  upsertProvider(input: ProviderUpsertInput): Promise<void>;
+  removeProvider(id: string): Promise<void>;
+  selectProvider(id: string, model: string): Promise<void>;
+  setProviderSecret(id: string, value: string): Promise<void>;
   onFrame(handler: (frame: ServerFrame) => void): () => void;
 }
 
@@ -116,6 +141,11 @@ export const DESKTOP_CHANNELS = {
   automationHalt: "desktop:automations:halt",
   automationUnhalt: "desktop:automations:unhalt",
   automationCreate: "desktop:automations:create",
+  providersList: "desktop:providers:list",
+  providerUpsert: "desktop:providers:upsert",
+  providerRemove: "desktop:providers:remove",
+  providerSelect: "desktop:providers:select",
+  providerSecret: "desktop:providers:secret",
   workspaceChoose: "desktop:workspace:choose",
   frame: "desktop:frame",
 } as const;
@@ -158,6 +188,14 @@ export function createDesktopApi(invoke: Invoke, subscribe: Subscribe): DesktopA
     unhaltAutomation: () => invoke(DESKTOP_CHANNELS.automationUnhalt) as Promise<void>,
     createAutomation: (input) =>
       invoke(DESKTOP_CHANNELS.automationCreate, input) as Promise<AutomationSummary>,
+    listProviders: () => invoke(DESKTOP_CHANNELS.providersList) as Promise<ProviderList>,
+    upsertProvider: (input) =>
+      invoke(DESKTOP_CHANNELS.providerUpsert, input) as Promise<void>,
+    removeProvider: (id) => invoke(DESKTOP_CHANNELS.providerRemove, { id }) as Promise<void>,
+    selectProvider: (id, model) =>
+      invoke(DESKTOP_CHANNELS.providerSelect, { id, model }) as Promise<void>,
+    setProviderSecret: (id, value) =>
+      invoke(DESKTOP_CHANNELS.providerSecret, { id, value }) as Promise<void>,
     onFrame: (handler) =>
       subscribe(DESKTOP_CHANNELS.frame, (value) => handler(value as ServerFrame)),
   };

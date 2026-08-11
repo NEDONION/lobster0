@@ -1,6 +1,7 @@
 """把 protocol v1 请求编排到唯一 Python Agent Runtime。"""
 
 import asyncio
+import os
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import Protocol
@@ -10,6 +11,12 @@ from lobster0 import __version__
 from lobster0.agent.events import RunEvent
 from lobster0.automation.models import DeliveryTarget, TaskBudget
 from lobster0.automation.parser import ScheduleError, parse_schedule
+from lobster0.config import (
+    ConfigError,
+    ProviderConfig,
+    provider_secret_env,
+    update_providers,
+)
 from lobster0.automation.repository import (
     AutomationDataError,
     AutomationStateError,
@@ -20,6 +27,7 @@ from lobster0.memory.store import MemoryError
 from lobster0.policy.approvals import ApprovalDecision
 from lobster0.providers.base import JsonValue
 from lobster0.runtime import AgentRuntime
+from lobster0.setup import SetupError, update_secret
 
 from .conversations import ConversationQueryError
 from .protocol import BridgeFrame, BridgeRequest, ProtocolError, decode_request, encode_frame
@@ -112,7 +120,8 @@ class BridgeServer:
                         "sessions",
                         "history",
                         "automation_read",
-                "automation_write",
+                        "automation_write",
+                        "providers_write",
                     ],
                     "automation_enabled": self._runtime.automation_enabled,
                 },
@@ -196,6 +205,8 @@ class BridgeServer:
             return True
         if request.type.startswith("automation.") and request.type != "automation.list":
             return await self._handle_automation_write(request)
+        if request.type.startswith("providers."):
+            return await self._handle_providers(request)
         if request.type == "session.new":
             if self._active_task is not None or self._pending_approval_id is not None:
                 await self._error(
@@ -234,6 +245,118 @@ class BridgeServer:
         await self._cancel_active()
         await self._ok(request.request_id, {})
         return False
+
+    async def _handle_providers(self, request: BridgeRequest) -> bool:
+        """处理 Provider 配置的读写。
+
+        写操作会碰用户真实的 ``config.toml`` 与 ``secrets.env``，因此这里只做路由，
+        原子写、加载前校验与备份都在 :func:`update_providers` /
+        :func:`update_secret` 内完成。响应一律不含密钥值——列表只回
+        ``secret_configured`` 布尔量，写密钥只回成功与否。
+        """
+        if request.type != "providers.list" and (
+            self._active_task is not None or self._pending_approval_id is not None
+        ):
+            await self._error(
+                request.request_id,
+                "turn_busy",
+                "当前有任务正在运行，请先结束后再修改模型配置",
+                retryable=True,
+            )
+            return True
+        try:
+            payload = self._run_provider_action(request)
+        except (ConfigError, SetupError, OSError) as error:
+            await self._error(
+                request.request_id,
+                getattr(error, "code", None) or "provider_write_failed",
+                # 异常文本可能带上路径或值，一律不透传，避免密钥经由错误信息回流。
+                "模型配置未更新",
+                retryable=False,
+            )
+            return True
+        await self._ok(request.request_id, payload)
+        return True
+
+    def _run_provider_action(self, request: BridgeRequest) -> dict[str, JsonValue]:
+        """执行一次 Provider 读写并返回可安全展示的结果。"""
+        config = self._runtime.config
+        current = tuple(config.providers) or (config.provider,)
+        selected = self._selected_provider_id(current)
+
+        if request.type == "providers.list":
+            return {
+                "providers": [_provider_summary(item, selected) for item in current],
+                "model": config.agent.model,
+            }
+
+        identifier = request.payload["id"]
+        assert isinstance(identifier, str)
+
+        if request.type == "providers.set_secret":
+            value = request.payload["value"]
+            assert isinstance(value, str)
+            if not any(item.id == identifier for item in current):
+                raise ConfigError(f"未知的 Provider: {identifier}")
+            # 变量名从 id 推导，请求里根本没有这个字段。
+            update_secret(self._runtime.paths, provider_secret_env(identifier), value)
+            return {"id": identifier, "secret_configured": True}
+
+        if request.type == "providers.remove":
+            if identifier == selected:
+                raise _ProviderError(
+                    "provider_selected", "当前默认 Provider 不能删除，请先切换默认项"
+                )
+            remaining = tuple(item for item in current if item.id != identifier)
+            if len(remaining) == len(current):
+                raise ConfigError(f"未知的 Provider: {identifier}")
+            update_providers(
+                self._runtime.paths,
+                providers=remaining,
+                selected=selected,
+                model=config.agent.model,
+            )
+            return {"removed": identifier}
+
+        if request.type == "providers.select":
+            model = request.payload["model"]
+            assert isinstance(model, str)
+            if not any(item.id == identifier for item in current):
+                raise ConfigError(f"未知的 Provider: {identifier}")
+            update_providers(
+                self._runtime.paths,
+                providers=current,
+                selected=identifier,
+                model=model,
+            )
+            return {"selected": identifier, "model": model, "restart_required": True}
+
+        base_url = request.payload["base_url"]
+        timeout_seconds = request.payload["timeout_seconds"]
+        assert isinstance(base_url, str)
+        assert isinstance(timeout_seconds, int) and not isinstance(timeout_seconds, bool)
+        entry = ProviderConfig(
+            id=identifier,
+            base_url=base_url,
+            api_key_env=provider_secret_env(identifier),
+            timeout_seconds=timeout_seconds,
+        )
+        replaced = [item for item in current if item.id != identifier]
+        replaced.append(entry)
+        update_providers(
+            self._runtime.paths,
+            providers=tuple(replaced),
+            selected=selected,
+            model=config.agent.model,
+        )
+        return {"provider": _provider_summary(entry, selected), "restart_required": True}
+
+    def _selected_provider_id(self, providers: tuple[ProviderConfig, ...]) -> str:
+        """取当前生效的 Provider id；``agent.provider`` 缺失时退回第一条。"""
+        configured = getattr(self._runtime.config.agent, "provider", "") or ""
+        if any(item.id == configured for item in providers):
+            return configured
+        return providers[0].id
 
     async def _handle_automation_write(self, request: BridgeRequest) -> bool:
         """处理 Automation 的写操作，全部复用 Core 既有 repository 语义。
@@ -490,6 +613,28 @@ class BridgeServer:
         encoded = encode_frame(frame)
         async with self._write_lock:
             await self._writer.write(encoded)
+
+
+class _ProviderError(ConfigError):
+    """带机器可读 code 的 Provider 操作失败，便于界面区分门禁与写入错误。"""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _provider_summary(entry: ProviderConfig, selected: str) -> dict[str, JsonValue]:
+    """把一条 Provider 配置压成可安全下发的摘要。
+
+    只回"密钥是否已配置"，绝不回密钥值或它的任何前后缀。
+    """
+    return {
+        "id": entry.id,
+        "base_url": entry.base_url,
+        "timeout_seconds": entry.timeout_seconds,
+        "secret_configured": bool(os.environ.get(entry.api_key_env, "").strip()),
+        "selected": entry.id == selected,
+    }
 
 
 def _task_summary(task: object) -> dict[str, JsonValue]:

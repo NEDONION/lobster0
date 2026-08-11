@@ -35,16 +35,21 @@ describe("Desktop Preload API", () => {
       "haltAutomation",
       "listAutomationRuns",
       "listAutomations",
+      "listProviders",
       "listSessions",
       "loadSession",
       "onFrame",
       "pauseAutomation",
       "resolveApproval",
+      "removeProvider",
       "resumeAutomation",
       "runAutomation",
+      "selectProvider",
       "setPermissionMode",
+      "setProviderSecret",
       "startTurn",
       "unhaltAutomation",
+      "upsertProvider",
     ].sort());
   });
 

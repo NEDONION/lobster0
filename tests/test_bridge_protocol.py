@@ -341,6 +341,83 @@ class BridgeProtocolTest(unittest.TestCase):
                     self._decode("automation.create", payload)
                 self.assertEqual(captured.exception.code, "invalid_automation_action")
 
+    def test_providers_list_takes_no_arguments(self) -> None:
+        """只读查询不接收任何字段，避免被塞进越权参数。"""
+        self.assertEqual(self._decode("providers.list", {}).payload, {})
+        with self.assertRaises(ProtocolError) as captured:
+            self._decode("providers.list", {"owner_id": 1})
+        self.assertEqual(captured.exception.code, "invalid_provider_action")
+
+    def test_provider_upsert_bounds_every_field(self) -> None:
+        """新增/更新只接受 id、base_url、timeout，且 id 必须是安全字符集。"""
+        request = self._decode(
+            "providers.upsert",
+            {"id": "openrouter", "base_url": "https://openrouter.ai/api/v1", "timeout_seconds": 120},
+        )
+        self.assertEqual(request.payload["id"], "openrouter")
+
+        for payload in (
+            {"id": "Bad Id", "base_url": "https://a.example/v1", "timeout_seconds": 120},
+            {"id": "UPPER", "base_url": "https://a.example/v1", "timeout_seconds": 120},
+            {"id": "", "base_url": "https://a.example/v1", "timeout_seconds": 120},
+            {"id": "x" * 33, "base_url": "https://a.example/v1", "timeout_seconds": 120},
+            {"id": "a", "base_url": "", "timeout_seconds": 120},
+            {"id": "a", "base_url": "https://a.example/v1", "timeout_seconds": 0},
+            {"id": "a", "base_url": "https://a.example/v1", "timeout_seconds": 3601},
+            {"id": "a", "base_url": "https://a.example/v1"},
+            # api_key_env 由 Core 从 id 推导，不接受调用方指定
+            {
+                "id": "a",
+                "base_url": "https://a.example/v1",
+                "timeout_seconds": 120,
+                "api_key_env": "PATH",
+            },
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ProtocolError) as captured:
+                    self._decode("providers.upsert", payload)
+                self.assertEqual(captured.exception.code, "invalid_provider_action")
+
+    def test_provider_select_requires_id_and_model(self) -> None:
+        """切换默认必须同时指定模型名，避免留下空模型。"""
+        request = self._decode("providers.select", {"id": "a", "model": "gpt-5"})
+        self.assertEqual(request.payload, {"id": "a", "model": "gpt-5"})
+
+        for payload in (
+            {"id": "a"},
+            {"model": "m"},
+            {"id": "a", "model": ""},
+            {"id": "a", "model": "   "},
+            {"id": "a", "model": "x" * 201},
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ProtocolError) as captured:
+                    self._decode("providers.select", payload)
+                self.assertEqual(captured.exception.code, "invalid_provider_action")
+
+    def test_provider_remove_takes_only_an_id(self) -> None:
+        """删除只认 id。"""
+        self.assertEqual(self._decode("providers.remove", {"id": "a"}).payload, {"id": "a"})
+        with self.assertRaises(ProtocolError):
+            self._decode("providers.remove", {"id": "a", "force": True})
+
+    def test_provider_secret_carries_no_variable_name(self) -> None:
+        """密钥请求只带 id 与值——变量名由 Core 推导，Renderer 无从指定。"""
+        request = self._decode("providers.set_secret", {"id": "a", "value": "sk-live"})
+        self.assertEqual(request.payload, {"id": "a", "value": "sk-live"})
+
+        for payload in (
+            {"id": "a"},
+            {"id": "a", "value": ""},
+            {"id": "a", "value": "x" * 4097},
+            # 绝不接受调用方指定写哪个环境变量
+            {"id": "a", "value": "v", "name": "LOBSTER0_MODEL_API_KEY"},
+        ):
+            with self.subTest(payload=payload):
+                with self.assertRaises(ProtocolError) as captured:
+                    self._decode("providers.set_secret", payload)
+                self.assertEqual(captured.exception.code, "invalid_provider_action")
+
     def test_encode_frame_is_one_utf8_json_line_and_rejects_nan(self) -> None:
         """输出必须是一行紧凑 UTF-8 JSON，且不能编码非标准数值。"""
         encoded = encode_frame(
