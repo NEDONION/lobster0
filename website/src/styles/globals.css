@@ -224,6 +224,12 @@ pre {
   background: color-mix(in srgb, var(--ink) 85%, white);
 }
 
+/* Sticky header would otherwise cover the heading of an anchored section. */
+.marketing-section,
+[id] {
+  scroll-margin-top: 76px;
+}
+
 .marketing-section {
   position: relative;
   display: grid;
@@ -2042,7 +2048,14 @@ pre {
     min-height: 44px;
   }
 
+  /* GitHub is one of the two primary CTAs; on phones it shrinks to a compact
+     square instead of disappearing entirely. */
   .header-github {
+    gap: 0;
+    padding: 0 10px;
+  }
+
+  .header-github span[aria-hidden] {
     display: none;
   }
 

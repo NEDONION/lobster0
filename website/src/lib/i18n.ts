@@ -64,6 +64,17 @@ export function localizedPath(locale: Locale, path: `/${string}`): string {
   return path === '/' ? `/${locale}` : `/${locale}${path}`;
 }
 
+/**
+ * hreflang map for one logical page, covering every supported locale.
+ * Keep page metadata using this instead of hand-listing locales, so adding a
+ * language can never silently leave stale two-language alternates behind.
+ */
+export function languageAlternates(siteUrl: string, path: `/${string}`): Record<string, string> {
+  return Object.fromEntries(
+    locales.map((locale) => [locale, `${siteUrl}${localizedPath(locale, path)}`]),
+  );
+}
+
 export function normalizeFrameworkPathname(pathname: string): string {
   if (pathname === '/zh-CN') return '/';
   if (pathname.startsWith('/zh-CN/')) return pathname.slice('/zh-CN'.length);
