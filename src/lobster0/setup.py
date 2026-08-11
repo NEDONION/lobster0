@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat
+import sys
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,8 @@ from types import TracebackType
 from typing import TextIO
 
 from lobster0.bootstrap import InitResult, initialize_state, render_default_config
+from lobster0.config import ConfigError, load_config
+from lobster0.env import load_dotenv
 from lobster0.paths import StatePaths
 
 _FEISHU_OWNER = re.compile(r"ou_[A-Za-z0-9_-]{1,128}\Z")
@@ -267,6 +270,146 @@ def update_secret(paths: StatePaths, name: str, value: str) -> None:
     if not replaced:
         lines.append(f"{name}={value}")
     _write_private_text(path, "".join(f"{line}\n" for line in lines))
+
+
+# 可写入 secrets.env 的固定基线：模型 Secret 加三个平台 Channel 的凭据变量。
+# 这是 _required_secret_names 在"三个 Channel 全部启用"时的并集，也就是 fresh setup
+# 有可能写进 secrets.env 的全部变量名。
+KNOWN_SECRET_NAMES: tuple[str, ...] = (
+    _MODEL_SECRET,
+    *_FEISHU_SECRETS,
+    _TELEGRAM_SECRET,
+    _DISCORD_SECRET,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class SecretStatus:
+    """描述一个 Secret 变量是否已配置，**不携带它的值**。"""
+
+    name: str
+    configured: bool
+
+
+def known_secret_names(paths: StatePaths) -> tuple[str, ...]:
+    """返回允许写入本地 secrets.env 的全部变量名。
+
+    判据是"这个变量名有没有人读"：固定基线覆盖模型与三个平台，配置派生项让多
+    Provider 用户也能更新自己的 Key。名单之外的名称一律拒绝，避免打错字之后静默
+    写进一个谁也不会读的变量。
+
+    Args:
+        paths: 已解析的 Lobster0 状态路径。
+
+    Returns:
+        固定基线在前、配置派生名按字典序在后的去重变量名。
+    """
+    names = list(KNOWN_SECRET_NAMES)
+    for name in sorted(_configured_secret_names(paths)):
+        if name not in names:
+            names.append(name)
+    return tuple(names)
+
+
+def _configured_secret_names(paths: StatePaths) -> frozenset[str]:
+    """收集本地配置真正引用的 Secret 变量名。
+
+    配置读不出来时返回空集合而不是抛错：``secret`` 命令不承担诊断配置的职责，那是
+    ``doctor``；固定基线足以覆盖 fresh setup 写过的一切。派生名同样过 ``_SECRET_NAME``
+    正则，配置里写 ``api_key_env = "PATH"`` 也进不了允许集合。
+
+    Args:
+        paths: 已解析的 Lobster0 状态路径。
+
+    Returns:
+        通过变量名形状校验的配置派生名集合。
+    """
+    try:
+        config = load_config(paths, {})
+    except (ConfigError, OSError, ValueError):
+        return frozenset()
+    channels = config.channels
+    candidates = {
+        channels.feishu.app_id_env,
+        channels.feishu.app_secret_env,
+        channels.telegram.bot_token_env,
+        channels.discord.bot_token_env,
+        config.provider.api_key_env,
+        *(provider.api_key_env for provider in config.providers),
+    }
+    return frozenset(
+        name
+        for name in candidates
+        if isinstance(name, str) and _SECRET_NAME.fullmatch(name)
+    )
+
+
+def describe_secrets(paths: StatePaths) -> tuple[SecretStatus, ...]:
+    """报告每个 Secret 变量是否已设置且非空，**绝不返回任何值**。
+
+    解析复用 :func:`load_dotenv`，顺带继承它的 0600 私密性与语法校验。除了已知名单，
+    还会列出文件里实际存在的其他变量，好让用户发现自己手工编辑时留下的错别字。
+
+    Args:
+        paths: 已解析的 Lobster0 状态路径。
+
+    Returns:
+        已知名单在前、文件残留名按字典序在后的只含名称与布尔量的状态。
+
+    Raises:
+        DotEnvError: Secret 文件不私密、无法读取或含非法行。
+    """
+    values: dict[str, str] = {}
+    load_dotenv(paths.secrets_file, values)
+    names = list(known_secret_names(paths))
+    for name in sorted(values):
+        if name not in names:
+            names.append(name)
+    return tuple(
+        SecretStatus(name, bool(values.get(name, "").strip())) for name in names
+    )
+
+
+def set_secret_interactively(paths: StatePaths, name: str) -> None:
+    """从控制终端隐藏读取一个已知 Secret，并就地更新 secrets.env。
+
+    与 fresh-only 的 :func:`run_interactive_setup` 不同，这条路径面对的是用户正在使用
+    的实例：只替换目标变量那一行，其余状态一律不动，因此改一个 Key 不再需要
+    ``rm -rf`` 整个状态根。
+
+    值只经 ``/dev/tty`` 的 getpass 读取，永远不来自 argv、环境或管道；连问两遍并要求
+    一致，避免把打错的值落盘。
+
+    Args:
+        paths: 已解析的 Lobster0 状态路径。
+        name: 目标变量名，必须属于 :func:`known_secret_names`。
+
+    Raises:
+        SetupError: 变量名不在已知名单、stdin 不是终端、控制终端不可用、
+            两次输入不一致，或值无法被受限 dotenv 无损表达。
+        OSError: Secret 文件的原子写入失败。
+    """
+    allowed = known_secret_names(paths)
+    if name not in allowed:
+        raise SetupError(
+            "unknown secret name; expected one of: " + ", ".join(allowed)
+        )
+    # getpass 在 /dev/tty 不可用时会退化成"回显着从 stdin 读"。先卡住非 TTY stdin，
+    # 就不存在那条把 Secret 明文打进终端或从管道静默吃进来的退化路径。
+    if not sys.stdin.isatty():
+        raise SetupError(
+            "setting a secret requires an interactive terminal; "
+            "Lobster0 never reads a secret from a pipe or from the command line"
+        )
+    try:
+        with _open_tty() as tty:
+            value = getpass.getpass(f"New value for {name}: ", stream=tty)
+            confirmation = getpass.getpass(f"Confirm {name}: ", stream=tty)
+    except (EOFError, StopIteration) as error:
+        raise SetupError("secret input ended unexpectedly") from error
+    if value != confirmation:
+        raise SetupError("the two entries did not match; nothing was written")
+    update_secret(paths, name, value)
 
 
 def _write_private_text(path: Path, text: str) -> None:

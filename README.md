@@ -50,6 +50,10 @@ lobster0 setup         # 交互式配置：模型 API Key、飞书 App ID/Secret
 lobster0 gateway       # 启动飞书网关（WebSocket 长连接，无需公网端口）
 ```
 
+> 密钥填错或需要轮换？用 `lobster0 secret set LOBSTER0_MODEL_API_KEY` 就地改掉一个值，
+> **不要** `rm -rf ~/.lobster0`——那会连记忆、会话历史、定时任务和审计记录一起删掉。
+> `lobster0 secret list` 可以查看哪些变量已配置（只显示名称）。
+
 > **文件名必须保持原样**——`uv` 要从中读取版本号，改名会报 `Must have a version`。
 >
 > `v0.7.0` 是**预发布**，整体状态为 **RELEASE CANDIDATE / PUBLIC GATES PENDING**：
@@ -260,6 +264,8 @@ curl -fsSL --proto '=https' --tlsv1.2 \
 | `uv run lobster0` | 启动主 TUI。 |
 | `uv run lobster0 init` | 初始化配置、Memory、Skills 和 SQLite。 |
 | `uv run lobster0 doctor` | 检查配置、目录、Provider、TUI 和数据库。 |
+| `uv run lobster0 secret list` | 查看哪些密钥变量已配置（只显示名称，不显示值）。 |
+| `uv run lobster0 secret set NAME` | 改掉一个填错或轮换的密钥；值从终端隐藏读取，其余状态不动。 |
 | `uv run lobster0 gateway` | 启动已配置的消息 Channel。 |
 | `uv run lobster0 web` | 启动本地 Web 控制台。 |
 | `uv run lobster0 task list` | 查看定时任务；另有 show/runs/pause/resume/run/cancel。 |
