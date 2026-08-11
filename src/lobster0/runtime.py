@@ -97,6 +97,7 @@ from lobster0.tools.memory_v2 import (
     MemoryReviewListTool,
     MemorySearchTool,
 )
+from lobster0.tools.artifacts import ReadArtifactTool
 from lobster0.tools.registry import ToolRegistry
 from lobster0.tools.search import GlobTool, GrepTool
 from lobster0.tools.system import SystemInfoTool
@@ -375,6 +376,17 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         interval=600,
     )
     memory_scheduler.bind(memory_worker.notify)
+    # 无条件构造：附件与浏览器是两件无关的事，而 browser.enabled 默认为 False。
+    # delete_expired 随之改为始终执行——过期 Artifact 本来就该回收，不该因为
+    # 用户关了浏览器就一直留着。
+    artifact_store = ArtifactStore(
+        database,
+        owner_id=owner.id,
+        root=paths.artifacts,
+        staging_root=paths.downloads,
+        max_bytes=config.browser.download_max_bytes,
+    )
+    artifact_store.delete_expired()
     available_tools = (
         SystemInfoTool(),
         ReadFileTool(),
@@ -417,6 +429,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         MemoryForgetTool(memory_governance, messages),
         MemoryCorrectTool(memory_governance, messages),
         MemoryReviewListTool(memory_governance),
+        ReadArtifactTool(artifact_store),
     )
     configured_tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled
@@ -440,17 +453,6 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         if config.browser.enabled
         else None
     )
-    # 无条件构造：附件与浏览器是两件无关的事，而 browser.enabled 默认为 False。
-    # delete_expired 随之改为始终执行——过期 Artifact 本来就该回收，不该因为
-    # 用户关了浏览器就一直留着。
-    artifact_store = ArtifactStore(
-        database,
-        owner_id=owner.id,
-        root=paths.artifacts,
-        staging_root=paths.downloads,
-        max_bytes=config.browser.download_max_bytes,
-    )
-    artifact_store.delete_expired()
     browser_toolset = (
         browser_tools(
             browser_client,

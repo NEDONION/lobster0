@@ -1442,6 +1442,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
                 "memory_review_list",
                 "memory_search",
                 "propose_memory",
+                "read_artifact",
                 "read_file",
                 "read_memory",
                 "run_command",
