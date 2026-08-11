@@ -603,6 +603,7 @@ class TurnRepository:
         event_id: str,
         model: str,
         content: str,
+        attachments: tuple[dict[str, JsonValue], ...] = (),
     ) -> StoredTurn:
         """在一个事务中创建 queued Turn 和对应 User Message。
 
@@ -611,6 +612,8 @@ class TurnRepository:
             event_id: 当前 Channel 内稳定且幂等的入站事件 ID。
             model: 该 Turn 固定记录的模型 ID。
             content: 需要原样持久化的用户输入。
+            attachments: 可选的附件摘要，写入该 User Message 的 ``metadata_json``；
+                与 Turn 在同一个事务里落盘，不会出现"有 Turn 没附件记录"的中间态。
 
         Returns:
             状态为 ``queued`` 的新 Turn。
@@ -629,12 +632,14 @@ class TurnRepository:
                 (session_id, event_id, model),
             )
             turn_id = int(cursor.lastrowid)
+            metadata = {"attachments": list(attachments)} if attachments else {}
             connection.execute(
                 """
-                INSERT INTO messages (session_id, turn_id, role, content, created_at)
-                VALUES (?, ?, 'user', ?, ?)
+                INSERT INTO messages
+                    (session_id, turn_id, role, content, metadata_json, created_at)
+                VALUES (?, ?, 'user', ?, ?, ?)
                 """,
-                (session_id, turn_id, content, now),
+                (session_id, turn_id, content, _json_text(metadata), now),
             )
             connection.execute(
                 "UPDATE sessions SET updated_at = ? WHERE id = ?",

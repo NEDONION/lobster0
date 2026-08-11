@@ -174,6 +174,52 @@ class ArtifactStoreTest(unittest.TestCase):
             ["user_upload"],
         )
 
+    def test_link_keeps_a_display_filename_per_occurrence(self) -> None:
+        """同一份内容用两个名字上传，两个名字都要保留。
+
+        文件名不能放在 artifacts 表上——那张表是内容寻址且去重的，两次上传是
+        同一行记录。
+        """
+        artifact = self.store.put(
+            self.stage("a.txt", b"alpha"),
+            declared_media_type="text/plain",
+            source="user_upload",
+        )
+        first = self.session("s-1")
+        second = self.session("s-2")
+
+        self.store.link(
+            artifact.artifact_id, session_id=first, origin="user_upload", filename="季度报告.txt"
+        )
+        self.store.link(
+            artifact.artifact_id, session_id=second, origin="user_upload", filename="backup.txt"
+        )
+
+        self.assertEqual(self.store.list_for_session(first, limit=10)[0].filename, "季度报告.txt")
+        self.assertEqual(self.store.list_for_session(second, limit=10)[0].filename, "backup.txt")
+
+    def test_link_sanitizes_a_hostile_filename(self) -> None:
+        """文件名是不可信显示文本：控制字符与超长必须在入库前处理掉。"""
+        artifact = self.store.put(
+            self.stage("a.txt", b"alpha"),
+            declared_media_type="text/plain",
+            source="user_upload",
+        )
+        session = self.session("s-1")
+
+        self.store.link(
+            artifact.artifact_id,
+            session_id=session,
+            origin="user_upload",
+            filename="bad\nname\u0000here" + "x" * 500,
+        )
+
+        stored = self.store.list_for_session(session, limit=10)[0].filename
+        assert stored is not None
+        self.assertNotIn("\n", stored)
+        self.assertNotIn("\u0000", stored)
+        self.assertLessEqual(len(stored), 255)
+
     def test_listing_is_scoped_to_one_session(self) -> None:
         """右栏只展示当前会话的产物，跨会话不能串。"""
         first = self.session("s-1")

@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from lobster0.agent.compaction import ContextCompactor
 from lobster0.agent.context import ContextBuilder, ContextError
+from lobster0.artifacts.store import ArtifactError, ArtifactStore, display_filename
 from lobster0.agent.events import RunEvent, RunEventHandler, emit
 from lobster0.agent.runner import (
     AgentError,
@@ -143,6 +144,7 @@ class TurnService:
         memory_capture: MemoryCapture | None = None,
         automation_gate: Callable[[], bool] | None = None,
         automation_continuation: AutomationApprovalContinuation | None = None,
+        artifacts: ArtifactStore | None = None,
         state_home: Path,
         workspace: WorkspaceConfig,
     ) -> None:
@@ -156,6 +158,7 @@ class TurnService:
             turns: 负责 User Message 和 Turn 终态事务的 Repository。
             context: 负责身份文件与历史组合的 ContextBuilder。
             runner: 负责模型与 Tool Call 循环的 AgentRunner。
+            artifacts: 可选的 ArtifactStore；缺省时附件功能不可用。
             memory_capture: 可选的 completed Turn durable capture，不运行提取器。
             automation_continuation: 可选的 durable TaskRun 审批续跑结算器。
             state_home: 当前实例的状态根目录。
@@ -175,6 +178,7 @@ class TurnService:
         self._memory_capture = memory_capture
         self._automation_gate = automation_gate
         self._automation_continuation = automation_continuation
+        self._artifacts = artifacts
         self._state_home = state_home
         self._workspace = workspace
 
@@ -186,6 +190,7 @@ class TurnService:
         on_text: StreamHandler | None = None,
         *,
         on_event: RunEventHandler | None = None,
+        attachments: tuple[tuple[str, str], ...] = (),
     ) -> TurnResult:
         """执行并持久化一条 CLI 用户消息。
 
@@ -194,6 +199,8 @@ class TurnService:
             text: 非空用户输入原文。
             conversation_id: CLI 指定或默认的稳定会话标识。
             on_text: 可选的 Channel 文本流回调。
+            attachments: ``(artifact_id, filename)`` 序列；为空时行为与无附件完全
+                一致。文件名只作展示，类型与大小一律由 Core 从 Store 读。
 
         Returns:
             最终回答与内部 Turn/Session/用量标识。
@@ -217,7 +224,34 @@ class TurnService:
             trusted_owner=True,
             conversation_kind="local",
             identity_verified=True,
+            attachments=attachments,
         )
+
+    def _attachment_summaries(
+        self, attachments: tuple[tuple[str, str], ...]
+    ) -> tuple[dict[str, JsonValue], ...]:
+        """把 id 解析成可安全展示的附件摘要。
+
+        每个字段都从 Store 读，调用方只能给 id——Renderer 无法谎报文件名或类型。
+        ``read_metadata`` 同时完成存在性、归属与本地文件形状校验，伪造 id 在这里
+        就会抛错，还没轮到建 Turn。
+        """
+        if not attachments:
+            return ()
+        if self._artifacts is None:
+            raise ArtifactError("artifact_unavailable", "artifact store is unavailable")
+        summaries: list[dict[str, JsonValue]] = []
+        for artifact_id, filename in attachments:
+            artifact = self._artifacts.read_metadata(artifact_id)
+            summaries.append(
+                {
+                    "artifact_id": artifact.artifact_id,
+                    "filename": display_filename(filename),
+                    "media_type": artifact.media_type,
+                    "byte_size": artifact.byte_size,
+                }
+            )
+        return tuple(summaries)
 
     async def handle_automation(
         self,
@@ -371,6 +405,7 @@ class TurnService:
         trusted_owner: bool = False,
         conversation_kind: ConversationKind = "unknown",
         identity_verified: bool = False,
+        attachments: tuple[tuple[str, str], ...] = (),
     ) -> TurnResult:
         """执行 Channel 消息，并分别绑定自动化信任与 Memory 披露边界。"""
         if not text.strip():
@@ -389,15 +424,27 @@ class TurnService:
             account_id,
             external_conversation_id,
         )
+        # 清单在建 Turn 之前解析：伪造 id 应该整体拒绝，而不是留下半条 Turn。
+        summaries = self._attachment_summaries(attachments)
+        stored_text = _with_attachment_manifest(text, summaries)
         try:
             turn = self._turns.create_with_user_message(
                 session.id,
                 inbound_event_id,
                 self._model,
-                text,
+                stored_text,
+                attachments=summaries,
             )
         except sqlite3.IntegrityError:
             return self._completed_duplicate(session.id, inbound_event_id)
+        for summary in summaries:
+            assert self._artifacts is not None
+            self._artifacts.link(
+                str(summary["artifact_id"]),
+                session_id=session.id,
+                origin="user_upload",
+                filename=str(summary["filename"]) or None,
+            )
         self._turns.mark_running(turn.id)
         started = time.monotonic()
 
@@ -1102,6 +1149,22 @@ def _telemetry(result: AgentRunResult, started: float) -> dict[str, JsonValue]:
 def _elapsed_ms(started: float) -> int:
     """把单调时钟差值转换为非负毫秒。"""
     return max(0, round((time.monotonic() - started) * 1000))
+
+
+def _with_attachment_manifest(text: str, attachments: tuple[dict[str, JsonValue], ...]) -> str:
+    """在正文后追加附件清单。
+
+    清单**永远追加在最后**，所以用户在正文里手写一段同样格式的假清单不会被当成
+    真的。没有附件时原样返回 ``text``——这条路径必须与引入附件之前逐字节一致。
+    """
+    if not attachments:
+        return text
+    listing = "\n".join(
+        f"- {item['artifact_id']} · {item['filename']} · "
+        f"{item['media_type']} · {item['byte_size']} B"
+        for item in attachments
+    )
+    return f"{text}\n\n[附件]\n{listing}"
 
 
 def _validate_inbound_event_id(value: str) -> None:

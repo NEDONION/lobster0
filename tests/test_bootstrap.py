@@ -23,7 +23,7 @@ class BootstrapTest(unittest.TestCase):
         result = initialize_state(self.paths)
         config = load_config(self.paths, {}, {})
 
-        self.assertEqual(result.applied_migrations, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11))
+        self.assertEqual(result.applied_migrations, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12))
         self.assertEqual(result.owner.display_name, "Owner")
         self.assertEqual(config.agent.model, "deepseek-v4-pro")
         self.assertEqual(config.agent.max_tool_iterations, 32)

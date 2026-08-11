@@ -510,6 +510,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             max_no_progress_iterations=config.agent.max_no_progress_iterations,
         ),
         approvals=approvals,
+        artifacts=artifact_store,
         compactor=ContextCompactor(
             messages,
             provider,

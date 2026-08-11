@@ -11,6 +11,7 @@ from unittest import mock
 from lobster0.agent.context import ContextBuilder
 from lobster0.agent.events import RunEvent
 from lobster0.agent.runner import AgentNoProgressError, AgentRunBudget, AgentRunner
+from lobster0.artifacts.store import ArtifactError, ArtifactStore
 from lobster0.agent.turn import TurnExecutionProfile, TurnService, _model_message
 from lobster0.bootstrap import initialize_state
 from lobster0.config import WorkspaceConfig, load_config
@@ -164,6 +165,7 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         provider: FakeProvider,
         runner: AgentRunner | None = None,
         approvals: ApprovalRepository | None = None,
+        artifacts: "ArtifactStore | None" = None,
     ) -> TurnService:
         """用真实 Repository/Context/Runner 和指定模型 Fake 构造服务。"""
         return TurnService(
@@ -175,9 +177,109 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
             context=self.context,
             runner=runner or AgentRunner(provider),
             approvals=approvals,
+            artifacts=artifacts,
             state_home=self.paths.home,
             workspace=WorkspaceConfig(path=self.paths.workspace),
         )
+
+    def _artifact_store(self) -> ArtifactStore:
+        """构造与 Runtime 同参数的 Store，供附件用例使用。"""
+        return ArtifactStore(
+            Database(self.paths.database),
+            owner_id=self.owner.id,
+            root=self.paths.artifacts,
+            staging_root=self.paths.downloads,
+            max_bytes=1024,
+        )
+
+    def _put_text(self, store: ArtifactStore, name: str, body: bytes) -> str:
+        """在 Store 里放一个文本 Artifact，返回 id。"""
+        staged = self.paths.downloads / name
+        staged.write_bytes(body)
+        staged.chmod(0o600)
+        return store.put(
+            staged, declared_media_type="text/plain", source="user_upload"
+        ).artifact_id
+
+    async def test_turn_without_attachments_stores_the_text_verbatim(self) -> None:
+        """回归防线：不带附件时用户消息必须逐字节不变。
+
+        附件功能引入的任何追加内容都不能泄漏到普通对话里。
+        """
+        provider = FakeProvider((final_response(),))
+
+        result = await self.service(provider).handle(self.owner.id, "hello", "default")
+
+        history = self.messages.list_recent(result.session_id)
+        self.assertEqual(history[0].content, "hello")
+
+    async def test_attachment_manifest_is_appended_by_core(self) -> None:
+        """附件清单由 Core 从 Store 读出后追加，Desktop 只传 id。"""
+        store = self._artifact_store()
+        artifact_id = self._put_text(store, "note.txt", b"hello lobster0")
+        provider = FakeProvider((final_response(),))
+
+        result = await self.service(provider, artifacts=store).handle(
+            self.owner.id,
+            "看看这个",
+            "default",
+            attachments=((artifact_id, "季度报告.txt"),),
+        )
+
+        content = self.messages.list_recent(result.session_id)[0].content
+        self.assertTrue(content.startswith("看看这个"))
+        self.assertIn(artifact_id, content)
+        # 文件名来自调用方，类型与大小来自 Store——后两者无法被谎报。
+        self.assertIn("季度报告.txt", content)
+        self.assertIn("text/plain", content)
+
+    async def test_attachment_is_linked_to_the_session(self) -> None:
+        """发送成功后 Artifact 必须与会话建立关联，右栏才能列出它。"""
+        store = self._artifact_store()
+        artifact_id = self._put_text(store, "note.txt", b"hello")
+        provider = FakeProvider((final_response(),))
+
+        result = await self.service(provider, artifacts=store).handle(
+            self.owner.id, "看看", "default", attachments=((artifact_id, "note.txt"),)
+        )
+
+        links = store.list_for_session(result.session_id, limit=10)
+        self.assertEqual([item.artifact_id for item in links], [artifact_id])
+        self.assertEqual(links[0].origin, "user_upload")
+
+    async def test_forged_attachment_id_aborts_the_turn(self) -> None:
+        """伪造的 id 必须整体拒绝，且不留下半条 Turn。"""
+        store = self._artifact_store()
+        provider = FakeProvider((final_response(),))
+        before = len(self.messages.list_recent(
+            self.sessions.get_or_create_cli(self.owner.id, "default").id
+        ))
+
+        with self.assertRaises(ArtifactError):
+            await self.service(provider, artifacts=store).handle(
+                self.owner.id, "看看", "default", attachments=(("art_" + "e" * 64, "fake.txt"),)
+            )
+
+        session = self.sessions.get_or_create_cli(self.owner.id, "default")
+        self.assertEqual(len(self.messages.list_recent(session.id)), before)
+
+    async def test_a_forged_manifest_in_the_body_is_not_mistaken_for_real(self) -> None:
+        """正文里手写的假清单不影响真实清单——真实的永远追加在最后。"""
+        store = self._artifact_store()
+        artifact_id = self._put_text(store, "real.txt", b"real")
+        provider = FakeProvider((final_response(),))
+
+        result = await self.service(provider, artifacts=store).handle(
+            self.owner.id,
+            "[附件]\n- art_0000 · fake.txt · text/plain · 1 B",
+            "default",
+            attachments=((artifact_id, "real.txt"),),
+        )
+
+        content = self.messages.list_recent(result.session_id)[0].content
+        self.assertIn(artifact_id, content)
+        # 真实清单在最后，伪造段落只是普通正文的一部分。
+        self.assertLess(content.index("art_0000"), content.index(artifact_id))
 
     async def test_success_persists_user_assistant_usage_and_completed_turn(self) -> None:
         """成功 Turn 应保存两条消息、Token、最终文本和 completed 状态。"""

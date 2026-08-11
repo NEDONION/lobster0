@@ -76,6 +76,7 @@ class ArtifactLink:
     origin: str
     message_id: int | None
     created_at: datetime
+    filename: str | None = None
     width: int | None = None
     height: int | None = None
 
@@ -274,6 +275,7 @@ class ArtifactStore:
         session_id: int,
         origin: str,
         message_id: int | None = None,
+        filename: str | None = None,
     ) -> None:
         """把一条 Artifact 关联到某个会话。
 
@@ -285,6 +287,8 @@ class ArtifactStore:
             session_id: 会话的内部 ID。
             origin: ``user_upload`` 或 ``agent_output``。
             message_id: 关联到的消息；为空表示尚未落到具体消息上。
+            filename: 可选的显示文件名。它是**不可信的展示文本**，不参与任何安全
+                判定；入库前会去掉控制字符并截断长度。
 
         Raises:
             ArtifactError: Artifact 不存在、已过期，或 origin 不在允许集合内。
@@ -298,14 +302,15 @@ class ArtifactStore:
         with self._database.connect() as connection:
             connection.execute(
                 "INSERT OR IGNORE INTO artifact_links "
-                "(owner_id, artifact_id, session_id, message_id, origin, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(owner_id, artifact_id, session_id, message_id, origin, filename, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     self._owner_id,
                     artifact_id,
                     session_id,
                     message_id,
                     origin,
+                    display_filename(filename),
                     self._now().isoformat(),
                 ),
             )
@@ -324,7 +329,7 @@ class ArtifactStore:
         now = self._now().isoformat()
         with self._database.connect_read_only() as connection:
             rows = connection.execute(
-                "SELECT l.artifact_id, l.origin, l.message_id, l.created_at, "
+                "SELECT l.artifact_id, l.origin, l.message_id, l.filename, l.created_at, "
                 "a.media_type, a.byte_size, a.width, a.height "
                 "FROM artifact_links AS l JOIN artifacts AS a "
                 "ON a.artifact_id = l.artifact_id AND a.owner_id = l.owner_id "
@@ -340,6 +345,7 @@ class ArtifactStore:
                 byte_size=row["byte_size"],
                 origin=row["origin"],
                 message_id=row["message_id"],
+                filename=row["filename"],
                 created_at=datetime.fromisoformat(row["created_at"]),
                 width=row["width"],
                 height=row["height"],
@@ -446,6 +452,19 @@ class ArtifactStore:
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("artifact clock must return an aware datetime")
         return value.astimezone(UTC)
+
+
+def display_filename(value: str | None) -> str | None:
+    """把调用方给的文件名收敛成可安全展示的短文本。
+
+    文件名不参与任何安全判定，但它会被渲染，也会进入发给模型的附件清单：
+    控制字符可以伪造换行制造假清单条目，超长会撑坏界面。
+    """
+    if value is None:
+        return None
+    cleaned = "".join(character for character in value if character.isprintable())
+    cleaned = cleaned.strip()
+    return cleaned[:255] or None
 
 
 def _private_directory(path: Path) -> Path:
