@@ -408,3 +408,40 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
 ### 验证
 
 五种语言首页 grep 全部 clean；`tsc` / `eslint` / `vitest` 28 / `build` / `playwright` 11 passed 全绿。
+
+---
+
+## Round 12 — 多语言文案审校，以及我自己上一轮引入的一个回归（2026-08-11）
+
+### 先承认一个我造成的线上问题
+
+Round 11 里我用一个有序替换列表改 5 种语言的 `facts`，其中 `'Implementation ≠ Live'` 这一条在 5 种语言里字面完全相同，而我用的是 `s.replace(a, b, 1)`——**「第一处」是按文件字节顺序算的，不是按语言块**。`en` 段（449 行）在 `ja` 段（671 行）前面，于是：
+
+- 本该给日文的 `'いつでも無効化できる'` 落进了**英文**文案
+- 剩下的 ja/ko/fr 三处被兜底 `s.replace(...)` 全部填成英文 `'Can be switched off'`
+
+**4 个语言全错，而且已经推上 main。** `tsc`/`eslint`/`vitest`/`build`/`playwright` 全绿——因为没有任何一层在检查「这段文字是不是该语言」。
+
+### 补上机械守卫（`site.test.ts`）
+
+写了三条覆盖整类问题的测试，都是遍历全部 5 种语言的 `marketingCopy`：
+
+1. **文字系统不串台**：为每种语言声明允许出现的书写系统（zh-CN 只允许汉字；en/fr 不允许任何 CJK；ja 允许假名+汉字；ko 允许谚文+汉字），越界即失败。
+2. **ja/ko 无漏翻**：这两种语言的每个展示字段都必须含至少一个本地文字，`id`/`icon`/`event`/`state`/`detail`/`name` 等标识符字段和 6 条「有意保留英文」的产品词（Transport、Delivery、`Agent · Policy · Tools · Memory` 等）走白名单。
+3. **引号用本语言的**：zh/ja/ko 的展示文案里不允许出现 ASCII `"` 或 `'`。
+
+**验证过这些测试真的会失败**：临时把 bug 重新注入（日文塞回英文、英文塞回韩文），两条测试立刻红，报错直接指明 `en.capabilities[4].facts[3] has kana: "..."` 和 `ko.capabilities[4].facts[3] = "Can be switched off"`，然后还原。不会失败的测试没有价值。
+
+### 排版审校
+
+扫了 5 种语言的引号/撇号用法，查出三处：
+
+- **fr**：全篇 26 个印刷撇号 `’`，只有 1 个 ASCII `'`——正是我 Round 11 写的那句 `L'activer n'accorde`。
+- **zh-CN**：同时混用 ASCII `"..."`（3 处）和日式「」（1 处）。简体中文标准是 `“ ”`，统一。
+- **ko**：4 处 ASCII 直引号，韩语引用规范用 `“ ”`，统一。
+- **ja**：5 处全部是「」，本来就正确一致，未动。
+- **en**：4 处 ASCII 直引号，英文里可接受且自身一致，**未动**（英文排版更讲究的话会用 `“ ”`，但这是风格选择而非错误，留给用户决定）。
+
+### 验证
+
+`tsc` / `eslint` / `vitest` 31（+3）/ `build` / `playwright` 11 passed 全绿。
