@@ -20,8 +20,8 @@
   --warn: #e4a93d;
   --coral: #f16c56;
   --violet: #7567d9;
-  --font-sans: 'Instrument Sans Variable', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
-  --font-mono: 'IBM Plex Mono', 'SFMono-Regular', Consolas, monospace;
+  --font-sans: var(--font-sans-web), 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: var(--font-mono-web), 'SFMono-Regular', Consolas, monospace;
 }
 
 /* Repoint Fumadocs' neutral-gray tokens at the marketing palette, so the docs
