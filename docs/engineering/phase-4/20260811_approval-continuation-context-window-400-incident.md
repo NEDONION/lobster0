@@ -203,6 +203,17 @@ Claw Trail 里 3 个 ✕ 全部是 `policy/command.py` 的**硬禁止**，在 `n
 
 回执：`会话上下文已重置：之前的历史不再进入模型，消息记录、Tool 和文件都没有被改动。`
 
+### 7.3 附带修掉的 bug：`/reset` 只能用一次
+
+`save_compaction()` 的连续性判定原本要求 `first_message_id <= previous_last + 1`。但 summary
+自身也是 `messages` 表里的一行（`role='system'`），会占掉紧随其覆盖范围之后的那个 id，所以
+第二次压缩必然被误判成"跳过了未压缩的消息"，`/reset` 只能成功一次，第二次回
+"会话上下文重置失败"。
+
+判定改为：**`previous_last` 与新范围起点之间不允许存在非 system 消息**——语义不变（仍然禁止
+漏掉真实消息），但不再把 summary 自己的 id 算作缺口。回归用例
+`test_context_reset_is_repeatable_and_keeps_raw_history` 连做两次 reset 并确认原始消息仍在。
+
 ## 8. 遗留项（本次未修）
 
 1. **审批频率**：`~/.miniclaw/config.toml` 里 `tools.mode = "safe"`，`edit_file` /

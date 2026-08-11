@@ -556,10 +556,22 @@ class MessageRepository:
                 if previous.get("kind") != "compaction":
                     continue
                 previous_last = previous.get("last_message_id")
-                if type(previous_last) is not int or first_message_id > previous_last + 1:
+                if type(previous_last) is not int:
                     raise ConversationStateError("compaction range is not continuous")
                 if last_message_id <= previous_last:
                     raise ConversationStateError("compaction range does not advance")
+                # 只要 previous_last 与新范围之间没有落下未压缩的真实消息就算连续。
+                # 不能用 first_message_id == previous_last + 1 判定：summary 自身也是
+                # messages 表里的一行（role='system'），会占掉紧随其后的那个 id，
+                # 于是第二次压缩永远被误判为跳过了消息。
+                skipped = connection.execute(
+                    "SELECT 1 FROM messages "
+                    "WHERE session_id = ? AND id > ? AND id < ? AND role != 'system' "
+                    "LIMIT 1",
+                    (session_id, previous_last, first_message_id),
+                ).fetchone()
+                if skipped is not None:
+                    raise ConversationStateError("compaction range is not continuous")
                 break
             cursor = connection.execute(
                 "INSERT INTO messages ("

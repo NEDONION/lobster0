@@ -484,6 +484,49 @@ class ConversationRepositoryTest(unittest.TestCase):
             ],
         )
 
+    def test_context_reset_is_repeatable_and_keeps_raw_history(self) -> None:
+        """/reset 必须能反复使用：summary 自身占用的 id 不能被当成漏压缩的消息。
+
+        summary 是 messages 表里的一行（role='system'），id 紧跟它覆盖的范围之后。早先的
+        连续性判定要求 ``first == previous_last + 1``，于是第二次 reset 永远报
+        "compaction range is not continuous"，`/reset` 实际只能用一次。
+        """
+        session = self.sessions.get_or_create_cli(self.owner.id, "repeatable-reset")
+
+        def talk(tag: str) -> None:
+            turn = self.turns.create_with_user_message(
+                session.id,
+                f"event-{tag}",
+                "deepseek-v4-pro",
+                f"改一下 {tag}",
+            )
+            self.turns.mark_running(turn.id)
+            self.turns.complete_with_assistant_message(
+                turn.id,
+                session.id,
+                f"正在改 {tag}，还没改完",
+                input_tokens=1,
+                output_tokens=1,
+                provider_request_id=f"req-{tag}",
+                iterations=1,
+                finish_reason="stop",
+            )
+
+        talk("first")
+        self.assertIsNotNone(self.messages.reset_context(session.id))
+        self.messages.create_channel_notice(session.id, "会话上下文已重置")
+        talk("second")
+
+        second = self.messages.reset_context(session.id)
+
+        self.assertIsNotNone(second)
+        context = self.messages.list_context(session.id)
+        self.assertEqual([message.role for message in context], ["system"])
+        self.assertIn("已由 Owner 重置", context[0].content)
+        history = self.messages.list_recent(session.id, limit=50)
+        self.assertTrue(any(message.content == "改一下 first" for message in history))
+        self.assertTrue(any(message.content == "改一下 second" for message in history))
+
     def test_compacted_context_window_never_starts_with_a_bare_tool_result(self) -> None:
         """压缩过的会话里，窗口边界不得把 Assistant Tool Call 切在审批续跑的结果之外。
 
