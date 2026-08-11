@@ -86,6 +86,7 @@ from lobster0.tui_launcher import (
     is_supported_node_version,
     run_default_tui,
 )
+from lobster0.web_launcher import DEFAULT_WEB_PORT, WebLaunchError, run_web_console
 
 _SERVICE_OPTIONAL_CHECKS = frozenset({"pi_tui", "browser"})
 
@@ -133,6 +134,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--home",
         dest="command_home",
         help="absolute Lobster0 state directory",
+    )
+    web_parser = subparsers.add_parser(
+        "web",
+        help="serve the local web console on loopback for browser access",
+    )
+    web_parser.add_argument(
+        "--home",
+        dest="command_home",
+        help="absolute Lobster0 state directory",
+    )
+    web_parser.add_argument(
+        "--host",
+        help="bind address; defaults to loopback. A non-loopback address additionally "
+        "requires the LOBSTER0_WEB_TOKEN environment variable",
+    )
+    web_parser.add_argument(
+        "--port",
+        type=int,
+        default=None,
+        help=f"bind port; defaults to {DEFAULT_WEB_PORT}",
     )
     task_parser = subparsers.add_parser(
         "task",
@@ -432,6 +453,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             print("Cancelled.", file=sys.stderr)
             return 130
         return 0
+
+    if arguments.command == "web":
+        # Web 控制台由浏览器交互，因此不套用 TUI 的 TTY 前置条件。
+        try:
+            return run_web_console(paths, host=arguments.host, port=arguments.port)
+        except (ConfigError, DotEnvError, WebLaunchError, ValueError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        except (DatabaseError, MigrationError, OSError, sqlite3.Error) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 5
+        except KeyboardInterrupt:
+            print("Cancelled.", file=sys.stderr)
+            return 130
 
     if not _is_tui_terminal():
         print("error: Lobster0 TUI requires an interactive terminal", file=sys.stderr)

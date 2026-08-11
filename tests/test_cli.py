@@ -28,6 +28,7 @@ from lobster0.paths import build_state_paths  # noqa: E402
 from lobster0.setup import SetupAnswers, write_fresh_setup  # noqa: E402
 from lobster0.storage.database import Database  # noqa: E402
 from lobster0.storage.repositories import OwnerRepository  # noqa: E402
+from lobster0.web_launcher import WebLaunchError  # noqa: E402
 
 
 def run_cli(arguments: list[str]) -> tuple[int, str, str]:
@@ -623,6 +624,60 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual((exit_code, output, error), (0, "", ""))
         self.assertEqual(events, ["prepare", "run"])
+
+    def test_web_command_defaults_to_loopback_and_needs_no_flags(self) -> None:
+        """裸 lobster0 web 必须绑回环，且不向 launcher 传任何显式 host。"""
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch("lobster0.cli.run_web_console", return_value=0) as run_web,
+        ):
+            exit_code, output, error = run_cli(["web", "--home", directory])
+
+        self.assertEqual((exit_code, output, error), (0, "", ""))
+        self.assertEqual(run_web.call_args.kwargs["host"], None)
+        self.assertEqual(run_web.call_args.kwargs["port"], None)
+
+    def test_web_command_forwards_an_explicit_bind(self) -> None:
+        """--host/--port 原样交给 launcher 判定，CLI 不自己放宽绑定。"""
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch("lobster0.cli.run_web_console", return_value=0) as run_web,
+        ):
+            run_cli(["web", "--home", directory, "--host", "0.0.0.0", "--port", "8080"])
+
+        self.assertEqual(run_web.call_args.kwargs["host"], "0.0.0.0")
+        self.assertEqual(run_web.call_args.kwargs["port"], 8080)
+
+    def test_web_command_has_no_token_flag(self) -> None:
+        """token 只能走环境变量；命令行参数会被同机其他用户从 ps 读到。"""
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(SystemExit):
+                run_cli(["web", "--home", directory, "--token", "t" * 32])
+
+    def test_web_command_maps_a_refused_bind_to_a_configuration_exit_code(self) -> None:
+        """缺 token 的非回环绑定必须以配置错误码 2 退出，并打印原因。"""
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch(
+                "lobster0.cli.run_web_console",
+                side_effect=WebLaunchError("需要 LOBSTER0_WEB_TOKEN"),
+            ),
+        ):
+            exit_code, _, error = run_cli(["web", "--home", directory, "--host", "0.0.0.0"])
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("LOBSTER0_WEB_TOKEN", error)
+
+    def test_web_command_does_not_require_a_terminal(self) -> None:
+        """Web 控制台由浏览器交互，不该继承 TUI 的 TTY 前置条件。"""
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            mock.patch("lobster0.cli._is_tui_terminal", return_value=False),
+            mock.patch("lobster0.cli.run_web_console", return_value=0),
+        ):
+            exit_code, _, _ = run_cli(["web", "--home", directory])
+
+        self.assertEqual(exit_code, 0)
 
 
 if __name__ == "__main__":
