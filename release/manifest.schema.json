@@ -80,8 +80,8 @@
         ]
       }
     },
-    "database_schema": {"const": 10},
-    "minimum_readable_schema": {"type": "integer", "minimum": 1, "maximum": 10}
+    "database_schema": {"const": 11},
+    "minimum_readable_schema": {"type": "integer", "minimum": 1, "maximum": 11}
   },
   "$defs": {
     "platform": {

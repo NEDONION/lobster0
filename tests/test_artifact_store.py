@@ -146,6 +146,100 @@ class ArtifactStoreTest(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "artifact_source_changed")
 
+    def session(self, external_id: str) -> int:
+        """创建一个可供关联的会话，返回内部 id。"""
+        from lobster0.storage.conversations import SessionRepository
+
+        return SessionRepository(self.database).get_or_create_cli(self.owner.id, external_id).id
+
+    def test_one_artifact_can_belong_to_two_sessions(self) -> None:
+        """Artifact 跨会话去重，所以归属必须是多对多而不是一列。"""
+        artifact = self.store.put(
+            self.stage("shot.png", png(3, 2)),
+            declared_media_type="image/png",
+            source="browser_screenshot",
+        )
+        first = self.session("s-1")
+        second = self.session("s-2")
+
+        self.store.link(artifact.artifact_id, session_id=first, origin="agent_output")
+        self.store.link(artifact.artifact_id, session_id=second, origin="user_upload")
+
+        self.assertEqual(
+            [item.artifact_id for item in self.store.list_for_session(first, limit=10)],
+            [artifact.artifact_id],
+        )
+        self.assertEqual(
+            [item.origin for item in self.store.list_for_session(second, limit=10)],
+            ["user_upload"],
+        )
+
+    def test_listing_is_scoped_to_one_session(self) -> None:
+        """右栏只展示当前会话的产物，跨会话不能串。"""
+        first = self.session("s-1")
+        second = self.session("s-2")
+        one = self.store.put(
+            self.stage("a.txt", b"alpha"),
+            declared_media_type="text/plain",
+            source="user_upload",
+        )
+        two = self.store.put(
+            self.stage("b.txt", b"beta"),
+            declared_media_type="text/plain",
+            source="user_upload",
+        )
+        self.store.link(one.artifact_id, session_id=first, origin="user_upload")
+        self.store.link(two.artifact_id, session_id=second, origin="user_upload")
+
+        self.assertEqual(
+            [item.artifact_id for item in self.store.list_for_session(first, limit=10)],
+            [one.artifact_id],
+        )
+
+    def test_linking_twice_in_one_session_is_idempotent(self) -> None:
+        """同一条消息重复关联不该产生两行，否则右栏会重复显示。"""
+        artifact = self.store.put(
+            self.stage("a.txt", b"alpha"),
+            declared_media_type="text/plain",
+            source="user_upload",
+        )
+        session = self.session("s-1")
+
+        self.store.link(artifact.artifact_id, session_id=session, origin="user_upload")
+        self.store.link(artifact.artifact_id, session_id=session, origin="user_upload")
+
+        self.assertEqual(len(self.store.list_for_session(session, limit=10)), 1)
+
+    def test_listing_refuses_an_unbounded_limit(self) -> None:
+        """列表必须有界，避免一次把整个会话的产物读进内存。"""
+        session = self.session("s-1")
+        for limit in (0, -1, 501):
+            with self.assertRaises(ArtifactError):
+                self.store.list_for_session(session, limit=limit)
+
+    def test_linking_an_unknown_artifact_is_refused(self) -> None:
+        """伪造的 artifact id 不能凭空建立关联。"""
+        session = self.session("s-1")
+
+        with self.assertRaises(ArtifactError) as raised:
+            self.store.link("art_" + "f" * 64, session_id=session, origin="user_upload")
+
+        self.assertEqual(raised.exception.code, "artifact_not_found")
+
+    def test_deleted_artifacts_disappear_from_the_listing(self) -> None:
+        """过期回收后右栏不该继续显示已经不存在的产物。"""
+        session = self.session("s-1")
+        artifact = self.store.put(
+            self.stage("a.txt", b"alpha"),
+            declared_media_type="text/plain",
+            source="user_upload",
+        )
+        self.store.link(artifact.artifact_id, session_id=session, origin="user_upload")
+        self.now = self.now + timedelta(seconds=120)
+        self.store.delete_expired()
+
+        self.assertEqual(self.store.list_for_session(session, limit=10), [])
+
     def test_png_is_content_addressed_private_and_tool_payload_has_no_path(self) -> None:
         """同内容去重；模型只看到 ID/hash/大小，不看到路径或 base64。"""
         first = self.store.put(

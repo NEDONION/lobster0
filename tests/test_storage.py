@@ -16,6 +16,7 @@ EXPECTED_TABLES = {
     "evolution_approvals",
     "approvals",
     "artifacts",
+    "artifact_links",
     "automation_control",
     "audit_events",
     "channel_identities",
@@ -78,10 +79,10 @@ class StorageTest(unittest.TestCase):
             busy_timeout = connection.execute("PRAGMA busy_timeout").fetchone()[0]
             journal_mode = connection.execute("PRAGMA journal_mode").fetchone()[0]
 
-        self.assertEqual(first, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+        self.assertEqual(first, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11))
         self.assertEqual(second, ())
         self.assertEqual(tables, EXPECTED_TABLES)
-        self.assertEqual(current_schema_version(database), 10)
+        self.assertEqual(current_schema_version(database), 11)
         self.assertEqual(foreign_keys, 1)
         self.assertEqual(busy_timeout, 5000)
         self.assertEqual(journal_mode, "wal")
@@ -107,7 +108,7 @@ class StorageTest(unittest.TestCase):
         """v5 必须包含 Task Ledger、E-stop、Checkpoint、Plan 与主动投递关联。"""
         database = Database(self.database_path)
 
-        self.assertEqual(apply_migrations(database), (1, 2, 3, 4, 5, 6, 7, 8, 9, 10))
+        self.assertEqual(apply_migrations(database), (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11))
 
         with database.connect_read_only() as connection:
             tables = {
@@ -141,7 +142,7 @@ class StorageTest(unittest.TestCase):
         self.assertIn("task_run_id", delivery_columns)
         self.assertIn("execution_plan_hash", approval_columns)
         self.assertIn("tool_run_id", checkpoint_columns)
-        self.assertEqual(current_schema_version(database), 10)
+        self.assertEqual(current_schema_version(database), 11)
 
     def test_owner_is_created_once_and_preserved(self) -> None:
         """重复初始化不能插入第二个 Owner 或覆盖已有显示名。"""
@@ -227,7 +228,7 @@ class StorageTest(unittest.TestCase):
                 (now,),
             )
 
-        self.assertEqual(apply_migrations(database), (2, 3, 4, 5, 6, 7, 8, 9, 10))
+        self.assertEqual(apply_migrations(database), (2, 3, 4, 5, 6, 7, 8, 9, 10, 11))
 
         with database.connect() as connection:
             event = connection.execute(
@@ -315,10 +316,10 @@ class StorageTest(unittest.TestCase):
             )
             connection.execute(
                 "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
-                (11, "future"),
+                (12, "future"),
             )
 
-        with self.assertRaisesRegex(MigrationError, "newer schema version 11"):
+        with self.assertRaisesRegex(MigrationError, "newer schema version 12"):
             apply_migrations(database)
 
 

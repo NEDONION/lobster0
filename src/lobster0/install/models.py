@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 _MAX_MANIFEST_BYTES = 1_048_576
 _MAX_ARTIFACT_BYTES = 1_073_741_824
 _MAX_ARTIFACTS = 128
-_DATABASE_SCHEMA_VERSION = 10
+_DATABASE_SCHEMA_VERSION = 11
 _SEMVER = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-((?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"

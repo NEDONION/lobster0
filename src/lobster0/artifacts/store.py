@@ -23,6 +23,8 @@ _MEDIA_EXTENSIONS = {
     "text/csv": ".csv",
 }
 _SOURCES = frozenset({"browser_screenshot", "browser_download", "user_upload"})
+_LINK_ORIGINS = frozenset({"user_upload", "agent_output"})
+_MAX_LIST_LIMIT = 500
 _MAX_IMAGE_DIMENSION = 16_384
 _MAX_IMAGE_PIXELS = 64_000_000
 
@@ -62,6 +64,20 @@ class Artifact:
         if self.width is not None and self.height is not None:
             payload.update({"width": self.width, "height": self.height})
         return payload
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactLink:
+    """一条 Artifact 在某个会话里的出现，只含可安全展示的摘要。"""
+
+    artifact_id: str
+    media_type: str
+    byte_size: int
+    origin: str
+    message_id: int | None
+    created_at: datetime
+    width: int | None = None
+    height: int | None = None
 
 
 class ArtifactStore:
@@ -250,6 +266,86 @@ class ArtifactStore:
             return b"".join(chunks)
         finally:
             os.close(descriptor)
+
+    def link(
+        self,
+        artifact_id: str,
+        *,
+        session_id: int,
+        origin: str,
+        message_id: int | None = None,
+    ) -> None:
+        """把一条 Artifact 关联到某个会话。
+
+        关联是多对多的：Artifact 是 content-addressed 且跨会话去重的，同一份文件
+        在两个会话里出现是同一行 artifacts 记录，归属放不进那一行。
+
+        Args:
+            artifact_id: 必须是当前 Owner 名下未过期的 Artifact。
+            session_id: 会话的内部 ID。
+            origin: ``user_upload`` 或 ``agent_output``。
+            message_id: 关联到的消息；为空表示尚未落到具体消息上。
+
+        Raises:
+            ArtifactError: Artifact 不存在、已过期，或 origin 不在允许集合内。
+        """
+        if origin not in _LINK_ORIGINS:
+            raise ArtifactError("artifact_source_denied", "artifact origin is denied")
+        if type(session_id) is not int or session_id <= 0:
+            raise ArtifactError("artifact_not_found", "artifact was not found")
+        # 借 read_metadata 做一次完整存在性与归属校验，伪造 id 到不了写入这步。
+        self.read_metadata(artifact_id)
+        with self._database.connect() as connection:
+            connection.execute(
+                "INSERT OR IGNORE INTO artifact_links "
+                "(owner_id, artifact_id, session_id, message_id, origin, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    self._owner_id,
+                    artifact_id,
+                    session_id,
+                    message_id,
+                    origin,
+                    self._now().isoformat(),
+                ),
+            )
+
+    def list_for_session(self, session_id: int, *, limit: int) -> list[ArtifactLink]:
+        """按会话列出未过期的产物摘要，最新的在前。
+
+        Raises:
+            ArtifactError: ``limit`` 越界。列表必须有界，否则一次会把整个会话的
+                产物读进内存。
+        """
+        if type(limit) is not int or not 1 <= limit <= _MAX_LIST_LIMIT:
+            raise ArtifactError("artifact_limit_invalid", "artifact limit is invalid")
+        if type(session_id) is not int or session_id <= 0:
+            return []
+        now = self._now().isoformat()
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                "SELECT l.artifact_id, l.origin, l.message_id, l.created_at, "
+                "a.media_type, a.byte_size, a.width, a.height "
+                "FROM artifact_links AS l JOIN artifacts AS a "
+                "ON a.artifact_id = l.artifact_id AND a.owner_id = l.owner_id "
+                "WHERE l.owner_id = ? AND l.session_id = ? "
+                "AND a.status = 'active' AND a.expires_at > ? "
+                "ORDER BY l.id DESC LIMIT ?",
+                (self._owner_id, session_id, now, limit),
+            ).fetchall()
+        return [
+            ArtifactLink(
+                artifact_id=row["artifact_id"],
+                media_type=row["media_type"],
+                byte_size=row["byte_size"],
+                origin=row["origin"],
+                message_id=row["message_id"],
+                created_at=datetime.fromisoformat(row["created_at"]),
+                width=row["width"],
+                height=row["height"],
+            )
+            for row in rows
+        ]
 
     def read_metadata(self, artifact_id: str) -> Artifact:
         """读取 Owner 当前未过期 Artifact，并重新校验本地文件形状。"""
