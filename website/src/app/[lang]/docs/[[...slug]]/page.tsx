@@ -9,7 +9,7 @@ import { notFound } from 'next/navigation';
 
 import { getMDXComponents } from '@/components/docs/mdx-components';
 import { siteFacts } from '@/content/site';
-import { getLocale, localizedPath } from '@/lib/i18n';
+import { getLocale, languageAlternates, localizedPath } from '@/lib/i18n';
 import { source } from '@/lib/source';
 
 const siteUrl = siteFacts.siteUrl;
@@ -36,10 +36,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     alternates: {
       canonical: `${siteUrl}${canonicalPath}`,
-      languages: {
-        'zh-CN': `${siteUrl}${path}`,
-        en: `${siteUrl}/en${path}`,
-      },
+      languages: languageAlternates(siteUrl, path as `/${string}`),
     },
     description: page.data.description,
     metadataBase: new URL(siteUrl),

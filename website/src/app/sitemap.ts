@@ -1,7 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 import { siteFacts } from '@/content/site';
-import { locales, localizedPath } from '@/lib/i18n';
+import { languageAlternates, locales, localizedPath } from '@/lib/i18n';
 
 const siteUrl = siteFacts.siteUrl;
 const docsSlugs = ['', 'getting-started', 'runtime', 'security', 'channels', 'memory'];
@@ -16,9 +16,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return paths.flatMap((path) => {
     // Every locale variant of this page points at the same alternates map so
     // search engines can pick the right language for each visitor.
-    const languages = Object.fromEntries(
-      locales.map((locale) => [locale, absolute(localizedPath(locale, path as `/${string}`))]),
-    );
+    const languages = languageAlternates(siteUrl, path as `/${string}`);
 
     return locales.map((locale) => ({
       alternates: { languages },
