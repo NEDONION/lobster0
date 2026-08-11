@@ -434,6 +434,7 @@ function automationTask(record: Record<string, JsonValue>): AutomationSummary {
     name: stringValue(record.name),
     status: stringValue(record.status),
     scheduleKind: stringValue(record.schedule_kind),
+    scheduleExpression: stringValue(record.schedule_expression),
     nextRunAt: nullableString(record.next_run_at),
   };
 }

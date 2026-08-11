@@ -505,6 +505,7 @@ def _task_summary(task: object) -> dict[str, JsonValue]:
         "name": task.name,
         "status": task.status.value,
         "schedule_kind": schedule.kind.value,
+        "schedule_expression": schedule.expression,
         "next_run_at": None if next_run_at is None else next_run_at.isoformat(),
     }
 

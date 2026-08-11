@@ -342,3 +342,37 @@ D1～D5 全部退出后，才能将本路线标记为 `IMPLEMENTATION PASS`：
 - 文档、实现和开源归属一致。
 
 签名安装包、自动更新、应用商店、多用户协作、公开 Agent Network 和递归 Agent 继续留到独立后续项目。
+
+## 4.7 D2a 实现记录（2026-08-11）
+
+设计文档：[D2a 定时任务从只读变可控](../../superpowers/specs/2026-08-11-desktop-d2a-automation-control-design.md)。
+
+分三层落地，每层 TDD 先红后绿：
+
+1. **Bridge 协议**：新增 8 个请求类型 + `automation_write` capability。校验全在 protocol 层，
+   server 分支只做路由与错误码映射。写操作沿用 `turn.start` 的忙碌判定，并先读当前 `version`
+   再交给 repository 做乐观锁（与 CLI 同款模式）。
+2. **Desktop IPC**：`common/api` → `bridge-service` → `ipc` 三层接通，IPC 侧做与 Core 同构的
+   exact-key 校验。TS 的 `RequestType` 联合类型同步补齐——两端协议定义必须一致，typecheck 会挡。
+3. **界面**：新增 `automation-panel.tsx`（统计卡、任务卡、运行历史、新建表单）与
+   `automation-stats.ts`（统计与调度描述纯函数）。
+
+### 实现中修正的三处问题
+
+- **字典字面量求值全部分支**：动作分发原先写成 `{"pause": tasks.pause, ...}`，字面量会求值
+  所有方法引用，导致一次 pause 也要求 repository 具备 resume/cancel，平白扩大依赖面。改为按需
+  `getattr`，由测试暴露。
+- **摘要缺 `schedule_expression`**：界面要把调度转成"每 1 小时"这类人话，但 Core 的 task 摘要
+  只有 `schedule_kind`。补上表达式字段——它是时间信息，不属于 prompt/delivery/budget 那类敏感数据。
+- **旧 CSS 命中新结构**：`.automation-list article > div` 等旧规则仍在，正好命中新组件的 DOM，
+  把 `.automation-card-actions` 的 `display` 从 flex 覆盖成 grid，主体列被压到 0 宽。实测
+  `getComputedStyle` 发现后删除这些死规则。
+
+### 验证
+
+- Python：bridge 29/29、automation_repository 7/7、task_runner 10/10、cli 26/26，ruff 干净；
+- Desktop：85/85、typecheck、build 通过；
+- 视觉：构造覆盖 cron/interval/once/heartbeat 四种调度与 active/paused/failed 三种状态的任务，
+  用 `getBoundingClientRect` 实测布局（主体 554px、操作区 260px、标题单行），并验证运行历史
+  （含失败的 `provider_timeout`）、新建表单字段、下拉中**不含 heartbeat**、以及 interval 低于
+  5 分钟时的界面拦截。

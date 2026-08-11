@@ -401,6 +401,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
                     status=SimpleNamespace(value="active"),
                     schedule=SimpleNamespace(
                         kind=SimpleNamespace(value="cron"),
+                        expression="0 1 * * *",
                         next_run_at=datetime(2026, 8, 10, 1, tzinfo=UTC),
                     ),
                 ),
@@ -427,6 +428,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
                         "name": "每日简报",
                         "status": "active",
                         "schedule_kind": "cron",
+                        "schedule_expression": "0 1 * * *",
                         "next_run_at": "2026-08-10T01:00:00+00:00",
                     }
                 ],
@@ -446,6 +448,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             status=SimpleNamespace(value="active"),
             schedule=SimpleNamespace(
                 kind=SimpleNamespace(value="cron"),
+                expression="0 1 * * *",
                 next_run_at=datetime(2026, 8, 10, 1, tzinfo=UTC),
             ),
         )
@@ -456,6 +459,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             status=SimpleNamespace(value="paused"),
             schedule=SimpleNamespace(
                 kind=SimpleNamespace(value="cron"),
+                expression="0 1 * * *",
                 next_run_at=None,
             ),
         )
@@ -480,7 +484,14 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         # 响应沿用只读摘要的字段集，不泄露 prompt/delivery。
         self.assertEqual(
             set(response["payload"]["task"]),
-            {"task_id", "name", "status", "schedule_kind", "next_run_at"},
+            {
+                "task_id",
+                "name",
+                "status",
+                "schedule_kind",
+                "schedule_expression",
+                "next_run_at",
+            },
         )
 
     async def test_automation_write_is_rejected_while_a_turn_is_active(self) -> None:
@@ -512,6 +523,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             status=SimpleNamespace(value="active"),
             schedule=SimpleNamespace(
                 kind=SimpleNamespace(value="cron"),
+                expression="0 9 * * *",
                 next_run_at=datetime(2026, 8, 12, 1, tzinfo=UTC),
             ),
         )

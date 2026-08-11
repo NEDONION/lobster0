@@ -9,6 +9,7 @@ function task(status: string, scheduleKind = "cron"): AutomationSummary {
     name: "t",
     status,
     scheduleKind,
+    scheduleExpression: "0 9 * * *",
     nextRunAt: null,
   };
 }

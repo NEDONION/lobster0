@@ -75,6 +75,7 @@ class FakeClient {
           name: "每日简报",
           status: "active",
           schedule_kind: "cron",
+          schedule_expression: "0 1 * * *",
           next_run_at: "2026-08-10T01:00:00+00:00",
         }],
       };
@@ -206,6 +207,7 @@ describe("BridgeService", () => {
         name: "每日简报",
         status: "active",
         scheduleKind: "cron",
+        scheduleExpression: "0 1 * * *",
         nextRunAt: "2026-08-10T01:00:00+00:00",
       }],
     });

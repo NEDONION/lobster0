@@ -53,6 +53,7 @@ export interface AutomationSummary {
   name: string;
   status: string;
   scheduleKind: string;
+  scheduleExpression: string;
   nextRunAt: string | null;
 }
 

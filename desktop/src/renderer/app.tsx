@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { isPermissionMode, type PermissionMode } from "@lobster0/pi-tui/protocol";
 
 import type {
+  AutomationCreateInput,
   AutomationList,
+  AutomationRun,
   DesktopBootstrap,
   SessionHistory,
   SessionSummary,
 } from "../common/api";
+import { AutomationPanel } from "./automation-panel";
 import { NAV_ITEMS, type ViewId } from "./navigation";
 import { SESSION_GROUP_LABELS, groupSessionsByRecency } from "./session-groups";
 import { TaskWorkbench } from "./task-workbench";
@@ -161,6 +164,18 @@ export function App(): React.JSX.Element {
     }
   }
 
+  // Core 未开放写能力时只渲染只读列表，不显示会失败的按钮。
+  const canWriteAutomation = bootstrap?.capabilities.includes("automation_write") ?? false;
+
+  function refreshAutomations(): void {
+    void window.lobster0.listAutomations(50).then((value) => {
+      setAutomations(value);
+      setAutomationError(null);
+    }).catch(() => {
+      setAutomationError("自动化列表读取失败，请稍后重试。");
+    });
+  }
+
   async function chooseWorkspace(): Promise<void> {
     if (!bootstrap || taskBusy) {
       return;
@@ -276,6 +291,31 @@ export function App(): React.JSX.Element {
               <p>{copy.body}</p>
             </section>
             <ViewPreview
+              canWriteAutomation={canWriteAutomation}
+              onCancelAutomation={async (taskId) => {
+                await window.lobster0.cancelAutomation(taskId);
+              }}
+              onCreateAutomation={async (input: AutomationCreateInput) => {
+                await window.lobster0.createAutomation(input);
+              }}
+              onHaltAutomation={async (reason) => {
+                await window.lobster0.haltAutomation(reason);
+              }}
+              onLoadAutomationRuns={(taskId): Promise<AutomationRun[]> =>
+                window.lobster0.listAutomationRuns(taskId)}
+              onPauseAutomation={async (taskId) => {
+                await window.lobster0.pauseAutomation(taskId);
+              }}
+              onRefreshAutomations={refreshAutomations}
+              onResumeAutomation={async (taskId) => {
+                await window.lobster0.resumeAutomation(taskId);
+              }}
+              onRunAutomation={async (taskId) => {
+                await window.lobster0.runAutomation(taskId);
+              }}
+              onUnhaltAutomation={async () => {
+                await window.lobster0.unhaltAutomation();
+              }}
               bootstrap={bootstrap}
               automations={automations}
               automationError={automationError}
@@ -301,14 +341,34 @@ function ViewPreview({
   settingsBusy,
   settingsError,
   taskBusy,
+  canWriteAutomation,
   onChooseWorkspace,
   onSetPermissionMode,
+  onRefreshAutomations,
+  onPauseAutomation,
+  onResumeAutomation,
+  onCancelAutomation,
+  onRunAutomation,
+  onLoadAutomationRuns,
+  onHaltAutomation,
+  onUnhaltAutomation,
+  onCreateAutomation,
 }: {
   view: Exclude<ViewId, "task">;
   bootstrap: DesktopBootstrap | null;
   automations: AutomationList | null;
   automationError: string | null;
   settingsBusy: boolean;
+  canWriteAutomation: boolean;
+  onRefreshAutomations: () => void;
+  onPauseAutomation: (taskId: number) => Promise<void>;
+  onResumeAutomation: (taskId: number) => Promise<void>;
+  onCancelAutomation: (taskId: number) => Promise<void>;
+  onRunAutomation: (taskId: number) => Promise<void>;
+  onLoadAutomationRuns: (taskId: number) => Promise<AutomationRun[]>;
+  onHaltAutomation: (reason: string) => Promise<void>;
+  onUnhaltAutomation: () => Promise<void>;
+  onCreateAutomation: (input: AutomationCreateInput) => Promise<void>;
   settingsError: string | null;
   taskBusy: boolean;
   onChooseWorkspace: () => void;
@@ -316,33 +376,21 @@ function ViewPreview({
 }): React.JSX.Element {
   if (view === "automation") {
     return (
-      <section className="data-panel" aria-label="自动化列表">
-        <div className="data-panel-heading">
-          <span>调度状态</span>
-          <strong data-enabled={automations?.enabled ?? false}>
-            {automations?.enabled ? "运行中" : "未启用"}
-          </strong>
-        </div>
-        {automationError ? <p className="panel-error" role="alert">{automationError}</p> : null}
-        {automations?.tasks.length ? (
-          <div className="automation-list">
-            {automations.tasks.map((task) => (
-              <article key={task.taskId}>
-                <span className="automation-index">{String(task.taskId).padStart(2, "0")}</span>
-                <div>
-                  <strong>{task.name}</strong>
-                  <small>{task.scheduleKind} · {task.status}</small>
-                </div>
-                <time>{task.nextRunAt
-                  ? new Date(task.nextRunAt).toLocaleString("zh-CN")
-                  : "无下次运行"}</time>
-              </article>
-            ))}
-          </div>
-        ) : (
-          <p className="panel-empty">{automations ? "还没有自动化任务。" : "正在读取 Core…"}</p>
-        )}
-      </section>
+      <AutomationPanel
+        automationError={automationError}
+        automations={automations}
+        busy={taskBusy}
+        canWrite={canWriteAutomation}
+        onCancel={onCancelAutomation}
+        onCreate={onCreateAutomation}
+        onHalt={onHaltAutomation}
+        onLoadRuns={onLoadAutomationRuns}
+        onPause={onPauseAutomation}
+        onRefresh={onRefreshAutomations}
+        onResume={onResumeAutomation}
+        onRun={onRunAutomation}
+        onUnhalt={onUnhaltAutomation}
+      />
     );
   }
   return (
