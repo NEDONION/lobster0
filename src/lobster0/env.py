@@ -34,14 +34,21 @@ def resolve_dotenv_path(
     Raises:
         DotEnvError: 显式安装态路径不是绝对路径。
     """
-    del paths
     selected = environ.get("LOBSTER0_ENV_FILE", "").strip()
-    if not selected:
-        return (Path.cwd() if cwd is None else cwd) / ".env"
-    candidate = Path(selected).expanduser()
-    if not candidate.is_absolute():
-        raise DotEnvError("LOBSTER0_ENV_FILE must be absolute path")
-    return candidate.resolve(strict=False)
+    if selected:
+        candidate = Path(selected).expanduser()
+        if not candidate.is_absolute():
+            raise DotEnvError("LOBSTER0_ENV_FILE must be absolute path")
+        return candidate.resolve(strict=False)
+    # `setup` 把 Secret 写到 StatePaths.secrets_file（<home>/secrets.env）。
+    # 若不在这里回退到它，配置好的部署仍会以 "LOBSTER0_MODEL_API_KEY is not
+    # configured" 启动失败——除非用户自己猜到要设 LOBSTER0_ENV_FILE。实机部署
+    # 中确实踩到了这个断裂：secrets.env 三个值俱全，doctor 却报 missing
+    # environment variable(s)。开发态 cwd/.env 仍然保留，但仅作为次选。
+    secrets_file = getattr(paths, "secrets_file", None)
+    if secrets_file is not None and Path(secrets_file).is_file():
+        return Path(secrets_file)
+    return (Path.cwd() if cwd is None else cwd) / ".env"
 
 
 def load_dotenv(
