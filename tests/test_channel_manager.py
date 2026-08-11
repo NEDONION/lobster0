@@ -920,7 +920,8 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         with self.database.connect_read_only() as connection:
             deliveries = connection.execute(
                 "SELECT content, reply_to_message_id FROM deliveries "
-                "WHERE message_id IS NOT NULL ORDER BY part_index"
+                "WHERE message_id IS NOT NULL AND delivery_kind = 'message' "
+                "ORDER BY part_index"
             ).fetchall()
         self.assertGreater(len(deliveries), 0)
         self.assertTrue(
@@ -1355,3 +1356,37 @@ class ChannelManagerFeedbackTest(ChannelManagerTest):
         self.assertEqual(len(rows), 1)
         self.assertIn("记录反馈失败", rows[0]["content"])
         self.assertNotIn("ledger exploded", rows[0]["content"])
+
+
+class ChannelManagerCardMappingTest(ChannelManagerTest):
+    """卡片的平台 ID 必须落库，否则 Owner 回复卡片时无法反查回内部消息。"""
+
+    async def test_card_platform_id_is_persisted_for_feedback_lookup(self) -> None:
+        """走完整 Turn 后，卡片应有一条 sent 记录且绑定同一条 assistant message。"""
+        transport = ManagerCapabilityTransport()
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
+        manager = self._manager(service, queue_size=2, worker_count=1)
+        manager.attach_experience(capabilities)
+
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_card_case", "你好"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        with self.database.connect_read_only() as connection:
+            cards = connection.execute(
+                "SELECT platform_message_id, status, message_id FROM deliveries "
+                "WHERE delivery_kind = 'card'"
+            ).fetchall()
+
+        self.assertEqual(len(cards), 1)
+        self.assertEqual(cards[0]["status"], "sent")
+        self.assertTrue(cards[0]["platform_message_id"])
+        self.assertIsNotNone(cards[0]["message_id"])

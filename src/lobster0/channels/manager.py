@@ -464,6 +464,7 @@ class ChannelManager:
                     final_delivery_required = True
                     final_delivery_offset = 0
                     final_reply_to_message_id: str | None = None
+                    progress_message_id: str | None = None
                     if activity is not None:
                         outcome = await activity.finish(
                             content=None if waiting_for_approval else visible,
@@ -472,6 +473,7 @@ class ChannelManager:
                         final_delivery_required = outcome.final_delivery_required
                         final_delivery_offset = outcome.final_delivery_offset
                         final_reply_to_message_id = outcome.final_reply_to_message_id
+                        progress_message_id = outcome.progress_message_id
                     if command.result is not None:
                         self._create_result_delivery(
                             session.id,
@@ -480,6 +482,7 @@ class ChannelManager:
                             message_delivery_required=final_delivery_required,
                             content_offset=final_delivery_offset,
                             reply_to_message_id=final_reply_to_message_id,
+                            progress_message_id=progress_message_id,
                         )
                     elif command.notice is not None and final_delivery_required:
                         self._create_notice_delivery(session.id, event, command.notice)
@@ -567,6 +570,7 @@ class ChannelManager:
             final_delivery_required = True
             final_delivery_offset = 0
             final_reply_to_message_id: str | None = None
+            progress_message_id: str | None = None
             if activity is not None:
                 waiting_for_approval = result.approval_id is not None
                 progress = activity.finalize(
@@ -586,6 +590,7 @@ class ChannelManager:
                 final_delivery_required = outcome.final_delivery_required
                 final_delivery_offset = outcome.final_delivery_offset
                 final_reply_to_message_id = outcome.final_reply_to_message_id
+                progress_message_id = outcome.progress_message_id
 
             self._create_result_delivery(
                 session.id,
@@ -594,6 +599,7 @@ class ChannelManager:
                 message_delivery_required=final_delivery_required,
                 content_offset=final_delivery_offset,
                 reply_to_message_id=final_reply_to_message_id,
+                progress_message_id=progress_message_id,
             )
             self._inbound.mark_completed(event.key)
             self._observe_turn(
@@ -712,9 +718,14 @@ class ChannelManager:
         message_delivery_required: bool = True,
         content_offset: int = 0,
         reply_to_message_id: str | None = None,
+        progress_message_id: str | None = None,
     ) -> None:
         """按平台终态创建完整 fallback、卡片后缀或 durable Approval Outbox。"""
         if result.message_id is not None:
+            if progress_message_id:
+                self._record_card_delivery(
+                    result.message_id, event, progress_message_id
+                )
             if not message_delivery_required:
                 return
             self._create_message_delivery(
@@ -728,6 +739,30 @@ class ChannelManager:
         if result.approval_id is None:
             return
         self._create_approval_delivery(session_id, event, result.approval_id)
+
+    def _record_card_delivery(
+        self,
+        message_id: int,
+        event: StoredInboundEvent,
+        platform_message_id: str,
+    ) -> None:
+        """登记 Experience 直接发出的卡片，使 Owner 回复它时可以反查回内部消息。
+
+        失败不能影响这一轮回复：这条记录只服务于反馈归属，缺失时 Owner 收到的是
+        "没有找到这条回答"，而不是整条消息处理失败。
+        """
+        try:
+            self._deliveries.record_sent_card(
+                message_id=message_id,
+                channel=event.key.channel,
+                account_id=event.key.account_id,
+                external_conversation_id=event.external_conversation_id,
+                reply_to_message_id=event.reply_to_message_id,
+                platform_message_id=platform_message_id,
+                idempotency_key=f"card:{event.key.external_message_id}",
+            )
+        except Exception:  # noqa: BLE001 - 卡片映射失败不得影响本轮回复
+            return
 
     def _create_message_delivery(
         self,

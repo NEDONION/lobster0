@@ -27,17 +27,19 @@ class _FakeMessage:
 
 @dataclass(slots=True)
 class FakeDeliveryLookup:
-    """按固定平台 message ID 返回预置 Delivery。"""
+    """按固定平台 message ID 与 delivery kind 返回预置 Delivery。"""
 
     by_platform_id: dict[str, _FakeDelivery] = field(default_factory=dict)
+    by_card_platform_id: dict[str, _FakeDelivery] = field(default_factory=dict)
     calls: list[tuple[str, str, str, str]] = field(default_factory=list)
 
     def find_sent_by_platform_message_id(
         self, *, channel: str, account_id: str, platform_message_id: str, kind: str
     ) -> _FakeDelivery | None:
-        """记录调用参数并返回预置结果。"""
+        """记录调用参数并按 kind 返回对应预置结果。"""
         self.calls.append((channel, account_id, platform_message_id, kind))
-        return self.by_platform_id.get(platform_message_id)
+        source = self.by_platform_id if kind == "message" else self.by_card_platform_id
+        return source.get(platform_message_id)
 
 
 @dataclass(slots=True)
@@ -262,3 +264,54 @@ class ChannelFeedbackControllerTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FeedbackOnCardReplyTest(unittest.IsolatedAsyncioTestCase):
+    """Owner 回复的是 Experience 直接发出的卡片，而不是普通文本消息。
+
+    真实事故：飞书里 /good 一直提示"没有找到这条回答"。原因是 Owner 看到并回复的是那张
+    绿色进度卡，而反查只认 ``delivery_kind='message'``；卡片的平台 ID 当时甚至没有落库。
+    """
+
+    def setUp(self) -> None:
+        """构造只登记了卡片、没有普通文本投递的场景。"""
+        self.deliveries = FakeDeliveryLookup()
+        self.messages = FakeMessageLookup()
+        self.feedback = FakeFeedbackLedger()
+        self.controller = ChannelFeedbackController(
+            owner_external_user_id="ou_owner",
+            feedback=self.feedback,
+            deliveries=self.deliveries,
+            messages=self.messages,
+        )
+        self.messages.by_id[7] = _FakeMessage(id=7, role="assistant", content="卡片里的回答")
+        self.deliveries.by_card_platform_id["om_card"] = _FakeDelivery(message_id=7)
+
+    async def test_reply_to_a_card_records_feedback(self) -> None:
+        """回复卡片必须能记录反馈，而不是报"没有找到这条回答"。"""
+        outcome = await self.controller.handle_text(
+            user_id=3,
+            actor_external_user_id="ou_owner",
+            text="/good",
+            channel="feishu",
+            account_id="default",
+            reply_to_platform_message_id="om_card",
+        )
+
+        self.assertTrue(outcome.handled)
+        self.assertIsNone(outcome.error_code)
+        self.assertEqual(outcome.feedback_id, 1)
+        self.assertEqual(self.feedback.calls[0]["message_id"], 7)
+
+    async def test_message_kind_is_tried_before_card(self) -> None:
+        """普通文本仍然优先命中，卡片只是补充来源。"""
+        await self.controller.handle_text(
+            user_id=3,
+            actor_external_user_id="ou_owner",
+            text="/good",
+            channel="feishu",
+            account_id="default",
+            reply_to_platform_message_id="om_card",
+        )
+
+        self.assertEqual([call[3] for call in self.deliveries.calls], ["message", "card"])

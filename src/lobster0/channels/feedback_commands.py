@@ -134,12 +134,18 @@ class ChannelFeedbackController:
                 True, notice=_NOT_A_REPLY, error_code="not_a_reply"
             )
 
-        delivery = self._deliveries.find_sent_by_platform_message_id(
-            channel=channel,
-            account_id=account_id,
-            platform_message_id=reply_to_platform_message_id,
-            kind="message",
-        )
+        # Owner 在 IM 里看到的可能是普通文本，也可能是 Experience 直接发出的卡片；
+        # 两种都要能反查回同一条内部 assistant message。
+        delivery = None
+        for kind in ("message", "card"):
+            delivery = self._deliveries.find_sent_by_platform_message_id(
+                channel=channel,
+                account_id=account_id,
+                platform_message_id=reply_to_platform_message_id,
+                kind=kind,
+            )
+            if delivery is not None:
+                break
         message_id = getattr(delivery, "message_id", None)
         message = None if message_id is None else self._messages.get(message_id)
         if message is None or message.role != "assistant":

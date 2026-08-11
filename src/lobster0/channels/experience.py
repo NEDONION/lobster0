@@ -61,6 +61,7 @@ class ExperienceOutcome:
     final_delivery_required: bool = True
     final_delivery_offset: int = 0
     final_reply_to_message_id: str | None = None
+    progress_message_id: str | None = None
 
     @property
     def card_created(self) -> bool:
@@ -287,13 +288,19 @@ class ExperienceActivity:
         return receipt
 
     def _outcome(self) -> ExperienceOutcome:
-        """生成不包含正文或平台 ID 的终态。"""
+        """生成不包含正文的终态。
+
+        ``progress_message_id`` 是 Owner 在 IM 里真正看到并可以「回复」的那条卡片的平台 ID。
+        Manager 需要它把卡片与内部 assistant message 关联起来，否则 Owner 回复卡片时
+        没有任何记录可以反查（真实事故：飞书 /good 一直提示"没有找到这条回答"）。
+        """
         return ExperienceOutcome(
             progress_created=self._progress_message_id is not None,
             progress_failed=self._progress_failed,
             final_delivery_required=not self._completed_final_progress,
             final_delivery_offset=self._final_delivery_offset,
             final_reply_to_message_id=self._final_reply_to_message_id,
+            progress_message_id=self._progress_message_id,
         )
 
     def _observe_failure(self, capability: str, error: Exception) -> None:

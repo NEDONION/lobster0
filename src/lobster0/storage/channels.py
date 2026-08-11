@@ -606,6 +606,52 @@ class DeliveryRepository:
             rows = self._list_task_parts(connection, task_run_id, channel, kind)
         return tuple(_delivery_from_row(row) for row in rows)
 
+    def record_sent_card(
+        self,
+        *,
+        message_id: int,
+        channel: str,
+        account_id: str,
+        external_conversation_id: str,
+        reply_to_message_id: str,
+        platform_message_id: str,
+        idempotency_key: str,
+    ) -> None:
+        """把已经由 Experience 直接发出的卡片登记为一条 ``sent`` 记录。
+
+        卡片由 Experience 通过 Transport 直接发送，其平台 message ID 此前只存在于内存，
+        导致 Owner 在 IM 里「回复」这张卡片时无法反查回内部 assistant message。这里补一条
+        ``delivery_kind='card'``、``status='sent'`` 的记录建立映射；因为 Worker 只领取
+        ``queued``，这条记录不会被再次投递。
+
+        重复调用是幂等的：唯一键 ``(message_id, channel, part_index, delivery_kind)``
+        会让第二次插入被安全忽略。
+        """
+        now = self._clock().isoformat()
+        with self._database.connect() as connection:
+            connection.execute(
+                """
+                INSERT OR IGNORE INTO deliveries (
+                    message_id, channel, account_id, external_conversation_id,
+                    reply_to_message_id, delivery_kind, part_index, content,
+                    content_hash, idempotency_key, platform_message_id, status,
+                    attempts, created_at, updated_at, sent_at
+                ) VALUES (?, ?, ?, ?, ?, 'card', 0, '', '', ?, ?, 'sent', 0, ?, ?, ?)
+                """,
+                (
+                    message_id,
+                    channel,
+                    account_id,
+                    external_conversation_id,
+                    reply_to_message_id,
+                    idempotency_key,
+                    platform_message_id,
+                    now,
+                    now,
+                    now,
+                ),
+            )
+
     def claim_next(self, channel: str, account_id: str) -> StoredDelivery | None:
         """原子 claim 当前可发送且没有未完成前序 part 的最早 Delivery。"""
         now = self._clock().isoformat()
