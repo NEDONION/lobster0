@@ -74,6 +74,7 @@ class StoredInboundEvent:
     received_at: datetime
     updated_at: datetime
     storage_rowid: int = 0
+    replied_to_message_id: str = ""
 
     @property
     def external_message_id(self) -> str:
@@ -231,8 +232,9 @@ class InboundEventRepository:
                     channel, account_id, event_id, external_message_id,
                     session_id, received_at, external_user_id,
                     external_conversation_id, chat_type, message_type, content,
-                    reply_to_message_id, status, attempts, last_error_code, updated_at
-                ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, NULL, ?)
+                    reply_to_message_id, replied_to_message_id,
+                    status, attempts, last_error_code, updated_at
+                ) VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, NULL, ?)
                 """,
                 (
                     message.channel,
@@ -246,6 +248,7 @@ class InboundEventRepository:
                     message.message_type,
                     message.text,
                     message.reply_to_message_id,
+                    message.replied_to_message_id,
                     now,
                 ),
             )
@@ -965,6 +968,7 @@ def _inbound_from_row(row: sqlite3.Row) -> StoredInboundEvent:
         message_type=str(row["message_type"]),
         content=str(row["content"]),
         reply_to_message_id=str(row["reply_to_message_id"]),
+        replied_to_message_id=str(row["replied_to_message_id"]),
         session_id=None if row["session_id"] is None else int(row["session_id"]),
         status=str(row["status"]),
         attempts=int(row["attempts"]),

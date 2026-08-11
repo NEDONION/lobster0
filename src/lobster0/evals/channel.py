@@ -163,6 +163,7 @@ class _MessageView:
     mentioned_bot: bool = False
     body_text: str = "hello"
     raw_content_type: str = "text"
+    parent_message_id: str = ""
     create_time: datetime = datetime(2026, 8, 8, tzinfo=UTC)
 
 

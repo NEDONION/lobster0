@@ -19,6 +19,7 @@ from lobster0.channels.approvals import (
 from lobster0.channels.base import DeliveryKind, InboundMessage
 from lobster0.channels.delivery import split_message
 from lobster0.channels.experience import ChannelExperience
+from lobster0.channels.feedback_commands import FeedbackCommandOutcome
 from lobster0.channels.observability import ChannelObserver
 from lobster0.channels.progress import progress_from_metadata, progress_to_metadata
 from lobster0.memory.models import ConversationKind
@@ -87,6 +88,23 @@ class ApprovalHandler(Protocol):
 
     def prompt(self, *, user_id: int, approval_id: int) -> ApprovalEnvelope:
         """构建 Core 已校验的审批展示。"""
+        ...
+
+
+class FeedbackHandler(Protocol):
+    """收窄 Manager 对 Channel Feedback Controller 的使用。"""
+
+    async def handle_text(
+        self,
+        *,
+        user_id: int,
+        actor_external_user_id: str,
+        text: str,
+        channel: str,
+        account_id: str,
+        reply_to_platform_message_id: str,
+    ) -> "FeedbackCommandOutcome":
+        """识别并处理 /good、/bad 反馈命令。"""
         ...
 
 
@@ -167,6 +185,7 @@ class ChannelManager:
         self._stopping = asyncio.Event()
         self._experience: ChannelExperience | None = None
         self._approvals: ApprovalHandler | None = None
+        self._feedback: FeedbackHandler | None = None
         self._observer = observer
 
     def attach_experience(self, experience: ChannelExperience) -> None:
@@ -184,6 +203,12 @@ class ChannelManager:
         if self._workers or self._feeder is not None:
             raise RuntimeError("Channel approvals must be attached before start")
         self._approvals = approvals
+
+    def attach_feedback(self, feedback: FeedbackHandler) -> None:
+        """在启动前绑定只写 Feedback Ledger 的反馈命令控制器。"""
+        if self._workers or self._feeder is not None:
+            raise RuntimeError("Channel feedback must be attached before start")
+        self._feedback = feedback
 
     async def receive(self, message: InboundMessage) -> InboundAcceptance:
         """先持久化消息，再 best-effort 写入有界内存队列。"""
@@ -347,6 +372,26 @@ class ChannelManager:
                     started=started,
                 )
                 return
+            if self._feedback is not None:
+                feedback_notice = await self._handle_feedback_command(event)
+                if feedback_notice is not None:
+                    final_delivery_required = True
+                    if activity is not None:
+                        outcome = await activity.finish(
+                            content=feedback_notice,
+                            failed=False,
+                        )
+                        final_delivery_required = outcome.final_delivery_required
+                    if final_delivery_required:
+                        self._create_notice_delivery(session.id, event, feedback_notice)
+                    self._inbound.mark_completed(event.key)
+                    self._observe_turn(
+                        event,
+                        status="completed",
+                        session_id=session.id,
+                        started=started,
+                    )
+                    return
             if self._approvals is not None:
                 try:
                     command = await self._approvals.handle_text(
@@ -560,6 +605,28 @@ class ChannelManager:
                 started=started,
                 result=result,
             )
+
+    async def _handle_feedback_command(self, event: StoredInboundEvent) -> str | None:
+        """处理 /good、/bad；不是反馈命令时返回 ``None`` 让消息继续进入模型。
+
+        任何内部失败都收口为一句安全提示：记录反馈失败不应该让整条消息处理失败，
+        更不应该把内部错误码回显给 IM。
+        """
+        assert self._feedback is not None
+        try:
+            outcome = await self._feedback.handle_text(
+                user_id=self.owner_id,
+                actor_external_user_id=event.external_user_id,
+                text=event.content,
+                channel=event.key.channel,
+                account_id=event.key.account_id,
+                reply_to_platform_message_id=event.replied_to_message_id,
+            )
+        except Exception:  # noqa: BLE001 - 反馈命令必须收口为稳定提示
+            return "记录反馈失败，请稍后重试。"
+        if not outcome.handled:
+            return None
+        return outcome.notice or "已处理。"
 
     def _trusted_owner(self, event: StoredInboundEvent) -> bool:
         """只有配置 Owner 的点对点消息可以携带自动化信任。"""

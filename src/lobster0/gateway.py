@@ -16,6 +16,7 @@ from lobster0.channels.approvals import ChannelApprovalController
 from lobster0.channels.delivery import DeliveryWorker
 from lobster0.channels.discord import DiscordTransport
 from lobster0.channels.experience import ChannelExperience
+from lobster0.channels.feedback_commands import ChannelFeedbackController
 from lobster0.channels.feishu import FeishuTransport
 from lobster0.channels.feishu_approval import FeishuApprovalActionHandler
 from lobster0.channels.observability import ChannelObserver
@@ -30,6 +31,7 @@ from lobster0.channels.supervisor import (
 from lobster0.channels.telegram import TelegramTransport
 from lobster0.config import AppConfig, ConfigError, load_config
 from lobster0.env import DotEnvError, load_dotenv, resolve_dotenv_path
+from lobster0.evolution.repository import FeedbackRepository
 from lobster0.paths import StatePaths
 from lobster0.runtime import (
     AgentRuntime,
@@ -283,7 +285,16 @@ def _channel_common(
         service=runtime.service,
     )
     manager.attach_approvals(approvals)
-    return database, observer, manager, approvals, DeliveryRepository(database)
+    deliveries = DeliveryRepository(database)
+    manager.attach_feedback(
+        ChannelFeedbackController(
+            owner_external_user_id=owner_external_user_id,
+            feedback=FeedbackRepository(database),
+            deliveries=deliveries,
+            messages=MessageRepository(database),
+        )
+    )
+    return database, observer, manager, approvals, deliveries
 
 
 def _build_feishu_channel(

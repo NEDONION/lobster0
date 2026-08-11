@@ -42,6 +42,7 @@ class FeishuMessageView(Protocol):
     mentioned_bot: bool
     body_text: str
     raw_content_type: str
+    parent_message_id: str
     create_time: datetime | str | int | None
 
 
@@ -96,6 +97,7 @@ class FeishuAdapter:
             message_type="text",
             text=text,
             reply_to_message_id=message.message_id,
+            replied_to_message_id=_valid_message_id(message.parent_message_id),
             received_at=_received_at(message.create_time, self._clock),
         )
 
@@ -132,6 +134,7 @@ class _OfficialMessageView:
     mentioned_bot: bool
     body_text: str
     raw_content_type: str
+    parent_message_id: str
     create_time: datetime | str | int | None
 
 
@@ -499,8 +502,36 @@ def _official_message_view(message: Any) -> _OfficialMessageView:
         mentioned_bot=bool(getattr(message, "mentioned_bot", False)),
         body_text=str(getattr(message, "body_text", "") or ""),
         raw_content_type=str(getattr(message, "raw_content_type", "") or ""),
+        parent_message_id=_parent_message_id(message),
         create_time=getattr(message, "create_time", None),
     )
+
+
+def _parent_message_id(message: Any) -> str:
+    """读取"这条消息回复了哪条消息"的平台 message ID。
+
+    飞书 ``im.message.receive_v1`` 在 ``event.message.parent_id`` 上给出被回复消息的 ID；
+    这里先按属性读取，再回退到原始事件 JSON。任何一步取不到都返回空字符串——不是回复时
+    本来就该为空，调用方据此判定"这不是一条回复"。
+    """
+    direct = getattr(message, "parent_id", None)
+    if isinstance(direct, str) and direct:
+        return direct
+    raw = getattr(message, "raw", None)
+    if isinstance(raw, dict):
+        event = raw.get("event")
+        if isinstance(event, dict):
+            payload = event.get("message")
+            if isinstance(payload, dict):
+                parent = payload.get("parent_id")
+                if isinstance(parent, str) and parent:
+                    return parent
+    return ""
+
+
+def _valid_message_id(value: str) -> str:
+    """只接受形状合法的飞书 message ID，其余一律当作"不是回复"。"""
+    return value if _MESSAGE_ID.fullmatch(value) is not None else ""
 
 
 def _event_id(raw: Any, *, fallback: str) -> str:

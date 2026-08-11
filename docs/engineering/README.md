@@ -31,7 +31,7 @@
 | Phase 5 | Telegram / Discord Channel | v0.5.0 | `IMPLEMENTATION PASS / LIVE PENDING` | [Telegram 与 Discord](phase-5/20260808_telegram-discord-channels.md) |
 | Phase 6 | Autonomy、Sandbox、Checkpoint、production gate | v0.7.0+ | `IMPLEMENTATION PASS / PRODUCTION SOAK PENDING` | [macOS + 飞书生产验收](phase-6/20260810_macos-feishu-production-acceptance.md) |
 | Phase 6.5 | Isolated Browser Agent | v0.6.5 capability record | `IMPLEMENTATION PASS / CONTROLLED LIVE SMOKE PENDING` | [Browser Agent](phase-6/browser-agent.md) |
-| Phase 7 | Controlled Evolution | 未发布 | `IMPLEMENTATION IN PROGRESS`（Task 1、6 完成；Task 2～5 部分完成） | [Controlled Evolution 工程落地方案](phase-7/20260810_controlled-evolution.md) |
+| Phase 7 | Controlled Evolution | 未发布 | `IMPLEMENTATION IN PROGRESS`（Task 1、2、6 完成；Task 3～5 部分完成） | [Controlled Evolution 工程落地方案](phase-7/20260810_controlled-evolution.md) |
 
 当前全仓本地基线是 1005/1005 Python、41/41 TUI TypeScript、14/14 Browser Worker、39/39 Agent、
 33/33 Channel、20 轮 660/660 local Channel soak、15/15 Automation，以及 18/18 Browser 和 20 轮

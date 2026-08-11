@@ -39,6 +39,7 @@ class FeishuAdapterTest(unittest.TestCase):
         self.assertEqual(result.chat_type, "p2p")
         self.assertEqual(result.text, "你好\n世界")
         self.assertEqual(result.reply_to_message_id, "om_test")
+        self.assertEqual(result.replied_to_message_id, "")
         self.assertFalse(hasattr(result, "raw"))
 
     def test_private_post_uses_sdk_flattened_safe_text(self) -> None:
@@ -120,3 +121,47 @@ class FeishuAdapterTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FeishuRepliedToMessageTest(unittest.TestCase):
+    """验证"这条消息回复了哪条"能被安全取出，取不到时不影响正常收消息。"""
+
+    def setUp(self) -> None:
+        """复用允许 Owner 私聊的最小配置。"""
+        self.adapter = FeishuAdapter(
+            FeishuConfig(
+                enabled=True,
+                account_id="default",
+                owner_open_id="ou_owner",
+                allowed_open_ids=("ou_owner",),
+                allowed_chat_ids=(),
+                allow_group_mentions=False,
+                message_max_chars=1000,
+            )
+        )
+
+    def test_parent_message_id_is_carried_through(self) -> None:
+        """回复某条消息时，被回复的平台 message ID 必须原样带进内部消息。"""
+        result = self.adapter.normalize(
+            FakeFeishuMessage(body_text="/good", parent_message_id="om_parent")
+        )
+
+        assert isinstance(result, InboundMessage)
+        self.assertEqual(result.replied_to_message_id, "om_parent")
+
+    def test_absent_parent_degrades_to_empty_not_an_error(self) -> None:
+        """不是回复时必须安全退化为空字符串，而不是让整条消息失败。"""
+        result = self.adapter.normalize(FakeFeishuMessage(body_text="你好"))
+
+        assert isinstance(result, InboundMessage)
+        self.assertEqual(result.replied_to_message_id, "")
+
+    def test_malformed_parent_id_is_treated_as_not_a_reply(self) -> None:
+        """形状非法的 parent ID 不能被当作有效目标，必须按"不是回复"处理。"""
+        for invalid in ("", "not-a-message-id", "om_" + "x" * 300):
+            with self.subTest(invalid=invalid):
+                result = self.adapter.normalize(
+                    FakeFeishuMessage(body_text="/good", parent_message_id=invalid)
+                )
+                assert isinstance(result, InboundMessage)
+                self.assertEqual(result.replied_to_message_id, "")

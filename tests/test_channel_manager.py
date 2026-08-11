@@ -20,6 +20,7 @@ from lobster0.channels.approvals import (
 )
 from lobster0.channels.base import InboundMessage, SendReceipt
 from lobster0.channels.capabilities import ChannelCapabilities
+from lobster0.channels.feedback_commands import FeedbackCommandOutcome
 from lobster0.channels.manager import ChannelManager
 from lobster0.channels.observability import ChannelObserver
 from lobster0.channels.progress import ProgressProjector, progress_to_metadata
@@ -1242,6 +1243,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         chat_id: str = "oc_chat",
         chat_type: str = "p2p",
         external_user_id: str = "ou_owner",
+        replied_to_message_id: str = "",
     ) -> InboundMessage:
         """创建一条标准化飞书消息。"""
         return InboundMessage(
@@ -1255,9 +1257,101 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             message_type="text",
             text=text,
             reply_to_message_id=message_id,
+            replied_to_message_id=replied_to_message_id,
             received_at=datetime(2026, 8, 8, tzinfo=UTC),
         )
 
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ChannelManagerFeedbackTest(ChannelManagerTest):
+    """验证 /good、/bad 在 Manager 层被当作控制命令消费，不进入模型。"""
+
+    class _Recorder:
+        """记录 Manager 传给 Feedback Controller 的参数。"""
+
+        def __init__(self, *, handled: bool, notice: str | None = None) -> None:
+            """保存固定返回值与调用记录。"""
+            self.calls: list[dict[str, object]] = []
+            self._handled = handled
+            self._notice = notice
+
+        async def handle_text(self, **kwargs: object) -> FeedbackCommandOutcome:
+            """记录一次调用并返回预置结果。"""
+            self.calls.append(kwargs)
+            return FeedbackCommandOutcome(self._handled, notice=self._notice)
+
+    async def test_feedback_command_bypasses_the_model_and_replies_once(self) -> None:
+        """/bad 必须被反馈控制器消费，不调用 Agent，且只产生一条回复。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=4, worker_count=1)
+        recorder = self._Recorder(handled=True, notice="已记录反馈 #1（差评）。")
+        manager.attach_feedback(recorder)
+        await manager.start()
+        try:
+            await manager.receive(
+                self._message(
+                    "om_cmd",
+                    "/bad 没有真正调用工具",
+                    replied_to_message_id="om_target",
+                )
+            )
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.trusted_calls, [])
+        self.assertEqual(len(recorder.calls), 1)
+        self.assertEqual(recorder.calls[0]["reply_to_platform_message_id"], "om_target")
+        self.assertEqual(recorder.calls[0]["actor_external_user_id"], "ou_owner")
+        with self.database.connect_read_only() as connection:
+            rows = connection.execute("SELECT content FROM deliveries").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertIn("已记录反馈", rows[0]["content"])
+
+    async def test_plain_message_still_reaches_the_model(self) -> None:
+        """普通消息不能被反馈控制器吞掉。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=4, worker_count=1)
+        recorder = self._Recorder(handled=False)
+        manager.attach_feedback(recorder)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_plain", "今天天气怎么样"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(len(recorder.calls), 1)
+        self.assertEqual(len(service.trusted_calls), 1)
+
+    async def test_feedback_controller_failure_does_not_fail_the_message(self) -> None:
+        """反馈控制器抛错时必须收口为安全提示，不能回显内部异常。"""
+
+        class _Exploding:
+            """总是抛出内部异常的 Feedback Controller。"""
+
+            async def handle_text(self, **_: object) -> FeedbackCommandOutcome:
+                """模拟 Ledger 内部崩溃。"""
+                raise RuntimeError("ledger exploded")
+
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=4, worker_count=1)
+        manager.attach_feedback(_Exploding())
+        await manager.start()
+        try:
+            await manager.receive(
+                self._message("om_boom", "/good", replied_to_message_id="om_target")
+            )
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.trusted_calls, [])
+        with self.database.connect_read_only() as connection:
+            rows = connection.execute("SELECT content FROM deliveries").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertIn("记录反馈失败", rows[0]["content"])
+        self.assertNotIn("ledger exploded", rows[0]["content"])

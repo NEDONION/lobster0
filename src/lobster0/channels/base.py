@@ -99,6 +99,7 @@ class InboundMessage:
     text: str
     reply_to_message_id: str
     received_at: datetime
+    replied_to_message_id: str = ""
 
     def __repr__(self) -> str:
         """返回不包含正文和平台标识的安全诊断表示。"""
