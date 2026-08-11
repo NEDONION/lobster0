@@ -616,7 +616,9 @@ class BridgeServer:
         spec = parse_schedule(
             {key: value for key, value in schedule.items() if value is not None},
             now=datetime.now(UTC),
-            misfire_grace_seconds=0,
+            # 用配置值而不是硬编码 0：界面的「立即执行一次」发的是当下时刻，
+            # 请求送达 Core 时它已经是过去，0 容差会必然判为 schedule_misfire。
+            misfire_grace_seconds=self._runtime.config.automation.misfire_grace_seconds,
         )
         name = payload["name"]
         prompt = payload["prompt"]

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { AutomationSummary } from "../src/common/api";
-import { automationStats, scheduleDescription } from "../src/renderer/automation-stats";
+import {
+  SCHEDULE_FORM_KINDS,
+  automationStats,
+  scheduleDescription,
+  scheduleFormSpec,
+} from "../src/renderer/automation-stats";
 
 function task(status: string, scheduleKind = "cron"): AutomationSummary {
   return {
@@ -61,5 +66,31 @@ describe("scheduleDescription", () => {
   it("falls back to the raw expression when it cannot be parsed", () => {
     expect(scheduleDescription("interval", "not-a-number")).toBe("interval not-a-number");
     expect(scheduleDescription("unknown_kind", "x")).toBe("unknown_kind x");
+  });
+});
+
+describe("scheduleFormKinds", () => {
+  it("offers an explicit immediate option so nobody has to type a timestamp", () => {
+    expect(SCHEDULE_FORM_KINDS.map((item) => item.id)).toEqual([
+      "now",
+      "once",
+      "interval",
+      "cron",
+    ]);
+    expect(SCHEDULE_FORM_KINDS[0]?.needsExpression).toBe(false);
+  });
+
+  it("maps the immediate option onto the Core's once schedule", () => {
+    const spec = scheduleFormSpec("now", "", () => new Date("2026-08-12T09:00:00Z"));
+    expect(spec.scheduleKind).toBe("once");
+    // Core 只认带显式 offset 的 RFC 3339。
+    expect(spec.expression).toMatch(/^\d{4}-\d{2}-\d{2}T[\d:.]+(Z|[+-]\d{2}:\d{2})$/);
+  });
+
+  it("passes the typed expression through for the other kinds", () => {
+    expect(scheduleFormSpec("cron", "0 9 * * *").expression).toBe("0 9 * * *");
+    expect(scheduleFormSpec("interval", "3600").expression).toBe("3600");
+    expect(scheduleFormSpec("once", "2026-08-12T09:00:00+08:00").expression)
+      .toBe("2026-08-12T09:00:00+08:00");
   });
 });

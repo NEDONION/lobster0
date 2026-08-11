@@ -68,3 +68,67 @@ export function scheduleDescription(kind: string, expression: string): string {
   }
   return raw;
 }
+
+export type ScheduleFormKind = "now" | "once" | "interval" | "cron";
+
+export interface ScheduleFormOption {
+  id: ScheduleFormKind;
+  label: string;
+  /** 是否还需要用户填一个表达式；「立即执行」不需要。 */
+  needsExpression: boolean;
+  fieldLabel: string;
+  placeholder: string;
+  defaultExpression: string;
+}
+
+export const SCHEDULE_FORM_KINDS: readonly ScheduleFormOption[] = [
+  {
+    id: "now",
+    label: "立即执行一次",
+    needsExpression: false,
+    fieldLabel: "",
+    placeholder: "",
+    defaultExpression: "",
+  },
+  {
+    id: "once",
+    label: "定时执行一次",
+    needsExpression: true,
+    fieldLabel: "执行时间",
+    placeholder: "2026-08-12T09:00:00+08:00",
+    defaultExpression: "",
+  },
+  {
+    id: "interval",
+    label: "按固定间隔重复",
+    needsExpression: true,
+    fieldLabel: "间隔秒数（≥300）",
+    placeholder: "3600",
+    defaultExpression: "3600",
+  },
+  {
+    id: "cron",
+    label: "按 cron 表达式",
+    needsExpression: true,
+    fieldLabel: "cron 表达式",
+    placeholder: "0 9 * * *",
+    defaultExpression: "0 9 * * *",
+  },
+];
+
+/**
+ * 把界面上的调度选择翻译成 Core 认识的 schedule。
+ *
+ * 「立即执行一次」在 Core 里没有对应类型，它就是一条时刻为「现在」的 once。
+ * Core 创建时按配置的 misfire grace 容忍这点传输耗时。
+ */
+export function scheduleFormSpec(
+  kind: ScheduleFormKind,
+  expression: string,
+  now: () => Date = () => new Date(),
+): { scheduleKind: "once" | "interval" | "cron"; expression: string } {
+  if (kind === "now") {
+    return { scheduleKind: "once", expression: now().toISOString() };
+  }
+  return { scheduleKind: kind, expression };
+}

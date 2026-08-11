@@ -7,7 +7,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
@@ -230,10 +230,25 @@ def _runtime(service) -> SimpleNamespace:
     )
 
 
+def _stub_task() -> SimpleNamespace:
+    """create() 的最小返回值，够 _task_summary 投影即可。"""
+    return SimpleNamespace(
+        id=1,
+        name="立即任务",
+        status=SimpleNamespace(value="active"),
+        schedule=SimpleNamespace(
+            kind=SimpleNamespace(value="once"),
+            expression="2026-08-12T09:00:00+00:00",
+            next_run_at=datetime(2026, 8, 12, 9, tzinfo=UTC),
+        ),
+    )
+
+
 def _stub_config() -> SimpleNamespace:
     """Provider 单测用的最小配置；真正的读盘由 patch load_config 挡掉。"""
     return SimpleNamespace(
         agent=SimpleNamespace(model="deepseek-v4-pro", provider="default"),
+        automation=SimpleNamespace(misfire_grace_seconds=300),
         provider=ProviderConfig(),
         providers=(ProviderConfig(),),
     )
@@ -719,6 +734,50 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         await task
 
         self.assertEqual(response["payload"]["code"], "turn_busy")
+
+    async def test_creating_a_once_task_for_now_is_not_rejected_as_misfired(self) -> None:
+        """「立即执行一次」发的是当下时刻，不能因为传输耗时就被判为过期。
+
+        创建时此前硬编码 misfire_grace_seconds=0，于是请求到达 Core 时「现在」
+        已经是过去，必然 schedule_misfire。
+        """
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(RecordingTurnService())
+        created: list[object] = []
+        runtime.database = SimpleNamespace()
+        with (
+            patch("lobster0.bridge.server.ScheduledTaskRepository") as repository,
+            patch("lobster0.bridge.server.load_config", return_value=_stub_config()),
+        ):
+            repository.return_value.create.side_effect = lambda **values: (
+                created.append(values) or _stub_task()
+            )
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(
+                _request(
+                    "create-1",
+                    "automation.create",
+                    {
+                        "name": "立即任务",
+                        "prompt": "汇总昨天的清单",
+                        "schedule": {
+                            "kind": "once",
+                            # 客户端在稍早一点的时刻生成，模拟传输耗时。
+                            "expression": (
+                                datetime.now(UTC) - timedelta(seconds=20)
+                            ).isoformat(),
+                        },
+                    },
+                )
+            )
+            response = await writer.wait_for_id("create-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            await task
+
+        self.assertEqual(response["type"], "response.ok", response)
+        self.assertEqual(len(created), 1)
 
     async def test_turn_start_with_unknown_attachment_is_refused_without_side_effects(
         self,

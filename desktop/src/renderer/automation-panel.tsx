@@ -1,7 +1,13 @@
 import { useState } from "react";
 
 import type { AutomationList, AutomationRun, AutomationSummary } from "../common/api";
-import { automationStats, scheduleDescription } from "./automation-stats";
+import {
+  SCHEDULE_FORM_KINDS,
+  type ScheduleFormKind,
+  automationStats,
+  scheduleDescription,
+  scheduleFormSpec,
+} from "./automation-stats";
 
 interface AutomationPanelProps {
   automations: AutomationList | null;
@@ -123,11 +129,10 @@ export function AutomationPanel({
 
       {canWrite ? (
         <div className="automation-toolbar">
-          <button className="nav-item automation-action" onClick={onRefresh} type="button">
-            刷新
-          </button>
+          {/* 新建是这一页的主动作，刷新是辅助，急停是破坏性动作——
+              此前四个按钮共用同一套 nav-item 样式，看上去完全等价。 */}
           <button
-            className="nav-item automation-action"
+            className="button-primary automation-action"
             disabled={busy}
             onClick={() => setCreating((value) => !value)}
             type="button"
@@ -135,7 +140,14 @@ export function AutomationPanel({
             {creating ? "收起" : "＋ 新建任务"}
           </button>
           <button
-            className="nav-item automation-action automation-danger"
+            className="button-secondary automation-action"
+            onClick={onRefresh}
+            type="button"
+          >
+            刷新
+          </button>
+          <button
+            className="button-secondary automation-action automation-danger"
             disabled={busy}
             onClick={() => {
               const reason = window.prompt("急停会停止所有自动化，请填写原因：");
@@ -148,7 +160,7 @@ export function AutomationPanel({
             急停
           </button>
           <button
-            className="nav-item automation-action"
+            className="button-secondary automation-action"
             disabled={busy}
             onClick={() => void guarded(onUnhalt)}
             type="button"
@@ -307,11 +319,18 @@ function AutomationCreateForm({
 }): React.JSX.Element {
   const [name, setName] = useState("");
   const [prompt, setPrompt] = useState("");
-  const [kind, setKind] = useState<"once" | "interval" | "cron">("cron");
-  const [expression, setExpression] = useState("0 9 * * *");
+  // 默认「立即执行一次」：绝大多数临时任务就是想现在跑一下，
+  // 让默认值省掉填时间这一步。
+  const [kind, setKind] = useState<ScheduleFormKind>("now");
+  const [expression, setExpression] = useState("");
   const [error, setError] = useState<string | null>(null);
 
-  const ready = name.trim().length > 0 && prompt.trim().length > 0 && expression.trim().length > 0;
+  const option =
+    SCHEDULE_FORM_KINDS.find((item) => item.id === kind) ?? SCHEDULE_FORM_KINDS[0]!;
+  const ready =
+    name.trim().length > 0
+    && prompt.trim().length > 0
+    && (!option.needsExpression || expression.trim().length > 0);
 
   return (
     <form
@@ -330,7 +349,13 @@ function AutomationCreateForm({
           }
         }
         setError(null);
-        void onSubmit({ name, prompt, scheduleKind: kind, expression });
+        const spec = scheduleFormSpec(kind, expression);
+        void onSubmit({
+          name,
+          prompt,
+          scheduleKind: spec.scheduleKind,
+          expression: spec.expression,
+        });
       }}
     >
       <label>
@@ -351,28 +376,33 @@ function AutomationCreateForm({
         <span>调度方式</span>
         <select
           onChange={(e) => {
-            const next = e.target.value as "once" | "interval" | "cron";
+            const next = e.target.value as ScheduleFormKind;
             setKind(next);
-            setExpression(next === "cron" ? "0 9 * * *" : next === "interval" ? "3600" : "");
+            setExpression(
+              SCHEDULE_FORM_KINDS.find((item) => item.id === next)?.defaultExpression ?? "",
+            );
           }}
           value={kind}
         >
-          <option value="cron">按 cron 表达式</option>
-          <option value="interval">按固定间隔</option>
-          <option value="once">仅执行一次</option>
+          {SCHEDULE_FORM_KINDS.map((item) => (
+            <option key={item.id} value={item.id}>{item.label}</option>
+          ))}
         </select>
       </label>
-      <label>
-        <span>
-          {kind === "cron" ? "cron 表达式" : kind === "interval" ? "间隔秒数（≥300）" : "执行时间"}
-        </span>
-        <input
-          maxLength={200}
-          onChange={(e) => setExpression(e.target.value)}
-          placeholder={kind === "once" ? "2026-08-12T09:00:00+08:00" : ""}
-          value={expression}
-        />
-      </label>
+      {/* 「立即执行一次」不该再要求填时间——时刻由界面按当下生成。 */}
+      {option.needsExpression ? (
+        <label>
+          <span>{option.fieldLabel}</span>
+          <input
+            maxLength={200}
+            onChange={(e) => setExpression(e.target.value)}
+            placeholder={option.placeholder}
+            value={expression}
+          />
+        </label>
+      ) : (
+        <p className="automation-form-note">保存后立刻排入执行队列。</p>
+      )}
       {error ? <p className="panel-error" role="alert">{error}</p> : null}
       <div className="automation-form-actions">
         <button className="nav-item automation-action" onClick={onCancel} type="button">
