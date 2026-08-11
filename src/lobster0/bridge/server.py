@@ -13,6 +13,7 @@ from lobster0.automation.models import DeliveryTarget, TaskBudget
 from lobster0.automation.parser import ScheduleError, parse_schedule
 from lobster0.config import (
     ConfigError,
+    load_config,
     ProviderConfig,
     provider_secret_env,
     update_providers,
@@ -279,8 +280,12 @@ class BridgeServer:
         return True
 
     def _run_provider_action(self, request: BridgeRequest) -> dict[str, JsonValue]:
-        """执行一次 Provider 读写并返回可安全展示的结果。"""
-        config = self._runtime.config
+        """执行一次 Provider 读写并返回可安全展示的结果。
+
+        每次都从磁盘重读配置，而不是用 Runtime 启动时的快照：连续两次写操作
+        （例如"新增 Provider"紧接着"设为默认"）之间，快照已经过期。
+        """
+        config = load_config(self._runtime.paths)
         current = tuple(config.providers) or (config.provider,)
         selected = self._selected_provider_id(current)
 

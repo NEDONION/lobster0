@@ -15,7 +15,7 @@ from lobster0.agent.events import RunEvent
 from lobster0.bootstrap import initialize_state
 from lobster0.bridge.__main__ import build_parser
 from lobster0.bridge.conversations import ConversationQueryError
-from lobster0.config import ProviderConfig
+from lobster0.config import ProviderConfig, load_config
 from lobster0.bridge.server import BridgeServer
 from lobster0.paths import build_state_paths
 from lobster0.policy.approvals import ApprovalDecision
@@ -202,11 +202,16 @@ def _runtime(service) -> SimpleNamespace:
         automation_enabled=True,
         database=object(),
         paths=SimpleNamespace(home=Path("/nonexistent")),
-        config=SimpleNamespace(
-            agent=SimpleNamespace(model="deepseek-v4-pro", provider="default"),
-            provider=ProviderConfig(),
-            providers=(ProviderConfig(),),
-        ),
+        config=_stub_config(),
+    )
+
+
+def _stub_config() -> SimpleNamespace:
+    """Provider 单测用的最小配置；真正的读盘由 patch load_config 挡掉。"""
+    return SimpleNamespace(
+        agent=SimpleNamespace(model="deepseek-v4-pro", provider="default"),
+        provider=ProviderConfig(),
+        providers=(ProviderConfig(),),
     )
 
 
@@ -252,6 +257,39 @@ async def _run_bridge_process(
         )
     )
     stdout, stderr = await asyncio.wait_for(process.communicate(stdin), timeout=3)
+    assert process.returncode is not None
+    return process.returncode, stdout, stderr
+
+
+async def _feed_bridge_process(
+    home: Path,
+    cwd: Path,
+    environ: dict[str, str],
+    requests: bytes,
+    *,
+    workspace: Path | None = None,
+) -> tuple[int, bytes, bytes]:
+    """与 :func:`_run_bridge_process` 相同，但由调用方给出完整请求序列。"""
+    project = Path(__file__).resolve().parent.parent
+    environment = {
+        key: value
+        for key, value in os.environ.items()
+        if key not in {"LOBSTER0_ENV_FILE", "LOBSTER0_MODEL_API_KEY"}
+    }
+    environment.update({"PYTHONPATH": str(project / "src"), **environ})
+    arguments = ["-m", "lobster0.bridge", "--home", str(home)]
+    if workspace is not None:
+        arguments.extend(("--workspace", str(workspace)))
+    process = await asyncio.create_subprocess_exec(
+        sys.executable,
+        *arguments,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
+        env=environment,
+    )
+    stdout, stderr = await asyncio.wait_for(process.communicate(requests), timeout=10)
     assert process.returncode is not None
     return process.returncode, stdout, stderr
 
@@ -572,7 +610,10 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         writer = CaptureWriter()
         runtime = _runtime(EventTurnService())
         sentinel = "sk-sentinel-must-not-leak"
-        with patch.dict(os.environ, {"LOBSTER0_MODEL_API_KEY": sentinel}, clear=False):
+        with (
+            patch.dict(os.environ, {"LOBSTER0_MODEL_API_KEY": sentinel}, clear=False),
+            patch("lobster0.bridge.server.load_config", return_value=_stub_config()),
+        ):
             server = BridgeServer(runtime, reader, writer)
             task = asyncio.create_task(server.run())
             await reader.feed(_request("pl-1", "providers.list", {}))
@@ -601,7 +642,10 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             del paths
             recorded.append((name, value))
 
-        with patch("lobster0.bridge.server.update_secret", side_effect=fake_update):
+        with (
+            patch("lobster0.bridge.server.update_secret", side_effect=fake_update),
+            patch("lobster0.bridge.server.load_config", return_value=_stub_config()),
+        ):
             server = BridgeServer(runtime, reader, writer)
             task = asyncio.create_task(server.run())
             await reader.feed(
@@ -621,12 +665,13 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         reader = QueueReader()
         writer = CaptureWriter()
         runtime = _runtime(EventTurnService())
-        server = BridgeServer(runtime, reader, writer)
-        task = asyncio.create_task(server.run())
-        await reader.feed(_request("pr-1", "providers.remove", {"id": "default"}))
-        response = await writer.wait_for_id("pr-1")
-        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
-        self.assertEqual(await task, 0)
+        with patch("lobster0.bridge.server.load_config", return_value=_stub_config()):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(_request("pr-1", "providers.remove", {"id": "default"}))
+            response = await writer.wait_for_id("pr-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            self.assertEqual(await task, 0)
 
         self.assertEqual(response["payload"]["code"], "provider_selected")
 
@@ -726,6 +771,75 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
 
         await reader.eof()
         self.assertEqual(await task, 0)
+
+    async def test_module_process_writes_provider_changes_through_to_disk(self) -> None:
+        """真实 Bridge 子进程的 Provider 写操作必须落到 config.toml 并能重新加载。
+
+        单测只能证明路由与响应形状；这条走完整链路：起进程 → 新增 Provider →
+        设为默认 → 读回文件，确认改动真的生效而不是只在内存里。
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory).resolve()
+            workspace = home / "selected-workspace"
+            workspace.mkdir()
+            paths = build_state_paths(home)
+            initialize_state(paths)
+            requests = b"".join(
+                (
+                    _request(
+                        "hello-1",
+                        "client.hello",
+                        {
+                            "client_name": "test-client",
+                            "client_version": "0.1.0",
+                            "protocols": [1],
+                        },
+                    ),
+                    _request(
+                        "up-1",
+                        "providers.upsert",
+                        {
+                            "id": "openrouter",
+                            "base_url": "https://openrouter.ai/api/v1",
+                            "timeout_seconds": 60,
+                        },
+                    ),
+                    _request(
+                        "sel-1",
+                        "providers.select",
+                        {"id": "openrouter", "model": "some-model"},
+                    ),
+                    _request("list-1", "providers.list", {}),
+                    _request("stop-1", "bridge.shutdown", {}),
+                )
+            )
+            returncode, stdout, stderr = await _feed_bridge_process(
+                home,
+                Path(__file__).resolve().parent.parent,
+                {"LOBSTER0_MODEL_API_KEY": "offline-test-key"},
+                requests,
+                workspace=workspace,
+            )
+            reloaded = load_config(paths, environ={"LOBSTER0_MODEL_API_KEY": "k"})
+            backup_exists = paths.config.with_suffix(".toml.bak").exists()
+
+        self.assertEqual(returncode, 0, stderr.decode("utf-8", errors="replace"))
+        frames = {
+            frame["id"]: frame
+            for frame in (json.loads(line) for line in stdout.splitlines())
+        }
+        self.assertEqual(frames["up-1"]["type"], "response.ok", frames["up-1"])
+        self.assertEqual(frames["sel-1"]["type"], "response.ok", frames["sel-1"])
+        self.assertEqual(
+            sorted(entry["id"] for entry in frames["list-1"]["payload"]["providers"]),
+            ["default", "openrouter"],
+        )
+        # 真正的判据在磁盘上：重新加载后新 Provider 生效。
+        self.assertEqual(reloaded.agent.provider, "openrouter")
+        self.assertEqual(reloaded.agent.model, "some-model")
+        self.assertEqual(reloaded.provider.base_url, "https://openrouter.ai/api/v1")
+        self.assertEqual(reloaded.provider.api_key_env, "LOBSTER0_PROVIDER_OPENROUTER_KEY")
+        self.assertTrue(backup_exists)
 
     async def test_module_process_reserves_stdout_for_protocol_frames(self) -> None:
         """真实 Bridge 子进程的 stdout 必须只有可独立解析的 NDJSON。"""

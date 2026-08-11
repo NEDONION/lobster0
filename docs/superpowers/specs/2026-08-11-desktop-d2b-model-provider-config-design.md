@@ -2,7 +2,7 @@
 
 > 日期：2026-08-11
 > 文档类型：Phase D2b 产品、配置与协议设计
-> 状态：`IMPLEMENTED`（2026-08-11；退出条件 6 的真机 smoke 待补）
+> 状态：`IMPLEMENTED`（2026-08-11）
 > 上位规划：[对标 ClawX 能力差距与 Milestone 规划 §5](2026-08-11-desktop-clawx-capability-gap-and-roadmap.md)
 > 前置实现：[D2a 定时任务可控](2026-08-11-desktop-d2a-automation-control-design.md)（已实现）
 
@@ -182,8 +182,12 @@ Desktop：IPC 校验、密钥框不回显、capability 缺失时只读、删除�
 `StatePaths` 与 `AppConfig` 随 `AgentRuntime` 一起下发给 Bridge，这是 Provider 写操作
 需要的唯一入口。
 
-退出条件 1-5 已由测试覆盖（Python 111 项、Desktop 96 项全绿）；第 6 条的真实
-Electron + Bridge smoke（新增 Provider → 设默认 → 重启）尚未执行。
+退出条件全部覆盖。第 6 条用真 Bridge 子进程的端到端测试兑现（起进程 → 新增 Provider →
+设为默认 → 读回 `config.toml`），它抓到了一个单测抓不到的缺陷：
+
+**`_run_provider_action` 原本用 Runtime 启动时的配置快照**，于是"新增 Provider"紧接着
+"设为默认"必然失败——第二步看不见第一步刚写进磁盘的条目。改为每次从磁盘重读。
+这类只在连续写操作之间暴露的问题，单测的形状断言无论如何都测不出来。
 
 ## 9. 明确不做
 

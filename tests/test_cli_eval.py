@@ -36,7 +36,7 @@ class CliEvalTest(unittest.TestCase):
 
         self.assertEqual((code, error), (0, ""))
         lines = output.splitlines()
-        self.assertEqual(len(lines), 130)
+        self.assertEqual(len(lines), 145)
         self.assertEqual(lines, sorted(lines))
         self.assertTrue(any(line.startswith("CORE-001 active core ") for line in lines))
         self.assertTrue(any(line.startswith("PROTO-001 active provider ") for line in lines))
@@ -62,7 +62,7 @@ class CliEvalTest(unittest.TestCase):
                 ["eval", "validate", "--root", str(SCENARIO_ROOT)]
             )
 
-        self.assertEqual((code, output, error), (0, "Validated 130 eval cases.\n", ""))
+        self.assertEqual((code, output, error), (0, "Validated 145 eval cases.\n", ""))
         self.assertFalse(missing_home.exists())
 
     def test_run_offline_prints_pass_rows_and_summary(self) -> None:
@@ -74,7 +74,7 @@ class CliEvalTest(unittest.TestCase):
         self.assertEqual((code, error), (0, ""))
         self.assertIn("PASS CORE-001", output)
         self.assertIn("PASS SAFE-001", output)
-        self.assertIn("Offline eval: 39/39 passed, 0 failed", output)
+        self.assertIn("Offline eval: 54/54 passed, 0 failed", output)
 
     def test_run_returns_one_and_only_short_codes_when_case_fails(self) -> None:
         """任一场景失败应返回 1，只打印 ID 和稳定短码。"""
@@ -111,7 +111,7 @@ class CliEvalTest(unittest.TestCase):
         self.assertIn("PASS FEISHU-DM-001", channel_output)
         self.assertIn("Channel eval: 33/33 passed, 0 failed", channel_output)
         self.assertEqual((all_code, all_error), (0, ""))
-        self.assertIn("Offline eval: 39/39 passed, 0 failed", all_output)
+        self.assertIn("Offline eval: 54/54 passed, 0 failed", all_output)
         self.assertIn("Channel eval: 33/33 passed, 0 failed", all_output)
         self.assertIn("Automation eval: 15/15 passed, 0 failed", all_output)
         self.assertIn("Browser eval: 18/18 passed, 0 failed", all_output)

@@ -538,13 +538,21 @@ class RepositoryEvalSuiteTest(unittest.TestCase):
         self.assertTrue(
             all(
                 "offline" in case.layers
-                and (case.responses or case.memory_fixture is not None)
+                and (
+                    case.responses
+                    or case.memory_fixture is not None
+                    or case.evolution_fixture is not None
+                )
                 for case in active
             )
         )
         memory = [case for case in active if case.memory_fixture is not None]
         self.assertEqual(len(memory), 10)
         self.assertTrue(all(case.expected.memory_evidence for case in memory))
+        evolution = [case for case in active if case.evolution_fixture is not None]
+        self.assertEqual(len(evolution), 15)
+        self.assertTrue(all(case.expected.evolution_evidence for case in evolution))
+        self.assertEqual(len({case.evolution_fixture for case in evolution}), 15)
         self.assertEqual(len(channel), 33)
         self.assertTrue(all(case.channel_fixture for case in channel))
         self.assertEqual(len({case.id for case in cases}), len(cases))
