@@ -46,8 +46,27 @@ migration 时改了 JSON fixture，漏了两处 Python fixture。
 - `python3 scripts/...`（build_node_bundle、build_tui_bundle）——没有。
 
 `build_node_bundle.py` 不 import `lobster0`，所以它一直是过的；`build_tui_bundle.py` 必然
-`ModuleNotFoundError`。补 `PYTHONPATH=src` 即可，无需为这个 job 引入 uv 同步。
-`release.yml` 的同一处调用有相同缺陷，一并修——否则这个坑会在真实发布时才爆。
+`ModuleNotFoundError`。`release.yml` 的同一处调用有相同缺陷，一并修——否则这个坑会在真实
+发布时才爆。
+
+补上 `PYTHONPATH=src` 之后，run `31507064314` 露出了**第二层**：这次 import 找得到
+`lobster0` 了，却栈到 `lobster0.tui_launcher` → `lobster0.tui` → `lobster0.tui.app` →
+`import rich`，而该 job 同样不安装第三方依赖。
+
+`build_tui_bundle.py` 需要的只是 `is_supported_node_version` 这一个纯版本比较函数，却因为
+`tui_launcher` 在**模块顶层** `from lobster0.tui import run_tui` 而被迫拖进整个 Textual 栈。
+处置不是给这个 job 装依赖——为一个纯函数装 rich/textual 既慢又本末倒置——而是把这条 import
+下沉到 `run_default_tui` 函数内部：4 处 `run_tui` 调用全在该函数里，且都是 **Textual 回退
+路径**。pi-tui 才是默认路径，走默认路径的人本来就不该为 Textual 付出 import 成本，所以这
+同时是一处架构上的收敛，而不只是给 CI 让路。
+
+代价是 `tests/test_tui_launcher.py` 里 3 处 `mock.patch("lobster0.tui_launcher.run_tui")`
+必须改指向 `lobster0.tui.run_tui`：函数内 from-import 在调用时才读模块属性，patch 打在真实
+模块上依然生效，但打在 launcher 命名空间上就不再有对象可替换。
+
+验证用的是一个**不装任何第三方包**的 3.12 venv（等价于该 job 的条件）：
+`PYTHONPATH=src python -c "from lobster0.tui_launcher import is_supported_node_version"`
+成功，`build_tui_bundle.py --help` 与 `normalize_sdist.py --help` 均退出 0。
 
 ### 2.3 setuptools 的 sdist 无法逐字节复现
 
@@ -100,6 +119,13 @@ Ruff 在 offline gate 里排在单元测试之后，而单测从没跑通，所�
 | 归一化产物可安装性 | `uv pip install` 后 `import lobster0` 可用，`schema.sql` 与 11 个 migration 的 package-data 齐全 |
 | `ruff check .` | All checks passed |
 | `scripts/validate_docs.py` | PASS |
+| `test_tui_launcher` + `test_cli` + `test_doctor` + `test_release_bundles` | 70 passed |
+| 空 3.12 venv（无 rich）import `tui_launcher` | 成功，`is_supported_node_version` 行为不变 |
+
+run `31507064314`（修复第 1～3 条之后）的实测结果：offline gate、artifact
+reproducibility、node 22 pi-tui 全部 success——包括此前从没跑到过的 Ruff、文档契约、
+分发构建，以及 artifact-build 尾部的 installer 对抗与离线安装矩阵。仅剩 node 24 栽在
+上面 2.2 的第二层，即本节最后一处修复。
 
 本地跑这套测试必须用 Python 3.12：`test_install_runtime` 需要一个名为 `python3.12` 的
 managed interpreter，在 3.13 上会有 82 个与本次修复无关的 `FileNotFoundError`。

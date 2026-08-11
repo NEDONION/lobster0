@@ -111,7 +111,7 @@ class TuiLauncherTest(unittest.TestCase):
         self.assertNotIn("NODE_OPTIONS", child_env)
         self.assertNotIn("NODE_PATH", child_env)
 
-    @mock.patch("lobster0.tui_launcher.run_tui", return_value=7)
+    @mock.patch("lobster0.tui.run_tui", return_value=7)
     @mock.patch("lobster0.tui_launcher.inspect_pi_tui")
     def test_explicit_textual_never_inspects_or_starts_node(
         self,
@@ -129,7 +129,7 @@ class TuiLauncherTest(unittest.TestCase):
         inspect_pi_tui.assert_not_called()
         run_tui.assert_called_once_with(self.paths)
 
-    @mock.patch("lobster0.tui_launcher.run_tui", return_value=0)
+    @mock.patch("lobster0.tui.run_tui", return_value=0)
     @mock.patch("lobster0.tui_launcher.inspect_pi_tui")
     def test_auto_uses_textual_onboarding_when_state_is_not_initialized(
         self,
@@ -157,7 +157,7 @@ class TuiLauncherTest(unittest.TestCase):
 
         self.assertIn("lobster0 init", str(captured.exception))
 
-    @mock.patch("lobster0.tui_launcher.run_tui", return_value=0)
+    @mock.patch("lobster0.tui.run_tui", return_value=0)
     @mock.patch("lobster0.tui_launcher.inspect_pi_tui")
     def test_auto_reports_problem_and_falls_back_without_crashing(
         self,

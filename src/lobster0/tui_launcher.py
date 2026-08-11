@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import TextIO
 
 from lobster0.paths import StatePaths
-from lobster0.tui import run_tui
 
 _SUPPORTED_NODE_MESSAGE = "Node.js 22.22.3～<23 或 24.15.0～<25"
 _NODE_VERSION = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$")
@@ -123,6 +122,11 @@ def run_default_tui(
     Raises:
         TuiLaunchError: UI mode 未知、显式 pi 不可用或 Node 启动失败。
     """
+    # Textual 栈（rich 等）只在回退路径才需要。放在函数内 import，模块顶层就
+    # 只依赖 stdlib 与 lobster0.paths——release 的 bundle 脚本正是靠这一点，
+    # 才能只为 is_supported_node_version 而 import 本模块，无需安装运行期依赖。
+    from lobster0.tui import run_tui
+
     source = os.environ if environ is None else environ
     error_stream = sys.stderr if stderr is None else stderr
     mode = source.get("LOBSTER0_TUI", "auto").strip().lower() or "auto"
