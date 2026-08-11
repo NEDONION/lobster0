@@ -242,3 +242,55 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
 ### 待办
 
 用户还要求"演示"3 个 tab 照着"特性 02-05"的真实界面剧场风格重做、"特性 01"（运行时）也重做——这两项还没做，是下一步。装甲龙虾 Logo（用户要求带盔甲/武器感，不是单纯龙虾）也还没做。
+
+---
+
+## Round 8 — 文档站视觉统一（2026-08-11）
+
+### 背景
+
+官网首页已经打磨了七轮，但 `/docs` 一直是 Fumadocs 的出厂模板：中性灰配色、默认排版、浅色代码块，和首页的蓝灰调（`--canvas #f4f7fb` / `--signal #4267f5`）加深色终端完全是两套语言。用户要求"打磨文档站的样式"。
+
+### 先查到的真 Bug：整个文档站的响应式隐藏全部失效
+
+动手改样式之前先看现状，发现桌面端顶部有一条 1px 的"幽灵横条"，里面的品牌名和图标溢出可见。查下去是个结构性问题：
+
+`#nd-subnav` 带着 `md:hidden`，但 `getComputedStyle` 返回 `display: flex`。抓服务端 CSS 一看，`@layer utilities` 在同一个文件里**出现了两次**（偏移 14587 和 117590）——`src/app/[lang]/layout.tsx` 引入了 `fumadocs-ui/style.css`（这个包**自带一整份编译好的 Tailwind**），而 `globals.css` 又 `@import 'tailwindcss'` 编译了第二份。同名 layer 会合并，合并后纯粹按源码顺序决胜，于是第二份构建里的 `.flex`（118291）压过了第一份里的 `md:hidden`（88344）。
+
+**影响面不止那条横条**：Fumadocs 所有 `md:` / `lg:` 响应式隐藏都失效，桌面端渲染着本该只在移动端出现的 chrome。
+
+修法是按 Fumadocs 的推荐姿势收敛成单份构建——`globals.css` 里改成
+`@import 'tailwindcss'` + `@import 'fumadocs-ui/css/neutral.css'` + `@import 'fumadocs-ui/css/preset.css'`，
+并从 `layout.tsx` 删掉 `fumadocs-ui/style.css`。修完 `display` 变回 `none`，layer 只剩一份，构建产物 CSS 也从 174KB 降到 142KB。
+
+### 视觉统一
+
+1. **令牌映射**（最高杠杆）：在 `globals.css` 加一个 `@theme` 块，把 Fumadocs 的 17 个 `--color-fd-*` 全部重新指向品牌调色板。一处改动同时覆盖侧栏、TOC、搜索框、弹层、按钮——比逐个追 Fumadocs 的类名稳得多。
+2. **白纸浮于画布**：`#nd-page` 给 `--surface` 白底 + 右边框，侧栏留在 `--canvas`，复用首页"白色面板浮在浅蓝画布上"的语言。
+3. **排版**：文档标题继承首页的紧字距重字重（h1 `letter-spacing: -0.045em` / `font-weight: 700`），正文行高 1.78。
+4. **代码块换成深色终端**：`source.config.ts` 把 shiki 主题固定成 `github-dark-default`（明暗都用），CSS 把底色覆盖成 `--terminal`——同一条命令在首页和文档里长得完全一样。复制按钮的中性色在深底上会消失，一并改成半透明白。
+5. **引用块**：Fumadocs 默认把 blockquote 渲染成粗体斜体且没有任何标记，读起来像在喊。改成左侧 2px 品牌蓝竖线 + 常规字重。
+6. **表格**：圆角边框 + `--canvas` 表头。
+7. **TOC**：Fumadocs 会把视口以上的**所有**标题标成 `data-active`，全部染蓝会变成一片蓝墙——文字保持 `--ink`，让竖轨承担高亮。
+
+### 顺手清掉的两处遗留
+
+- 文档站品牌标记还是改名前的蓝色方块 **"M"**（MiniClaw），换成和首页一致的 `BrandMark`（🦞）。
+- `baseOptions` 里的 `githubUrl` 在侧栏底部渲染出一个近乎空白的图标条（主题切换已关闭，条里只剩它一个），且和已有的带文字 GitHub 链接重复——删掉。
+- zh-CN 补了 `Collapse Sidebar` / `Hide Sidebar` / `Show Sidebar` 三个漏翻的键。
+
+### E2E：一个测试辅助函数的真实缺陷
+
+修好双 Tailwind 之后 `docs.spec.ts` 的两个桌面用例挂了，但**不是产品回归**。
+
+`firstVisible()` 只调 `isVisible()`，而 Playwright 的可见性判定**不看 opacity**。Fumadocs 会常驻挂载一个「侧栏折叠时的浮动工具条」，用 `opacity-0 pointer-events-none` 藏着。之前 subnav 因为 1px 高但子元素溢出，被判定为可见并被选中，测试侥幸通过；subnav 一旦真正 `display: none`，选择器就落到了那个永远点不到的透明按钮上。
+
+两处修正：
+- `firstVisible()` 增加祖先链 opacity 检查，跳过淡出的元素。（只查 opacity，不查 `pointer-events`——侧栏容器本身是 `pointer-events-none *:pointer-events-auto`，查后者会误伤。）
+- 桌面端的搜索入口本来就不是那个图标按钮，而是侧栏里的「搜索 ⌘K」输入框（无 aria-label）。测试按 `isMobile` 分支选对应控件。
+
+### 验证
+
+- `tsc` / `eslint` / `vitest`（28/28）/ `npm run build`（35 条静态路由）全绿
+- `npx playwright test`：11 passed / 1 skipped
+- 移动端 390×844 文档页零横向溢出，截图确认 subnav 正常

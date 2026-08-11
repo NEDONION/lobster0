@@ -1,6 +1,5 @@
 import '@fontsource-variable/instrument-sans';
 import '@fontsource/ibm-plex-mono/400.css';
-import 'fumadocs-ui/style.css';
 import '@/styles/globals.css';
 
 import type { Metadata } from 'next';

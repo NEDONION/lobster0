@@ -2,6 +2,7 @@ import { defineI18nUI } from 'fumadocs-ui/i18n';
 import type { BaseLayoutProps } from 'fumadocs-ui/layouts/shared';
 
 import { marketingCopy, siteFacts, type Locale } from '@/content/site';
+import { BrandMark } from '@/components/marketing/BrandMark';
 import { i18n, localizedPath } from '@/lib/i18n';
 
 export const i18nUI = defineI18nUI(i18n, {
@@ -11,6 +12,9 @@ export const i18nUI = defineI18nUI(i18n, {
     'Choose a language(language switcher)(aria-label)': '选择语言',
     'Close Search(search dialog)(aria-label)': '关闭搜索',
     'Close Sidebar(sidebar)(aria-label)': '关闭侧边栏',
+    'Collapse Sidebar(sidebar)(aria-label)': '收起侧边栏',
+    'Hide Sidebar(sidebar)': '收起侧边栏',
+    'Show Sidebar(sidebar)': '展开侧边栏',
     'Copied Text(code block)(aria-label)': '已复制',
     'Copy Text(code block)(aria-label)': '复制代码',
     'Next Page(pagination)': '下一页',
@@ -33,7 +37,6 @@ export function baseOptions(locale: Locale): BaseLayoutProps {
   const copy = marketingCopy[locale];
 
   return {
-    githubUrl: siteFacts.links.github,
     links: [
       {
         text: locale === 'zh-CN' ? '官网' : 'Website',
@@ -48,7 +51,7 @@ export function baseOptions(locale: Locale): BaseLayoutProps {
     nav: {
       title: (
         <span className="docs-brand">
-          <span aria-hidden="true">M</span>
+          <BrandMark size={26} />
           Lobster0
         </span>
       ),
