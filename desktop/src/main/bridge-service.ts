@@ -16,6 +16,7 @@ import type {
   AutomationList,
   AutomationRun,
   AutomationSummary,
+  AttachmentRef,
   DesktopBootstrap,
   ProviderList,
   ProviderSummary,
@@ -95,7 +96,7 @@ export class BridgeService {
     const client = this.requireClient("idle");
     this.currentStatus = "running";
     try {
-      await client.startTurn(input.sessionKey, input.text);
+      await client.startTurn(input.sessionKey, input.text, input.attachmentIds);
     } catch (error) {
       this.currentStatus = "idle";
       throw error;
@@ -257,6 +258,20 @@ export class BridgeService {
       schedule,
     });
     return automationTask(recordValue(requiredValue(response.task)));
+  }
+
+  public async stageAttachment(path: string, declaredMediaType: string): Promise<AttachmentRef> {
+    const response = await this.requireClient().request("attachment.stage", {
+      path,
+      declared_media_type: declaredMediaType,
+    });
+    const record = recordValue(requiredValue(response.attachment));
+    return {
+      artifactId: stringValue(record.artifact_id),
+      filename: stringValue(record.filename),
+      mediaType: stringValue(record.media_type),
+      sizeBytes: positiveInteger(record.size_bytes),
+    };
   }
 
   public async listProviders(): Promise<ProviderList> {

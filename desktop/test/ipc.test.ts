@@ -8,6 +8,7 @@ import {
   validateAutomationRunsInput,
   validateApprovalInput,
   validateHaltInput,
+  validateAttachmentPathInput,
   validateProviderIdInput,
   validateProviderSecretInput,
   validateProviderSelectInput,
@@ -19,6 +20,40 @@ import {
 } from "../src/main/ipc";
 import { DESKTOP_CHANNELS } from "../src/common/api";
 import type { BridgeService } from "../src/main/bridge-service";
+
+describe("附件的 Main 层校验", () => {
+  it("keeps the chosen absolute path and derives the declared type from the extension", () => {
+    expect(validateAttachmentPathInput({ path: "/Users/x/Documents/note.txt" })).toEqual({
+      path: "/Users/x/Documents/note.txt",
+      declaredMediaType: "text/plain",
+    });
+    expect(validateAttachmentPathInput({ path: "/Users/x/shot.PNG" })).toEqual({
+      path: "/Users/x/shot.PNG",
+      declaredMediaType: "image/png",
+    });
+  });
+
+  it("rejects relative paths and NUL bytes", () => {
+    // 相对路径的含义取决于 Core 的 cwd，不可控。
+    for (const path of ["note.txt", "", "~/note.txt", "/tmp/a\u0000b"]) {
+      expect(() => validateAttachmentPathInput({ path })).toThrowError(DesktopRequestError);
+    }
+  });
+
+  it("refuses extensions outside the Core media whitelist", () => {
+    // 白名单由 Core 的 _MEDIA_EXTENSIONS 决定；这里提前拒绝，给出更快的反馈。
+    for (const path of ["/tmp/app.dmg", "/tmp/script.sh", "/tmp/noext"]) {
+      expect(() => validateAttachmentPathInput({ path })).toThrowError(DesktopRequestError);
+    }
+  });
+
+  it("rejects a caller-supplied media type", () => {
+    // 类型只能由扩展名推导，否则调用方可以谎报类型绕过前置检查。
+    expect(() =>
+      validateAttachmentPathInput({ path: "/tmp/a.txt", declaredMediaType: "image/png" }),
+    ).toThrowError(DesktopRequestError);
+  });
+});
 
 describe("Provider 配置的 Main 层校验", () => {
   it("accepts a well-formed upsert and rejects a caller-supplied env name", () => {
@@ -89,6 +124,23 @@ describe("Desktop Main IPC validation", () => {
     });
   });
 
+  it("passes attachment ids through and rejects malformed ones", () => {
+    expect(
+      validateStartTurnInput({
+        sessionKey: "task-1",
+        text: "看看",
+        attachmentIds: [`art_${"a".repeat(64)}`],
+      }),
+    ).toEqual({
+      sessionKey: "task-1",
+      text: "看看",
+      attachmentIds: [`art_${"a".repeat(64)}`],
+    });
+    expect(() =>
+      validateStartTurnInput({ sessionKey: "task-1", text: "看看", attachmentIds: ["../x"] }),
+    ).toThrowError(DesktopRequestError);
+  });
+
   it("rejects extra task fields at the Main trust boundary", () => {
     expect(() => validateStartTurnInput({
       sessionKey: "task-1",
@@ -132,6 +184,7 @@ describe("Desktop Main IPC validation", () => {
       (channel, handler) => handlers.set(channel, handler),
       bridge,
       () => undefined,
+      async () => null,
       async () => null,
     );
 

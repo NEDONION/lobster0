@@ -20,6 +20,8 @@ export interface DesktopBootstrap {
 export interface StartTurnInput {
   sessionKey: string;
   text: string;
+  /** 已 stage 的附件；不带附件时该字段整体缺席。 */
+  attachmentIds?: string[];
 }
 
 export interface SessionSummary {
@@ -78,6 +80,13 @@ export interface AutomationList {
   tasks: AutomationSummary[];
 }
 
+export interface AttachmentRef {
+  artifactId: string;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+}
+
 export interface ProviderSummary {
   id: string;
   baseUrl: string;
@@ -116,6 +125,8 @@ export interface DesktopApi {
   haltAutomation(reason: string): Promise<void>;
   unhaltAutomation(): Promise<void>;
   createAutomation(input: AutomationCreateInput): Promise<AutomationSummary>;
+  pickAttachment(): Promise<string | null>;
+  stageAttachment(path: string): Promise<AttachmentRef>;
   listProviders(): Promise<ProviderList>;
   upsertProvider(input: ProviderUpsertInput): Promise<void>;
   removeProvider(id: string): Promise<void>;
@@ -141,6 +152,8 @@ export const DESKTOP_CHANNELS = {
   automationHalt: "desktop:automations:halt",
   automationUnhalt: "desktop:automations:unhalt",
   automationCreate: "desktop:automations:create",
+  attachmentPick: "desktop:attachment:pick",
+  attachmentStage: "desktop:attachment:stage",
   providersList: "desktop:providers:list",
   providerUpsert: "desktop:providers:upsert",
   providerRemove: "desktop:providers:remove",
@@ -188,6 +201,10 @@ export function createDesktopApi(invoke: Invoke, subscribe: Subscribe): DesktopA
     unhaltAutomation: () => invoke(DESKTOP_CHANNELS.automationUnhalt) as Promise<void>,
     createAutomation: (input) =>
       invoke(DESKTOP_CHANNELS.automationCreate, input) as Promise<AutomationSummary>,
+    pickAttachment: () =>
+      invoke(DESKTOP_CHANNELS.attachmentPick) as Promise<string | null>,
+    stageAttachment: (path) =>
+      invoke(DESKTOP_CHANNELS.attachmentStage, { path }) as Promise<AttachmentRef>,
     listProviders: () => invoke(DESKTOP_CHANNELS.providersList) as Promise<ProviderList>,
     upsertProvider: (input) =>
       invoke(DESKTOP_CHANNELS.providerUpsert, input) as Promise<void>,

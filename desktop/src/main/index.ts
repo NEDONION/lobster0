@@ -74,6 +74,19 @@ void app.whenReady().then(() => {
       const result = await dialog.showOpenDialog({ properties: ["openDirectory"] });
       return result.canceled ? null : (result.filePaths[0] ?? null);
     },
+    async () => {
+      const result = await dialog.showOpenDialog({
+        properties: ["openFile"],
+        // 过滤器只是引导，真正的类型判定在 Core 的 magic byte 嗅探里。
+        filters: [
+          {
+            name: "支持的附件",
+            extensions: ["txt", "csv", "json", "pdf", "png", "jpg", "jpeg", "zip"],
+          },
+        ],
+      });
+      return result.canceled ? null : (result.filePaths[0] ?? null);
+    },
   );
   createWindow();
   app.on("activate", () => {

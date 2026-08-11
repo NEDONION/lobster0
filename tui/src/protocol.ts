@@ -36,6 +36,7 @@ export type RequestType =
   | "providers.remove"
   | "providers.select"
   | "providers.set_secret"
+  | "attachment.stage"
   | "bridge.shutdown";
 
 export type PermissionMode = "safe" | "smart" | "autopilot" | "yolo";

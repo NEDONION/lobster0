@@ -30,6 +30,7 @@ export function registerDesktopIpc(
   bridge: BridgeService,
   publishFrame: (frame: ServerFrame) => void,
   chooseWorkspace: () => Promise<string | null>,
+  chooseAttachment: () => Promise<string | null>,
 ): () => void {
   register(DESKTOP_CHANNELS.bootstrap, () => bridge.start());
   register(DESKTOP_CHANNELS.taskStart, (payload) => bridge.startTurn(validateStartTurnInput(payload)));
@@ -74,6 +75,11 @@ export function registerDesktopIpc(
   register(DESKTOP_CHANNELS.automationUnhalt, () => bridge.unhaltAutomation());
   register(DESKTOP_CHANNELS.automationCreate, (payload) =>
     bridge.createAutomation(validateAutomationCreateInput(payload)));
+  register(DESKTOP_CHANNELS.attachmentPick, () => chooseAttachment());
+  register(DESKTOP_CHANNELS.attachmentStage, (payload) => {
+    const input = validateAttachmentPathInput(payload);
+    return bridge.stageAttachment(input.path, input.declaredMediaType);
+  });
   register(DESKTOP_CHANNELS.providersList, () => bridge.listProviders());
   register(DESKTOP_CHANNELS.providerUpsert, (payload) =>
     bridge.upsertProvider(validateProviderUpsertInput(payload)));
@@ -98,7 +104,10 @@ export function registerDesktopIpc(
 }
 
 export function validateStartTurnInput(payload: unknown): StartTurnInput {
-  const record = exactRecord(payload, ["sessionKey", "text"], "invalid_start_turn");
+  const keys = Object.hasOwn(payload ?? {}, "attachmentIds")
+    ? ["sessionKey", "text", "attachmentIds"]
+    : ["sessionKey", "text"];
+  const record = exactRecord(payload, keys, "invalid_start_turn");
   if (
     !boundedString(record.sessionKey, 128)
     || !boundedString(record.text, 200_000)
@@ -106,7 +115,56 @@ export function validateStartTurnInput(payload: unknown): StartTurnInput {
   ) {
     throw new DesktopRequestError("invalid_start_turn", "任务内容无效");
   }
-  return { sessionKey: record.sessionKey, text: record.text };
+  const input: StartTurnInput = { sessionKey: record.sessionKey, text: record.text };
+  if (Object.hasOwn(record, "attachmentIds")) {
+    const ids = record.attachmentIds;
+    if (
+      !Array.isArray(ids)
+      || ids.length < 1
+      || ids.length > MAX_ATTACHMENTS
+      || !ids.every((id) => typeof id === "string" && ARTIFACT_ID.test(id))
+    ) {
+      throw new DesktopRequestError("invalid_start_turn", "附件引用无效");
+    }
+    input.attachmentIds = ids;
+  }
+  return input;
+}
+
+// Core 的 _MEDIA_EXTENSIONS 白名单，提前在 Main 层拒绝以给出更快的反馈；
+// 真正的判定仍在 Core 的 magic byte 嗅探里，这里的映射不被信任。
+const ATTACHMENT_MEDIA_TYPES: Record<string, string> = {
+  ".txt": "text/plain",
+  ".csv": "text/csv",
+  ".json": "application/json",
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".zip": "application/zip",
+};
+const ARTIFACT_ID = /^art_[0-9a-f]{64}$/;
+const MAX_ATTACHMENTS = 10;
+
+export function validateAttachmentPathInput(payload: unknown): {
+  path: string;
+  declaredMediaType: string;
+} {
+  // declaredMediaType 刻意不在字段集里：类型只能由扩展名推导，否则调用方
+  // 可以谎报类型绕过这一层。
+  const record = exactRecord(payload, ["path"], "invalid_attachment");
+  const path = record.path;
+  if (!boundedString(path, 4096) || !path.startsWith("/")) {
+    throw new DesktopRequestError("invalid_attachment", "附件路径无效");
+  }
+  const dot = path.lastIndexOf(".");
+  const slash = path.lastIndexOf("/");
+  const extension = dot > slash ? path.slice(dot).toLowerCase() : "";
+  const declaredMediaType = ATTACHMENT_MEDIA_TYPES[extension];
+  if (declaredMediaType === undefined) {
+    throw new DesktopRequestError("invalid_attachment", "暂不支持该文件类型");
+  }
+  return { path, declaredMediaType };
 }
 
 export function validateApprovalInput(payload: unknown): {

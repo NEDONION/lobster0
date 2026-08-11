@@ -161,8 +161,17 @@ export class BridgeClient {
     });
   }
 
-  public async startTurn(sessionKey: string, text: string): Promise<void> {
-    await this.request("turn.start", { session_key: sessionKey, text });
+  public async startTurn(
+    sessionKey: string,
+    text: string,
+    attachmentIds?: readonly string[],
+  ): Promise<void> {
+    const payload: Record<string, unknown> = { session_key: sessionKey, text };
+    // 字段可选：不带附件时不能出现在 payload 里，Core 的 exact-key 校验会拒绝。
+    if (attachmentIds && attachmentIds.length > 0) {
+      payload.attachment_ids = [...attachmentIds];
+    }
+    await this.request("turn.start", payload as never);
   }
 
   public async cancelTurn(): Promise<void> {
