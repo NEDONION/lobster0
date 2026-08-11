@@ -12,7 +12,10 @@ import { isAbsolute } from "node:path";
 
 import type {
   ApprovalDecision,
+  AutomationCreateInput,
   AutomationList,
+  AutomationRun,
+  AutomationSummary,
   DesktopBootstrap,
   SessionHistory,
   SessionSummary,
@@ -191,17 +194,77 @@ export class BridgeService {
     }
     return {
       enabled: response.enabled,
-      tasks: response.tasks.map((value) => {
-        const record = recordValue(value);
-        return {
-          taskId: positiveInteger(record.task_id),
-          name: stringValue(record.name),
-          status: stringValue(record.status),
-          scheduleKind: stringValue(record.schedule_kind),
-          nextRunAt: nullableString(record.next_run_at),
-        };
-      }),
+      tasks: response.tasks.map((value) => automationTask(recordValue(value))),
     };
+  }
+
+  public async pauseAutomation(taskId: number): Promise<AutomationSummary> {
+    return this.mutateAutomationTask("automation.pause", taskId);
+  }
+
+  public async resumeAutomation(taskId: number): Promise<AutomationSummary> {
+    return this.mutateAutomationTask("automation.resume", taskId);
+  }
+
+  public async cancelAutomation(taskId: number): Promise<AutomationSummary> {
+    return this.mutateAutomationTask("automation.cancel", taskId);
+  }
+
+  public async runAutomation(taskId: number): Promise<AutomationRun> {
+    const response = await this.requireClient().request("automation.run", {
+      task_id: assertTaskId(taskId),
+    });
+    return automationRun(recordValue(requiredValue(response.run)));
+  }
+
+  public async listAutomationRuns(taskId: number, limit: number): Promise<AutomationRun[]> {
+    const response = await this.requireClient().request("automation.runs", {
+      task_id: assertTaskId(taskId),
+      limit,
+    });
+    if (!Array.isArray(response.runs)) {
+      throw protocolError();
+    }
+    return response.runs.map((value) => automationRun(recordValue(value)));
+  }
+
+  public async haltAutomation(reason: string): Promise<void> {
+    // Core 侧 reason 必填且非空白；这里先挡一次，避免把明显无效的请求发出去。
+    if (reason.trim().length === 0) {
+      throw new BridgeRequestError("bridge_state", "急停必须填写原因");
+    }
+    await this.requireClient().request("automation.halt", { reason });
+  }
+
+  public async unhaltAutomation(): Promise<void> {
+    await this.requireClient().request("automation.unhalt", {});
+  }
+
+  public async createAutomation(input: AutomationCreateInput): Promise<AutomationSummary> {
+    const schedule: Record<string, string> = {
+      kind: input.scheduleKind,
+      expression: input.expression,
+    };
+    if (input.timezone) {
+      schedule.timezone = input.timezone;
+    }
+    const response = await this.requireClient().request("automation.create", {
+      name: input.name,
+      prompt: input.prompt,
+      schedule,
+    });
+    return automationTask(recordValue(requiredValue(response.task)));
+  }
+
+  /** pause/resume/cancel 的响应形状一致，共用同一条校验路径。 */
+  private async mutateAutomationTask(
+    requestType: "automation.pause" | "automation.resume" | "automation.cancel",
+    taskId: number,
+  ): Promise<AutomationSummary> {
+    const response = await this.requireClient().request(requestType, {
+      task_id: assertTaskId(taskId),
+    });
+    return automationTask(recordValue(requiredValue(response.task)));
   }
 
   public async restartWorkspace(workspace: string): Promise<DesktopBootstrap> {
@@ -362,6 +425,49 @@ function nullableString(value: JsonValue | undefined): string | null {
     return null;
   }
   return stringValue(value);
+}
+
+/** 把一条 Task 响应投影成 Renderer 类型；与只读列表共用，避免字段集漂移。 */
+function automationTask(record: Record<string, JsonValue>): AutomationSummary {
+  return {
+    taskId: positiveInteger(record.task_id),
+    name: stringValue(record.name),
+    status: stringValue(record.status),
+    scheduleKind: stringValue(record.schedule_kind),
+    nextRunAt: nullableString(record.next_run_at),
+  };
+}
+
+/** 把一条运行记录投影成 Renderer 类型。 */
+function automationRun(record: Record<string, JsonValue>): AutomationRun {
+  return {
+    runId: positiveInteger(record.run_id),
+    taskId: positiveInteger(record.task_id),
+    status: stringValue(record.status),
+    scheduledFor: stringValue(record.scheduled_for),
+    errorCode: nullableString(record.error_code),
+  };
+}
+
+/**
+ * 在发请求前挡住非法 task_id。
+ *
+ * Core 侧 protocol 会再校验一次——这里只是让明显错误在本地就失败，
+ * 不是把校验责任前移。
+ */
+function assertTaskId(taskId: number): number {
+  if (!Number.isSafeInteger(taskId) || taskId <= 0) {
+    throw new BridgeRequestError("bridge_state", "定时任务 ID 不合法");
+  }
+  return taskId;
+}
+
+/** 响应里缺少必需字段时，按协议错误处理而不是让 undefined 继续流动。 */
+function requiredValue(value: JsonValue | undefined): JsonValue {
+  if (value === undefined) {
+    throw protocolError();
+  }
+  return value;
 }
 
 function protocolError(): BridgeRequestError {

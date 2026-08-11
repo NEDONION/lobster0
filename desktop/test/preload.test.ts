@@ -28,15 +28,23 @@ describe("Desktop Preload API", () => {
 
     expect(Object.keys(api).sort()).toEqual([
       "bootstrap",
+      "cancelAutomation",
       "cancelTurn",
       "chooseWorkspace",
+      "createAutomation",
+      "haltAutomation",
+      "listAutomationRuns",
       "listAutomations",
       "listSessions",
       "loadSession",
       "onFrame",
+      "pauseAutomation",
       "resolveApproval",
+      "resumeAutomation",
+      "runAutomation",
       "setPermissionMode",
       "startTurn",
+      "unhaltAutomation",
     ].sort());
   });
 

@@ -3,8 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   DesktopRequestError,
   registerDesktopIpc,
+  validateAutomationCreateInput,
   validateAutomationListInput,
+  validateAutomationRunsInput,
   validateApprovalInput,
+  validateHaltInput,
+  validateTaskIdInput,
   validateHistoryInput,
   validateSessionListInput,
   validateStartTurnInput,
@@ -68,5 +72,86 @@ describe("Desktop Main IPC validation", () => {
 
     await expect(handlers.get(DESKTOP_CHANNELS.workspaceChoose)?.(undefined))
       .resolves.toBeNull();
+  });
+
+  it("accepts only a positive integer task id", () => {
+    expect(validateTaskIdInput({ taskId: 7 })).toEqual({ taskId: 7 });
+    for (const payload of [
+      { taskId: 0 },
+      { taskId: -1 },
+      { taskId: 1.5 },
+      { taskId: "1" },
+      { taskId: true },
+      {},
+      { taskId: 1, extra: 1 },
+    ]) {
+      expect(() => validateTaskIdInput(payload)).toThrowError(DesktopRequestError);
+    }
+  });
+
+  it("requires a non-blank bounded halt reason", () => {
+    expect(validateHaltInput({ reason: "刷屏了" })).toEqual({ reason: "刷屏了" });
+    for (const payload of [{}, { reason: "" }, { reason: "   " }, { reason: "x".repeat(501) }]) {
+      expect(() => validateHaltInput(payload)).toThrowError(DesktopRequestError);
+    }
+  });
+
+  it("bounds the run-history limit", () => {
+    expect(validateAutomationRunsInput({ taskId: 2, limit: 20 })).toEqual({
+      taskId: 2,
+      limit: 20,
+    });
+    for (const payload of [{ taskId: 2 }, { taskId: 2, limit: 0 }, { taskId: 2, limit: 101 }]) {
+      expect(() => validateAutomationRunsInput(payload)).toThrowError(DesktopRequestError);
+    }
+  });
+
+  it("narrows automation creation to schedule fields and enforces the interval floor", () => {
+    expect(
+      validateAutomationCreateInput({
+        name: "每日摘要",
+        prompt: "汇总昨天的文档",
+        scheduleKind: "cron",
+        expression: "0 9 * * *",
+      }),
+    ).toEqual({
+      name: "每日摘要",
+      prompt: "汇总昨天的文档",
+      scheduleKind: "cron",
+      expression: "0 9 * * *",
+    });
+
+    // timezone 是唯一可选字段
+    expect(
+      validateAutomationCreateInput({
+        name: "n",
+        prompt: "p",
+        scheduleKind: "interval",
+        expression: "300",
+        timezone: "Asia/Shanghai",
+      }).timezone,
+    ).toBe("Asia/Shanghai");
+
+    for (const payload of [
+      // heartbeat 不允许从界面创建
+      { name: "n", prompt: "p", scheduleKind: "heartbeat", expression: "60" },
+      // 5 分钟下限，防止误配置高频空转
+      { name: "n", prompt: "p", scheduleKind: "interval", expression: "299" },
+      { name: "n", prompt: "p", scheduleKind: "interval", expression: "abc" },
+      // 空白等同没填
+      { name: "  ", prompt: "p", scheduleKind: "cron", expression: "* * * * *" },
+      { name: "n", prompt: "  ", scheduleKind: "cron", expression: "* * * * *" },
+      // 未开放字段一律拒绝，不能绕过界面收窄
+      {
+        name: "n",
+        prompt: "p",
+        scheduleKind: "cron",
+        expression: "* * * * *",
+        budget: { maxTurns: 999 },
+      },
+      { name: "n", prompt: "p", scheduleKind: "cron" },
+    ]) {
+      expect(() => validateAutomationCreateInput(payload)).toThrowError(DesktopRequestError);
+    }
   });
 });

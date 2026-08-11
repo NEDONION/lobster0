@@ -23,6 +23,14 @@ export type RequestType =
   | "session.list"
   | "session.history"
   | "automation.list"
+  | "automation.pause"
+  | "automation.resume"
+  | "automation.run"
+  | "automation.cancel"
+  | "automation.runs"
+  | "automation.halt"
+  | "automation.unhalt"
+  | "automation.create"
   | "bridge.shutdown";
 
 export type PermissionMode = "safe" | "smart" | "autopilot" | "yolo";
