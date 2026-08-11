@@ -2,7 +2,7 @@
 
 > 日期：2026-08-11
 > 文档类型：Phase D2c 产品、协议与安全设计
-> 状态：`IMPLEMENTED`（2026-08-11）
+> 状态：`PARTIAL`（2026-08-11）——admission 链路完整，但附件未抵达模型，见 §6.2
 > 取代：[2026-08-10 D2 附件/模型/Workspace/Agent 控件设计](2026-08-10-desktop-d2-composer-controls-design.md)
 > 前置实现：[D2a 定时任务可控](2026-08-11-desktop-d2a-automation-control-design.md)、[D2b 多 Provider 配置](2026-08-11-desktop-d2b-model-provider-config-design.md)（均已 `IMPLEMENTED`）
 
@@ -195,6 +195,20 @@ SQLite 改不了 CHECK，只能重建表搬数据。设计文档说的「不做 
 
 端到端 smoke 走真 Bridge 子进程，同时兑现退出条件 2、3、6，并断言完整路径不出现在
 响应里。
+
+## 6.2 已知缺口（2026-08-11 发现）
+
+设计 D3 时重新核查代码，发现 **§3.5 没有实现**：`turn.start` 里 `attachment_ids` 只用于
+校验就被丢弃，既没写进消息的 `metadata_json`，也没传给 `TurnService.handle()`。
+
+后果：点附件、选文件、发送全程不报错，文件也确实被安全存进了 ArtifactStore，但**模型完全
+不知道用户发了文件**，而且没有任何 Tool 能读取 Artifact 正文。
+
+根因是 §6 的退出条件里没有一条是「Agent 能真正用上这个附件」——6 条全部围绕 admission 的
+安全性，所以测试全绿却漏掉了功能本身。
+
+修补并入 [D3](2026-08-11-desktop-d3-artifacts-design.md) §1，因为它需要的「Artifact ↔ 会话
+关联」正是 D3 展示产物所需的同一份数据，分两次做会把同一张表改两遍。
 
 ## 7. 与原文档的差异汇总
 

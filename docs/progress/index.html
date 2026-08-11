@@ -505,8 +505,8 @@
         </article>
         <article class="phase done">
           <div class="phase-no">D2c</div>
-          <div><h3>附件</h3><p>可以选一个本地文件随消息一起发送。文件走 ArtifactStore 的完整校验（symlink 拒绝、大小上限、magic byte 嗅探、TOCTOU 复查），不是把路径塞进 prompt。实施中发现 ArtifactStore 原本挂在浏览器开关下、而浏览器默认关闭，已改为无条件构造。</p></div>
-          <span class="pill">COMPLETED</span>
+          <div><h3>附件</h3><p>可以选一个本地文件随消息一起发送。文件走 ArtifactStore 的完整校验（symlink 拒绝、大小上限、magic byte 嗅探、TOCTOU 复查），不是把路径塞进 prompt。实施中发现 ArtifactStore 原本挂在浏览器开关下、而浏览器默认关闭，已改为无条件构造。<strong>已知缺口：</strong>附件被校验存储后，id 只用于校验就被丢弃，尚未抵达模型——修补并入 D3。</p></div>
+          <span class="pill">ADMISSION DONE · 未接入模型</span>
         </article>
         <article class="phase current">
           <div class="phase-no">D3</div>
