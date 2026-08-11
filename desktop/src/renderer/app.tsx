@@ -6,10 +6,13 @@ import type {
   AutomationList,
   AutomationRun,
   DesktopBootstrap,
+  ProviderList,
+  ProviderUpsertInput,
   SessionHistory,
   SessionSummary,
 } from "../common/api";
 import { AutomationPanel } from "./automation-panel";
+import { ModelsPanel } from "./models-panel";
 import { NAV_ITEMS, type ViewId } from "./navigation";
 import { SESSION_GROUP_LABELS, groupSessionsByRecency } from "./session-groups";
 import { TaskWorkbench } from "./task-workbench";
@@ -60,6 +63,8 @@ export function App(): React.JSX.Element {
   const [history, setHistory] = useState<SessionHistory | null>(null);
   const [automations, setAutomations] = useState<AutomationList | null>(null);
   const [automationError, setAutomationError] = useState<string | null>(null);
+  const [providers, setProviders] = useState<ProviderList | null>(null);
+  const [providerError, setProviderError] = useState<string | null>(null);
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
@@ -124,6 +129,26 @@ export function App(): React.JSX.Element {
     };
   }, [bootstrap, view]);
 
+  useEffect(() => {
+    if (!bootstrap || view !== "settings") {
+      return;
+    }
+    let active = true;
+    void window.lobster0.listProviders().then((value) => {
+      if (active) {
+        setProviders(value);
+        setProviderError(null);
+      }
+    }).catch(() => {
+      if (active) {
+        setProviderError("Provider 列表读取失败，请稍后重试。");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [bootstrap, view]);
+
   function createTask(): void {
     if (taskBusy) {
       return;
@@ -174,6 +199,30 @@ export function App(): React.JSX.Element {
     }).catch(() => {
       setAutomationError("自动化列表读取失败，请稍后重试。");
     });
+  }
+
+  // Core 未开放写能力时只渲染只读列表，不显示会失败的按钮。
+  const canWriteProviders = bootstrap?.capabilities.includes("providers_write") ?? false;
+
+  function refreshProviders(): void {
+    void window.lobster0.listProviders().then((value) => {
+      setProviders(value);
+      setProviderError(null);
+    }).catch(() => {
+      setProviderError("Provider 列表读取失败，请稍后重试。");
+    });
+  }
+
+  /** 所有 Provider 写操作共用：失败只给固定文案，不透传可能带上密钥的异常文本。 */
+  async function runProviderWrite(action: () => Promise<void>, failure: string): Promise<void> {
+    setProviderError(null);
+    try {
+      await action();
+    } catch {
+      setProviderError(failure);
+      return;
+    }
+    refreshProviders();
   }
 
   async function chooseWorkspace(): Promise<void> {
@@ -319,6 +368,34 @@ export function App(): React.JSX.Element {
               bootstrap={bootstrap}
               automations={automations}
               automationError={automationError}
+              canWriteProviders={canWriteProviders}
+              onRefreshProviders={refreshProviders}
+              onRemoveProvider={async (id) => {
+                await runProviderWrite(
+                  () => window.lobster0.removeProvider(id),
+                  "删除 Provider 失败。",
+                );
+              }}
+              onSelectProvider={async (id, model) => {
+                await runProviderWrite(
+                  () => window.lobster0.selectProvider(id, model),
+                  "切换默认 Provider 失败。",
+                );
+              }}
+              onSetProviderSecret={async (id, value) => {
+                await runProviderWrite(
+                  () => window.lobster0.setProviderSecret(id, value),
+                  "密钥保存失败。",
+                );
+              }}
+              onUpsertProvider={async (input) => {
+                await runProviderWrite(
+                  () => window.lobster0.upsertProvider(input),
+                  "保存 Provider 失败。",
+                );
+              }}
+              providerError={providerError}
+              providers={providers}
               onChooseWorkspace={() => void chooseWorkspace()}
               onSetPermissionMode={(mode) => void setPermissionMode(mode)}
               settingsBusy={settingsBusy}
@@ -342,6 +419,14 @@ function ViewPreview({
   settingsError,
   taskBusy,
   canWriteAutomation,
+  canWriteProviders,
+  providers,
+  providerError,
+  onRefreshProviders,
+  onUpsertProvider,
+  onRemoveProvider,
+  onSelectProvider,
+  onSetProviderSecret,
   onChooseWorkspace,
   onSetPermissionMode,
   onRefreshAutomations,
@@ -360,6 +445,14 @@ function ViewPreview({
   automationError: string | null;
   settingsBusy: boolean;
   canWriteAutomation: boolean;
+  canWriteProviders: boolean;
+  providers: ProviderList | null;
+  providerError: string | null;
+  onRefreshProviders: () => void;
+  onUpsertProvider: (input: ProviderUpsertInput) => Promise<void>;
+  onRemoveProvider: (id: string) => Promise<void>;
+  onSelectProvider: (id: string, model: string) => Promise<void>;
+  onSetProviderSecret: (id: string, value: string) => Promise<void>;
   onRefreshAutomations: () => void;
   onPauseAutomation: (taskId: number) => Promise<void>;
   onResumeAutomation: (taskId: number) => Promise<void>;
@@ -428,6 +521,17 @@ function ViewPreview({
         <SettingsRow label="能力" value={bootstrap?.capabilities.join(" · ") || "未连接"} />
       </div>
       {taskBusy ? <p className="settings-note">任务运行或等待审批时不能修改本地设置。</p> : null}
+      <ModelsPanel
+        busy={taskBusy || settingsBusy}
+        canWrite={canWriteProviders}
+        error={providerError}
+        onRefresh={onRefreshProviders}
+        onRemove={onRemoveProvider}
+        onSelect={onSelectProvider}
+        onSetSecret={onSetProviderSecret}
+        onUpsert={onUpsertProvider}
+        providers={providers}
+      />
     </section>
   );
 }

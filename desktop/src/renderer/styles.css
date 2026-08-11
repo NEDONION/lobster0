@@ -1249,3 +1249,151 @@ select:focus-visible {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* --- 设置页 Models 区 ------------------------------------------------- */
+
+.models-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--lobster-border);
+}
+
+.models-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.models-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lobster-text-primary);
+}
+
+.models-header-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.models-note,
+.models-empty {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--lobster-text-muted);
+}
+
+.models-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.models-card {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--lobster-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: var(--lobster-surface);
+}
+
+.models-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.models-card-id {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--lobster-text-primary);
+}
+
+.models-badge {
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-size: 11px;
+  background: var(--lobster-primary-muted);
+  color: var(--lobster-primary);
+}
+
+.models-secret-ok,
+.models-secret-missing {
+  font-size: 11px;
+}
+
+.models-secret-ok {
+  color: var(--lobster-text-muted);
+}
+
+.models-secret-missing {
+  color: var(--lobster-destructive);
+}
+
+.models-card-url,
+.models-card-meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--lobster-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.models-card-actions,
+.models-form-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.models-card-secret {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.models-card-secret .models-field {
+  flex: 1 1 220px;
+}
+
+.models-card-editor,
+.models-form {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--lobster-border);
+  padding-top: 10px;
+}
+
+.models-field {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--lobster-text-muted);
+}
+
+.models-field input {
+  border: 1px solid var(--lobster-border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--lobster-text-primary);
+  background: var(--lobster-background);
+}
+
+.models-field input:disabled {
+  color: var(--lobster-text-muted);
+}
+
+.models-remove {
+  color: var(--lobster-destructive);
+}

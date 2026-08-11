@@ -201,7 +201,8 @@ class Phase6DocumentationTest(unittest.TestCase):
         progress = (PROJECT_ROOT / "docs/progress/index.html").read_text(encoding="utf-8")
         self.assertIn(relative, engineering)
         self.assertIn("../engineering/phase-7/20260810_controlled-evolution.md", progress)
-        self.assertIn("IMPLEMENTATION IN PROGRESS · TASK 1/6", progress)
+        self.assertIn("IMPLEMENTATION IN PROGRESS", progress)
+        self.assertIn("PARTIAL", progress)
 
     def test_documentation_validator_passes_repository(self) -> None:
         """内部链接、Mermaid fence、HTML 与事实扫描由一个可复现脚本校验。"""
