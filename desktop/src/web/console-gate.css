@@ -1,0 +1,61 @@
+/*
+ * 只服务 Web 控制台自己的登录/连接态。
+ *
+ * 刻意独立成文件而不是往 renderer/styles.css 里加：Renderer 的任何文件都不该
+ * 因为多了一种传输而改动。
+ */
+
+.console-gate {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+  max-width: 420px;
+  margin: 15vh auto 0;
+  padding: 24px;
+  font: 14px/1.6 system-ui, -apple-system, "PingFang SC", sans-serif;
+  color: #1f2430;
+}
+
+.console-gate h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.console-gate p {
+  margin: 0;
+  color: #5a6072;
+}
+
+.console-gate form {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.console-gate input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #d3d7e0;
+  border-radius: 6px;
+  font: inherit;
+}
+
+.console-gate button {
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 6px;
+  background: #1f2430;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.console-gate button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.console-gate [role="alert"] {
+  color: #b3261e;
+}
