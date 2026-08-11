@@ -15,6 +15,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
+    "build:web": "vite build --config vite.web.config.ts && vite build --config vite.web-server.config.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "smoke": "electron scripts/smoke-electron.mjs",
