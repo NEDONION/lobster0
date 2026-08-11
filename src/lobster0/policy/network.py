@@ -13,6 +13,9 @@ _HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\Z")
 _ENCODED_CONTROL = re.compile(r"%(?:0[0-9a-f]|1[0-9a-f]|7f)", re.IGNORECASE)
 
 
+IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+
 class NetworkPolicyError(ValueError):
     """表示 URL、authority 或 DNS 结果命中 SSRF 安全边界。"""
 
@@ -50,8 +53,18 @@ def validate_https_target(
     resolver: Resolver | None = None,
     *,
     allowed_ports: tuple[int, ...] = (443,),
+    allow_cidrs: tuple[IpNetwork, ...] = (),
 ) -> NetworkTarget:
-    """规范 HTTPS URL，并要求每个 DNS 地址都是明确公网地址。"""
+    """规范 HTTPS URL，并要求每个 DNS 地址都是明确公网地址。
+
+    Args:
+        allow_cidrs: 用户显式声明的额外可信网段。fake-IP 模式的代理（Surge、
+            Clash 等）会把所有域名解析到 ``198.18.0.0/15`` 这类保留段，真实流量
+            由代理转发；不声明就会让 http_get 在这类机器上完全不可用。
+            **豁免不能打开真正危险的地址**：回环、链路本地（含 169.254.169.254
+            云元数据）、RFC1918 内网、组播与保留段永远拒绝，哪怕调用方写了
+            ``0.0.0.0/0``。
+    """
     if (
         not isinstance(url, str)
         or not url
@@ -106,8 +119,8 @@ def validate_https_target(
         except ValueError:
             raise NetworkPolicyError("dns_failed", "hostname returned an invalid address") from None
         mapped = address.ipv4_mapped if isinstance(address, ipaddress.IPv6Address) else None
-        if not _is_public_address(address) or (
-            mapped is not None and not _is_public_address(mapped)
+        if not _is_reachable_address(address, allow_cidrs) or (
+            mapped is not None and not _is_reachable_address(mapped, allow_cidrs)
         ):
             raise NetworkPolicyError(
                 "non_public_address",
@@ -169,6 +182,35 @@ def _normalize_hostname(value: str) -> str:
     if any(_HOST_LABEL.fullmatch(label) is None for label in labels):
         raise NetworkPolicyError("invalid_hostname", "hostname is invalid")
     return hostname
+
+
+# 无论用户怎么配置都不放行的地址。SSRF 真正要防的就是这些：回环、链路本地
+# （169.254.169.254 是云元数据端点）、RFC1918 内网、组播与保留段。
+_NEVER_REACHABLE = (
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("fc00::/7"),
+)
+
+
+def _is_reachable_address(
+    address: ipaddress.IPv4Address | ipaddress.IPv6Address,
+    allow_cidrs: tuple[IpNetwork, ...],
+) -> bool:
+    """判断地址是否可访问：公网直接放行，其余只看显式豁免且不触红线。"""
+    if _is_public_address(address):
+        return True
+    if (
+        address.is_loopback
+        or address.is_link_local
+        or address.is_multicast
+        or address.is_unspecified
+        or address.is_reserved
+        or any(address in network for network in _NEVER_REACHABLE)
+    ):
+        return False
+    return any(address in network for network in allow_cidrs)
 
 
 def _is_public_address(

@@ -11,10 +11,12 @@ import type { Telemetry } from "@lobster0/pi-tui/state";
 
 import type {
   ApprovalDecision,
+  ArtifactSummary,
   AttachmentRef,
   DesktopBootstrap,
   SessionHistory,
 } from "../common/api";
+import { ArtifactPanel } from "./artifact-panel";
 import {
   addAttachment,
   attachmentIds,
@@ -100,6 +102,8 @@ export function TaskWorkbench({
   const [submitting, setSubmitting] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentRef[]>([]);
   const [staging, setStaging] = useState(false);
+  const [artifacts, setArtifacts] = useState<ArtifactSummary[]>([]);
+  const [artifactError, setArtifactError] = useState<string | null>(null);
   const [resolvingApproval, setResolvingApproval] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [expandedProcesses, setExpandedProcesses] = useState<ReadonlySet<number>>(new Set());
@@ -138,6 +142,27 @@ export function TaskWorkbench({
   useEffect(() => {
     onBusyChange(liveBusy);
   }, [liveBusy, onBusyChange]);
+
+  // 回合结束是新产物出现的时刻；会话切换也要重新拉，避免串到上一个会话。
+  useEffect(() => {
+    if (!bootstrap || liveBusy) {
+      return;
+    }
+    let active = true;
+    void window.lobster0.listArtifacts(sessionKey).then((value) => {
+      if (active) {
+        setArtifacts(value);
+        setArtifactError(null);
+      }
+    }).catch(() => {
+      if (active) {
+        setArtifactError("产物列表读取失败。");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [bootstrap, sessionKey, liveBusy]);
 
   async function pickAndStageAttachment(): Promise<void> {
     setActionError(null);
@@ -232,6 +257,7 @@ export function TaskWorkbench({
     }
   }
 
+  const canRevealArtifacts = bootstrap?.capabilities.includes("artifacts_read") ?? false;
   // Core 未开放附件能力时不显示入口，与 D2a/D2b 的做法一致。
   const canAttach = bootstrap?.capabilities.includes("attachments") ?? false;
   const approvalChoices: ApprovalDecision[] = pendingApproval
@@ -417,6 +443,16 @@ export function TaskWorkbench({
         </>
         )}
       </section>
+      {/* 有产物时右栏才出现，沿用 D1 的按需布局，不给空面板留位置。 */}
+      {artifacts.length > 0 ? (
+        <ArtifactPanel
+          artifacts={artifacts}
+          canReveal={canRevealArtifacts}
+          error={artifactError}
+          onPreview={(artifactId) => window.lobster0.previewArtifact(artifactId)}
+          onReveal={(artifactId) => window.lobster0.revealArtifact(artifactId)}
+        />
+      ) : null}
     </section>
   );
 }

@@ -285,3 +285,38 @@ class ManageTaskToolTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManageTaskSchemaTest(unittest.TestCase):
+    """工具 Schema 必须让模型一次就写对，而不是靠猜。"""
+
+    def test_schedule_shape_is_declared_not_an_opaque_object(self) -> None:
+        """schedule 曾是裸的 {"type": "object"}，模型只能猜字段名。
+
+        实测后果：连续三次 manage_task 全部 rejected，用户只看到工具反复失败。
+        """
+        schedule = ManageTaskTool.definition.parameters["properties"]["schedule"]
+
+        self.assertIn("properties", schedule)
+        self.assertEqual(
+            sorted(schedule["properties"]["kind"]["enum"]),
+            ["cron", "heartbeat", "interval", "once"],
+        )
+        self.assertIn("expression", schedule["properties"])
+        self.assertEqual(sorted(schedule["required"]), ["expression", "kind"])
+
+    def test_schedule_examples_cover_every_kind(self) -> None:
+        """每种调度都给一个可以照抄的例子。"""
+        description = ManageTaskTool.definition.parameters["properties"]["schedule"][
+            "description"
+        ]
+
+        for fragment in ("0 9 * * *", "interval", "once", "3600"):
+            self.assertIn(fragment, description)
+
+    def test_delivery_and_budget_shapes_are_declared_too(self) -> None:
+        """同样是裸 object 的两个字段，模型一样会猜错。"""
+        properties = ManageTaskTool.definition.parameters["properties"]
+
+        self.assertIn("properties", properties["delivery"])
+        self.assertIn("properties", properties["budget"])

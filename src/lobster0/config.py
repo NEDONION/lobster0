@@ -3,6 +3,7 @@
 import contextlib
 import json
 import os
+import ipaddress
 import re
 import tomllib
 from collections.abc import Mapping
@@ -16,6 +17,8 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from lobster0.paths import StatePaths
 
 type OverrideValue = str | int | Path
+
+IpNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 BUILTIN_TOOL_NAMES = (
     "system_info",
@@ -98,7 +101,9 @@ _TOOLS_KEYS = frozenset(
 _RUN_COMMAND_KEYS = frozenset(
     {"allow_commands", "timeout_seconds", "max_timeout_seconds"}
 )
-_HTTP_GET_KEYS = frozenset({"allow_hosts", "timeout_seconds", "max_response_bytes"})
+_HTTP_GET_KEYS = frozenset(
+    {"allow_hosts", "timeout_seconds", "max_response_bytes", "trusted_cidrs"}
+)
 _UI_KEYS = frozenset({"language"})
 _CHANNELS_KEYS = frozenset({"feishu", "telegram", "discord"})
 _FEISHU_KEYS = frozenset(
@@ -290,6 +295,9 @@ class HttpGetConfig:
     allow_hosts: tuple[str, ...] = ()
     timeout_seconds: int = 20
     max_response_bytes: int = 2 * 1024 * 1024
+    # fake-IP 模式的代理会把所有域名解析到保留段（如 198.18.0.0/15），不声明
+    # 就会让 http_get 在这类机器上完全不可用。默认为空，保持严格。
+    trusted_cidrs: tuple[IpNetwork, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -646,6 +654,7 @@ def load_config(
         "tools.http_get.max_response_bytes",
         maximum=2 * 1024 * 1024,
     )
+    http_trusted_cidrs = _trusted_cidrs(http_get_raw.get("trusted_cidrs", []))
     http_hosts = _string_list(
         http_get_raw.get("allow_hosts", []),
         "tools.http_get.allow_hosts",
@@ -1138,6 +1147,7 @@ def load_config(
                 allow_hosts=http_hosts,
                 timeout_seconds=http_timeout,
                 max_response_bytes=http_max_response_bytes,
+                trusted_cidrs=http_trusted_cidrs,
             ),
         ),
         ui=UIConfig(language=ui_language),
@@ -1400,6 +1410,23 @@ def _sandbox_image(value: object, name: str) -> str:
     ):
         raise ConfigError(f"{name} must be a valid bounded container image")
     return image
+
+
+def _trusted_cidrs(value: object) -> tuple[IpNetwork, ...]:
+    """解析用户声明的可信网段；写错的值在加载期就报错，不留到运行期。"""
+    if not isinstance(value, list):
+        raise ConfigError("tools.http_get.trusted_cidrs must be a list of CIDR strings")
+    networks: list[IpNetwork] = []
+    for item in value:
+        if not isinstance(item, str):
+            raise ConfigError("tools.http_get.trusted_cidrs must contain only strings")
+        try:
+            networks.append(ipaddress.ip_network(item, strict=False))
+        except ValueError as error:
+            raise ConfigError(
+                f"tools.http_get.trusted_cidrs has an invalid entry: {item}"
+            ) from error
+    return tuple(networks)
 
 
 def _enabled_tools(value: object) -> tuple[str, ...]:

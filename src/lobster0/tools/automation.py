@@ -87,11 +87,65 @@ class ManageTaskTool:
                 "task_id": {"type": "integer", "minimum": 1},
                 "version": {"type": "integer", "minimum": 1},
                 "name": {"type": "string", "minLength": 1, "maxLength": 200},
-                "schedule": {"type": "object"},
+                # 这三个字段此前都是裸的 {"type": "object"}，模型无从得知字段名，
+                # 只能一次次猜、一次次被拒。形状必须写在 Schema 里。
+                "schedule": {
+                    "type": "object",
+                    "description": (
+                        "When to run. Examples: "
+                        '{"kind": "cron", "expression": "0 9 * * *"} runs daily at 09:00; '
+                        '{"kind": "interval", "expression": "3600"} runs every 3600 seconds '
+                        "(minimum 300); "
+                        '{"kind": "once", "expression": "2026-08-12T09:00:00+08:00"} runs '
+                        "a single time at an RFC 3339 instant with an explicit offset."
+                    ),
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["cron", "interval", "once", "heartbeat"],
+                        },
+                        "expression": {"type": "string", "minLength": 1},
+                        "timezone": {
+                            "type": "string",
+                            "description": "IANA name, defaults to UTC.",
+                        },
+                    },
+                    "required": ["kind", "expression"],
+                    "additionalProperties": False,
+                },
                 "prompt": {"type": "string", "minLength": 1},
                 "skills": {"type": "array", "items": {"type": "string"}, "maxItems": 3},
-                "delivery": {"type": "object"},
-                "budget": {"type": "object"},
+                "delivery": {
+                    "type": "object",
+                    "description": (
+                        "Where the result goes. Omit it to keep the run silent. "
+                        '{"route": "owner"} sends to the Owner\'s default channel.'
+                    ),
+                    "properties": {
+                        "route": {
+                            "type": "string",
+                            "enum": ["origin", "owner", "explicit", "none"],
+                        },
+                        "channel": {"type": "string"},
+                        "account_id": {"type": "string"},
+                        "conversation_id": {"type": "string"},
+                    },
+                    "required": ["route"],
+                    "additionalProperties": False,
+                },
+                "budget": {
+                    "type": "object",
+                    "description": "Per-run limits; omit to use defaults.",
+                    "properties": {
+                        "timeout_seconds": {"type": "integer", "minimum": 1},
+                        "max_turns": {"type": "integer", "minimum": 1},
+                        "max_tool_calls": {"type": "integer", "minimum": 1},
+                        "max_input_tokens": {"type": "integer", "minimum": 1},
+                        "max_output_tokens": {"type": "integer", "minimum": 1},
+                        "max_cost_microusd": {"type": "integer", "minimum": 0},
+                    },
+                    "additionalProperties": False,
+                },
             },
             "required": ["action"],
             "additionalProperties": False,

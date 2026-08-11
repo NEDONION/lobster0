@@ -712,6 +712,38 @@ class ConfigTest(unittest.TestCase):
         # 读取路径永不写盘。
         self.assertEqual(self.paths.config.read_text(encoding="utf-8"), before)
 
+    def test_http_get_trusted_cidrs_default_to_empty(self) -> None:
+        """默认不豁免任何网段，保持严格。"""
+        self._write_config('[agent]\nmodel = "m"\n')
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(config.tools.http_get.trusted_cidrs, ())
+
+    def test_http_get_trusted_cidrs_accepts_a_proxy_range(self) -> None:
+        """fake-IP 代理环境下用户可以显式声明自己的网段。"""
+        self._write_config(
+            '[agent]\nmodel = "m"\n'
+            '[tools.http_get]\ntrusted_cidrs = ["198.18.0.0/15"]\n'
+        )
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(
+            [str(item) for item in config.tools.http_get.trusted_cidrs],
+            ["198.18.0.0/15"],
+        )
+
+    def test_http_get_trusted_cidrs_rejects_a_malformed_value(self) -> None:
+        """写错的网段要在加载时就报错，而不是运行期静默失效。"""
+        for value in ('["not-a-cidr"]', '["198.18.0.0/15", 5]', '"198.18.0.0/15"'):
+            self._write_config(
+                '[agent]\nmodel = "m"\n'
+                f"[tools.http_get]\ntrusted_cidrs = {value}\n"
+            )
+            with self.assertRaises(ConfigError):
+                load_config(self.paths, {})
+
     def test_attachment_limit_defaults_below_the_artifact_store_bound(self) -> None:
         """未配置时给一个比 Store 上限更小的默认值。"""
         self._write_config('[agent]\nmodel = "m"\n')

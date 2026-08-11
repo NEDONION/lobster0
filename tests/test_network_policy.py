@@ -1,5 +1,6 @@
 """HTTPS URL、DNS 与 SSRF 硬禁止测试。"""
 
+import ipaddress
 import unittest
 from pathlib import Path
 
@@ -171,3 +172,44 @@ class NetworkPolicyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ProxyFakeIpTest(unittest.TestCase):
+    """fake-IP 代理环境下的显式豁免。"""
+
+    def test_fake_ip_range_is_refused_by_default(self) -> None:
+        """默认必须保持严格：不声明就不放行。"""
+        with self.assertRaises(NetworkPolicyError) as raised:
+            validate_https_target(
+                "https://api.github.com/x", resolver=lambda h, p: ("198.18.0.56",)
+            )
+
+        self.assertEqual(raised.exception.code, "non_public_address")
+
+    def test_explicitly_allowed_cidr_passes(self) -> None:
+        """用户显式声明代理网段后放行——这是他自己的网络事实。"""
+        target = validate_https_target(
+            "https://api.github.com/x",
+            resolver=lambda h, p: ("198.18.0.56",),
+            allow_cidrs=(ipaddress.ip_network("198.18.0.0/15"),),
+        )
+
+        self.assertEqual(target.hostname, "api.github.com")
+
+    def test_allowlist_cannot_open_loopback_or_metadata(self) -> None:
+        """豁免只对声明的网段生效，回环与云元数据永远拒绝。
+
+        否则一条 0.0.0.0/0 就能把整道 SSRF 防护关掉。
+        """
+        for address, cidr in (
+            ("127.0.0.1", "127.0.0.0/8"),
+            ("169.254.169.254", "169.254.0.0/16"),
+            ("10.0.0.5", "0.0.0.0/0"),
+        ):
+            with self.assertRaises(NetworkPolicyError) as raised:
+                validate_https_target(
+                    "https://evil.example/x",
+                    resolver=lambda h, p, value=address: (value,),
+                    allow_cidrs=(ipaddress.ip_network(cidr),),
+                )
+            self.assertEqual(raised.exception.code, "non_public_address", address)
