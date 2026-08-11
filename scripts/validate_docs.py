@@ -42,6 +42,7 @@ CURRENT_RELATIVE_DOCS = (
     Path("docs/evals/releases/v0.7.0.md"),
     Path("docs/evals/releases/v0.6.5.md"),
     Path("docs/engineering/operations/20260809_install-release-operations.md"),
+    Path("docs/engineering/operations/20260812_aliyun-cli-and-ecs-setup-pitfalls.md"),
     Path("docs/evals/releases/v0.7.0-install.md"),
 )
 FACT_RELATIVE_DOCS = (
