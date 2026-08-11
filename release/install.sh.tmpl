@@ -54,6 +54,7 @@ need_cmd mkdir
 need_cmd chmod
 need_cmd rm
 need_cmd wc
+need_cmd find
 if ! command -v sha256sum >/dev/null 2>&1 && ! command -v shasum >/dev/null 2>&1; then
   fail "missing required command: sha256sum or shasum"
 fi
@@ -182,6 +183,26 @@ case "$managed_python" in
   *) fail "unexpected managed Python layout" ;;
 esac
 managed_python_root=${managed_python%/bin/python3.12}
+# `uv python find` 返回的是形如 cpython-3.12-<platform> 的软链接别名，而安装器
+# 以 no-follow 语义逐段校验祖先链，软链接组件会被直接拒绝。先解析成物理路径
+# 再交接，才是安装器真正会校验的那棵树。
+managed_python_root=$(cd "$managed_python_root" && pwd -P) \
+  || fail "could not resolve managed Python root"
+managed_python="$managed_python_root/bin/python3.12"
+[ -f "$managed_python" ] && [ -x "$managed_python" ] \
+  || fail "resolved managed Python is not executable"
+# uv 显式把 managed Python 目录建成 0777，无视 umask；全局可写的解释器目录
+# 意味着同机任何本地用户都能篡改即将被执行的 Python，安装器因此（正确地）
+# 拒绝它。这里在交接前把整棵树收回 owner-only，而不是去放宽那些检查。
+# 安装器只接受 {0600,0644,0700,0755} 这几种 file mode，而真实 Python 发行版里
+# 混有 0444/0555 等只读条目。统一归一化成 owner-only：目录 0700、可执行文件
+# 0700、其余文件 0600，既满足白名单又不放宽任何检查。
+find "$managed_python_root" -type d -exec chmod 0700 {} + \
+  || fail "could not restrict managed Python directories"
+find "$managed_python_root" -type f -perm -u+x -exec chmod 0700 {} + \
+  || fail "could not restrict managed Python executables"
+find "$managed_python_root" -type f ! -perm -u+x -exec chmod 0600 {} + \
+  || fail "could not restrict managed Python files"
 
 # 8/9. Hand off to the stdlib-only installer, forwarding the internal
 # bootstrap flags plus every original public flag unchanged, and let the
