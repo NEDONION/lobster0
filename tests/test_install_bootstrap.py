@@ -33,7 +33,7 @@ _UV_ARCHIVE_NAMES = {
     "macos-x86_64": "uv-x86_64-apple-darwin.tar.gz",
     "macos-arm64": "uv-aarch64-apple-darwin.tar.gz",
 }
-_PASSTHROUGH_COMMANDS = ("mktemp", "mkdir", "chmod", "rm")
+_PASSTHROUGH_COMMANDS = ("mktemp", "mkdir", "chmod", "rm", "find")
 _PROFILE_NAMES = (".profile", ".bashrc", ".bash_profile", ".zshrc")
 
 
@@ -326,6 +326,33 @@ class InstallBootstrapTest(unittest.TestCase):
         self.assertNotEqual(completed.returncode, 0)
         self.assertEqual(self._calls("curl"), [])
         self.assertFalse(any(self.tmp_root.iterdir()))
+
+    def test_managed_python_is_resolved_and_restricted_before_handoff(self) -> None:
+        """交接前必须解析软链接并把 managed Python 收紧成 owner-only。
+
+        实测依据（真实 uv 安装的 Linux CPython）：
+        1. `uv python find` 返回 cpython-3.12-<platform> 软链接别名，而安装器
+           以 no-follow 语义校验祖先链，软链接组件会被直接拒绝；
+        2. uv 显式把该目录建成 0777，无视 umask，全局可写的解释器目录会被
+           安装器（正确地）拒绝；
+        3. 发行版内混有 0444/0555 等只读文件，不在安装器的 file mode 白名单内。
+
+        三者任缺其一，Linux 一行安装都会以 runtime_install_failed 失败。
+        """
+        script = render_install_script(
+            self.release_inputs,
+            runtime_versions=self.runtime_versions_path,
+            template=_TEMPLATE,
+        )
+        self.assertIn("pwd -P", script)
+        self.assertIn("could not resolve managed Python root", script)
+        for fragment in (
+            'find "$managed_python_root" -type d -exec chmod 0700',
+            'find "$managed_python_root" -type f -perm -u+x -exec chmod 0700',
+            'find "$managed_python_root" -type f ! -perm -u+x -exec chmod 0600',
+        ):
+            self.assertIn(fragment, script)
+        self.assertIn("need_cmd find", script)
 
     def test_missing_wc_fails_closed(self) -> None:
         """缺少 wc 必须在创建任何私有目录前失败，而不是在中途报 could-not-size。"""
