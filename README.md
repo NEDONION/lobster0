@@ -2,155 +2,97 @@
 
 # 🦞 Lobster0
 
-**一个小而完整、私有自托管、默认受控的个人 Agent。**
+**一个装在自己电脑上的个人 Agent：能聊天，也能在你允许后真正把事情做完。**
 
 [简体中文](README.md) · [English](README_EN.md)
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
-[![Node.js 22.22.3–<23 or 24.15.0–<25](https://img.shields.io/badge/Node.js-22.22.3--%3C23%20%7C%2024.15.0--%3C25-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
-[![Version](https://img.shields.io/badge/package-v0.1.0-8B5CF6)](pyproject.toml)
-[![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
+[![Node.js 22/24](https://img.shields.io/badge/Node.js-22%20%7C%2024-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
+[![Version](https://img.shields.io/badge/package-v0.7.0-8B5CF6)](pyproject.toml)
+[![Status](https://img.shields.io/badge/status-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
-[官网](https://lobster0.jchu.tech) · [为什么是 Lobster0](#为什么是-lobster0) · [当前能力](#当前能力) · [快速开始](#快速开始) · [产品预览](#产品预览) · [架构](#工作原理) · [路线图](#路线图) · [文档](#文档)
+[能做什么](#它能帮你做什么) · [快速开始](#快速开始) · [为什么可控](#它为什么可控) · [技术细节](#技术细节) · [项目状态](#项目状态) · [文档](#文档)
 
 </div>
 
-![Lobster0 在 Warp 中完成中文对话](docs/assets/lobster0-tui-conversation-warp.png)
+![Lobster0 Desktop 读取会议记录并整理周报](docs/assets/lobster0-desktop-weekly-brief.png)
 
-Lobster0 把模型、Tool、权限、审批、持久化和多个消息渠道收进同一个本地 Core。你可以从 TUI、飞书、Telegram 或 Discord 与同一个 Agent 交互；所有本机动作仍要经过统一的 Policy、Workspace 边界和可审计执行链。
+你可以把会议记录、代码仓库、文件整理、网页查询或定时任务交给 Lobster0。它会先理解目标，
+再调用受控工具完成工作；遇到本地写入、命令执行等关键动作，会把准备做什么说清楚，等你批准。
+
+Lobster0 的 Core 跑在你自己的机器上。Desktop、TUI、飞书、Telegram、Discord 和 Web 控制台
+只是不同入口，它们共享同一套会话、Memory、权限和审计记录。
 
 > [!IMPORTANT]
-> 当前所有能力为 **IMPLEMENTATION PASS**：本地门禁与离线场景全绿，但飞书 / Telegram / Discord 的
-> 真实平台 Live Gate 与 Phase 6 生产 soak 仍在进行中。详细逐项证据见[项目状态](#项目状态)。
+> 当前状态是 **IMPLEMENTATION PASS**：本地测试、离线评测和多轮稳定性门禁已通过；飞书等真实平台的
+> 完整 Live Gate、Phase 6 production soak 与公开 Release 仍在收口。README 不会把这些 pending 工作
+> 写成已经上线。
 
-## 为什么是 Lobster0
+## 它能帮你做什么
 
-| 目标 | Lobster0 的选择 |
+| 你交给它的事 | Lobster0 怎么完成 |
 | --- | --- |
-| 私有与可控 | 状态、会话、审批和审计保存在本机；Secret 不进入 Prompt、日志或 Memory。 |
-| 小而完整 | 一个 Python Core、一个主 TUI、一个 OpenAI-compatible Provider，不提前堆叠服务。 |
-| 真正能行动 | 18 个 Core Tool 覆盖本机与 Memory；启用 Browser 后再加入 8 个隔离网页 Tool。 |
-| 默认可追溯 | Turn、ToolRun、Approval、Delivery 与 Channel Inbox/Outbox 都有 SQLite 状态。 |
-| 多入口同一 Core | TUI、Feishu、Telegram、Discord 复用同一个 `AgentRuntime`；Transport 和故障域隔离。 |
-| 先验证再扩张 | `unittest`、TypeScript test、Agent/Channel JSONL、20 轮 soak 和文档校验共同守门。 |
+| “读完这些会议记录，整理一份周报” | 在 Workspace 内读取文件，给出进展、风险和下一步。 |
+| “检查仓库有没有未提交改动” | 展示精确命令，经过审批后执行并解释结果。 |
+| “每天 9:30 汇总昨天的工作” | 创建可暂停、可追踪、可恢复的定时任务。 |
+| “帮我查网页并保存结果” | 使用独立 Chromium Profile；点击、输入和下载仍受 Policy 控制。 |
+| “我在飞书里问一句，回电脑继续做” | Owner 私聊共享同一个 Agent Runtime 和 Memory。 |
 
-Lobster0 不是“把聊天框接到 Shell”——模型只提出 Tool Call，Core 负责参数校验、风险判定、审批绑定、执行、审计和恢复。
+它不是“把聊天框直接接到 Shell”。模型只能提出 Tool Call；真正的参数校验、权限判断、审批、执行、
+落库和恢复，都由本地 Core 负责。
+
+## 四个真实界面
+
+下面 4 张图来自当前仓库构建。Desktop 与 TUI 使用隔离的 `LOBSTER0_HOME`、虚构 Workspace 和本地固定
+Provider；UI、Bridge、TurnService、Policy、ToolExecutor、SQLite 与 Tool 执行都走真实代码路径。
+飞书图来自真实 Lucas’s 智能体会话。截图不代表真实模型 Live Gate 或生产 soak 已通过。
+
+### 1. Desktop：从材料到结果
+
+主界面直接输入目标。Lobster0 读取会议记录，展开真实 `read_file` 过程，再交付结构化周报。
+
+### 2. Warp TUI：开发任务也能说人话
+
+![Lobster0 在 Warp 中检查仓库状态](docs/assets/lobster0-tui-repository-check-warp.png)
+
+它运行 `git status --short --branch` 后，不只回显命令输出，而是告诉你：当前分支是什么、哪些文件尚未跟踪。
+
+### 3. SAFE 审批：先看清楚，再决定
+
+![Lobster0 TUI 展示精确命令审批](docs/assets/lobster0-tui-approval-warp.png)
+
+执行前会显示绝对程序、完整参数、超时和四种授权范围。截图里的命令仍处于 `requested`，尚未执行。
+
+### 4. 飞书：在常用聊天里拿结果
+
+![Lobster0 飞书 Claw Trail 完成态卡片](docs/assets/lobster0-feishu-claw-trail.png)
+
+同一个 Agent 在飞书里用单张 `Claw Trail` 卡片交付步骤和最终回答；不用在一串零散消息里找结论。
 
 ## 当前能力
 
-| 层 | 已实现能力 |
+| 部分 | 已经能用的能力 |
 | --- | --- |
-| Agent Loop | OpenAI-compatible 流式响应、Tool Loop、token/latency telemetry、错误归一化、Context compaction。 |
-| TUI | 默认 pi-tui、中文/英文、流式对话、Tool 状态、紧凑审批卡、四档 Permission Mode、Textual fallback。 |
-| Tool | 系统、文件、搜索、HTTPS、exact-argv CLI，以及 remember/search/get/list/flush/forget/correct/review Memory surface。 |
-| 安全 | Workspace Guard、敏感路径硬拒绝、exact argv、最小子进程环境、HTTPS/DNS/SSRF 校验、参数绑定 Approval。 |
-| Channel | Feishu 用单张 `Claw Trail` Agent Card 展示脱敏步骤和最终回答；审批点击在原卡先显示处理中，再以成功、拒绝或失败终态收口；三平台各自独立 Transport/Delivery/Manager/queue/recovery，共享 Agent Runtime。 |
-| 数据 | SQLite Session/Message/Turn/ToolRun/Approval/Channel/Memory control plane；owner-only Markdown Truth 与 Skills。 |
-| Automation | one-shot/interval/cron、durable TaskRun、E-stop、预算、Heartbeat、Approval continuation 与幂等主动投递。 |
-| Desktop | W0/W1 development build：浅色四界面、真实单 Agent 任务流、审批/取消、最近任务、只读 Automation、权限和 Workspace 切换。 |
-| Sandbox | immutable ExecutionPlan、Docker/Seatbelt fail-closed backend、Checkpoint CAS 与冲突感知 Rollback。 |
-| Browser | 专用 Chromium Profile、bounded snapshot/opaque ref、网页动作审批、私有 Screenshot/Download Artifact。 |
-| 运维 | `init`、`doctor`、`gateway`、受管 macOS `service`、`task` 控制面、Memory rebuild、结构化脱敏日志、幂等恢复与版本化 Eval。 |
+| 对话 | OpenAI-compatible 流式回答、Tool Loop、上下文压缩、token/耗时统计。 |
+| Desktop | 对话、最近任务、附件、产物预览、审批、自动化控制、模型与 Workspace 设置。 |
+| TUI | 中文/英文、流式时间线、Tool 过程、紧凑审批、四档 Permission Mode。 |
+| Channel | 飞书、Telegram、Discord 独立收发和恢复，共享一个 Agent Runtime。 |
+| Tool | 18 个本机与 Memory Tool；启用 Browser 后增加 8 个隔离网页 Tool。 |
+| Memory Autopilot | Markdown 真相源、SQLite 检索、纠错、忘记、Review、TTL 和跨入口 Owner 私聊共享。 |
+| Automation | one-shot、interval、cron、预算、E-stop、审批续跑和幂等主动投递。 |
+| 安全 | Workspace Guard、exact argv、HTTPS/SSRF 校验、参数绑定审批、SQLite 审计。 |
+| 运维 | `init`、`doctor`、Gateway、macOS/Linux 用户服务、Web 控制台和版本化 Eval。 |
 
-`init` 会幂等安装 `feishu-lark-cli` 与 `github-cli` Skill：飞书业务请求走官方 `lark-cli`，GitHub 远端请求走本机 `gh`，本地仓库请求走 `git`；凭据不进入 Tool 参数或模型上下文。
-
-### Permission Mode
-
-- `SAFE`：只读低风险动作自动执行，其余动作按 Policy 请求审批或拒绝。
-- `SMART`：精确规则和安全 HTTPS 可以少打扰，未命中仍受监督。
-- `AUTOPILOT`：已验证 Owner 的非关键动作可自动执行，硬边界、参数校验与审计仍然存在。
-- `YOLO`：最少监督模式；不会关闭敏感路径、SSRF、Workspace 和关键动作硬边界。
-
-新安装和缺少 `tools.mode` 的旧配置默认使用 `autopilot`；显式 `safe`/`smart` 保持不变。该默认值只信任本地入口和经过验证的 Owner 私聊，群聊、其他用户与硬拒绝规则不会扩权。
-
-如果当前个人实例明确要求最少监督，可在私有 `~/.lobster0/config.toml` 中设置 `mode = "yolo"` 并重启 Gateway；这只减少硬校验通过后的审批，不会开放凭据、敏感路径、SSRF、提权或 Shell 字符串执行。
+`init` 会幂等安装 `feishu-lark-cli` 与 `github-cli` Skill。飞书云端请求走官方 `lark-cli`，
+GitHub 远端请求走本机 `gh`，本地仓库请求走 `git`；凭据不会被塞进 Tool 参数或模型上下文。
 
 ## 快速开始
 
-### 一行安装
+### 现在可用：源码安装
 
-```bash
-curl -fsSL --proto '=https' --tlsv1.2 \
-  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash
-```
-
-> [!IMPORTANT]
-> 这条命令描述的是 v0.7.0 Release 发布**之后**的行为。本仓库目前还没有任何 Release 或 tag，
-> 该 URL 现在会 404。一行安装链路的状态是 **RELEASE CANDIDATE / PUBLIC GATES PENDING**：
-> 真机安装矩阵、包发布与镜像摘要冒烟一次都没有执行过。逐项证据见
-> [v0.7.0 一行安装候选记录](docs/evals/releases/v0.7.0-install.md)。
-> 在正式发布之前，请使用下面的[源码开发安装](#源码开发安装)。
-
-安装器自带 pinned uv、受管 Python 3.12、受管 Node.js 与平台 pi-tui bundle，因此**不需要预装
-Python、Node.js 或 pnpm**。默认安装到 `~/.lobster0`，命令入口是 `~/.local/bin/lobster0`，
-默认安装过程不请求 sudo；需要系统包、linger 或系统级前缀时会先展示精确计划再单独确认。
-Python 分发名是 `lobster0-agent`，CLI、import 与状态根仍是 `lobster0`。
-
-先看计划、零写入、零下载：
-
-```bash
-curl -fsSL --proto '=https' --tlsv1.2 \
-  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash -s -- --dry-run
-```
-
-完全非交互安装（需要事先准备好配置模板与 owner-only Secret 文件）：
-
-```bash
-curl -fsSL --proto '=https' --tlsv1.2 \
-  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh \
-  | bash -s -- --no-onboard --no-install-service --json \
-      --config /absolute/path/to/config.toml \
-      --secrets-file /absolute/path/to/secrets.env
-```
-
-其余参数：`--version <semver>`、`--channel stable|dev`、`--prefix <绝对路径>`、`--system-prefix`、
-`--install-service`、`--allow-system-packages`、`--verbose`。stdin 不是 TTY 且参数不足时 fail closed；
-Secret 只从 `/dev/tty` 隐藏输入、owner-only Secret 文件或现有进程环境读取，不接受命令行明文。
-
-### 支持矩阵
-
-| 平台 | 版本 | 架构 | 常驻服务 |
-| --- | --- | --- | --- |
-| Ubuntu | 22.04、24.04 | x86_64、arm64 | systemd user |
-| Debian | 12、13 | x86_64、arm64 | systemd user |
-| RHEL / Rocky / Alma | 9、10 | x86_64、arm64 | systemd user |
-| macOS | 13 及以上 | Intel（x86_64）、Apple Silicon（arm64） | LaunchAgent |
-
-明确不支持、且在任何写入前就返回 `unsupported_platform`：Windows 原生与 WSL、Alpine/musl、
-NixOS 声明式安装、Android/Termux、32 位架构，以及没有 systemd 的 Linux 常驻服务宿主。
-
-上表是设计上的 Tier 1 范围，不是已验证结论——这些组合目前都还没有跑过真机安装矩阵。
-
-### Node 策略
-
-受管 Node.js 默认 24.18.0。只接受 `22.22.3 <= version < 23.0.0` 或 `24.15.0 <= version < 25.0.0`，
-Node 20/23/25/26 一律拒绝。一行安装会自己下载并校验受管 Node，不使用也不要求机器上已有的 Node。
-
-### 服务、升级与卸载
-
-| 命令 | 用途 |
-| --- | --- |
-| `lobster0 service install` | 安装并启用受管 Gateway 用户服务（systemd user / LaunchAgent） |
-| `lobster0 service status` | 查看受管服务状态 |
-| `lobster0 service logs` | 读取受管服务日志 |
-| `lobster0 service restart` | 重启受管服务 |
-| `lobster0 service uninstall` | 只移除受管服务，保留安装与数据 |
-| `lobster0 uninstall` | 移除受管 Runtime、launcher 与 receipt，**保留 `~/.lobster0` 下全部用户数据** |
-| `lobster0 uninstall --purge-data --yes-i-understand-data-loss` | 额外删除枚举出来的状态；`workspace/` 仍然保留 |
-
-**升级的方式是重新运行上面的一行安装命令。** 已安装 CLI 上的 `lobster0 update` 目前会打印
-`update_requires_bootstrap` 并以退出码 2 结束：升级流水线需要 bootstrap 建立的信任根（pinned uv 与
-受管 Python），而受管 Runtime 在激活时按设计删除 `.inputs`，所以它 fail closed，而不是退化到
-`PATH` 上的不可信 uv。升级中途失败会自动回滚；若迁移之后已经产生新写入，则返回 `rollback_conflict`
-并保留现场，人工恢复步骤见[安装与发布运维手册](docs/engineering/operations/20260809_install-release-operations.md)。
-
-### 源码开发安装
-
-开发与贡献走源码路径，需要本机自备 Python 3.12+、[uv](https://docs.astral.sh/uv/)、
-Node.js 22.22.3–<23 或 24.15.0–<25 与 pnpm（默认 pi-tui；受管默认 24.18.0）；启用 Browser Agent 时
-另需 Chrome/Chromium 与 Playwright；对话需要一个 OpenAI-compatible 模型端点，默认配置为
-`deepseek-v4-pro`。
+需要 Python 3.12+、[uv](https://docs.astral.sh/uv/)、Node.js
+`22.22.3 <= version < 23` 或 `24.15.0 <= version < 25`，以及 pnpm。
 
 ```bash
 git clone https://github.com/NEDONION/lobster0.git
@@ -159,8 +101,6 @@ cd lobster0
 uv sync --extra dev --extra channels
 pnpm --dir tui install
 pnpm --dir tui build
-pnpm --dir browser-worker install
-pnpm --dir browser-worker build
 
 cp .env.example .env
 # 只在本机填写 LOBSTER0_MODEL_API_KEY；不要提交 .env
@@ -170,239 +110,177 @@ uv run lobster0 doctor
 uv run lobster0
 ```
 
-默认状态目录是 `~/.lobster0`，Workspace 是 `~/.lobster0/workspace`。使用隔离实例：
+默认状态目录是 `~/.lobster0`，Workspace 是 `~/.lobster0/workspace`。想跑一份完全隔离的实例：
 
 ```bash
 uv run lobster0 --home /absolute/path/to/demo-home init
 uv run lobster0 --home /absolute/path/to/demo-home
 ```
 
-如果暂时没有满足版本要求的 Node.js，可以显式使用迁移期 fallback：
+没有合规 Node.js 时，可以临时使用 Textual fallback：
 
 ```bash
 LOBSTER0_TUI=textual uv run lobster0
 ```
 
-### 常用入口
+### Desktop
 
-| 命令 | 用途 |
-| --- | --- |
-| `uv run lobster0` | 启动唯一主 TUI。 |
-| `uv run lobster0 init` | 幂等初始化 owner-only 状态、配置、Memory、Skills 和 SQLite。 |
-| `uv run lobster0 doctor` | 检查配置、目录权限、Provider、TUI 和数据库状态。 |
-| `uv run lobster0 gateway` | 启动已配置的 Feishu/Telegram/Discord Gateway。 |
-| `lobster0 service install/status/logs/restart/uninstall` | 管理受管 Gateway 用户服务（Linux systemd user / macOS LaunchAgent）；service 永远指向稳定 launcher。 |
-| `uv run lobster0 task list` | 查看 durable ScheduledTask；`show/runs/pause/resume/run/cancel/halt/unhalt` 提供完整控制面。 |
-| `uv run lobster0 eval validate --root evals/scenarios` | 校验版本化 JSONL 场景。 |
-| `uv run lobster0 eval run --suite offline --root evals/scenarios` | 跑真实 Core/Policy/Tool/SQLite 离线回归。 |
-| `uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios` | 跑三平台 Channel gate 与 20 轮本地 soak。 |
-| `uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios` | 跑 Phase 6 的 15 条 Automation gate 与 20 轮 soak。 |
-| `uv run lobster0 eval run --suite browser --repeat 20 --json --root evals/scenarios` | 跑 Phase 6.5 的 18 条 Browser gate 与 20 轮 soak。 |
-
-Channel 的 allowlist、Owner 身份与平台凭据配置见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
-
-### Desktop W0/W1 开发版与 D1～D5 新目标
-
-Desktop 当前是开发构建，不是已签名安装包。它复用同一 Python Core、Policy、SQLite 与 Automation，不在
-Renderer 中复制 Agent 逻辑或直接访问本机能力。
-
-macOS 已安装 `uv`、满足 22.22.3–<23 或 24.15.0–<25 的 Node.js 和 Corepack 后，首选直接在 Finder 双击根目录的
-`start-desktop.command`，或从终端执行：
+Desktop 当前是开发构建，还不是已签名安装包。macOS 上可直接双击根目录的
+`start-desktop.command`，或在终端执行：
 
 ```bash
 ./start-desktop.command
 ```
 
-脚本会按需安装锁定的 Python/TUI/Desktop 项目依赖、构建共享 TUI Bridge client、补齐 Electron 二进制，
-并在首次启动时调用安全的 `lobster0 setup` 收集模型 Key；后续启动只运行幂等 `init`。默认状态目录是 `~/.lobster0`，也可提前设置绝对
-路径 `LOBSTER0_HOME`。Secret 继续由 Core 写入 owner-only `secrets.env`，脚本不读取或打印其内容。
-旧状态没有 `secrets.env` 时，开发入口会显式选择仓库根目录现有的 owner-only `.env`。
+脚本会安装锁定依赖、构建共享 TUI Bridge client、补齐 Electron，并在首次启动时安全收集模型 Key。
+Secret 由 Core 写入 owner-only `secrets.env`，脚本不会读取或打印它。
 
-如果一键入口报告依赖或配置错误，可按下面步骤手工排障：
+### Web 控制台
+
+先构建 Desktop 的共享 Renderer，再启动回环控制台：
 
 ```bash
-uv sync --extra dev
-pnpm --dir tui install
-pnpm --dir tui build
-pnpm --dir desktop install
-uv run lobster0 setup --home /absolute/path/to/lobster0-home
-
-LOBSTER0_PYTHON="$(pwd)/.venv/bin/python" \
-LOBSTER0_HOME=/absolute/path/to/lobster0-home \
-LOBSTER0_ENV_FILE=/absolute/path/to/lobster0-home/secrets.env \
-pnpm --dir desktop dev
+pnpm --dir desktop build:web
+uv run lobster0 web
 ```
 
-当前可运行版本包含首页、任务工作台、自动化只读列表和设置；自动化跨进程测试和隔离 Electron 进程 smoke 已通过。
-它仍是 W0/W1 历史基线：输入框藏在任务页，Artifact、Sub-agent、installer/signing、鼠标/键盘视觉验收和真实模型
-LIVE smoke 尚未完成。
+默认只绑定 loopback；非回环监听必须显式配置 token。
 
-新的 D1～D5 目标已确认：以 LobsterAI Cowork 为主体，让首屏直接显示大对话框、附件、模型、Workspace 和 Agent
-选择；吸收 OpenAgents 的 Agent 列表、任务线程、参与状态和右侧共享产物；底层继续只使用 Lobster0 Core、Policy、
-Approval、ArtifactStore 和 SQLite。当前处于设计完成、实现 pending，详见
-[桌面多 Agent 开发需求](docs/product/20260810_桌面多Agent工作台开发需求.md)、
-[架构设计](docs/architecture/20260810_LobsterAI-first桌面多Agent设计.md)和
-[分 Phase 落地方案](docs/engineering/desktop/20260810_桌面多Agent分Phase落地.md)。
+### 飞书、Telegram、Discord
 
-## 产品预览
+完成对应 Channel 配置后启动 Gateway：
 
-下面 3 个典型 Case 均在 Warp 中使用全新隔离 `LOBSTER0_HOME` 运行。为了不消耗真实模型额度，Provider 响应来自本地固定端点；Lobster0 的 TUI、Bridge、TurnService、Policy、ToolExecutor、SQLite、Approval 和 Tool 执行均走真实代码路径。
+```bash
+uv run lobster0 gateway
+```
 
-### 1. TUI 对话完整跑通
+Owner、allowlist、平台凭据和真实验收步骤见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
 
-![Lobster0 TUI 对话](docs/assets/lobster0-tui-conversation-warp.png)
+### 发布后的一行安装
 
-中文输入、回答、32K 应用侧 Context budget、token、迭代和耗时在同一界面可见。
+```bash
+curl -fsSL --proto '=https' --tlsv1.2 \
+  https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash
+```
 
-### 2. SAFE 模式请求权限
+> [!WARNING]
+> 仓库目前还没有公开 Release 或 tag，这个 URL 现在会返回 404。安装器已经实现，但真机安装矩阵、
+> 包发布、镜像摘要 smoke 与 attestation 仍是 **PUBLIC GATES PENDING**。正式发布前请使用源码安装。
 
-![Lobster0 SAFE 权限审批](docs/assets/lobster0-tui-approval-warp.png)
+发布后的安装器会自带 pinned uv、受管 Python 3.12 和受管 Node.js，默认安装到 `~/.lobster0`，
+不要求 sudo。完整参数、升级、回滚和卸载方法见[安装与发布运维手册](docs/engineering/operations/20260809_install-release-operations.md)。
 
-`run_command` 在执行前展示规范化后的绝对程序、精确 argv、超时和四种审批选择；截图时命令仍处于 `requested`，没有执行。
+候选包名是 `lobster0-agent`。Tier 1 设计范围包括 Ubuntu 22.04/24.04、Debian、Rocky/Alma 与 macOS，
+覆盖 x86_64、arm64，并使用 systemd user 或 LaunchAgent；Windows、WSL、Alpine 会在写入前返回
+`unsupported_platform`。Node 支持 22.22.3 起的 22.x 或 24.15.0 起的 24.x，发布矩阵锁定 24.18.0。
 
-### 3. 调用外部 Git CLI 完成任务
+服务与卸载命令是 `lobster0 service install`、`lobster0 service logs`、`lobster0 service uninstall` 和
+`lobster0 uninstall`；删除状态还要同时给出 `--purge-data --yes-i-understand-data-loss`。自动化安装可用
+`--no-onboard`、`--no-install-service`、`--dry-run` 和 `--json`。当前 `lobster0 update` 会返回
+`update_requires_bootstrap`，升级请重新运行一行安装命令。
 
-![Lobster0 调用外部 Git CLI](docs/assets/lobster0-tui-external-cli-warp.png)
+### 常用命令
 
-Lobster0 用 `run_command` 的 exact argv 调用隔离仓库中的 `git status --short --branch`，再根据真实 Tool 结果完成总结；没有 Shell 字符串拼接。
+| 命令 | 用途 |
+| --- | --- |
+| `uv run lobster0` | 启动主 TUI。 |
+| `uv run lobster0 init` | 初始化配置、Memory、Skills 和 SQLite。 |
+| `uv run lobster0 doctor` | 检查配置、目录、Provider、TUI 和数据库。 |
+| `uv run lobster0 gateway` | 启动已配置的消息 Channel。 |
+| `uv run lobster0 web` | 启动本地 Web 控制台。 |
+| `uv run lobster0 task list` | 查看定时任务；另有 show/runs/pause/resume/run/cancel。 |
+| `lobster0 service install/status/logs/restart` | 管理 Linux systemd user 或 macOS LaunchAgent。 |
 
-## 工作原理
+## 它为什么可控
+
+### Permission Mode
+
+| 模式 | 大白话说明 |
+| --- | --- |
+| `SAFE` | 低风险只读动作可以直接做，其余先问你。 |
+| `SMART` | 命中明确安全规则时少打扰，没命中仍会问。 |
+| `AUTOPILOT` | 已验证 Owner 的非关键动作自动放行，硬边界仍然生效。 |
+| `YOLO` | 最少监督，但不会关闭敏感路径、SSRF、Workspace 和关键动作硬拒绝。 |
+
+新安装默认 `autopilot`。这个默认值只信任本地入口和经过验证的 Owner 私聊；群聊、其他用户与硬拒绝规则
+不会因此扩权。显式配置过 `safe` 或 `smart` 的旧实例保持不变。
+
+### 永远不会因为“少打扰”而关闭的边界
+
+- Secret 不进入仓库、普通日志或 Memory；密码、Token、OTP、Authorization 和私钥在边界拒绝。
+- 文件 Tool 只能访问配置的 Workspace/允许根；symlink、路径逃逸、二进制和超限内容 fail closed。
+- `run_command` 只接受程序名和参数数组，`shell=False`，没有管道、重定向或命令字符串拼接。
+- `http_get` 只允许通过 URL、DNS、端口、redirect 和重绑定检查的 HTTPS 目标。
+- Approval 绑定 Tool、规范化参数 hash、Owner、TTL 和允许的决策；篡改、重放、跨 Owner 都会失败。
+- 各 Channel 的 Transport、Delivery、queue 与恢复状态彼此隔离，不会因为一个平台故障拖垮全部入口。
+- Memory、Skill、网页和外部消息只是上下文，不能扩大 Policy 权限。
+
+## 技术细节
 
 ```mermaid
 flowchart LR
-    U["Owner"] --> TUI["pi-tui / Textual"]
+    U["Owner"] --> UI["Desktop / TUI / Web"]
     U --> IM["Feishu / Telegram / Discord"]
-    TUI --> CORE["TurnService + AgentRunner"]
+    UI --> CORE["Lobster0 Core"]
     IM --> PIPE["isolated Channel pipelines"]
     PIPE --> CORE
     CORE --> PROVIDER["OpenAI-compatible Provider"]
-    CORE --> EXEC["ToolExecutor"]
-    EXEC --> POLICY["Policy + Permission Mode"]
-    POLICY --> APPROVAL["bound Approval"]
-    POLICY --> TOOLS["Files / HTTPS / CLI / Memory"]
-    CORE --> SCHED["Scheduler + TaskRunner"]
-    SCHED --> LEDGER["Task Ledger + E-stop"]
-    SCHED --> EXEC
+    CORE --> POLICY["Policy + Approval"]
+    POLICY --> TOOLS["Files / HTTPS / CLI / Memory / Browser"]
+    CORE --> AUTO["Scheduler + TaskRunner"]
     CORE --> DB["SQLite ledgers"]
     CORE --> MD["Markdown Memory + Skills"]
 ```
 
-一次典型本机动作的链路是：
+一次本机任务大致是这样完成的：
 
-1. TUI 或 Channel 把用户消息交给同一个 `TurnService`；
-2. `ContextBuilder` 组合 SOUL、USER、当前 Memory、Skills 和有界历史；
+1. Desktop、TUI 或 Channel 把你的原话交给同一个 `TurnService`；
+2. Core 组合 SOUL、USER、Memory、Skills 和有界历史；
 3. Provider 返回文本或 Tool Call；
-4. Tool 先做 Schema 校验，再由 Policy 决定 allow / deny / approval；
-5. 执行结果写入 ToolRun/Audit，返回 Agent 继续完成回答；
-6. Turn、消息、审批与 Channel Delivery 都能在重启后恢复或解释。
+4. Tool 先过 Schema，再由 Policy 决定允许、拒绝或请求审批；
+5. 执行结果写入 ToolRun/Audit，Agent 根据真实结果继续回答；
+6. Turn、消息、审批、Artifact 和 Delivery 都能在重启后恢复或解释。
 
-## Memory Autopilot：已实现的混合方案
+### Memory、Automation 与 Browser
 
-| 能力 | 当前实现 |
-| --- | --- |
-| 真相源 | 已接受 Unit 写入 `memory/owners/<owner>/memory.md`；SQLite Projection 可重建 |
-| 写入 | 普通 Turn 非阻塞 capture/flush；明确“记住”原子落盘后才报告成功 |
-| 检索 | owner-scoped FTS5/CJK、完整来源链、有效期过滤与固定 Recall 预算 |
-| 治理 | short-term、重复晋升、Review、冲突、纠错、forget、TTL 与 weekly review |
-| 跨渠道 | TUI、Feishu、Telegram、Discord 的已验证 Owner 私聊共享一个 Memory Space |
-| 隐私 | 群聊、非 Owner、未知/冲突身份 fail closed；Secret 在 Candidate 前拒绝 |
-| 维护 | Markdown direct edit 对账、`/memory rebuild`、legacy 只读 hash 迁移、Doctor drift 检查 |
+- **Memory**：Owner 接受的内容写入 Markdown 真相源；SQLite 只是可重建的检索投影。普通对话异步捕获，
+  明确“记住”会原子落盘后再报告成功。
+- **Automation**：每个 Run 都冻结任务快照、预算和 Tool profile；`complete_task` 是唯一成功出口，
+  危险动作仍走参数绑定审批。
+- **Sandbox/Checkpoint**：Docker/Seatbelt 缺失时 fail closed；文件副作用前创建有界 Checkpoint，
+  Rollback 需要 preview hash，冲突时保留现场。
+- **Browser**：使用 Lobster0 专用 Chromium Profile；模型只能调用 8 个封闭 Tool，不能执行任意 JavaScript，
+  也不能读取个人 Chrome Profile、密码或 OTP。
 
-架构、实现和证据入口：
-
-- [Memory Autopilot 能力 Gap 与重构架构](docs/architecture/20260808_Memory-Autopilot能力Gap与重构架构.md)
-- [正式设计 Spec](docs/superpowers/specs/2026-08-08-memory-autopilot-design.md)
-- [最佳实践与技术选型](docs/engineering/20260808_memory-autopilot-best-practices-and-technology-selection.md)
-- [Memory A～E TDD 实施计划](docs/superpowers/plans/2026-08-09-memory-autopilot.md)
-- [Memory Autopilot 工程实现](docs/engineering/phase-5/20260809_memory-autopilot.md)
-- [v0.6.0 发布证据](docs/evals/releases/v0.6.0.md)
-
-## Phase 6：自治运行与安全
-
-Phase 6 让 Lobster0 在 Gateway 常驻时执行受控后台任务，但不把控制权交给模型：
-
-- SQLite Task Ledger 冻结 Task/Run snapshot，Scheduler 幂等生成 due Run；
-- 每个 Run 使用独立 Automation Session、固定 Tool profile 和 wall-clock/turn/tool/token/cost 预算；
-- `manage_task` 只存在于普通 Agent，Automation Agent 不能递归创建 Task；
-- `complete_task` 是唯一成功出口，危险 Tool 继续走参数与 ExecutionPlan 绑定的人工 Approval；
-- durable E-stop、lease recovery、幂等 Channel Delivery 和 Heartbeat 复用现有 Runtime；
-- Docker/Seatbelt 缺失时 fail closed，不回退 Host；Seatbelt v2 Plan 绑定 exact executable path/hash；文件副作用前创建
-  有界 Checkpoint，Rollback 需要 preview hash。
-
-默认 `automation.enabled = false`、`heartbeat.enabled = false`。当前 Heartbeat 没有 Owner IM route；Checkpoint
-只覆盖主 Workspace；Rollback 还没有 CLI/TUI。详细边界见
-[Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md)、
-[Sandbox 与 Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md)和
-[v0.7.0 发布证据](docs/evals/releases/v0.7.0.md)。
-
-## Phase 6.5：隔离 Browser Agent
-
-Browser 默认关闭。开启后，一个 Runtime 独占一个 TypeScript Worker 和 Lobster0 专用 Chromium Profile；模型只能使用
-`browser_open/snapshot/click/type/press/scroll/screenshot/close` 八个封闭 Tool，不能执行任意 JavaScript，也不能读取
-个人 Chrome Profile、Cookie、密码或 OTP。
-
-```toml
-[browser]
-enabled = true
-profile = "lobster0"
-headed = true
-allow_personal_profile = false
-max_tabs = 8
-max_snapshot_chars = 20000
-inactivity_timeout_seconds = 120
-download_max_bytes = 20971520
-```
-
-网页内容始终作为 `untrusted_web_content`；点击与 Enter/Space 走参数绑定 Approval；公网 HTTPS 与 redirect 复用 SSRF
-Policy；截图和下载只返回私有 Artifact ID。当前状态为 **IMPLEMENTATION PASS / CONTROLLED LIVE SMOKE PENDING**。
-完整数据流、故障矩阵和验收方法见 [Browser Agent 工程文档](docs/engineering/phase-6/browser-agent.md)与
-[v0.6.5 发布证据](docs/evals/releases/v0.6.5.md)。
-
-## 安全边界
-
-- Secret 永不进入仓库、普通日志或 Memory；常见 Token、密码、OTP、Authorization 和私钥在边界拒绝。
-- 文件 Tool 只能访问配置的 Workspace/允许根；symlink、路径逃逸、二进制和超限内容 fail closed。
-- `run_command` 只接受程序与参数数组，`shell=False`，使用最小环境、固定 cwd、超时和输出上限。
-- `http_get` 只允许经过 URL、DNS、端口和重绑定检查的 HTTPS 目标。
-- Approval 绑定 Tool 名、规范化参数 hash、Owner、TTL 和可用决策；篡改、重放和跨 Owner 使用都会拒绝。
-- Channel allowlist、Owner 映射、Inbox/Outbox 幂等、独立 queue 和恢复状态不会交给模型决定。
-- Memory、Skill 和外部内容只能提供上下文，不能扩大 Policy 权限。
-
-完整威胁模型与契约见[系统架构](docs/architecture/20260807_系统架构.md)和[Phase 2 安全设计](docs/superpowers/specs/2026-08-07-phase-2-tools-security-design.md)。
+更完整的数据流和边界见[系统架构](docs/architecture/20260807_系统架构.md)。
 
 ## 项目状态
 
 | 项目 | 当前证据 |
 | --- | --- |
-| Python | 1005/1005 `unittest` PASS |
-| TUI | 41/41 TypeScript tests + build PASS |
-| Browser Worker | 14/14 TypeScript + 真实 headless Chrome tests PASS |
-| Agent | 39/39 active offline cases PASS（含 `MEM-AUTO-001..010`） |
-| Channel | 33/33 versioned cases PASS |
-| 稳定性 | 20 轮 local Channel soak，660/660 PASS |
-| Automation | 15/15 versioned cases；20 轮 300/300 PASS |
-| Browser | 18/18 versioned cases；20 轮 360/360 PASS；controlled live smoke pending |
-| Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING |
-| Telegram / Discord | Implementation PASS；真实平台 Live Gate 仍 pending |
-| Memory Autopilot | A～E IMPLEMENTATION PASS；真实 IM Live 结论沿用各平台 gate |
-| Phase 6 | **IMPLEMENTATION PASS / PRODUCTION SOAK PENDING**；生产 Gate tooling 完成，严格 25-case 与 24h 尚未完成 |
-| 一行安装与发布 | **RELEASE CANDIDATE / PUBLIC GATES PENDING**；真机安装矩阵、包发布、镜像摘要冒烟与 attestation 校验均未执行，仓库尚无 Release 或 tag |
+| Python | 全量标准库 `unittest` 通过；Phase 6.5 历史计数基线为 1005，当前计数见 v0.7.0 记录。 |
+| TUI | 42/42 TypeScript tests + build PASS；41/41 是上一个发布记录基线。 |
+| Desktop | 159/159 Vitest + Electron build PASS。 |
+| Browser Worker | 14/14 TypeScript + 真实 headless Chrome tests PASS。 |
+| Agent | 39/39 active offline cases PASS。 |
+| Channel | 33/33 versioned cases；20 轮 local soak 660/660 PASS。 |
+| Automation | 15/15 versioned cases；20 轮 300/300 PASS。 |
+| Browser | 18/18 versioned cases；20 轮 360/360 PASS；**CONTROLLED LIVE SMOKE PENDING**。 |
+| Feishu | TARGETED CALLBACK LIVE VERIFIED / 15-CASE LIVE PENDING。 |
+| Telegram / Discord | Implementation PASS；完整真实平台 Live Gate pending。 |
+| Phase 6 | IMPLEMENTATION PASS / PRODUCTION SOAK PENDING。 |
+| 一行安装 | RELEASE CANDIDATE / PUBLIC GATES PENDING。 |
 
-本地 fake SDK、离线场景和 660/660 soak 只代表 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。历史发布证据见 [`docs/evals/releases/`](docs/evals/releases/)。
-Memory 上线前的 Phase 5 历史基线为 562 Python、30 TypeScript、29/29 Agent；Memory v0.6.0 的历史基线为
-666 Python、35 TypeScript、39/39 Agent；Phase 6 历史基线为 798 Python。当前发布数字以上表和 v0.6.5 为准。
-上表的 1005 是 Phase 6.5 的 Python 计数基线；安装/发布链路新增的测试尚未并入该数字，本机全量
-`unittest discover` 当前为 1547 项，逐项结果见
-[v0.7.0 一行安装候选记录](docs/evals/releases/v0.7.0-install.md)。
+本地 fake SDK、固定 Provider、离线场景和 soak 只能证明 **IMPLEMENTATION PASS**，不会冒充真实平台 Live PASS。
+逐项证据见 [`docs/evals/releases/`](docs/evals/releases/)。
 
 ### 验证命令
 
 ```bash
 uv run python -m unittest discover -s tests -v
 pnpm --dir tui test
-pnpm --dir tui build
+pnpm --dir desktop test
 pnpm --dir browser-worker test
-pnpm --dir browser-worker build
 uv run ruff check .
 uv run lobster0 eval run --suite channel --repeat 20 --json --root evals/scenarios
 uv run lobster0 eval run --suite automation --repeat 20 --json --root evals/scenarios
@@ -411,73 +289,58 @@ uv run python scripts/validate_docs.py
 git diff --check
 ```
 
-## 路线图
+## 下一步
 
-```mermaid
-flowchart LR
-    P53["v0.5.3\nLive Evidence 收口"] --> MA["Memory A-E\nIMPLEMENTED"]
-    MA --> P6["Phase 6\nIMPLEMENTED"]
-    P6 --> P65["Phase 6.5\nBrowser IMPLEMENTED"]
-    P65 --> P7["Phase 7\nControlled Evolution"]
-    P7 --> P8["Phase 8\nSkills + MCP + Provider"]
-    P8 --> P9["Phase 9\nSub-agent + Multimodal"]
-```
+- 完成飞书、Telegram、Discord 的严格 Live Evidence；
+- 完成 Browser controlled live smoke 与 Phase 6 production soak；
+- 跑完一行安装的真实平台矩阵并发布首个公开 Release；
+- 继续 Controlled Evolution、更多 Skills/MCP、Sub-agent 与 Multimodal。
 
-Owner `AUTOPILOT` 默认值、飞书 `Claw Trail` Agent Card、v0.5.3 Core hardening、Memory A～E、Phase 6
-Autonomy/Sandbox 与 Phase 6.5 Browser Agent 已实现。下一条功能主线是 **Phase 7 Controlled Evolution**；
-Browser controlled live smoke 和 Feishu/Discord 严格 Live Evidence 仍作为独立验收并行收口。
+规划项只有通过对应 Gate 后，才会从“下一步”移到“当前能力”。
 
 ## 仓库结构
 
 ```text
 src/lobster0/
 ├── agent/       # Context、Runner、Turn、Compaction
-├── automation/  # Task Ledger、Scheduler、Runner、Heartbeat、Delivery
-├── artifacts/   # Browser Screenshot/Download 私有 CAS 与 TTL
-├── browser/     # Worker Client、协议模型、发现与动作 Policy
-├── checkpoints/ # bounded CAS 与 conflict-aware Rollback
-├── channels/    # Feishu / Telegram / Discord adapters and pipelines
-├── memory/      # Markdown Truth、buffer/flush、FTS5、治理、对账与迁移
-├── policy/      # Workspace、Command、Network、Permission、Approval
-├── providers/   # OpenAI-compatible Provider
-├── sandbox/     # immutable Plan 与 Host/Docker/Seatbelt backend
-├── storage/     # SQLite schema, repositories and migrations
-├── tools/       # 18 个 Core Tool + 8 个可选 Browser Tool
-└── tui/         # Textual fallback；默认 pi-tui 在仓库 tui/
+├── automation/  # Task、Scheduler、Runner、Heartbeat、Delivery
+├── artifacts/   # Screenshot/Download 私有 CAS 与 TTL
+├── browser/     # Worker Client、协议与动作 Policy
+├── channels/    # Feishu / Telegram / Discord
+├── memory/      # Markdown Truth、FTS5、Review、迁移
+├── policy/      # Workspace、Command、Network、Approval
+├── sandbox/     # immutable Plan 与隔离 backend
+├── storage/     # SQLite schema、repository、migration
+└── tools/       # Core Tool 与可选 Browser Tool
 
 tui/             # Node.js pi-tui + Python Bridge client
-browser-worker/  # TypeScript Playwright/Chromium 隔离 Worker
-desktop/         # Electron + React 的 W0/W1 development build
+desktop/         # Electron + React Desktop / Web Renderer
+browser-worker/  # Playwright/Chromium 隔离 Worker
 evals/           # versioned Agent / Channel / Automation / Browser scenarios
-docs/            # PRD、架构、工程、计划、发布证据与进度页
+docs/            # 产品、架构、工程、计划与发布证据
 tests/           # Python unittest
 ```
 
 ## 文档
 
-| 入口 | 适合读者 |
+| 想了解什么 | 从这里开始 |
 | --- | --- |
-| [文档中心](docs/README.md) | 完整索引与推荐阅读顺序 |
-| [产品需求文档](docs/product/20260807_产品需求文档.md) | 产品范围、非目标和验收标准 |
-| [系统架构](docs/architecture/20260807_系统架构.md) | 模块边界、数据流与安全原则 |
-| [本地运行指南](docs/getting-started/20260807_本地运行指南.md) | 安装、配置、TUI、Gateway 与排障 |
-| [安装与发布运维手册](docs/engineering/operations/20260809_install-release-operations.md) | 草稿 Release 提升、PyPI/GHCR 核对、`rollback_conflict` 恢复与撤销流程 |
-| [v0.7.0 一行安装候选记录](docs/evals/releases/v0.7.0-install.md) | 一行安装链路的真实门禁状态与最终 PASS 所需外部证据（当前 PENDING） |
-| [工程文档索引](docs/engineering/README.md) | 已实现模块与规划文档的边界 |
-| [开发与交付时间线](docs/engineering/20260809_development-timeline.md) | 架构 Phase、真实版本顺序与证据状态的对应关系 |
-| [开发进度页](docs/progress/index.html) | 当前 Phase、证据和下一步 |
-| [OpenClaw / Hermes Gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) | 竞品能力映射与 v0.5.3 Evidence→Memory A～E→Phase 6～9 路线 |
-| [能力对齐工程落地总方案](docs/engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) | 后续交付的模块、数据和测试边界 |
-| [Memory A～E 实施计划](docs/superpowers/plans/2026-08-09-memory-autopilot.md) | 可直接执行的 RED→GREEN 施工计划 |
-| [Memory Autopilot 工程实现](docs/engineering/phase-5/20260809_memory-autopilot.md) | 当前数据流、安全边界、恢复和运维入口 |
-| [Phase 6 Autonomy Runtime](docs/engineering/phase-6/20260809_autonomy-runtime.md) | Task/Scheduler/Runner/Heartbeat、预算、恢复与运维入口 |
-| [Phase 6 Sandbox 与 Checkpoint](docs/engineering/phase-6/20260809_sandbox-and-checkpoint.md) | Plan/Approval 绑定、隔离后端、Checkpoint 与 Rollback |
-| [Phase 6.5 Browser Agent](docs/engineering/phase-6/browser-agent.md) | 专用 Profile、snapshot/ref、Policy、Artifact、恢复和 18-case gate |
-| [Phase 6 macOS + 飞书生产验收](docs/engineering/phase-6/20260810_macos-feishu-production-acceptance.md) | managed LaunchAgent、25-case、重启恢复、24h soak 与 Evidence Runbook |
+| 安装、配置、TUI、Gateway | [本地运行指南](docs/getting-started/20260807_本地运行指南.md) |
+| 产品范围和非目标 | [产品需求文档](docs/product/20260807_产品需求文档.md) |
+| 模块边界和数据流 | [系统架构](docs/architecture/20260807_系统架构.md) |
+| 全部文档索引 | [文档中心](docs/README.md) |
+| 安装、升级、回滚和卸载 | [安装与发布运维手册](docs/engineering/operations/20260809_install-release-operations.md) |
+| 当前 Release 候选证据 | [v0.7.0 记录](docs/evals/releases/v0.7.0.md) |
+| macOS + 飞书生产验收 | [Phase 6 验收 Runbook](docs/engineering/phase-6/20260810_macos-feishu-production-acceptance.md) |
+| Browser 隔离与 Artifact | [Browser Agent 工程文档](docs/engineering/phase-6/browser-agent.md) |
+| 能力差距与后续路线 | [OpenClaw/Hermes Gap](docs/architecture/20260808_OpenClaw-Hermes能力Gap与演进路线.md) |
+| 路线的工程拆解 | [Alignment Roadmap](docs/engineering/20260808_openclaw-hermes-alignment-engineering-roadmap.md) |
+| Memory Autopilot 实施记录 | [实施计划](docs/superpowers/plans/2026-08-09-memory-autopilot.md) |
 
 ## 参与开发
 
-欢迎 Issue 和 Pull Request。开始前请阅读 [AGENTS.md](AGENTS.md) 与[文档中心](docs/README.md)，保持变更范围小、测试离线可重复，并且不要把规划写成已实现。
+欢迎 Issue 和 Pull Request。开始前请阅读 [AGENTS.md](AGENTS.md)，只提交当前任务需要的改动，
+保持测试离线可重复，也不要把规划写成已经实现。
 
 ```bash
 uv sync --extra dev
