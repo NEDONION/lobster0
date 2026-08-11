@@ -127,6 +127,10 @@ reproducibility、node 22 pi-tui 全部 success——包括此前从没跑到过
 分发构建，以及 artifact-build 尾部的 installer 对抗与离线安装矩阵。仅剩 node 24 栽在
 上面 2.2 的第二层，即本节最后一处修复。
 
+**最终结果**：补上该修复后，run `31507975543`（commit `76846e1`）四个 job——offline
+gate、artifact reproducibility、node 22 pi-tui、node 24 pi-tui——**全部 success**。这是
+此前 60 次运行（44 failure、15 cancelled、0 success）之后的第一次全绿。
+
 本地跑这套测试必须用 Python 3.12：`test_install_runtime` 需要一个名为 `python3.12` 的
 managed interpreter，在 3.13 上会有 82 个与本次修复无关的 `FileNotFoundError`。
 
