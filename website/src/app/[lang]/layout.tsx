@@ -1,5 +1,3 @@
-import '@fontsource-variable/instrument-sans';
-import '@fontsource/ibm-plex-mono/400.css';
 import '@/styles/globals.css';
 
 import type { Metadata } from 'next';
@@ -9,6 +7,7 @@ import type { ReactNode } from 'react';
 import { marketingCopy, siteFacts } from '@/content/site';
 import { AppProvider } from '@/components/AppProvider';
 import { getLocale, openGraphLocales, locales } from '@/lib/i18n';
+import { instrumentSans, plexMono } from '@/lib/fonts';
 import { i18nUI } from '@/lib/layout.shared';
 
 export function generateStaticParams() {
@@ -68,7 +67,7 @@ export default async function LocaleLayout({
   if (!locale) notFound();
 
   return (
-    <html lang={locale} suppressHydrationWarning>
+    <html className={`${instrumentSans.variable} ${plexMono.variable}`} lang={locale} suppressHydrationWarning>
       <body>
         <AppProvider
           i18n={i18nUI.provider(locale)}

@@ -294,3 +294,40 @@ Round 3 记录的 Browser 面板故障（`innerWidth/innerHeight` 持续为 0）
 - `tsc` / `eslint` / `vitest`（28/28）/ `npm run build`（35 条静态路由）全绿
 - `npx playwright test`：11 passed / 1 skipped
 - 移动端 390×844 文档页零横向溢出，截图确认 subnav 正常
+
+---
+
+## Round 9 — 字体加载（2026-08-11）
+
+### 问题
+
+字体走 Fontsource 的 CSS 引入（`import '@fontsource-variable/instrument-sans'`）。Fontsource 出的是普通样式表，浏览器**必须先拿到并解析 CSS 才能发现字体文件**，多出一整个往返。实测 HTML 里连一条 `rel="preload"` 都没有。
+
+### 走过的两条弯路
+
+1. **JS import 取 URL + 手写 preload**：Turbopack 下能拿到 `/_next/static/media/...woff2`，dev 正常；但 `package.json` 的 build 脚本是 `next build --webpack`，webpack 没配 woff2 loader，**生产构建直接失败**。
+2. 想给 webpack 补 asset rule —— 放弃。CSS 里引用的字体由 Next 自己的管线发出（`ae05c57c...`），JS import 由我的 rule 发出（另一套 hash），两条路径产出**两份文件**，preload 的和 CSS 请求的不是同一个 URL，反而下载两次。
+
+### 最终做法
+
+改用 `next/font/local`（`src/lib/fonts.ts`）：它自己生成 @font-face（只有一份文件）并自动发 preload，且 Turbopack / webpack 都支持。
+
+- 只声明 Latin 子集：CJK 由 fallback 里的系统字体承担，文案里没有 latin-ext 字符（法语 Œ/œ 落在 Latin range 内）。
+- 不声明斜体：31 KB 只有在 preload 的前提下才值得，文档里那几个强调标签用合成倾斜完全够看。
+- 导出名要用 `instrumentSans` / `plexMono` —— `next/font` 拿**导出标识符**当生成的 font-family 名，叫 `sans` 会 ship 出 `font-family: sans`。
+- `global-not-found.tsx` 自己渲染 `<html>`，也要挂 variable className。
+
+### 实测（150ms RTT / 1.6Mbps 节流，各 5 次取中位数）
+
+| | 字体开始下载 | 主字体到位 |
+|---|---|---|
+| 改前 | 742ms | 1716ms |
+| 改后 | **164ms** | **943ms** |
+
+主字体提前约 **770ms** 到位。改前正文在 ~820ms 用 fallback 画出来，要到 1716ms 才换成真字体 —— 近 900ms 的 FOUT 窗口，而 fallback 是 PingFang SC，和 Instrument Sans 字面宽差很多，回流很明显。改后字体在首次内容绘制时已经就位。
+
+**FCP 不作为依据**：同一构建 5 次跑出 736–988ms 的双峰分布，噪声大于任何配置间差异，不能拿来支持结论。
+
+### 验证
+
+`tsc` / `eslint` / `vitest` 28 / `build` / `playwright` 11 passed 全绿；截图确认 Latin 走 Instrument Sans、中文走 PingFang SC、代码块走 Plex Mono，404 页同样生效。

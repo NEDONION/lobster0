@@ -1,11 +1,10 @@
-import '@fontsource-variable/instrument-sans';
-import '@fontsource/ibm-plex-mono/400.css';
 import '@/styles/globals.css';
 
 import Link from 'next/link';
 import type { Metadata } from 'next';
 
 import { siteFacts } from '@/content/site';
+import { instrumentSans, plexMono } from '@/lib/fonts';
 
 export const metadata: Metadata = {
   description: 'The requested Lobster0 route could not be found.',
@@ -16,7 +15,7 @@ export const metadata: Metadata = {
 
 export default function GlobalNotFound() {
   return (
-    <html lang="zh-CN">
+    <html className={`${instrumentSans.variable} ${plexMono.variable}`} lang="zh-CN">
       <body>
         <main className="not-found-page">
           <div className="not-found-page__code" aria-hidden="true">404</div>
