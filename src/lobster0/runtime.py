@@ -1,6 +1,7 @@
 """CLI、TUI 与 Gateway 共用的唯一 Agent/Automation 运行期装配。"""
 
 import json
+import os
 import sys
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from lobster0.channels.manager import ChannelManager
 from lobster0.channels.observability import ChannelObserver
 from lobster0.checkpoints.store import CheckpointStore
 from lobster0.config import AppConfig, resolve_permission_roots
+from lobster0.media.switching import VisionSwitchingProvider
 from lobster0.memory.buffer import MemoryBufferRepository
 from lobster0.memory.console import MemoryConsole
 from lobster0.memory.extractor import (
@@ -217,6 +219,34 @@ class AgentRuntime:
                     self._closed = True
 
 
+
+def _with_vision_switching(provider, config: AppConfig):
+    """在带图轮次上自动切到视觉后端；未配置时原样返回主 Provider。
+
+    视觉后端来自 ``providers`` 列表里 id 为 ``vision`` 的那一条，模型名取自
+    ``LOBSTER0_VISION_MODEL``。三者缺一就退化为"没有视觉能力"——此时带图轮次会
+    在 Provider 边界明确报错，而不是把图悄悄丢掉发给看不见图的模型。
+
+    刻意不新增配置字段：``config.py`` 正在被并行改动，从既有的多 Provider 列表加
+    环境变量取值可以完整实现能力，且不与之冲突。
+    """
+    vision_config = next(
+        (item for item in config.providers if item.id == "vision"), None
+    )
+    model = os.environ.get("LOBSTER0_VISION_MODEL", "").strip()
+    if vision_config is None or not model:
+        return VisionSwitchingProvider(provider, vision=None, vision_model=None)
+    vision_key = os.environ.get(vision_config.api_key_env, "").strip()
+    if not vision_key:
+        return VisionSwitchingProvider(provider, vision=None, vision_model=None)
+    backend = OpenAICompatibleProvider(
+        vision_config.base_url,
+        vision_key,
+        vision_config.timeout_seconds,
+    )
+    return VisionSwitchingProvider(provider, vision=backend, vision_model=model)
+
+
 def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentRuntime:
     """按已校验配置装配唯一 Agent、Automation 与查询 Runtime。
 
@@ -270,6 +300,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         api_key,
         config.provider.timeout_seconds,
     )
+    provider = _with_vision_switching(provider, config)
     approvals = ApprovalRepository(database)
     rules = PolicyRuleRepository(database)
     messages = MessageRepository(database)
