@@ -895,12 +895,35 @@ def _run_summary(run: object, session_key: str | None = None) -> dict[str, JsonV
     }
 
 
+_AUTOMATION_STATE_CODES = frozenset(
+    {
+        "automation_halted",
+        "system_task_immutable",
+        "system_task_not_found",
+        "task_lease_lost",
+        "task_not_active",
+        "task_not_found",
+        "task_run_not_found",
+        "task_run_transition",
+        "task_state_conflict",
+        "task_terminal",
+        "task_version_conflict",
+    }
+)
+
+
 def _automation_error_code(error: Exception) -> str:
     """把 Core 的自动化异常映射为稳定、可展示的 Bridge 错误码。"""
     if isinstance(error, ScheduleError):
         return str(error) or "automation_schedule_invalid"
     if isinstance(error, AutomationStateError):
-        return "automation_state_conflict"
+        # 保留具体原因：界面要靠它区分「已结束」（重试永远无用）和「版本冲突」
+        # （刷新即可）。白名单之外一律收敛，不把任意异常文本当错误码送出去。
+        return (
+            str(error)
+            if str(error) in _AUTOMATION_STATE_CODES
+            else "automation_state_conflict"
+        )
     if isinstance(error, AutomationDataError):
         return "automation_data_invalid"
     return "automation_invalid"

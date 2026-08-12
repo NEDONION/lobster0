@@ -14,10 +14,16 @@ from unittest.mock import Mock, patch
 
 from lobster0.agent.events import RunEvent
 from lobster0.artifacts.store import ArtifactError
+from lobster0.automation.repository import AutomationStateError
 from lobster0.bootstrap import initialize_state
 from lobster0.bridge.__main__ import build_parser
 from lobster0.bridge.conversations import ConversationQueryError
-from lobster0.bridge.server import BridgeServer, _run_summary, _task_summary
+from lobster0.bridge.server import (
+    BridgeServer,
+    _automation_error_code,
+    _run_summary,
+    _task_summary,
+)
 from lobster0.config import ProviderConfig, load_config
 from lobster0.paths import build_state_paths
 from lobster0.policy.approvals import ApprovalDecision
@@ -747,6 +753,26 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         await task
 
         self.assertEqual(response["payload"]["code"], "turn_busy")
+
+    def test_state_conflicts_keep_their_specific_reason(self) -> None:
+        """压成一个 automation_state_conflict，界面就无法区分「已结束」和「版本冲突」。
+
+        前者永远不会成功，后者刷新一下就好——提示语必须不同，所以码要保留。
+        """
+        self.assertEqual(
+            _automation_error_code(AutomationStateError("task_terminal")), "task_terminal"
+        )
+        self.assertEqual(
+            _automation_error_code(AutomationStateError("task_version_conflict")),
+            "task_version_conflict",
+        )
+
+    def test_unknown_state_reason_is_not_passed_through(self) -> None:
+        """白名单之外一律收敛，避免把任意异常文本当成错误码送出去。"""
+        self.assertEqual(
+            _automation_error_code(AutomationStateError("SECRET internal detail")),
+            "automation_state_conflict",
+        )
 
     def test_run_summary_carries_enough_to_explain_what_happened(self) -> None:
         """只回时间/状态/错误码，用户根本看不出 AI 到底做了什么。
