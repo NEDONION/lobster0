@@ -24,6 +24,7 @@ import type {
   ProviderSummary,
   ProviderUpsertInput,
   SessionHistory,
+  SessionMessage,
   SessionSummary,
   StartTurnInput,
 } from "../common/api";
@@ -181,14 +182,26 @@ export class BridgeService {
       messages: messages.map((value) => {
         const record = recordValue(value);
         const role = record.role;
-        if (role !== "user" && role !== "assistant") {
+        if (role !== "user" && role !== "assistant" && role !== "tool") {
           throw protocolError();
         }
-        return {
+        const message: SessionMessage = {
           role,
           content: stringValue(record.content),
           turnId: nullablePositiveInteger(record.turn_id),
         };
+        if (typeof record.reasoning === "string") {
+          message.reasoning = record.reasoning;
+        }
+        if (Array.isArray(record.tool_calls)) {
+          message.toolCalls = record.tool_calls.filter(
+            (item): item is string => typeof item === "string",
+          );
+        }
+        if (typeof record.tool_name === "string") {
+          message.toolName = record.tool_name;
+        }
+        return message;
       }),
     };
   }
