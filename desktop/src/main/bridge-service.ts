@@ -24,6 +24,7 @@ import type {
   ProviderSummary,
   ProviderUpsertInput,
   SessionHistory,
+  SessionMessage,
   SessionSummary,
   StartTurnInput,
 } from "../common/api";
@@ -181,14 +182,31 @@ export class BridgeService {
       messages: messages.map((value) => {
         const record = recordValue(value);
         const role = record.role;
-        if (role !== "user" && role !== "assistant") {
+        if (role !== "user" && role !== "assistant" && role !== "tool") {
           throw protocolError();
         }
-        return {
+        // 正文允许为空：只调了工具、没写正文的那一轮正是关键一步，
+        // stringValue 拒绝空串会让整个会话打不开。
+        if (typeof record.content !== "string") {
+          throw protocolError();
+        }
+        const message: SessionMessage = {
           role,
-          content: stringValue(record.content),
+          content: record.content,
           turnId: nullablePositiveInteger(record.turn_id),
         };
+        if (typeof record.reasoning === "string") {
+          message.reasoning = record.reasoning;
+        }
+        if (Array.isArray(record.tool_calls)) {
+          message.toolCalls = record.tool_calls.filter(
+            (item): item is string => typeof item === "string",
+          );
+        }
+        if (typeof record.tool_name === "string") {
+          message.toolName = record.tool_name;
+        }
+        return message;
       }),
     };
   }
@@ -557,7 +575,13 @@ function automationRun(record: Record<string, JsonValue>): AutomationRun {
     taskId: positiveInteger(record.task_id),
     status: stringValue(record.status),
     scheduledFor: stringValue(record.scheduled_for),
+    startedAt: nullableString(record.started_at),
+    completedAt: nullableString(record.completed_at),
     errorCode: nullableString(record.error_code),
+    resultPreview: nullableString(record.result_preview),
+    inputTokens: typeof record.input_tokens === "number" ? record.input_tokens : null,
+    outputTokens: typeof record.output_tokens === "number" ? record.output_tokens : null,
+    sessionKey: nullableString(record.session_key),
   };
 }
 

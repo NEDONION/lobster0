@@ -445,3 +445,108 @@ Round 11 里我用一个有序替换列表改 5 种语言的 `facts`，其中 `'
 ### 验证
 
 `tsc` / `eslint` / `vitest` 31（+3）/ `build` / `playwright` 11 passed 全绿。
+
+---
+
+## Round 13 — 官网主推「一条命令安装并启动」（2026-08-11）
+
+### 背景与一个必须先澄清的事实
+
+用户希望官网主推 README 里的「一行命令安装和启动」。但**真正的一行安装 `install.sh` 目前还不存在**——
+实测 `https://github.com/NEDONION/lobster0/releases/latest/download/install.sh` 返回 **404**，README 自己
+也写了「尚未产出，发布流水线 `assemble` 阶段未跑通」。所以官网不能挂这条，否则是在宣传一个坏链接。
+
+当前**真正能跑通**的是 wheel 安装（实测该 URL 返回 200）。它是一条 `&&` 串起来的单条命令，把它作为
+「一条命令装好」来主推是诚实的。
+
+### 实测验证命令本身
+
+没有只是照抄 README，而是真的下载验证了：752KB 真 wheel，包名 `lobster0-agent`、版本 `0.7.0`、
+`feishu` extra 存在、`Requires-Python: >=3.12`（与命令里的 `--python 3.12` 对得上）。
+
+### 命令的两个坑
+
+1. **文件名不能改**：`uv` 从 wheel 文件名里读版本号，改名报 `Must have a version`。所以不能用
+   `-o /tmp/lobster0.whl` 这种简写来缩短命令。
+2. **`${W}` 的花括号是必须的**：为了让命令在版面里不换行，把文件名提成变量 `W=...`。但裸写
+   `$W[feishu]` 在 **macOS 默认的 zsh 里会被当成数组下标**。实测 `bash` 和 `zsh` 下
+   `"/tmp/${W}[feishu]"` 都正确展开为同一个字符串。
+
+### 官网改动
+
+- `siteFacts.install` 从 9 行源码构建换成 4 行的 wheel 安装；新增 `siteFacts.start`
+  （`lobster0 setup` / `lobster0 gateway`）和 `siteFacts.version`。
+- **拆成两个终端块**，不是一个：`lobster0 setup` 是交互式的，如果和安装命令共用一个复制按钮，
+  用户一次粘贴会把 `gateway` 喂进 setup 的 stdin。这条约束写进了单测。
+- 需求 chip 从 `Python 3.12+ / Node.js 22.19+` 改成 `Python 3.12+ / uv / v0.7.0`——走 wheel 路径
+  不需要 Node，Node 只在从源码构建 TUI 时才需要。
+- 5 种语言的 `quickStart` 标题/正文和终端块标题全部改写。
+- 中英文档 `getting-started` 重写：一条命令装好 → 配置并启动 → 版本状态 → 从源码运行（降级为
+  贡献者路径）。中文版另加了国内镜像源那条命令。
+
+### 修掉 Round 8 一个静默失效的 Bug
+
+改文档时发现引用块仍然是斜体、并且末尾挂着一个多余的 `”`。查下去发现 **Round 8 我写的
+`#nd-page article ...` 选择器全部匹配到 0 个元素**——`#nd-page` **本身就是** Fumadocs 渲染的那个
+`<article>`，页面上没有嵌套 article。
+
+受影响的是 12 条规则：h2/h3 字号字距、正文行高、正文链接、行内代码 chip、引用块、表格边框与表头。
+当时看着页面确实变好了，是因为**令牌重映射和 shiki 主题这两项生效了，掩盖了排版规则全废**这件事。
+
+修法：去掉选择器里的 ` article`；另外 typography 插件还给 blockquote 段落加了
+`content: open-quote/close-quote`，一并置 `none`。
+
+**并且加了防复发的验证**：写脚本遍历 6 个文档页，检查我写的每一条 `#nd-page`/`#nd-sidebar`/`#nd-toc`
+规则实际匹配到几个元素。23 条里只剩 `#nd-page h3` 和 `#nd-page figure:has(pre) figcaption` 全页无匹配
+——这两条是条件性的（文档暂时没有 h3，也没有带 title 的代码块），保留。
+
+### 验证
+
+`tsc` / `eslint` / `vitest` 31 / `build` / `playwright` 11 passed 全绿；桌面与 390px 移动端零横向溢出；
+安装命令 4 行在桌面不换行，续行符 `\` 对齐。
+
+---
+
+## Round 14 — 消除版本号硬编码（2026-08-11）
+
+### 我上一轮留下的债
+
+Round 13 把安装命令铺开到官网和中英文档之后，`0.7.0` 在 3 个文件里被硬编码了 **12 处**。版本号同时出现在
+**下载 URL** 和 **wheel 文件名**里，下次发版漏改任何一处，官网就会给出一个下载不到的链接——而且是静默的，
+因为散文不参与类型检查。
+
+### 顺带查清的一件事
+
+`gh release view` 报 `release not found`，因为 **v0.7.0 被标记为 prerelease，仓库根本没有 "latest" release**。
+这才是 `releases/latest/download/install.sh` 返回 404 的**真正**原因：即使 `install.sh` 被生成出来，只要还没有
+正式版，那条 URL 依然会 404。README 只归因到「assemble 阶段未跑通」，其实是两个原因叠加。
+
+### 收敛到单一来源
+
+- `site.ts` 里加 `RELEASE_VERSION` 常量和 `installCommand({ mirrored })` 构造函数，导出 `install` 与
+  `installMirrored`。12 处硬编码 → **1 处**。
+- 文档侧新增 `<InstallCommand />` / `<ReleaseVersion />` 两个 MDX 组件（注册进 `getMDXComponents`），
+  用 Fumadocs 的 `DynamicCodeBlock` 从 `siteFacts` 取命令，既保留 shiki 高亮又不可能漂移。
+
+### 两个踩坑
+
+1. **MDX 的行内代码是字面量**：一开始写成 `` `v<ReleaseVersion />` ``，反引号里的 JSX 不会被求值，会原样
+   渲染出 `v<ReleaseVersion />`。改用真正的 `<code>v<ReleaseVersion /></code>`。
+2. **`DynamicCodeBlock` 不走 `source.config.ts` 的主题**：它和围栏代码块是两条不同的高亮路径。只在
+   `rehypeCodeOptions` 里配主题的话，同一页上两种代码块颜色明显不同（动态块整体发暗、对比度下降）。
+   截图对比发现的。修法是把主题抽到 `src/lib/code-theme.ts`，`source.config.ts` 和组件都从这里取——
+   这个 Bug 的成因正是两处各写各的。
+
+### 防复发
+
+新增 `docs-version.test.ts` 两条：
+- MDX 里不允许出现字面的 wheel 文件名或 `releases/download/v*` URL（**不依赖版本号的具体值**，所以一个
+  过期的硬编码同样会被抓到）。
+- `siteFacts.install` / `installMirrored` 必须由 `siteFacts.version` 构造，且必须是 `"/tmp/${W}[feishu]"`
+  而不是裸的 `$W[`。
+
+已验证会失败：临时把 `<InstallCommand />` 换回硬编码的围栏代码块，测试立刻红并指出是哪个文件，然后还原。
+
+### 验证
+
+`tsc` / `eslint` / `vitest` 33（+2）/ `build` / `playwright` 11 passed 全绿；截图确认两种代码块高亮一致。

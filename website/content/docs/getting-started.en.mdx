@@ -1,16 +1,49 @@
 ---
 title: Install and run
-description: Install Lobster0 from source, initialize it, run Doctor, and launch the TUI.
+description: Install Lobster0 with one command, configure your model and owner, then start it.
 ---
 
-## Requirements
+## One command to install
 
-- Python 3.12 or newer.
-- [`uv`](https://docs.astral.sh/uv/) for Python environments and dependencies.
-- Node.js 22.19+ and `pnpm` for the default pi-tui.
-- An OpenAI-compatible model service and credentials you control.
+All you need is [`uv`](https://docs.astral.sh/uv/). The command below fetches the release wheel and
+installs `lobster0` as a standalone CLI tool, leaving your existing Python environments untouched.
+
+<InstallCommand />
+
+> **Keep the filename exactly as published.** `uv` reads the version out of the wheel's filename and
+> fails with `Must have a version` if you rename it. The braces in `${W}` matter too: a bare
+> `$W[feishu]` is array subscripting in zsh, the default shell on macOS.
+
+## Configure and start
+
+```bash
+lobster0 --version     # prints the version you just installed
+lobster0 setup         # prompts for the model API key, Feishu app credentials, and owner
+lobster0 gateway       # starts the Feishu gateway over a WebSocket connection — no public port
+```
+
+`lobster0 setup` is interactive, so run it separately rather than pasting it together with the
+install command.
+
+To fix or rotate a single credential, use `lobster0 secret set LOBSTER0_MODEL_API_KEY`.
+`lobster0 secret list` prints only the names of configured variables, never their values.
+
+> **Do not `rm -rf ~/.lobster0`.** That deletes memory, conversation history, scheduled tasks, and
+> audit records along with the configuration.
+
+## Release status
+
+<code>v<ReleaseVersion /></code> is a **prerelease**. It has been verified on a clean Ubuntu 24.04 machine through a fully
+green `doctor`, so it is usable for self-hosting — but the Tier 1 hardware matrix, the PyPI release,
+and image attestation have not run, so treat it as unverified for production.
+
+A one-line `install.sh` is not published yet: the release pipeline's `assemble` stage does not pass,
+so use the wheel above for now.
 
 ## Run from source
+
+You only need this path to change code or run the test suite. Beyond `uv` it also needs Node.js
+`22.22.3 <= v < 23` or `24.15.0 <= v < 25` plus `pnpm`, because the TUI is built locally.
 
 ```bash
 git clone https://github.com/NEDONION/lobster0.git
@@ -27,10 +60,7 @@ uv run lobster0
 `cp .env.example .env` creates local configuration only. Fill in the Provider and optional Channel
 settings from the template. Never commit a real API key, app secret, or token.
 
-## Initialize and diagnose
-
-`lobster0 init` creates the required local structure. `lobster0 doctor` checks the environment and
-configuration. After Doctor passes, `uv run lobster0` launches the primary TUI.
+Without a compliant Node.js you can fall back to Textual: `LOBSTER0_TUI=textual uv run lobster0`.
 
 > **Start with the TUI**
 >

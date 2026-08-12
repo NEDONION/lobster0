@@ -54,6 +54,7 @@ export interface MarketingCopy {
     primaryCta: string;
     secondaryCta: string;
     installLabel: string;
+    startLabel: string;
     copyLabel: string;
     copiedLabel: string;
     surfaces: readonly {
@@ -176,10 +177,47 @@ export interface MarketingCopy {
   };
 }
 
+/**
+ * Single source for the released version. It appears in the download URL, the
+ * wheel filename and the `--version` output, so hardcoding it per call site is
+ * how a release ships a 404 for whichever occurrence someone forgets.
+ */
+const RELEASE_VERSION = '0.7.0';
+
+const GITHUB_RELEASE_BASE = `https://github.com/NEDONION/lobster0/releases/download/v${RELEASE_VERSION}`;
+
+/**
+ * The one-command installer. The wheel filename appears three times and is far
+ * too long for one line, so it is hoisted into a shell variable — and the braces
+ * in `${W}` are load bearing, because a bare `$W[feishu]` is array subscripting
+ * in zsh, the default shell on macOS.
+ *
+ * The filename itself must stay exactly as published: `uv` reads the version out
+ * of it and fails with "Must have a version" when it is renamed.
+ */
+function installCommand({ mirrored = false } = {}): string {
+  const wheel = `lobster0_agent-${RELEASE_VERSION}-py3-none-any.whl`;
+  const url = mirrored ? `https://gh-proxy.com/${GITHUB_RELEASE_BASE}` : GITHUB_RELEASE_BASE;
+  const install = mirrored
+    ? '  && UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \\\n     uv tool install --python 3.12 "/tmp/${W}[feishu]"'
+    : '  && uv tool install --python 3.12 "/tmp/${W}[feishu]"';
+  return [
+    `W=${wheel}`,
+    "curl -fL --proto '=https' --tlsv1.2 -o /tmp/${W} \\",
+    `  ${url}/\${W} \\`,
+    install,
+  ].join('\n');
+}
+
 export const siteFacts = {
+  // The published wheel is the promoted path, so `uv` plus a managed Python is
+  // the whole prerequisite list. Node/pnpm only matter when building the TUI
+  // from source, which is a contributor concern and lives in the docs.
+  version: RELEASE_VERSION,
   requirements: {
     python: '3.12+',
     node: '22.19+',
+    installer: 'uv',
   },
   counts: {
     surfaces: 4,
@@ -196,17 +234,14 @@ export const siteFacts = {
     'TOOL_EXECUTION',
     'RESULT_DELIVERED',
   ],
-  install: [
-    'git clone https://github.com/NEDONION/lobster0.git',
-    'cd lobster0',
-    'uv sync --extra dev --extra channels',
-    'pnpm --dir tui install',
-    'pnpm --dir tui build',
-    'cp .env.example .env',
-    'uv run lobster0 init',
-    'uv run lobster0 doctor',
-    'uv run lobster0',
-  ].join('\n'),
+  // One command: fetch the release wheel and hand it to `uv tool install`.
+  // Keep the filename as published — uv reads the version out of it and fails
+  // with "Must have a version" if it is renamed.
+  install: installCommand(),
+  installMirrored: installCommand({ mirrored: true }),
+  // Kept separate from `install`: `setup` is interactive, so these must not be
+  // pasted into the same buffer as the installer.
+  start: ['lobster0 setup', 'lobster0 gateway'].join('\n'),
   status: {
     automationDefault: false,
     implementationPassIsLivePass: false,
@@ -244,7 +279,8 @@ export const marketingCopy = {
         '从熟悉的入口发出请求。Lobster0 在你的机器上理解意图、检查边界、请求审批，并把任务安全做完。',
       primaryCta: '5 分钟开始',
       secondaryCta: '查看源码',
-      installLabel: '从源码启动',
+      installLabel: '一条命令装好',
+      startLabel: '配置并启动',
       copyLabel: '复制命令',
       copiedLabel: '已复制',
       surfaces: [
@@ -364,8 +400,8 @@ export const marketingCopy = {
     ],
     quickStart: {
       eyebrow: '本地启动',
-      title: '从本地开始，看见第一条 Trace。',
-      lead: 'Python 3.12+；默认 TUI 需要 Node.js 22.19+。服务凭据始终由你保管。',
+      title: '一条命令装好，接着就能用。',
+      lead: '装好后 lobster0 setup 交互式填模型 Key 与 Owner，lobster0 gateway 起飞书网关。凭据始终存在你自己的机器上。',
       docsCta: '阅读安装文档',
       githubCta: '参与贡献',
     },
@@ -466,7 +502,8 @@ export const marketingCopy = {
         'Ask from a surface you already use. Lobster0 understands intent, checks boundaries, requests approval, and finishes the work on your machine.',
       primaryCta: 'Start in 5 minutes',
       secondaryCta: 'View source',
-      installLabel: 'Run from source',
+      installLabel: 'One command to install',
+      startLabel: 'Configure and start',
       copyLabel: 'Copy commands',
       copiedLabel: 'Copied',
       surfaces: [
@@ -586,8 +623,8 @@ export const marketingCopy = {
     ],
     quickStart: {
       eyebrow: 'RUN IT YOURSELF',
-      title: 'Start local. See your first Trace.',
-      lead: 'Python 3.12+; the default TUI needs Node.js 22.19+. You keep every service credential.',
+      title: 'One command to install. Then just use it.',
+      lead: 'After install, `lobster0 setup` walks you through the model key and owner, and `lobster0 gateway` brings the channel up. Credentials never leave your machine.',
       docsCta: 'Read the install guide',
       githubCta: 'Contribute',
     },
@@ -688,7 +725,8 @@ export const marketingCopy = {
         '使い慣れた入口からリクエストを送るだけ。Lobster0 はあなたのマシン上で意図を読み取り、境界を確認し、承認を求めたうえで、仕事を安全に終わらせます。',
       primaryCta: '5 分で始める',
       secondaryCta: 'ソースを見る',
-      installLabel: 'ソースから起動',
+      installLabel: 'コマンド 1 つでインストール',
+      startLabel: '設定して起動',
       copyLabel: 'コマンドをコピー',
       copiedLabel: 'コピーしました',
       surfaces: [
@@ -808,8 +846,8 @@ export const marketingCopy = {
     ],
     quickStart: {
       eyebrow: 'ローカルで動かす',
-      title: 'ローカルで始めて、最初の Trace を見る。',
-      lead: 'Python 3.12+、既定の TUI は Node.js 22.19+ が必要です。サービスの認証情報は常にあなたが保持します。',
+      title: 'コマンド 1 つで入って、すぐ使える。',
+      lead: 'インストール後は lobster0 setup がモデルキーと Owner を対話式で設定し、lobster0 gateway が Channel を起動します。認証情報はあなたのマシンから出ません。',
       docsCta: 'インストール手順を読む',
       githubCta: 'コントリビュート',
     },
@@ -910,7 +948,8 @@ export const marketingCopy = {
         '늘 쓰던 입구에서 요청만 보내세요. Lobster0는 여러분의 컴퓨터에서 의도를 읽고, 경계를 확인하고, 승인을 요청한 뒤 작업을 안전하게 끝냅니다.',
       primaryCta: '5분 만에 시작',
       secondaryCta: '소스 보기',
-      installLabel: '소스에서 실행',
+      installLabel: '명령 하나로 설치',
+      startLabel: '설정하고 시작',
       copyLabel: '명령 복사',
       copiedLabel: '복사됨',
       surfaces: [
@@ -1030,8 +1069,8 @@ export const marketingCopy = {
     ],
     quickStart: {
       eyebrow: '로컬에서 실행',
-      title: '로컬에서 시작해 첫 Trace를 확인하세요.',
-      lead: 'Python 3.12+, 기본 TUI는 Node.js 22.19+가 필요합니다. 서비스 자격 증명은 항상 여러분이 보관합니다.',
+      title: '명령 하나로 설치하고, 바로 씁니다.',
+      lead: '설치 후 lobster0 setup이 모델 키와 Owner를 대화식으로 잡아 주고, lobster0 gateway가 Channel을 띄웁니다. 자격 증명은 내 컴퓨터를 벗어나지 않습니다.',
       docsCta: '설치 가이드 읽기',
       githubCta: '기여하기',
     },
@@ -1132,7 +1171,8 @@ export const marketingCopy = {
         'Envoyez une demande depuis une interface que vous utilisez déjà. Lobster0 lit l’intention sur votre machine, vérifie la frontière, demande votre accord, puis termine la tâche en toute sécurité.',
       primaryCta: 'Démarrer en 5 minutes',
       secondaryCta: 'Voir le code',
-      installLabel: 'Lancer depuis les sources',
+      installLabel: 'Une commande pour installer',
+      startLabel: 'Configurer et lancer',
       copyLabel: 'Copier les commandes',
       copiedLabel: 'Copié',
       surfaces: [
@@ -1252,8 +1292,8 @@ export const marketingCopy = {
     ],
     quickStart: {
       eyebrow: 'LANCEZ-LE VOUS-MÊME',
-      title: 'Démarrez en local. Voyez votre première Trace.',
-      lead: 'Python 3.12+ ; le TUI par défaut nécessite Node.js 22.19+. Vous gardez tous vos identifiants de service.',
+      title: 'Une commande pour installer. Puis servez-vous.',
+      lead: 'Ensuite, `lobster0 setup` configure la clé du modèle et le propriétaire, et `lobster0 gateway` démarre le canal. Vos identifiants ne quittent jamais votre machine.',
       docsCta: 'Lire le guide d’installation',
       githubCta: 'Contribuer',
     },

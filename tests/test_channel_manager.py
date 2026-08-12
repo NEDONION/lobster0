@@ -11,7 +11,11 @@ from typing import Any
 from unittest import mock
 
 from lobster0.agent.events import RunEvent
-from lobster0.agent.runner import AgentLoopLimitError, AgentNoProgressError
+from lobster0.agent.runner import (
+    AgentLoopLimitError,
+    AgentNoProgressError,
+    AgentTurnDeadlineError,
+)
 from lobster0.agent.turn import TurnResult
 from lobster0.channels.approvals import (
     ApprovalCommandOutcome,
@@ -24,6 +28,7 @@ from lobster0.channels.feedback_commands import FeedbackCommandOutcome
 from lobster0.channels.manager import ChannelManager
 from lobster0.channels.observability import ChannelObserver
 from lobster0.channels.progress import ProgressProjector, progress_to_metadata
+from lobster0.channels.restart import GatewayRestartController
 from lobster0.policy.approvals import ApprovalDecision
 from lobster0.policy.modes import PermissionMode, PermissionState
 from lobster0.providers.base import ProviderProtocolError
@@ -117,18 +122,18 @@ class TrackingTurnService:
                 )
             if self.fail or self.failure is not None:
                 error = self.failure or RuntimeError("secret-provider-detail")
-                error_code = (
-                    "provider_protocol"
-                    if isinstance(error, ProviderProtocolError)
-                    else (
-                        "loop_no_progress"
-                        if isinstance(error, AgentNoProgressError)
-                        else (
-                            "loop_limit"
-                            if isinstance(error, AgentLoopLimitError)
-                            else "provider_server_error"
+                error_code = next(
+                    (
+                        code
+                        for error_type, code in (
+                            (ProviderProtocolError, "provider_protocol"),
+                            (AgentTurnDeadlineError, "turn_deadline"),
+                            (AgentNoProgressError, "loop_no_progress"),
+                            (AgentLoopLimitError, "loop_limit"),
                         )
-                    )
+                        if isinstance(error, error_type)
+                    ),
+                    "provider_server_error",
                 )
                 self.turns.fail(turn.id, error_code, "safe failure")
                 raise error
@@ -356,6 +361,84 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             }
         self.assertIn("已重置", notices["om_reset"])
         self.assertIn("Owner 私聊", notices["om_group_reset"])
+
+    async def test_restart_command_is_owner_private_only_and_bypasses_agent(self) -> None:
+        """只有 Owner 私聊能触发重启；群聊、他人和多余参数都只拿到提示。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=6, worker_count=1)
+        shutdown = asyncio.Event()
+
+        async def sleep(seconds: float) -> None:
+            del seconds
+
+        controller = GatewayRestartController(
+            shutdown_event=shutdown,
+            supervision="systemd-user",
+            sleep=sleep,
+        )
+        manager.attach_restart(controller)
+
+        await manager.start()
+        try:
+            await manager.receive(
+                self._message(
+                    "om_group_restart",
+                    "/restart",
+                    chat_id="oc_group_restart",
+                    chat_type="group",
+                )
+            )
+            await manager.receive(
+                self._message(
+                    "om_friend_restart",
+                    "/restart",
+                    external_user_id="ou_friend",
+                )
+            )
+            await manager.receive(self._message("om_bad_restart", "/restart now"))
+            await manager.wait_idle(timeout=2)
+            self.assertFalse(controller.restart_requested)
+            await manager.receive(self._message("om_restart", "/restart"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+        await controller.wait_for_shutdown_request()
+
+        self.assertEqual(service.calls, [])
+        self.assertTrue(controller.restart_requested)
+        self.assertTrue(shutdown.is_set())
+        with self.database.connect_read_only() as connection:
+            notices = {
+                row["reply_to_message_id"]: row["content"]
+                for row in connection.execute(
+                    "SELECT reply_to_message_id, content FROM deliveries "
+                    "WHERE reply_to_message_id IN ('om_restart', 'om_group_restart', "
+                    "'om_friend_restart', 'om_bad_restart')"
+                )
+            }
+        self.assertIn("Owner 私聊", notices["om_group_restart"])
+        self.assertIn("Owner 私聊", notices["om_friend_restart"])
+        self.assertIn("用法：/restart", notices["om_bad_restart"])
+        self.assertIn("systemd", notices["om_restart"])
+
+    async def test_restart_command_without_a_controller_stays_a_safe_notice(self) -> None:
+        """Manager 没接 Gateway 控制器时，/restart 只能是一句提示，不能进模型。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=4, worker_count=1)
+
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_no_ctl", "/restart"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.calls, [])
+        with self.database.connect_read_only() as connection:
+            notice = connection.execute(
+                "SELECT content FROM deliveries WHERE reply_to_message_id = 'om_no_ctl'"
+            ).fetchone()["content"]
+        self.assertIn("不支持 /restart", notice)
 
     async def test_permissions_command_is_owner_private_only_and_bypasses_agent(self) -> None:
         """Owner 私聊可切换/查询模式；群聊和其他成员不能切换或进入模型。"""
@@ -737,6 +820,51 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("0 个真实 ToolRun", final)
         self.assertIn("当前模型轮次：4", final)
         self.assertIn("连续无进展轮次：3", final)
+
+    async def test_turn_deadline_failure_tells_the_user_what_it_was_doing(self) -> None:
+        """墙钟预算触发时必须给出稳定码、真实耗时、超时前动作和调高配置的指引。"""
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            failure=AgentTurnDeadlineError(
+                deadline_seconds=90,
+                elapsed_seconds=108.7,
+                model_iterations=16,
+                activity="run_command npm · 3 args",
+            ),
+        )
+        transport = ManagerCapabilityTransport()
+        capabilities = ChannelCapabilities(
+            transport=transport,
+            streaming_card=True,
+            update_interval=0.01,
+        )
+        manager = self._manager(
+            service,
+            queue_size=2,
+            worker_count=1,
+            observer=ChannelObserver(self.database),
+        )
+        manager.attach_experience(capabilities)
+
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_deadline", "装一个缺失的命令行工具"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        final = repr(transport.cards[-1])
+        self.assertIn("Agent Tool Loop", final)
+        self.assertIn("turn_deadline", final)
+        self.assertIn("108.7 秒", final)
+        self.assertIn("90 秒", final)
+        self.assertIn("超时前正在执行：run_command npm · 3 args", final)
+        self.assertIn("已完成模型轮次：16", final)
+        self.assertIn("max_turn_seconds", final)
+        self.assertIn("Turn #", final)
+        self.assertIn("Event #", final)
 
     async def test_no_progress_fallback_code_survives_unreadable_turn(self) -> None:
         """Turn 不可读时仍须用异常类型回退到 loop_no_progress 和安全整数诊断。"""

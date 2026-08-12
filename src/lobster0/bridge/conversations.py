@@ -97,14 +97,18 @@ class ConversationConsole:
         """
         if type(limit) is not int or not 1 <= limit <= 200:
             raise ValueError("History limit must be between 1 and 200")
-        session = self._sessions.get_cli(owner_id, session_key)
+        session = self._sessions.get_local(owner_id, session_key)
         if session is None:
             raise ConversationQueryError("session_not_found", "任务不存在")
         turns = tuple(reversed(self._turns.list_recent(session.id, limit)))
+        # 过程也要能回放：此前只留 user/assistant 且 content 非空，于是工具
+        # 调用被整个滤掉，只调工具没写正文的那一轮也被丢掉。重新打开会话只剩
+        # 问答两行，定时任务尤其致命——它没有实时事件流可看。
         visible = tuple(
             message
             for message in self._messages.list_recent(session.id, limit)
-            if message.role in {"user", "assistant"} and message.content
+            if message.role in {"user", "assistant", "tool"}
+            and (message.content or _tool_call_names(message) or _reasoning(message))
         )[-limit:]
         return {
             "session_key": session.external_conversation_id,
@@ -117,14 +121,7 @@ class ConversationConsole:
                 }
                 for turn in turns
             ],
-            "messages": [
-                {
-                    "role": message.role,
-                    "content": _content(message.content),
-                    "turn_id": message.turn_id,
-                }
-                for message in visible
-            ],
+            "messages": _message_summaries(visible),
         }
 
 
@@ -134,6 +131,79 @@ def _title(message: StoredMessage | None) -> str:
         return "未命名任务"
     normalized = re.sub(r"\s+", " ", message.content).strip()
     return normalized[:80] or "未命名任务"
+
+
+def _message_summaries(messages: tuple[object, ...]) -> list[JsonValue]:
+    """按顺序投影历史消息，并把工具结果关联回它的工具名。
+
+    结果消息自身只带 tool_call_id，名字在发起它的那条 Assistant 里，所以边走
+    边建映射。
+    """
+    names_by_call: dict[str, str] = {}
+    summaries: list[JsonValue] = []
+    for message in messages:
+        names_by_call.update(_tool_call_ids(message))
+        summaries.append(_message_summary(message, names_by_call))
+    return summaries
+
+
+def _tool_call_ids(message: object) -> dict[str, str]:
+    """从一条 Assistant 里取出 call_id → 工具名的映射。"""
+    calls = message.metadata.get("tool_calls")
+    if not isinstance(calls, list):
+        return {}
+    mapping: dict[str, str] = {}
+    for call in calls:
+        if not isinstance(call, dict):
+            continue
+        call_id = call.get("call_id")
+        name = call.get("name")
+        if isinstance(call_id, str) and isinstance(name, str):
+            mapping[call_id] = name
+    return mapping
+
+
+def _message_summary(
+    message: object, names_by_call: dict[str, str]
+) -> dict[str, JsonValue]:
+    """把一条历史消息投影成界面可回放的形状。
+
+    思考与工具调用都从 metadata 里取——它们本来就存着，只是此前没有下发。
+    工具**参数不下发**：里面可能有 URL、路径这类没必要进列表的细节，界面只需要
+    知道调用了什么。
+    """
+    summary: dict[str, JsonValue] = {
+        "role": message.role,
+        "content": _content(message.content),
+        "turn_id": message.turn_id,
+    }
+    reasoning = _reasoning(message)
+    if reasoning:
+        summary["reasoning"] = _content(reasoning)
+    names = _tool_call_names(message)
+    if names:
+        summary["tool_calls"] = list(names)
+    if message.role == "tool":
+        summary["tool_name"] = names_by_call.get(message.tool_call_id or "")
+    return summary
+
+
+def _reasoning(message: object) -> str:
+    """读取 Assistant 的思考正文；缺失或类型不对时按空处理。"""
+    value = message.metadata.get("reasoning_content")
+    return value if isinstance(value, str) else ""
+
+
+def _tool_call_names(message: object) -> tuple[str, ...]:
+    """读取该条 Assistant 发起的工具名，顺序与模型返回一致。"""
+    calls = message.metadata.get("tool_calls")
+    if not isinstance(calls, list):
+        return ()
+    return tuple(
+        call["name"]
+        for call in calls
+        if isinstance(call, dict) and isinstance(call.get("name"), str)
+    )
 
 
 def _content(content: str) -> str:

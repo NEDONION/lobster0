@@ -5,6 +5,8 @@ import {
   SCHEDULE_FORM_KINDS,
   type ScheduleFormKind,
   automationStats,
+  runDuration,
+  runFailureReason,
   scheduleDescription,
   scheduleFormSpec,
 } from "./automation-stats";
@@ -24,6 +26,8 @@ interface AutomationPanelProps {
   onLoadRuns: (taskId: number) => Promise<AutomationRun[]>;
   onHalt: (reason: string) => Promise<void>;
   onUnhalt: () => Promise<void>;
+  /** 打开某次运行的完整过程；Core 未提供会话标识时缺席。 */
+  onOpenRun?: (sessionKey: string) => void;
   onCreate: (input: {
     name: string;
     prompt: string;
@@ -61,6 +65,7 @@ export function AutomationPanel({
   onHalt,
   onUnhalt,
   onCreate,
+  onOpenRun,
 }: AutomationPanelProps): React.JSX.Element {
   const [expandedRuns, setExpandedRuns] = useState<Record<number, AutomationRun[]>>({});
   const [creating, setCreating] = useState(false);
@@ -195,6 +200,7 @@ export function AutomationPanel({
                   void guarded(() => onCancel(task.taskId));
                 }
               }}
+              onOpenRun={onOpenRun}
               onPause={() => void guarded(() => onPause(task.taskId))}
               onResume={() => void guarded(() => onResume(task.taskId))}
               onRun={() => {
@@ -223,6 +229,7 @@ function AutomationCard({
   onCancel,
   onRun,
   onToggleRuns,
+  onOpenRun,
 }: {
   task: AutomationSummary;
   runs: AutomationRun[] | undefined;
@@ -233,6 +240,7 @@ function AutomationCard({
   onCancel: () => void;
   onRun: () => void;
   onToggleRuns: () => void;
+  onOpenRun: ((sessionKey: string) => void) | undefined;
 }): React.JSX.Element {
   const paused = task.status === "paused";
   const terminal = task.status === "cancelled";
@@ -287,15 +295,40 @@ function AutomationCard({
           {runs.length === 0 ? (
             <span>还没有运行记录。</span>
           ) : (
-            runs.map((run) => (
-              <div className="automation-run" key={run.runId}>
-                <span>{new Date(run.scheduledFor).toLocaleString("zh-CN")}</span>
-                <span data-status={run.status}>
-                  {RUN_STATUS_LABELS[run.status] ?? run.status}
-                </span>
-                {run.errorCode ? <code>{run.errorCode}</code> : null}
-              </div>
-            ))
+            runs.map((run) => {
+              const duration = runDuration(run.startedAt, run.completedAt);
+              const reason = runFailureReason(run.errorCode);
+              return (
+                <div className="automation-run" key={run.runId}>
+                  <div className="automation-run-head">
+                    <span>{new Date(run.scheduledFor).toLocaleString("zh-CN")}</span>
+                    <span data-status={run.status}>
+                      {RUN_STATUS_LABELS[run.status] ?? run.status}
+                    </span>
+                    {duration ? <span className="automation-run-meta">{duration}</span> : null}
+                    {run.inputTokens !== null ? (
+                      <span className="automation-run-meta">
+                        {run.inputTokens} / {run.outputTokens} token
+                      </span>
+                    ) : null}
+                    {/* 过程才是"它到底做了什么"的答案，入口要显眼。 */}
+                    {run.sessionKey && onOpenRun ? (
+                      <button
+                        className="automation-run-open"
+                        onClick={() => onOpenRun(run.sessionKey as string)}
+                        type="button"
+                      >
+                        查看完整过程
+                      </button>
+                    ) : null}
+                  </div>
+                  {reason ? <p className="automation-run-reason">{reason}</p> : null}
+                  {run.resultPreview ? (
+                    <p className="automation-run-preview">{run.resultPreview}</p>
+                  ) : null}
+                </div>
+              );
+            })
           )}
         </div>
       ) : null}

@@ -261,3 +261,48 @@ describe("streaming paragraph breaks", () => {
     expect(assistant?.kind === "assistant" && assistant.content).toBe("最终回复");
   });
 });
+
+
+describe("hydrateSession 回放过程", () => {
+  it("把思考与工具调用还原成过程条目", () => {
+    // 定时任务没有实时事件流，回放是唯一能看到执行过程的途径。
+    const state = hydrateSession({
+      sessionKey: "task:1:run:1",
+      updatedAt: "2026-08-12T00:00:00Z",
+      turns: [{ turnId: 1, status: "completed", errorCode: null }],
+      messages: [
+        { role: "user", content: "汇总昨天的项目", turnId: 1 },
+        {
+          role: "assistant",
+          content: "",
+          turnId: 1,
+          reasoning: "先查一下认证状态。",
+          toolCalls: ["run_command"],
+        },
+        { role: "tool", content: '{"exit_code":1}', turnId: 1, toolName: "run_command" },
+        { role: "assistant", content: "认证未通过。", turnId: 1 },
+      ],
+    });
+
+    const kinds = state.run.timeline.map((item) => item.kind);
+    expect(kinds).toContain("reasoning");
+    expect(kinds).toContain("tool");
+    const reasoning = state.run.timeline.find((item) => item.kind === "reasoning");
+    expect(reasoning && "content" in reasoning ? reasoning.content : "").toContain(
+      "先查一下认证状态",
+    );
+  });
+
+  it("不因为一条只调工具、没有正文的回合就丢掉它", () => {
+    const state = hydrateSession({
+      sessionKey: "s",
+      updatedAt: "2026-08-12T00:00:00Z",
+      turns: [],
+      messages: [
+        { role: "assistant", content: "", turnId: 1, toolCalls: ["http_get"] },
+      ],
+    });
+
+    expect(state.run.timeline.length).toBeGreaterThan(0);
+  });
+});

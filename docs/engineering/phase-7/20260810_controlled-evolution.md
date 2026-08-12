@@ -1,9 +1,9 @@
 # Phase 7 Controlled Evolution 工程落地方案
 
 > 文档日期：2026-08-10（施工状态更新于 2026-08-11）  
-> 状态：**IMPLEMENTATION IN PROGRESS（Task 1、2、6 完成；Task 3～5 部分完成——飞书摘要卡未接线、
-> Memory candidate 仅支持 forget、评测缺 failure case 与差分；apply/rollback 已覆盖 Prompt 与 Skill，
-> Memory 目标仍未接）**  
+> 状态：**IMPLEMENTATION IN PROGRESS（六个 Task 的本机路径全部打通，但多项仍是部分完成——Memory candidate 仅支持 forget、
+> 评测缺 baseline/candidate 差分、failure case 为待 Owner 补齐的 planned 草稿、飞书摘要卡已实现但未接线、
+> real Provider 与 Owner 飞书 controlled smoke 仍为 pending）**  
 > 前置条件：Phase 6 生产验收通过；Memory Autopilot A～E 已实现  
 > 施工偏离说明：Phase 6 生产验收（真实 Seatbelt 2/2、飞书 15/15、Automation 10/10、24 小时 soak）截至
 > 2026-08-11 仍是 `PRODUCTION SOAK PENDING`，未通过。Owner 明确决定跳过该前置条件、提前开工 Phase 7 第 16
@@ -599,9 +599,14 @@ EvalRun 结算为 passed/failed，Runner 抛错时结算为 `error` 而不会停
 
 **未实现，且不是简单遗漏**：
 
-1. **由 `/bad` 反馈自动生成 failure case**。离线 case 需要脚本化的 Provider 响应序列
-   （`offline.responses`）才能确定性重放，而 Feedback 记录里只有脱敏后的自然语言，无法凭空合成
-   一条可执行 case。这一项需要单独设计"如何把一次真实失败对话固化成可重放 case"。
+1. **由 `/bad` 反馈自动生成 failure case** —— 已于 2026-08-12 实现为
+   `src/lobster0/evolution/failure_cases.py` + `lobster0 feedback export-case`，但**刻意产出
+   `planned` + `live` 草稿而不是 active offline case**：离线 Runner 用 `ScriptedProvider`，
+   模型回复来自 case 文件本身，把回复也写进去等于答案预设，根本检验不了"候选是否修好了问题"；
+   真正验证行为改进必须调用真实 Provider。同时"本该调用哪个 Tool、正确回答长什么样"是 Owner
+   的判断，无法从一次失败对话机械推导。因此工具只做确定性部分：回溯同一 Turn 的真实提问、
+   复用 redaction 脱敏、把失败回答的显著片段沉淀为 `answer_excludes`、记录实际调用过的 Tool、
+   绑定来源 context hash；判断题留给 Owner，草稿绝不自动进入任何 active 门禁。
 2. **baseline / candidate 差分对比**。候选真正生效依赖 Task 5 的 active revision overlay；在那之前
    `run_offline_suite` 跑的始终是本机现状，跑两遍只会得到同一结果，做成"对比"是自欺。
 3. **token / 费用预算**。离线 suite 用脚本化 Provider，case 里的 token 数是文件里的固定常量而不是

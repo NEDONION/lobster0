@@ -7,7 +7,7 @@ import {
   type Telemetry,
 } from "@lobster0/pi-tui/state";
 
-import type { SessionHistory } from "../common/api";
+import type { SessionHistory, SessionMessage } from "../common/api";
 
 export type DesktopTaskStatus =
   | "idle"
@@ -74,21 +74,91 @@ export function cancelDesktopTask(state: DesktopTaskState): DesktopTaskState {
   return { ...state, status: "cancelled", run: terminal(state.run), error: null };
 }
 
+/** 给最近一个尚无预览的工具条目补上结果正文。 */
+function finishLatestTool(
+  state: DesktopTaskState,
+  message: SessionMessage,
+): DesktopTaskState {
+  const pending = [...state.run.timeline]
+    .reverse()
+    .find((item) => item.kind === "tool" && !item.preview);
+  if (pending === undefined || pending.kind !== "tool") {
+    return state;
+  }
+  return {
+    ...state,
+    run: reduceFrame(state.run, {
+      v: 1,
+      type: "event.tool_finished",
+      payload: {
+        turn_id: message.turnId ?? 0,
+        call_id: pending.callId,
+        status: "succeeded",
+        preview: message.content,
+        duration_ms: null,
+      },
+    }),
+  };
+}
+
+/** 把一条历史消息还原成时间线条目，含思考与工具调用。 */
+function hydrateMessage(state: DesktopTaskState, message: SessionMessage): DesktopTaskState {
+  const turnId = message.turnId ?? 0;
+  if (message.role === "user") {
+    return appendDesktopUser(state, message.content);
+  }
+  if (message.role === "tool") {
+    // 工具条目由发起它的那条 Assistant 生成（那里才有工具名与顺序）；
+    // 结果消息只补上正文预览。
+    return finishLatestTool(state, message);
+  }
+  let next = state;
+  for (const name of message.toolCalls ?? []) {
+    // 历史里没有 requested/started/finished 三段事件，只有最终态，
+    // 所以直接构造一个工具条目，再由随后的结果消息补预览。
+    next = {
+      ...next,
+      run: reduceFrame(next.run, {
+        v: 1,
+        type: "event.tool_requested",
+        payload: {
+          turn_id: turnId,
+          call_id: `history-${next.run.nextItemId}`,
+          tool_name: name,
+          summary: "",
+          arguments: {},
+        },
+      }),
+    };
+  }
+  if (message.reasoning) {
+    next = {
+      ...next,
+      run: reduceFrame(next.run, {
+        v: 1,
+        type: "event.model_reasoning",
+        payload: { turn_id: turnId, text: message.reasoning },
+      }),
+    };
+  }
+  // 正文为空时不再丢掉整条：那一轮往往正是"只调了工具"的关键一步。
+  if (message.content) {
+    next = {
+      ...next,
+      run: reduceFrame(next.run, {
+        v: 1,
+        type: "event.turn_finished",
+        payload: { turn_id: turnId, content: message.content },
+      }),
+    };
+  }
+  return next;
+}
+
 export function hydrateSession(history: SessionHistory): DesktopTaskState {
   let state = createDesktopTaskState(history.sessionKey);
   for (const message of history.messages) {
-    if (message.role === "user") {
-      state = appendDesktopUser(state, message.content);
-    } else {
-      state = {
-        ...state,
-        run: reduceFrame(state.run, {
-          v: 1,
-          type: "event.turn_finished",
-          payload: { turn_id: message.turnId ?? 0, content: message.content },
-        }),
-      };
-    }
+    state = hydrateMessage(state, message);
   }
   const latest = history.turns.at(-1);
   if (!latest) {

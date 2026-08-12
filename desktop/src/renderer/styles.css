@@ -1690,3 +1690,56 @@ select:focus-visible {
   line-height: 1.5;
   color: var(--lobster-text-secondary);
 }
+
+/* --- 自动化运行详情 ---------------------------------------------------- */
+
+.automation-run {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--lobster-border-subtle);
+}
+
+.automation-run-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.automation-run-meta {
+  color: var(--lobster-text-muted);
+}
+
+.automation-run-open {
+  margin-left: auto;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--lobster-primary);
+  background: transparent;
+}
+
+.automation-run-open:hover {
+  text-decoration: underline;
+}
+
+.automation-run-reason {
+  margin: 0;
+  font-size: 12px;
+  color: var(--lobster-destructive);
+}
+
+.automation-run-preview {
+  margin: 0;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--lobster-text-secondary);
+}

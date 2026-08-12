@@ -63,10 +63,10 @@ class ConversationRepositoryTest(unittest.TestCase):
             [second.external_conversation_id, first.external_conversation_id],
         )
         self.assertEqual(
-            self.sessions.get_cli(self.owner.id, "task-new"),
+            self.sessions.get_local(self.owner.id, "task-new"),
             second,
         )
-        self.assertIsNone(self.sessions.get_cli(self.owner.id, "other-task"))
+        self.assertIsNone(self.sessions.get_local(self.owner.id, "other-task"))
 
     def test_stale_queued_and_running_turns_fail_as_runtime_interrupted(self) -> None:
         """进程重启只收敛无法继续的前台 Turn，不破坏等待审批状态。"""

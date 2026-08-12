@@ -38,9 +38,15 @@ export interface SessionTurn {
 }
 
 export interface SessionMessage {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | "tool";
   content: string;
   turnId: number | null;
+  /** Assistant 的思考正文；模型没给时缺席。 */
+  reasoning?: string;
+  /** 该条 Assistant 发起的工具名，顺序与模型返回一致。 */
+  toolCalls?: string[];
+  /** 工具结果对应的工具名，由 Core 从 call_id 关联。 */
+  toolName?: string | null;
 }
 
 export interface SessionHistory {
@@ -64,7 +70,14 @@ export interface AutomationRun {
   taskId: number;
   status: string;
   scheduledFor: string;
+  startedAt: string | null;
+  completedAt: string | null;
   errorCode: string | null;
+  resultPreview: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  /** 用来打开那次运行的完整过程。 */
+  sessionKey: string | null;
 }
 
 export interface AutomationCreateInput {

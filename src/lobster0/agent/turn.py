@@ -21,6 +21,7 @@ from lobster0.agent.runner import (
     AgentRunner,
     AgentRunResult,
     AgentRunStatus,
+    AgentTurnDeadlineError,
     EmptyModelResponseError,
     UnparsedToolCallError,
 )
@@ -1191,6 +1192,7 @@ def _error_code(
         (ProviderServerError, "provider_server"),
         (EmptyModelResponseError, "empty_response"),
         (UnparsedToolCallError, "unparsed_tool_call"),
+        (AgentTurnDeadlineError, "turn_deadline"),
         (AgentNoProgressError, "loop_no_progress"),
         (AgentLoopLimitError, "loop_limit"),
         (ConversationDataError, "conversation_data"),

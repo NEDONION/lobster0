@@ -17,7 +17,8 @@ export function QuickStartClose({ locale }: { locale: Locale }) {
         <p>{copy.quickStart.lead}</p>
         <div className="quick-start-close__requirements" aria-label={ui.requirements}>
           <span>Python {siteFacts.requirements.python}</span>
-          <span>Node.js {siteFacts.requirements.node}</span>
+          <span>{siteFacts.requirements.installer}</span>
+          <span>v{siteFacts.version}</span>
         </div>
         <div className="quick-start-close__actions">
           <Link className="button button--primary" href={localizedPath(locale, '/docs/getting-started')}>
@@ -28,12 +29,22 @@ export function QuickStartClose({ locale }: { locale: Locale }) {
           </a>
         </div>
       </div>
-      <CommandCopy
-        command={siteFacts.install}
-        copiedLabel={copy.hero.copiedLabel}
-        label={copy.hero.copyLabel}
-        title={copy.hero.installLabel}
-      />
+      {/* Two blocks, not one: `lobster0 setup` is interactive, so the start
+          commands must never end up in the same paste as the installer. */}
+      <div className="quick-start-close__commands">
+        <CommandCopy
+          command={siteFacts.install}
+          copiedLabel={copy.hero.copiedLabel}
+          label={copy.hero.copyLabel}
+          title={copy.hero.installLabel}
+        />
+        <CommandCopy
+          command={siteFacts.start}
+          copiedLabel={copy.hero.copiedLabel}
+          label={copy.hero.copyLabel}
+          title={copy.hero.startLabel}
+        />
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 > 日期：2026-08-11
 > 文档类型：Phase D3 产品、协议与安全设计
-> 状态：`DRAFT FOR REVIEW / IMPLEMENTATION PENDING`
+> 状态：`IMPLEMENTED`（2026-08-12）
 > 大纲来源：[分 Phase 落地文档 §6](../../engineering/desktop/20260810_桌面多Agent分Phase落地.md)
 > 前置实现：[D2c 附件](2026-08-11-desktop-d2c-attachments-design.md)（`IMPLEMENTED`，但存在本文 §1 记录的缺口）
 
@@ -166,6 +166,52 @@ Desktop：右栏按需出现、预览失败隔离、capability 缺失时退化�
 6. 不带附件的 `turn.start` 行为与 D3 之前完全一致；
 7. Python + Desktop 全量门禁通过；
 8. 真 Bridge 子进程端到端覆盖第 1、3 条。
+
+## 8.1 落地记录（2026-08-12）
+
+退出条件全部兑现。D2c 的缺口（§1）已补：附件抵达模型、`read_artifact` 可读正文、
+`artifact_links` 按会话关联，真 Bridge 子进程端到端验证过。
+
+### 实施中真正花时间的地方
+
+**（a）文件名不能放在 `artifacts` 表上。** 那张表内容寻址且跨会话去重——同一份内容
+用两个名字上传是同一行记录。文件名属于「每次出现」，所以放 `artifact_links`，为此
+多加了迁移 0012。
+
+**（b）`ToolContext.session_id` 本来就存在。** 我给 `read_artifact` 设计了一个
+「当前会话回调」，写完才发现框架早已提供这个不可伪造的边界，把自己发明的那套删了。
+
+**（c）SQLite 的 `UNIQUE` 里 NULL 互不相等。** `UNIQUE(artifact_id, session_id,
+message_id)` 管不住 `message_id IS NULL` 的重复行，重复关联会在右栏显示两次。用一个
+`WHERE message_id IS NULL` 的部分唯一索引补上。
+
+**（d）一条测试在写的过程中被证伪。** 本想验证「非法 UTF-8 不被替换字符掩盖」，但
+Store 的 magic byte 检查在入库时就拒绝了它，这个前提根本构造不出来。测试改为如实
+验证真正的那道防线。
+
+### 真实使用暴露出的四个连带问题
+
+D3 之外，把功能真正跑起来后暴露了四处「数据早就在库里，只是从没往界面发」：
+
+1. **运行摘要只有时间/状态/错误码**。一次跑了 55 秒、22518 token、写出完整答案的
+   运行，用户只看到一个英文错误码。`_run_summary` 补上结果摘要、用量、起止时间与
+   `turn_id`。
+2. **任务摘要不含 `prompt`**，卡片上看不出这个任务要让 AI 干什么。D2a 时出于「不泄露
+   敏感内容」收敛掉了，现在看这个尺度收得太紧——prompt 是用户自己写的。
+3. **历史只回放 user/assistant**。`role == "tool"` 直接抛协议错，正文为空的 assistant
+   被整条丢弃，而那一轮往往正是「只调了工具」的关键一步。
+4. **automation 渠道的会话打不开**。`history` 只认 `cli`，而定时任务的会话在
+   `automation`——偏偏它最需要回放，因为没有实时事件流。
+
+还有一处是 Core 行为而非展示：**失败的运行不记录产出与用量**。只有判定成功的分支写
+`result_preview` 与 `usage`，于是上面第 1 条补完之后，失败运行的那几个字段依然是空。
+改为失败也保留（Provider 直接抛错时无正文可留，不凭空构造）。
+
+### 一个「做了等于没做」
+
+「查看完整过程」按钮做完并提交后，`app.tsx` 没传 `onOpenRun`，而按钮的渲染条件是
+`run.sessionKey && onOpenRun`——回调缺席时它永远不出现。本地 172 项测试全绿也没发现，
+因为没有测试覆盖这条接线。**组件测得再全，也测不出组件没被接上。**
 
 ## 9. 明确不做
 

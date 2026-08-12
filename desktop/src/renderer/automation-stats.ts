@@ -132,3 +132,38 @@ export function scheduleFormSpec(
   }
   return { scheduleKind: kind, expression };
 }
+
+// Core 的稳定错误码翻成人话。用户此前看到的就是这些英文串本身。
+const RUN_FAILURE_REASONS: Record<string, string> = {
+  automation_terminal_response_missing:
+    "Agent 没有用工具收尾，本次结果未被采纳（产出仍可在完整过程里查看）",
+  schedule_misfire: "错过了预定时间且已超出容错窗口，本次未执行",
+  automation_halted: "自动化处于急停状态，本次未执行",
+  automation_budget_exceeded: "超出本次运行的预算上限",
+  automation_disabled: "自动化功能当前已关闭",
+  turn_timeout: "执行超时",
+};
+
+export function runFailureReason(errorCode: string | null): string | null {
+  if (!errorCode) {
+    return null;
+  }
+  // 未知错误码也要露出来，否则用户和维护者都无从排查。
+  return RUN_FAILURE_REASONS[errorCode] ?? `执行失败（${errorCode}）`;
+}
+
+export function runDuration(startedAt: string | null, completedAt: string | null): string | null {
+  if (!startedAt || !completedAt) {
+    return null;
+  }
+  const seconds = Math.round(
+    (new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 1000,
+  );
+  if (!Number.isFinite(seconds) || seconds < 0) {
+    return null;
+  }
+  if (seconds < 60) {
+    return `${seconds} 秒`;
+  }
+  return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
+}

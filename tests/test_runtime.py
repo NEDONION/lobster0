@@ -159,7 +159,8 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 "[agent]\n"
                 "max_tool_iterations = 40\n"
                 "max_tool_iterations_hard = 48\n"
-                "max_no_progress_iterations = 5\n",
+                "max_no_progress_iterations = 5\n"
+                "max_turn_seconds = 240\n",
                 encoding="utf-8",
             )
             config = load_config(paths)
@@ -170,6 +171,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(runner._max_iterations, 40)
                 self.assertEqual(runner._hard_max_iterations, 48)
                 self.assertEqual(runner._max_no_progress_iterations, 5)
+                self.assertEqual(runner._max_turn_seconds, 240)
             finally:
                 await runtime.aclose()
 

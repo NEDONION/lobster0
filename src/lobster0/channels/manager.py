@@ -9,7 +9,11 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from lobster0.agent.events import RunEventHandler
-from lobster0.agent.runner import AgentLoopLimitError, AgentNoProgressError
+from lobster0.agent.runner import (
+    AgentLoopLimitError,
+    AgentNoProgressError,
+    AgentTurnDeadlineError,
+)
 from lobster0.agent.turn import TurnResult
 from lobster0.channels.approvals import (
     ApprovalCommandOutcome,
@@ -22,6 +26,7 @@ from lobster0.channels.experience import ChannelExperience
 from lobster0.channels.feedback_commands import FeedbackCommandOutcome
 from lobster0.channels.observability import ChannelObserver
 from lobster0.channels.progress import progress_from_metadata, progress_to_metadata
+from lobster0.channels.restart import GatewayRestartController
 from lobster0.memory.models import ConversationKind
 from lobster0.policy.modes import PermissionMode, PermissionState
 from lobster0.providers.base import (
@@ -186,6 +191,7 @@ class ChannelManager:
         self._experience: ChannelExperience | None = None
         self._approvals: ApprovalHandler | None = None
         self._feedback: FeedbackHandler | None = None
+        self._restart: GatewayRestartController | None = None
         self._observer = observer
 
     def attach_experience(self, experience: ChannelExperience) -> None:
@@ -209,6 +215,12 @@ class ChannelManager:
         if self._workers or self._feeder is not None:
             raise RuntimeError("Channel feedback must be attached before start")
         self._feedback = feedback
+
+    def attach_restart(self, restart: GatewayRestartController) -> None:
+        """在启动前绑定 Gateway 自重启控制器；只有 Gateway 装配时才存在。"""
+        if self._workers or self._feeder is not None:
+            raise RuntimeError("Channel restart must be attached before start")
+        self._restart = restart
 
     async def receive(self, message: InboundMessage) -> InboundAcceptance:
         """先持久化消息，再 best-effort 写入有界内存队列。"""
@@ -660,7 +672,33 @@ class ChannelManager:
             return self._permission_notice(parts, event)
         if parts[0] == "/reset":
             return self._reset_notice(parts, event, session_id)
+        if parts[0] == "/restart":
+            return self._restart_notice(parts, event)
         return None
+
+    def _restart_notice(
+        self,
+        parts: list[str],
+        event: StoredInboundEvent,
+    ) -> str:
+        """处理 Owner 的 Gateway 自重启命令，并返回可投递的说明。
+
+        权限判断复用与 /reset、/permissions 完全相同的 ``_trusted_owner``：外部身份
+        必须等于配置的 Owner，且必须是私聊。群里有人喊 /restart 不会重启任何东西。
+        """
+        if not self._trusted_owner(event):
+            return "只有 Owner 私聊可以重启 Gateway。"
+        if len(parts) != 1:
+            return "用法：/restart"
+        if self._restart is None:
+            return (
+                "当前进程不支持 /restart：这个 Channel 不是由 Gateway 装配的，"
+                "没有可以安全触发的关停入口。"
+            )
+        try:
+            return self._restart.request()
+        except Exception:  # noqa: BLE001 - 控制命令必须收口为稳定提示
+            return "重启请求处理失败，Gateway 保持原状。"
 
     def _reset_notice(
         self,
@@ -932,6 +970,15 @@ class ChannelManager:
                     f"- 连续无进展轮次：{error.no_progress_iterations}",
                 )
             )
+        if isinstance(error, AgentTurnDeadlineError):
+            # activity 是 tool_display_summary 的输出，与审批卡同一份脱敏摘要，
+            # 不含完整命令行、URL 路径或凭据。
+            diagnostics.extend(
+                (
+                    f"- 超时前正在执行：{error.activity}",
+                    f"- 已完成模型轮次：{error.model_iterations}",
+                )
+            )
         diagnostics.extend(
             (
                 f"- Tool 状态：{tool_status}",
@@ -1133,6 +1180,18 @@ class ChannelManager:
 
 def _failure_profile(error: Exception) -> tuple[str, str, str]:
     """把异常类型映射为安全失败阶段、原因和行动建议。"""
+    if isinstance(error, AgentTurnDeadlineError):
+        return (
+            "Agent Tool Loop",
+            (
+                f"本轮已用 {error.elapsed_seconds:.1f} 秒，超过单轮 "
+                f"{error.deadline_seconds} 秒的墙钟预算，已在工具边界安全停止。"
+            ),
+            (
+                "请把任务拆小后重试；确实需要更长时间，就调高 agent.max_turn_seconds"
+                "（或 LOBSTER0_MAX_TURN_SECONDS）。"
+            ),
+        )
     if isinstance(error, AgentNoProgressError):
         return (
             "Agent Tool Loop",
@@ -1171,6 +1230,7 @@ def _failure_profile(error: Exception) -> tuple[str, str, str]:
 def _failure_error_code(error: Exception) -> str:
     """把公开异常类型映射为稳定错误码，未知异常使用 Channel 兜底码。"""
     mappings = (
+        (AgentTurnDeadlineError, "turn_deadline"),
         (AgentNoProgressError, "loop_no_progress"),
         (AgentLoopLimitError, "loop_limit"),
         (ProviderAuthenticationError, "provider_authentication"),

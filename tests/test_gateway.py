@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from lobster0.bootstrap import initialize_state
+from lobster0.channels.restart import RESTART_EXIT_CODE, GatewayRestartController
 from lobster0.channels.supervisor import GatewaySecrets
 from lobster0.config import load_config
 from lobster0.gateway import (
@@ -292,6 +293,88 @@ class GatewayTest(unittest.IsolatedAsyncioTestCase):
             events,
             ["channel.logging", "sdk.filter", "supervisor.create", "supervisor.run"],
         )
+
+    async def test_owner_restart_exits_non_zero_so_the_supervisor_relaunches(self) -> None:
+        """受托管时 /restart 必须让进程以非零码退出；systemd/launchd 只拉起失败退出。"""
+        captured: list[GatewayRestartController] = []
+
+        async def sleep(seconds: float) -> None:
+            del seconds
+
+        def build_controller(**kwargs: object) -> GatewayRestartController:
+            """注入零宽限与假 sleep，避免测试真的等待。"""
+            controller = GatewayRestartController(
+                **{**kwargs, "grace_seconds": 0.0, "sleep": sleep}
+            )
+            captured.append(controller)
+            return controller
+
+        async def create_supervisor(*_args: object, **kwargs: object) -> object:
+            """返回一个"被 Owner 要求重启"的 Supervisor fake。"""
+
+            async def run(**values: object) -> None:
+                """模拟收到 /restart 后等待有序关停。"""
+                captured[0].request()
+                await values["shutdown_event"].wait()
+
+            del kwargs
+            return SimpleNamespace(run=run)
+
+        with (
+            patch("lobster0.gateway.load_dotenv"),
+            patch("lobster0.gateway.load_config", return_value=self.config),
+            patch(
+                "lobster0.gateway.validate_gateway_environment",
+                return_value=SimpleNamespace(),
+            ),
+            patch("lobster0.gateway._configure_channel_logging"),
+            patch("lobster0.channels.sdk_logging.install_feishu_sdk_log_filter"),
+            patch(
+                "lobster0.gateway.GatewayRestartController",
+                side_effect=build_controller,
+            ),
+            patch(
+                "lobster0.gateway.create_gateway_supervisor",
+                side_effect=create_supervisor,
+            ),
+        ):
+            code = await run_gateway(
+                self.paths,
+                environ={"LOBSTER0_SUPERVISED": "1"},
+            )
+
+        self.assertEqual(code, RESTART_EXIT_CODE)
+        self.assertNotEqual(RESTART_EXIT_CODE, 0)
+        self.assertTrue(captured[0].restart_requested)
+
+    async def test_normal_shutdown_exits_zero(self) -> None:
+        """没有 /restart 时 Gateway 必须以 0 退出，否则会被 supervisor 无限重启。"""
+
+        async def create_supervisor(*_args: object, **_kwargs: object) -> object:
+            """返回立即结束的 Supervisor fake。"""
+
+            async def run(**_values: object) -> None:
+                """模拟收到 SIGTERM 后的正常结束。"""
+
+            return SimpleNamespace(run=run)
+
+        with (
+            patch("lobster0.gateway.load_dotenv"),
+            patch("lobster0.gateway.load_config", return_value=self.config),
+            patch(
+                "lobster0.gateway.validate_gateway_environment",
+                return_value=SimpleNamespace(),
+            ),
+            patch("lobster0.gateway._configure_channel_logging"),
+            patch("lobster0.channels.sdk_logging.install_feishu_sdk_log_filter"),
+            patch(
+                "lobster0.gateway.create_gateway_supervisor",
+                side_effect=create_supervisor,
+            ),
+        ):
+            code = await run_gateway(self.paths, environ={"INVOCATION_ID": "unit-abc"})
+
+        self.assertEqual(code, 0)
 
     async def test_gateway_lease_wraps_success_and_runtime_failure(self) -> None:
         """lease 必须先于 Supervisor 获取，并在正常/异常路径最后释放。"""

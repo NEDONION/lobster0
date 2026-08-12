@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -103,6 +104,52 @@ class AgentNoProgressError(AgentError):
         )
 
 
+class AgentTurnDeadlineError(AgentError):
+    """表示单次 Turn 的墙钟预算已经耗尽。
+
+    与 ``AgentNoProgressError`` 一样，这是一个**正常的停止**：抛出前该批次的所有
+    Tool 结果都已经通过 ``on_intermediate`` 落库，Turn 由 ``TurnService`` 的同一个
+    异常分支标成 ``failed``，不会出现半写状态。
+    """
+
+    def __init__(
+        self,
+        *,
+        deadline_seconds: int,
+        elapsed_seconds: float,
+        model_iterations: int,
+        activity: str,
+    ) -> None:
+        """保存停止时的预算、真实耗时、已完成轮数和当时正在做的事。
+
+        Args:
+            deadline_seconds: 生效的单轮墙钟预算。
+            model_iterations: 已经完成的模型调用轮数。
+            elapsed_seconds: 单调时钟测得的本轮真实耗时，统一保存为 float。
+            activity: 超时前最后一次执行的 Tool 展示摘要，已脱敏。
+
+        Raises:
+            ValueError: 任一诊断字段不满足类型或取值约束。
+        """
+        if type(deadline_seconds) is not int or deadline_seconds <= 0:
+            raise ValueError("deadline_seconds must be a positive integer")
+        if type(elapsed_seconds) not in {int, float} or elapsed_seconds < 0:
+            raise ValueError("elapsed_seconds must be a non-negative number")
+        if type(model_iterations) is not int or model_iterations < 0:
+            raise ValueError("model_iterations must be a non-negative integer")
+        if not isinstance(activity, str) or not activity:
+            raise ValueError("activity must not be empty")
+        self.deadline_seconds = deadline_seconds
+        self.elapsed_seconds = float(elapsed_seconds)
+        self.model_iterations = model_iterations
+        self.activity = activity
+        super().__init__(
+            f"agent stopped after {elapsed_seconds:.1f}s, exceeding the "
+            f"{deadline_seconds}s turn deadline after {model_iterations} model rounds "
+            f"while running {activity}"
+        )
+
+
 class AgentRunStatus(StrEnum):
     """区分最终回答与等待人工确认的正常业务结果。"""
 
@@ -173,6 +220,8 @@ class AgentRunner:
         max_iterations: int = 32,
         hard_max_iterations: int = 64,
         max_no_progress_iterations: int = 3,
+        max_turn_seconds: int = 90,
+        clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """绑定 Provider、当前可用工具和严格正数循环上限。
 
@@ -182,6 +231,10 @@ class AgentRunner:
             max_iterations: 包含最终响应在内的最多模型调用次数，默认 32。
             hard_max_iterations: 任何自适应策略都不能超过的循环硬上限，默认 64。
             max_no_progress_iterations: 允许连续无进展 Tool 循环的次数上限，默认 3。
+            max_turn_seconds: 单次 Turn 的墙钟预算秒数，默认 90；与上面三条计数
+                预算并存，不替代其中任何一条。
+            clock: 单调时钟来源；必须单调，默认 ``time.monotonic``，NTP 回拨不会
+                让预算提前触发或永不触发。测试注入假时钟以避免真的 sleep。
 
         Raises:
             ValueError: 任一循环预算不是正整数，或 hard 上限低于常规上限。
@@ -192,6 +245,10 @@ class AgentRunner:
             raise ValueError("hard_max_iterations must be a positive integer")
         if type(max_no_progress_iterations) is not int or max_no_progress_iterations <= 0:
             raise ValueError("max_no_progress_iterations must be a positive integer")
+        if type(max_turn_seconds) is not int or max_turn_seconds <= 0:
+            raise ValueError("max_turn_seconds must be a positive integer")
+        if not callable(clock):
+            raise ValueError("clock must be callable")
         if hard_max_iterations < max_iterations:
             raise ValueError("hard_max_iterations must be greater than or equal to max_iterations")
         self._provider = provider
@@ -199,6 +256,8 @@ class AgentRunner:
         self._max_iterations = max_iterations
         self._hard_max_iterations = hard_max_iterations
         self._max_no_progress_iterations = max_no_progress_iterations
+        self._max_turn_seconds = max_turn_seconds
+        self._clock = clock
 
     @property
     def tool_schemas(self) -> tuple[dict[str, JsonValue], ...]:
@@ -273,6 +332,7 @@ class AgentRunner:
             EmptyModelResponseError: 最终响应没有文本也没有工具调用。
             AgentLoopLimitError: 最后一轮仍请求工具。
             AgentNoProgressError: 连续多轮没有新的成功 Tool 结果。
+            AgentTurnDeadlineError: 本轮墙钟预算耗尽；只在工具边界抛出。
             ProviderError: Provider 调用失败，保持原具体类型。
             asyncio.CancelledError: 调用方取消，Runner 不拦截。
         """
@@ -292,6 +352,13 @@ class AgentRunner:
         soft_budget_extended = False
         executed_tool_calls = 0
         round_chunks: list[str] = []
+        turn_started = self._clock()
+        last_activity = "model response"
+        # 墙钟预算只覆盖没有其他墙钟主人的交互式 Turn。automation 传进来的
+        # AgentRunBudget 已经由 automation/runner.py 的
+        # ``asyncio.timeout(budget.timeout_seconds)``（默认 600s）在外层封顶，
+        # 这里再叠加一层只会把后台任务悄悄砍短。
+        deadline_active = budget is None
 
         def build_result(
             *,
@@ -343,6 +410,17 @@ class AgentRunner:
             else min(self._hard_max_iterations, budget.max_turns)
         )
         for iteration in range(1, loop_limit + 1):
+            # 第 1 轮 elapsed≈0，检查没有意义；从第 2 轮起，每次发起 Provider 请求前
+            # 都在"没有任何未完成副作用"的时刻检查墙钟预算。
+            if deadline_active and iteration > 1:
+                overrun = self._deadline_overrun(turn_started)
+                if overrun is not None:
+                    raise AgentTurnDeadlineError(
+                        deadline_seconds=self._max_turn_seconds,
+                        elapsed_seconds=overrun,
+                        model_iterations=iteration - 1,
+                        activity=last_activity,
+                    )
             preflight_error = _budget_preflight_error(
                 budget,
                 input_tokens=input_tokens,
@@ -513,7 +591,31 @@ class AgentRunner:
             messages.append(assistant_message)
             intermediate_messages.append(assistant_message)
             batch_progressed = False
-            for call in response.tool_calls:
+            for call_index, call in enumerate(response.tool_calls):
+                # 一个响应可以带多条串行 Tool Call；只在迭代边界检查的话，一个批次
+                # 就能把预算超出 N 倍单条工具超时。这里在执行下一条之前再检查一次，
+                # 并给该批次剩余的每一条补一条确定性结果，保证存下来的历史里每个
+                # tool_call_id 都恰好有一条对应的 tool 消息。
+                batch_overrun = (
+                    self._deadline_overrun(turn_started) if deadline_active else None
+                )
+                if batch_overrun is not None:
+                    for skipped in response.tool_calls[call_index:]:
+                        deadline_message = ModelMessage(
+                            role="tool",
+                            content=_deadline_tool_result(skipped.name),
+                            tool_call_id=skipped.call_id,
+                        )
+                        messages.append(deadline_message)
+                        intermediate_messages.append(deadline_message)
+                    if on_intermediate is not None:
+                        on_intermediate(tuple(intermediate_messages[batch_start:]))
+                    raise AgentTurnDeadlineError(
+                        deadline_seconds=self._max_turn_seconds,
+                        elapsed_seconds=batch_overrun,
+                        model_iterations=iteration,
+                        activity=last_activity,
+                    )
                 if tool_context is not None:
                     await emit(
                         on_event,
@@ -595,6 +697,7 @@ class AgentRunner:
                             error_code="task_budget_tool_calls",
                         )
                     attempted_tool_fingerprints.add(fingerprint)
+                    last_activity = tool_display_summary(call.name, call.arguments)
                     tool_message, approval_id, executed_result = await self._execute_tool(
                         call,
                         tool_context,
@@ -665,6 +768,16 @@ class AgentRunner:
                     )
 
         raise AgentLoopLimitError("agent reached an unexpected loop state")
+
+    def _deadline_overrun(self, turn_started: float) -> float | None:
+        """返回已经超出墙钟预算时的真实耗时，未超出时返回 ``None``。
+
+        只读单调时钟，不做任何取消或副作用；调用方负责在安全边界上处理。
+        """
+        elapsed = self._clock() - turn_started
+        if elapsed >= self._max_turn_seconds:
+            return elapsed
+        return None
 
     async def _execute_tool(
         self,
@@ -814,6 +927,25 @@ def _budget_tool_result(tool_name: str) -> str:
             "error": {
                 "code": "task_budget_tool_calls",
                 "message": "automation tool call budget exhausted",
+                "retryable": False,
+            },
+            "ok": False,
+            "tool": tool_name,
+        },
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+
+
+def _deadline_tool_result(tool_name: str) -> str:
+    """为墙钟预算耗尽而未执行的 Tool Call 生成稳定协议结果。"""
+    return json.dumps(
+        {
+            "error": {
+                "code": "turn_deadline",
+                "message": "turn wall-clock budget exhausted",
                 "retryable": False,
             },
             "ok": False,

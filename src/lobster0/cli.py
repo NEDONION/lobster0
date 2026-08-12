@@ -42,6 +42,10 @@ from lobster0.evals.cases import (
 from lobster0.evals.channel import run_channel_suite
 from lobster0.evals.runner import run_offline_suite
 from lobster0.evolution.evaluator import EvaluationError, evaluate_proposal_version
+from lobster0.evolution.failure_cases import (
+    build_failure_case,
+    write_failure_case,
+)
 from lobster0.evolution.models import (
     Feedback,
     FeedbackRating,
@@ -223,6 +227,17 @@ def build_parser() -> argparse.ArgumentParser:
         "forget", help="clear a feedback's reason material"
     )
     feedback_forget.add_argument("feedback_id", type=_positive_cli_id)
+    feedback_export = feedback_subparsers.add_parser(
+        "export-case",
+        help="draft a versioned failure case from a bad feedback for owner review",
+    )
+    feedback_export.add_argument("feedback_id", type=_positive_cli_id)
+    feedback_export.add_argument(
+        "--output",
+        type=Path,
+        required=True,
+        help="destination JSONL path; an existing file is never overwritten",
+    )
     evolve_parser = subparsers.add_parser(
         "evolve",
         help="drive the Controlled Evolution pipeline for one restricted target",
@@ -474,7 +489,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.command == "gateway":
         try:
             prepare_gateway_sdk_runtime()
-            asyncio.run(run_gateway(paths))
+            # Owner 通过 /restart 自愿重启时返回非零码：systemd 的
+            # Restart=on-failure 与 launchd 的 KeepAlive.SuccessfulExit=false
+            # 都只在非零退出时才会重新拉起进程。
+            return asyncio.run(run_gateway(paths))
         except (ConfigError, DotEnvError, GatewayConfigError, ValueError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
@@ -484,7 +502,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         except KeyboardInterrupt:
             print("Cancelled.", file=sys.stderr)
             return 130
-        return 0
 
     if arguments.command == "web":
         # Web 控制台由浏览器交互，因此不套用 TUI 的 TTY 前置条件。
@@ -724,6 +741,22 @@ def _run_feedback(paths: StatePaths, arguments: argparse.Namespace) -> int:
         if command == "forget":
             item = feedback.forget(owner.id, arguments.feedback_id)
             print(_feedback_line(item))
+            return 0
+        if command == "export-case":
+            item = feedback.get(owner.id, arguments.feedback_id)
+            query, answer, tools = _failure_context(database, item.message_id)
+            draft = build_failure_case(
+                item,
+                user_query=query,
+                failing_answer=answer,
+                tool_names=tools,
+            )
+            write_failure_case(draft, arguments.output)
+            print(f"case={draft.case_id} status=planned layers=live")
+            print(
+                "草稿已写出。它不会进入任何 active 门禁：请补齐"
+                "\"本该调用哪个 Tool / 正确回答应满足什么\"，确认无隐私残留后再提升为 active。"
+            )
             return 0
         raise ValueError("unsupported feedback command")
     except EvolutionError as error:
@@ -1193,6 +1226,41 @@ def _proposal_line(proposal: Proposal) -> str:
         f"proposal={proposal.id} target={proposal.target_type.value}:{proposal.target_name} "
         f"status={proposal.status.value} feedback={proposal.feedback_id} "
         f"version={proposal.current_version_id or '-'}"
+    )
+
+
+def _failure_context(
+    database: Database, message_id: int
+) -> tuple[str, str, tuple[str, ...]]:
+    """回溯被差评回答所在 Turn 的原始提问、回答与实际调用过的 Tool。
+
+    Returns:
+        ``(用户提问, 失败回答, Tool 名称)``；缺失的部分退化为空字符串或空元组，
+        由草稿生成阶段再判定是否足以成案。
+    """
+    with database.connect_read_only() as connection:
+        row = connection.execute(
+            "SELECT content, turn_id FROM messages WHERE id = ?", (message_id,)
+        ).fetchone()
+        if row is None:
+            raise EvolutionError("feedback_target_missing", "target message is gone")
+        answer = str(row["content"])
+        turn_id = row["turn_id"]
+        if turn_id is None:
+            return "", answer, ()
+        question = connection.execute(
+            "SELECT content FROM messages WHERE turn_id = ? AND role = 'user' "
+            "ORDER BY id LIMIT 1",
+            (turn_id,),
+        ).fetchone()
+        tools = connection.execute(
+            "SELECT DISTINCT tool_name FROM tool_runs WHERE turn_id = ? ORDER BY tool_name",
+            (turn_id,),
+        ).fetchall()
+    return (
+        "" if question is None else str(question["content"]),
+        answer,
+        tuple(str(item["tool_name"]) for item in tools),
     )
 
 

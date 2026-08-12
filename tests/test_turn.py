@@ -10,7 +10,12 @@ from unittest import mock
 
 from lobster0.agent.context import ContextBuilder
 from lobster0.agent.events import RunEvent
-from lobster0.agent.runner import AgentNoProgressError, AgentRunBudget, AgentRunner
+from lobster0.agent.runner import (
+    AgentNoProgressError,
+    AgentRunBudget,
+    AgentRunner,
+    AgentTurnDeadlineError,
+)
 from lobster0.agent.turn import TurnExecutionProfile, TurnService, _model_message
 from lobster0.artifacts.store import ArtifactError, ArtifactStore
 from lobster0.bootstrap import initialize_state
@@ -43,6 +48,61 @@ from lobster0.tools.registry import ToolRegistry
 from lobster0.tools.system import SystemInfoTool
 from lobster0.tools.task_completion import CompleteTaskTool
 from tests.fakes.fake_provider import FakeProvider
+
+
+class _FakeClock:
+    """确定性单调时钟：只有 Tool 显式推进，测试不真的 sleep。"""
+
+    def __init__(self, start: float = 5_000.0) -> None:
+        """从固定时刻开始。"""
+        self.now = start
+
+    def __call__(self) -> float:
+        """返回当前注入时刻。"""
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        """向前推进注入时刻。"""
+        self.now += seconds
+
+
+class _SlowClockTool:
+    """执行时推进注入时钟的 Turn 测试 Tool。"""
+
+    definition = ToolDefinition(
+        name="slow",
+        description="Burn injected wall-clock time.",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self, clock: _FakeClock, seconds: float) -> None:
+        """绑定注入时钟与每次执行推进的秒数。"""
+        self._clock = clock
+        self._seconds = seconds
+        self.executions = 0
+
+    def validate(self, arguments: dict[str, object]) -> dict[str, object]:
+        """只接受单个字符串 text。"""
+        if set(arguments) != {"text"} or not isinstance(arguments["text"], str):
+            raise ValueError("text must be a string")
+        return arguments
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, object],
+    ) -> ToolResult:
+        """推进注入时钟并返回成功结果。"""
+        del context
+        self.executions += 1
+        self._clock.advance(self._seconds)
+        return ToolResult.success({"text": arguments["text"]})
 
 
 class _AutomationContinuationProbe:
@@ -882,6 +942,86 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([message.role for message in history].count("tool"), 4)
         self.assertEqual(events[-1].kind, "turn_failed")
         self.assertEqual(events[-1].data["error_code"], "loop_no_progress")
+
+    async def test_turn_deadline_persists_stable_code_and_consistent_transcript(
+        self,
+    ) -> None:
+        """墙钟预算在批次中途触发时，Turn 落 failed，且历史仍然是可重放的。
+
+        这条断言的是"部分工作保持已持久化且一致"：assistant 消息声明的每一个
+        ``tool_call_id`` 在库里都恰好有一条对应的 tool 消息，没有悬空调用；
+        真实副作用只发生在预算耗尽之前的那一次。
+        """
+        clock = _FakeClock()
+        tool = _SlowClockTool(clock, 60.0)
+        calls = (
+            ToolCall("call_slow_a", "slow", {"text": "a"}),
+            ToolCall("call_slow_b", "slow", {"text": "b"}),
+            ToolCall("call_slow_c", "slow", {"text": "c"}),
+        )
+        provider = FakeProvider(
+            (
+                ModelResponse(
+                    content="",
+                    tool_calls=calls,
+                    reasoning_content=None,
+                    finish_reason="tool_calls",
+                    input_tokens=1,
+                    output_tokens=1,
+                    provider_request_id="req-deadline",
+                ),
+            )
+        )
+        executor = ToolExecutor(
+            ToolRegistry((tool,)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+        )
+        runner = AgentRunner(
+            provider,
+            executor,
+            max_iterations=8,
+            hard_max_iterations=12,
+            max_turn_seconds=30,
+            clock=clock,
+        )
+        events: list[RunEvent] = []
+
+        async def capture(event: RunEvent) -> None:
+            events.append(event)
+
+        with self.assertRaises(AgentTurnDeadlineError) as stopped:
+            await self.service(provider, runner).handle(
+                self.owner.id,
+                "装一个不存在的命令行工具",
+                "turn-deadline",
+                on_event=capture,
+            )
+
+        session = self.sessions.get_or_create_cli(self.owner.id, "turn-deadline")
+        saved = self.turns.list_recent(session.id, limit=1)[0]
+        self.assertEqual(saved.status, "failed")
+        self.assertEqual(saved.error_code, "turn_deadline")
+        self.assertEqual(events[-1].kind, "turn_failed")
+        self.assertEqual(events[-1].data["error_code"], "turn_deadline")
+        self.assertEqual(stopped.exception.deadline_seconds, 30)
+
+        history = [_model_message(item) for item in self.messages.list_context(session.id)]
+        requested = tuple(
+            call.call_id
+            for message in history
+            if message.role == "assistant"
+            for call in message.tool_calls
+        )
+        answered = tuple(
+            message.tool_call_id for message in history if message.role == "tool"
+        )
+        self.assertEqual(requested, tuple(call.call_id for call in calls))
+        self.assertEqual(answered, requested)
+        self.assertEqual(tool.executions, 1)
+        with self.database.connect_read_only() as connection:
+            tool_runs = connection.execute("SELECT COUNT(*) FROM tool_runs").fetchone()[0]
+        self.assertEqual(tool_runs, 1)
 
     async def test_cancellation_marks_turn_cancelled_and_propagates(self) -> None:
         """取消必须持久化 cancelled，并继续抛出以便 CLI 返回 130。"""
