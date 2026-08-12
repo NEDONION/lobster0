@@ -101,3 +101,73 @@ class BuildImagePartsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AttachImagesToRequestTest(unittest.TestCase):
+    """图片必须挂在最后一条用户消息上，而不是散落或覆盖历史。"""
+
+    def setUp(self) -> None:
+        """准备一张合法图片分片。"""
+        import hashlib
+
+        from lobster0.providers.base import ImagePart
+
+        data = b"\x89PNG"
+        self.part = ImagePart(
+            media_type="image/png",
+            content_hash=hashlib.sha256(data).hexdigest(),
+            data=data,
+        )
+
+    def _request(self, *roles: str):
+        """构造一个只含指定角色序列的最小请求。"""
+        from lobster0.providers.base import ModelMessage, ModelRequest
+
+        return ModelRequest(
+            model="deepseek-v4-pro",
+            messages=tuple(
+                ModelMessage(role=role, content=f"{role}-text") for role in roles
+            ),
+        )
+
+    def test_images_attach_to_the_last_user_message(self) -> None:
+        """必须挂到最后一条用户消息，而不是 system 或历史里的旧消息。"""
+        from lobster0.media.attachments import attach_images_to_request
+
+        request = self._request("system", "user", "assistant", "user")
+
+        updated = attach_images_to_request(request, (self.part,))
+
+        self.assertEqual(updated.messages[-1].images, (self.part,))
+        self.assertEqual(updated.messages[1].images, ())
+        self.assertEqual(updated.messages[0].images, ())
+
+    def test_no_images_returns_the_request_unchanged(self) -> None:
+        """没有图片时必须原样返回，不产生任何多余拷贝语义。"""
+        from lobster0.media.attachments import attach_images_to_request
+
+        request = self._request("system", "user")
+
+        self.assertIs(attach_images_to_request(request, ()), request)
+
+    def test_request_without_a_user_message_is_left_alone(self) -> None:
+        """没有用户消息时不能硬塞，避免把图挂到 system 上。"""
+        from lobster0.media.attachments import attach_images_to_request
+
+        request = self._request("system")
+
+        updated = attach_images_to_request(request, (self.part,))
+
+        self.assertTrue(all(message.images == () for message in updated.messages))
+
+    def test_other_message_fields_survive(self) -> None:
+        """挂图不能丢掉正文、角色或其他字段。"""
+        from lobster0.media.attachments import attach_images_to_request
+
+        request = self._request("system", "user")
+
+        updated = attach_images_to_request(request, (self.part,))
+
+        self.assertEqual(updated.messages[-1].content, "user-text")
+        self.assertEqual(updated.messages[-1].role, "user")
+        self.assertEqual(updated.model, "deepseek-v4-pro")

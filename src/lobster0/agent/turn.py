@@ -28,6 +28,10 @@ from lobster0.agent.runner import (
 from lobster0.artifacts.store import ArtifactError, ArtifactStore, display_filename
 from lobster0.automation.models import TaskResponse
 from lobster0.config import WorkspaceConfig
+from lobster0.media.attachments import (
+    attach_images_to_request,
+    build_image_parts,
+)
 from lobster0.memory.flush import MemoryCapture
 from lobster0.memory.models import ConversationKind, DisclosureContext
 from lobster0.policy.approvals import ApprovalDecision, ApprovalError
@@ -464,6 +468,16 @@ class TurnService:
                 disclosure=disclosure,
                 tools=self._runner.tool_schemas,
             )
+            # 图片字节只在这一刻读出来：上传时不读，纯文字轮次也不读。
+            # 读失败不能让整轮挂掉——附件仍以文字摘要留在上下文里，
+            # 模型可以用 read_artifact 按需读取。
+            if summaries and self._artifacts is not None:
+                try:
+                    request = attach_images_to_request(
+                        request, build_image_parts(self._artifacts, summaries)
+                    )
+                except (ArtifactError, OSError, ValueError):
+                    pass
             if self._compactor is not None and self._compactor.should_compact(request):
                 if self._memory_capture is not None:
                     self._memory_capture.flush()

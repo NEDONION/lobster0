@@ -12,9 +12,10 @@
 """
 
 import hashlib
+from dataclasses import replace
 from typing import Protocol
 
-from lobster0.providers.base import ImagePart
+from lobster0.providers.base import ImagePart, ModelRequest
 
 # 与 ImagePart 的白名单保持一致；这里再列一次是为了在读盘之前就跳过，
 # 避免为一个注定被拒绝的类型白白读一遍文件。
@@ -80,3 +81,29 @@ def build_image_parts(
             )
         )
     return tuple(parts)
+
+
+def attach_images_to_request(
+    request: ModelRequest, images: tuple[ImagePart, ...]
+) -> ModelRequest:
+    """把图片挂到请求里**最后一条用户消息**上。
+
+    挂在最后一条用户消息，而不是散落到历史里：视觉模型按消息顺序理解"这句话配这张图"，
+    挂错位置会让它把旧问题和新图片对应起来。没有用户消息时原样返回——宁可不发，
+    也不能把图挂到 system 上改变它的语义。
+
+    Args:
+        request: 已经构建好的模型请求。
+        images: 本轮要发送的图片分片；为空时原样返回。
+
+    Returns:
+        挂好图片的新请求；无需改动时返回原对象。
+    """
+    if not images:
+        return request
+    messages = list(request.messages)
+    for index in range(len(messages) - 1, -1, -1):
+        if messages[index].role == "user":
+            messages[index] = replace(messages[index], images=images)
+            return replace(request, messages=tuple(messages))
+    return request
