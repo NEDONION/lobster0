@@ -108,6 +108,44 @@ class _EchoTool:
         return ToolResult.success({"text": arguments["text"]})
 
 
+class _FailingTool:
+    """每次都失败但每次参数都不同的 Runner 测试 Tool。
+
+    模拟"连着换三个搜索引擎、每个都连不上"这类合理但零成功的探索。
+    """
+
+    definition = ToolDefinition(
+        name="failing",
+        description="Always fail.",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self) -> None:
+        self.executions = 0
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """只接受单个字符串 text。"""
+        if set(arguments) != {"text"} or not isinstance(arguments["text"], str):
+            raise ToolValidationError("text must be a string")
+        return arguments
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """记录一次执行并返回确定性网络失败。"""
+        del context, arguments
+        self.executions += 1
+        return ToolResult.failure("http_failed", "HTTPS request failed", retryable=True)
+
+
 class _FakeClock:
     """确定性单调时钟：只有测试显式推进，绝不真的 sleep。"""
 
@@ -211,7 +249,7 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
                 runner._hard_max_iterations,
                 runner._max_no_progress_iterations,
             ),
-            (32, 64, 3),
+            (200, 400, 12),
         )
         invalid_budgets = (
             ({"hard_max_iterations": 0}, "hard_max_iterations"),
@@ -1002,15 +1040,139 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(asyncio.CancelledError):
             await AgentRunner(provider).run(request())
 
-    def test_constructor_defaults_and_rejects_invalid_turn_deadline(self) -> None:
-        """墙钟预算默认 90 秒，且拒绝零、负数和 bool 这类不可能的值。"""
+    def test_constructor_defaults_open_up_long_running_work(self) -> None:
+        """默认不限时，计数预算放宽到不会误杀正常长任务的量级。
+
+        Owner 的要求是"别按时间和次数限制长程任务，让我能随时停"。默认因此是
+        ``max_turn_seconds=0``（不限时），而循环上界仍然有限——它是 ``run`` 会终止的
+        唯一结构性保证。
+        """
+        runner = AgentRunner(FakeProvider(()))
+
+        self.assertEqual(runner._max_turn_seconds, 0)
+        self.assertEqual(runner._max_iterations, 200)
+        self.assertEqual(runner._hard_max_iterations, 400)
+        self.assertEqual(runner._max_no_progress_iterations, 12)
+
+    def test_constructor_rejects_impossible_turn_deadline_but_accepts_disabled(
+        self,
+    ) -> None:
+        """``0`` 是"关闭墙钟预算"的合法开关；负数和 bool 仍然拒绝。"""
         provider = FakeProvider(())
 
-        self.assertEqual(AgentRunner(provider)._max_turn_seconds, 90)
-        for value in (0, -1, True, 1.5):
+        self.assertEqual(AgentRunner(provider, max_turn_seconds=0)._max_turn_seconds, 0)
+        for value in (-1, True, 1.5):
             with self.subTest(value=value):
                 with self.assertRaisesRegex(ValueError, "max_turn_seconds"):
                     AgentRunner(provider, max_turn_seconds=value)
+
+    async def test_disabled_turn_deadline_lets_a_long_turn_finish(self) -> None:
+        """默认配置下，一个远超旧 90 秒预算的正常 Turn 必须跑完而不是被杀。
+
+        真实事故：`turn_deadline` 上线当天就杀掉了一次 98.1 秒的正常任务。
+        """
+        clock = _FakeClock()
+        tool = _SlowTool(clock, 600.0)
+        executor = self.executor(tool)
+        provider = FakeProvider(
+            (
+                response("", tool_calls=(ToolCall("call_slow_0", "slow", {"text": "0"}),)),
+                response("", tool_calls=(ToolCall("call_slow_1", "slow", {"text": "1"}),)),
+                response("done"),
+            )
+        )
+
+        result = await AgentRunner(provider, executor, clock=clock).run(
+            request(*executor.schemas),
+            tool_context=self.tool_context,
+        )
+
+        self.assertEqual(result.content, "done")
+        self.assertEqual(tool.executions, 2)
+        self.assertGreaterEqual(clock.now - 1_000.0, 1_200.0)
+
+    async def test_operator_can_still_opt_into_a_wall_clock_cap(self) -> None:
+        """机制保留：显式配置正整数时，墙钟预算仍按原样在工具边界触发。"""
+        clock = _FakeClock()
+        tool = _SlowTool(clock, 60.0)
+        executor = self.executor(tool)
+        provider = FakeProvider(
+            tuple(
+                response(
+                    "",
+                    tool_calls=(
+                        ToolCall(f"call_slow_{index}", "slow", {"text": str(index)}),
+                    ),
+                )
+                for index in range(4)
+            )
+        )
+
+        with self.assertRaises(AgentTurnDeadlineError) as stopped:
+            await AgentRunner(
+                provider,
+                executor,
+                max_turn_seconds=90,
+                clock=clock,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        self.assertEqual(stopped.exception.deadline_seconds, 90)
+
+    async def test_no_progress_budget_survives_a_dozen_failed_alternatives(self) -> None:
+        """连续失败但仍在尝试**不同**方案时，不得在第 3 轮就被掐断。
+
+        真实事故：大陆云主机上依次访问 Google/DuckDuckGo/Bing 全部失败，
+        `max_no_progress_iterations=3` 直接终止了本来合理的探索。
+        """
+        failing = _FailingTool()
+        executor = self.executor(failing)
+        provider = FakeProvider(
+            tuple(
+                response(
+                    "",
+                    tool_calls=(
+                        ToolCall(f"call_fail_{index}", "failing", {"text": str(index)}),
+                    ),
+                )
+                for index in range(5)
+            )
+            + (response("done"),)
+        )
+
+        result = await AgentRunner(provider, executor).run(
+            request(*executor.schemas),
+            tool_context=self.tool_context,
+        )
+
+        self.assertEqual(result.content, "done")
+        self.assertEqual(failing.executions, 5)
+
+    async def test_no_progress_budget_still_stops_a_wedged_turn(self) -> None:
+        """放宽不等于取消：持续零成功的循环仍然必须在有限轮内终止。
+
+        墙钟预算默认关闭后，这条计数预算是"卡死的 Turn 一定会结束"的主要保证。
+        """
+        failing = _FailingTool()
+        executor = self.executor(failing)
+        provider = FakeProvider(
+            tuple(
+                response(
+                    "",
+                    tool_calls=(
+                        ToolCall(f"call_fail_{index}", "failing", {"text": str(index)}),
+                    ),
+                )
+                for index in range(40)
+            )
+        )
+
+        with self.assertRaises(AgentNoProgressError) as stopped:
+            await AgentRunner(provider, executor).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+            )
+
+        self.assertEqual(stopped.exception.no_progress_iterations, 12)
 
     async def test_turn_deadline_stops_at_iteration_boundary_with_diagnostics(
         self,

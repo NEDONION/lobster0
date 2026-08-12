@@ -111,7 +111,13 @@ class TrackingTurnService:
             self.reached_concurrency.set()
         try:
             if self.gate is not None:
-                await self.gate.wait()
+                try:
+                    await self.gate.wait()
+                except asyncio.CancelledError:
+                    # 与真实 TurnService.handle_inbound 的 except CancelledError
+                    # 分支保持一致：取消时把 Turn 落成 cancelled 再上抛。
+                    self.turns.cancel(turn.id)
+                    raise
             if on_event is not None and self.emit_event:
                 await on_event(
                     RunEvent(
@@ -1334,6 +1340,278 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
                 "WHERE reply_to_message_id = 'om_wait_restart'"
             ).fetchone()
         self.assertEqual(delivery["delivery_kind"], "approval")
+
+    async def test_stop_interrupts_a_turn_that_is_actually_running(self) -> None:
+        """真正的验收点：``/stop`` 必须打断**正在执行中**的 Turn。
+
+        Owner 的原话是"我能不能在它执行的时候让它停止"。事后登记等于没有，
+        所以这里让 Service 卡在一个测试持有的 Event 上，Turn 真的停在半途，
+        再从另一侧投递 ``/stop``。
+        """
+        gate = asyncio.Event()
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            gate=gate,
+            expected_concurrency=1,
+        )
+        manager = self._manager(service, queue_size=8, worker_count=2)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_long", "跑一个长任务"))
+            # Turn 已经进入 Service 且卡在 gate 上——此刻它确实在执行中。
+            await asyncio.wait_for(service.reached_concurrency.wait(), timeout=2)
+            self.assertEqual(service.active, 1)
+
+            await manager.receive(self._message("om_stop", "/stop"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            gate.set()
+            await manager.stop()
+
+        # gate 从未在停止前被 set：Turn 是被取消的，不是自己跑完的。
+        turn = self.turns.get_by_inbound(
+            self.sessions.get_or_create(
+                self.owner.id, "feishu", "default", "oc_chat"
+            ).id,
+            "om_long",
+        )
+        self.assertEqual(turn.status, "cancelled")
+
+    async def test_stop_keeps_partial_work_persisted_and_consistent(self) -> None:
+        """被停止的 Turn 必须留下一致的持久状态：读数据库验证，不靠断言口号。"""
+        gate = asyncio.Event()
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            gate=gate,
+            expected_concurrency=1,
+        )
+        manager = self._manager(service, queue_size=8, worker_count=2)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_long", "跑一个长任务"))
+            await asyncio.wait_for(service.reached_concurrency.wait(), timeout=2)
+            await manager.receive(self._message("om_stop", "/stop"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            gate.set()
+            await manager.stop()
+
+        session = self.sessions.get_or_create(
+            self.owner.id, "feishu", "default", "oc_chat"
+        )
+        turn = self.turns.get_by_inbound(session.id, "om_long")
+        self.assertEqual(turn.status, "cancelled")
+        # 用户那条消息仍然在，没有因为取消被回滚掉。
+        history = self.messages.list_recent(session.id, limit=50)
+        self.assertIn("跑一个长任务", [message.content for message in history])
+        # 入站事件到达终态，不会在重启后被重放。
+        self.assertEqual(
+            tuple(self.inbound.list_by_status("feishu", "default", "running")),
+            (),
+        )
+        self.assertEqual(
+            tuple(self.inbound.list_by_status("feishu", "default", "queued")),
+            (),
+        )
+        # Owner 收到了确认，而且诊断里带着稳定错误码。
+        notices = [
+            message.content
+            for message in history
+            if message.role == "assistant"
+        ]
+        self.assertTrue(
+            any("turn_stopped" in notice for notice in notices),
+            notices,
+        )
+
+    async def test_worker_survives_an_owner_stop_and_keeps_serving(self) -> None:
+        """Owner 的 ``/stop`` 不得杀死 Worker——否则一次停止就废掉整个 Channel。"""
+        gate = asyncio.Event()
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            gate=gate,
+            expected_concurrency=1,
+        )
+        manager = self._manager(service, queue_size=8, worker_count=2)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_long", "长任务"))
+            await asyncio.wait_for(service.reached_concurrency.wait(), timeout=2)
+            await manager.receive(self._message("om_stop", "/stop"))
+            await manager.wait_idle(timeout=2)
+
+            gate.set()
+            await manager.receive(self._message("om_next", "停完之后还能用吗"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            gate.set()
+            await manager.stop()
+
+        self.assertIn(("oc_chat", "om_next"), service.calls)
+        session = self.sessions.get_or_create(
+            self.owner.id, "feishu", "default", "oc_chat"
+        )
+        self.assertEqual(
+            self.turns.get_by_inbound(session.id, "om_next").status,
+            "completed",
+        )
+
+    async def test_stop_without_a_running_turn_says_so(self) -> None:
+        """空闲时 ``/stop`` 必须明确说"没有正在执行的任务"，而不是假装停了什么。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=4, worker_count=1)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_stop", "/stop"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.calls, [])
+        session = self.sessions.get_or_create(
+            self.owner.id, "feishu", "default", "oc_chat"
+        )
+        notices = [
+            message.content
+            for message in self.messages.list_recent(session.id, limit=50)
+            if message.role == "assistant"
+        ]
+        self.assertEqual(len(notices), 1)
+        self.assertIn("没有正在执行", notices[0])
+
+    async def test_stop_with_extra_arguments_cancels_nothing(self) -> None:
+        """``/stop now`` 只回用法提示，绝不能"取消了却说你用法错了"。"""
+        gate = asyncio.Event()
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            gate=gate,
+            expected_concurrency=1,
+        )
+        manager = self._manager(service, queue_size=8, worker_count=2)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_long", "长任务"))
+            await asyncio.wait_for(service.reached_concurrency.wait(), timeout=2)
+            await manager.receive(self._message("om_stop", "/stop now"))
+            await asyncio.sleep(0)
+            self.assertEqual(service.active, 1)
+            gate.set()
+            await manager.wait_idle(timeout=2)
+        finally:
+            gate.set()
+            await manager.stop()
+
+        session = self.sessions.get_or_create(
+            self.owner.id, "feishu", "default", "oc_chat"
+        )
+        self.assertEqual(
+            self.turns.get_by_inbound(session.id, "om_long").status,
+            "completed",
+        )
+        notices = [
+            message.content
+            for message in self.messages.list_recent(session.id, limit=50)
+            if message.role == "assistant"
+        ]
+        self.assertIn("用法：/stop", notices)
+
+    async def test_non_owner_stop_cannot_cancel_anything(self) -> None:
+        """群聊与非 Owner 私聊的 ``/stop`` 都不得取消任何 Turn。
+
+        授权判断必须与 /reset、/permissions、/restart 完全同源
+        （``_trusted_owner``：身份等于配置 Owner **且** 私聊）。
+        """
+        for label, kwargs in (
+            ("group", {"chat_type": "group", "chat_id": "oc_group"}),
+            ("stranger", {"external_user_id": "ou_stranger"}),
+        ):
+            with self.subTest(actor=label):
+                gate = asyncio.Event()
+                service = TrackingTurnService(
+                    self.sessions,
+                    self.messages,
+                    self.turns,
+                    gate=gate,
+                    expected_concurrency=1,
+                )
+                manager = self._manager(service, queue_size=8, worker_count=2)
+                await manager.start()
+                try:
+                    await manager.receive(
+                        self._message(f"om_long_{label}", "长任务")
+                    )
+                    await asyncio.wait_for(
+                        service.reached_concurrency.wait(), timeout=2
+                    )
+                    await manager.receive(
+                        self._message(f"om_stop_{label}", "/stop", **kwargs)
+                    )
+                    await asyncio.sleep(0)
+                    # 关键断言：Turn 仍然在跑，没有被外人掐掉。
+                    self.assertEqual(service.active, 1)
+                    gate.set()
+                    await manager.wait_idle(timeout=2)
+                finally:
+                    gate.set()
+                    await manager.stop()
+
+                session = self.sessions.get_or_create(
+                    self.owner.id, "feishu", "default", "oc_chat"
+                )
+                self.assertEqual(
+                    self.turns.get_by_inbound(session.id, f"om_long_{label}").status,
+                    "completed",
+                )
+
+    async def test_failure_card_can_receive_feedback(self) -> None:
+        """失败卡片必须能被 ``/good``、``/bad`` 反查到。
+
+        真实事故：Owner 对一张 turn_deadline 失败卡回复 /bad，得到
+        "没有找到这条回答，无法记录反馈。"。根因是失败路径从不登记
+        ``delivery_kind='card'`` 映射——只有成功路径调用 _record_card_delivery。
+        """
+        service = TrackingTurnService(
+            self.sessions,
+            self.messages,
+            self.turns,
+            fail=True,
+        )
+        transport = ManagerCapabilityTransport()
+        manager = self._manager(service, queue_size=4, worker_count=1)
+        manager.attach_experience(
+            ChannelCapabilities(
+                transport=transport,
+                streaming_card=True,
+                update_interval=0.0001,
+            )
+        )
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_fail", "会失败的任务"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        delivery = self.deliveries.find_sent_by_platform_message_id(
+            channel="feishu",
+            account_id="default",
+            platform_message_id="om_manager_card",
+            kind="card",
+        )
+        self.assertIsNotNone(delivery)
+        assert delivery is not None
+        target = self.messages.get(delivery.message_id)
+        self.assertIsNotNone(target)
+        assert target is not None
+        self.assertEqual(target.role, "assistant")
 
     def _manager(
         self,

@@ -1,5 +1,14 @@
 # Turn 墙钟预算与飞书 `/restart` 工程方案
 
+> **⚠️ 本文 §2（墙钟预算）已被同日的
+> [`20260812_owner-stop-control-and-failure-legibility.md`](20260812_owner-stop-control-and-failure-legibility.md)
+> 取代。** 上线当天的生产证据表明这条预算既**误杀正常长任务**（98.1s / 197.5s 两次），
+> 又**没有真的约束住任何东西**（90 秒预算放任跑了 197.5 秒，因为它只在工具边界检查）。
+> 现在 `agent.max_turn_seconds` 默认 `0`（不限时），机制保留为运维可选项；
+> `max_iterations` / `hard_max_iterations` / `max_no_progress_iterations` 也已分别放宽到
+> 200 / 400 / 12。"想随时停止"改由 Owner 私聊 `/stop` 表达，它在工具执行途中也生效。
+> 本文 §3（`/restart`）仍然有效。下文保留的是当时的推理记录。
+
 > 文档日期：2026-08-12
 > 状态：**IMPLEMENTATION IN PROGRESS**
 > 触发事件：2026-08-12 一次真实飞书对话中，Agent 为了安装缺失的 `lark-cli`，在

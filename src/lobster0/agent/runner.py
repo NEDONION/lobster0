@@ -217,10 +217,10 @@ class AgentRunner:
         provider: ModelProvider,
         executor: ToolExecutor | None = None,
         *,
-        max_iterations: int = 32,
-        hard_max_iterations: int = 64,
-        max_no_progress_iterations: int = 3,
-        max_turn_seconds: int = 90,
+        max_iterations: int = 200,
+        hard_max_iterations: int = 400,
+        max_no_progress_iterations: int = 12,
+        max_turn_seconds: int = 0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         """绑定 Provider、当前可用工具和严格正数循环上限。
@@ -228,16 +228,22 @@ class AgentRunner:
         Args:
             provider: 实际或 Fake 模型边界。
             executor: 可选的唯一安全 Tool 执行入口。
-            max_iterations: 包含最终响应在内的最多模型调用次数，默认 32。
-            hard_max_iterations: 任何自适应策略都不能超过的循环硬上限，默认 64。
-            max_no_progress_iterations: 允许连续无进展 Tool 循环的次数上限，默认 3。
-            max_turn_seconds: 单次 Turn 的墙钟预算秒数，默认 90；与上面三条计数
-                预算并存，不替代其中任何一条。
+            max_iterations: 包含最终响应在内的最多模型调用次数，默认 200。到点时
+                发一轮"不带工具、请给最终答案"的收口请求，不是硬性终止。
+            hard_max_iterations: 任何自适应策略都不能超过的循环硬上限，默认 400。
+                这是 ``run`` 一定会终止的**唯一结构性保证**，不接受"无限"。
+            max_no_progress_iterations: 允许连续无进展 Tool 循环的次数上限，默认 12。
+                只有真正成功的 Tool 结果才清零，因此计数单调递增、必然收敛；
+                墙钟预算默认关闭后，这是卡死 Turn 的主要终止路径。
+            max_turn_seconds: 单次 Turn 的墙钟预算秒数，默认 ``0`` 表示**不限时**。
+                墙钟时间与"任务是否在正常推进"无关，按时间杀掉正常长任务是错的；
+                运维想封顶时设正整数即可，机制本身完全保留。
             clock: 单调时钟来源；必须单调，默认 ``time.monotonic``，NTP 回拨不会
                 让预算提前触发或永不触发。测试注入假时钟以避免真的 sleep。
 
         Raises:
-            ValueError: 任一循环预算不是正整数，或 hard 上限低于常规上限。
+            ValueError: 任一循环预算不是正整数、墙钟预算为负，或 hard 上限低于
+                常规上限。
         """
         if type(max_iterations) is not int or max_iterations <= 0:
             raise ValueError("max_iterations must be a positive integer")
@@ -245,8 +251,8 @@ class AgentRunner:
             raise ValueError("hard_max_iterations must be a positive integer")
         if type(max_no_progress_iterations) is not int or max_no_progress_iterations <= 0:
             raise ValueError("max_no_progress_iterations must be a positive integer")
-        if type(max_turn_seconds) is not int or max_turn_seconds <= 0:
-            raise ValueError("max_turn_seconds must be a positive integer")
+        if type(max_turn_seconds) is not int or max_turn_seconds < 0:
+            raise ValueError("max_turn_seconds must be a non-negative integer")
         if not callable(clock):
             raise ValueError("clock must be callable")
         if hard_max_iterations < max_iterations:
@@ -358,7 +364,9 @@ class AgentRunner:
         # AgentRunBudget 已经由 automation/runner.py 的
         # ``asyncio.timeout(budget.timeout_seconds)``（默认 600s）在外层封顶，
         # 这里再叠加一层只会把后台任务悄悄砍短。
-        deadline_active = budget is None
+        # ``max_turn_seconds == 0`` 是默认值，表示 Owner 不希望长程任务被秒表打断；
+        # 想停止应该由人发 /stop，见 channels/manager.py。
+        deadline_active = budget is None and self._max_turn_seconds > 0
 
         def build_result(
             *,

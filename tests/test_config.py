@@ -35,10 +35,11 @@ class ConfigTest(unittest.TestCase):
         )
 
         self.assertEqual(config.agent.model, "provider/model")
-        self.assertEqual(config.agent.max_tool_iterations, 32)
-        self.assertEqual(config.agent.max_tool_iterations_hard, 64)
-        self.assertEqual(config.agent.max_no_progress_iterations, 3)
-        self.assertEqual(config.agent.max_turn_seconds, 90)
+        self.assertEqual(config.agent.max_tool_iterations, 200)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 400)
+        self.assertEqual(config.agent.max_no_progress_iterations, 12)
+        # 0 = 不限时。Owner 明确要求长程任务不被墙钟预算打断。
+        self.assertEqual(config.agent.max_turn_seconds, 0)
         self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(config.provider.api_key_env, "LOBSTER0_MODEL_API_KEY")
@@ -167,27 +168,27 @@ class ConfigTest(unittest.TestCase):
             )
 
     def test_legacy_toml_soft_budget_expands_implicit_hard_budget(self) -> None:
-        """旧 TOML 只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
+        """旧 TOML 只配置 soft 时，隐式 hard 必须始终不低于 soft。"""
         self.paths.config.write_text(
-            "[agent]\nmax_tool_iterations = 100\n",
+            "[agent]\nmax_tool_iterations = 600\n",
             encoding="utf-8",
         )
 
         config = load_config(self.paths, {}, {})
 
-        self.assertEqual(config.agent.max_tool_iterations, 100)
-        self.assertEqual(config.agent.max_tool_iterations_hard, 100)
+        self.assertEqual(config.agent.max_tool_iterations, 600)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 600)
 
     def test_legacy_environment_soft_budget_expands_implicit_hard_budget(self) -> None:
-        """旧环境变量只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
+        """旧环境变量只配置 soft 时，隐式 hard 必须始终不低于 soft。"""
         config = load_config(
             self.paths,
-            {"LOBSTER0_MAX_TOOL_ITERATIONS": "100"},
+            {"LOBSTER0_MAX_TOOL_ITERATIONS": "600"},
             {},
         )
 
-        self.assertEqual(config.agent.max_tool_iterations, 100)
-        self.assertEqual(config.agent.max_tool_iterations_hard, 100)
+        self.assertEqual(config.agent.max_tool_iterations, 600)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 600)
 
     def test_toml_hard_remains_explicit_when_environment_overrides_soft(self) -> None:
         """TOML 显式 hard 不得被环境 soft 静默提升。"""
@@ -451,13 +452,25 @@ class ConfigTest(unittest.TestCase):
                 "[agent]\nmax_no_progress_iterations = true\n",
                 "max_no_progress_iterations",
             ),
-            ("[agent]\nmax_turn_seconds = 0\n", "max_turn_seconds"),
+            ("[agent]\nmax_turn_seconds = -1\n", "max_turn_seconds"),
             ("[agent]\nmax_turn_seconds = true\n", "max_turn_seconds"),
         ):
             with self.subTest(content=content):
                 self.paths.config.write_text(content, encoding="utf-8")
                 with self.assertRaisesRegex(ConfigError, expected):
                     load_config(self.paths, {}, {})
+
+    def test_wall_clock_budget_can_be_switched_on_and_off(self) -> None:
+        """``0`` 是"不限时"开关；运维想封顶时设正整数仍然生效，机制没有被删掉。"""
+        self.paths.config.write_text(
+            "[agent]\nmax_turn_seconds = 300\n", encoding="utf-8"
+        )
+        self.assertEqual(load_config(self.paths, {}, {}).agent.max_turn_seconds, 300)
+
+        self.assertEqual(
+            load_config(self.paths, {"LOBSTER0_MAX_TURN_SECONDS": "0"}, {}).agent.max_turn_seconds,
+            0,
+        )
 
     def test_unknown_key_is_rejected(self) -> None:
         """拼错的配置项必须立即失败，而不是静默使用默认值。"""
