@@ -300,3 +300,30 @@ describe("loadSession 的消息映射", () => {
     expect(history.messages[1]?.role).toBe("tool");
   });
 });
+
+describe("revealArtifact", () => {
+  it("hands the path to the opener and never returns it to the renderer", async () => {
+    // 路径是本机信息：Main 打开访达即可，Renderer 不需要也不该拿到。
+    const client = new FakeClient();
+    client.responses.set("artifacts.reveal", { path: "/Users/x/.lobster0/artifacts/a/b.png" });
+    const opened: string[] = [];
+    const service = new BridgeService(() => client, {}, undefined, (path) => {
+      opened.push(path);
+    });
+    await service.start();
+
+    const result = await service.revealArtifact(`art_${"a".repeat(64)}`);
+
+    expect(opened).toEqual(["/Users/x/.lobster0/artifacts/a/b.png"]);
+    expect(result).toBeUndefined();
+  });
+
+  it("refuses a response without a usable path", async () => {
+    const client = new FakeClient();
+    client.responses.set("artifacts.reveal", { path: "" });
+    const service = new BridgeService(() => client, {}, undefined, () => undefined);
+    await service.start();
+
+    await expect(service.revealArtifact(`art_${"a".repeat(64)}`)).rejects.toThrow();
+  });
+});

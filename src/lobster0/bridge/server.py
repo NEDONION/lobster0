@@ -78,8 +78,6 @@ class BridgeServer:
         # 已 stage、尚未被某次 turn 使用的附件。内存态即可：staging 本就不是
         # 持久语义，进程重启后重新选文件即可。
         self._staged_attachments: dict[str, dict[str, JsonValue]] = {}
-        # 最近一次 reveal 请求的真实路径，只供 Main 进程读取，不进 Renderer。
-        self._pending_reveal: str | None = None
 
     async def run(self) -> int:
         """处理请求直到 stdin EOF 或 `bridge.shutdown`。
@@ -327,9 +325,9 @@ class BridgeServer:
             return True
 
         if request.type == "artifacts.reveal":
-            # 路径只到 Main 进程，不进 Renderer；Renderer 只知道「已请求定位」。
-            self._pending_reveal = str(artifact.path)
-            await self._ok(request.request_id, {"revealed": True})
+            # 路径回给 Main 进程去打开访达。Renderer 仍然拿不到它——Main 执行完
+            # 不再往下传。此前这里把路径存进一个没人读的字段，按钮点了毫无反应。
+            await self._ok(request.request_id, {"path": str(artifact.path)})
             return True
 
         max_bytes = request.payload["max_bytes"]

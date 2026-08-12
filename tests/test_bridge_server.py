@@ -1027,6 +1027,44 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(listed["payload"]["artifacts"][0]["filename"], "report.txt")
         self.assertNotIn(secret_path, json.dumps(listed, ensure_ascii=False))
 
+    async def test_reveal_returns_the_path_so_main_can_open_finder(self) -> None:
+        """路径必须真的回给 Main——此前存进一个没人读的字段，按钮点了毫无反应。
+
+        Renderer 仍然拿不到它：Main 打开访达后不再往下传。
+        """
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(RecordingTurnService())
+        artifact_id = "art_" + "a" * 64
+        real_path = "/Users/someone/.lobster0/artifacts/aa/x.png"
+        runtime.artifact_store = SimpleNamespace(
+            list_for_session=lambda session_id, *, limit: [
+                SimpleNamespace(
+                    artifact_id=artifact_id,
+                    media_type="image/png",
+                    byte_size=5,
+                    origin="agent_output",
+                    message_id=None,
+                    filename=None,
+                    created_at=datetime(2026, 8, 12, tzinfo=UTC),
+                )
+            ],
+            read_metadata=lambda value: SimpleNamespace(
+                artifact_id=value, media_type="image/png", byte_size=5, path=Path(real_path)
+            ),
+        )
+        with patch("lobster0.bridge.server.SessionRepository", _fake_sessions):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(
+                _request("rev-1", "artifacts.reveal", {"artifact_id": artifact_id})
+            )
+            response = await writer.wait_for_id("rev-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            await task
+
+        self.assertEqual(response["payload"]["path"], real_path)
+
     async def test_artifact_preview_refuses_an_artifact_outside_the_session(self) -> None:
         """预览只覆盖当前会话的产物，跨会话即拒绝。"""
         reader = QueueReader()

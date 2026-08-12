@@ -56,6 +56,7 @@ type ClientFactory = (environment: NodeJS.ProcessEnv) => BridgePort;
 export class BridgeService {
   private readonly createClient: ClientFactory;
   private environment: NodeJS.ProcessEnv;
+  private readonly revealInFileManager: (path: string) => void;
   private readonly frameHandlers = new Set<(frame: ServerFrame) => void>();
   private client: BridgePort | null = null;
   private bootstrapData: DesktopBootstrap | null = null;
@@ -67,9 +68,14 @@ export class BridgeService {
   public constructor(
     createClient: ClientFactory = BridgeClient.spawnFromEnvironment,
     environment: NodeJS.ProcessEnv = process.env,
+    workspaceChooser?: undefined,
+    // 在文件管理器中定位产物。做成注入而不是直接 import electron，
+    // 是为了让这条路径可测——它是 Main 进程独有的副作用。
+    revealInFileManager: (path: string) => void = () => undefined,
   ) {
     this.createClient = createClient;
     this.environment = { ...environment };
+    this.revealInFileManager = revealInFileManager;
   }
 
   public get status(): BridgeStatus {
@@ -313,7 +319,11 @@ export class BridgeService {
   }
 
   public async revealArtifact(artifactId: string): Promise<void> {
-    await this.requireClient().request("artifacts.reveal", { artifact_id: artifactId });
+    const response = await this.requireClient().request("artifacts.reveal", {
+      artifact_id: artifactId,
+    });
+    // 路径到此为止：打开访达后不再往下传，Renderer 拿不到本机路径。
+    this.revealInFileManager(stringValue(response.path));
   }
 
   public async stageAttachment(path: string, declaredMediaType: string): Promise<AttachmentRef> {

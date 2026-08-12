@@ -7,7 +7,14 @@ import { BridgeService } from "./bridge-service";
 import { registerDesktopIpc } from "./ipc";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
-const bridge = new BridgeService();
+const bridge = new BridgeService(
+  undefined,
+  undefined,
+  undefined,
+  // 只定位、不打开：showItemInFolder 让用户在访达里看到文件，
+  // 而不是用某个未知程序执行它。
+  (path) => shell.showItemInFolder(path),
+);
 let quitting = false;
 
 function createWindow(): void {
