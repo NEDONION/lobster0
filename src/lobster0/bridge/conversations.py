@@ -97,7 +97,7 @@ class ConversationConsole:
         """
         if type(limit) is not int or not 1 <= limit <= 200:
             raise ValueError("History limit must be between 1 and 200")
-        session = self._sessions.get_cli(owner_id, session_key)
+        session = self._sessions.get_local(owner_id, session_key)
         if session is None:
             raise ConversationQueryError("session_not_found", "任务不存在")
         turns = tuple(reversed(self._turns.list_recent(session.id, limit)))

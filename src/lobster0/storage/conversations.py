@@ -120,8 +120,12 @@ class SessionRepository:
             conversation_id,
         )
 
-    def get_cli(self, user_id: int, conversation_id: str) -> Session | None:
-        """按 Owner 与 CLI 会话标识读取 Session，但绝不隐式创建。
+    def get_local(self, user_id: int, conversation_id: str) -> Session | None:
+        """按 Owner 与本地会话标识读取 Session，但绝不隐式创建。
+
+        覆盖 ``cli`` 与 ``automation`` 两个本地渠道：定时任务的会话在后者，
+        不放开的话桌面端根本打不开它，而它恰恰最需要回放——没有实时事件流。
+        飞书/Discord 等 IM 渠道仍然不在范围内。
 
         Args:
             user_id: 当前 Owner 的数据库 ID。
@@ -142,7 +146,8 @@ class SessionRepository:
             row = connection.execute(
                 """
                 SELECT * FROM sessions
-                WHERE user_id = ? AND channel = 'cli' AND account_id = 'local'
+                WHERE user_id = ? AND channel IN ('cli', 'automation')
+                  AND account_id = 'local'
                   AND external_conversation_id = ?
                 """,
                 (user_id, normalized),

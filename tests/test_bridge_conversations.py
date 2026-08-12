@@ -59,6 +59,35 @@ class ConversationConsoleTest(unittest.TestCase):
         self.assertNotIn("secret-provider-id", repr(result))
         self.assertNotIn("must-not-leak", repr(result))
 
+    def test_history_can_open_an_automation_session(self) -> None:
+        """定时任务的会话在 automation 渠道，此前桌面端根本打不开。
+
+        它恰恰是最需要回放的那类——没有实时事件流，不看历史就无从判断
+        Agent 做了什么。
+        """
+        session = self.sessions.get_or_create(
+            self.owner_id, "automation", "local", "task:1:run:1"
+        )
+        self.turns.create_with_user_message(session.id, "event-1", "model", "汇总")
+
+        history = self.console.history(
+            self.owner_id, session_key="task:1:run:1", limit=50
+        )
+
+        self.assertEqual(history["session_key"], "task:1:run:1")
+
+    def test_history_still_refuses_an_im_channel_session(self) -> None:
+        """放开 automation 不等于放开飞书/Discord 的会话。"""
+        session = self.sessions.get_or_create(
+            self.owner_id, "feishu", "default", "oc_secret"
+        )
+        self.turns.create_with_user_message(session.id, "event-1", "model", "私聊内容")
+
+        with self.assertRaises(ConversationQueryError) as raised:
+            self.console.history(self.owner_id, session_key="oc_secret", limit=50)
+
+        self.assertEqual(raised.exception.code, "session_not_found")
+
     def test_history_replays_tool_calls_not_just_the_answer(self) -> None:
         """历史必须能还原执行过程，否则用户无从判断 Agent 到底做了什么。
 
