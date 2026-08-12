@@ -20,6 +20,7 @@ import tomllib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from enum import StrEnum
 from pathlib import Path, PurePosixPath
 from typing import Literal, Never, Protocol, TextIO
 
@@ -99,6 +100,7 @@ _UPDATE_HEALTH_TIMEOUT = 30.0
 _INTERNAL_HOP = "LOBSTER0_INSTALLER_HOPS"
 _PREFIX_ENV = "LOBSTER0_PREFIX"
 _RECEIPT_NAME = "install-receipt.json"
+_INSTALLED_PACKAGE_PARENTS = frozenset({"site-packages", "dist-packages"})
 _INSTALLER_NAME = "lobster0-installer.pyz"
 _MANIFEST_NAME = "release-manifest.json"
 _PURGE_PHRASE = "DELETE ALL LOBSTER0 DATA"
@@ -2392,17 +2394,31 @@ def _installer_error() -> Never:
     raise InstallError("installer_error", "manifest")
 
 
+class InstallMethod(StrEnum):
+    """列出 CLI 与 Doctor 共用的三种安装模式。
+
+    ``MANAGED`` 是 installer 写下 receipt 的受管安装；``PACKAGE`` 是 wheel、
+    ``uv tool``、``pipx`` 或 ``pip`` 装进 site-packages 的普通包安装；``SOURCE``
+    是从工作树（``src`` 布局或 editable 安装）运行的源码 checkout。
+    """
+
+    MANAGED = "managed"
+    PACKAGE = "package"
+    SOURCE = "source"
+
+
 @dataclass(frozen=True, slots=True)
 class InstallFacts:
-    """描述当前进程面对的是受管安装还是源码 checkout。
+    """描述当前进程面对的是受管安装、包安装还是源码 checkout。
 
     Args:
         managed: 解析到的 program prefix 是否持有有效 install receipt。
-        program_prefix: 已发现的受管程序根；源码模式为 ``None``。
+        program_prefix: 已发现的受管程序根；非受管模式为 ``None``。
         state_home: 调用方选择的状态根。
         receipt: 已通过 strict 校验的 install receipt。
         layout: 与 receipt 版本绑定的受管 layout。
         detail: 稳定、不含私有路径的判定原因。
+        method: 三态安装模式；``managed`` 为真时恒为 ``MANAGED``。
     """
 
     managed: bool
@@ -2411,6 +2427,7 @@ class InstallFacts:
     receipt: InstallReceipt | None
     layout: InstallLayout | None
     detail: str
+    method: InstallMethod
 
 
 def resolve_install_facts(
@@ -2419,8 +2436,9 @@ def resolve_install_facts(
     environ: Mapping[str, str] | None = None,
     executable: Path | None = None,
     user_home: Path | None = None,
+    package_dir: Path | None = None,
 ) -> InstallFacts:
-    """判定当前状态根对应的是受管安装还是源码 checkout。
+    """判定当前状态根对应的是受管安装、包安装还是源码 checkout。
 
     CLI 与 Doctor 共用这一个判定，避免两处各自实现 receipt 发现逻辑。
 
@@ -2429,20 +2447,38 @@ def resolve_install_facts(
         environ: 读取 ``LOBSTER0_PREFIX`` 的环境；省略时使用当前进程环境。
         executable: 当前解释器路径；省略时使用 ``sys.executable``。
         user_home: 目标用户 Home；省略时按默认 `<home>/.lobster0` 布局或 passwd 解析。
+        package_dir: 当前 ``lobster0`` 包目录；省略时使用本模块所在的包目录。
 
     Returns:
         永不抛异常的安装事实；任何不可信 receipt 都降级为非受管并给出原因。
     """
     source = dict(os.environ if environ is None else environ)
+    unmanaged = _unmanaged_method(package_dir)
     if not _canonical_absolute(state_home):
-        return InstallFacts(False, None, Path(state_home), None, None, "state_home_invalid")
+        return InstallFacts(
+            False,
+            None,
+            Path(state_home),
+            None,
+            None,
+            "state_home_invalid",
+            InstallMethod.SOURCE,
+        )
     uid = os.geteuid()
     account_home: Path | None = user_home
     if account_home is None:
         try:
             account_home = Path(pwd.getpwuid(uid).pw_dir)
         except (KeyError, OSError, TypeError):
-            return InstallFacts(False, None, state_home, None, None, "account_unavailable")
+            return InstallFacts(
+                False,
+                None,
+                state_home,
+                None,
+                None,
+                "account_unavailable",
+                InstallMethod.SOURCE,
+            )
     for prefix in _prefix_candidates(state_home, source, executable):
         receipt_path = prefix / _RECEIPT_NAME
         if not _lexists(receipt_path):
@@ -2456,9 +2492,47 @@ def resolve_install_facts(
             receipt = InstallReceipt.load(receipt_path, expected_uid=uid)
             layout = _installed_layout(prefix, state_home, receipt.version, uid=uid, user_home=home)
         except (InstallError, OSError, ValueError):
-            return InstallFacts(False, prefix, state_home, None, None, "receipt_invalid")
-        return InstallFacts(True, prefix, state_home, receipt, layout, "managed")
-    return InstallFacts(False, None, state_home, None, None, "source")
+            # 受管安装的 receipt 损坏时绝不降级成包安装：那会写出一个指向 Runtime
+            # venv 而不是 stable launcher 的 service unit。
+            return InstallFacts(
+                False,
+                prefix,
+                state_home,
+                None,
+                None,
+                "receipt_invalid",
+                InstallMethod.SOURCE,
+            )
+        return InstallFacts(
+            True,
+            prefix,
+            state_home,
+            receipt,
+            layout,
+            "managed",
+            InstallMethod.MANAGED,
+        )
+    return InstallFacts(False, None, state_home, None, None, str(unmanaged), unmanaged)
+
+
+def _unmanaged_method(package_dir: Path | None) -> InstallMethod:
+    """按 ``lobster0`` 包所在目录区分包安装与源码 checkout。
+
+    判据是当前模块**从哪里被导入**，与当前工作目录无关；也刻意不看 ``.git``，
+    否则删掉 ``.git`` 的工作树就能绕过源码模式的 provenance 检查。
+
+    Args:
+        package_dir: 待判定的 ``lobster0`` 包目录；省略时使用本模块的包目录。
+
+    Returns:
+        位于 ``site-packages``/``dist-packages`` 下时为 ``PACKAGE``，否则 ``SOURCE``。
+    """
+    selected = Path(__file__).parent.parent if package_dir is None else Path(package_dir)
+    return (
+        InstallMethod.PACKAGE
+        if selected.parent.name in _INSTALLED_PACKAGE_PARENTS
+        else InstallMethod.SOURCE
+    )
 
 
 def _prefix_candidates(
