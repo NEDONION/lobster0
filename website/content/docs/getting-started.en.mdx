@@ -8,12 +8,7 @@ description: Install Lobster0 with one command, configure your model and owner, 
 All you need is [`uv`](https://docs.astral.sh/uv/). The command below fetches the release wheel and
 installs `lobster0` as a standalone CLI tool, leaving your existing Python environments untouched.
 
-```bash
-W=lobster0_agent-0.7.0-py3-none-any.whl
-curl -fL --proto '=https' --tlsv1.2 -o /tmp/${W} \
-  https://github.com/NEDONION/lobster0/releases/download/v0.7.0/${W} \
-  && uv tool install --python 3.12 "/tmp/${W}[feishu]"
-```
+<InstallCommand />
 
 > **Keep the filename exactly as published.** `uv` reads the version out of the wheel's filename and
 > fails with `Must have a version` if you rename it. The braces in `${W}` matter too: a bare
@@ -22,7 +17,7 @@ curl -fL --proto '=https' --tlsv1.2 -o /tmp/${W} \
 ## Configure and start
 
 ```bash
-lobster0 --version     # lobster0 0.7.0
+lobster0 --version     # prints the version you just installed
 lobster0 setup         # prompts for the model API key, Feishu app credentials, and owner
 lobster0 gateway       # starts the Feishu gateway over a WebSocket connection — no public port
 ```
@@ -38,7 +33,7 @@ To fix or rotate a single credential, use `lobster0 secret set LOBSTER0_MODEL_AP
 
 ## Release status
 
-`v0.7.0` is a **prerelease**. It has been verified on a clean Ubuntu 24.04 machine through a fully
+<code>v<ReleaseVersion /></code> is a **prerelease**. It has been verified on a clean Ubuntu 24.04 machine through a fully
 green `doctor`, so it is usable for self-hosting — but the Tier 1 hardware matrix, the PyPI release,
 and image attestation have not run, so treat it as unverified for production.
 
