@@ -8,7 +8,9 @@ from collections.abc import Callable
 from email.message import Message
 from urllib.parse import urljoin
 
+from lobster0 import __version__
 from lobster0.policy.network import (
+    IpNetwork,
     NetworkPolicyError,
     NetworkRule,
     NetworkTarget,
@@ -64,6 +66,9 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
 type ConnectionFactory = Callable[[NetworkTarget, float], http.client.HTTPSConnection]
 
 
+_USER_AGENT = f"Lobster0/{__version__} (+https://github.com/NEDONION/lobster0)"
+
+
 class HttpGetTool:
     """执行无认证、无请求体、每跳重验 DNS 的 HTTPS GET。"""
 
@@ -94,6 +99,7 @@ class HttpGetTool:
         resolver: Resolver = default_resolver,
         connection_factory: ConnectionFactory | None = None,
         allow_rules: tuple[NetworkRule, ...] = (),
+        trusted_cidrs: tuple[IpNetwork, ...] = (),
     ) -> None:
         if (
             type(timeout_seconds) is not int
@@ -110,6 +116,8 @@ class HttpGetTool:
         self._max_timeout_seconds = max_timeout_seconds
         self._max_response_bytes = max_response_bytes
         self._resolver = resolver
+        # 用户显式声明的代理网段；默认为空，行为与声明前完全一致。
+        self._trusted_cidrs = trusted_cidrs
         self._connection_factory = connection_factory or _new_pinned_connection
         self._allow_rules = frozenset(allow_rules)
         self._allowed_ports = tuple(sorted({443, *(rule.port for rule in allow_rules)}))
@@ -150,6 +158,7 @@ class HttpGetTool:
                     url,
                     self._resolver,
                     allowed_ports=self._allowed_ports,
+                    allow_cidrs=self._trusted_cidrs,
                 )
             except NetworkPolicyError as error:
                 return ToolResult.failure(error.code, str(error))
@@ -167,7 +176,14 @@ class HttpGetTool:
                     "GET",
                     target.request_target,
                     body=None,
-                    headers={"Accept": "text/*, application/json", "Connection": "close"},
+                    headers={
+                        "Accept": "text/*, application/json",
+                        # 不带 User-Agent 会被主流 API 直接拒绝：GitHub 对无
+                        # User-Agent 的请求返回 403。带上产品名与版本，不伪装
+                        # 成浏览器。
+                        "User-Agent": _USER_AGENT,
+                        "Connection": "close",
+                    },
                 )
                 response = connection.getresponse()
                 if response.status in _REDIRECT_STATUSES:

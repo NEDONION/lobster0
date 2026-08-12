@@ -100,16 +100,23 @@ def validate_prompt_candidate(
 
 
 def validate_skill_candidate(
-    staging_directory: Path, *, existing: ActivatedSkill | None = None
+    staging_directory: Path,
+    *,
+    existing: ActivatedSkill | None = None,
+    versions_root: Path | None = None,
 ) -> CandidateMaterial:
     """复用 SkillLoader 校验 staging 目录，只允许恰好一个 Skill。
 
     Args:
         staging_directory: 只包含这一个候选 Skill 子目录的隔离 staging 根。
         existing: 同名 Skill 当前的 active 内容；新建 Skill 时为 ``None``。
+        versions_root: ``StatePaths.skill_versions``。给出时把校验通过的 ``SKILL.md``
+            按内容哈希复制进不可变版本库，使 apply 阶段有稳定位置可读；省略时只做校验
+            （fixture 与纯校验测试使用）。
 
     Returns:
-        绑定 base/candidate hash 与 staging 目录名的候选材料。
+        绑定 base/candidate hash 与候选引用的材料。写入版本库时 ``candidate_ref`` 是
+        版本库内的相对路径，否则退化为 staging 目录名。
 
     Raises:
         CandidateError: staging 目录不安全、为空、包含一个以上 Skill，或加载失败。
@@ -143,11 +150,21 @@ def validate_skill_candidate(
     manifest = _canonical_json(
         {"kind": "skill", "name": matching.name, "version": matching.version}
     )
+    candidate_ref = f"skill-staging/{metadata.path.parent.name}"
+    if versions_root is not None:
+        candidate_ref = f"{matching.name}/{matching.content_hash}/SKILL.md"
+        try:
+            payload = metadata.path.read_bytes()
+        except OSError as error:
+            raise CandidateError(
+                "skill_load_failed", "staged skill could not be read"
+            ) from error
+        _write_candidate_file(versions_root / candidate_ref, payload)
     return CandidateMaterial(
         base_hash=base_hash,
         candidate_hash=matching.content_hash,
         manifest_json=manifest,
-        candidate_ref=f"skill-staging/{metadata.path.parent.name}",
+        candidate_ref=candidate_ref,
     )
 
 

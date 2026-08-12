@@ -8,7 +8,7 @@ fail closed，不留半应用状态。
 
 import hashlib
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from lobster0.evolution.evaluator import EvaluationError, latest_passing_run
@@ -32,6 +32,7 @@ from lobster0.evolution.revisions import (
     ApplyReceipt,
     approval_binding_hash,
     verify_prompt_artifact,
+    verify_skill_artifact,
 )
 
 _DEFAULT_TTL_SECONDS = 900
@@ -72,6 +73,8 @@ class EvolutionService:
         approvals: EvolutionApprovalRepository,
         active: ActiveRevisionRepository,
         prompt_versions_root: Path,
+        skill_versions_root: Path | None = None,
+        memory_reviews: object | None = None,
         clock: type[datetime] = datetime,
     ) -> None:
         """绑定四个 Repository 与 owner-only prompt version store。"""
@@ -80,6 +83,8 @@ class EvolutionService:
         self._approvals = approvals
         self._active = active
         self._prompt_versions_root = prompt_versions_root
+        self._skill_versions_root = skill_versions_root
+        self._memory_reviews = memory_reviews
         self._clock = clock
 
     def preview_apply(
@@ -166,6 +171,8 @@ class EvolutionService:
         )
         expected_current_id = self._expected_base_pointer(owner_id, proposal, version)
         self._approvals.consume(owner_id, approval_id, expected_binding_hash=binding)
+        if proposal.target_type is ProposalTargetType.MEMORY:
+            self._apply_memory_candidate(owner_id, version)
         revision = self._active.activate(
             owner_id,
             proposal.target_type,
@@ -195,9 +202,20 @@ class EvolutionService:
         *,
         ttl_seconds: int = _DEFAULT_TTL_SECONDS,
     ) -> EvolutionApproval:
-        """为一次 rollback 创建绑定当前 active version 的 pending 审批。"""
+        """为一次 rollback 创建绑定当前 active version 的 pending 审批。
+
+        Raises:
+            EvolutionError: Proposal 不在 applied 状态、没有可回滚的上一版，或目标是
+                Memory——Memory 的改动已穿过治理规则落地，切指针撤不回来。
+        """
         proposal = self._proposals.get(owner_id, proposal_id)
         self._require_status(proposal, ProposalStatus.APPLIED)
+        if proposal.target_type is ProposalTargetType.MEMORY:
+            # 在申请阶段就拒绝，避免 Owner 拿到一条注定无法执行的审批。
+            raise EvolutionError(
+                "memory_rollback_unsupported",
+                "memory changes must be undone through the memory review flow",
+            )
         pointer = self._require_pointer(owner_id, proposal)
         version = self._proposals.get_version(owner_id, pointer.proposal_version_id)
         if pointer.previous_version_id is None:
@@ -239,6 +257,15 @@ class EvolutionService:
         version = self._proposals.get_version(owner_id, approval.proposal_version_id)
         proposal = self._proposals.get(owner_id, version.proposal_id)
         self._require_status(proposal, ProposalStatus.APPLIED)
+        if proposal.target_type is ProposalTargetType.MEMORY:
+            # Prompt/Skill 的应用只是切换一个指向不可变 artifact 的指针，切回去即可撤销；
+            # Memory 的改动已经穿过既有治理规则落进 Markdown truth 与 Unit 状态机，
+            # 切指针撤不回来。谎称回滚成功比拒绝更危险，因此显式 fail closed，
+            # 由 Owner 走 Memory 自己的 review 流程处理。
+            raise EvolutionError(
+                "memory_rollback_unsupported",
+                "memory changes must be undone through the memory review flow",
+            )
         binding = approval_binding_hash(
             action=EvolutionAction.ROLLBACK,
             proposal_id=proposal.id,
@@ -306,6 +333,13 @@ class EvolutionService:
         """
         pointer = self._active.get(owner_id, proposal.target_type, proposal.target_name)
         if pointer is None:
+            if proposal.target_type is ProposalTargetType.MEMORY:
+                # Memory 的 base_hash 由候选生成器从"目标 Unit 的 ID + 当前状态"派生，
+                # Evolution 这一层无法在不耦合 Memory 内部实现的前提下重算它。真正的
+                # "基线是否漂移"由 MemoryReviewService.decide 的 preview_hash 比较负责，
+                # 它绑定的是预览时的真实 Unit 状态，比这里能做的检查更强。再叠一个算法
+                # 对不上的弱检查只会让所有真实 Memory 候选必然失败。
+                return None
             expected_base = self._baseline_hash(proposal)
             if version.base_hash != expected_base:
                 raise EvolutionError(
@@ -320,6 +354,53 @@ class EvolutionService:
                 "active revision no longer matches the proposal's base version",
             )
         return pointer.proposal_version_id
+
+    def _apply_memory_candidate(self, owner_id: int, version: ProposalVersion) -> None:
+        """把 Memory 候选交给既有 MemoryReviewService 落地。
+
+        Memory 与 Prompt/Skill 的根本区别在于：它没有独立 artifact，改动必须穿过既有的
+        disclosure、conflict、forget、promotion 与 reconcile 规则，让 Memory domain 保持
+        唯一实现。这里只负责把 Evolution 的审批结论转达过去，不自己改 Markdown truth。
+
+        Raises:
+            EvolutionError: 未配置 Memory Review 服务、候选引用不合法，或 Memory 侧拒绝。
+        """
+        from lobster0.memory.models import DisclosureContext
+        from lobster0.memory.store import MemoryError
+
+        if self._memory_reviews is None:
+            raise EvolutionError(
+                "memory_service_unavailable",
+                "memory proposals require a configured memory review service",
+            )
+        prefix = "memory-review:"
+        if not version.candidate_ref.startswith(prefix):
+            raise EvolutionError(
+                "memory_candidate_ref_invalid", "memory candidate reference is malformed"
+            )
+        try:
+            review_id = int(version.candidate_ref.removeprefix(prefix))
+        except ValueError as error:
+            raise EvolutionError(
+                "memory_candidate_ref_invalid", "memory candidate reference is malformed"
+            ) from error
+        disclosure = DisclosureContext(
+            owner_id=owner_id,
+            requester_user_id=owner_id,
+            channel="cli",
+            conversation_kind="local",
+            identity_verified=True,
+        )
+        try:
+            self._memory_reviews.decide(
+                disclosure,
+                review_id,
+                version.candidate_hash,
+                approve=True,
+                now=datetime.now(UTC),
+            )
+        except MemoryError as error:
+            raise EvolutionError(error.code, str(error)) from error
 
     @staticmethod
     def _baseline_hash(proposal: Proposal) -> str:
@@ -343,10 +424,21 @@ class EvolutionService:
     def _require_valid_artifact(
         self, proposal: Proposal, version: ProposalVersion
     ) -> None:
-        """Prompt 目标必须有完整、哈希匹配的 artifact 才能进入审批或应用。"""
-        if proposal.target_type is not ProposalTargetType.PROMPT:
+        """Prompt 与 Skill 目标必须有完整、哈希匹配的 artifact 才能进入审批或应用。
+
+        Memory 目标的候选内容留在既有 Memory Review 表中，没有独立 artifact，因此跳过。
+        """
+        if proposal.target_type is ProposalTargetType.PROMPT:
+            check = verify_prompt_artifact(self._prompt_versions_root, version)
+        elif proposal.target_type is ProposalTargetType.SKILL:
+            if self._skill_versions_root is None:
+                raise EvolutionError(
+                    "skill_store_unavailable",
+                    "skill proposals require a configured skill version store",
+                )
+            check = verify_skill_artifact(self._skill_versions_root, version)
+        else:
             return
-        check = verify_prompt_artifact(self._prompt_versions_root, version)
         if not check.valid:
             raise EvolutionError(
                 "artifact_invalid", f"candidate artifact is not usable: {check.reason}"

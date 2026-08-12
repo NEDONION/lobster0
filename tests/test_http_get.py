@@ -110,6 +110,27 @@ class HttpGetToolTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIs(connection.sock, tls_socket)
 
+    async def test_request_sends_a_user_agent(self) -> None:
+        """实测 GitHub API 对无 User-Agent 的请求直接返回 403。
+
+        这条不是理论洁癖：修好网络层之后请求真的到达了 GitHub，却因为缺这一个
+        头被拒，等于功能仍然不可用。
+        """
+        factory = FakeConnectionFactory(
+            (FakeResponse(200, b"ok", {"Content-Type": "text/plain"}),)
+        )
+        tool = HttpGetTool(resolver=self.resolver, connection_factory=factory)
+
+        await tool.execute(self.context, tool.validate({"url": "https://example.com/"}))
+
+        headers = factory.connections[0].requests[0][3]
+        agent = next(
+            (value for key, value in headers.items() if key.casefold() == "user-agent"),
+            None,
+        )
+        self.assertIsNotNone(agent, "http_get 必须发送 User-Agent")
+        self.assertIn("Lobster0", agent)
+
     async def test_returns_untrusted_text_with_get_only_and_no_auth_headers(self) -> None:
         """合法文本响应必须标为 untrusted，且请求没有 body/认证 Header。"""
         factory = FakeConnectionFactory(

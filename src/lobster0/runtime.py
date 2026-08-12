@@ -406,6 +406,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             timeout_seconds=config.tools.http_get.timeout_seconds,
             max_response_bytes=config.tools.http_get.max_response_bytes,
             allow_rules=network_rules,
+            trusted_cidrs=config.tools.http_get.trusted_cidrs,
         ),
         RunCommandTool(
             timeout_seconds=config.tools.run_command.timeout_seconds,
@@ -473,6 +474,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             command_rules=command_rules,
             network_rules=network_rules,
             executable_path=executable_environment.path_value,
+            trusted_cidrs=config.tools.http_get.trusted_cidrs,
         ),
         runs,
         result_max_chars=config.agent.tool_result_max_chars,

@@ -17,7 +17,7 @@ from lobster0.artifacts.store import ArtifactError
 from lobster0.bootstrap import initialize_state
 from lobster0.bridge.__main__ import build_parser
 from lobster0.bridge.conversations import ConversationQueryError
-from lobster0.bridge.server import BridgeServer
+from lobster0.bridge.server import BridgeServer, _run_summary, _task_summary
 from lobster0.config import ProviderConfig, load_config
 from lobster0.paths import build_state_paths
 from lobster0.policy.approvals import ApprovalDecision
@@ -235,6 +235,7 @@ def _stub_task() -> SimpleNamespace:
     return SimpleNamespace(
         id=1,
         name="立即任务",
+        prompt="汇总昨天的清单",
         status=SimpleNamespace(value="active"),
         schedule=SimpleNamespace(
             kind=SimpleNamespace(value="once"),
@@ -473,7 +474,12 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await task, 0)
 
     async def test_automation_list_is_owner_scoped_and_exposes_only_safe_fields(self) -> None:
-        """Automation 查询只返回只读摘要，不泄露 prompt、delivery 或预算。"""
+        """Automation 查询只返回只读摘要，不泄露 delivery 或预算。
+
+        prompt 从 D3 起改为下发：它是用户自己写的任务内容，卡片不显示的话根本
+        看不出这个任务要让 AI 干什么。delivery（投递目标）与 budget（执行预算）
+        仍然不给界面。
+        """
         reader = QueueReader()
         writer = CaptureWriter()
         runtime = _runtime(EventTurnService())
@@ -482,6 +488,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(
                     id=4,
                     name="每日简报",
+                    prompt="汇总昨天的更新",
                     status=SimpleNamespace(value="active"),
                     schedule=SimpleNamespace(
                         kind=SimpleNamespace(value="cron"),
@@ -514,6 +521,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
                         "schedule_kind": "cron",
                         "schedule_expression": "0 1 * * *",
                         "next_run_at": "2026-08-10T01:00:00+00:00",
+                        "prompt": "汇总昨天的更新",
                     }
                 ],
             },
@@ -529,6 +537,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             id=4,
             version=7,
             name="每日简报",
+            prompt="汇总昨天的更新",
             status=SimpleNamespace(value="active"),
             schedule=SimpleNamespace(
                 kind=SimpleNamespace(value="cron"),
@@ -540,6 +549,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             id=4,
             version=8,
             name="每日简报",
+            prompt="汇总昨天的更新",
             status=SimpleNamespace(value="paused"),
             schedule=SimpleNamespace(
                 kind=SimpleNamespace(value="cron"),
@@ -565,12 +575,14 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         repository.get.assert_called_once_with(4, owner_id=1)
         repository.pause.assert_called_once_with(4, owner_id=1, expected_version=7)
         self.assertEqual(response["payload"]["task"]["status"], "paused")
-        # 响应沿用只读摘要的字段集，不泄露 prompt/delivery。
+        # 响应沿用只读摘要的字段集。prompt 从 D3 起下发（用户自己写的任务内容，
+        # 不显示就看不出这个任务在干什么）；delivery 与 budget 仍然不给界面。
         self.assertEqual(
             set(response["payload"]["task"]),
             {
                 "task_id",
                 "name",
+                "prompt",
                 "status",
                 "schedule_kind",
                 "schedule_expression",
@@ -604,6 +616,7 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             id=9,
             version=1,
             name="每日摘要",
+            prompt="汇总昨天的更新",
             status=SimpleNamespace(value="active"),
             schedule=SimpleNamespace(
                 kind=SimpleNamespace(value="cron"),
@@ -734,6 +747,66 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         await task
 
         self.assertEqual(response["payload"]["code"], "turn_busy")
+
+    def test_run_summary_carries_enough_to_explain_what_happened(self) -> None:
+        """只回时间/状态/错误码，用户根本看不出 AI 到底做了什么。
+
+        实测：一次跑了 55 秒、产出完整答案的运行，界面上只显示一个英文错误码。
+        结果摘要、用量、耗时与 turn_id 都在库里，此前一个都没下发。
+        """
+        run = SimpleNamespace(
+            id=7,
+            task_id=1,
+            status=SimpleNamespace(value="failed"),
+            scheduled_for=datetime(2026, 8, 11, 17, 40, tzinfo=UTC),
+            started_at=datetime(2026, 8, 11, 17, 40, 54, tzinfo=UTC),
+            completed_at=datetime(2026, 8, 11, 17, 41, 49, tzinfo=UTC),
+            error_code="automation_terminal_response_missing",
+            result_preview="## 结论：暂时无法获取数据",
+            usage={"input_tokens": 22518, "output_tokens": 1829},
+            session_id=51,
+            turn_id=309,
+        )
+
+        summary = _run_summary(run)
+
+        self.assertEqual(summary["result_preview"], "## 结论：暂时无法获取数据")
+        self.assertEqual(summary["input_tokens"], 22518)
+        self.assertEqual(summary["output_tokens"], 1829)
+        self.assertEqual(summary["turn_id"], 309)
+        self.assertEqual(summary["started_at"], "2026-08-11T17:40:54+00:00")
+        self.assertEqual(summary["completed_at"], "2026-08-11T17:41:49+00:00")
+
+    def test_run_summary_tolerates_a_run_that_never_started(self) -> None:
+        """排队中的运行没有起止时间与用量，不能因此报错。"""
+        run = SimpleNamespace(
+            id=8,
+            task_id=1,
+            status=SimpleNamespace(value="queued"),
+            scheduled_for=datetime(2026, 8, 11, 17, 40, tzinfo=UTC),
+            started_at=None,
+            completed_at=None,
+            error_code=None,
+            result_preview=None,
+            usage={},
+            session_id=None,
+            turn_id=None,
+        )
+
+        summary = _run_summary(run)
+
+        self.assertIsNone(summary["started_at"])
+        self.assertIsNone(summary["result_preview"])
+        self.assertIsNone(summary["input_tokens"])
+
+    def test_task_summary_exposes_the_prompt(self) -> None:
+        """任务卡片不显示 prompt，用户看不出这个任务到底让 AI 干什么。"""
+        task = _stub_task()
+        task.prompt = "汇总昨天热门的 Github 开源项目清单和说明"
+
+        self.assertEqual(
+            _task_summary(task)["prompt"], "汇总昨天热门的 Github 开源项目清单和说明"
+        )
 
     async def test_creating_a_once_task_for_now_is_not_rejected_as_misfired(self) -> None:
         """「立即执行一次」发的是当下时刻，不能因为传输耗时就被判为过期。

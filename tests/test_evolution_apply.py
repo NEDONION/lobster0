@@ -14,7 +14,11 @@ from lobster0.evolution.models import (
     ProposalStatus,
     ProposalTargetType,
 )
-from lobster0.evolution.proposals import PROMPT_BLOCKS, validate_prompt_candidate
+from lobster0.evolution.proposals import (
+    PROMPT_BLOCKS,
+    validate_prompt_candidate,
+    validate_skill_candidate,
+)
 from lobster0.evolution.repository import (
     ActiveRevisionRepository,
     EvalRepository,
@@ -25,6 +29,7 @@ from lobster0.evolution.repository import (
 )
 from lobster0.evolution.revisions import (
     active_prompt_text,
+    active_skill_document,
     approval_binding_hash,
     prompt_artifact_path,
     recover_active_prompt_revision,
@@ -66,6 +71,8 @@ class EvolutionApplyTestCase(unittest.TestCase):
         self.addCleanup(self.temporary_directory.cleanup)
         root = Path(self.temporary_directory.name)
         self.prompt_versions = root / "prompts" / "versions"
+        self.skill_versions = root / "skills" / "versions"
+        self.skill_staging = root / "skill-staging"
         self.database = Database(root / "lobster0.db")
         apply_migrations(self.database)
         self.owner_id = OwnerRepository(self.database).get_or_create().id
@@ -81,6 +88,7 @@ class EvolutionApplyTestCase(unittest.TestCase):
             approvals=self.approvals,
             active=self.active,
             prompt_versions_root=self.prompt_versions,
+            skill_versions_root=self.skill_versions,
         )
 
         material = validate_prompt_candidate(self.prompt_versions, _BLOCK, _CANDIDATE)
@@ -507,3 +515,435 @@ class ArtifactIntegrityTest(EvolutionApplyTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SkillTargetApplyTest(EvolutionApplyTestCase):
+    """Skill 目标必须能走完与 Prompt 相同的审批、应用与回滚链路。
+
+    此前只有 Prompt 端到端可用：Skill 候选只校验调用方给的临时目录，从不复制进版本库，
+    因此 apply 阶段根本不知道候选文件在哪，整条链路对 Skill 是断的。
+    """
+
+    def _stage_skill(self, name: str, body: str) -> None:
+        """在隔离 staging 根下写入一个格式合法的候选 Skill。"""
+        directory = self.skill_staging / name
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: fixture skill\nversion: 1\n---\n\n"
+            f"# Instructions\n\n{body}\n",
+            encoding="utf-8",
+        )
+
+    def _skill_proposal(self, name: str = "weather-skill", body: str = "查天气。"):
+        """创建一个已进入 evaluating 且带通过 EvalRun 的 Skill Proposal。"""
+        self._stage_skill(name, body)
+        material = validate_skill_candidate(
+            self.skill_staging, versions_root=self.skill_versions
+        )
+        proposal, version = self.proposals.create_draft(
+            owner_id=self.owner_id,
+            feedback_id=self._record_feedback(),
+            target_type=ProposalTargetType.SKILL,
+            target_name=name,
+            base_hash=material.base_hash,
+            candidate_hash=material.candidate_hash,
+            manifest_json=material.manifest_json,
+            candidate_ref=material.candidate_ref,
+            rationale="新增查天气技能",
+        )
+        self.proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.DRAFT,
+            new_status=ProposalStatus.EVALUATING,
+        )
+        return proposal, version, self._passing_eval_run(version.id)
+
+    def test_candidate_is_persisted_into_the_version_store(self) -> None:
+        """校验通过的 Skill 必须按内容哈希落进版本库，apply 才有稳定位置可读。"""
+        _, version, _ = self._skill_proposal()
+
+        stored = self.skill_versions / version.candidate_ref
+        self.assertTrue(stored.is_file())
+        self.assertIn("weather-skill", stored.read_text(encoding="utf-8"))
+        self.assertEqual(
+            hashlib.sha256(stored.read_bytes()).hexdigest(), version.candidate_hash
+        )
+
+    def test_full_approve_apply_rollback_flow_for_a_skill(self) -> None:
+        """Skill 必须能审批、应用、并回滚到上一版。"""
+        proposal, version, run = self._skill_proposal()
+        approval = self.service.request_apply_approval(
+            self.owner_id, proposal.id, eval_run_id=run.id
+        )
+        self.proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.EVALUATING,
+            new_status=ProposalStatus.APPROVED,
+        )
+        self.approvals.decide(self.owner_id, approval.id, approved=True)
+
+        receipt = self.service.apply(self.owner_id, approval.id)
+
+        self.assertEqual(receipt.target_type, ProposalTargetType.SKILL)
+        pointer = self.active.get(
+            self.owner_id, ProposalTargetType.SKILL, "weather-skill"
+        )
+        self.assertIsNotNone(pointer)
+        self.assertEqual(pointer.proposal_version_id, version.id)
+        self.assertEqual(
+            self.proposals.get(self.owner_id, proposal.id).status,
+            ProposalStatus.APPLIED,
+        )
+
+    def test_runtime_reads_the_active_skill_and_fails_safe(self) -> None:
+        """Runtime 能读到生效版本；artifact 损坏时必须退化为 None 而不是加载可疑内容。"""
+        proposal, version, run = self._skill_proposal(body="独特的技能正文标记")
+        approval = self.service.request_apply_approval(
+            self.owner_id, proposal.id, eval_run_id=run.id
+        )
+        self.proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.EVALUATING,
+            new_status=ProposalStatus.APPROVED,
+        )
+        self.approvals.decide(self.owner_id, approval.id, approved=True)
+        self.service.apply(self.owner_id, approval.id)
+
+        document = active_skill_document(
+            self.proposals,
+            self.active,
+            self.skill_versions,
+            owner_id=self.owner_id,
+            skill_name="weather-skill",
+        )
+        self.assertIsNotNone(document)
+        self.assertIn("独特的技能正文标记", document)
+
+        (self.skill_versions / version.candidate_ref).unlink()
+        self.assertIsNone(
+            active_skill_document(
+                self.proposals,
+                self.active,
+                self.skill_versions,
+                owner_id=self.owner_id,
+                skill_name="weather-skill",
+            )
+        )
+
+    def test_unknown_skill_has_no_active_document(self) -> None:
+        """从未被 Evolution 改过的 Skill 必须返回 None，由调用方读磁盘常规版本。"""
+        self.assertIsNone(
+            active_skill_document(
+                self.proposals,
+                self.active,
+                self.skill_versions,
+                owner_id=self.owner_id,
+                skill_name="never-proposed",
+            )
+        )
+
+    def test_corrupted_skill_artifact_blocks_approval(self) -> None:
+        """artifact 损坏时不得进入审批，必须 fail closed。"""
+        proposal, version, run = self._skill_proposal()
+        (self.skill_versions / version.candidate_ref).write_text("被篡改", encoding="utf-8")
+
+        with self.assertRaises(EvolutionError) as raised:
+            self.service.request_apply_approval(
+                self.owner_id, proposal.id, eval_run_id=run.id
+            )
+        self.assertEqual(raised.exception.code, "artifact_invalid")
+
+
+class MemoryTargetApplyTest(EvolutionApplyTestCase):
+    """Memory 目标的应用必须穿过既有 Memory 治理，且不得假装能靠切指针回滚。"""
+
+    class _RecordingReviews:
+        """记录 Evolution 是否把决定原样转达给 Memory domain。"""
+
+        def __init__(self, error: Exception | None = None) -> None:
+            """保存可注入的 Memory 侧错误与调用记录。"""
+            self.calls: list[dict[str, object]] = []
+            self._error = error
+
+        def decide(self, disclosure, review_id, preview_hash, *, approve, now):
+            """记录一次调用；注入错误时原样抛出。"""
+            self.calls.append(
+                {
+                    "owner_id": disclosure.owner_id,
+                    "review_id": review_id,
+                    "preview_hash": preview_hash,
+                    "approve": approve,
+                }
+            )
+            if self._error is not None:
+                raise self._error
+
+    def _memory_service(self, reviews) -> EvolutionService:
+        """构造一个绑定了 Memory Review 服务的 EvolutionService。"""
+        return EvolutionService(
+            proposals=self.proposals,
+            evals=self.evals,
+            approvals=self.approvals,
+            active=self.active,
+            prompt_versions_root=self.prompt_versions,
+            skill_versions_root=self.skill_versions,
+            memory_reviews=reviews,
+        )
+
+    def _memory_proposal(self, candidate_ref: str = "memory-review:42"):
+        """创建一个已进入 evaluating 且带通过 EvalRun 的 Memory Proposal。"""
+        proposal, version = self.proposals.create_draft(
+            owner_id=self.owner_id,
+            feedback_id=self._record_feedback(),
+            target_type=ProposalTargetType.MEMORY,
+            target_name="unit-abc",
+            base_hash="d" * 64,
+            candidate_hash="e" * 64,
+            manifest_json='{"kind":"memory"}',
+            candidate_ref=candidate_ref,
+            rationale="遗忘一条过期事实",
+        )
+        self.proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.DRAFT,
+            new_status=ProposalStatus.EVALUATING,
+        )
+        return proposal, version, self._passing_eval_run(version.id)
+
+    def _approve(self, service: EvolutionService, proposal, run) -> int:
+        """走到 approved 并返回可消费的审批 ID。"""
+        approval = service.request_apply_approval(
+            self.owner_id, proposal.id, eval_run_id=run.id
+        )
+        self.proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.EVALUATING,
+            new_status=ProposalStatus.APPROVED,
+        )
+        self.approvals.decide(self.owner_id, approval.id, approved=True)
+        return approval.id
+
+    def test_apply_delegates_to_the_memory_review_service(self) -> None:
+        """应用必须把 review_id 与 candidate_hash 原样交给 Memory domain。"""
+        reviews = self._RecordingReviews()
+        service = self._memory_service(reviews)
+        proposal, version, run = self._memory_proposal()
+        approval_id = self._approve(service, proposal, run)
+
+        receipt = service.apply(self.owner_id, approval_id)
+
+        self.assertEqual(receipt.target_type, ProposalTargetType.MEMORY)
+        self.assertEqual(len(reviews.calls), 1)
+        self.assertEqual(reviews.calls[0]["review_id"], 42)
+        self.assertEqual(reviews.calls[0]["preview_hash"], version.candidate_hash)
+        self.assertTrue(reviews.calls[0]["approve"])
+        self.assertEqual(reviews.calls[0]["owner_id"], self.owner_id)
+
+    def test_memory_domain_rejection_surfaces_as_a_stable_code(self) -> None:
+        """Memory 侧拒绝时必须转译成稳定错误码，而不是泄露内部异常。"""
+        from lobster0.memory.store import MemoryError
+
+        reviews = self._RecordingReviews(
+            error=MemoryError("memory_review_preview_mismatch", "preview changed")
+        )
+        service = self._memory_service(reviews)
+        proposal, _, run = self._memory_proposal()
+        approval_id = self._approve(service, proposal, run)
+
+        with self.assertRaises(EvolutionError) as raised:
+            service.apply(self.owner_id, approval_id)
+        self.assertEqual(raised.exception.code, "memory_review_preview_mismatch")
+
+    def test_apply_without_a_memory_service_fails_closed(self) -> None:
+        """未配置 Memory Review 服务时必须拒绝，而不是静默跳过治理规则。"""
+        service = self._memory_service(None)
+        proposal, _, run = self._memory_proposal()
+        approval_id = self._approve(service, proposal, run)
+
+        with self.assertRaises(EvolutionError) as raised:
+            service.apply(self.owner_id, approval_id)
+        self.assertEqual(raised.exception.code, "memory_service_unavailable")
+
+    def test_malformed_candidate_reference_is_rejected(self) -> None:
+        """候选引用不是 memory-review:<id> 形状时必须拒绝。"""
+        service = self._memory_service(self._RecordingReviews())
+        proposal, _, run = self._memory_proposal(candidate_ref="not-a-review-ref")
+        approval_id = self._approve(service, proposal, run)
+
+        with self.assertRaises(EvolutionError) as raised:
+            service.apply(self.owner_id, approval_id)
+        self.assertEqual(raised.exception.code, "memory_candidate_ref_invalid")
+
+    def test_memory_rollback_is_explicitly_unsupported(self) -> None:
+        """Memory 改动已落进 Markdown truth，切指针撤不回来，必须显式拒绝。"""
+        reviews = self._RecordingReviews()
+        service = self._memory_service(reviews)
+        proposal, _, run = self._memory_proposal()
+        service.apply(self.owner_id, self._approve(service, proposal, run))
+
+        with self.assertRaises(EvolutionError) as raised:
+            service.request_rollback_approval(self.owner_id, proposal.id)
+        self.assertEqual(raised.exception.code, "memory_rollback_unsupported")
+
+
+class RealMemoryCandidateApplyTest(unittest.TestCase):
+    """用真实的 build_memory_forget_candidate 跑通 apply。
+
+    真实事故：``_baseline_hash`` 对 Memory 返回空内容哈希，而真实候选生成器把 base_hash
+    算成 ``sha256(unit_id:status)``。两者永远对不上，导致任何真实 Memory 候选在 apply 时
+    必然 ``active_base_changed``。用手写 base_hash 的测试发现不了，必须走真实生成器。
+    """
+
+    def setUp(self) -> None:
+        """初始化真实 Memory 状态并造出一条可遗忘的 Unit。"""
+        from lobster0.bootstrap import initialize_state
+        from lobster0.memory.markdown_store import MemoryMarkdownStore
+        from lobster0.memory.models import DisclosureContext, SourceRef
+        from lobster0.memory.repository import (
+            MemoryManifestRepository,
+            MemoryReviewRepository,
+            MemoryUnitRepository,
+        )
+        from lobster0.memory.review import MemoryReviewService
+        from lobster0.memory.service import ExplicitMemoryRequest, MemoryService
+        from lobster0.memory.store import MemoryStore
+        from lobster0.paths import build_state_paths
+        from lobster0.storage.conversations import SessionRepository, TurnRepository
+
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        root = Path(self.temporary_directory.name)
+        self.paths = build_state_paths((root / "state").resolve())
+        self.owner_id = initialize_state(self.paths).owner.id
+        self.database = Database(self.paths.database)
+
+        units = MemoryUnitRepository(self.database)
+        reviews = MemoryReviewRepository(self.database)
+        markdown = MemoryMarkdownStore(self.paths, MemoryManifestRepository(self.database))
+        legacy = MemoryStore(self.paths)
+        memory = MemoryService(markdown, units, reviews, legacy)
+        session = SessionRepository(self.database).get_or_create_cli(self.owner_id, "evo")
+        turn = TurnRepository(self.database).create_with_user_message(
+            session.id, "evo-src", "test-model", "请记住我喜欢简洁回答"
+        )
+        with self.database.connect_read_only() as connection:
+            message_id = int(
+                connection.execute(
+                    "SELECT id FROM messages WHERE turn_id = ?", (turn.id,)
+                ).fetchone()[0]
+            )
+        disclosure = DisclosureContext(self.owner_id, self.owner_id, "cli", "local", True)
+        self.unit_id = memory.remember_explicit(
+            ExplicitMemoryRequest(
+                disclosure,
+                SourceRef(message_id, session.id, "cli"),
+                "请记住我喜欢简洁回答",
+                "用户喜欢简洁回答",
+                datetime(2026, 8, 11, tzinfo=UTC),
+            )
+        ).unit_id
+        self.governance = MemoryReviewService(
+            self.database, markdown, units, reviews, legacy
+        )
+
+    def test_real_forget_candidate_can_be_applied(self) -> None:
+        """真实候选必须能一路走到 applied，Unit 被真正归档。"""
+        from lobster0.evolution.proposals import build_memory_forget_candidate
+
+        material = build_memory_forget_candidate(
+            self.governance,
+            owner_id=self.owner_id,
+            unit_id=self.unit_id,
+            now=datetime(2026, 8, 11, 1, tzinfo=UTC),
+        )
+        proposals = ProposalRepository(self.database)
+        evals = EvalRepository(self.database)
+        approvals = EvolutionApprovalRepository(self.database)
+        active = ActiveRevisionRepository(self.database)
+        service = EvolutionService(
+            proposals=proposals,
+            evals=evals,
+            approvals=approvals,
+            active=active,
+            prompt_versions_root=self.paths.prompt_versions,
+            skill_versions_root=self.paths.skill_versions,
+            memory_reviews=self.governance,
+        )
+        with self.database.connect() as connection:
+            message = connection.execute(
+                "SELECT id FROM messages WHERE role = 'assistant' LIMIT 1"
+            ).fetchone()
+            if message is None:
+                session = connection.execute(
+                    "SELECT id FROM sessions LIMIT 1"
+                ).fetchone()[0]
+                message = (
+                    connection.execute(
+                        "INSERT INTO messages (session_id, role, content, created_at) "
+                        "VALUES (?, 'assistant', 'r', '2026-08-11T00:00:00+00:00')",
+                        (session,),
+                    ).lastrowid,
+                )
+        feedback_id = FeedbackRepository(self.database).record(
+            owner_id=self.owner_id,
+            message_id=int(message[0]),
+            rating=FeedbackRating.BAD,
+            redacted_reason="这条记忆过期了",
+            context_hash="a" * 64,
+        ).id
+        proposal, version = proposals.create_draft(
+            owner_id=self.owner_id,
+            feedback_id=feedback_id,
+            target_type=ProposalTargetType.MEMORY,
+            target_name=self.unit_id,
+            base_hash=material.base_hash,
+            candidate_hash=material.candidate_hash,
+            manifest_json=material.manifest_json,
+            candidate_ref=material.candidate_ref,
+            rationale="遗忘过期记忆",
+        )
+        proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.DRAFT,
+            new_status=ProposalStatus.EVALUATING,
+        )
+        run = evals.start_run(
+            proposal_version_id=version.id, suite_manifest_hash="b" * 64
+        )
+        evals.complete_run(
+            run.id,
+            status=EvalRunStatus.PASSED,
+            receipt_hash="c" * 64,
+            total_cases=1,
+            passed_cases=1,
+            safety_failures=0,
+            duration_ms=1,
+        )
+        approval = service.request_apply_approval(
+            self.owner_id, proposal.id, eval_run_id=run.id
+        )
+        proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.EVALUATING,
+            new_status=ProposalStatus.APPROVED,
+        )
+        approvals.decide(self.owner_id, approval.id, approved=True)
+
+        receipt = service.apply(self.owner_id, approval.id)
+
+        self.assertEqual(receipt.target_type, ProposalTargetType.MEMORY)
+        self.assertEqual(
+            proposals.get(self.owner_id, proposal.id).status, ProposalStatus.APPLIED
+        )
+        with self.database.connect_read_only() as connection:
+            status = connection.execute(
+                "SELECT status FROM memory_units WHERE id = ?", (self.unit_id,)
+            ).fetchone()[0]
+        self.assertEqual(status, "archived")

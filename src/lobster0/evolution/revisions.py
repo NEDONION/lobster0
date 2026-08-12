@@ -98,6 +98,52 @@ def verify_prompt_artifact(
     return ArtifactCheck(True, None)
 
 
+def skill_artifact_path(skill_versions_root: Path, candidate_ref: str) -> Path:
+    """把 Skill ProposalVersion 的受控引用解析为 owner-only artifact 路径。"""
+    return prompt_artifact_path(skill_versions_root, candidate_ref)
+
+
+def verify_skill_artifact(
+    skill_versions_root: Path, version: ProposalVersion
+) -> ArtifactCheck:
+    """校验 Skill artifact 仍存在且内容哈希与 candidate_hash 一致。
+
+    Skill 的 ``candidate_hash`` 是 ``SkillLoader`` 对整个 ``SKILL.md`` 字节算出的摘要，
+    与 Prompt 的算法一致，因此可以直接复用同一套校验。
+    """
+    return verify_prompt_artifact(skill_versions_root, version)
+
+
+def active_skill_document(
+    proposals: ProposalRepository,
+    active: ActiveRevisionRepository,
+    skill_versions_root: Path,
+    *,
+    owner_id: int,
+    skill_name: str,
+) -> str | None:
+    """返回一个 Skill 当前生效版本的完整 ``SKILL.md`` 正文；没有或不可信时返回 ``None``。
+
+    与 Prompt 一样 fail safe：指针缺失、version 读不到、artifact 损坏或哈希不匹配都返回
+    ``None``，由调用方回退到磁盘上的常规 Skill，绝不加载可疑内容。
+    """
+    pointer = active.get(owner_id, ProposalTargetType.SKILL, skill_name)
+    if pointer is None:
+        return None
+    try:
+        version = proposals.get_version(owner_id, pointer.proposal_version_id)
+    except EvolutionError:
+        return None
+    if not verify_skill_artifact(skill_versions_root, version).valid:
+        return None
+    try:
+        return skill_artifact_path(skill_versions_root, version.candidate_ref).read_text(
+            encoding="utf-8"
+        )
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 def active_prompt_text(
     proposals: ProposalRepository,
     active: ActiveRevisionRepository,
