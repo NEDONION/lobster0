@@ -343,6 +343,7 @@ export function App(): React.JSX.Element {
               onCancelAutomation={async (taskId) => {
                 await window.lobster0.cancelAutomation(taskId);
               }}
+              onOpenRun={(sessionKey) => void openSession(sessionKey)}
               onCreateAutomation={async (input: AutomationCreateInput) => {
                 await window.lobster0.createAutomation(input);
               }}
@@ -437,6 +438,7 @@ function ViewPreview({
   onHaltAutomation,
   onUnhaltAutomation,
   onCreateAutomation,
+  onOpenRun,
 }: {
   view: Exclude<ViewId, "task">;
   bootstrap: DesktopBootstrap | null;
@@ -461,6 +463,7 @@ function ViewPreview({
   onHaltAutomation: (reason: string) => Promise<void>;
   onUnhaltAutomation: () => Promise<void>;
   onCreateAutomation: (input: AutomationCreateInput) => Promise<void>;
+  onOpenRun: (sessionKey: string) => void;
   settingsError: string | null;
   taskBusy: boolean;
   onChooseWorkspace: () => void;
@@ -477,6 +480,7 @@ function ViewPreview({
         onCreate={onCreateAutomation}
         onHalt={onHaltAutomation}
         onLoadRuns={onLoadAutomationRuns}
+        onOpenRun={onOpenRun}
         onPause={onPauseAutomation}
         onRefresh={onRefreshAutomations}
         onResume={onResumeAutomation}
