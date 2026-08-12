@@ -275,6 +275,18 @@ class BrowserTool:
                 return ToolResult.failure(
                     "artifact_store_failed", "browser artifact import failed", retryable=True
                 )
+            # 入库还不够：不建立会话关联，右栏就永远只显示用户上传的文件。
+            # session_id 来自运行期 Context，模型伪造不了。
+            try:
+                self._artifact_store.link(
+                    imported.artifact_id,
+                    session_id=context.session_id,
+                    origin="agent_output",
+                )
+            except ArtifactError:
+                # 关联失败不该让整个工具调用失败——产物本身已经安全入库了，
+                # 只是右栏少一条。
+                pass
             result = {**result, "artifact": imported.to_tool_payload()}
         return ToolResult.success(result)
 

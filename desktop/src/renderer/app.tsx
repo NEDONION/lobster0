@@ -88,8 +88,11 @@ export function App(): React.JSX.Element {
     };
   }, []);
 
+  // 依赖里带上 taskBusy 与 sessionKey：回合结束是新会话与新标题出现的时刻，
+  // 切换会话也要让高亮跟上。此前只依赖 bootstrap，整个生命周期只拉一次——
+  // 侧栏因此永远停在应用启动那一刻的样子。
   useEffect(() => {
-    if (!bootstrap) {
+    if (!bootstrap || taskBusy) {
       return;
     }
     let active = true;
@@ -106,7 +109,7 @@ export function App(): React.JSX.Element {
     return () => {
       active = false;
     };
-  }, [bootstrap]);
+  }, [bootstrap, taskBusy, sessionKey]);
 
   useEffect(() => {
     if (!bootstrap || view !== "automation") {
@@ -330,6 +333,8 @@ export function App(): React.JSX.Element {
             initialHistory={history}
             key={sessionKey}
             onBusyChange={setTaskBusy}
+            onChooseWorkspace={() => void chooseWorkspace()}
+            onOpenSettings={() => setView("settings")}
             sessionKey={sessionKey}
           />
         ) : (
@@ -394,6 +399,17 @@ export function App(): React.JSX.Element {
                   "保存 Provider 失败。",
                 );
               }}
+              onRestartCore={async () => {
+                setSettingsBusy(true);
+                setSettingsError(null);
+                try {
+                  setBootstrap(await window.lobster0.restartCore());
+                } catch {
+                  setSettingsError("Core 重启失败，请检查本地配置。");
+                } finally {
+                  setSettingsBusy(false);
+                }
+              }}
               providerError={providerError}
               providers={providers}
               onChooseWorkspace={() => void chooseWorkspace()}
@@ -427,6 +443,7 @@ function ViewPreview({
   onRemoveProvider,
   onSelectProvider,
   onSetProviderSecret,
+  onRestartCore,
   onChooseWorkspace,
   onSetPermissionMode,
   onRefreshAutomations,
@@ -454,6 +471,7 @@ function ViewPreview({
   onRemoveProvider: (id: string) => Promise<void>;
   onSelectProvider: (id: string, model: string) => Promise<void>;
   onSetProviderSecret: (id: string, value: string) => Promise<void>;
+  onRestartCore: () => Promise<void>;
   onRefreshAutomations: () => void;
   onPauseAutomation: (taskId: number) => Promise<void>;
   onResumeAutomation: (taskId: number) => Promise<void>;
@@ -545,6 +563,7 @@ function ViewPreview({
         onRefresh={onRefreshProviders}
         onRemove={onRemoveProvider}
         onSelect={onSelectProvider}
+        onRestartCore={onRestartCore}
         onSetSecret={onSetProviderSecret}
         onUpsert={onUpsertProvider}
         providers={providers}

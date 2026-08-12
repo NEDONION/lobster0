@@ -14,10 +14,16 @@ from unittest.mock import Mock, patch
 
 from lobster0.agent.events import RunEvent
 from lobster0.artifacts.store import ArtifactError
+from lobster0.automation.repository import AutomationStateError
 from lobster0.bootstrap import initialize_state
 from lobster0.bridge.__main__ import build_parser
 from lobster0.bridge.conversations import ConversationQueryError
-from lobster0.bridge.server import BridgeServer, _run_summary, _task_summary
+from lobster0.bridge.server import (
+    BridgeServer,
+    _automation_error_code,
+    _run_summary,
+    _task_summary,
+)
 from lobster0.config import ProviderConfig, load_config
 from lobster0.paths import build_state_paths
 from lobster0.policy.approvals import ApprovalDecision
@@ -748,6 +754,26 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(response["payload"]["code"], "turn_busy")
 
+    def test_state_conflicts_keep_their_specific_reason(self) -> None:
+        """压成一个 automation_state_conflict，界面就无法区分「已结束」和「版本冲突」。
+
+        前者永远不会成功，后者刷新一下就好——提示语必须不同，所以码要保留。
+        """
+        self.assertEqual(
+            _automation_error_code(AutomationStateError("task_terminal")), "task_terminal"
+        )
+        self.assertEqual(
+            _automation_error_code(AutomationStateError("task_version_conflict")),
+            "task_version_conflict",
+        )
+
+    def test_unknown_state_reason_is_not_passed_through(self) -> None:
+        """白名单之外一律收敛，避免把任意异常文本当成错误码送出去。"""
+        self.assertEqual(
+            _automation_error_code(AutomationStateError("SECRET internal detail")),
+            "automation_state_conflict",
+        )
+
     def test_run_summary_carries_enough_to_explain_what_happened(self) -> None:
         """只回时间/状态/错误码，用户根本看不出 AI 到底做了什么。
 
@@ -1000,6 +1026,44 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(listed["payload"]["artifacts"][0]["filename"], "report.txt")
         self.assertNotIn(secret_path, json.dumps(listed, ensure_ascii=False))
+
+    async def test_reveal_returns_the_path_so_main_can_open_finder(self) -> None:
+        """路径必须真的回给 Main——此前存进一个没人读的字段，按钮点了毫无反应。
+
+        Renderer 仍然拿不到它：Main 打开访达后不再往下传。
+        """
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(RecordingTurnService())
+        artifact_id = "art_" + "a" * 64
+        real_path = "/Users/someone/.lobster0/artifacts/aa/x.png"
+        runtime.artifact_store = SimpleNamespace(
+            list_for_session=lambda session_id, *, limit: [
+                SimpleNamespace(
+                    artifact_id=artifact_id,
+                    media_type="image/png",
+                    byte_size=5,
+                    origin="agent_output",
+                    message_id=None,
+                    filename=None,
+                    created_at=datetime(2026, 8, 12, tzinfo=UTC),
+                )
+            ],
+            read_metadata=lambda value: SimpleNamespace(
+                artifact_id=value, media_type="image/png", byte_size=5, path=Path(real_path)
+            ),
+        )
+        with patch("lobster0.bridge.server.SessionRepository", _fake_sessions):
+            server = BridgeServer(runtime, reader, writer)
+            task = asyncio.create_task(server.run())
+            await reader.feed(
+                _request("rev-1", "artifacts.reveal", {"artifact_id": artifact_id})
+            )
+            response = await writer.wait_for_id("rev-1")
+            await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+            await task
+
+        self.assertEqual(response["payload"]["path"], real_path)
 
     async def test_artifact_preview_refuses_an_artifact_outside_the_session(self) -> None:
         """预览只覆盖当前会话的产物，跨会话即拒绝。"""

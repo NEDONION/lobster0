@@ -46,6 +46,7 @@ describe("Desktop Preload API", () => {
       "previewArtifact",
       "removeProvider",
       "revealArtifact",
+      "restartCore",
       "resumeAutomation",
       "runAutomation",
       "selectProvider",

@@ -300,3 +300,60 @@ describe("loadSession 的消息映射", () => {
     expect(history.messages[1]?.role).toBe("tool");
   });
 });
+
+describe("revealArtifact", () => {
+  it("hands the path to the opener and never returns it to the renderer", async () => {
+    // 路径是本机信息：Main 打开访达即可，Renderer 不需要也不该拿到。
+    const client = new FakeClient();
+    client.responses.set("artifacts.reveal", { path: "/Users/x/.lobster0/artifacts/a/b.png" });
+    const opened: string[] = [];
+    const service = new BridgeService(() => client, {}, undefined, (path) => {
+      opened.push(path);
+    });
+    await service.start();
+
+    const result = await service.revealArtifact(`art_${"a".repeat(64)}`);
+
+    expect(opened).toEqual(["/Users/x/.lobster0/artifacts/a/b.png"]);
+    expect(result).toBeUndefined();
+  });
+
+  it("refuses a response without a usable path", async () => {
+    const client = new FakeClient();
+    client.responses.set("artifacts.reveal", { path: "" });
+    const service = new BridgeService(() => client, {}, undefined, () => undefined);
+    await service.start();
+
+    await expect(service.revealArtifact(`art_${"a".repeat(64)}`)).rejects.toThrow();
+  });
+});
+
+describe("restartCore", () => {
+  it("restarts without changing the workspace", async () => {
+    // D2b 承诺改完 Provider/密钥能一键重启。restartWorkspace 已经是「停机再起」，
+    // 这里只是不换目录的同一条路径。
+    const clients: FakeClient[] = [];
+    const service = new BridgeService(() => {
+      const client = new FakeClient();
+      clients.push(client);
+      return client;
+    }, { LOBSTER0_WORKSPACE: "/work/report" });
+    await service.start();
+
+    const bootstrap = await service.restartCore();
+
+    expect(clients).toHaveLength(2);
+    expect(clients[0]?.shutdownCalls).toBe(1);
+    expect(bootstrap.coreVersion).toBe(HELLO.core_version);
+  });
+
+  it("refuses while a turn is running", async () => {
+    // 回合跑到一半重启会丢掉正在进行的工作。
+    const client = new FakeClient();
+    const service = new BridgeService(() => client, {});
+    await service.start();
+    await service.startTurn({ sessionKey: "s", text: "hi" });
+
+    await expect(service.restartCore()).rejects.toThrow();
+  });
+});

@@ -156,6 +156,7 @@ export interface DesktopApi {
   haltAutomation(reason: string): Promise<void>;
   unhaltAutomation(): Promise<void>;
   createAutomation(input: AutomationCreateInput): Promise<AutomationSummary>;
+  restartCore(): Promise<DesktopBootstrap>;
   listArtifacts(sessionKey: string, limit?: number): Promise<ArtifactSummary[]>;
   previewArtifact(artifactId: string, maxBytes?: number): Promise<ArtifactPreview>;
   revealArtifact(artifactId: string): Promise<void>;
@@ -186,6 +187,7 @@ export const DESKTOP_CHANNELS = {
   automationHalt: "desktop:automations:halt",
   automationUnhalt: "desktop:automations:unhalt",
   automationCreate: "desktop:automations:create",
+  coreRestart: "desktop:core:restart",
   artifactsList: "desktop:artifacts:list",
   artifactPreview: "desktop:artifacts:preview",
   artifactReveal: "desktop:artifacts:reveal",
@@ -238,6 +240,7 @@ export function createDesktopApi(invoke: Invoke, subscribe: Subscribe): DesktopA
     unhaltAutomation: () => invoke(DESKTOP_CHANNELS.automationUnhalt) as Promise<void>,
     createAutomation: (input) =>
       invoke(DESKTOP_CHANNELS.automationCreate, input) as Promise<AutomationSummary>,
+    restartCore: () => invoke(DESKTOP_CHANNELS.coreRestart) as Promise<DesktopBootstrap>,
     listArtifacts: (sessionKey, limit = 50) =>
       invoke(DESKTOP_CHANNELS.artifactsList, { sessionKey, limit }) as Promise<ArtifactSummary[]>,
     previewArtifact: (artifactId, maxBytes = 65_536) =>

@@ -43,6 +43,10 @@ interface TaskWorkbenchProps {
   bootstrapError: string | null;
   initialHistory: SessionHistory | null;
   onBusyChange: (busy: boolean) => void;
+  /** 跳到设置页改模型；缺席时模型名退化为纯文本。 */
+  onOpenSettings?: () => void;
+  /** 复用设置页那条完整的 Workspace 切换链路，只是多一个入口。 */
+  onChooseWorkspace?: () => void;
 }
 
 const STATUS_LABELS: Record<DesktopTaskStatus, string> = {
@@ -94,6 +98,8 @@ export function TaskWorkbench({
   bootstrapError,
   initialHistory,
   onBusyChange,
+  onOpenSettings,
+  onChooseWorkspace,
 }: TaskWorkbenchProps): React.JSX.Element {
   const [task, setTask] = useState(() => (
     initialHistory ? hydrateSession(initialHistory) : createDesktopTaskState(sessionKey)
@@ -317,11 +323,38 @@ export function TaskWorkbench({
             {staging ? "正在校验…" : "📎"}
           </button>
         ) : null}
-        <span>
-          {bootstrap
-            ? `Main Agent · ${bootstrap.model} · ${workspaceBasename(bootstrap.workspace)} · ${bootstrap.permissionMode}`
-            : "本地 Core"}
-        </span>
+        {/* 模型与 Workspace 做成可点入口：改模型要跳设置页，换目录复用既有的
+            完整切换链路（校验 + 重启 + 失败回滚），这里只是多一个入口。 */}
+        {bootstrap ? (
+          <span className="composer-status">
+            <span>Main Agent</span>
+            <span aria-hidden="true">·</span>
+            {onOpenSettings ? (
+              <button className="composer-link" onClick={onOpenSettings} type="button">
+                {bootstrap.model}
+              </button>
+            ) : (
+              <span>{bootstrap.model}</span>
+            )}
+            <span aria-hidden="true">·</span>
+            {onChooseWorkspace ? (
+              <button
+                className="composer-link"
+                disabled={disabled}
+                onClick={onChooseWorkspace}
+                type="button"
+              >
+                {workspaceBasename(bootstrap.workspace)}
+              </button>
+            ) : (
+              <span>{workspaceBasename(bootstrap.workspace)}</span>
+            )}
+            <span aria-hidden="true">·</span>
+            <span>{bootstrap.permissionMode}</span>
+          </span>
+        ) : (
+          <span>本地 Core</span>
+        )}
         {/* 运行中把「停止」提为主按钮并隐藏「发送」：跑飞的回合需要一眼能找到刹车，
             此时发送本来也是禁用的，留着只会挤占注意力。 */}
         {task.status === "running" || task.status === "waiting_approval" ? (

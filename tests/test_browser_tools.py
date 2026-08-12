@@ -239,6 +239,47 @@ class BrowserToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("staging_path", model_text)
         self.assertNotIn(str(self.paths.downloads), model_text)
 
+    async def test_worker_artifact_is_linked_to_the_current_session(self) -> None:
+        """入库还不够——不建立会话关联，右栏永远只显示用户自己上传的文件。
+
+        D3 承诺「当前任务产生 Artifact 后右侧面板自动出现」，而 link() 此前只有
+        用户上传一处调用，Agent 产生的产物一个都不会出现。
+        """
+        staged = self.paths.downloads / "worker-shot.png"
+        staged.write_bytes(_png(3, 2))
+        staged.chmod(0o600)
+        self.client.result = {
+            "action": "screenshot",
+            "artifact": {
+                "staging_path": str(staged),
+                "declared_media_type": "image/png",
+                "source": "browser_screenshot",
+                "width": 3,
+                "height": 2,
+            },
+        }
+        store = ArtifactStore(
+            self.database,
+            owner_id=self.context.user_id,
+            root=self.paths.artifacts,
+            staging_root=self.paths.downloads,
+            max_bytes=1024,
+        )
+        screenshot = next(
+            tool
+            for tool in browser_tools(
+                self.client, max_snapshot_chars=12_000, artifact_store=store
+            )
+            if tool.definition.name == "browser_screenshot"
+        )
+
+        await screenshot.execute(self.context, {"full_page": False})
+
+        links = store.list_for_session(self.context.session_id, limit=10)
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0].origin, "agent_output")
+        self.assertEqual(links[0].media_type, "image/png")
+
     async def test_runtime_exposes_browser_tools_only_when_browser_is_enabled(self) -> None:
         """Browser 开关应原子控制八个 Schema 和共享 Client 生命周期。"""
         base = load_config(self.paths, {}, {})

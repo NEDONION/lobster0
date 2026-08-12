@@ -78,8 +78,6 @@ class BridgeServer:
         # 已 stage、尚未被某次 turn 使用的附件。内存态即可：staging 本就不是
         # 持久语义，进程重启后重新选文件即可。
         self._staged_attachments: dict[str, dict[str, JsonValue]] = {}
-        # 最近一次 reveal 请求的真实路径，只供 Main 进程读取，不进 Renderer。
-        self._pending_reveal: str | None = None
 
     async def run(self) -> int:
         """处理请求直到 stdin EOF 或 `bridge.shutdown`。
@@ -327,9 +325,9 @@ class BridgeServer:
             return True
 
         if request.type == "artifacts.reveal":
-            # 路径只到 Main 进程，不进 Renderer；Renderer 只知道「已请求定位」。
-            self._pending_reveal = str(artifact.path)
-            await self._ok(request.request_id, {"revealed": True})
+            # 路径回给 Main 进程去打开访达。Renderer 仍然拿不到它——Main 执行完
+            # 不再往下传。此前这里把路径存进一个没人读的字段，按钮点了毫无反应。
+            await self._ok(request.request_id, {"path": str(artifact.path)})
             return True
 
         max_bytes = request.payload["max_bytes"]
@@ -895,12 +893,35 @@ def _run_summary(run: object, session_key: str | None = None) -> dict[str, JsonV
     }
 
 
+_AUTOMATION_STATE_CODES = frozenset(
+    {
+        "automation_halted",
+        "system_task_immutable",
+        "system_task_not_found",
+        "task_lease_lost",
+        "task_not_active",
+        "task_not_found",
+        "task_run_not_found",
+        "task_run_transition",
+        "task_state_conflict",
+        "task_terminal",
+        "task_version_conflict",
+    }
+)
+
+
 def _automation_error_code(error: Exception) -> str:
     """把 Core 的自动化异常映射为稳定、可展示的 Bridge 错误码。"""
     if isinstance(error, ScheduleError):
         return str(error) or "automation_schedule_invalid"
     if isinstance(error, AutomationStateError):
-        return "automation_state_conflict"
+        # 保留具体原因：界面要靠它区分「已结束」（重试永远无用）和「版本冲突」
+        # （刷新即可）。白名单之外一律收敛，不把任意异常文本当错误码送出去。
+        return (
+            str(error)
+            if str(error) in _AUTOMATION_STATE_CODES
+            else "automation_state_conflict"
+        )
     if isinstance(error, AutomationDataError):
         return "automation_data_invalid"
     return "automation_invalid"

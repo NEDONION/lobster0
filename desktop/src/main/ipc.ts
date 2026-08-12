@@ -75,6 +75,7 @@ export function registerDesktopIpc(
   register(DESKTOP_CHANNELS.automationUnhalt, () => bridge.unhaltAutomation());
   register(DESKTOP_CHANNELS.automationCreate, (payload) =>
     bridge.createAutomation(validateAutomationCreateInput(payload)));
+  register(DESKTOP_CHANNELS.coreRestart, () => bridge.restartCore());
   register(DESKTOP_CHANNELS.artifactsList, (payload) => {
     const input = validateArtifactListInput(payload);
     return bridge.listArtifacts(input.sessionKey, input.limit);

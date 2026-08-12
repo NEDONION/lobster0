@@ -3,7 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { AutomationSummary } from "../src/common/api";
 import {
   SCHEDULE_FORM_KINDS,
+  automationActionError,
   automationStats,
+  errorCodeFrom,
+  isTerminalTask,
   scheduleDescription,
   runDuration,
   runFailureReason,
@@ -124,5 +127,54 @@ describe("runDuration", () => {
   it("says nothing when the run has not finished", () => {
     expect(runDuration("2026-08-11T17:40:54Z", null)).toBeNull();
     expect(runDuration(null, null)).toBeNull();
+  });
+});
+
+describe("isTerminalTask", () => {
+  it("treats a finished one-off task as terminal", () => {
+    // 单次任务跑完即 completed，Core 拒绝对它做任何写操作（task_terminal）。
+    // 界面此前只判 cancelled，于是给已完成的任务留着「取消」按钮，点了必然失败。
+    expect(isTerminalTask("completed")).toBe(true);
+    expect(isTerminalTask("cancelled")).toBe(true);
+  });
+
+  it("keeps active and paused tasks operable", () => {
+    expect(isTerminalTask("active")).toBe(false);
+    expect(isTerminalTask("paused")).toBe(false);
+    expect(isTerminalTask("failed")).toBe(false);
+  });
+});
+
+describe("automationActionError", () => {
+  it("does not tell the user to retry something that can never succeed", () => {
+    // task_terminal 是稳定状态，重试一万次也一样。
+    const message = automationActionError("task_terminal");
+    expect(message).not.toContain("重试");
+    expect(message).toContain("已结束");
+  });
+
+  it("keeps the retry hint for genuinely transient failures", () => {
+    expect(automationActionError("turn_busy")).toContain("稍后");
+  });
+
+  it("surfaces an unknown code instead of hiding it", () => {
+    expect(automationActionError("some_new_code")).toContain("some_new_code");
+  });
+});
+
+describe("errorCodeFrom", () => {
+  it("recovers the code from an IPC-serialized error message", () => {
+    // Electron 只把 message 送过 IPC，code 属性丢失；Main 侧把码写进 message，
+    // 渲染进程再解析出来。不这么做，界面永远只能显示一句笼统的失败。
+    const error = new Error(
+      "Error invoking remote method 'desktop:automations:cancel': " +
+        "BridgeRequestError: [task_terminal] 自动化操作未完成",
+    );
+    expect(errorCodeFrom(error)).toBe("task_terminal");
+  });
+
+  it("returns null when there is no code to find", () => {
+    expect(errorCodeFrom(new Error("网络断开"))).toBeNull();
+    expect(errorCodeFrom("not an error")).toBeNull();
   });
 });

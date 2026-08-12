@@ -167,3 +167,40 @@ export function runDuration(startedAt: string | null, completedAt: string | null
   }
   return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
+
+// 已终结的任务不能再被写操作：Core 会以 task_terminal 拒绝。单次任务跑完就是
+// completed，此前界面只判 cancelled，于是给它留着「取消」按钮，点了必然失败。
+const TERMINAL_TASK_STATUSES = new Set(["completed", "cancelled"]);
+
+export function isTerminalTask(status: string): boolean {
+  return TERMINAL_TASK_STATUSES.has(status);
+}
+
+// 只有真正瞬时的失败才提示「稍后重试」。对稳定状态说重试是误导。
+const AUTOMATION_ACTION_ERRORS: Record<string, string> = {
+  task_terminal: "这个任务已结束，无法再操作。",
+  task_not_found: "任务不存在，可能已被删除。",
+  task_version_conflict: "任务已被改动，请刷新后重试。",
+  task_not_active: "任务当前不是运行状态，无法执行该操作。",
+  system_task_immutable: "系统内建任务不可修改。",
+  automation_halted: "自动化处于急停状态，请先解除急停。",
+  turn_busy: "当前有任务正在运行，请稍后再试。",
+};
+
+export function automationActionError(errorCode: string | null): string {
+  if (!errorCode) {
+    return "操作未完成，请稍后重试。";
+  }
+  return AUTOMATION_ACTION_ERRORS[errorCode] ?? `操作未完成（${errorCode}）。`;
+}
+
+// Electron 只把 message 送过 IPC，Error 上的 code 属性会丢。Main 侧把码写成
+// `[code]` 前缀，这里再解析回来——否则界面永远只能显示一句笼统的失败。
+const ERROR_CODE_PATTERN = /\[([a-z][a-z0-9_]*)\]/;
+
+export function errorCodeFrom(error: unknown): string | null {
+  if (!(error instanceof Error)) {
+    return null;
+  }
+  return ERROR_CODE_PATTERN.exec(error.message)?.[1] ?? null;
+}

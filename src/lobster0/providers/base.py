@@ -41,6 +41,37 @@ class ToolCall:
 
 
 @dataclass(frozen=True, slots=True)
+class ImagePart:
+    """一段随消息发送的已验证图像。
+
+    只在 Provider 边界持有字节，且不进入日志、持久化或 repr——base64 之后体积极大，
+    落进任何一处都既污染存储又可能泄露私人图像。
+    """
+
+    media_type: str
+    content_hash: str
+    data: bytes = field(repr=False)
+
+    def __post_init__(self) -> None:
+        """拒绝空数据与非图像 media type。"""
+        if self.media_type not in {"image/png", "image/jpeg"}:
+            raise ValueError("unsupported image media type")
+        if not self.data:
+            raise ValueError("image part must not be empty")
+        if len(self.content_hash) != 64:
+            raise ValueError("image part requires a sha256 content hash")
+
+    def __repr__(self) -> str:
+        """只显示类型、哈希与大小，绝不显示字节。"""
+        return (
+            "ImagePart("
+            f"media_type={self.media_type!r}, "
+            f"content_hash={self.content_hash[:16]!r}, "
+            f"byte_size={len(self.data)})"
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class ModelMessage:
     """表示不依赖具体厂商 SDK 的单条模型上下文消息。"""
 
@@ -50,6 +81,7 @@ class ModelMessage:
     tool_call_id: str | None = None
     reasoning_content: str | None = None
     metadata: dict[str, JsonValue] = field(default_factory=dict)
+    images: tuple["ImagePart", ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

@@ -7,7 +7,14 @@ import { BridgeService } from "./bridge-service";
 import { registerDesktopIpc } from "./ipc";
 
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
-const bridge = new BridgeService();
+const bridge = new BridgeService(
+  undefined,
+  undefined,
+  undefined,
+  // 只定位、不打开：showItemInFolder 让用户在访达里看到文件，
+  // 而不是用某个未知程序执行它。
+  (path) => shell.showItemInFolder(path),
+);
 let quitting = false;
 
 function createWindow(): void {
@@ -62,7 +69,20 @@ function isExternalHttpUrl(url: string): boolean {
 void app.whenReady().then(() => {
   registerDesktopIpc(
     (channel, handler) => {
-      ipcMain.handle(channel, (_event, payload) => handler(payload));
+      ipcMain.handle(channel, async (_event, payload) => {
+        try {
+          return await handler(payload);
+        } catch (error) {
+          // Electron 序列化 Error 时只保留 message，自定义的 code 属性会丢。
+          // 把码写进 message，渲染进程才能分清「已结束」和「稍后重试」。
+          // Web 传输不走这里——那条路径本来就单独传 code 字段。
+          const code = (error as { code?: unknown }).code;
+          if (typeof code === "string" && error instanceof Error) {
+            error.message = `[${code}] ${error.message}`;
+          }
+          throw error;
+        }
+      });
     },
     bridge,
     (frame) => {

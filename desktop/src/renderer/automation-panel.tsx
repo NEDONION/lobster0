@@ -4,7 +4,10 @@ import type { AutomationList, AutomationRun, AutomationSummary } from "../common
 import {
   SCHEDULE_FORM_KINDS,
   type ScheduleFormKind,
+  automationActionError,
   automationStats,
+  errorCodeFrom,
+  isTerminalTask,
   runDuration,
   runFailureReason,
   scheduleDescription,
@@ -79,8 +82,9 @@ export function AutomationPanel({
     try {
       await action();
       onRefresh();
-    } catch {
-      setActionError("操作未完成，请稍后重试。");
+    } catch (error) {
+      // 带上 Core 的具体原因：对 task_terminal 这种稳定状态说「稍后重试」是误导。
+      setActionError(automationActionError(errorCodeFrom(error)));
     }
   }
 
@@ -243,7 +247,9 @@ function AutomationCard({
   onOpenRun: ((sessionKey: string) => void) | undefined;
 }): React.JSX.Element {
   const paused = task.status === "paused";
-  const terminal = task.status === "cancelled";
+  // 单次任务跑完即 completed，同样不能再操作——此前只判 cancelled，于是给已完成
+  // 的任务留着「取消」按钮，点了必然被 Core 以 task_terminal 拒绝。
+  const terminal = isTerminalTask(task.status);
   return (
     <article className="automation-card">
       <div className="automation-card-main">
