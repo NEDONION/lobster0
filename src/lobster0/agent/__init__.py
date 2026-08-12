@@ -7,6 +7,7 @@ from lobster0.agent.runner import (
     AgentRunBudget,
     AgentRunner,
     AgentRunResult,
+    AgentTurnDeadlineError,
     EmptyModelResponseError,
 )
 from lobster0.agent.turn import TurnResult, TurnService
@@ -17,6 +18,7 @@ __all__ = [
     "AgentRunBudget",
     "AgentRunResult",
     "AgentRunner",
+    "AgentTurnDeadlineError",
     "ContextBuilder",
     "ContextError",
     "EmptyModelResponseError",

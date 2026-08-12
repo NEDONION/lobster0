@@ -484,7 +484,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if arguments.command == "gateway":
         try:
             prepare_gateway_sdk_runtime()
-            asyncio.run(run_gateway(paths))
+            # Owner 通过 /restart 自愿重启时返回非零码：systemd 的
+            # Restart=on-failure 与 launchd 的 KeepAlive.SuccessfulExit=false
+            # 都只在非零退出时才会重新拉起进程。
+            return asyncio.run(run_gateway(paths))
         except (ConfigError, DotEnvError, GatewayConfigError, ValueError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
@@ -494,7 +497,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         except KeyboardInterrupt:
             print("Cancelled.", file=sys.stderr)
             return 130
-        return 0
 
     if arguments.command == "web":
         # Web 控制台由浏览器交互，因此不套用 TUI 的 TTY 前置条件。

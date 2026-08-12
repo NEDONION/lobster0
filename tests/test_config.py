@@ -38,6 +38,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.agent.max_tool_iterations, 32)
         self.assertEqual(config.agent.max_tool_iterations_hard, 64)
         self.assertEqual(config.agent.max_no_progress_iterations, 3)
+        self.assertEqual(config.agent.max_turn_seconds, 90)
         self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(config.provider.api_key_env, "LOBSTER0_MODEL_API_KEY")
@@ -398,6 +399,7 @@ class ConfigTest(unittest.TestCase):
                 "LOBSTER0_MAX_TOOL_ITERATIONS": "6",
                 "LOBSTER0_MAX_TOOL_ITERATIONS_HARD": "12",
                 "LOBSTER0_MAX_NO_PROGRESS_ITERATIONS": "4",
+                "LOBSTER0_MAX_TURN_SECONDS": "240",
             },
             {"model": "cli-model"},
         )
@@ -406,6 +408,7 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.agent.max_tool_iterations, 6)
         self.assertEqual(config.agent.max_tool_iterations_hard, 12)
         self.assertEqual(config.agent.max_no_progress_iterations, 4)
+        self.assertEqual(config.agent.max_turn_seconds, 240)
         self.assertEqual(config.provider.base_url, "https://file.example/v1")
         self.assertEqual(config.workspace.path, self.workspace)
 
@@ -448,6 +451,8 @@ class ConfigTest(unittest.TestCase):
                 "[agent]\nmax_no_progress_iterations = true\n",
                 "max_no_progress_iterations",
             ),
+            ("[agent]\nmax_turn_seconds = 0\n", "max_turn_seconds"),
+            ("[agent]\nmax_turn_seconds = true\n", "max_turn_seconds"),
         ):
             with self.subTest(content=content):
                 self.paths.config.write_text(content, encoding="utf-8")
@@ -481,6 +486,7 @@ class ConfigTest(unittest.TestCase):
         for key in (
             "LOBSTER0_MAX_TOOL_ITERATIONS_HARD",
             "LOBSTER0_MAX_NO_PROGRESS_ITERATIONS",
+            "LOBSTER0_MAX_TURN_SECONDS",
         ):
             with self.subTest(key=key):
                 with self.assertRaisesRegex(ConfigError, key):

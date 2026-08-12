@@ -20,6 +20,10 @@ from lobster0.channels.feedback_commands import ChannelFeedbackController
 from lobster0.channels.feishu import FeishuTransport
 from lobster0.channels.feishu_approval import FeishuApprovalActionHandler
 from lobster0.channels.observability import ChannelObserver
+from lobster0.channels.restart import (
+    GatewayRestartController,
+    detect_supervision,
+)
 from lobster0.channels.supervisor import (
     ChannelRuntime,
     GatewayConfigError,
@@ -145,8 +149,14 @@ async def run_gateway(
     *,
     environ: dict[str, str] | None = None,
     ready: Callable[[str], None] = print,
-) -> None:
-    """加载安全环境、安装信号并运行 production Gateway。"""
+) -> int:
+    """加载安全环境、安装信号并运行 production Gateway。
+
+    Returns:
+        进程应使用的退出码：Owner 通过 `/restart` 主动重启时是非零的
+        ``RESTART_EXIT_CODE``（systemd 的 ``Restart=on-failure`` 与 launchd 的
+        ``KeepAlive.SuccessfulExit=false`` 都只在非零退出时拉起），其余为 0。
+    """
     target = os.environ if environ is None else environ
     try:
         load_dotenv(resolve_dotenv_path(paths, target), target)
@@ -165,6 +175,10 @@ async def run_gateway(
         raise GatewayConfigError(error.code) from None
     shutdown_event = asyncio.Event()
     force_event = asyncio.Event()
+    restart = GatewayRestartController(
+        shutdown_event=shutdown_event,
+        supervision=detect_supervision(target),
+    )
     loop = asyncio.get_running_loop()
     installed: list[signal.Signals] = []
     signal_count = 0
@@ -186,7 +200,12 @@ async def run_gateway(
                 continue
             installed.append(item)
         try:
-            supervisor = await create_gateway_supervisor(config, paths, secrets)
+            supervisor = await create_gateway_supervisor(
+                config,
+                paths,
+                secrets,
+                restart=restart,
+            )
             await supervisor.run(
                 shutdown_event=shutdown_event,
                 force_event=force_event,
@@ -196,7 +215,9 @@ async def run_gateway(
             raise
         except Exception:
             raise GatewayRuntimeError("gateway startup or runtime failed") from None
+        return restart.exit_code
     finally:
+        await restart.close()
         for item in installed:
             loop.remove_signal_handler(item)
         lease.close()
@@ -236,6 +257,7 @@ async def create_gateway_supervisor(
     *,
     runtime_factory: Callable[[AppConfig, StatePaths, str], AgentRuntime] | None = None,
     channel_factories: Mapping[str, Callable[..., ChannelRuntime]] | None = None,
+    restart: GatewayRestartController | None = None,
 ) -> GatewaySupervisor:
     """创建唯一 AgentRuntime，并按稳定顺序各装配一条 Channel pipeline。"""
     build_runtime = runtime_factory or create_runtime
@@ -250,6 +272,12 @@ async def create_gateway_supervisor(
             factories[channel](config, paths, runtime, secrets)
             for channel in collect_enabled_channels(config)
         )
+        if restart is not None:
+            # Manager 是唯一的入站命令入口；/restart 必须在 start() 之前绑定。
+            for channel_runtime in channels:
+                attach = getattr(channel_runtime.manager, "attach_restart", None)
+                if callable(attach):
+                    attach(restart)
         return GatewaySupervisor(runtime=runtime, channels=channels)
     except Exception:
         await runtime.aclose()
