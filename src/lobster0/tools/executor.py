@@ -718,6 +718,9 @@ class ToolExecutor:
                     "call_id": call_id,
                     "tool_name": tool.definition.name,
                     "status": "succeeded" if result.ok else "failed",
+                    # 稳定 snake_case 错误码，不是异常正文。卡片靠它说明**为什么**
+                    # 失败；只有 preview 的话所有失败在 Claw Trail 上都长得一样。
+                    "error_code": None if result.ok else result.error_code,
                     "duration_ms": duration_ms,
                     "preview": model_text,
                 },

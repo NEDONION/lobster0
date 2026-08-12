@@ -189,6 +189,10 @@ class ChannelFeedbackControllerTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(outcome.handled)
         self.assertEqual(outcome.error_code, "target_not_found")
         self.assertEqual(self.feedback.calls, [])
+        # 不能留死胡同：必须说明可能的原因和下一步怎么做。
+        assert outcome.notice is not None
+        self.assertIn("原因", outcome.notice)
+        self.assertIn("重试", outcome.notice)
 
     async def test_reply_to_user_message_is_rejected(self) -> None:
         """只能评价 assistant message，不能评价用户自己发的消息。"""

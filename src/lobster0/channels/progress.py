@@ -112,12 +112,19 @@ class ProgressProjector:
         if event.kind == "tool_finished":
             raw_status = event.data.get("status")
             status: StepStatus = "succeeded" if raw_status == "succeeded" else "failed"
-            detail = (
-                "重复 Tool 请求，已跳过执行"
-                if event.data.get("error_code") == "duplicate_tool_call"
-                else None
+            if status == "succeeded":
+                return self._set_tool_status(event.data, status)
+            error_code = event.data.get("error_code")
+            # 从未真正执行过的调用没有"目标"可展示，只留原因；真的执行过并失败的
+            # 调用要**同时**保留目标和原因——"哪个主机连不上"和"为什么连不上"
+            # 缺一不可。
+            detail = "" if error_code in _UNEXECUTED_CODES else None
+            return self._set_tool_status(
+                event.data,
+                status,
+                detail=detail,
+                reason=_failure_detail(error_code),
             )
-            return self._set_tool_status(event.data, status, detail=detail)
         if event.kind == "approval_required":
             return self._set_latest_waiting()
         return event.kind in {"turn_started", "turn_finished", "turn_failed", "turn_cancelled"}
@@ -180,8 +187,16 @@ class ProgressProjector:
         status: StepStatus,
         *,
         detail: str | None = None,
+        reason: str | None = None,
     ) -> bool:
-        """按 call_id 更新步骤状态，忽略 preview 等原始 Tool 输出。"""
+        """按 call_id 更新步骤状态，忽略 preview 等原始 Tool 输出。
+
+        Args:
+            data: 运行事件的原始数据；只读取 call_id 和 duration_ms。
+            status: 该步骤的新状态。
+            detail: 覆盖目标描述；``None`` 保留原值，``""`` 清空。
+            reason: 追加在目标之后的失败原因短语。
+        """
         call_id = data.get("call_id")
         if not isinstance(call_id, str):
             return False
@@ -190,10 +205,11 @@ class ProgressProjector:
             return False
         current = self._steps[position]
         duration = _optional_non_negative_int(data.get("duration_ms"))
+        target = current.detail if detail is None else detail
         self._steps[position] = replace(
             current,
             status=status,
-            detail=current.detail if detail is None else detail,
+            detail=_compose_detail(target, reason),
             duration_ms=duration,
         )
         return True
@@ -345,6 +361,82 @@ def progress_from_metadata(
         output_tokens=_metadata_optional_int(value.get("output_tokens")),
         duration_ms=_metadata_optional_int(value.get("duration_ms")),
     )
+
+
+def _compose_detail(target: str, reason: str | None) -> str:
+    """把目标与失败原因拼成一条有界展示文本，原因永远不被目标挤掉。"""
+    if not reason:
+        return _clean(text=target, limit=_MAX_FIELD_CHARS)
+    reason = _clean(text=reason, limit=_MAX_FIELD_CHARS)
+    if not target:
+        return reason
+    budget = _MAX_FIELD_CHARS - len(reason) - 3
+    if budget <= 0:
+        return reason
+    return f"{_clean(text=target, limit=budget)} · {reason}"
+
+
+def _failure_detail(error_code: JsonValue) -> str:
+    """把稳定错误码翻译成一句可以直接展示的失败原因。
+
+    只输出由错误码派生的固定短语，绝不回显 Tool 的 preview、响应正文、完整 URL
+    或凭据——脱敏标准与 ``tool_display_summary`` 一致。
+
+    真实事故：大陆云主机连不上 Google/DuckDuckGo/Bing，卡片却只画了三个 ✗，
+    用户无法判断是出站被阻断、工具坏了还是模型在打转。
+    """
+    if not isinstance(error_code, str) or not error_code:
+        return "调用失败，未返回具体原因"
+    known = _FAILURE_REASONS.get(error_code)
+    if known is not None:
+        return known
+    safe = _safe_error_code(error_code)
+    return "调用失败" if safe is None else f"调用失败（{safe}）"
+
+
+def _safe_error_code(value: str) -> str | None:
+    """只接受小写 ASCII snake_case 码；其余一律丢弃，避免变成注入点。"""
+    if len(value) > 64 or not all(
+        character == "_" or "a" <= character <= "z" or "0" <= character <= "9"
+        for character in value
+    ):
+        return None
+    return value
+
+
+# 稳定错误码 → 面向 Owner 的一句话原因。新增码不写进来也不会出错，
+# 会退化成"调用失败（<code>）"。
+_FAILURE_REASONS: dict[str, str] = {
+    "duplicate_tool_call": "重复 Tool 请求，已跳过执行",
+    "turn_deadline": "本轮墙钟预算耗尽，未执行",
+    "task_budget_tool_calls": "后台任务的 Tool 预算耗尽，未执行",
+    "http_failed": "网络请求失败：超时或出站连接被阻断",
+    "dns_resolution_failed": "网络请求失败：域名解析不通",
+    "response_too_large": "网络请求失败：响应体超出大小上限",
+    "too_many_redirects": "网络请求失败：重定向次数过多",
+    "redirect_not_allowed": "网络请求失败：重定向目标不在允许范围",
+    "invalid_redirect": "网络请求失败：重定向响应不合法",
+    "unsupported_content_type": "网络请求失败：返回了不支持的内容类型",
+    "unsupported_content_encoding": "网络请求失败：返回了不支持的编码",
+    "invalid_response": "网络请求失败：响应头不合法",
+    "invalid_text": "网络请求失败：响应不是合法文本",
+    "command_failed": "命令执行失败",
+    "command_timeout": "命令超时，已终止",
+    "command_forbidden": "该命令被永久禁止执行",
+    "command_not_found": "找不到这个可执行程序",
+    "invalid_command": "命令参数不合法",
+    "tool_failed": "工具内部执行失败",
+    "tool_result_too_large": "工具输出超出大小上限",
+    "tool_not_found": "没有这个工具",
+    "automation_halted": "后台自动化已被停止",
+    "path_denied": "目标路径不在允许的读写范围内",
+    "path_not_found": "目标路径不存在",
+}
+
+# 这些码代表调用**从未真正执行**，因此没有"目标"值得展示，只保留原因。
+_UNEXECUTED_CODES = frozenset(
+    {"duplicate_tool_call", "turn_deadline", "task_budget_tool_calls"}
+)
 
 
 def _tool_summary(tool_name: str, arguments: dict[str, JsonValue]) -> tuple[str, str]:

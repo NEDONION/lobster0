@@ -15,6 +15,14 @@ _NOT_A_REPLY = (
     "请先长按并「回复」某一条 Lobster0 的回答，再发送 /good 或 /bad <原因>——"
     "否则无法确定你在评价哪一条。"
 )
+# 只说"没有找到"是个死胡同：Owner 无从判断该怎么办。把可能的原因列清楚。
+_TARGET_NOT_FOUND = (
+    "这条消息不能记录反馈。可能的原因："
+    "①你回复的是自己发的消息，或是 /reset、/permissions 这类控制提示，"
+    "它们不是模型给出的回答；"
+    "②这张卡片是更早版本的 Lobster0 发出的，当时没有登记可反查的投递记录。"
+    "请改为回复一条 Lobster0 的回答或结果卡片后重试。"
+)
 
 
 class FeedbackLedger(Protocol):
@@ -151,7 +159,7 @@ class ChannelFeedbackController:
         if message is None or message.role != "assistant":
             return FeedbackCommandOutcome(
                 True,
-                notice="没有找到这条回答，无法记录反馈。",
+                notice=_TARGET_NOT_FOUND,
                 error_code="target_not_found",
             )
 

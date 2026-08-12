@@ -160,6 +160,89 @@ class ProgressProjectorTest(unittest.TestCase):
         self.assertNotIn("private duplicate payload", public)
         self.assertNotIn("private-alias.txt", public)
 
+    def test_failed_step_explains_why_it_failed(self) -> None:
+        """失败步骤必须说明**原因**，而不是只留一个 ✗。
+
+        真实事故：大陆云主机上 Google/DuckDuckGo/Bing 三连失败，卡片只显示三个 ✗
+        和一句"连续多轮没有新的成功 Tool 结果"，用户分不清是网络被墙、工具坏了
+        还是模型在打转。
+        """
+        projector = ProgressProjector(clock=lambda: 1.0)
+        projector.apply(
+            RunEvent(
+                "tool_requested",
+                1,
+                {
+                    "call_id": "call_web",
+                    "tool_name": "http_get",
+                    "arguments": {"url": "https://www.google.com/search?q=secret"},
+                },
+            )
+        )
+        projector.apply(
+            RunEvent(
+                "tool_finished",
+                1,
+                {
+                    "call_id": "call_web",
+                    "tool_name": "http_get",
+                    "status": "failed",
+                    "error_code": "http_failed",
+                    "duration_ms": 20_000,
+                    "preview": '{"ok":false,"error":{"message":"private body"}}',
+                },
+            )
+        )
+
+        progress = projector.finish(None, failed=True)
+        step = progress.steps[-1]
+
+        self.assertEqual(step.status, "failed")
+        self.assertIn("网络", step.detail)
+        self.assertEqual(step.duration_ms, 20_000)
+        # 目标主机仍然可见（卡片本来就展示它），但不得泄漏 query 或响应正文。
+        public = json.dumps(progress_to_metadata(progress), ensure_ascii=False)
+        self.assertIn("www.google.com", public)
+        self.assertNotIn("secret", public)
+        self.assertNotIn("private body", public)
+
+    def test_unknown_failure_code_is_shown_safely(self) -> None:
+        """未知错误码要原样带出，但必须先过字符白名单，不能变成注入点。"""
+        projector = ProgressProjector(clock=lambda: 1.0)
+        for index, code in enumerate(("weird_new_code", "不是 ascii 的码", "")):
+            call_id = f"call_{index}"
+            projector.apply(
+                RunEvent(
+                    "tool_requested",
+                    1,
+                    {
+                        "call_id": call_id,
+                        "tool_name": "system_info",
+                        "arguments": {"kind": "os"},
+                    },
+                )
+            )
+            projector.apply(
+                RunEvent(
+                    "tool_finished",
+                    1,
+                    {
+                        "call_id": call_id,
+                        "tool_name": "system_info",
+                        "status": "failed",
+                        "error_code": code,
+                        "preview": "payload",
+                    },
+                )
+            )
+
+        progress = projector.finish(None, failed=True)
+        details = [step.detail for step in progress.steps if step.call_id is not None]
+
+        self.assertIn("weird_new_code", details[0])
+        self.assertNotIn("不是 ascii 的码", details[1])
+        self.assertTrue(details[2])
+
     def test_steps_and_fields_are_bounded_and_control_characters_removed(self) -> None:
         """恶意长字段与大量调用不能放大卡片或注入控制字符。"""
         projector = ProgressProjector(clock=lambda: 1.0)

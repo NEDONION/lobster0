@@ -181,7 +181,7 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             paths = build_state_paths(Path(directory).resolve())
             initialize_state(paths)
             paths.config.write_text(
-                "[agent]\nmax_tool_iterations = 100\n",
+                "[agent]\nmax_tool_iterations = 600\n",
                 encoding="utf-8",
             )
             config = load_config(paths, {}, {})
@@ -189,8 +189,8 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             runtime = create_runtime(config, paths, "test-key")
             try:
                 runner = runtime.service._runner
-                self.assertEqual(runner._max_iterations, 100)
-                self.assertEqual(runner._hard_max_iterations, 100)
+                self.assertEqual(runner._max_iterations, 600)
+                self.assertEqual(runner._hard_max_iterations, 600)
             finally:
                 await runtime.aclose()
 

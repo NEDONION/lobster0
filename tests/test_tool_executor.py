@@ -597,6 +597,44 @@ class ToolExecutorTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(run[0], "failed")
         self.assertEqual([row[0] for row in events], ["tool.started", "tool.failed"])
 
+    async def test_tool_finished_event_carries_the_stable_error_code(self) -> None:
+        """``tool_finished`` 必须带出稳定错误码，卡片才能说清"为什么"失败。
+
+        以前只带 preview（完整 model_text，不能进卡片），于是所有失败在 Claw Trail
+        上都长得一样——用户分不清网络被墙、工具坏了还是模型在打转。
+        """
+        events = []
+
+        async def capture(event) -> None:
+            events.append(event)
+
+        await self.executor(_BrokenTool()).execute(
+            self.context,
+            ToolCall("call_broken", "broken", {}),
+            on_event=capture,
+        )
+
+        finished = next(event for event in events if event.kind == "tool_finished")
+        self.assertEqual(finished.data["status"], "failed")
+        self.assertEqual(finished.data["error_code"], "tool_failed")
+
+    async def test_tool_finished_event_has_no_error_code_on_success(self) -> None:
+        """成功的 ``tool_finished`` 不得携带错误码。"""
+        events = []
+
+        async def capture(event) -> None:
+            events.append(event)
+
+        await self.executor(_EchoTool()).execute(
+            self.context,
+            ToolCall("call_echo", "echo", {"text": "ok"}),
+            on_event=capture,
+        )
+
+        finished = next(event for event in events if event.kind == "tool_finished")
+        self.assertEqual(finished.data["status"], "succeeded")
+        self.assertIsNone(finished.data["error_code"])
+
     async def test_cancel_marks_tool_run_interrupted_and_propagates(self) -> None:
         """取消必须持久化 interrupted，并继续向上抛出。"""
         with self.assertRaises(asyncio.CancelledError):

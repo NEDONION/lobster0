@@ -233,9 +233,10 @@ def render_default_config(
     workspace = json.dumps(str(paths.workspace), ensure_ascii=False)
     rendered_image = json.dumps(image)
     return (
-        '[agent]\nmodel = "deepseek-v4-pro"\nmax_tool_iterations = 32\n'
-        "max_tool_iterations_hard = 64\nmax_no_progress_iterations = 3\n"
-        "max_turn_seconds = 90\n"
+        '[agent]\nmodel = "deepseek-v4-pro"\nmax_tool_iterations = 200\n'
+        "max_tool_iterations_hard = 400\nmax_no_progress_iterations = 12\n"
+        "# 0 = 不限时；想给单轮封顶就改成正整数秒数。随时停止请在飞书私聊发 /stop。\n"
+        "max_turn_seconds = 0\n"
         "context_budget_tokens = 32000\ntool_result_max_chars = 20000\n\n"
         '[ui]\nlanguage = "zh-CN"\n\n'
         '[provider]\nbase_url = "https://api.deepseek.com"\n'
