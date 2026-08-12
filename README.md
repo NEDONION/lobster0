@@ -136,10 +136,21 @@ GitHub 远端请求走本机 `gh`，本地仓库请求走 `git`；凭据不会�
 
 ## 快速开始
 
-### 现在可用：源码安装
+### 安装
+
+安装命令见文首的[安装](#安装)一节（含中国大陆镜像源版本），这里不重复。
+
+安装后 `lobster0` 是全局命令，接着执行 `lobster0 setup` 配置、`lobster0 gateway` 启动。
+完整的服务器部署流程见 [Linux 服务器部署指南](docs/getting-started/20260811_Linux服务器部署指南.md)，
+国内网络的坑见[实机部署踩坑实录](docs/getting-started/20260811_实机部署踩坑实录.md)。
+
+### 从源码运行（开发与贡献）
+
+只想把它跑起来用的话，直接看上面的[安装](#安装)——一条命令即可，不需要 Node.js 和 pnpm。
+这一节是给要改代码、跑测试的人用的。
 
 需要 Python 3.12+、[uv](https://docs.astral.sh/uv/)、Node.js
-`22.22.3 <= version < 23` 或 `24.15.0 <= version < 25`，以及 pnpm。
+`22.22.3 <= version < 23` 或 `24.15.0 <= version < 25`，以及 pnpm（因为要自己构建 TUI）。
 
 ```bash
 git clone https://github.com/NEDONION/lobster0.git
@@ -203,33 +214,6 @@ uv run lobster0 gateway
 
 Owner、allowlist、平台凭据和真实验收步骤见[本地运行指南](docs/getting-started/20260807_本地运行指南.md)。
 
-### 安装
-
-`v0.7.0` 已作为**预发布**发出，wheel 可以直接匿名下载安装：
-
-```bash
-curl -fL --proto '=https' --tlsv1.2 \
-  -o /tmp/lobster0_agent-0.7.0-py3-none-any.whl \
-  https://github.com/NEDONION/lobster0/releases/download/v0.7.0/lobster0_agent-0.7.0-py3-none-any.whl \
-  && uv tool install --python 3.12 "/tmp/lobster0_agent-0.7.0-py3-none-any.whl[feishu]"
-```
-
-中国大陆的机器建议加镜像与国内源，否则下载会很慢甚至中断：
-
-```bash
-curl -fL --proto '=https' --tlsv1.2 \
-  -o /tmp/lobster0_agent-0.7.0-py3-none-any.whl \
-  https://gh-proxy.com/https://github.com/NEDONION/lobster0/releases/download/v0.7.0/lobster0_agent-0.7.0-py3-none-any.whl \
-  && UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
-     uv tool install --python 3.12 "/tmp/lobster0_agent-0.7.0-py3-none-any.whl[feishu]"
-```
-
-> 文件名必须保持原样——`uv` 要从中读取版本号，改名会报 `Must have a version`。
-
-安装后 `lobster0` 是全局命令，接着执行 `lobster0 setup` 配置、`lobster0 gateway` 启动。
-完整的服务器部署流程见 [Linux 服务器部署指南](docs/getting-started/20260811_Linux服务器部署指南.md)，
-国内网络的坑见[实机部署踩坑实录](docs/getting-started/20260811_实机部署踩坑实录.md)。
-
 ### 一行安装（尚不可用）
 
 ```bash
@@ -238,8 +222,11 @@ curl -fsSL --proto '=https' --tlsv1.2 \
 ```
 
 > [!WARNING]
-> **这个 URL 目前仍返回 404。** `install.sh` 由发布流水线的 `assemble` 阶段生成，
-> 而该阶段目前尚未跑通，因此 Release 里还没有这个文件。请先用上面的 wheel 安装方式。
+> **这个 URL 目前仍返回 404，而且有两个独立的原因。** 其一，`install.sh` 由发布流水线的
+> `assemble` 阶段生成，该阶段尚未跑通，Release 里还没有这个文件。其二，`releases/latest/`
+> 只解析到**正式版**，而 `v0.7.0` 被标记为预发布，所以本仓库当前根本没有 latest release——
+> 即使 `install.sh` 生成出来，在发出第一个正式版之前这条 URL 依然会 404。
+> 请先用上面的 wheel 安装方式。
 >
 > `v0.7.0` 是**预发布**：真机安装矩阵（Tier 1）、包发布到 PyPI、镜像摘要 smoke 与
 > attestation 均**未执行**，状态为 **PUBLIC GATES PENDING**。它可以用来自己部署，

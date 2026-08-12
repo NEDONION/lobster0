@@ -8,7 +8,7 @@
 
 [![Python 3.12+](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](pyproject.toml)
 [![Node.js 22.22.3–<23 or 24.15.0–<25](https://img.shields.io/badge/Node.js-22.22.3--%3C23%20%7C%2024.15.0--%3C25-339933?logo=nodedotjs&logoColor=white)](tui/package.json)
-[![Version](https://img.shields.io/badge/package-v0.1.0-8B5CF6)](pyproject.toml)
+[![Version](https://img.shields.io/badge/package-v0.7.0-8B5CF6)](pyproject.toml)
 [![Phase 6.5](https://img.shields.io/badge/Phase%206.5-IMPLEMENTATION%20PASS-16A34A)](docs/progress/index.html)
 [![License MIT](https://img.shields.io/badge/License-MIT-0F172A)](LICENSE)
 
@@ -64,20 +64,53 @@ New installations and older configurations without `tools.mode` default to `auto
 
 ## Quick start
 
-### One-line install
+### Install
+
+`v0.7.0` is out as a **prerelease** and its wheel can be installed directly. All you need is
+[uv](https://docs.astral.sh/uv/) — no preinstalled Node.js or pnpm:
+
+```bash
+W=lobster0_agent-0.7.0-py3-none-any.whl
+curl -fL --proto '=https' --tlsv1.2 -o /tmp/${W} \
+  https://github.com/NEDONION/lobster0/releases/download/v0.7.0/${W} \
+  && uv tool install --python 3.12 "/tmp/${W}[feishu]"
+```
+
+> Keep the filename exactly as published — `uv` reads the version out of it and fails with
+> `Must have a version` when it is renamed. The braces in `${W}` matter too: a bare `$W[feishu]`
+> is array subscripting in zsh, the default shell on macOS.
+
+`lobster0` is then a global command:
+
+```bash
+lobster0 --version
+lobster0 setup         # prompts for the model API key, Feishu app credentials, and owner
+lobster0 gateway       # starts the Feishu gateway over WebSocket — no public port needed
+```
+
+`lobster0 setup` is interactive, so run it separately rather than pasting it with the installer.
+Use `lobster0 secret set LOBSTER0_MODEL_API_KEY` to fix or rotate one credential — do **not**
+`rm -rf ~/.lobster0`, which would delete memory, history, scheduled tasks and audit records too.
+
+`v0.7.0` is **RELEASE CANDIDATE / PUBLIC GATES PENDING**: the Tier 1 real-machine matrix, the PyPI
+publish and the image digest smokes have not been executed, so it is usable for self-hosting but is
+not a fully verified stable build.
+
+### One-line install (not available yet)
 
 ```bash
 curl -fsSL --proto '=https' --tlsv1.2 \
   https://github.com/NEDONION/lobster0/releases/latest/download/install.sh | bash
 ```
 
-> [!IMPORTANT]
-> This command describes the behaviour **after** the v0.7.0 Release is published. This repository
-> has no Release and no tag yet, so the URL currently returns 404. The one-line install path is
-> **RELEASE CANDIDATE / PUBLIC GATES PENDING**: the real-machine install matrix, the package
-> publish and the image digest smokes have never been executed. Per-item evidence lives in the
+> [!WARNING]
+> **This URL returns 404 today, for two independent reasons.** First, `install.sh` is produced by the
+> release pipeline's `assemble` stage, which does not pass yet, so no Release carries the file.
+> Second, `releases/latest/` only resolves to a **stable** release, and `v0.7.0` is marked as a
+> prerelease — so this repository has no latest release at all, and the URL would keep returning 404
+> even once `install.sh` exists, until a stable version ships. Use the wheel install above for now.
+> Per-item evidence lives in the
 > [v0.7.0 one-line install candidate record](docs/evals/releases/v0.7.0-install.md).
-> Until then, use the [source development install](#source-development-install) below.
 
 The installer ships its own pinned uv, managed Python 3.12, managed Node.js and platform pi-tui
 bundle, so **no preinstalled Python, Node.js or pnpm is required**. It installs into `~/.lobster0`
