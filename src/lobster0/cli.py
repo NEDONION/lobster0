@@ -74,7 +74,12 @@ from lobster0.gateway_service import (
     ServiceError,
     render_launchd_service,
 )
-from lobster0.install.orchestrator import resolve_install_facts, run_install_action
+from lobster0.install.orchestrator import (
+    InstallMethod,
+    resolve_install_facts,
+    run_install_action,
+)
+from lobster0.install.package_service import run_package_service_action
 from lobster0.paths import PathConfigurationError, StatePaths, build_state_paths, resolve_home
 from lobster0.setup import (
     SetupError,
@@ -763,11 +768,13 @@ def _run_feedback(paths: StatePaths, arguments: argparse.Namespace) -> int:
 
 
 def _run_service(paths: StatePaths, arguments: argparse.Namespace) -> int:
-    """按 install receipt 分流受管 user service 与源码 checkout LaunchAgent。
+    """按三态安装模式把 service 动作分发到唯一正确的实现。
 
-    受管安装（存在有效 install receipt）走 installer 的 systemd-user/launchd
-    service 层；源码 checkout 保持 Phase 6 的 macOS LaunchAgent 行为、输出与
-    退出码不变。`logs` 只对受管安装有意义，源码模式按既有约定干净失败。
+    - ``MANAGED``（存在有效 install receipt）：installer 的 systemd-user/launchd 层。
+    - ``PACKAGE``（wheel/``uv tool``/``pipx``/``pip``）：同一个 renderer，但由
+      ``package_service`` 提供 launcher 解析与 owner-only service receipt。
+    - ``SOURCE``（工作树）：Phase 6 的 macOS LaunchAgent，**保留** Git provenance
+      检查，行为、输出与退出码不变。
 
     Args:
         paths: 已解析的 Lobster0 状态路径。
@@ -777,8 +784,11 @@ def _run_service(paths: StatePaths, arguments: argparse.Namespace) -> int:
         成功为 0、配置/preflight 错误为 2、service lifecycle 错误为 5。
     """
     command = arguments.service_command
-    if resolve_install_facts(paths.home).managed:
+    facts = resolve_install_facts(paths.home)
+    if facts.managed:
         return run_install_action(f"service.{command}", state_home=paths.home)
+    if facts.method is InstallMethod.PACKAGE:
+        return _run_package_service(paths, command)
     if command == "logs":
         print("error: service_logs_unavailable", file=sys.stderr)
         return 2
@@ -962,6 +972,62 @@ def _service_repository_commit(root: Path) -> str:
     ):
         raise ServiceError("service_repository_dirty")
     return commit
+
+
+def _run_package_service(paths: StatePaths, command: str) -> int:
+    """在包安装模式下先做本地 preflight，再交给 package service 层。
+
+    Args:
+        paths: 已解析的 Lobster0 状态路径。
+        command: 五个固定动作之一。
+
+    Returns:
+        成功为 0、配置/preflight 错误为 2、service lifecycle 错误为 5。
+    """
+    if command == "install":
+        try:
+            _package_service_preflight(paths)
+        except (ConfigError, DotEnvError, GatewayConfigError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        except ServiceError as error:
+            print(f"error: {error.code}", file=sys.stderr)
+            return 2
+    return run_package_service_action(command, state_home=paths.home)
+
+
+def _package_service_preflight(paths: StatePaths) -> None:
+    """在写 unit 前确认包安装的状态确实值得常驻。
+
+    与源码 checkout 不同，这里**不**要求"只启用飞书"：那是 Phase 6 macOS 生产
+    验收的范围闸门，而与之并列的受管安装路径从来没有这条限制；只在包安装上加一条
+    受管安装没有的限制会让两条同级路径互相矛盾。仍然保留的不变量是至少启用一个
+    Channel——``collect_enabled_channels`` 本身就对空集合 fail closed，所以这里
+    只需照常调用它，装不出一个什么都不做的常驻进程。
+
+    dotenv **显式**按 ``paths.secrets_file`` 加载，与 unit 里写的
+    ``LOBSTER0_ENV_FILE`` 完全一致；调用者环境里的 ``LOBSTER0_ENV_FILE``
+    只影响当前这次 CLI 调用，不会写进 unit，因此不能用来做这次判定。
+
+    Args:
+        paths: 即将交给 service 的状态路径。
+
+    Raises:
+        ConfigError: 配置无法加载。
+        DotEnvError: dotenv 文件不安全。
+        GatewayConfigError: 没有任何 enabled Channel。
+        ServiceError: 任一本地 Doctor check 失败。
+    """
+    environment = dict(os.environ)
+    environment.pop("LOBSTER0_ENV_FILE", None)
+    load_dotenv(paths.secrets_file, environment)
+    config = load_config(paths, environment)
+    collect_enabled_channels(config)
+    if any(
+        result.status is CheckStatus.FAIL and result.name not in _SERVICE_OPTIONAL_CHECKS
+        for result in run_local_checks(paths, environment)
+    ):
+        raise ServiceError("service_preflight_failed")
 
 
 def _service_install_preflight(paths: StatePaths) -> None:

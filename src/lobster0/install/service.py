@@ -169,6 +169,61 @@ def render_service_spec(layout: InstallLayout, platform: ServicePlatform) -> Ser
     return _build_service_spec(evidence)
 
 
+def render_package_service_spec(
+    *,
+    launcher: Path,
+    state_home: Path,
+    platform: ServicePlatform,
+    user_home: Path | None = None,
+) -> ServiceSpec:
+    """为没有 install receipt 的包安装生成同一套用户级 service spec。
+
+    wheel、``uv tool``、``pipx`` 与 ``pip`` 安装都没有受管 ``InstallLayout``
+    （没有 ``program_prefix``/``runtimes``/``current``），因此不能走
+    ``render_service_spec``；但 unit/plist 的内容、argv、lint、发布与回滚必须
+    与受管安装**逐字相同**，所以这里只是换一种方式构造同一份 sealed evidence，
+    再交给同一个 ``_build_service_spec``。
+
+    Args:
+        launcher: 已解析、确实存在的 ``lobster0`` 可执行文件。
+        state_home: Gateway 使用的绝对状态根。
+        platform: 已检测的用户级 service manager。
+        user_home: 目标用户 Home；省略时按当前 EUID 从 passwd 解析。
+
+    Returns:
+        与受管安装完全同构的 strict ServiceSpec。
+
+    Raises:
+        InstallError: platform/UID/路径不可信，或当前用户没有 passwd 记录。
+    """
+    if type(platform) is not ServicePlatform:
+        _service_failed()
+    uid = os.geteuid()
+    if type(uid) is not int or uid <= 0:
+        _service_failed()
+    if user_home is None:
+        try:
+            home = Path(pwd.getpwuid(uid).pw_dir)
+        except (KeyError, OSError, TypeError):
+            _service_failed()
+    else:
+        home = Path(user_home)
+    for path in (home, launcher, state_home):
+        _require_safe_path(path)
+    evidence = _ServiceEvidence(
+        seal=_SPEC_SEAL,
+        platform=platform,
+        owner_uid=uid,
+        home=home,
+        launcher=Path(launcher),
+        state_home=Path(state_home),
+        secrets_file=state_home / "secrets.env",
+        stdout_log=state_home / "logs" / "gateway.stdout.log",
+        stderr_log=state_home / "logs" / "gateway.stderr.log",
+    )
+    return _build_service_spec(evidence)
+
+
 def _build_service_spec(evidence: _ServiceEvidence) -> ServiceSpec:
     """从 sealed layout evidence 私有构造 canonical ServiceSpec。"""
     if evidence.bound_spec is not None:
@@ -894,8 +949,16 @@ def _read_owned(path: Path) -> tuple[bytes, tuple[int, int]]:
 
 
 def _write_temporary(spec: ServiceSpec) -> tuple[Path, tuple[int, int]]:
-    """在 service parent 内以 O_EXCL 0600 写入、fsync validator temp。"""
-    temporary = spec.path.with_name(f".{spec.path.name}.{os.getpid()}.tmp")
+    """在 service parent 内以 O_EXCL 0600 写入、fsync validator temp。
+
+    临时文件名必须保留 `.service`/`.plist` 后缀：`systemd-analyze verify` 只接受
+    合法 unit 名，`<label>.service.<pid>.tmp` 会被判为 "Invalid argument"，
+    使 lint 在任何真实 systemd 主机上必然失败。后缀放在最后即可，同时保持
+    dotfile 隐藏、0600 与同目录（`os.link` 需要同一文件系统）。
+    """
+    temporary = spec.path.with_name(
+        f".{spec.path.stem}.{os.getpid()}.tmp{spec.path.suffix}"
+    )
     descriptor = -1
     identity: tuple[int, int] | None = None
     try:

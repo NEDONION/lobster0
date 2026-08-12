@@ -23,7 +23,7 @@ from lobster0.config import (
 )
 from lobster0.install.layout import InstallLayout
 from lobster0.install.models import InstallError
-from lobster0.install.orchestrator import resolve_install_facts
+from lobster0.install.orchestrator import InstallMethod, resolve_install_facts
 from lobster0.install.receipt import InstallReceipt, managed_file_sha256
 from lobster0.install.runtime import RuntimeReceipt
 from lobster0.paths import StatePaths
@@ -110,8 +110,8 @@ def run_local_checks(
 def _check_install(paths: StatePaths, environ: Mapping[str, str]) -> tuple[CheckResult, ...]:
     """报告安装方式与受管 Runtime/Node/TUI/service 事实，全程离线只读。
 
-    源码 checkout 只产生一项 `install_method` WARN，绝不因为缺少安装事实而
-    FAIL；受管安装再补齐 receipt、Runtime、Node、TUI 与 service 五项事实。
+    包安装与源码 checkout 都只产生一项 `install_method` WARN，绝不因为缺少安装
+    事实而 FAIL；受管安装再补齐 receipt、Runtime、Node、TUI 与 service 五项事实。
     本函数不发起任何网络调用，也不读取任何 Secret 值。
 
     Args:
@@ -123,11 +123,12 @@ def _check_install(paths: StatePaths, environ: Mapping[str, str]) -> tuple[Check
     """
     facts = resolve_install_facts(paths.home, environ=environ)
     if not facts.managed or facts.receipt is None or facts.layout is None:
+        mode = "package install" if facts.method is InstallMethod.PACKAGE else "source checkout"
         return (
             CheckResult(
                 "install_method",
                 CheckStatus.WARN,
-                f"source checkout; no managed install receipt was found ({facts.detail})",
+                f"{mode}; no managed install receipt was found ({facts.detail})",
             ),
         )
     receipt = facts.receipt
