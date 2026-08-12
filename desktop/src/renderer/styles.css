@@ -1743,3 +1743,32 @@ select:focus-visible {
   line-height: 1.6;
   color: var(--lobster-text-secondary);
 }
+
+/* --- Composer 状态栏的可点入口 ---------------------------------------- */
+
+.composer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* 看起来仍是状态文字，只在悬停时显出可点——状态栏不该抢 Composer 的注意力。 */
+.composer-link {
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border-bottom: 1px solid transparent;
+}
+
+.composer-link:hover:not(:disabled) {
+  color: var(--lobster-text-primary);
+  border-bottom-color: var(--lobster-border);
+}
+
+.composer-link:disabled {
+  cursor: default;
+}

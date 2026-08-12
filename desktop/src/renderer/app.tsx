@@ -330,6 +330,8 @@ export function App(): React.JSX.Element {
             initialHistory={history}
             key={sessionKey}
             onBusyChange={setTaskBusy}
+            onChooseWorkspace={() => void chooseWorkspace()}
+            onOpenSettings={() => setView("settings")}
             sessionKey={sessionKey}
           />
         ) : (
