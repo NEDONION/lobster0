@@ -88,8 +88,11 @@ export function App(): React.JSX.Element {
     };
   }, []);
 
+  // 依赖里带上 taskBusy 与 sessionKey：回合结束是新会话与新标题出现的时刻，
+  // 切换会话也要让高亮跟上。此前只依赖 bootstrap，整个生命周期只拉一次——
+  // 侧栏因此永远停在应用启动那一刻的样子。
   useEffect(() => {
-    if (!bootstrap) {
+    if (!bootstrap || taskBusy) {
       return;
     }
     let active = true;
@@ -106,7 +109,7 @@ export function App(): React.JSX.Element {
     return () => {
       active = false;
     };
-  }, [bootstrap]);
+  }, [bootstrap, taskBusy, sessionKey]);
 
   useEffect(() => {
     if (!bootstrap || view !== "automation") {
