@@ -409,3 +409,39 @@ D1～D5 全部退出后，才能将本路线标记为 `IMPLEMENTATION PASS`：
 - 端到端：真 Bridge 子进程完成「stage 一个 0644 的 .txt → 返回 artifact_id」，同时断言
   `capabilities` 含 `attachments`、完整路径不出现在响应里；
 - 视觉：Composer 附件 chip 在 900px 宽下核对超长文件名省略、大小不被挤掉、移除按钮对齐。
+
+
+## 4.10 D3 实现记录（2026-08-12）
+
+设计文档：[D3 共享产物（含 D2c 附件缺口修补）](../../superpowers/specs/2026-08-11-desktop-d3-artifacts-design.md)。
+
+### 分层落地
+
+1. **数据**：`artifact_links` 关联表（迁移 0011）+ 显示文件名（0012）。不给 `artifacts`
+   加 `session_id`：那张表内容寻址且跨会话去重，一行塞不下两个归属。
+2. **Core**：`TurnService` 接受附件并在正文后追加由 Core 生成的清单；`read_artifact`
+   工具让模型读到正文，归属判定走 link 表。
+3. **Bridge**：`artifacts.list / preview / reveal`；响应永不含文件系统路径。
+4. **Desktop**：右栏按需出现，文本/图片预览，`reveal` 由 Main 进程执行。
+
+### 真实使用暴露的问题（都不是 D3 范围内的设计缺陷，而是「数据早在库里、从没往界面发」）
+
+- 运行摘要只有时间/状态/错误码；任务摘要不含 prompt；
+- 历史回放丢掉 `role == "tool"` 与「正文为空但调了工具」的那一轮；
+- `automation` 渠道的会话打不开，而它最需要回放；
+- 失败的运行不记录产出与用量。
+
+四条都已修复，均有测试。
+
+### 一条值得记住的教训
+
+「查看完整过程」按钮提交后才发现 `app.tsx` 没传回调，而按钮的渲染条件依赖它——
+本地 172 项测试全绿也照样没发现。**组件测得再全，也测不出组件没被接上。**
+
+### 验证
+
+- Python：task_runner 12/12、bridge 31/31、artifact_store 18/18、artifact_tool 7/7，
+  受影响范围合计 191/191；
+- Desktop：172/172、typecheck、build 通过；
+- 真机：应用重启后 Bridge 握手含 `artifacts_read`，`automation.runs` 返回
+  `session_key = task:1:run:1`，点进去可见 12 条消息、4 段思考、6 次工具调用。
