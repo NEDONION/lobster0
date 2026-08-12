@@ -27,6 +27,15 @@ describe('Workbench', () => {
       'href',
       '/en/docs/getting-started',
     );
-    expect(screen.getByText(/git clone https:\/\/github.com\/NEDONION\/lobster0.git/)).toBeInTheDocument();
+    // The promoted path is the released wheel, not a source build.
+    const blocks = container.querySelectorAll('.command-copy');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].textContent).toContain('uv tool install');
+    expect(blocks[0].textContent).not.toContain('git clone');
+    // `lobster0 setup` is interactive, so it must never share a copy buffer
+    // with the installer.
+    expect(blocks[0].textContent).not.toContain('lobster0 setup');
+    expect(blocks[1].textContent).toContain('lobster0 setup');
+    expect(blocks[1].textContent).toContain('lobster0 gateway');
   });
 });
