@@ -550,3 +550,37 @@ Round 13 把安装命令铺开到官网和中英文档之后，`0.7.0` 在 3 个
 ### 验证
 
 `tsc` / `eslint` / `vitest` 33（+2）/ `build` / `playwright` 11 passed 全绿；截图确认两种代码块高亮一致。
+
+---
+
+## Round 15 — 官网文档与 README 对齐，并把「反引号里的 JSX」变成机械检查（2026-08-12）
+
+### 起因
+
+刚在 README 里查清 `install.sh` 404 有**两个**独立原因，而官网文档只写了一个（`assemble` 阶段未跑通），
+漏了更关键的那个：`releases/latest/` 只解析到**正式版**，`v0.7.0` 标记为预发布，所以仓库当前根本没有
+latest release——即使 `install.sh` 生成出来，在发出第一个正式版之前那条 URL 依然会 404。中英文档都补齐。
+
+### 又踩了同一个坑（第二次）
+
+改中文文档时又写成了 `` `v<ReleaseVersion />` ``。**MDX 的行内代码是字面量**，反引号里的 JSX 不会求值，
+页面上原样渲染出 `v<ReleaseVersion />`。Round 14 刚记过这个坑，靠肉眼又漏了一次。
+
+所以这次不只是改回 `<code>`，而是加了机械守卫：扫描所有 MDX 的行内代码片段，一旦里面出现
+`<大写开头的标签` 就失败。已验证会失败——临时把 `<code>` 改回反引号，测试立刻红并打印出
+`getting-started.mdx: \`v<ReleaseVersion />\``，然后还原。
+
+**教训**：同一个坑踩第二次，说明它不该靠记忆防守。判断标准是「这个错误能不能被机械检查出来」，
+能的话就该写成测试，而不是写进文档提醒自己。
+
+### 顺带排查（无问题）
+
+Playwright 日志里出现 `Encountered a script tag while rendering React component`。查了：自己的组件里
+没有 `<script>`，两处 `dangerouslySetInnerHTML` 注入的 SVG 里也没有；生产构建和 dev 模式下、
+含 reduced-motion 与逐个点 tab 的交互路径都复现不出来。结论是 Next 开发工具覆盖层自身的产物，
+不是本项目代码的问题，未做改动。
+
+### 验证
+
+`tsc` / `eslint` / `vitest` 34（+1）/ `build` / `playwright` 11 passed 1 skipped 全绿；
+浏览器实测两个语言的文档页均无组件泄漏成字面量。

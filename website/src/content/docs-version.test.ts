@@ -27,6 +27,19 @@ describe('docs never hardcode the release artifacts', () => {
     expect(offenders).toEqual([]);
   });
 
+  // MDX inline code spans are literal, so a component written inside backticks
+  // ships the tag text to readers instead of rendering. Caught twice by eye now;
+  // this makes it mechanical.
+  it('never puts a component inside an inline code span', () => {
+    const offenders: string[] = [];
+    for (const { name, text } of mdxFiles()) {
+      for (const [span] of text.matchAll(/`[^`\n]*`/g)) {
+        if (/<[A-Z][A-Za-z]*\b/.test(span)) offenders.push(`${name}: ${span}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('builds the install command from the single release version', () => {
     expect(siteFacts.install).toContain(`lobster0_agent-${siteFacts.version}-py3-none-any.whl`);
     expect(siteFacts.install).toContain(`releases/download/v${siteFacts.version}/`);
