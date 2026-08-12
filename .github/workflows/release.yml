@@ -59,7 +59,7 @@ jobs:
       sdist: ${{ steps.facts.outputs.sdist }}
     steps:
       - name: Check out the tagged commit with full history
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: ${{ github.event_name == 'workflow_dispatch' }}
@@ -123,7 +123,7 @@ jobs:
       contents: read
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Set up the pinned Python series
@@ -186,7 +186,7 @@ jobs:
       TAG: ${{ needs.guard.outputs.tag }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Create the draft release that carries every candidate artifact
@@ -220,7 +220,7 @@ jobs:
       SOURCE_DATE_EPOCH: ${{ needs.guard.outputs.source_date_epoch }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Set up the pinned Python series
@@ -279,7 +279,7 @@ jobs:
       PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Set up the pinned Python series
@@ -337,7 +337,7 @@ jobs:
       PLATFORM: ${{ matrix.platform }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Set up the pinned Python series
@@ -417,7 +417,7 @@ jobs:
       CSC_IDENTITY_AUTO_DISCOVERY: 'false'
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Set up the pinned Python series
@@ -503,7 +503,7 @@ jobs:
       WHEEL: ${{ needs.guard.outputs.wheel }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Take back the freshly built wheel and pin it to the build job digest
@@ -588,7 +588,7 @@ jobs:
       SOURCE_DATE_EPOCH: ${{ needs.guard.outputs.source_date_epoch }}
     steps:
       - name: Check out the tagged commit with full history
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -715,7 +715,7 @@ jobs:
       VERSION: ${{ needs.guard.outputs.version }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Take back the verified release set and recheck every digest
@@ -806,7 +806,7 @@ jobs:
       TAG: ${{ needs.guard.outputs.tag }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Set up the pinned Python series
@@ -894,7 +894,7 @@ jobs:
       TAG: ${{ needs.guard.outputs.tag }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Install from the draft release bootstrap and verify its digest
@@ -933,7 +933,7 @@ jobs:
       SDIST: ${{ needs.guard.outputs.sdist }}
     steps:
       - name: Check out the tagged commit
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
       - name: Take back the verified release set and recheck every digest
