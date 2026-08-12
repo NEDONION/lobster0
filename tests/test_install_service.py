@@ -387,6 +387,28 @@ class InstallServiceTests(unittest.TestCase):
         )
         self.assertFalse(spec.path.exists())
 
+    def test_lint_temporary_keeps_a_valid_unit_suffix_for_both_platforms(self) -> None:
+        """`systemd-analyze verify` 只接受合法 unit 名，后缀丢失会让 lint 必然失败。
+
+        回归：临时名曾是 `<label>.service.<pid>.tmp`，在真实 systemd 主机上被判为
+        "Invalid argument"，导致受管安装与包安装的 install 在 Linux 上全都失败；
+        macOS 上因为没有 /usr/bin/systemd-analyze 而从未暴露。
+        """
+        for spec, suffix in ((self.systemd(), ".service"), (self.launchd(), ".plist")):
+            with self.subTest(platform=spec.platform):
+                runner = FakeSystemctlRunner()
+                with mock.patch(
+                    "lobster0.install.service._systemd_analyze_available",
+                    return_value=True,
+                ):
+                    service_install(spec, runner)
+                linted = Path(runner.calls[0][0][-1])
+                self.assertEqual(linted.suffix, suffix)
+                self.assertEqual(linted.parent, spec.path.parent)
+                self.assertTrue(linted.name.startswith("."))
+                self.assertNotEqual(linted, spec.path)
+                self.assertFalse(linted.exists())
+
     def test_launchd_lifecycle_binds_gui_domain_and_lints_before_publish(self) -> None:
         """user domain 不绑定 UID 或 publish 先于 plutil 会误控其他 session。"""
         spec = self.launchd()

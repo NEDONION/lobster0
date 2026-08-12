@@ -894,8 +894,16 @@ def _read_owned(path: Path) -> tuple[bytes, tuple[int, int]]:
 
 
 def _write_temporary(spec: ServiceSpec) -> tuple[Path, tuple[int, int]]:
-    """在 service parent 内以 O_EXCL 0600 写入、fsync validator temp。"""
-    temporary = spec.path.with_name(f".{spec.path.name}.{os.getpid()}.tmp")
+    """在 service parent 内以 O_EXCL 0600 写入、fsync validator temp。
+
+    临时文件名必须保留 `.service`/`.plist` 后缀：`systemd-analyze verify` 只接受
+    合法 unit 名，`<label>.service.<pid>.tmp` 会被判为 "Invalid argument"，
+    使 lint 在任何真实 systemd 主机上必然失败。后缀放在最后即可，同时保持
+    dotfile 隐藏、0600 与同目录（`os.link` 需要同一文件系统）。
+    """
+    temporary = spec.path.with_name(
+        f".{spec.path.stem}.{os.getpid()}.tmp{spec.path.suffix}"
+    )
     descriptor = -1
     identity: tuple[int, int] | None = None
     try:
