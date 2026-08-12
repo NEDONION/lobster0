@@ -32,6 +32,7 @@ from lobster0.evolution.revisions import (
     ApplyReceipt,
     approval_binding_hash,
     verify_prompt_artifact,
+    verify_skill_artifact,
 )
 
 _DEFAULT_TTL_SECONDS = 900
@@ -72,6 +73,7 @@ class EvolutionService:
         approvals: EvolutionApprovalRepository,
         active: ActiveRevisionRepository,
         prompt_versions_root: Path,
+        skill_versions_root: Path | None = None,
         clock: type[datetime] = datetime,
     ) -> None:
         """绑定四个 Repository 与 owner-only prompt version store。"""
@@ -80,6 +82,7 @@ class EvolutionService:
         self._approvals = approvals
         self._active = active
         self._prompt_versions_root = prompt_versions_root
+        self._skill_versions_root = skill_versions_root
         self._clock = clock
 
     def preview_apply(
@@ -343,10 +346,21 @@ class EvolutionService:
     def _require_valid_artifact(
         self, proposal: Proposal, version: ProposalVersion
     ) -> None:
-        """Prompt 目标必须有完整、哈希匹配的 artifact 才能进入审批或应用。"""
-        if proposal.target_type is not ProposalTargetType.PROMPT:
+        """Prompt 与 Skill 目标必须有完整、哈希匹配的 artifact 才能进入审批或应用。
+
+        Memory 目标的候选内容留在既有 Memory Review 表中，没有独立 artifact，因此跳过。
+        """
+        if proposal.target_type is ProposalTargetType.PROMPT:
+            check = verify_prompt_artifact(self._prompt_versions_root, version)
+        elif proposal.target_type is ProposalTargetType.SKILL:
+            if self._skill_versions_root is None:
+                raise EvolutionError(
+                    "skill_store_unavailable",
+                    "skill proposals require a configured skill version store",
+                )
+            check = verify_skill_artifact(self._skill_versions_root, version)
+        else:
             return
-        check = verify_prompt_artifact(self._prompt_versions_root, version)
         if not check.valid:
             raise EvolutionError(
                 "artifact_invalid", f"candidate artifact is not usable: {check.reason}"

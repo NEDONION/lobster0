@@ -14,7 +14,11 @@ from lobster0.evolution.models import (
     ProposalStatus,
     ProposalTargetType,
 )
-from lobster0.evolution.proposals import PROMPT_BLOCKS, validate_prompt_candidate
+from lobster0.evolution.proposals import (
+    PROMPT_BLOCKS,
+    validate_prompt_candidate,
+    validate_skill_candidate,
+)
 from lobster0.evolution.repository import (
     ActiveRevisionRepository,
     EvalRepository,
@@ -25,6 +29,7 @@ from lobster0.evolution.repository import (
 )
 from lobster0.evolution.revisions import (
     active_prompt_text,
+    active_skill_document,
     approval_binding_hash,
     prompt_artifact_path,
     recover_active_prompt_revision,
@@ -66,6 +71,8 @@ class EvolutionApplyTestCase(unittest.TestCase):
         self.addCleanup(self.temporary_directory.cleanup)
         root = Path(self.temporary_directory.name)
         self.prompt_versions = root / "prompts" / "versions"
+        self.skill_versions = root / "skills" / "versions"
+        self.skill_staging = root / "skill-staging"
         self.database = Database(root / "lobster0.db")
         apply_migrations(self.database)
         self.owner_id = OwnerRepository(self.database).get_or_create().id
@@ -81,6 +88,7 @@ class EvolutionApplyTestCase(unittest.TestCase):
             approvals=self.approvals,
             active=self.active,
             prompt_versions_root=self.prompt_versions,
+            skill_versions_root=self.skill_versions,
         )
 
         material = validate_prompt_candidate(self.prompt_versions, _BLOCK, _CANDIDATE)
@@ -507,3 +515,143 @@ class ArtifactIntegrityTest(EvolutionApplyTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SkillTargetApplyTest(EvolutionApplyTestCase):
+    """Skill 目标必须能走完与 Prompt 相同的审批、应用与回滚链路。
+
+    此前只有 Prompt 端到端可用：Skill 候选只校验调用方给的临时目录，从不复制进版本库，
+    因此 apply 阶段根本不知道候选文件在哪，整条链路对 Skill 是断的。
+    """
+
+    def _stage_skill(self, name: str, body: str) -> None:
+        """在隔离 staging 根下写入一个格式合法的候选 Skill。"""
+        directory = self.skill_staging / name
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "SKILL.md").write_text(
+            f"---\nname: {name}\ndescription: fixture skill\nversion: 1\n---\n\n"
+            f"# Instructions\n\n{body}\n",
+            encoding="utf-8",
+        )
+
+    def _skill_proposal(self, name: str = "weather-skill", body: str = "查天气。"):
+        """创建一个已进入 evaluating 且带通过 EvalRun 的 Skill Proposal。"""
+        self._stage_skill(name, body)
+        material = validate_skill_candidate(
+            self.skill_staging, versions_root=self.skill_versions
+        )
+        proposal, version = self.proposals.create_draft(
+            owner_id=self.owner_id,
+            feedback_id=self._record_feedback(),
+            target_type=ProposalTargetType.SKILL,
+            target_name=name,
+            base_hash=material.base_hash,
+            candidate_hash=material.candidate_hash,
+            manifest_json=material.manifest_json,
+            candidate_ref=material.candidate_ref,
+            rationale="新增查天气技能",
+        )
+        self.proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.DRAFT,
+            new_status=ProposalStatus.EVALUATING,
+        )
+        return proposal, version, self._passing_eval_run(version.id)
+
+    def test_candidate_is_persisted_into_the_version_store(self) -> None:
+        """校验通过的 Skill 必须按内容哈希落进版本库，apply 才有稳定位置可读。"""
+        _, version, _ = self._skill_proposal()
+
+        stored = self.skill_versions / version.candidate_ref
+        self.assertTrue(stored.is_file())
+        self.assertIn("weather-skill", stored.read_text(encoding="utf-8"))
+        self.assertEqual(
+            hashlib.sha256(stored.read_bytes()).hexdigest(), version.candidate_hash
+        )
+
+    def test_full_approve_apply_rollback_flow_for_a_skill(self) -> None:
+        """Skill 必须能审批、应用、并回滚到上一版。"""
+        proposal, version, run = self._skill_proposal()
+        approval = self.service.request_apply_approval(
+            self.owner_id, proposal.id, eval_run_id=run.id
+        )
+        self.proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.EVALUATING,
+            new_status=ProposalStatus.APPROVED,
+        )
+        self.approvals.decide(self.owner_id, approval.id, approved=True)
+
+        receipt = self.service.apply(self.owner_id, approval.id)
+
+        self.assertEqual(receipt.target_type, ProposalTargetType.SKILL)
+        pointer = self.active.get(
+            self.owner_id, ProposalTargetType.SKILL, "weather-skill"
+        )
+        self.assertIsNotNone(pointer)
+        self.assertEqual(pointer.proposal_version_id, version.id)
+        self.assertEqual(
+            self.proposals.get(self.owner_id, proposal.id).status,
+            ProposalStatus.APPLIED,
+        )
+
+    def test_runtime_reads_the_active_skill_and_fails_safe(self) -> None:
+        """Runtime 能读到生效版本；artifact 损坏时必须退化为 None 而不是加载可疑内容。"""
+        proposal, version, run = self._skill_proposal(body="独特的技能正文标记")
+        approval = self.service.request_apply_approval(
+            self.owner_id, proposal.id, eval_run_id=run.id
+        )
+        self.proposals.transition(
+            self.owner_id,
+            proposal.id,
+            expected_status=ProposalStatus.EVALUATING,
+            new_status=ProposalStatus.APPROVED,
+        )
+        self.approvals.decide(self.owner_id, approval.id, approved=True)
+        self.service.apply(self.owner_id, approval.id)
+
+        document = active_skill_document(
+            self.proposals,
+            self.active,
+            self.skill_versions,
+            owner_id=self.owner_id,
+            skill_name="weather-skill",
+        )
+        self.assertIsNotNone(document)
+        self.assertIn("独特的技能正文标记", document)
+
+        (self.skill_versions / version.candidate_ref).unlink()
+        self.assertIsNone(
+            active_skill_document(
+                self.proposals,
+                self.active,
+                self.skill_versions,
+                owner_id=self.owner_id,
+                skill_name="weather-skill",
+            )
+        )
+
+    def test_unknown_skill_has_no_active_document(self) -> None:
+        """从未被 Evolution 改过的 Skill 必须返回 None，由调用方读磁盘常规版本。"""
+        self.assertIsNone(
+            active_skill_document(
+                self.proposals,
+                self.active,
+                self.skill_versions,
+                owner_id=self.owner_id,
+                skill_name="never-proposed",
+            )
+        )
+
+    def test_corrupted_skill_artifact_blocks_approval(self) -> None:
+        """artifact 损坏时不得进入审批，必须 fail closed。"""
+        proposal, version, run = self._skill_proposal()
+        (self.skill_versions / version.candidate_ref).write_text("被篡改", encoding="utf-8")
+
+        with self.assertRaises(EvolutionError) as raised:
+            self.service.request_apply_approval(
+                self.owner_id, proposal.id, eval_run_id=run.id
+            )
+        self.assertEqual(raised.exception.code, "artifact_invalid")
