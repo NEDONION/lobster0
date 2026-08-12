@@ -213,3 +213,37 @@ class ProxyFakeIpTest(unittest.TestCase):
                     allow_cidrs=(ipaddress.ip_network(cidr),),
                 )
             self.assertEqual(raised.exception.code, "non_public_address", address)
+
+
+class TrustedCidrWiringTest(unittest.TestCase):
+    """配置必须真的传到调用点——只落在 config 上等于没做。"""
+
+    def test_http_get_tool_honours_trusted_cidrs(self) -> None:
+        """HttpGetTool 拿到网段后，fake-IP 地址不再被拒。"""
+        from lobster0.tools.web import HttpGetTool
+
+        tool = HttpGetTool(
+            resolver=lambda hostname, port: ("198.18.0.56",),
+            trusted_cidrs=(ipaddress.ip_network("198.18.0.0/15"),),
+        )
+
+        # 不真正发请求，只验证目标校验这一步不再拒绝。
+        target = validate_https_target(
+            "https://api.github.com/x",
+            resolver=lambda h, p: ("198.18.0.56",),
+            allow_cidrs=tool._trusted_cidrs,
+        )
+        self.assertEqual(target.hostname, "api.github.com")
+
+    def test_policy_engine_honours_trusted_cidrs(self) -> None:
+        """PolicyEngine 的 http_get 判定同样要带上网段。"""
+        from lobster0.policy.engine import PolicyEngine
+
+        engine = PolicyEngine(
+            network_resolver=lambda hostname, port: ("198.18.0.56",),
+            trusted_cidrs=(ipaddress.ip_network("198.18.0.0/15"),),
+        )
+
+        self.assertEqual(
+            engine._trusted_cidrs, (ipaddress.ip_network("198.18.0.0/15"),)
+        )

@@ -14,6 +14,7 @@ from lobster0.policy.command import (
 )
 from lobster0.policy.modes import PermissionMode, PermissionState
 from lobster0.policy.network import (
+    IpNetwork,
     NetworkPolicyError,
     NetworkRule,
     Resolver,
@@ -58,6 +59,7 @@ class PolicyEngine:
         command_rules: tuple[NormalizedCommand, ...] = (),
         network_rules: tuple[NetworkRule, ...] = (),
         network_resolver: Resolver | None = None,
+        trusted_cidrs: tuple[IpNetwork, ...] = (),
         executable_path: str = SAFE_EXECUTABLE_PATH,
         mode: str | PermissionMode = PermissionMode.SAFE,
         permission_state: PermissionState | None = None,
@@ -71,6 +73,7 @@ class PolicyEngine:
         self._command_rules = set(command_rules)
         self._network_rules = set(network_rules)
         self._network_resolver = network_resolver or default_resolver
+        self._trusted_cidrs = trusted_cidrs
         self._executable_path = executable_path
         self._permission_state = permission_state or PermissionState(mode)
 
@@ -102,6 +105,7 @@ class PolicyEngine:
                         url,
                         self._network_resolver,
                         allowed_ports=(443,),
+                        allow_cidrs=self._trusted_cidrs,
                     )
                 except NetworkPolicyError as error:
                     return PolicyDecision(PolicyAction.DENY, str(error), error.code)
@@ -210,6 +214,7 @@ class PolicyEngine:
                 url,
                 self._network_resolver,
                 allowed_ports=allowed_ports,
+                allow_cidrs=self._trusted_cidrs,
             )
         except NetworkPolicyError as error:
             return PolicyDecision(PolicyAction.DENY, str(error), error.code)
