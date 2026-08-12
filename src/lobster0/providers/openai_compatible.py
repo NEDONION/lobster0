@@ -1,6 +1,7 @@
 """通过 HTTPX 调用 OpenAI-compatible Chat Completions。"""
 
 import asyncio
+import base64
 import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -165,6 +166,24 @@ def _request_payload(request: ModelRequest) -> dict[str, object]:
 def _message_payload(message: ModelMessage) -> dict[str, object]:
     """把一条稳定消息转换为兼容协议字段并保留 reasoning。"""
     payload: dict[str, object] = {"role": message.role, "content": message.content}
+    if message.images:
+        # 只有携带图像时才切换成 content parts 数组：纯文本消息保持字符串形态，
+        # 避免给不支持数组 content 的兼容实现平白增加失败面。
+        payload["content"] = [
+            {"type": "text", "text": message.content},
+            *(
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": (
+                            f"data:{image.media_type};base64,"
+                            f"{base64.b64encode(image.data).decode('ascii')}"
+                        )
+                    },
+                }
+                for image in message.images
+            ),
+        ]
     if message.tool_calls:
         payload["tool_calls"] = [
             {
