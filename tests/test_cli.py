@@ -24,6 +24,7 @@ from lobster0.automation.models import (  # noqa: E402
     TaskBudget,
 )
 from lobster0.automation.repository import ScheduledTaskRepository  # noqa: E402
+from lobster0.channels.restart import RESTART_EXIT_CODE  # noqa: E402
 from lobster0.cli import build_parser, main  # noqa: E402
 from lobster0.config import load_config  # noqa: E402
 from lobster0.paths import build_state_paths  # noqa: E402
@@ -446,6 +447,7 @@ class CliTest(unittest.TestCase):
         """gateway 不要求 TTY，并把配置错误映射为 2。"""
         async def successful(paths):
             self.assertEqual(paths.home, Path(directory).resolve())
+            return 0
 
         with tempfile.TemporaryDirectory() as directory:
             with (
@@ -454,6 +456,20 @@ class CliTest(unittest.TestCase):
             ):
                 exit_code, output, error = run_cli(["gateway", "--home", directory])
         self.assertEqual((exit_code, output, error), (0, "", ""))
+
+    def test_gateway_command_propagates_the_restart_exit_code(self) -> None:
+        """Owner 的 /restart 要求进程非零退出，CLI 不能把它压成 0。"""
+        async def restarting(paths):
+            del paths
+            return RESTART_EXIT_CODE
+
+        with tempfile.TemporaryDirectory() as directory:
+            with (
+                mock.patch("lobster0.cli.prepare_gateway_sdk_runtime"),
+                mock.patch("lobster0.cli.run_gateway", side_effect=restarting),
+            ):
+                exit_code, output, error = run_cli(["gateway", "--home", directory])
+        self.assertEqual((exit_code, output, error), (RESTART_EXIT_CODE, "", ""))
 
     def test_service_update_and_uninstall_dispatch_outside_agent_runtime(self) -> None:
         """公共 lifecycle 命令只把 typed action 交给安装模块，不加载 Agent runtime。"""
@@ -607,9 +623,10 @@ class CliTest(unittest.TestCase):
         def prepare() -> None:
             events.append("prepare")
 
-        async def successful(paths) -> None:
+        async def successful(paths) -> int:
             del paths
             events.append("run")
+            return 0
 
         with tempfile.TemporaryDirectory() as directory:
             with (

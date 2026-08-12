@@ -235,6 +235,7 @@ def render_default_config(
     return (
         '[agent]\nmodel = "deepseek-v4-pro"\nmax_tool_iterations = 32\n'
         "max_tool_iterations_hard = 64\nmax_no_progress_iterations = 3\n"
+        "max_turn_seconds = 90\n"
         "context_budget_tokens = 32000\ntool_result_max_chars = 20000\n\n"
         '[ui]\nlanguage = "zh-CN"\n\n'
         '[provider]\nbase_url = "https://api.deepseek.com"\n'

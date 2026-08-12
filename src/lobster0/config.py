@@ -69,6 +69,7 @@ _AGENT_KEYS = frozenset(
         "max_tool_iterations",
         "max_tool_iterations_hard",
         "max_no_progress_iterations",
+        "max_turn_seconds",
         "context_budget_tokens",
         "tool_result_max_chars",
     }
@@ -222,6 +223,8 @@ class AgentConfig:
     max_tool_iterations: int = 32
     max_tool_iterations_hard: int = 64
     max_no_progress_iterations: int = 3
+    # 单次 Turn 的墙钟预算：计数预算拦不住“每次换个命令重试”的死循环。
+    max_turn_seconds: int = 90
     context_budget_tokens: int = 32_000
     tool_result_max_chars: int = 20_000
 
@@ -562,6 +565,10 @@ def load_config(
     max_no_progress_iterations = _positive_integer(
         agent_raw.get("max_no_progress_iterations", 3),
         "agent.max_no_progress_iterations",
+    )
+    max_turn_seconds = _positive_integer(
+        agent_raw.get("max_turn_seconds", 90),
+        "agent.max_turn_seconds",
     )
     context_budget_tokens = _positive_integer(
         agent_raw.get("context_budget_tokens", 32_000), "agent.context_budget_tokens"
@@ -1078,6 +1085,11 @@ def load_config(
         "LOBSTER0_MAX_NO_PROGRESS_ITERATIONS",
         max_no_progress_iterations,
     )
+    max_turn_seconds = _environment_integer(
+        source,
+        "LOBSTER0_MAX_TURN_SECONDS",
+        max_turn_seconds,
+    )
     context_budget_tokens = _environment_integer(
         source, "LOBSTER0_CONTEXT_BUDGET_TOKENS", context_budget_tokens
     )
@@ -1119,6 +1131,7 @@ def load_config(
             max_tool_iterations=max_tool_iterations,
             max_tool_iterations_hard=max_tool_iterations_hard,
             max_no_progress_iterations=max_no_progress_iterations,
+            max_turn_seconds=max_turn_seconds,
             context_budget_tokens=context_budget_tokens,
             tool_result_max_chars=tool_result_max_chars,
         ),

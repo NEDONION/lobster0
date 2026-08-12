@@ -24,6 +24,7 @@ from lobster0.tui.app import (
     Lobster0App,
     ReasoningCard,
     ToolCard,
+    _failure_label,
     _load_runtime,
     _terminal_safe,
 )
@@ -803,6 +804,19 @@ class TuiShellTest(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(self.paths.config.is_file())
             self.assertEqual(len(app.query("#onboarding")), 0)
             self.assertIs(app.focused, app.query_one("#composer", TextArea))
+
+
+class FailureLabelTest(unittest.TestCase):
+    """TUI 必须为每个 Core 稳定错误码给出两种语言的可读摘要。"""
+
+    def test_turn_deadline_is_labelled_in_both_languages(self) -> None:
+        """墙钟预算错误码不能退回成裸异常类名。"""
+        error = RuntimeError("unused")
+        for language, expected in (("zh-CN", "墙钟"), ("en", "wall-clock")):
+            with self.subTest(language=language):
+                label = _failure_label(language, "turn_deadline", error)
+                self.assertIn("turn_deadline", label)
+                self.assertIn(expected, label)
 
 
 if __name__ == "__main__":

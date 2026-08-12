@@ -510,6 +510,7 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
             max_iterations=config.agent.max_tool_iterations,
             hard_max_iterations=config.agent.max_tool_iterations_hard,
             max_no_progress_iterations=config.agent.max_no_progress_iterations,
+            max_turn_seconds=config.agent.max_turn_seconds,
         ),
         approvals=approvals,
         artifacts=artifact_store,

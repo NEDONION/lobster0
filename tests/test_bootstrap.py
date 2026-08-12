@@ -29,6 +29,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(config.agent.max_tool_iterations, 32)
         self.assertEqual(config.agent.max_tool_iterations_hard, 64)
         self.assertEqual(config.agent.max_no_progress_iterations, 3)
+        self.assertEqual(config.agent.max_turn_seconds, 90)
         self.assertEqual(config.provider.base_url, "https://api.deepseek.com")
         self.assertEqual(config.provider.api_key_env, "LOBSTER0_MODEL_API_KEY")
         self.assertEqual(config.ui.language, "zh-CN")
@@ -36,6 +37,10 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(config.permissions.profile, "personal")
         self.assertTrue(config.permissions.discover_user_executables)
         self.assertEqual(getattr(config.tools, "mode", None), "autopilot")
+        self.assertIn(
+            "max_turn_seconds = 90",
+            self.paths.config.read_text(encoding="utf-8"),
+        )
         self.assertIn(
             '[ui]\nlanguage = "zh-CN"',
             self.paths.config.read_text(encoding="utf-8"),

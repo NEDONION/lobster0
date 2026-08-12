@@ -16,6 +16,7 @@ from lobster0.agent.runner import (
     AgentRunBudget,
     AgentRunner,
     AgentRunStatus,
+    AgentTurnDeadlineError,
     EmptyModelResponseError,
     looks_like_unparsed_tool_call,
 )
@@ -104,6 +105,59 @@ class _EchoTool:
         """记录并返回参数。"""
         del context
         self.executions += 1
+        return ToolResult.success({"text": arguments["text"]})
+
+
+class _FakeClock:
+    """确定性单调时钟：只有测试显式推进，绝不真的 sleep。"""
+
+    def __init__(self, start: float = 1_000.0) -> None:
+        self.now = start
+
+    def __call__(self) -> float:
+        """返回当前注入时刻。"""
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        """把注入时刻向前推进给定秒数。"""
+        self.now += seconds
+
+
+class _SlowTool:
+    """执行时把注入时钟推进固定秒数的 Runner 测试 Tool。"""
+
+    definition = ToolDefinition(
+        name="slow",
+        description="Burn injected wall-clock time.",
+        parameters={
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+            "additionalProperties": False,
+        },
+        risk=ToolRisk.LOW,
+    )
+
+    def __init__(self, clock: _FakeClock, seconds: float) -> None:
+        self._clock = clock
+        self._seconds = seconds
+        self.executions = 0
+
+    def validate(self, arguments: dict[str, JsonValue]) -> dict[str, JsonValue]:
+        """只接受单个字符串 text。"""
+        if set(arguments) != {"text"} or not isinstance(arguments["text"], str):
+            raise ToolValidationError("text must be a string")
+        return arguments
+
+    async def execute(
+        self,
+        context: ToolContext,
+        arguments: dict[str, JsonValue],
+    ) -> ToolResult:
+        """推进注入时钟并返回成功结果。"""
+        del context
+        self.executions += 1
+        self._clock.advance(self._seconds)
         return ToolResult.success({"text": arguments["text"]})
 
 
@@ -947,6 +1001,135 @@ class AgentRunnerTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(asyncio.CancelledError):
             await AgentRunner(provider).run(request())
+
+    def test_constructor_defaults_and_rejects_invalid_turn_deadline(self) -> None:
+        """墙钟预算默认 90 秒，且拒绝零、负数和 bool 这类不可能的值。"""
+        provider = FakeProvider(())
+
+        self.assertEqual(AgentRunner(provider)._max_turn_seconds, 90)
+        for value in (0, -1, True, 1.5):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "max_turn_seconds"):
+                    AgentRunner(provider, max_turn_seconds=value)
+
+    async def test_turn_deadline_stops_at_iteration_boundary_with_diagnostics(
+        self,
+    ) -> None:
+        """墙钟预算耗尽后不得再发起新的 Provider 请求，并带出可展示的诊断。"""
+        clock = _FakeClock()
+        tool = _SlowTool(clock, 60.0)
+        executor = self.executor(tool)
+        provider = FakeProvider(
+            tuple(
+                response(
+                    "",
+                    tool_calls=(
+                        ToolCall(f"call_slow_{index}", "slow", {"text": str(index)}),
+                    ),
+                )
+                for index in range(4)
+            )
+        )
+
+        with self.assertRaises(AgentTurnDeadlineError) as stopped:
+            await AgentRunner(
+                provider,
+                executor,
+                max_turn_seconds=90,
+                clock=clock,
+            ).run(request(*executor.schemas), tool_context=self.tool_context)
+
+        # 第 1 轮不检查（elapsed≈0），第 2 轮 elapsed=60<90 继续，第 3 轮 elapsed=120 触发。
+        self.assertEqual(len(provider.requests), 2)
+        self.assertEqual(tool.executions, 2)
+        self.assertEqual(stopped.exception.deadline_seconds, 90)
+        self.assertEqual(stopped.exception.elapsed_seconds, 120.0)
+        self.assertEqual(stopped.exception.model_iterations, 2)
+        self.assertEqual(stopped.exception.activity, "slow request")
+
+    async def test_turn_deadline_does_not_shrink_the_automation_budget(self) -> None:
+        """带 AgentRunBudget 的 automation 已有自己的墙钟上限，交互预算不得再收紧它。
+
+        automation/runner.py 用 ``asyncio.timeout(budget.timeout_seconds)``（默认 600s）
+        包住整个 Turn。如果交互用的 90 秒预算也生效，后台任务会被悄悄砍到 90 秒。
+        """
+        clock = _FakeClock()
+        tool = _SlowTool(clock, 60.0)
+        executor = self.executor(tool)
+        provider = FakeProvider(
+            (
+                response(
+                    "",
+                    tool_calls=(ToolCall("call_slow_0", "slow", {"text": "0"}),),
+                ),
+                response(
+                    "",
+                    tool_calls=(ToolCall("call_slow_1", "slow", {"text": "1"}),),
+                ),
+                response("done"),
+            )
+        )
+
+        result = await AgentRunner(
+            provider,
+            executor,
+            max_turn_seconds=30,
+            clock=clock,
+        ).run(
+            request(*executor.schemas),
+            tool_context=self.tool_context,
+            budget=AgentRunBudget(max_turns=8, max_tool_calls=8),
+        )
+
+        self.assertEqual(result.content, "done")
+        self.assertEqual(tool.executions, 2)
+        self.assertGreaterEqual(clock.now - 1_000.0, 120.0)
+
+    async def test_turn_deadline_keeps_tool_transcript_consistent_in_batch(self) -> None:
+        """批次中途触发预算时，每个 tool_call_id 都必须有且只有一条对应结果。"""
+        clock = _FakeClock()
+        slow = _SlowTool(clock, 60.0)
+        echo = _EchoTool()
+        executor = ToolExecutor(
+            ToolRegistry((slow, echo)),
+            PolicyEngine(),
+            ToolRunRepository(self.database),
+        )
+        calls = (
+            ToolCall("call_slow", "slow", {"text": "a"}),
+            ToolCall("call_echo_1", "echo", {"text": "b"}),
+            ToolCall("call_echo_2", "echo", {"text": "c"}),
+        )
+        provider = FakeProvider((response("", tool_calls=calls),))
+        batches: list[tuple[ModelMessage, ...]] = []
+
+        with self.assertRaises(AgentTurnDeadlineError) as stopped:
+            await AgentRunner(
+                provider,
+                executor,
+                max_turn_seconds=30,
+                clock=clock,
+            ).run(
+                request(*executor.schemas),
+                tool_context=self.tool_context,
+                on_intermediate=batches.append,
+            )
+
+        self.assertEqual(echo.executions, 0)
+        self.assertEqual(slow.executions, 1)
+        self.assertEqual(stopped.exception.activity, "slow request")
+        self.assertEqual(len(batches), 1)
+        persisted = batches[0]
+        self.assertEqual(persisted[0].role, "assistant")
+        self.assertEqual(
+            [message.tool_call_id for message in persisted[1:]],
+            [call.call_id for call in calls],
+        )
+        skipped = [json.loads(message.content) for message in persisted[2:]]
+        self.assertEqual(
+            [(item["ok"], item["error"]["code"]) for item in skipped],
+            [(False, "turn_deadline"), (False, "turn_deadline")],
+        )
 
 
 if __name__ == "__main__":
