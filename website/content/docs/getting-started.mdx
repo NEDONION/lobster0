@@ -37,8 +37,10 @@ lobster0 gateway       # 启动飞书网关（WebSocket 长连接，不需要公
 <code>v<ReleaseVersion /></code> 是**预发布**。它已经在纯净的 Ubuntu 24.04 实机上验证到 `doctor` 全绿，可以用来自己部署，
 但 Tier 1 真机矩阵、PyPI 发布与镜像 attestation 都还没跑，不应当作完整验证过的稳定版。
 
-`install.sh` 形式的一行安装尚未产出（发布流水线的 `assemble` 阶段还没跑通），所以目前请用上面的
-wheel 安装方式。
+`install.sh` 形式的一行安装尚未可用，有两个独立的原因：一是 `install.sh` 由发布流水线的 `assemble`
+阶段生成，该阶段还没跑通；二是 `releases/latest/` 只解析到**正式版**，而 <code>v<ReleaseVersion /></code> 标记为
+预发布，所以仓库当前根本没有 latest release —— 即使 `install.sh` 生成出来，在发出第一个正式版之前
+那条 URL 依然会 404。目前请用上面的 wheel 安装方式。
 
 ## 从源码运行
 

@@ -37,8 +37,11 @@ To fix or rotate a single credential, use `lobster0 secret set LOBSTER0_MODEL_AP
 green `doctor`, so it is usable for self-hosting — but the Tier 1 hardware matrix, the PyPI release,
 and image attestation have not run, so treat it as unverified for production.
 
-A one-line `install.sh` is not published yet: the release pipeline's `assemble` stage does not pass,
-so use the wheel above for now.
+A one-line `install.sh` is not available yet, for two independent reasons. First, `install.sh` is
+produced by the release pipeline's `assemble` stage, which does not pass. Second, `releases/latest/`
+only resolves to a **stable** release, and <code>v<ReleaseVersion /></code> is marked as a prerelease,
+so this repository has no latest release at all — the URL would keep returning 404 even once
+`install.sh` exists, until a stable version ships. Use the wheel install above for now.
 
 ## Run from source
 
