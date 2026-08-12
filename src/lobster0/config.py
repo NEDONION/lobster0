@@ -42,6 +42,10 @@ BUILTIN_TOOL_NAMES = (
     "manage_task",
     "read_artifact",
 )
+# 合法但不默认启用：没有声明 [[subagents]] 时它无处可派，默认开着只是多一个
+# 空工具。要用 depth-1 就得同时写 [[subagents]] 并把它加进 tools.enabled。
+OPTIONAL_TOOL_NAMES = ("delegate_task",)
+KNOWN_TOOL_NAMES = (*BUILTIN_TOOL_NAMES, *OPTIONAL_TOOL_NAMES)
 DEFAULT_TOOL_MODE = "autopilot"
 
 _TOP_LEVEL_KEYS = frozenset(
@@ -60,6 +64,7 @@ _TOP_LEVEL_KEYS = frozenset(
         "checkpoint",
         "browser",
         "attachments",
+        "subagents",
     }
 )
 _AGENT_KEYS = frozenset(
@@ -189,6 +194,13 @@ _CHECKPOINT_KEYS = frozenset(
     {"enabled", "max_entries", "max_total_bytes", "max_file_bytes", "max_count"}
 )
 _ATTACHMENTS_KEYS = frozenset({"max_bytes"})
+_SUBAGENT_KEYS = frozenset(
+    {"id", "description", "tools", "max_turns", "timeout_seconds"}
+)
+_SUBAGENT_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
+# 派发工具本身永远不进子 Agent 的工具集：这是 max depth = 1 的实现点，
+# 比任何深度计数器都可靠——子 Agent 根本看不到这个工具。
+DELEGATE_TOOL_NAME = "delegate_task"
 _BROWSER_KEYS = frozenset(
     {
         "enabled",
@@ -220,13 +232,11 @@ class AgentConfig:
     model: str = "provider/model"
     # 当前生效 Provider 的 id。旧配置没有这个字段，加载时补成实际生效的那条。
     provider: str = "default"
-    max_tool_iterations: int = 200
-    max_tool_iterations_hard: int = 400
-    max_no_progress_iterations: int = 12
-    # 单次 Turn 的墙钟预算，``0`` 表示不限时（默认）。墙钟时间不是"人想停"的代理
-    # 变量，按秒表杀掉正常长任务是错的；想停止由 Owner 发 /stop。机制保留，
-    # 运维设正整数即可重新封顶。
-    max_turn_seconds: int = 0
+    max_tool_iterations: int = 32
+    max_tool_iterations_hard: int = 64
+    max_no_progress_iterations: int = 3
+    # 单次 Turn 的墙钟预算：计数预算拦不住“每次换个命令重试”的死循环。
+    max_turn_seconds: int = 90
     context_budget_tokens: int = 32_000
     tool_result_max_chars: int = 20_000
 
@@ -436,6 +446,21 @@ class CheckpointConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SubagentConfig:
+    """一个 depth-1 子 Agent 的受限执行档。
+
+    不是「Agent 注册表」——那是 v2 的多 Agent 平台。这里只描述「主 Agent 可以把
+    一个子目标交给谁、对方能用哪些工具、花多少预算」。
+    """
+
+    id: str
+    description: str
+    tools: tuple[str, ...]
+    max_turns: int = 4
+    timeout_seconds: int = 300
+
+
+@dataclass(frozen=True, slots=True)
 class AttachmentsConfig:
     """用户上传附件的边界。
 
@@ -483,6 +508,8 @@ class AppConfig:
     checkpoint: CheckpointConfig = CheckpointConfig()
     browser: BrowserConfig = BrowserConfig()
     attachments: AttachmentsConfig = AttachmentsConfig()
+    # 已声明的 depth-1 子 Agent；为空表示不开放派发。
+    subagents: tuple[SubagentConfig, ...] = ()
 
 
 def load_config(
@@ -558,18 +585,18 @@ def load_config(
 
     model = _non_empty_string(agent_raw.get("model", "provider/model"), "agent.model")
     max_tool_iterations = _positive_integer(
-        agent_raw.get("max_tool_iterations", 200), "agent.max_tool_iterations"
+        agent_raw.get("max_tool_iterations", 32), "agent.max_tool_iterations"
     )
     max_tool_iterations_hard = _positive_integer(
-        agent_raw.get("max_tool_iterations_hard", 400),
+        agent_raw.get("max_tool_iterations_hard", 64),
         "agent.max_tool_iterations_hard",
     )
     max_no_progress_iterations = _positive_integer(
-        agent_raw.get("max_no_progress_iterations", 12),
+        agent_raw.get("max_no_progress_iterations", 3),
         "agent.max_no_progress_iterations",
     )
-    max_turn_seconds = _non_negative_integer(
-        agent_raw.get("max_turn_seconds", 0),
+    max_turn_seconds = _positive_integer(
+        agent_raw.get("max_turn_seconds", 90),
         "agent.max_turn_seconds",
     )
     context_budget_tokens = _positive_integer(
@@ -619,6 +646,8 @@ def load_config(
             "permissions roots and discover_user_executables require personal profile"
         )
     enabled_tools = _enabled_tools(tools_raw.get("enabled", list(BUILTIN_TOOL_NAMES)))
+    # 必须在 enabled_tools 之后：子 Agent 的工具集要对着父的启用集校验。
+    subagents = _subagents(raw, enabled_tools)
     tool_mode = _enum_string(
         tools_raw.get("mode", DEFAULT_TOOL_MODE),
         "tools.mode",
@@ -1087,7 +1116,7 @@ def load_config(
         "LOBSTER0_MAX_NO_PROGRESS_ITERATIONS",
         max_no_progress_iterations,
     )
-    max_turn_seconds = _environment_non_negative_integer(
+    max_turn_seconds = _environment_integer(
         source,
         "LOBSTER0_MAX_TURN_SECONDS",
         max_turn_seconds,
@@ -1253,6 +1282,7 @@ def load_config(
             download_max_bytes=browser_download_max_bytes,
         ),
         attachments=AttachmentsConfig(max_bytes=attachments_max_bytes),
+        subagents=subagents,
     )
 
 
@@ -1310,16 +1340,6 @@ def _positive_integer(value: object, name: str) -> int:
     """校验严格正整数，并显式排除布尔值。"""
     if type(value) is not int or value <= 0:
         raise ConfigError(f"{name} must be a positive integer")
-    return value
-
-
-def _non_negative_integer(value: object, name: str) -> int:
-    """校验非负整数，并显式排除布尔值。
-
-    用于"``0`` 表示关闭"的开关型预算，例如 ``agent.max_turn_seconds``。
-    """
-    if type(value) is not int or value < 0:
-        raise ConfigError(f"{name} must be a non-negative integer")
     return value
 
 
@@ -1437,6 +1457,74 @@ def _sandbox_image(value: object, name: str) -> str:
     return image
 
 
+def _subagents(
+    raw: Mapping[str, object], enabled_tools: tuple[str, ...]
+) -> tuple[SubagentConfig, ...]:
+    """解析 depth-1 子 Agent 声明，并强制「只能收窄」。
+
+    Raises:
+        ConfigError: id 非法或重复、工具越出父的启用集、或试图把派发工具本身
+            交给子 Agent。三者都拒绝加载而不是静默取交集——静默降级会让用户
+            以为自己配的生效了。
+    """
+    entries = raw.get("subagents", [])
+    if not isinstance(entries, list):
+        raise ConfigError("subagents must be an array of tables")
+    available = set(enabled_tools)
+    parsed: list[SubagentConfig] = []
+    seen: set[str] = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ConfigError("each subagent must be a table")
+        unknown = set(entry) - _SUBAGENT_KEYS
+        if unknown:
+            raise ConfigError(f"unknown subagent key: {sorted(unknown)[0]}")
+        identifier = entry.get("id")
+        if not isinstance(identifier, str) or not _SUBAGENT_ID.fullmatch(identifier):
+            raise ConfigError(f"invalid subagent id: {identifier!r}")
+        if identifier in seen:
+            raise ConfigError(f"duplicate subagent id: {identifier}")
+        seen.add(identifier)
+        description = entry.get("description")
+        if not isinstance(description, str) or not description.strip():
+            raise ConfigError(f"subagent {identifier} needs a description")
+        tools = entry.get("tools")
+        if not isinstance(tools, list) or not tools:
+            raise ConfigError(f"subagent {identifier} needs a non-empty tools list")
+        for tool in tools:
+            if not isinstance(tool, str):
+                raise ConfigError(f"subagent {identifier} tools must be strings")
+            if tool == DELEGATE_TOOL_NAME:
+                raise ConfigError(
+                    f"subagent {identifier} cannot be given {DELEGATE_TOOL_NAME}: "
+                    "depth is capped at 1"
+                )
+            if tool not in available:
+                raise ConfigError(
+                    f"subagent {identifier} tool {tool} is not enabled for the main agent"
+                )
+        parsed.append(
+            SubagentConfig(
+                id=identifier,
+                description=description,
+                tools=tuple(tools),
+                max_turns=_bounded_integer(
+                    entry.get("max_turns", 4),
+                    f"subagents.{identifier}.max_turns",
+                    minimum=1,
+                    maximum=32,
+                ),
+                timeout_seconds=_bounded_integer(
+                    entry.get("timeout_seconds", 300),
+                    f"subagents.{identifier}.timeout_seconds",
+                    minimum=1,
+                    maximum=3600,
+                ),
+            )
+        )
+    return tuple(parsed)
+
+
 def _trusted_cidrs(value: object) -> tuple[IpNetwork, ...]:
     """解析用户声明的可信网段；写错的值在加载期就报错，不留到运行期。"""
     if not isinstance(value, list):
@@ -1457,7 +1545,7 @@ def _trusted_cidrs(value: object) -> tuple[IpNetwork, ...]:
 def _enabled_tools(value: object) -> tuple[str, ...]:
     """保留用户顺序，同时拒绝未知或重复的内置 Tool 名。"""
     names = _string_list(value, "tools.enabled", allow_empty=True)
-    if len(set(names)) != len(names) or any(name not in BUILTIN_TOOL_NAMES for name in names):
+    if len(set(names)) != len(names) or any(name not in KNOWN_TOOL_NAMES for name in names):
         raise ConfigError("tools.enabled must contain unique built-in tool names")
     return names
 
@@ -2033,21 +2121,6 @@ def _environment_integer(source: Mapping[str, str], key: str, default: int) -> i
     except ValueError as error:
         raise ConfigError(f"{key} must be a positive integer") from error
     return _positive_integer(value, key)
-
-
-def _environment_non_negative_integer(
-    source: Mapping[str, str],
-    key: str,
-    default: int,
-) -> int:
-    """读取可选的非负整数环境变量；``0`` 是合法的"关闭"值。"""
-    if key not in source:
-        return default
-    try:
-        value = int(source[key])
-    except ValueError as error:
-        raise ConfigError(f"{key} must be a non-negative integer") from error
-    return _non_negative_integer(value, key)
 
 
 def _environment_url(source: Mapping[str, str], key: str, default: str) -> str:

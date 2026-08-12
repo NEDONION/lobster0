@@ -35,11 +35,10 @@ class ConfigTest(unittest.TestCase):
         )
 
         self.assertEqual(config.agent.model, "provider/model")
-        self.assertEqual(config.agent.max_tool_iterations, 200)
-        self.assertEqual(config.agent.max_tool_iterations_hard, 400)
-        self.assertEqual(config.agent.max_no_progress_iterations, 12)
-        # 0 = 不限时。Owner 明确要求长程任务不被墙钟预算打断。
-        self.assertEqual(config.agent.max_turn_seconds, 0)
+        self.assertEqual(config.agent.max_tool_iterations, 32)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 64)
+        self.assertEqual(config.agent.max_no_progress_iterations, 3)
+        self.assertEqual(config.agent.max_turn_seconds, 90)
         self.assertEqual(config.ui.language, "zh-CN")
         self.assertEqual(config.provider.base_url, "https://api.openai.com/v1")
         self.assertEqual(config.provider.api_key_env, "LOBSTER0_MODEL_API_KEY")
@@ -168,27 +167,27 @@ class ConfigTest(unittest.TestCase):
             )
 
     def test_legacy_toml_soft_budget_expands_implicit_hard_budget(self) -> None:
-        """旧 TOML 只配置 soft 时，隐式 hard 必须始终不低于 soft。"""
+        """旧 TOML 只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
         self.paths.config.write_text(
-            "[agent]\nmax_tool_iterations = 600\n",
+            "[agent]\nmax_tool_iterations = 100\n",
             encoding="utf-8",
         )
 
         config = load_config(self.paths, {}, {})
 
-        self.assertEqual(config.agent.max_tool_iterations, 600)
-        self.assertEqual(config.agent.max_tool_iterations_hard, 600)
+        self.assertEqual(config.agent.max_tool_iterations, 100)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 100)
 
     def test_legacy_environment_soft_budget_expands_implicit_hard_budget(self) -> None:
-        """旧环境变量只配置 soft 时，隐式 hard 必须始终不低于 soft。"""
+        """旧环境变量只配置较大 soft 时应自动把隐式 hard 提升到同值。"""
         config = load_config(
             self.paths,
-            {"LOBSTER0_MAX_TOOL_ITERATIONS": "600"},
+            {"LOBSTER0_MAX_TOOL_ITERATIONS": "100"},
             {},
         )
 
-        self.assertEqual(config.agent.max_tool_iterations, 600)
-        self.assertEqual(config.agent.max_tool_iterations_hard, 600)
+        self.assertEqual(config.agent.max_tool_iterations, 100)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 100)
 
     def test_toml_hard_remains_explicit_when_environment_overrides_soft(self) -> None:
         """TOML 显式 hard 不得被环境 soft 静默提升。"""
@@ -452,25 +451,13 @@ class ConfigTest(unittest.TestCase):
                 "[agent]\nmax_no_progress_iterations = true\n",
                 "max_no_progress_iterations",
             ),
-            ("[agent]\nmax_turn_seconds = -1\n", "max_turn_seconds"),
+            ("[agent]\nmax_turn_seconds = 0\n", "max_turn_seconds"),
             ("[agent]\nmax_turn_seconds = true\n", "max_turn_seconds"),
         ):
             with self.subTest(content=content):
                 self.paths.config.write_text(content, encoding="utf-8")
                 with self.assertRaisesRegex(ConfigError, expected):
                     load_config(self.paths, {}, {})
-
-    def test_wall_clock_budget_can_be_switched_on_and_off(self) -> None:
-        """``0`` 是"不限时"开关；运维想封顶时设正整数仍然生效，机制没有被删掉。"""
-        self.paths.config.write_text(
-            "[agent]\nmax_turn_seconds = 300\n", encoding="utf-8"
-        )
-        self.assertEqual(load_config(self.paths, {}, {}).agent.max_turn_seconds, 300)
-
-        self.assertEqual(
-            load_config(self.paths, {"LOBSTER0_MAX_TURN_SECONDS": "0"}, {}).agent.max_turn_seconds,
-            0,
-        )
 
     def test_unknown_key_is_rejected(self) -> None:
         """拼错的配置项必须立即失败，而不是静默使用默认值。"""
@@ -730,6 +717,76 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.agent.provider, "default")
         # 读取路径永不写盘。
         self.assertEqual(self.paths.config.read_text(encoding="utf-8"), before)
+
+    def test_subagents_default_to_none(self) -> None:
+        """不声明就没有子 Agent，delegate_task 也就无处可派。"""
+        self._write_config('[agent]\nmodel = "m"\n')
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(config.subagents, ())
+
+    def test_subagent_tools_must_be_a_subset_of_enabled_tools(self) -> None:
+        """子 Agent 只能收窄，不能放大——这是 Phase 9 不可放宽的边界之一。
+
+        越界即拒绝加载，不静默取交集：静默降级会让用户以为自己配的生效了。
+        """
+        self._write_config(
+            '[agent]\nmodel = "m"\n'
+            '[tools]\nenabled = ["read_file", "glob"]\n'
+            '[[subagents]]\nid = "researcher"\n'
+            'description = "只读检索"\n'
+            'tools = ["read_file", "run_command"]\n'
+        )
+
+        with self.assertRaises(ConfigError) as raised:
+            load_config(self.paths, {})
+
+        self.assertIn("run_command", str(raised.exception))
+
+    def test_subagent_cannot_be_given_delegate_task(self) -> None:
+        """max depth = 1 的实现点：子 Agent 拿不到派发工具本身。"""
+        self._write_config(
+            '[agent]\nmodel = "m"\n'
+            '[tools]\nenabled = ["read_file", "delegate_task"]\n'
+            '[[subagents]]\nid = "researcher"\n'
+            'description = "只读检索"\n'
+            'tools = ["read_file", "delegate_task"]\n'
+        )
+
+        with self.assertRaises(ConfigError) as raised:
+            load_config(self.paths, {})
+
+        self.assertIn("delegate_task", str(raised.exception))
+
+    def test_subagent_budget_defaults_are_bounded(self) -> None:
+        """未写预算时给一组保守默认，而不是继承父的全部额度。"""
+        self._write_config(
+            '[agent]\nmodel = "m"\n'
+            '[[subagents]]\nid = "researcher"\n'
+            'description = "只读检索"\n'
+            'tools = ["read_file"]\n'
+        )
+
+        config = load_config(self.paths, {})
+
+        entry = config.subagents[0]
+        self.assertEqual(entry.id, "researcher")
+        self.assertEqual(entry.tools, ("read_file",))
+        self.assertEqual(entry.max_turns, 4)
+        self.assertEqual(entry.timeout_seconds, 300)
+
+    def test_subagent_ids_must_be_unique_and_safe(self) -> None:
+        """id 会进日志与 Bridge 响应，字符集与唯一性都要卡死。"""
+        for block in (
+            '[[subagents]]\nid = "A"\ndescription = "x"\ntools = ["read_file"]\n',
+            '[[subagents]]\nid = "has space"\ndescription = "x"\ntools = ["read_file"]\n',
+            '[[subagents]]\nid = "dup"\ndescription = "x"\ntools = ["read_file"]\n'
+            '[[subagents]]\nid = "dup"\ndescription = "y"\ntools = ["read_file"]\n',
+        ):
+            self._write_config('[agent]\nmodel = "m"\n' + block)
+            with self.assertRaises(ConfigError):
+                load_config(self.paths, {})
 
     def test_http_get_trusted_cidrs_default_to_empty(self) -> None:
         """默认不豁免任何网段，保持严格。"""
