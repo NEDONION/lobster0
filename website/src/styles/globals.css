@@ -1871,6 +1871,12 @@ pre {
   line-height: 1.5;
 }
 
+.quick-start-close__commands {
+  display: grid;
+  min-width: 0;
+  gap: 14px;
+}
+
 .quick-start-close__requirements,
 .quick-start-close__actions {
   display: flex;
@@ -1974,38 +1980,38 @@ pre {
   line-height: 1.12;
 }
 
-#nd-page article h2 {
+#nd-page h2 {
   margin-top: 2.6em;
   font-size: 1.45rem;
   font-weight: 680;
   letter-spacing: -0.03em;
 }
 
-#nd-page article h3 {
+#nd-page h3 {
   font-size: 1.1rem;
   font-weight: 650;
   letter-spacing: -0.02em;
 }
 
-#nd-page article p,
-#nd-page article li {
+#nd-page p,
+#nd-page li {
   line-height: 1.78;
 }
 
 /* Prose links get the underline treatment; nav/UI links inside the page
    (breadcrumb, pagination, cards) must keep their own styling. */
-#nd-page article :where(p, li, td) a {
+#nd-page :where(p, li, td) a {
   color: var(--signal);
   text-decoration-color: color-mix(in srgb, var(--signal) 35%, transparent);
   text-underline-offset: 3px;
 }
 
-#nd-page article :where(p, li, td) a:hover {
+#nd-page :where(p, li, td) a:hover {
   text-decoration-color: var(--signal);
 }
 
 /* Inline code reads as a chip, not as body text. */
-#nd-page article :not(pre) > code {
+#nd-page :not(pre) > code {
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--canvas);
@@ -2052,7 +2058,7 @@ pre {
 
 /* The two MDX constructs the docs actually use. Fumadocs renders blockquotes
    as bold italic with no marker, which reads as shouting rather than quoting. */
-#nd-page article blockquote {
+#nd-page blockquote {
   border-left: 2px solid color-mix(in srgb, var(--signal) 55%, transparent);
   padding-left: 18px;
   color: var(--muted);
@@ -2060,23 +2066,28 @@ pre {
   font-weight: 400;
 }
 
-#nd-page article blockquote p {
+#nd-page blockquote p {
   font-size: 0.95rem;
 }
 
-#nd-page article table {
+#nd-page blockquote p::before,
+#nd-page blockquote p::after {
+  content: none;
+}
+
+#nd-page table {
   border: 1px solid var(--line);
   border-radius: 10px;
   font-size: 0.875rem;
 }
 
-#nd-page article th {
+#nd-page th {
   background: var(--canvas);
   color: var(--ink);
   font-weight: 600;
 }
 
-#nd-page article :where(th, td) {
+#nd-page :where(th, td) {
   border-color: var(--line);
 }
 
