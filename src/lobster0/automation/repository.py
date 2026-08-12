@@ -554,6 +554,75 @@ class TaskRunRepository:
             ).fetchone()
         return _run_from_row(row)
 
+    def enqueue_child(
+        self,
+        task: ScheduledTask,
+        *,
+        parent_run_id: int,
+        subagent_id: str,
+        scheduled_for: datetime,
+        idempotency_key: str | None = None,
+    ) -> TaskRun:
+        """为一次 depth-1 派发创建子 Run。
+
+        复用同一张表：子 Run 的生命周期、lease 与重启恢复与普通 Run 完全一致，
+        复制一张表只会让恢复逻辑分叉。
+
+        Raises:
+            AutomationStateError: 父 Run 不存在，或它本身已经是子 Run
+                （``subagent_depth_exceeded``）。工具层已经通过「子 Agent 拿不到
+                delegate_task」保证了深度，这里是第二道——绕过工具层直接调
+                仓库也不行。
+        """
+        slot = _as_utc(scheduled_for, "scheduled_for")
+        key = idempotency_key or f"subagent:{parent_run_id}:{subagent_id}:{slot.isoformat()}"
+        snapshot = _task_snapshot_json(task)
+        now = _as_utc(self._clock(), "task run create time")
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            _raise_if_halted(connection)
+            parent = connection.execute(
+                "SELECT parent_run_id FROM task_runs WHERE id = ?", (parent_run_id,)
+            ).fetchone()
+            if parent is None:
+                raise AutomationStateError("task_run_not_found")
+            if parent["parent_run_id"] is not None:
+                raise AutomationStateError("subagent_depth_exceeded")
+            connection.execute(
+                """
+                INSERT INTO task_runs (
+                    task_id, scheduled_for, idempotency_key, snapshot_json,
+                    status, attempt, usage_json, created_at,
+                    parent_run_id, subagent_id
+                ) VALUES (?, ?, ?, ?, 'queued', 0, '{}', ?, ?, ?)
+                ON CONFLICT(idempotency_key) DO NOTHING
+                """,
+                (
+                    task.id,
+                    slot.isoformat(),
+                    key,
+                    snapshot,
+                    now.isoformat(),
+                    parent_run_id,
+                    subagent_id,
+                ),
+            )
+            row = connection.execute(
+                "SELECT * FROM task_runs WHERE idempotency_key = ?", (key,)
+            ).fetchone()
+        return _run_from_row(row)
+
+    def list_children(self, parent_run_id: int, *, limit: int = 50) -> tuple[TaskRun, ...]:
+        """列出一次派发下的全部子 Run，供界面展示参与的子任务。"""
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise AutomationDataError("task run limit is invalid")
+        with self._database.connect_read_only() as connection:
+            rows = connection.execute(
+                "SELECT * FROM task_runs WHERE parent_run_id = ? ORDER BY id LIMIT ?",
+                (parent_run_id, limit),
+            ).fetchall()
+        return tuple(_run_from_row(row) for row in rows)
+
     def enqueue_and_advance(
         self,
         task: ScheduledTask,
@@ -1174,6 +1243,8 @@ def _run_from_row(row: sqlite3.Row | None) -> TaskRun:
             result_preview=row["result_preview"],
             error_code=row["error_code"],
             snapshot=_snapshot_from_mapping(snapshot),
+            parent_run_id=row["parent_run_id"],
+            subagent_id=row["subagent_id"],
         )
     except (KeyError, TypeError, ValueError) as error:
         raise AutomationDataError("task_run_data_invalid") from error

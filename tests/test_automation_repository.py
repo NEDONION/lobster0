@@ -179,5 +179,97 @@ class AutomationRepositoryTest(unittest.TestCase):
         self.assertNotIn("SECRET_SENTINEL", str(raised.exception))
 
 
+class SubagentRunTest(unittest.TestCase):
+    """depth-1 子 Run 的关联与深度约束。"""
+
+    def setUp(self) -> None:
+        """准备状态、任务与 Run 仓库。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.database = Database(Path(self.temporary_directory.name) / "lobster0.db")
+        apply_migrations(self.database)
+        self.owner = OwnerRepository(self.database).get_or_create()
+        self.now = datetime(2026, 8, 12, 9, tzinfo=UTC)
+        self.tasks = ScheduledTaskRepository(self.database, clock=lambda: self.now)
+        self.runs = TaskRunRepository(self.database, clock=lambda: self.now)
+        self.task = self.tasks.create(
+            owner_id=self.owner.id,
+            name="父任务",
+            prompt="汇总",
+            schedule=ScheduleSpec(
+                kind=ScheduleKind.INTERVAL,
+                expression="3600",
+                timezone="UTC",
+                next_run_at=self.now,
+            ),
+            skill_names=(),
+            delivery=DeliveryTarget(route="none", channel="none"),
+            policy_profile="automation-default",
+            budget=TaskBudget(),
+        )
+
+    def parent(self) -> object:
+        """建一条普通 Run 作为父。"""
+        return self.runs.enqueue(
+            self.task, scheduled_for=self.now, idempotency_key="parent"
+        )
+
+    def test_child_run_records_its_parent_and_subagent(self) -> None:
+        """子 Run 复用同一张表，只多两列关联。"""
+        parent = self.parent()
+
+        child = self.runs.enqueue_child(
+            self.task,
+            parent_run_id=parent.id,
+            subagent_id="researcher",
+            scheduled_for=self.now,
+        )
+
+        self.assertEqual(child.parent_run_id, parent.id)
+        self.assertEqual(child.subagent_id, "researcher")
+        self.assertIsNone(self.runs.get(parent.id).parent_run_id)
+
+    def test_a_child_cannot_have_children(self) -> None:
+        """max depth = 1 的持久层防线：子 Run 不能再当父。
+
+        工具层已经通过「子 Agent 拿不到 delegate_task」保证了这一点，这里是
+        第二道——绕过工具层直接调仓库也不行。
+        """
+        parent = self.parent()
+        child = self.runs.enqueue_child(
+            self.task,
+            parent_run_id=parent.id,
+            subagent_id="researcher",
+            scheduled_for=self.now,
+        )
+
+        with self.assertRaises(AutomationStateError) as raised:
+            self.runs.enqueue_child(
+                self.task,
+                parent_run_id=child.id,
+                subagent_id="researcher",
+                scheduled_for=self.now,
+            )
+
+        self.assertEqual(str(raised.exception), "subagent_depth_exceeded")
+
+    def test_children_can_be_listed_for_a_parent(self) -> None:
+        """界面要按父 Run 展示参与的子任务。"""
+        parent = self.parent()
+        for index in range(2):
+            self.runs.enqueue_child(
+                self.task,
+                parent_run_id=parent.id,
+                subagent_id="researcher",
+                scheduled_for=self.now,
+                idempotency_key=f"child-{index}",
+            )
+
+        children = self.runs.list_children(parent.id)
+
+        self.assertEqual(len(children), 2)
+        self.assertTrue(all(item.parent_run_id == parent.id for item in children))
+
+
 if __name__ == "__main__":
     unittest.main()

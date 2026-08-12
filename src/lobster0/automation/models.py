@@ -239,6 +239,9 @@ class TaskRun:
     created_at: datetime
     session_id: int | None = None
     turn_id: int | None = None
+    # depth-1 派发：为空表示这是一次普通 Run。深度由此推导，不单独存列。
+    parent_run_id: int | None = None
+    subagent_id: str | None = None
     approval_id: int | None = None
     worker_id: str | None = None
     lease_expires_at: datetime | None = None
