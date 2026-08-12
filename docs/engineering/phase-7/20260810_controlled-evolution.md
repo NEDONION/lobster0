@@ -2,8 +2,8 @@
 
 > 文档日期：2026-08-10（施工状态更新于 2026-08-11）  
 > 状态：**IMPLEMENTATION IN PROGRESS（Task 1、2、6 完成；Task 3～5 部分完成——飞书摘要卡未接线、
-> Memory candidate 仅支持 forget、评测缺 failure case 与差分；apply/rollback 已覆盖 Prompt 与 Skill，
-> Memory 目标仍未接）**  
+> Memory candidate 仅支持 forget、评测缺 failure case 与差分；apply 已覆盖 Prompt、Skill、Memory 三类，
+> 其中 Memory 按设计不支持 rollback）**  
 > 前置条件：Phase 6 生产验收通过；Memory Autopilot A～E 已实现  
 > 施工偏离说明：Phase 6 生产验收（真实 Seatbelt 2/2、飞书 15/15、Automation 10/10、24 小时 soak）截至
 > 2026-08-11 仍是 `PRODUCTION SOAK PENDING`，未通过。Owner 明确决定跳过该前置条件、提前开工 Phase 7 第 16
