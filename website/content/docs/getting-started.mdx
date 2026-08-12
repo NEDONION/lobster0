@@ -8,30 +8,19 @@ description: 一条命令装好 Lobster0，配置模型与 Owner，然后启动�
 只需要 [`uv`](https://docs.astral.sh/uv/)。安装器会拉取发布 wheel 并把 `lobster0` 装成一个独立的
 命令行工具，不污染你现有的 Python 环境。
 
-```bash
-W=lobster0_agent-0.7.0-py3-none-any.whl
-curl -fL --proto '=https' --tlsv1.2 -o /tmp/${W} \
-  https://github.com/NEDONION/lobster0/releases/download/v0.7.0/${W} \
-  && uv tool install --python 3.12 "/tmp/${W}[feishu]"
-```
+<InstallCommand />
 
 > **文件名必须保持原样。** `uv` 从 wheel 的文件名里读版本号，改名会直接报 `Must have a version`。
 > `${W}` 外面的花括号也是必要的：在 macOS 默认的 zsh 里，裸写 `$W[feishu]` 会被当成数组下标。
 
 中国大陆的机器建议加 GitHub 镜像和国内 PyPI 源，否则下载会很慢甚至中断：
 
-```bash
-W=lobster0_agent-0.7.0-py3-none-any.whl
-curl -fL --proto '=https' --tlsv1.2 -o /tmp/${W} \
-  https://gh-proxy.com/https://github.com/NEDONION/lobster0/releases/download/v0.7.0/${W} \
-  && UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \
-     uv tool install --python 3.12 "/tmp/${W}[feishu]"
-```
+<InstallCommand mirrored />
 
 ## 配置并启动
 
 ```bash
-lobster0 --version     # lobster0 0.7.0
+lobster0 --version     # 应输出上面安装的版本号
 lobster0 setup         # 交互式填写模型 API Key、飞书 App ID/Secret、Owner
 lobster0 gateway       # 启动飞书网关（WebSocket 长连接，不需要公网端口）
 ```
@@ -45,7 +34,7 @@ lobster0 gateway       # 启动飞书网关（WebSocket 长连接，不需要公
 
 ## 版本状态
 
-`v0.7.0` 是**预发布**。它已经在纯净的 Ubuntu 24.04 实机上验证到 `doctor` 全绿，可以用来自己部署，
+<code>v<ReleaseVersion /></code> 是**预发布**。它已经在纯净的 Ubuntu 24.04 实机上验证到 `doctor` 全绿，可以用来自己部署，
 但 Tier 1 真机矩阵、PyPI 发布与镜像 attestation 都还没跑，不应当作完整验证过的稳定版。
 
 `install.sh` 形式的一行安装尚未产出（发布流水线的 `assemble` 阶段还没跑通），所以目前请用上面的

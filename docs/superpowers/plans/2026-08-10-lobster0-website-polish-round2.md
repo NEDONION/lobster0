@@ -504,3 +504,49 @@ Round 11 里我用一个有序替换列表改 5 种语言的 `facts`，其中 `'
 
 `tsc` / `eslint` / `vitest` 31 / `build` / `playwright` 11 passed 全绿；桌面与 390px 移动端零横向溢出；
 安装命令 4 行在桌面不换行，续行符 `\` 对齐。
+
+---
+
+## Round 14 — 消除版本号硬编码（2026-08-11）
+
+### 我上一轮留下的债
+
+Round 13 把安装命令铺开到官网和中英文档之后，`0.7.0` 在 3 个文件里被硬编码了 **12 处**。版本号同时出现在
+**下载 URL** 和 **wheel 文件名**里，下次发版漏改任何一处，官网就会给出一个下载不到的链接——而且是静默的，
+因为散文不参与类型检查。
+
+### 顺带查清的一件事
+
+`gh release view` 报 `release not found`，因为 **v0.7.0 被标记为 prerelease，仓库根本没有 "latest" release**。
+这才是 `releases/latest/download/install.sh` 返回 404 的**真正**原因：即使 `install.sh` 被生成出来，只要还没有
+正式版，那条 URL 依然会 404。README 只归因到「assemble 阶段未跑通」，其实是两个原因叠加。
+
+### 收敛到单一来源
+
+- `site.ts` 里加 `RELEASE_VERSION` 常量和 `installCommand({ mirrored })` 构造函数，导出 `install` 与
+  `installMirrored`。12 处硬编码 → **1 处**。
+- 文档侧新增 `<InstallCommand />` / `<ReleaseVersion />` 两个 MDX 组件（注册进 `getMDXComponents`），
+  用 Fumadocs 的 `DynamicCodeBlock` 从 `siteFacts` 取命令，既保留 shiki 高亮又不可能漂移。
+
+### 两个踩坑
+
+1. **MDX 的行内代码是字面量**：一开始写成 `` `v<ReleaseVersion />` ``，反引号里的 JSX 不会被求值，会原样
+   渲染出 `v<ReleaseVersion />`。改用真正的 `<code>v<ReleaseVersion /></code>`。
+2. **`DynamicCodeBlock` 不走 `source.config.ts` 的主题**：它和围栏代码块是两条不同的高亮路径。只在
+   `rehypeCodeOptions` 里配主题的话，同一页上两种代码块颜色明显不同（动态块整体发暗、对比度下降）。
+   截图对比发现的。修法是把主题抽到 `src/lib/code-theme.ts`，`source.config.ts` 和组件都从这里取——
+   这个 Bug 的成因正是两处各写各的。
+
+### 防复发
+
+新增 `docs-version.test.ts` 两条：
+- MDX 里不允许出现字面的 wheel 文件名或 `releases/download/v*` URL（**不依赖版本号的具体值**，所以一个
+  过期的硬编码同样会被抓到）。
+- `siteFacts.install` / `installMirrored` 必须由 `siteFacts.version` 构造，且必须是 `"/tmp/${W}[feishu]"`
+  而不是裸的 `$W[`。
+
+已验证会失败：临时把 `<InstallCommand />` 换回硬编码的围栏代码块，测试立刻红并指出是哪个文件，然后还原。
+
+### 验证
+
+`tsc` / `eslint` / `vitest` 33（+2）/ `build` / `playwright` 11 passed 全绿；截图确认两种代码块高亮一致。

@@ -177,11 +177,43 @@ export interface MarketingCopy {
   };
 }
 
+/**
+ * Single source for the released version. It appears in the download URL, the
+ * wheel filename and the `--version` output, so hardcoding it per call site is
+ * how a release ships a 404 for whichever occurrence someone forgets.
+ */
+const RELEASE_VERSION = '0.7.0';
+
+const GITHUB_RELEASE_BASE = `https://github.com/NEDONION/lobster0/releases/download/v${RELEASE_VERSION}`;
+
+/**
+ * The one-command installer. The wheel filename appears three times and is far
+ * too long for one line, so it is hoisted into a shell variable — and the braces
+ * in `${W}` are load bearing, because a bare `$W[feishu]` is array subscripting
+ * in zsh, the default shell on macOS.
+ *
+ * The filename itself must stay exactly as published: `uv` reads the version out
+ * of it and fails with "Must have a version" when it is renamed.
+ */
+function installCommand({ mirrored = false } = {}): string {
+  const wheel = `lobster0_agent-${RELEASE_VERSION}-py3-none-any.whl`;
+  const url = mirrored ? `https://gh-proxy.com/${GITHUB_RELEASE_BASE}` : GITHUB_RELEASE_BASE;
+  const install = mirrored
+    ? '  && UV_DEFAULT_INDEX=https://pypi.tuna.tsinghua.edu.cn/simple \\\n     uv tool install --python 3.12 "/tmp/${W}[feishu]"'
+    : '  && uv tool install --python 3.12 "/tmp/${W}[feishu]"';
+  return [
+    `W=${wheel}`,
+    "curl -fL --proto '=https' --tlsv1.2 -o /tmp/${W} \\",
+    `  ${url}/\${W} \\`,
+    install,
+  ].join('\n');
+}
+
 export const siteFacts = {
   // The published wheel is the promoted path, so `uv` plus a managed Python is
   // the whole prerequisite list. Node/pnpm only matter when building the TUI
   // from source, which is a contributor concern and lives in the docs.
-  version: '0.7.0',
+  version: RELEASE_VERSION,
   requirements: {
     python: '3.12+',
     node: '22.19+',
@@ -205,15 +237,8 @@ export const siteFacts = {
   // One command: fetch the release wheel and hand it to `uv tool install`.
   // Keep the filename as published — uv reads the version out of it and fails
   // with "Must have a version" if it is renamed.
-  install: [
-    // The wheel filename is repeated three times and is far too long to sit on
-    // one line, so it is hoisted into a variable. Braces around ${W} are load
-    // bearing: bare $W[feishu] is array subscripting in zsh, the macOS default.
-    'W=lobster0_agent-0.7.0-py3-none-any.whl',
-    "curl -fL --proto '=https' --tlsv1.2 -o /tmp/${W} \\",
-    '  https://github.com/NEDONION/lobster0/releases/download/v0.7.0/${W} \\',
-    '  && uv tool install --python 3.12 "/tmp/${W}[feishu]"',
-  ].join('\n'),
+  install: installCommand(),
+  installMirrored: installCommand({ mirrored: true }),
   // Kept separate from `install`: `setup` is interactive, so these must not be
   // pasted into the same buffer as the installer.
   start: ['lobster0 setup', 'lobster0 gateway'].join('\n'),
