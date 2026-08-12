@@ -258,6 +258,24 @@ curl -fsSL --proto '=https' --tlsv1.2 \
 | `uv run lobster0 task list` | 查看定时任务；另有 show/runs/pause/resume/run/cancel。 |
 | `lobster0 service install/status/logs/restart` | 管理 Linux systemd user 或 macOS LaunchAgent。 |
 
+### 在飞书里直接用的指令
+
+私聊机器人发送这些指令（都**只有 Owner 私聊有效**，群里或他人发送一律拒绝）：
+
+| 指令 | 作用 |
+| --- | --- |
+| `/stop` | **中止当前正在执行的这一轮**。能真正打断执行中的命令与网络请求，不是等它跑完。 |
+| `/restart` | 重启 Gateway 进程。仅在进程由 systemd/launchd 托管时生效；前台裸跑时会明确拒绝而不是把自己关掉。 |
+| `/reset` | 清空当前会话上下文，重新开始。 |
+| `/good`、`/bad <原因>` | 回复某条回答记录反馈。失败的回答同样可以反馈。 |
+| `/approve`、`/deny` | 审批或拒绝一个待确认的危险动作。 |
+| `/permissions` | 查看当前权限模式与生效规则。 |
+
+> **关于长任务**：默认**不限制**单轮时长与工具调用次数——真正的长程任务不该被时钟砍断。
+> 约束交回给你：想停就发 `/stop`。若确实需要一个硬性时限，可设 `agent.max_turn_seconds`
+> （或 `LOBSTER0_MAX_TURN_SECONDS`）为正整数启用；注意它只在**工具边界**检查，
+> 单次很长的工具调用可能显著超出该预算。
+
 ## 它为什么可控
 
 ### Permission Mode
