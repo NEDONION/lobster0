@@ -22,6 +22,8 @@ class FakeClient {
   public readonly turns: [string, string][] = [];
   public readonly requests: [RequestType, Record<string, JsonValue>][] = [];
   public shutdownCalls = 0;
+  /** 覆盖某个请求类型的响应，供针对性用例使用。 */
+  public readonly responses = new Map<RequestType, Record<string, JsonValue>>();
   private eventHandler: ((frame: ServerFrame) => void) | undefined;
 
   public constructor(
@@ -57,6 +59,10 @@ class FakeClient {
     payload: Record<string, JsonValue>,
   ): Promise<Record<string, JsonValue>> {
     this.requests.push([type, payload]);
+    const override = this.responses.get(type);
+    if (override !== undefined) {
+      return override;
+    }
     if (type === "session.list") {
       return {
         sessions: [{
@@ -267,5 +273,30 @@ describe("BridgeService", () => {
       { LOBSTER0_HOME: "/state/lobster0", LOBSTER0_WORKSPACE: "/work/broken" },
       { LOBSTER0_HOME: "/state/lobster0" },
     ]);
+  });
+});
+
+describe("loadSession 的消息映射", () => {
+  it("接受只调了工具、正文为空的那一轮", async () => {
+    // 那一轮往往正是关键一步；stringValue 拒绝空串，会让整个会话打不开。
+    const client = new FakeClient();
+    client.responses.set("session.history", {
+      session_key: "task:1:run:1",
+      updated_at: "2026-08-12T00:00:00Z",
+      turns: [],
+      messages: [
+        { role: "assistant", content: "", turn_id: 309, tool_calls: ["http_get"] },
+        { role: "tool", content: '{"data":{}}', turn_id: 309, tool_name: null },
+      ],
+    });
+    const service = new BridgeService(() => client, {});
+    await service.start();
+
+    const history = await service.loadSession("task:1:run:1", 100);
+
+    expect(history.messages).toHaveLength(2);
+    expect(history.messages[0]?.content).toBe("");
+    expect(history.messages[0]?.toolCalls).toEqual(["http_get"]);
+    expect(history.messages[1]?.role).toBe("tool");
   });
 });

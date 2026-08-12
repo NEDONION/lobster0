@@ -185,9 +185,14 @@ export class BridgeService {
         if (role !== "user" && role !== "assistant" && role !== "tool") {
           throw protocolError();
         }
+        // 正文允许为空：只调了工具、没写正文的那一轮正是关键一步，
+        // stringValue 拒绝空串会让整个会话打不开。
+        if (typeof record.content !== "string") {
+          throw protocolError();
+        }
         const message: SessionMessage = {
           role,
-          content: stringValue(record.content),
+          content: record.content,
           turnId: nullablePositiveInteger(record.turn_id),
         };
         if (typeof record.reasoning === "string") {
