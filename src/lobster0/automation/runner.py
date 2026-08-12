@@ -18,6 +18,7 @@ from lobster0.automation.repository import (
     TaskRunRepository,
 )
 from lobster0.providers.base import (
+    JsonValue,
     ProviderAuthenticationError,
     ProviderError,
     ProviderProtocolError,
@@ -273,6 +274,13 @@ class TaskRunner:
                 "automation_terminal_response_missing",
                 session_id=result.session_id,
                 turn_id=result.turn_id,
+                # 模型确实写出了正文，只是没走收尾工具——留着它，界面才能解释
+                # 这次运行到底发生了什么。
+                result_preview=_preview(result.content) or None,
+                usage={
+                    "input_tokens": result.input_tokens,
+                    "output_tokens": result.output_tokens,
+                },
             )
         completed = self._runs.finish(
             claimed.id,
@@ -381,8 +389,15 @@ class TaskRunner:
         status: RunStatus = RunStatus.FAILED,
         session_id: int | None = None,
         turn_id: int | None = None,
+        result_preview: str | None = None,
+        usage: dict[str, JsonValue] | None = None,
     ) -> TaskRunAttempt:
-        """用稳定码结算 running/claimed Run，并返回脱敏 Attempt。"""
+        """用稳定码结算 running/claimed Run，并返回脱敏 Attempt。
+
+        失败也保留 ``result_preview`` 与 ``usage``：一次跑了很久、产出了完整
+        答案、只因没有用工具收尾而失败的运行，如果连产出和用量都不记，界面上
+        就完全看不出 Agent 做过什么。Provider 直接抛错时二者为空，不凭空构造。
+        """
         completed = self._runs.finish(
             run_id,
             status=status,
@@ -391,6 +406,8 @@ class TaskRunner:
             error_code=error_code,
             session_id=session_id,
             turn_id=turn_id,
+            result_preview=result_preview,
+            usage=usage,
         )
         self._audit(
             "task_run.terminal",

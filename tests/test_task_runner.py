@@ -2,7 +2,9 @@
 
 import asyncio
 import tempfile
+import json
 import unittest
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
@@ -284,6 +286,45 @@ class TaskRunnerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(missing.error_code, "automation_terminal_response_missing")
         self.assertEqual(failed.error_code, "provider_server")
         self.assertNotIn("SECRET_PROVIDER_BODY", failed.error_code)
+
+    async def test_failed_run_still_records_what_the_agent_produced(self) -> None:
+        """失败的运行也要留下产出与用量，否则界面上什么都看不到。
+
+        实测：一次跑了 55 秒、22518 token、写出完整答案的运行，只因为没有用
+        工具收尾就被判失败，结果 result_preview 与 usage 全是空——用户完全
+        无从判断 Agent 做了什么。这些数据 TurnResult 里本来就有。
+        """
+        result = _turn_result(
+            session_id=self.session.id,
+            turn_id=self.turn.id,
+            terminal=None,
+        )
+        result = replace(result, content="## 结论：暂时无法获取数据")
+
+        attempt = await self._runner(_FakeAutomationTurns([result])).run_once(
+            "worker-a", self.now
+        )
+
+        self.assertEqual(attempt.error_code, "automation_terminal_response_missing")
+        stored = self.runs.get(attempt.run_id)
+        self.assertEqual(stored.result_preview, "## 结论：暂时无法获取数据")
+        # usage 不在 TaskRun 模型上，直接查库确认它真的落了盘。
+        with self.database.connect_read_only() as connection:
+            usage = connection.execute(
+                "SELECT usage_json FROM task_runs WHERE id = ?", (attempt.run_id,)
+            ).fetchone()["usage_json"]
+        self.assertEqual(json.loads(usage)["input_tokens"], 10)
+        self.assertEqual(json.loads(usage)["output_tokens"], 3)
+
+    async def test_failed_run_without_any_text_keeps_the_preview_empty(self) -> None:
+        """Provider 直接抛错时没有正文可留，不能凭空造一条。"""
+        attempt = await self._runner(
+            _FakeAutomationTurns([ProviderServerError("SECRET_PROVIDER_BODY")])
+        ).run_once("worker-a", self.now)
+
+        stored = self.runs.get(attempt.run_id)
+        self.assertIsNone(stored.result_preview)
+        self.assertNotIn("SECRET_PROVIDER_BODY", str(stored.result_preview))
 
     async def test_waiting_approval_releases_lease_and_keeps_turn_links(self) -> None:
         """等待 Owner 时 Run 不占 Worker lease，并保存恢复所需三个 ID。"""
