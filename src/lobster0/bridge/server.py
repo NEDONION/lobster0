@@ -578,7 +578,14 @@ class BridgeServer:
             assert isinstance(limit, int) and not isinstance(limit, bool)
             task = tasks.get(task_id, owner_id=owner_id)
             runs = TaskRunRepository(database).list(task_id=task.id, limit=limit)
-            return {"runs": [_run_summary(run) for run in runs]}
+            # 界面按 session_key 打开会话，而 TaskRun 只有 session_id。
+            # 按 id 真实查一次，不去复制 runner 里的 key 生成约定。
+            keys = _session_keys(database, tuple(run.session_id for run in runs))
+            return {
+                "runs": [
+                    _run_summary(run, keys.get(run.session_id)) for run in runs
+                ]
+            }
 
         # pause/resume/cancel/run 都要先读当前 version，交给 repository 做乐观锁。
         task = tasks.get(task_id, owner_id=owner_id)
@@ -843,7 +850,21 @@ def _task_summary(task: object) -> dict[str, JsonValue]:
     }
 
 
-def _run_summary(run: object) -> dict[str, JsonValue]:
+def _session_keys(database: object, session_ids: tuple[int | None, ...]) -> dict[int, str]:
+    """把一批 session_id 解析成外部会话标识。"""
+    wanted = sorted({value for value in session_ids if value is not None})
+    if not wanted:
+        return {}
+    placeholders = ",".join("?" for _ in wanted)
+    with database.connect_read_only() as connection:
+        rows = connection.execute(
+            f"SELECT id, external_conversation_id FROM sessions WHERE id IN ({placeholders})",
+            tuple(wanted),
+        ).fetchall()
+    return {row["id"]: row["external_conversation_id"] for row in rows}
+
+
+def _run_summary(run: object, session_key: str | None = None) -> dict[str, JsonValue]:
     """把一次运行记录投影成只读摘要。
 
     此前只回时间、状态与错误码，界面上完全看不出 AI 做了什么——一次跑了 55 秒、
@@ -867,9 +888,10 @@ def _run_summary(run: object) -> dict[str, JsonValue]:
         "result_preview": run.result_preview,
         "input_tokens": usage.get("input_tokens"),
         "output_tokens": usage.get("output_tokens"),
-        # 界面凭它跳到那次对话看完整产出。
+        # 界面凭它打开那次运行的完整过程。
         "turn_id": run.turn_id,
         "session_id": run.session_id,
+        "session_key": session_key,
     }
 
 

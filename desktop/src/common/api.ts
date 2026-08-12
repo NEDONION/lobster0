@@ -70,7 +70,14 @@ export interface AutomationRun {
   taskId: number;
   status: string;
   scheduledFor: string;
+  startedAt: string | null;
+  completedAt: string | null;
   errorCode: string | null;
+  resultPreview: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  /** 用来打开那次运行的完整过程。 */
+  sessionKey: string | null;
 }
 
 export interface AutomationCreateInput {

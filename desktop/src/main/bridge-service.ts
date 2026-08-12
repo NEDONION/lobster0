@@ -570,7 +570,13 @@ function automationRun(record: Record<string, JsonValue>): AutomationRun {
     taskId: positiveInteger(record.task_id),
     status: stringValue(record.status),
     scheduledFor: stringValue(record.scheduled_for),
+    startedAt: nullableString(record.started_at),
+    completedAt: nullableString(record.completed_at),
     errorCode: nullableString(record.error_code),
+    resultPreview: nullableString(record.result_preview),
+    inputTokens: typeof record.input_tokens === "number" ? record.input_tokens : null,
+    outputTokens: typeof record.output_tokens === "number" ? record.output_tokens : null,
+    sessionKey: nullableString(record.session_key),
   };
 }
 

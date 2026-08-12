@@ -5,6 +5,8 @@ import {
   SCHEDULE_FORM_KINDS,
   automationStats,
   scheduleDescription,
+  runDuration,
+  runFailureReason,
   scheduleFormSpec,
 } from "../src/renderer/automation-stats";
 
@@ -92,5 +94,35 @@ describe("scheduleFormKinds", () => {
     expect(scheduleFormSpec("interval", "3600").expression).toBe("3600");
     expect(scheduleFormSpec("once", "2026-08-12T09:00:00+08:00").expression)
       .toBe("2026-08-12T09:00:00+08:00");
+  });
+});
+
+describe("runFailureReason", () => {
+  it("turns Core error codes into something a person can act on", () => {
+    // 用户看到的曾经是 automation_terminal_response_missing 这一串英文。
+    expect(runFailureReason("automation_terminal_response_missing")).toContain("收尾");
+    expect(runFailureReason("schedule_misfire")).toContain("错过了预定时间");
+    expect(runFailureReason("automation_halted")).toContain("急停");
+  });
+
+  it("falls back to the raw code instead of hiding it", () => {
+    // 未知错误码也要露出来，否则用户和我都无从排查。
+    expect(runFailureReason("some_new_code")).toContain("some_new_code");
+  });
+
+  it("returns null when the run did not fail", () => {
+    expect(runFailureReason(null)).toBeNull();
+  });
+});
+
+describe("runDuration", () => {
+  it("reports how long the run actually took", () => {
+    expect(runDuration("2026-08-11T17:40:54Z", "2026-08-11T17:41:49Z")).toBe("55 秒");
+    expect(runDuration("2026-08-11T17:40:00Z", "2026-08-11T17:42:30Z")).toBe("2 分 30 秒");
+  });
+
+  it("says nothing when the run has not finished", () => {
+    expect(runDuration("2026-08-11T17:40:54Z", null)).toBeNull();
+    expect(runDuration(null, null)).toBeNull();
   });
 });
