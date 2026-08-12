@@ -6,9 +6,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from lobster0.bootstrap import initialize_state
+from lobster0.providers.base import ModelMessage, ToolCall
 from lobster0.bridge.conversations import ConversationConsole, ConversationQueryError
 from lobster0.paths import build_state_paths
-from lobster0.storage.conversations import SessionRepository, TurnRepository
+from lobster0.storage.conversations import MessageRepository, SessionRepository, TurnRepository
 from lobster0.storage.database import Database
 
 
@@ -25,6 +26,7 @@ class ConversationConsoleTest(unittest.TestCase):
         self.database = Database(paths.database)
         self.sessions = SessionRepository(self.database)
         self.turns = TurnRepository(self.database)
+        self.messages = MessageRepository(self.database)
         self.console = ConversationConsole(self.database)
 
     def test_list_sessions_is_newest_first_and_contains_only_safe_summary(self) -> None:
@@ -56,6 +58,69 @@ class ConversationConsoleTest(unittest.TestCase):
         self.assertEqual(result["sessions"][0]["status"], "queued")
         self.assertNotIn("secret-provider-id", repr(result))
         self.assertNotIn("must-not-leak", repr(result))
+
+    def test_history_replays_tool_calls_not_just_the_answer(self) -> None:
+        """历史必须能还原执行过程，否则用户无从判断 Agent 到底做了什么。
+
+        此前只下发 user/assistant，工具调用被整个滤掉——重新打开任何一个会话
+        都只剩问答两行，定时任务尤其致命：它没有实时事件流可看。
+        """
+        session = self.sessions.get_or_create_cli(self.owner_id, "task-1")
+        turn = self.turns.create_with_user_message(
+            session.id, "event-1", "model", "汇总昨天的项目"
+        )
+        self.turns.mark_running(turn.id)
+        self.turns.append_intermediate_messages(
+            turn.id,
+            session.id,
+            (
+                ModelMessage(
+                    role="assistant",
+                    content="先查一下认证状态。",
+                    tool_calls=(ToolCall("call-1", "run_command", {"args": ["gh"]}),),
+                ),
+                ModelMessage(
+                    role="tool",
+                    content='{"data":{"exit_code":1}}',
+                    tool_call_id="call-1",
+                ),
+            ),
+        )
+
+        history = self.console.history(self.owner_id, session_key="task-1", limit=100)
+
+        roles = [message["role"] for message in history["messages"]]
+        self.assertIn("tool", roles)
+        tool_message = next(m for m in history["messages"] if m["role"] == "tool")
+        self.assertEqual(tool_message["tool_name"], "run_command")
+
+    def test_history_keeps_an_assistant_turn_that_only_called_tools(self) -> None:
+        """只调工具、没写正文的那一轮此前被 content 判空丢掉。
+
+        它恰恰是"Agent 做了什么"的关键一环。
+        """
+        session = self.sessions.get_or_create_cli(self.owner_id, "task-1")
+        turn = self.turns.create_with_user_message(
+            session.id, "event-1", "model", "汇总"
+        )
+        self.turns.mark_running(turn.id)
+        self.turns.append_intermediate_messages(
+            turn.id,
+            session.id,
+            (
+                ModelMessage(
+                    role="assistant",
+                    content="",
+                    tool_calls=(ToolCall("call-1", "http_get", {"url": "https://x/"}),),
+                ),
+            ),
+        )
+
+        history = self.console.history(self.owner_id, session_key="task-1", limit=100)
+
+        assistant = [m for m in history["messages"] if m["role"] == "assistant"]
+        self.assertEqual(len(assistant), 1)
+        self.assertEqual(assistant[0]["tool_calls"], ["http_get"])
 
     def test_history_is_owner_scoped_and_exposes_stable_interruption(self) -> None:
         """历史只返回可见消息和稳定错误码，其他 Owner 按不存在处理。"""
