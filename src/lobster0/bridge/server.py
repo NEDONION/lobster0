@@ -826,8 +826,9 @@ def _provider_summary(entry: ProviderConfig, selected: str) -> dict[str, JsonVal
 def _task_summary(task: object) -> dict[str, JsonValue]:
     """把一条 Task 投影成可安全展示的只读摘要。
 
-    只暴露列表所需字段；``prompt``、``delivery`` 与 ``budget`` 一律不出现在 Bridge
-    响应里——它们可能含有敏感指令或投递目标。
+    ``delivery`` 与 ``budget`` 仍然不下发：前者是投递目标，后者是执行预算，界面
+    都不需要。``prompt`` 现在下发——它是用户自己写的任务内容，不显示的话卡片上
+    根本看不出这个任务要让 AI 干什么。
     """
     schedule = task.schedule
     next_run_at = schedule.next_run_at
@@ -838,17 +839,37 @@ def _task_summary(task: object) -> dict[str, JsonValue]:
         "schedule_kind": schedule.kind.value,
         "schedule_expression": schedule.expression,
         "next_run_at": None if next_run_at is None else next_run_at.isoformat(),
+        "prompt": task.prompt,
     }
 
 
 def _run_summary(run: object) -> dict[str, JsonValue]:
-    """把一次运行记录投影成只读摘要，错误只保留稳定错误码。"""
+    """把一次运行记录投影成只读摘要。
+
+    此前只回时间、状态与错误码，界面上完全看不出 AI 做了什么——一次跑了 55 秒、
+    产出完整答案的运行，用户只看到一个英文错误码。结果摘要、用量、起止时间与
+    turn_id 都在库里，现在一并下发。
+
+    仍然不下发的是 ``response_json`` 与 ``snapshot_json``：前者是完整正文（界面
+    用 turn_id 跳到那次对话去看即可），后者含投递目标等不必给界面的内容。
+    """
+    usage = getattr(run, "usage", None) or {}
+    started_at = run.started_at
+    completed_at = run.completed_at
     return {
         "run_id": run.id,
         "task_id": run.task_id,
         "status": run.status.value,
         "scheduled_for": run.scheduled_for.isoformat(),
+        "started_at": None if started_at is None else started_at.isoformat(),
+        "completed_at": None if completed_at is None else completed_at.isoformat(),
         "error_code": run.error_code,
+        "result_preview": run.result_preview,
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        # 界面凭它跳到那次对话看完整产出。
+        "turn_id": run.turn_id,
+        "session_id": run.session_id,
     }
 
 
