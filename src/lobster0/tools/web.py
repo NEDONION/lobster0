@@ -8,6 +8,7 @@ from collections.abc import Callable
 from email.message import Message
 from urllib.parse import urljoin
 
+from lobster0 import __version__
 from lobster0.policy.network import (
     IpNetwork,
     NetworkPolicyError,
@@ -63,6 +64,9 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
 
 
 type ConnectionFactory = Callable[[NetworkTarget, float], http.client.HTTPSConnection]
+
+
+_USER_AGENT = f"Lobster0/{__version__} (+https://github.com/NEDONION/lobster0)"
 
 
 class HttpGetTool:
@@ -172,7 +176,14 @@ class HttpGetTool:
                     "GET",
                     target.request_target,
                     body=None,
-                    headers={"Accept": "text/*, application/json", "Connection": "close"},
+                    headers={
+                        "Accept": "text/*, application/json",
+                        # 不带 User-Agent 会被主流 API 直接拒绝：GitHub 对无
+                        # User-Agent 的请求返回 403。带上产品名与版本，不伪装
+                        # 成浏览器。
+                        "User-Agent": _USER_AGENT,
+                        "Connection": "close",
+                    },
                 )
                 response = connection.getresponse()
                 if response.status in _REDIRECT_STATUSES:
