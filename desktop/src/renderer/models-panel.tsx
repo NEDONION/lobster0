@@ -14,6 +14,8 @@ interface ModelsPanelProps {
   onRemove: (id: string) => Promise<void>;
   onSelect: (id: string, model: string) => Promise<void>;
   onSetSecret: (id: string, value: string) => Promise<void>;
+  /** 改动生效需要重启 Core；缺席时只保留文字提示。 */
+  onRestartCore?: () => Promise<void>;
 }
 
 const RESTART_NOTE = "改动 Provider、模型名或密钥后，需要重启 Core 才会生效。";
@@ -28,6 +30,7 @@ export function ModelsPanel({
   onRemove,
   onSelect,
   onSetSecret,
+  onRestartCore,
 }: ModelsPanelProps): React.JSX.Element {
   const [adding, setAdding] = useState(false);
 
@@ -43,6 +46,16 @@ export function ModelsPanel({
             <button className="button-secondary" onClick={onRefresh} type="button">
               刷新
             </button>
+            {onRestartCore ? (
+              <button
+                className="button-secondary"
+                disabled={busy}
+                onClick={() => void onRestartCore()}
+                type="button"
+              >
+                重启 Core
+              </button>
+            ) : null}
             <button
               className="button-primary"
               disabled={busy}

@@ -407,6 +407,19 @@ export class BridgeService {
     }
   }
 
+  public async restartCore(): Promise<DesktopBootstrap> {
+    // 改完 Provider、模型名或密钥要重启才生效。与 restartWorkspace 是同一条
+    // 「停机再起」路径，只是不动 Workspace。
+    if (this.currentStatus !== "idle") {
+      throw new BridgeRequestError(
+        "bridge_state",
+        "Lobster0 Core 当前状态不允许重启，请先结束运行中的任务",
+      );
+    }
+    await this.stop();
+    return this.start();
+  }
+
   public async stop(): Promise<void> {
     if (this.startPromise) {
       await this.startPromise.catch(() => undefined);

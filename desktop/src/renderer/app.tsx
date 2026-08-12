@@ -396,6 +396,17 @@ export function App(): React.JSX.Element {
                   "保存 Provider 失败。",
                 );
               }}
+              onRestartCore={async () => {
+                setSettingsBusy(true);
+                setSettingsError(null);
+                try {
+                  setBootstrap(await window.lobster0.restartCore());
+                } catch {
+                  setSettingsError("Core 重启失败，请检查本地配置。");
+                } finally {
+                  setSettingsBusy(false);
+                }
+              }}
               providerError={providerError}
               providers={providers}
               onChooseWorkspace={() => void chooseWorkspace()}
@@ -429,6 +440,7 @@ function ViewPreview({
   onRemoveProvider,
   onSelectProvider,
   onSetProviderSecret,
+  onRestartCore,
   onChooseWorkspace,
   onSetPermissionMode,
   onRefreshAutomations,
@@ -456,6 +468,7 @@ function ViewPreview({
   onRemoveProvider: (id: string) => Promise<void>;
   onSelectProvider: (id: string, model: string) => Promise<void>;
   onSetProviderSecret: (id: string, value: string) => Promise<void>;
+  onRestartCore: () => Promise<void>;
   onRefreshAutomations: () => void;
   onPauseAutomation: (taskId: number) => Promise<void>;
   onResumeAutomation: (taskId: number) => Promise<void>;
@@ -547,6 +560,7 @@ function ViewPreview({
         onRefresh={onRefreshProviders}
         onRemove={onRemoveProvider}
         onSelect={onSelectProvider}
+        onRestartCore={onRestartCore}
         onSetSecret={onSetProviderSecret}
         onUpsert={onUpsertProvider}
         providers={providers}
