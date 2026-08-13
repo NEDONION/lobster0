@@ -79,6 +79,45 @@ class FeishuSdkContractTest(unittest.TestCase):
         fields = {field.name for field in dataclasses.fields(lark_channel.ChannelConfig)}
         self.assertIn("media_cache", fields)
 
+    def test_inbound_resources_are_descriptors_without_local_paths(self) -> None:
+        """``InboundMessage.resources`` 只是描述符，**没有**本地路径。
+
+        真实事故：早前的实现直接在 ``message.resources`` 上找 ``decision`` 和
+        ``path``，以为 SDK 会自动把图片下载好。这两个字段在 ``ResourceDescriptor``
+        上根本不存在，于是循环每次都跳过，图片能力整条链路静默失效——没有报错，
+        没有日志，只有模型说"我看不到图片"。
+        """
+        descriptor_fields = {
+            field.name for field in dataclasses.fields(lark_channel.ResourceDescriptor)
+        }
+        self.assertEqual(
+            descriptor_fields & {"decision", "path"},
+            set(),
+            "描述符上出现了 decision/path，缓存模型可能已变，请重新确认解析路径",
+        )
+        self.assertIn("file_key", descriptor_fields)
+        self.assertIn("type", descriptor_fields)
+
+        cached_fields = {
+            field.name for field in dataclasses.fields(lark_channel.CachedResource)
+        }
+        self.assertTrue(
+            {"decision", "path", "mime_type"}.issubset(cached_fields),
+            f"CachedResource 字段已变化：{sorted(cached_fields)}",
+        )
+
+    def test_downloading_requires_an_explicit_resolve_call(self) -> None:
+        """必须显式调用才会下载：这是"图片看不到"那次事故的根因。"""
+        resolve = getattr(lark_channel.FeishuChannel, "resolve_resources_to_cache", None)
+        self.assertIsNotNone(resolve, "SDK 不再提供 resolve_resources_to_cache")
+        parameters = set(inspect.signature(resolve).parameters)
+        self.assertTrue(
+            {"message_id", "resources"}.issubset(parameters),
+            f"resolve_resources_to_cache 签名已变化：{sorted(parameters)}",
+        )
+        source = inspect.getsource(FeishuTransport._resolve_images)
+        self.assertIn("resolve_resources_to_cache", source)
+
     def test_explicit_keywords_still_override_the_config_base(self) -> None:
         """SDK 必须保持"``config`` 作底座、显式关键字覆盖"的合并顺序。
 

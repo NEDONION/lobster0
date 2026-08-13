@@ -1,7 +1,7 @@
 """Channel 契约测试使用的纯内存对象。"""
 
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -24,7 +24,8 @@ class FakeFeishuMessage:
     body_text: str = "你好"
     raw_content_type: str = "text"
     parent_message_id: str = ""
-    resources: list = field(default_factory=list)
+    # 与真实 _OfficialMessageView 同名：只带图片描述符，不含本地路径。
+    image_descriptors: tuple = ()
     create_time: datetime = datetime(2026, 8, 8, tzinfo=UTC)
 
 
@@ -110,6 +111,10 @@ class FakeOfficialChannel:
         self.outcomes = list(outcomes)
         self.handlers: dict[str, Any] = {}
         self.constructor_kwargs: dict[str, Any] = {}
+        # 媒体缓存：真实 SDK 只有被显式调用才会下载，这里如实记录每次调用。
+        self.cached_resources: list[Any] = []
+        self.resolve_calls: list[tuple[str, int]] = []
+        self.resolve_error: BaseException | None = None
         self.sent: list[tuple[str, Any, Any]] = []
         self.cards_updated: list[tuple[str, dict[str, Any]]] = []
         self.typing_added: list[str] = []
@@ -165,6 +170,19 @@ class FakeOfficialChannel:
         """记录 Typing 清理。"""
         self.typing_removed.append((message_id, reaction_id))
         return True
+
+    async def resolve_resources_to_cache(
+        self, *, message_id: str, resources: list[Any]
+    ) -> list[Any]:
+        """模拟"必须显式调用才会下载"的真实语义并记录调用。
+
+        真实 SDK 不会自动缓存任何资源；把这次调用记下来，测试才能证明代码真的
+        发起了下载，而不是在读一个永远为空的字段。
+        """
+        self.resolve_calls.append((message_id, len(resources)))
+        if self.resolve_error is not None:
+            raise self.resolve_error
+        return list(self.cached_resources)
 
     async def update_card(self, message_id: str, card: dict[str, Any]):
         """记录卡片更新。"""
