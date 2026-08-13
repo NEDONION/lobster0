@@ -4,7 +4,7 @@ import importlib
 import re
 import tempfile
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import ModuleType
@@ -45,7 +45,7 @@ class FeishuMessageView(Protocol):
     body_text: str
     raw_content_type: str
     parent_message_id: str
-    resources: list
+    image_descriptors: tuple[Any, ...]
     create_time: datetime | str | int | None
 
 
@@ -83,9 +83,11 @@ class FeishuAdapter:
         elif message.chat_type != "p2p":
             return IgnoredInbound("unsupported_message")
 
-        images = _cached_image_paths(message)
+        # 这里只看描述符判断"这条消息带没带图"——判断是免费的，下载不是。真正的
+        # 下载由 Transport 在准入通过之后再做，图片路径随后补上。
+        has_image = bool(message.image_descriptors)
         text = sanitize_inbound_text(message.body_text).strip()
-        if not text and images:
+        if not text and has_image:
             # 只发图不配文字是常见用法；给一句中性提示，让这一轮不至于被当成空消息丢弃。
             text = "请看这张图片。"
         if not text:
@@ -105,7 +107,6 @@ class FeishuAdapter:
             text=text,
             reply_to_message_id=message.message_id,
             replied_to_message_id=_valid_message_id(message.parent_message_id),
-            image_paths=images,
             received_at=_received_at(message.create_time, self._clock),
         )
 
@@ -143,6 +144,9 @@ class _OfficialMessageView:
     body_text: str
     raw_content_type: str
     parent_message_id: str
+    # 只带图片描述符（type + file_key），不含本地路径：判断"带没带图"是免费的，
+    # 真正下载由 Transport 在准入之后再做。
+    image_descriptors: tuple[Any, ...]
     create_time: datetime | str | int | None
 
 
@@ -432,6 +436,15 @@ class FeishuTransport:
         view = _official_message_view(message)
         normalized = self._adapter.normalize(view)
         if isinstance(normalized, InboundMessage):
+            # 下载必须发生在准入**之后**：resources 只是描述符，把它换成本地文件要真的
+            # 走一次网络。放在准入前，任何陌生人发一张图就能让我们下载，等于送出一个
+            # 免费的流量与磁盘放大器。
+            normalized = replace(
+                normalized,
+                image_paths=await self._resolve_images(
+                    view.message_id, view.image_descriptors
+                ),
+            )
             await self._on_inbound(normalized)
         elif self._observer is not None:
             try:
@@ -445,6 +458,33 @@ class FeishuTransport:
                 )
             except Exception:
                 pass
+
+    async def _resolve_images(
+        self, message_id: str, descriptors: tuple[Any, ...]
+    ) -> tuple[tuple[Path, str], ...]:
+        """把入站消息里的图片描述符换成 SDK 缓存好的本地文件。
+
+        ``InboundMessage.resources`` 只是 ``ResourceDescriptor``（``type`` + ``file_key``），
+        **不含本地路径**——SDK 不会自动下载任何东西。必须显式调
+        ``resolve_resources_to_cache`` 才会真正落盘并返回带 ``path`` 的
+        ``CachedResource``。这一点曾经理解错，导致图片能力整条链路静默失效：
+        代码在读一个永远不存在的字段，于是永远拿到空列表，没有任何报错。
+
+        只解析 ``type == "image"`` 的描述符：文件、音频、视频对视觉模型没有意义，
+        为它们付一次下载与磁盘是纯浪费。
+
+        任何一步失败都只让这一轮没有图，不让整条消息处理失败——看不到图是能力降级，
+        丢掉 Owner 的消息是故障。
+        """
+        if not descriptors or not message_id:
+            return ()
+        try:
+            cached = await self._channel.resolve_resources_to_cache(
+                message_id=message_id, resources=list(descriptors)
+            )
+        except Exception:  # noqa: BLE001 - 下载失败不得吞掉 Owner 的消息
+            return ()
+        return _cached_image_paths(cached)
 
     def _handle_reconnecting(self) -> None:
         """同步接收 SDK 自动重连通知并更新安全状态。"""
@@ -529,12 +569,20 @@ def _official_message_view(message: Any) -> _OfficialMessageView:
         body_text=str(getattr(message, "body_text", "") or ""),
         raw_content_type=str(getattr(message, "raw_content_type", "") or ""),
         parent_message_id=_parent_message_id(message),
+        image_descriptors=tuple(
+            item
+            for item in (getattr(message, "resources", None) or ())
+            if getattr(item, "type", None) == "image"
+        ),
         create_time=getattr(message, "create_time", None),
     )
 
 
-def _cached_image_paths(message: Any) -> tuple[tuple[Path, str], ...]:
-    """取出 SDK 已经下载并缓存到本地的图片资源。
+def _cached_image_paths(resources: Any) -> tuple[tuple[Path, str], ...]:
+    """从 ``CachedResource`` 列表里取出真正落盘的图片。
+
+    入参是 ``FeishuChannel.resolve_resources_to_cache`` 的返回值，**不是**
+    ``InboundMessage.resources``——后者只是不含路径的描述符。
 
     只接受 ``decision == "cached"``：``skipped``/``rejected`` 表示 SDK 因为超限或策略
     没有真的把文件落盘，此时 ``path`` 不可读，当成图片带出去只会在读取时炸掉。
@@ -542,7 +590,6 @@ def _cached_image_paths(message: Any) -> tuple[tuple[Path, str], ...]:
     同时按 MIME 二次过滤：``resources`` 里也可能有音频、文件，它们不能被当作图片
     送进视觉模型。
     """
-    resources = getattr(message, "resources", None)
     if not resources:
         return ()
     found: list[tuple[Path, str]] = []

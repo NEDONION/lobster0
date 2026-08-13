@@ -164,6 +164,8 @@ class _MessageView:
     body_text: str = "hello"
     raw_content_type: str = "text"
     parent_message_id: str = ""
+    # 与 _OfficialMessageView 同名：只带图片描述符，本地路径由 Transport 后补。
+    image_descriptors: tuple = ()
     create_time: datetime = datetime(2026, 8, 8, tzinfo=UTC)
 
 
