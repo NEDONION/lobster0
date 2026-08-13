@@ -1772,3 +1772,17 @@ select:focus-visible {
 .composer-link:disabled {
   cursor: default;
 }
+
+/* --- 子 Agent 的运行记录 ------------------------------------------------ */
+
+/* 缩进而不是换配色：它和父 Run 是同一类东西，只是隶属关系不同。 */
+.automation-run[data-subagent="true"] {
+  margin-left: 20px;
+  border-left: 2px solid var(--lobster-border);
+  padding-left: 10px;
+}
+
+.automation-run-agent {
+  font-size: 12px;
+  color: var(--lobster-primary);
+}

@@ -6,6 +6,7 @@ import {
   automationActionError,
   automationStats,
   errorCodeFrom,
+  groupRunsByParent,
   isTerminalTask,
   scheduleDescription,
   runDuration,
@@ -176,5 +177,39 @@ describe("errorCodeFrom", () => {
   it("returns null when there is no code to find", () => {
     expect(errorCodeFrom(new Error("网络断开"))).toBeNull();
     expect(errorCodeFrom("not an error")).toBeNull();
+  });
+});
+
+describe("groupRunsByParent", () => {
+  const parent = {
+    runId: 7, taskId: 1, status: "succeeded", scheduledFor: "2026-08-12T09:00:00Z",
+    startedAt: null, completedAt: null, errorCode: null, resultPreview: null,
+    inputTokens: null, outputTokens: null, sessionKey: null,
+    parentRunId: null, subagentId: null,
+  };
+  const child = { ...parent, runId: 9, parentRunId: 7, subagentId: "researcher" };
+
+  it("nests child runs under the run that dispatched them", () => {
+    // 父子共用 task_id，平铺显示看不出谁派了谁。
+    const groups = groupRunsByParent([child, parent]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.run.runId).toBe(7);
+    expect(groups[0]?.children.map((item) => item.runId)).toEqual([9]);
+  });
+
+  it("keeps an orphaned child visible instead of dropping it", () => {
+    // 父 Run 可能已超出 limit 被截断；丢掉子 Run 会让它彻底消失。
+    const groups = groupRunsByParent([child]);
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0]?.run.runId).toBe(9);
+  });
+
+  it("preserves the incoming order of parents", () => {
+    const older = { ...parent, runId: 3 };
+    const groups = groupRunsByParent([parent, older]);
+
+    expect(groups.map((item) => item.run.runId)).toEqual([7, 3]);
   });
 });

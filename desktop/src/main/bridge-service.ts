@@ -605,6 +605,9 @@ function automationRun(record: Record<string, JsonValue>): AutomationRun {
     inputTokens: typeof record.input_tokens === "number" ? record.input_tokens : null,
     outputTokens: typeof record.output_tokens === "number" ? record.output_tokens : null,
     sessionKey: nullableString(record.session_key),
+    parentRunId:
+      typeof record.parent_run_id === "number" ? record.parent_run_id : null,
+    subagentId: nullableString(record.subagent_id),
   };
 }
 

@@ -1,4 +1,4 @@
-import type { AutomationSummary } from "../common/api";
+import type { AutomationRun, AutomationSummary } from "../common/api";
 
 export interface AutomationStats {
   total: number;
@@ -203,4 +203,40 @@ export function errorCodeFrom(error: unknown): string | null {
     return null;
   }
   return ERROR_CODE_PATTERN.exec(error.message)?.[1] ?? null;
+}
+
+export interface RunGroup {
+  run: AutomationRun;
+  children: AutomationRun[];
+}
+
+/**
+ * 把运行列表按「谁派出了谁」分组。
+ *
+ * 子 Run 与父 Run 共用同一个 task_id，所以它们本来就混在同一个列表里；平铺显示
+ * 看不出谁派了谁。父 Run 可能因为 limit 截断而不在本页，这时**子 Run 仍然单独
+ * 成组**而不是被丢掉——丢掉会让它彻底消失。
+ */
+export function groupRunsByParent(runs: AutomationRun[]): RunGroup[] {
+  const groups = new Map<number, RunGroup>();
+  const order: number[] = [];
+  for (const run of runs) {
+    if (run.parentRunId === null) {
+      groups.set(run.runId, { run, children: [] });
+      order.push(run.runId);
+    }
+  }
+  for (const run of runs) {
+    if (run.parentRunId === null) {
+      continue;
+    }
+    const parent = groups.get(run.parentRunId);
+    if (parent) {
+      parent.children.push(run);
+    } else {
+      groups.set(run.runId, { run, children: [] });
+      order.push(run.runId);
+    }
+  }
+  return order.map((id) => groups.get(id)!);
 }

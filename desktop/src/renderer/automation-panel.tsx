@@ -7,6 +7,7 @@ import {
   automationActionError,
   automationStats,
   errorCodeFrom,
+  groupRunsByParent,
   isTerminalTask,
   runDuration,
   runFailureReason,
@@ -301,12 +302,21 @@ function AutomationCard({
           {runs.length === 0 ? (
             <span>还没有运行记录。</span>
           ) : (
-            runs.map((run) => {
+            groupRunsByParent(runs).flatMap((group) => [group.run, ...group.children])
+              .map((run) => {
               const duration = runDuration(run.startedAt, run.completedAt);
               const reason = runFailureReason(run.errorCode);
               return (
-                <div className="automation-run" key={run.runId}>
+                <div
+                  className="automation-run"
+                  data-subagent={run.subagentId !== null}
+                  key={run.runId}
+                >
                   <div className="automation-run-head">
+                    {/* 子 Run 与父 Run 同一个 task_id，标出派给了谁才看得懂。 */}
+                    {run.subagentId ? (
+                      <span className="automation-run-agent">↳ {run.subagentId}</span>
+                    ) : null}
                     <span>{new Date(run.scheduledFor).toLocaleString("zh-CN")}</span>
                     <span data-status={run.status}>
                       {RUN_STATUS_LABELS[run.status] ?? run.status}

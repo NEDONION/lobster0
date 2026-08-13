@@ -78,6 +78,16 @@ export interface AutomationRun {
   outputTokens: number | null;
   /** 用来打开那次运行的完整过程。 */
   sessionKey: string | null;
+  /** 非空表示这是一次子 Agent 派发的运行。 */
+  parentRunId: number | null;
+  subagentId: string | null;
+}
+
+export interface SubagentSummary {
+  id: string;
+  description: string;
+  maxTurns: number;
+  timeoutSeconds: number;
 }
 
 export interface AutomationCreateInput {
