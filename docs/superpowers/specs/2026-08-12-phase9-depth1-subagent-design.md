@@ -2,7 +2,7 @@
 
 > 日期：2026-08-12
 > 文档类型：Phase 9 后端设计（D4 的前置）
-> 状态：`BACKEND DONE`（2026-08-12）——后端 1～4 块已实现，剩 Bridge/UI（即 D4），见 §9
+> 状态：`USABLE`（2026-08-12）——后端 + 派发链路 + Bridge 下发已实现，见 §9
 > 上位规划：[D1～D5 分 Phase 落地文档 §7](../../engineering/desktop/20260810_桌面多Agent分Phase落地.md)
 
 ## 1. 为什么先写这份
@@ -113,7 +113,9 @@ ALTER TABLE task_runs ADD COLUMN subagent_id TEXT;
 | 2. 父子 Run 关联 | 已实现 | 迁移 0013 + `TaskRunRepository.enqueue_child/list_children` |
 | 3. `delegate_task` 与收窄 | 已实现 | `tools/delegate.py` |
 | 4. 取消传播与重启恢复 | 已实现 | `cancel_children` + `finish` 内联清理 |
-| 5. Bridge / UI（即 D4） | 未开始 | |
+| 4.5 派发链路 | 已实现 | `subagents/dispatch.py`，复用 `handle_automation` |
+| 5. Bridge 下发 | 已实现 | `subagents.list` + 运行摘要的 `parent_run_id`/`subagent_id` |
+| 6. 桌面端展示 | 部分 | 运行列表已按父子分组；「参与 Agent」面板未做 |
 
 ### max depth = 1 最终落成三道，全部是结构性的
 
@@ -130,6 +132,21 @@ ALTER TABLE task_runs ADD COLUMN subagent_id TEXT;
 
 四道都不是计数器。计数器要靠正确读写才生效，而「看不到工具」与「数据库拒绝」是
 结构性的。
+
+### 差点又造出一个「说了没接上」
+
+`delegate_task` 的工具与测试都写完、全绿，但**从没注册进 Runtime**——模型永远看不到
+它，Phase 9 整个不可用。这是本项目第九处同类缺陷，这次是在动手做 UI 前主动核查
+发现的（`grep DelegateTaskTool` 在 runtime 里 0 命中）。
+
+### 一处设计边界在实施中才浮现
+
+**交互式对话没有 Run，子 Run 无处可挂。** 设计时默认「派发发生在某个 Run 之下」，
+但交互式回合根本没有 Run。与其临时造一条本来不存在的 Run，不如明确拒绝并说清
+原因（`subagent_requires_background_run`）——派发目前是**后台任务**的能力。
+
+要让交互式对话也能派发，需要先想清楚「一次聊天里的派发算不算一条可恢复的
+durable 工作」，那是独立的决定，不该在做 UI 时顺手带过。
 
 ### 取消传播分两种，因为事实不同
 
