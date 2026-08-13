@@ -26,10 +26,10 @@ class BootstrapTest(unittest.TestCase):
         self.assertEqual(result.applied_migrations, (1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13))
         self.assertEqual(result.owner.display_name, "Owner")
         self.assertEqual(config.agent.model, "deepseek-v4-pro")
-        self.assertEqual(config.agent.max_tool_iterations, 32)
-        self.assertEqual(config.agent.max_tool_iterations_hard, 64)
-        self.assertEqual(config.agent.max_no_progress_iterations, 3)
-        self.assertEqual(config.agent.max_turn_seconds, 90)
+        self.assertEqual(config.agent.max_tool_iterations, 200)
+        self.assertEqual(config.agent.max_tool_iterations_hard, 400)
+        self.assertEqual(config.agent.max_no_progress_iterations, 12)
+        self.assertEqual(config.agent.max_turn_seconds, 0)
         self.assertEqual(config.provider.base_url, "https://api.deepseek.com")
         self.assertEqual(config.provider.api_key_env, "LOBSTER0_MODEL_API_KEY")
         self.assertEqual(config.ui.language, "zh-CN")
@@ -38,7 +38,7 @@ class BootstrapTest(unittest.TestCase):
         self.assertTrue(config.permissions.discover_user_executables)
         self.assertEqual(getattr(config.tools, "mode", None), "autopilot")
         self.assertIn(
-            "max_turn_seconds = 90",
+            "max_turn_seconds = 0",
             self.paths.config.read_text(encoding="utf-8"),
         )
         self.assertIn(
@@ -46,9 +46,9 @@ class BootstrapTest(unittest.TestCase):
             self.paths.config.read_text(encoding="utf-8"),
         )
         template = self.paths.config.read_text(encoding="utf-8")
-        self.assertIn("max_tool_iterations = 32", template)
-        self.assertIn("max_tool_iterations_hard = 64", template)
-        self.assertIn("max_no_progress_iterations = 3", template)
+        self.assertIn("max_tool_iterations = 200", template)
+        self.assertIn("max_tool_iterations_hard = 400", template)
+        self.assertIn("max_no_progress_iterations = 12", template)
         self.assertIn('[tools]\nmode = "autopilot"', template)
         self.assertIn("# [channels.feishu]", template)
         self.assertIn('# app_id_env = "LOBSTER0_FEISHU_APP_ID"', template)

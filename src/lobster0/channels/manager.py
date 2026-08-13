@@ -23,7 +23,7 @@ from lobster0.channels.approvals import (
 )
 from lobster0.channels.base import DeliveryKind, InboundMessage
 from lobster0.channels.delivery import split_message
-from lobster0.channels.experience import ChannelExperience
+from lobster0.channels.experience import ChannelExperience, ExperienceActivity
 from lobster0.channels.feedback_commands import FeedbackCommandOutcome
 from lobster0.channels.observability import ChannelObserver
 from lobster0.channels.progress import progress_from_metadata, progress_to_metadata
@@ -54,6 +54,8 @@ from lobster0.storage.conversations import (
 )
 
 _FAILURE_NOTICE = "抱歉，这条消息处理失败了，请稍后重试。"
+# /stop 结果只在那条命令自己被处理前有用，留一个小上界防止异常路径下无限增长。
+_MAX_STOP_OUTCOMES = 128
 
 
 class TurnHandler(Protocol):
@@ -187,6 +189,13 @@ class ChannelManager:
         self._enqueued_guard = asyncio.Lock()
         self._locks: dict[str, _LockEntry] = {}
         self._locks_guard = asyncio.Lock()
+        # 每个 Conversation 至多一个执行中的 Turn Task；/stop 就是取消它。
+        self._active_turns: dict[str, asyncio.Task[TurnResult]] = {}
+        # 由 _request_stop 显式置位，用来把「Owner 主动停止」与「Gateway 关停」
+        # 两种 CancelledError 区分开——后者必须继续上抛，前者必须被吞掉。
+        self._stop_requested: set[str] = set()
+        # /stop 那条入站事件自己的确认文案所需的结果，_control_notice 取用后即弹出。
+        self._stop_outcomes: dict[InboundEventKey, bool] = {}
         self._workers: list[asyncio.Task[None]] = []
         self._feeder: asyncio.Task[None] | None = None
         self._stopping = asyncio.Event()
@@ -235,11 +244,54 @@ class ChannelManager:
         if not result.inserted:
             self._observe_inbound(message, result.event, "duplicate", False)
             return InboundAcceptance(False, False)
+        # /stop 的取消动作必须在这里发生，而不是等 Worker 领取它。
+        # _process 的第一件事是 `async with self._conversation_lock(...)`，
+        # 走正常路径的 /stop 会排在正在执行的那个 Turn 后面等锁——等它拿到锁，
+        # 要停的东西早跑完了。放在 receive() 里则不占 Worker、不等锁，
+        # worker_count=1、队列已满时同样立即生效。
+        if self._is_stop_command(result.event):
+            self._record_stop_outcome(
+                result.event.key,
+                self._request_stop(result.event.external_conversation_id),
+            )
         if message.image_paths:
             self._pending_images[result.event.key] = message.image_paths
         enqueued = await self._enqueue(result.event.key)
         self._observe_inbound(message, result.event, "accepted", enqueued)
         return InboundAcceptance(True, enqueued)
+
+    def _is_stop_command(self, event: StoredInboundEvent) -> bool:
+        """判断这条消息是否为 Owner 发出的停止命令。
+
+        授权与 /reset、/permissions、/restart 完全同源：``_trusted_owner`` 要求
+        外部身份等于配置 Owner **且** 是私聊。群里任何人喊 /stop 都不会取消任何东西。
+
+        必须是**恰好** ``/stop``：``_stop_notice`` 对多余参数只回"用法：/stop"，
+        如果这里放宽成前缀匹配，就会出现"取消了但告诉你用法错了"的自相矛盾。
+        """
+        return event.content.split() == ["/stop"] and self._trusted_owner(event)
+
+    def _request_stop(self, conversation_id: str) -> bool:
+        """取消该 Conversation 正在执行的 Turn；没有在跑的 Turn 时返回 False。
+
+        Args:
+            conversation_id: 平台会话 ID。
+
+        Returns:
+            是否真的取消了一个执行中的 Turn。
+        """
+        task = self._active_turns.get(conversation_id)
+        if task is None or task.done():
+            return False
+        self._stop_requested.add(conversation_id)
+        task.cancel()
+        return True
+
+    def _record_stop_outcome(self, key: InboundEventKey, stopped: bool) -> None:
+        """记下 /stop 的结果供确认文案使用，并保持字典有界。"""
+        if len(self._stop_outcomes) >= _MAX_STOP_OUTCOMES:
+            self._stop_outcomes.pop(next(iter(self._stop_outcomes)), None)
+        self._stop_outcomes[key] = stopped
 
     async def start(self) -> None:
         """恢复遗留状态并启动 feeder 与有限数量 Worker。"""
@@ -519,8 +571,12 @@ class ChannelManager:
                         result=command.result,
                     )
                     return
-            try:
-                result = await self.service.handle_inbound(
+            # Turn 跑在自己的 Task 里，/stop 才能只取消它而不牵连 Worker。
+            # 取消最终落到既有路径上：TurnService 的 except CancelledError 已经
+            # 负责 self._turns.cancel(turn.id) 与 turn_cancelled 事件，
+            # 这里不新建第二套取消机制。
+            turn_task = asyncio.ensure_future(
+                self.service.handle_inbound(
                     user_id=self.owner_id,
                     channel=event.key.channel,
                     account_id=event.key.account_id,
@@ -533,7 +589,21 @@ class ChannelManager:
                     identity_verified=self._verified_owner(event),
                     image_paths=self._pending_images.pop(event.key, ()),
                 )
+            )
+            self._active_turns[event.external_conversation_id] = turn_task
+            try:
+                result = await turn_task
             except asyncio.CancelledError:
+                if self._consume_stop_request(event.external_conversation_id):
+                    await self._settle_owner_stop(
+                        session_id=session.id,
+                        event=event,
+                        activity=activity,
+                        started=started,
+                    )
+                    # 刻意不 raise：被取消的是内层 turn_task，Worker Task 本身
+                    # 从未被 cancel。一次 /stop 不该废掉整个 Channel Worker。
+                    return
                 failure_notice = self._failure_diagnostics(
                     session_id=session.id,
                     event=event,
@@ -565,18 +635,21 @@ class ChannelManager:
                     error=error,
                 )
                 final_delivery_required = True
+                progress_message_id = None
                 if activity is not None:
                     outcome = await activity.finish(
                         content=failure_notice,
                         failed=True,
                     )
                     final_delivery_required = outcome.final_delivery_required
-                if final_delivery_required:
-                    self._create_failure_delivery(
-                        session.id,
-                        event,
-                        content=failure_notice,
-                    )
+                    progress_message_id = outcome.progress_message_id
+                self._create_failure_delivery(
+                    session.id,
+                    event,
+                    content=failure_notice,
+                    delivery_required=final_delivery_required,
+                    progress_message_id=progress_message_id,
+                )
                 self._inbound.mark_failed(event.key, "channel_turn_failed")
                 self._observe_turn(
                     event,
@@ -586,6 +659,10 @@ class ChannelManager:
                     error_code="channel_turn_failed",
                 )
                 return
+            finally:
+                if self._active_turns.get(event.external_conversation_id) is turn_task:
+                    del self._active_turns[event.external_conversation_id]
+                self._stop_requested.discard(event.external_conversation_id)
 
             final_delivery_required = True
             final_delivery_offset = 0
@@ -631,6 +708,72 @@ class ChannelManager:
                 started=started,
                 result=result,
             )
+
+    def _consume_stop_request(self, conversation_id: str) -> bool:
+        """判断这次 CancelledError 是否来自 Owner 的 /stop，并消费该标记。
+
+        两个条件都必须成立：
+
+        1. ``_request_stop`` 显式置过位；
+        2. **当前 Worker Task 自己没有被 cancel**——``cancelling() == 0``。
+           关停走的是 ``worker.cancel()``，那种 CancelledError 必须继续上抛，
+           否则 Worker 不会退出、``stop()`` 会一直等下去。
+        """
+        if conversation_id not in self._stop_requested:
+            return False
+        current = asyncio.current_task()
+        if current is not None and current.cancelling() > 0:
+            return False
+        self._stop_requested.discard(conversation_id)
+        return True
+
+    async def _settle_owner_stop(
+        self,
+        *,
+        session_id: int,
+        event: StoredInboundEvent,
+        activity: ExperienceActivity | None,
+        started: float,
+    ) -> None:
+        """把 Owner 主动停止结算成一条可投递诊断，并让入站事件进入终态。
+
+        持久化一致性由既有取消路径保证：``TurnService`` 已经在同一个
+        ``except asyncio.CancelledError`` 里把 Turn 标成 ``cancelled``，
+        中途完成的 Tool 批次也已经由 ``on_intermediate`` 落库。这里只负责
+        告诉 Owner 发生了什么。
+        """
+        notice = self._failure_diagnostics(
+            session_id=session_id,
+            event=event,
+            fallback_error_code="turn_stopped",
+            stage="Owner 主动停止",
+            reason="你发送了 /stop，本轮任务已在当前位置安全取消。",
+            suggestion=(
+                "已完成的步骤和文件改动都保留着；需要继续就重新发送任务，"
+                "系统不会自动续跑。"
+            ),
+        )
+        final_delivery_required = True
+        progress_message_id: str | None = None
+        if activity is not None:
+            outcome = await activity.finish(content=notice, failed=True)
+            final_delivery_required = outcome.final_delivery_required
+            progress_message_id = outcome.progress_message_id
+        self._create_failure_delivery(
+            session_id,
+            event,
+            content=notice,
+            delivery_required=final_delivery_required,
+            progress_message_id=progress_message_id,
+        )
+        self._fail_running_event(event.key, "turn_stopped")
+        self._observe_turn(
+            event,
+            status="interrupted",
+            session_id=session_id,
+            started=started,
+            error_code="turn_stopped",
+        )
 
     async def _handle_feedback_command(self, event: StoredInboundEvent) -> str | None:
         """处理 /good、/bad；不是反馈命令时返回 ``None`` 让消息继续进入模型。
@@ -682,7 +825,25 @@ class ChannelManager:
             return self._reset_notice(parts, event, session_id)
         if parts[0] == "/restart":
             return self._restart_notice(parts, event)
+        if parts[0] == "/stop":
+            return self._stop_notice(parts, event)
         return None
+
+    def _stop_notice(self, parts: list[str], event: StoredInboundEvent) -> str:
+        """确认 Owner 的 /stop；真正的取消已经在 ``receive()`` 里发生过了。
+
+        这条确认走正常队列，因此天然排在"Turn 真的停下来"之后：
+        Owner 看到的顺序是 Turn 停止诊断 → 本条确认。
+
+        权限判断复用与 /reset、/permissions、/restart 完全相同的 ``_trusted_owner``。
+        """
+        if not self._trusted_owner(event):
+            return "只有 Owner 私聊可以停止当前任务。"
+        if len(parts) != 1:
+            return "用法：/stop"
+        if self._stop_outcomes.pop(event.key, False):
+            return "已停止本轮任务。已完成的步骤和文件改动都保留着，系统不会自动续跑。"
+        return "当前没有正在执行的任务，无需停止。"
 
     def _restart_notice(
         self,
@@ -903,9 +1064,27 @@ class ChannelManager:
         event: StoredInboundEvent,
         *,
         content: str = _FAILURE_NOTICE,
+        delivery_required: bool = True,
+        progress_message_id: str | None = None,
     ) -> None:
-        """把任意内部失败压缩为固定、可投递且不含异常正文的提示。"""
+        """把任意内部失败压缩为固定、可投递且不含异常正文的提示。
+
+        Args:
+            session_id: 归属会话。
+            event: 触发本次失败的入站事件。
+            content: 已脱敏的诊断正文。
+            delivery_required: 平台是否仍需要一条普通文本投递；卡片已经完整
+                展示时为 False，但内部通知消息**仍然要建**——它是失败卡片能被
+                /good、/bad 反查到的唯一锚点。
+            progress_message_id: Owner 在 IM 里真正看到并可以「回复」的那张卡片的
+                平台 ID。以前只有成功路径登记这层映射，失败卡片因此永远反查不到，
+                Owner 对失败卡回复 /bad 只会得到"没有找到这条回答"。
+        """
         notice = self._messages.create_channel_notice(session_id, content)
+        if progress_message_id:
+            self._record_card_delivery(notice.id, event, progress_message_id)
+        if not delivery_required:
+            return
         self._deliveries.create_parts(
             message_id=notice.id,
             channel=event.key.channel,
@@ -1192,12 +1371,14 @@ def _failure_profile(error: Exception) -> tuple[str, str, str]:
         return (
             "Agent Tool Loop",
             (
-                f"本轮已用 {error.elapsed_seconds:.1f} 秒，超过单轮 "
-                f"{error.deadline_seconds} 秒的墙钟预算，已在工具边界安全停止。"
+                f"本轮已用 {error.elapsed_seconds:.1f} 秒，超过你配置的单轮 "
+                f"{error.deadline_seconds} 秒墙钟预算。这个预算**只在工具边界检查**，"
+                "不会打断已经在执行的工具，所以实际耗时可以显著超过配置值"
+                "（一次 run_command 最长可达 120 秒）。"
             ),
             (
-                "请把任务拆小后重试；确实需要更长时间，就调高 agent.max_turn_seconds"
-                "（或 LOBSTER0_MAX_TURN_SECONDS）。"
+                "墙钟预算默认是关闭的（agent.max_turn_seconds = 0）；不想被按时间打断"
+                "就把它调回 0，改用私聊发送 /stop 随时停止——/stop 在工具执行途中也生效。"
             ),
         )
     if isinstance(error, AgentNoProgressError):
