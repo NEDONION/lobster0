@@ -405,14 +405,20 @@ class FeishuTransport:
             auto_reconnect=True,
             http_timeout_seconds=30.0,
         )
+        # media_cache 没有对应的构造关键字：它只是 ChannelConfig 的一个字段。
+        # SDK 的 __init__ 先取 ``config`` 当底座，再让显式关键字覆盖同名字段，
+        # 所以这里把 ChannelConfig 当"只为带上 media_cache"的载体传进去，
+        # 其余配置照旧走关键字，覆盖顺序不受影响。
         return self._sdk.FeishuChannel(
             app_id=app_id,
             app_secret=app_secret,
-            media_cache=self._sdk.MediaCacheConfig(
-                enabled=True,
-                root_dir=str(cache_root),
-                ttl_seconds=3600,
-                image_max_bytes=8 * 1024 * 1024,
+            config=self._sdk.ChannelConfig(
+                media_cache=self._sdk.MediaCacheConfig(
+                    enabled=True,
+                    root_dir=str(cache_root),
+                    ttl_seconds=3600,
+                    image_max_bytes=8 * 1024 * 1024,
+                ),
             ),
             domain=_sdk_domain(self._sdk, self._config.domain),
             transport=transport,
