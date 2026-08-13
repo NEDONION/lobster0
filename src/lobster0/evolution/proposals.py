@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from lobster0.memory.models import DisclosureContext
+from lobster0.memory.models import DisclosureContext, SourceRef
 from lobster0.memory.review import MemoryReviewService
 from lobster0.memory.store import MemoryError
 from lobster0.skills.loader import ActivatedSkill, SkillError, SkillLoader
@@ -206,6 +206,87 @@ def build_memory_forget_candidate(
     base_hash = hashlib.sha256(
         f"{preview.unit_id}:{preview.current_status}".encode()
     ).hexdigest()
+    manifest = _canonical_json(
+        {
+            "kind": "memory",
+            "review_type": preview.review_type,
+            "unit_id": preview.unit_id,
+            "review_id": preview.review_id,
+        }
+    )
+    return CandidateMaterial(
+        base_hash=base_hash,
+        candidate_hash=preview.preview_hash,
+        manifest_json=manifest,
+        candidate_ref=f"memory-review:{preview.review_id}",
+    )
+
+
+def build_memory_correction_candidate(
+    memory_reviews: MemoryReviewService,
+    *,
+    disclosure: DisclosureContext,
+    unit_id: str,
+    new_text: str,
+    source: SourceRef,
+    reason_text: str,
+    now: datetime,
+) -> CandidateMaterial:
+    """通过既有 ``propose_correction`` 生成"改正一条已有记忆"的候选。
+
+    ## 出处为什么必须由调用方传进来
+
+    ``SourceRef`` 指向的是 Owner 亲口说出这条更正的那句话——在 ``/bad <原因>`` 场景里，
+    就是那句原因本身落库后的 user message（``feedback.reason_message_id``）。
+    不接受由本函数凭空构造：记忆的出处一旦可以由代码编造，Memory 里最不能骗人的字段
+    就失去了意义。被评价的那条**助手**消息同样不行——模型自己答错的话不是事实的证据。
+
+    ## 意图门槛照旧
+
+    ``propose_correction`` 要求 ``reason_text`` 命中明确纠错意图。这不是障碍而是筛子：
+    ``/bad 这个回答太啰嗦了`` 不该改任何记忆，``/bad 你记错了，我的部署机是 mac`` 才该。
+    这里不为 Evolution 放宽——放宽等于给模型开一条绕过 Owner 意图的路。
+
+    ## Disclosure 必须由调用方给出，不能在这里编
+
+    与 ``build_memory_forget_candidate`` 不同，更正可以从飞书发起，而"这是私聊还是群聊"、
+    "身份验没验过"只有真正处理那条消息的地方知道。如果在这里一律写成
+    ``direct`` + ``identity_verified=True``，群聊里的 ``/bad`` 就会被伪装成私聊，
+    绕过"群聊不得写入记忆"的既有限制。所以整个 ``DisclosureContext`` 由调用方构造，
+    本函数只负责把它原样交给既有策略去判。
+
+    Args:
+        memory_reviews: 已绑定 Owner Disclosure 规则的既有 Memory Review 服务。
+        disclosure: 反映真实会话事实的披露上下文；渠道、私聊/群聊与身份校验状态
+            都必须来自实际那条消息，不得由调用方臆断。
+        unit_id: 被更正的既有 Memory Unit。
+        new_text: 更正后的事实正文。
+        source: Owner 原话对应的、已落库且可核验的消息。
+        reason_text: Owner 的原话，用于既有的纠错意图判定。
+        now: 用于绑定 preview hash 的当前时间。
+
+    Returns:
+        绑定 base/candidate hash 与 Review 引用的候选材料。
+
+    Raises:
+        CandidateError: Unit 不存在、不可更正、正文未变、缺少纠错意图、来源不合法，
+            或该会话根本不允许写入记忆（全部由 MemoryError 转译，错误码原样透出，
+            不在这里重新命名）。
+    """
+    try:
+        preview = memory_reviews.propose_correction(
+            disclosure,
+            unit_id,
+            new_text,
+            source=source,
+            latest_user_text=reason_text,
+            now=now,
+        )
+    except MemoryError as error:
+        raise CandidateError(error.code, str(error)) from error
+    # 与 forget candidate 一致：base_hash 绑定"被更正的那条 Unit 当前是什么状态"，
+    # 一旦它在审批期间被改动或遗忘，审批就该失效。
+    base_hash = hashlib.sha256(f"{unit_id}:correction".encode()).hexdigest()
     manifest = _canonical_json(
         {
             "kind": "memory",

@@ -10,7 +10,11 @@ from urllib.parse import urlsplit
 _MAX_MANIFEST_BYTES = 1_048_576
 _MAX_ARTIFACT_BYTES = 1_073_741_824
 _MAX_ARTIFACTS = 128
-_DATABASE_SCHEMA_VERSION = 13
+# 必须与 lobster0.storage.migrations.LATEST_SCHEMA_VERSION 同步，但**不能 import**：
+# 安装器被打包成独立 zipapp，scripts/build_installer_zipapp.py 用 import 白名单强制
+# install/ 不依赖 lobster0 其余部分，好让它在目标机上先于 Runtime 运行。
+# 这份重复是有意的；tests/test_install_models.py 有一条测试盯着两边不许漂移。
+_DATABASE_SCHEMA_VERSION = 14
 _SEMVER = re.compile(
     r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)"
     r"(?:-((?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"

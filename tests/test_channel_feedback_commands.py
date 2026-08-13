@@ -23,6 +23,7 @@ class _FakeMessage:
     id: int
     role: str
     content: str
+    session_id: int = 1
 
 
 @dataclass(slots=True)
@@ -48,9 +49,25 @@ class FakeMessageLookup:
 
     by_id: dict[int, _FakeMessage] = field(default_factory=dict)
 
+    created_reasons: list[tuple[int, str]] = field(default_factory=list)
+    next_reason_id: int = 900
+    reason_error: Exception | None = None
+
     def get(self, message_id: int) -> _FakeMessage | None:
         """返回预置消息或 None。"""
         return self.by_id.get(message_id)
+
+    def create_feedback_reason(self, session_id: int, content: str) -> _FakeMessage:
+        """记录 Owner 原话的落库调用，或回放注入的失败。"""
+        if self.reason_error is not None:
+            raise self.reason_error
+        self.created_reasons.append((session_id, content))
+        message = _FakeMessage(
+            id=self.next_reason_id, role="user", content=content, session_id=session_id
+        )
+        self.next_reason_id += 1
+        self.by_id[message.id] = message
+        return message
 
 
 @dataclass(slots=True)
@@ -69,6 +86,7 @@ class FakeFeedbackLedger:
         rating: FeedbackRating,
         redacted_reason: str | None,
         context_hash: str,
+        reason_message_id: int | None = None,
     ) -> Feedback:
         """回放固定错误，或返回一条构造好的 Feedback。"""
         self.calls.append(
@@ -78,6 +96,7 @@ class FakeFeedbackLedger:
                 "rating": rating,
                 "redacted_reason": redacted_reason,
                 "context_hash": context_hash,
+                "reason_message_id": reason_message_id,
             }
         )
         if self.error is not None:
@@ -246,6 +265,76 @@ class ChannelFeedbackControllerTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("owner@example.com", reason)
         self.assertNotIn("/Users/owner/secret/report.txt", reason)
         self.assertNotIn("sk-abcdef123456", reason)
+
+    async def test_bad_reason_is_persisted_as_an_owner_message(self) -> None:
+        """Owner 的原话必须落成同会话的 user message，并绑定到该条反馈。
+
+        这是 Memory correction candidate 唯一合法的出处来源：``SourceRef`` 只接受
+        可核验的真实消息，编不出来。角色必须是 user——记成 assistant 等于把
+        Owner 说的话安到模型头上，出处就假了。
+        """
+        self._seed_target_message()
+        outcome = await self.controller.handle_text(
+            user_id=7,
+            actor_external_user_id="ou_owner",
+            text="/bad 你记错了，我的部署机器是 mac 不是 linux",
+            channel="feishu",
+            account_id="default",
+            reply_to_platform_message_id="om_target",
+        )
+
+        self.assertTrue(outcome.handled)
+        self.assertEqual(
+            self.messages.created_reasons,
+            [(1, "你记错了，我的部署机器是 mac 不是 linux")],
+        )
+        reason_message_id = self.feedback.calls[0]["reason_message_id"]
+        self.assertIsNotNone(reason_message_id)
+        stored = self.messages.by_id[reason_message_id]
+        self.assertEqual(stored.role, "user")
+        # 落库的是原话而不是脱敏版：脱敏是给 Proposal 展示用的，
+        # 出处必须是 Owner 真正说过的那句。
+        self.assertEqual(stored.content, "你记错了，我的部署机器是 mac 不是 linux")
+
+    async def test_good_without_reason_persists_no_owner_message(self) -> None:
+        """``/good`` 与不带原因的 ``/bad`` 没有原话可存，不得凭空造一条消息。"""
+        self._seed_target_message()
+        for text in ("/good", "/bad"):
+            with self.subTest(command=text):
+                self.messages.created_reasons.clear()
+                self.feedback.calls.clear()
+                await self.controller.handle_text(
+                    user_id=7,
+                    actor_external_user_id="ou_owner",
+                    text=text,
+                    channel="feishu",
+                    account_id="default",
+                    reply_to_platform_message_id="om_target",
+                )
+                self.assertEqual(self.messages.created_reasons, [])
+                self.assertIsNone(self.feedback.calls[0]["reason_message_id"])
+
+    async def test_reason_persist_failure_still_records_the_feedback(self) -> None:
+        """存原话失败只该让这条反馈不能用于改记忆，不该让 ``/bad`` 整体失败。
+
+        Owner 表达不满是第一位的；出处缺失是能力降级，不是错误。
+        """
+        self._seed_target_message()
+        self.messages.reason_error = RuntimeError("disk full")
+
+        outcome = await self.controller.handle_text(
+            user_id=7,
+            actor_external_user_id="ou_owner",
+            text="/bad 你记错了，我用的是 mac",
+            channel="feishu",
+            account_id="default",
+            reply_to_platform_message_id="om_target",
+        )
+
+        self.assertTrue(outcome.handled)
+        self.assertIsNone(outcome.error_code)
+        self.assertEqual(len(self.feedback.calls), 1)
+        self.assertIsNone(self.feedback.calls[0]["reason_message_id"])
 
     async def test_duplicate_feedback_returns_stable_notice(self) -> None:
         """重复反馈必须映射成稳定提示，而不是把内部错误码直接展示。"""
