@@ -1,9 +1,9 @@
 """Lobster0 的 TOML 配置、环境变量覆盖与边界校验。"""
 
 import contextlib
+import ipaddress
 import json
 import os
-import ipaddress
 import re
 import tomllib
 from collections.abc import Mapping
@@ -232,11 +232,13 @@ class AgentConfig:
     model: str = "provider/model"
     # 当前生效 Provider 的 id。旧配置没有这个字段，加载时补成实际生效的那条。
     provider: str = "default"
-    max_tool_iterations: int = 32
-    max_tool_iterations_hard: int = 64
-    max_no_progress_iterations: int = 3
-    # 单次 Turn 的墙钟预算：计数预算拦不住“每次换个命令重试”的死循环。
-    max_turn_seconds: int = 90
+    max_tool_iterations: int = 200
+    max_tool_iterations_hard: int = 400
+    max_no_progress_iterations: int = 12
+    # 单次 Turn 的墙钟预算，``0`` 表示不限时（默认）。墙钟时间不是"人想停"的代理
+    # 变量，按秒表杀掉正常长任务是错的；想停止由 Owner 发 /stop。机制保留，
+    # 运维设正整数即可重新封顶。
+    max_turn_seconds: int = 0
     context_budget_tokens: int = 32_000
     tool_result_max_chars: int = 20_000
 
@@ -585,18 +587,18 @@ def load_config(
 
     model = _non_empty_string(agent_raw.get("model", "provider/model"), "agent.model")
     max_tool_iterations = _positive_integer(
-        agent_raw.get("max_tool_iterations", 32), "agent.max_tool_iterations"
+        agent_raw.get("max_tool_iterations", 200), "agent.max_tool_iterations"
     )
     max_tool_iterations_hard = _positive_integer(
-        agent_raw.get("max_tool_iterations_hard", 64),
+        agent_raw.get("max_tool_iterations_hard", 400),
         "agent.max_tool_iterations_hard",
     )
     max_no_progress_iterations = _positive_integer(
-        agent_raw.get("max_no_progress_iterations", 3),
+        agent_raw.get("max_no_progress_iterations", 12),
         "agent.max_no_progress_iterations",
     )
-    max_turn_seconds = _positive_integer(
-        agent_raw.get("max_turn_seconds", 90),
+    max_turn_seconds = _non_negative_integer(
+        agent_raw.get("max_turn_seconds", 0),
         "agent.max_turn_seconds",
     )
     context_budget_tokens = _positive_integer(
@@ -1116,7 +1118,7 @@ def load_config(
         "LOBSTER0_MAX_NO_PROGRESS_ITERATIONS",
         max_no_progress_iterations,
     )
-    max_turn_seconds = _environment_integer(
+    max_turn_seconds = _environment_non_negative_integer(
         source,
         "LOBSTER0_MAX_TURN_SECONDS",
         max_turn_seconds,
@@ -1340,6 +1342,16 @@ def _positive_integer(value: object, name: str) -> int:
     """校验严格正整数，并显式排除布尔值。"""
     if type(value) is not int or value <= 0:
         raise ConfigError(f"{name} must be a positive integer")
+    return value
+
+
+def _non_negative_integer(value: object, name: str) -> int:
+    """校验非负整数，并显式排除布尔值。
+
+    用于"``0`` 表示关闭"的开关型预算，例如 ``agent.max_turn_seconds``。
+    """
+    if type(value) is not int or value < 0:
+        raise ConfigError(f"{name} must be a non-negative integer")
     return value
 
 
@@ -2121,6 +2133,21 @@ def _environment_integer(source: Mapping[str, str], key: str, default: int) -> i
     except ValueError as error:
         raise ConfigError(f"{key} must be a positive integer") from error
     return _positive_integer(value, key)
+
+
+def _environment_non_negative_integer(
+    source: Mapping[str, str],
+    key: str,
+    default: int,
+) -> int:
+    """读取可选的非负整数环境变量；``0`` 是合法的"关闭"值。"""
+    if key not in source:
+        return default
+    try:
+        value = int(source[key])
+    except ValueError as error:
+        raise ConfigError(f"{key} must be a non-negative integer") from error
+    return _non_negative_integer(value, key)
 
 
 def _environment_url(source: Mapping[str, str], key: str, default: str) -> str:
