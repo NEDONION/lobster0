@@ -61,8 +61,14 @@ class FeedbackRepository:
         rating: FeedbackRating,
         redacted_reason: str | None,
         context_hash: str,
+        reason_message_id: int | None = None,
     ) -> Feedback:
         """插入一条脱敏后的反馈；同一 Owner 对同一 message 只能有一条。
+
+        Args:
+            reason_message_id: Owner 原话落库后的 user message id；``/bad`` 不带
+                原因时为 ``None``。它是 Memory correction candidate 唯一合法的
+                出处来源，见 ``build_memory_correction_candidate``。
 
         Raises:
             EvolutionError: Owner 已对该 message 记录过反馈。
@@ -74,8 +80,8 @@ class FeedbackRepository:
                     """
                     INSERT INTO feedback (
                         owner_id, message_id, rating, redacted_reason,
-                        context_hash, status, created_at
-                    ) VALUES (?, ?, ?, ?, ?, 'open', ?)
+                        context_hash, status, created_at, reason_message_id
+                    ) VALUES (?, ?, ?, ?, ?, 'open', ?, ?)
                     """,
                     (
                         owner_id,
@@ -84,6 +90,7 @@ class FeedbackRepository:
                         redacted_reason,
                         context_hash,
                         now.isoformat(),
+                        reason_message_id,
                     ),
                 )
             except sqlite3.IntegrityError as error:
@@ -932,6 +939,7 @@ def _feedback_from_row(row: sqlite3.Row) -> Feedback:
         forgotten_at=(
             None if row["forgotten_at"] is None else datetime.fromisoformat(row["forgotten_at"])
         ),
+        reason_message_id=row["reason_message_id"],
     )
 
 

@@ -371,6 +371,42 @@ class MessageRepository:
             ).fetchone()
         return _message_from_row(row)
 
+    def create_feedback_reason(self, session_id: int, content: str) -> StoredMessage:
+        """把 Owner 在 ``/bad <原因>`` 里说的那句话落成一条 user message。
+
+        ``/bad`` 是控制命令，不进模型，此前 Owner 的原话只以脱敏字符串留在
+        ``feedback.redacted_reason`` 里，没有任何 messages 行。但 Memory 的
+        ``SourceRef`` 只接受可核验的真实消息，导致"改正一条记错的记忆"这类提案
+        永远拿不到合法出处（见 docs/engineering/phase-7/
+        20260813_memory-add-update-candidates.md）。
+
+        角色是 ``user`` 而不是 notice 用的 ``assistant``：这句话确实是 Owner 说的，
+        记成别人说的就等于伪造出处——而出处正是 Memory 里最不能骗人的字段。
+        元数据里的 ``feedback_reason`` 标明它由命令产生而非普通对话，供审计区分。
+        """
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("feedback reason must not be empty")
+        now = _utc_now().isoformat()
+        metadata = _json_text({"feedback_reason": True})
+        with self._database.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT INTO messages (
+                    session_id, role, content, metadata_json, created_at
+                ) VALUES (?, 'user', ?, ?, ?)
+                """,
+                (session_id, content, metadata, now),
+            )
+            connection.execute(
+                "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                (now, session_id),
+            )
+            row = connection.execute(
+                "SELECT * FROM messages WHERE id = ?",
+                (int(cursor.lastrowid),),
+            ).fetchone()
+        return _message_from_row(row)
+
     def latest_compaction(self, session_id: int) -> StoredCompaction | None:
         """读取一个 Session 最新且结构有效的 compaction summary。"""
         with self._database.connect_read_only() as connection:

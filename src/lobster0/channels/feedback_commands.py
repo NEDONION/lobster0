@@ -10,7 +10,12 @@ from lobster0.evolution.repository import EvolutionError
 
 _GOOD = re.compile(r"/good\Z")
 _BAD = re.compile(r"/bad(?:[ \t]+(.+))?\Z", re.DOTALL)
-_USAGE = "用法：回复一条 Lobster0 的回答，发送 /good 或 /bad <原因>。"
+# 提到"更正"不是啰嗦：想改掉一条记错的记忆，措辞必须命中既有的明确纠错意图
+# （更正/纠正/改成/更新记忆）。不写出来，这个能力对 Owner 就是隐形的。
+_USAGE = (
+    "用法：回复一条 Lobster0 的回答，发送 /good 或 /bad <原因>。\n"
+    "想改掉记错的事实，请在原因里写「更正：……」，例如 /bad 更正：我的部署机是 mac。"
+)
 _NOT_A_REPLY = (
     "请先长按并「回复」某一条 Lobster0 的回答，再发送 /good 或 /bad <原因>——"
     "否则无法确定你在评价哪一条。"
@@ -36,6 +41,7 @@ class FeedbackLedger(Protocol):
         rating: FeedbackRating,
         redacted_reason: str | None,
         context_hash: str,
+        reason_message_id: int | None = None,
     ) -> Feedback:
         """持久化一条脱敏后的反馈。"""
         ...
@@ -45,6 +51,7 @@ class TargetMessage(Protocol):
     """收窄 Controller 需要的目标消息字段。"""
 
     id: int
+    session_id: int
     role: str
     content: str
 
@@ -69,6 +76,10 @@ class MessageLookup(Protocol):
 
     def get(self, message_id: int) -> TargetMessage | None:
         """按内部 ID 读取一条消息；不存在时返回 None。"""
+        ...
+
+    def create_feedback_reason(self, session_id: int, content: str) -> TargetMessage:
+        """把 Owner 在 ``/bad`` 里说的原话落成一条 user message。"""
         ...
 
 
@@ -165,6 +176,17 @@ class ChannelFeedbackController:
 
         redacted_reason = None if raw_reason is None else redact_feedback_context(raw_reason)
         context_hash = feedback_context_hash(redact_feedback_context(message.content))
+        # Owner 的原话必须落成一条真实 user message，否则 Memory correction
+        # 永远拿不到合法的 SourceRef——记忆的出处不能是编的。
+        # 落库失败不能连累反馈本身：反馈仍然记下，只是这条反馈不能再用于改记忆。
+        reason_message_id: int | None = None
+        if raw_reason is not None:
+            try:
+                reason_message_id = self._messages.create_feedback_reason(
+                    message.session_id, raw_reason
+                ).id
+            except Exception:  # noqa: BLE001 - 出处缺失不该让 /bad 整体失败
+                reason_message_id = None
         try:
             feedback = self._feedback.record(
                 owner_id=user_id,
@@ -172,6 +194,7 @@ class ChannelFeedbackController:
                 rating=rating,
                 redacted_reason=redacted_reason,
                 context_hash=context_hash,
+                reason_message_id=reason_message_id,
             )
         except EvolutionError as error:
             return FeedbackCommandOutcome(

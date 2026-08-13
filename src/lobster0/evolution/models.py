@@ -69,6 +69,9 @@ class Feedback:
     status: FeedbackStatus
     created_at: datetime
     forgotten_at: datetime | None
+    # Owner 原话落库后的 user message id；``/bad`` 不带原因时为 None。
+    # Memory correction candidate 的合法出处只能取自这里。
+    reason_message_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)

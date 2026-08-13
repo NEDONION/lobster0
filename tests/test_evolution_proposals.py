@@ -10,6 +10,7 @@ from lobster0.bootstrap import initialize_state
 from lobster0.evolution.proposals import (
     PROMPT_BLOCKS,
     CandidateError,
+    build_memory_correction_candidate,
     build_memory_forget_candidate,
     validate_prompt_candidate,
     validate_skill_candidate,
@@ -180,7 +181,13 @@ class MemoryForgetCandidateTest(unittest.TestCase):
                     "SELECT id FROM messages WHERE turn_id = ?", (turn.id,)
                 ).fetchone()[0]
             )
-        disclosure = DisclosureContext(self.owner.id, self.owner.id, "cli", "local", True)
+        self.units = units
+        self.session_id = session.id
+        # correction 的出处必须是一条真实落库的消息；这里复用建 Unit 时那条 user message，
+        # 与 /bad 场景里 feedback.reason_message_id 指向的东西是同一类。
+        self.source = SourceRef(message_id, session.id, "cli")
+        self.disclosure = DisclosureContext(self.owner.id, self.owner.id, "cli", "local", True)
+        disclosure = self.disclosure
         self.unit_id = memory.remember_explicit(
             ExplicitMemoryRequest(
                 disclosure,
@@ -217,6 +224,89 @@ class MemoryForgetCandidateTest(unittest.TestCase):
                 now=datetime(2026, 8, 11, tzinfo=UTC),
             )
         self.assertEqual(raised.exception.code, "memory_not_found")
+
+    def test_correction_candidate_binds_preview_hash_without_copying_text(self) -> None:
+        """update 候选必须复用既有 correction review，并且不把正文复制进 manifest。"""
+        material = build_memory_correction_candidate(
+            self.reviews_service,
+            disclosure=self.disclosure,
+            unit_id=self.unit_id,
+            new_text="用户喜欢带要点的详细回答",
+            source=self.source,
+            reason_text="更正：我其实喜欢详细一点的回答",
+            now=datetime(2026, 8, 11, 1, tzinfo=UTC),
+        )
+
+        self.assertEqual(len(material.base_hash), 64)
+        self.assertEqual(len(material.candidate_hash), 64)
+        self.assertTrue(material.candidate_ref.startswith("memory-review:"))
+        # 新旧正文都不得出现在 manifest 里：Evolution 只存引用。
+        self.assertNotIn("用户喜欢带要点的详细回答", material.manifest_json)
+        self.assertNotIn("用户喜欢简洁回答", material.manifest_json)
+        self.assertIn('"review_type":"correction"', material.manifest_json)
+
+    def test_correction_leaves_the_original_unit_untouched_until_approval(self) -> None:
+        """提案阶段绝不能动既有记忆——Agent 只能提议，批准前旧事实原样有效。"""
+        before = self.units.get(self.owner.id, self.unit_id)
+
+        build_memory_correction_candidate(
+            self.reviews_service,
+            disclosure=self.disclosure,
+            unit_id=self.unit_id,
+            new_text="用户喜欢带要点的详细回答",
+            source=self.source,
+            reason_text="更正：我其实喜欢详细一点的回答",
+            now=datetime(2026, 8, 11, 1, tzinfo=UTC),
+        )
+
+        after = self.units.get(self.owner.id, self.unit_id)
+        self.assertEqual(after.text, before.text)
+        self.assertEqual(after.status, before.status)
+
+    def test_reason_without_correction_intent_is_refused(self) -> None:
+        """没有纠错意图的 /bad 不得改任何记忆——这道门不为 Evolution 放宽。
+
+        ``/bad 这个回答太啰嗦了`` 是对风格不满，不是在纠正一条事实。
+        """
+        with self.assertRaises(CandidateError) as raised:
+            build_memory_correction_candidate(
+                self.reviews_service,
+                disclosure=self.disclosure,
+                unit_id=self.unit_id,
+                new_text="用户喜欢带要点的详细回答",
+                source=self.source,
+                reason_text="这个回答太啰嗦了",
+                now=datetime(2026, 8, 11, 1, tzinfo=UTC),
+            )
+        self.assertEqual(raised.exception.code, "memory_correction_intent_required")
+
+    def test_forged_source_message_is_refused(self) -> None:
+        """指向不存在消息的出处必须被拒——记忆的出处不能是编的。"""
+        with self.assertRaises(CandidateError) as raised:
+            build_memory_correction_candidate(
+                self.reviews_service,
+                disclosure=self.disclosure,
+                unit_id=self.unit_id,
+                new_text="用户喜欢带要点的详细回答",
+                source=SourceRef(999_999, self.session_id, "cli"),
+                reason_text="更正：我其实喜欢详细一点的回答",
+                now=datetime(2026, 8, 11, 1, tzinfo=UTC),
+            )
+        self.assertEqual(raised.exception.code, "invalid_memory_source")
+
+    def test_unchanged_text_is_refused(self) -> None:
+        """正文没变的"更正"不该产生提案，否则审批列表会被空改动淹没。"""
+        with self.assertRaises(CandidateError) as raised:
+            build_memory_correction_candidate(
+                self.reviews_service,
+                disclosure=self.disclosure,
+                unit_id=self.unit_id,
+                new_text="用户喜欢简洁回答",
+                source=self.source,
+                reason_text="更正：我其实喜欢详细一点的回答",
+                now=datetime(2026, 8, 11, 1, tzinfo=UTC),
+            )
+        self.assertEqual(raised.exception.code, "memory_correction_unchanged")
 
 
 if __name__ == "__main__":
