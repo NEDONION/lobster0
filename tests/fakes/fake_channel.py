@@ -1,7 +1,7 @@
 """Channel 契约测试使用的纯内存对象。"""
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -24,6 +24,7 @@ class FakeFeishuMessage:
     body_text: str = "你好"
     raw_content_type: str = "text"
     parent_message_id: str = ""
+    resources: list = field(default_factory=list)
     create_time: datetime = datetime(2026, 8, 8, tzinfo=UTC)
 
 
@@ -198,6 +199,10 @@ class FakeOfficialSdk:
     def TransportConfig(self, **values: Any) -> FakeSdkConfig:  # noqa: N802
         """记录 WebSocket 配置。"""
         return FakeSdkConfig("transport", values)
+
+    def MediaCacheConfig(self, **values: Any) -> FakeSdkConfig:  # noqa: N802
+        """记录媒体缓存配置；图片能否被下载到本地取决于它。"""
+        return FakeSdkConfig("media_cache", values)
 
     def SendOpts(self, **values: Any) -> SimpleNamespace:  # noqa: N802
         """模拟 official SendOpts。"""

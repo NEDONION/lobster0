@@ -31,6 +31,7 @@ from lobster0.config import WorkspaceConfig
 from lobster0.media.attachments import (
     attach_images_to_request,
     build_image_parts,
+    build_image_parts_from_paths,
 )
 from lobster0.memory.flush import MemoryCapture
 from lobster0.memory.models import ConversationKind, DisclosureContext
@@ -196,6 +197,7 @@ class TurnService:
         *,
         on_event: RunEventHandler | None = None,
         attachments: tuple[tuple[str, str], ...] = (),
+        image_paths: tuple[tuple[Path, str], ...] = (),
     ) -> TurnResult:
         """执行并持久化一条 CLI 用户消息。
 
@@ -411,6 +413,7 @@ class TurnService:
         conversation_kind: ConversationKind = "unknown",
         identity_verified: bool = False,
         attachments: tuple[tuple[str, str], ...] = (),
+        image_paths: tuple[tuple[Path, str], ...] = (),
     ) -> TurnResult:
         """执行 Channel 消息，并分别绑定自动化信任与 Memory 披露边界。"""
         if not text.strip():
@@ -477,6 +480,15 @@ class TurnService:
                         request, build_image_parts(self._artifacts, summaries)
                     )
                 except (ArtifactError, OSError, ValueError):
+                    pass
+            # Channel 直接给的本地图片（如飞书 SDK 已缓存的图）：不是 Artifact，
+            # 读失败同样只跳过，不让整轮对话失败。
+            if image_paths:
+                try:
+                    request = attach_images_to_request(
+                        request, build_image_parts_from_paths(image_paths)
+                    )
+                except (OSError, ValueError):
                     pass
             if self._compactor is not None and self._compactor.should_compact(request):
                 if self._memory_capture is not None:

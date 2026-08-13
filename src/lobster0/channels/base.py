@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from math import isfinite
+from pathlib import Path
 from typing import Literal, Protocol, runtime_checkable
 
 type ChatType = Literal["p2p", "group"]
@@ -100,6 +101,8 @@ class InboundMessage:
     reply_to_message_id: str
     received_at: datetime
     replied_to_message_id: str = ""
+    # 已由平台 SDK 下载到本地的图片：(路径, MIME)。空元组表示这一轮没有图。
+    image_paths: tuple[tuple[Path, str], ...] = ()
 
     def __repr__(self) -> str:
         """返回不包含正文和平台标识的安全诊断表示。"""

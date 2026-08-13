@@ -613,7 +613,13 @@ class _FakeSdk:
         self.channel = _FakeSdkChannel()
 
     def __getattr__(self, name: str):
-        if name in {"SecurityConfig", "PolicyConfig", "InboundConfig", "TransportConfig"}:
+        if name in {
+            "SecurityConfig",
+            "PolicyConfig",
+            "InboundConfig",
+            "TransportConfig",
+            "MediaCacheConfig",
+        }:
             return lambda **values: SimpleNamespace(**values)
         if name == "FeishuChannel":
             return lambda **values: self.channel

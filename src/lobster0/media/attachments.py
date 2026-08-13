@@ -13,6 +13,7 @@
 
 import hashlib
 from dataclasses import replace
+from pathlib import Path
 from typing import Protocol
 
 from lobster0.providers.base import ImagePart, ModelRequest
@@ -77,6 +78,36 @@ def build_image_parts(
             ImagePart(
                 media_type=media_type,
                 content_hash=artifact.content_hash,
+                data=data,
+            )
+        )
+    return tuple(parts)
+
+
+def build_image_parts_from_paths(
+    paths: tuple[tuple[Path, str], ...],
+) -> tuple[ImagePart, ...]:
+    """把 Channel 已下载到本地的图片读成 ImagePart。
+
+    与 ``build_image_parts`` 的区别：这些图不是 Artifact，没有事先记录的内容哈希，
+    因此哈希在这里当场算出来——它的作用是让下游能识别同一张图，而不是校验篡改。
+
+    读不到、类型不支持、超限的一律跳过，不让一张坏图毁掉整轮对话。
+    """
+    parts: list[ImagePart] = []
+    for path, media_type in paths:
+        if media_type not in _VISION_MEDIA_TYPES:
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            continue
+        if not data or len(data) > _MAX_IMAGE_BYTES:
+            continue
+        parts.append(
+            ImagePart(
+                media_type=media_type,
+                content_hash=hashlib.sha256(data).hexdigest(),
                 data=data,
             )
         )

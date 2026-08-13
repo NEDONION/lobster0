@@ -83,7 +83,8 @@ class FeishuAdapterTest(unittest.TestCase):
         cases = (
             (FakeFeishuMessage(sender_is_bot=True), "bot_message"),
             (FakeFeishuMessage(sender_type="app"), "bot_message"),
-            (FakeFeishuMessage(raw_content_type="image"), "unsupported_message"),
+            # image 现在受支持（走视觉模型）；仍然不受支持的是贴纸这类。
+            (FakeFeishuMessage(raw_content_type="sticker"), "unsupported_message"),
             (FakeFeishuMessage(message_id="bad"), "invalid_message"),
             (FakeFeishuMessage(sender_id="bad"), "invalid_message"),
             (FakeFeishuMessage(body_text=" \n\t "), "empty_message"),

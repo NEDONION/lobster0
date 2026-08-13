@@ -2,9 +2,11 @@
 
 import importlib
 import re
+import tempfile
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from types import ModuleType
 from typing import Any, Protocol
 from uuid import uuid4
@@ -43,6 +45,7 @@ class FeishuMessageView(Protocol):
     body_text: str
     raw_content_type: str
     parent_message_id: str
+    resources: list
     create_time: datetime | str | int | None
 
 
@@ -67,7 +70,7 @@ class FeishuAdapter:
         """把官方 SDK 消息变成内部消息，拒绝所有未明确允许的输入。"""
         if message.sender_is_bot or message.sender_type in {"app", "bot", "system"}:
             return IgnoredInbound("bot_message")
-        if message.raw_content_type not in {"text", "post"}:
+        if message.raw_content_type not in {"text", "post", "image"}:
             return IgnoredInbound("unsupported_message")
         if not self._valid_identifiers(message):
             return IgnoredInbound("invalid_message")
@@ -80,7 +83,11 @@ class FeishuAdapter:
         elif message.chat_type != "p2p":
             return IgnoredInbound("unsupported_message")
 
+        images = _cached_image_paths(message)
         text = sanitize_inbound_text(message.body_text).strip()
+        if not text and images:
+            # 只发图不配文字是常见用法；给一句中性提示，让这一轮不至于被当成空消息丢弃。
+            text = "请看这张图片。"
         if not text:
             return IgnoredInbound("empty_message")
         if len(text) > self._config.message_max_chars:
@@ -98,6 +105,7 @@ class FeishuAdapter:
             text=text,
             reply_to_message_id=message.message_id,
             replied_to_message_id=_valid_message_id(message.parent_message_id),
+            image_paths=images,
             received_at=_received_at(message.create_time, self._clock),
         )
 
@@ -381,6 +389,12 @@ class FeishuTransport:
             respond_to_mention_all=False,
             sender_identity_fields=["open_id"],
         )
+        # 开启媒体缓存，SDK 才会把图片真正下载到本地并给出可读路径；
+        # 不开的话 resources 里只有 file_key，图片永远到不了视觉模型。
+        # 缓存落在进程私有临时目录并设硬上限：图片是用户私人内容，不该长期留存，
+        # 也不该让一次批量转发把磁盘写满。
+        cache_root = Path(tempfile.gettempdir()) / "lobster0-feishu-media"
+        cache_root.mkdir(mode=0o700, parents=True, exist_ok=True)
         inbound = self._sdk.InboundConfig(
             drop_self_sent=True,
             include_raw=True,
@@ -394,6 +408,12 @@ class FeishuTransport:
         return self._sdk.FeishuChannel(
             app_id=app_id,
             app_secret=app_secret,
+            media_cache=self._sdk.MediaCacheConfig(
+                enabled=True,
+                root_dir=str(cache_root),
+                ttl_seconds=3600,
+                image_max_bytes=8 * 1024 * 1024,
+            ),
             domain=_sdk_domain(self._sdk, self._config.domain),
             transport=transport,
             policy=policy,
@@ -505,6 +525,32 @@ def _official_message_view(message: Any) -> _OfficialMessageView:
         parent_message_id=_parent_message_id(message),
         create_time=getattr(message, "create_time", None),
     )
+
+
+def _cached_image_paths(message: Any) -> tuple[tuple[Path, str], ...]:
+    """取出 SDK 已经下载并缓存到本地的图片资源。
+
+    只接受 ``decision == "cached"``：``skipped``/``rejected`` 表示 SDK 因为超限或策略
+    没有真的把文件落盘，此时 ``path`` 不可读，当成图片带出去只会在读取时炸掉。
+
+    同时按 MIME 二次过滤：``resources`` 里也可能有音频、文件，它们不能被当作图片
+    送进视觉模型。
+    """
+    resources = getattr(message, "resources", None)
+    if not resources:
+        return ()
+    found: list[tuple[Path, str]] = []
+    for item in resources:
+        if getattr(item, "decision", None) != "cached":
+            continue
+        mime = str(getattr(item, "mime_type", "") or "")
+        if mime not in {"image/png", "image/jpeg"}:
+            continue
+        path = getattr(item, "path", None)
+        if path is None:
+            continue
+        found.append((Path(path), mime))
+    return tuple(found)
 
 
 def _parent_message_id(message: Any) -> str:
