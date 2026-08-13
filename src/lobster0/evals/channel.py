@@ -619,6 +619,9 @@ class _FakeSdk:
             "InboundConfig",
             "TransportConfig",
             "MediaCacheConfig",
+            # media_cache 只能经由 ChannelConfig 传给真实 SDK；
+            # 见 tests/test_feishu_sdk_contract.py。
+            "ChannelConfig",
         }:
             return lambda **values: SimpleNamespace(**values)
         if name == "FeishuChannel":

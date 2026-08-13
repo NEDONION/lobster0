@@ -204,6 +204,10 @@ class FakeOfficialSdk:
         """记录媒体缓存配置；图片能否被下载到本地取决于它。"""
         return FakeSdkConfig("media_cache", values)
 
+    def ChannelConfig(self, **values: Any) -> FakeSdkConfig:  # noqa: N802
+        """记录整包 ChannelConfig；media_cache 只能经由它传给 SDK。"""
+        return FakeSdkConfig("channel_config", values)
+
     def SendOpts(self, **values: Any) -> SimpleNamespace:  # noqa: N802
         """模拟 official SendOpts。"""
         return SimpleNamespace(**values)
