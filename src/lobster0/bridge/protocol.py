@@ -39,6 +39,7 @@ _REQUEST_TYPES = frozenset(
         "artifacts.list",
         "artifacts.preview",
         "artifacts.reveal",
+        "subagents.list",
         "bridge.shutdown",
     }
 )
@@ -212,6 +213,10 @@ def _validate_payload(request_type: str, payload: dict[str, JsonValue]) -> None:
             raise ProtocolError("invalid_turn", "Turn 请求字段不合法")
         if "attachment_ids" in payload and not _valid_artifact_ids(payload["attachment_ids"]):
             raise ProtocolError("invalid_turn", "Turn 请求字段不合法")
+        return
+    if request_type == "subagents.list":
+        if payload:
+            raise ProtocolError("invalid_subagent_query", "子 Agent 查询字段不合法")
         return
     if request_type == "artifacts.list":
         if (

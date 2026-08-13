@@ -573,5 +573,18 @@ class ArtifactProtocolTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, "invalid_artifact_query")
 
 
+class SubagentProtocolTest(unittest.TestCase):
+    """子 Agent 列表是只读查询，不带任何参数。"""
+
+    def test_list_takes_no_payload(self) -> None:
+        request = decode_request(_frame("subagents.list", {}))
+
+        self.assertEqual(request.payload, {})
+
+        with self.assertRaises(ProtocolError) as raised:
+            decode_request(_frame("subagents.list", {"limit": 10}))
+        self.assertEqual(raised.exception.code, "invalid_subagent_query")
+
+
 if __name__ == "__main__":
     unittest.main()

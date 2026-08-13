@@ -256,6 +256,7 @@ def _stub_config() -> SimpleNamespace:
     return SimpleNamespace(
         agent=SimpleNamespace(model="deepseek-v4-pro", provider="default"),
         automation=SimpleNamespace(misfire_grace_seconds=300),
+        subagents=(),
         provider=ProviderConfig(),
         providers=(ProviderConfig(),),
     )
@@ -792,6 +793,8 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             usage={"input_tokens": 22518, "output_tokens": 1829},
             session_id=51,
             turn_id=309,
+            parent_run_id=None,
+            subagent_id=None,
         )
 
         summary = _run_summary(run)
@@ -802,6 +805,29 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["turn_id"], 309)
         self.assertEqual(summary["started_at"], "2026-08-11T17:40:54+00:00")
         self.assertEqual(summary["completed_at"], "2026-08-11T17:41:49+00:00")
+
+    def test_run_summary_marks_a_subagent_run(self) -> None:
+        """子 Run 与父 Run 同一个 task_id，不标出来就会在列表里平铺混在一起。"""
+        run = SimpleNamespace(
+            id=9,
+            task_id=1,
+            status=SimpleNamespace(value="succeeded"),
+            scheduled_for=datetime(2026, 8, 12, 9, tzinfo=UTC),
+            started_at=None,
+            completed_at=None,
+            error_code=None,
+            result_preview="子任务结果",
+            usage={},
+            session_id=None,
+            turn_id=None,
+            parent_run_id=7,
+            subagent_id="researcher",
+        )
+
+        summary = _run_summary(run)
+
+        self.assertEqual(summary["parent_run_id"], 7)
+        self.assertEqual(summary["subagent_id"], "researcher")
 
     def test_run_summary_tolerates_a_run_that_never_started(self) -> None:
         """排队中的运行没有起止时间与用量，不能因此报错。"""
@@ -817,6 +843,8 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
             usage={},
             session_id=None,
             turn_id=None,
+            parent_run_id=None,
+            subagent_id=None,
         )
 
         summary = _run_summary(run)
@@ -987,6 +1015,38 @@ class BridgeServerTest(unittest.IsolatedAsyncioTestCase):
         await task
 
         self.assertEqual(response["payload"]["code"], "attachment_unknown")
+
+    async def test_subagents_list_exposes_roster_without_internals(self) -> None:
+        """界面要知道有谁可派，但不需要知道各自被收窄成了哪些工具。
+
+        工具集是安全边界的一部分，下发它只会多一处需要维护一致性的地方。
+        """
+        from lobster0.config import SubagentConfig
+
+        reader = QueueReader()
+        writer = CaptureWriter()
+        runtime = _runtime(RecordingTurnService())
+        runtime.config.subagents = (
+            SubagentConfig(
+                id="researcher",
+                description="只读检索与汇总",
+                tools=("read_file", "glob"),
+                max_turns=4,
+                timeout_seconds=300,
+            ),
+        )
+        server = BridgeServer(runtime, reader, writer)
+        task = asyncio.create_task(server.run())
+        await reader.feed(_request("sa-1", "subagents.list", {}))
+        response = await writer.wait_for_id("sa-1")
+        await reader.feed(_request("stop-1", "bridge.shutdown", {}))
+        await task
+
+        entry = response["payload"]["subagents"][0]
+        self.assertEqual(entry["id"], "researcher")
+        self.assertEqual(entry["description"], "只读检索与汇总")
+        self.assertEqual(entry["max_turns"], 4)
+        self.assertNotIn("tools", entry)
 
     async def test_artifact_preview_never_returns_a_filesystem_path(self) -> None:
         """Renderer 拿不到路径，也就无从构造任意本地读取。"""

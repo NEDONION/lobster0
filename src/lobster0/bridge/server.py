@@ -136,6 +136,7 @@ class BridgeServer:
                         "providers_write",
                         "attachments",
                         "artifacts_read",
+                        "subagents_read",
                     ],
                     "automation_enabled": self._runtime.automation_enabled,
                 },
@@ -236,6 +237,24 @@ class BridgeServer:
             return True
         if request.type.startswith("automation.") and request.type != "automation.list":
             return await self._handle_automation_write(request)
+        if request.type == "subagents.list":
+            # 只回名册，不回工具集：那是安全边界的一部分，下发它只会多一处
+            # 需要维护一致性的地方，而界面并不需要。
+            await self._ok(
+                request.request_id,
+                {
+                    "subagents": [
+                        {
+                            "id": item.id,
+                            "description": item.description,
+                            "max_turns": item.max_turns,
+                            "timeout_seconds": item.timeout_seconds,
+                        }
+                        for item in self._runtime.config.subagents
+                    ]
+                },
+            )
+            return True
         if request.type.startswith("artifacts."):
             return await self._handle_artifacts(request)
         if request.type == "attachment.stage":
@@ -890,6 +909,9 @@ def _run_summary(run: object, session_key: str | None = None) -> dict[str, JsonV
         "turn_id": run.turn_id,
         "session_id": run.session_id,
         "session_key": session_key,
+        # 子 Run 与父 Run 同一个 task_id，不标出来界面就会把它们平铺在一起。
+        "parent_run_id": run.parent_run_id,
+        "subagent_id": run.subagent_id,
     }
 
 
