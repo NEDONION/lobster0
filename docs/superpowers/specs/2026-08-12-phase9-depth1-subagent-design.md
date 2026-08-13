@@ -2,7 +2,7 @@
 
 > 日期：2026-08-12
 > 文档类型：Phase 9 后端设计（D4 的前置）
-> 状态：`IN PROGRESS`（2026-08-12）——第 1～3 块已实现，见 §9
+> 状态：`BACKEND DONE`（2026-08-12）——后端 1～4 块已实现，剩 Bridge/UI（即 D4），见 §9
 > 上位规划：[D1～D5 分 Phase 落地文档 §7](../../engineering/desktop/20260810_桌面多Agent分Phase落地.md)
 
 ## 1. 为什么先写这份
@@ -112,7 +112,7 @@ ALTER TABLE task_runs ADD COLUMN subagent_id TEXT;
 | 1. 子 Agent 声明与校验 | 已实现 | `config.py` 的 `[[subagents]]` 与 `_subagents()` |
 | 2. 父子 Run 关联 | 已实现 | 迁移 0013 + `TaskRunRepository.enqueue_child/list_children` |
 | 3. `delegate_task` 与收窄 | 已实现 | `tools/delegate.py` |
-| 4. 取消传播与重启恢复 | 未开始 | |
+| 4. 取消传播与重启恢复 | 已实现 | `cancel_children` + `finish` 内联清理 |
 | 5. Bridge / UI（即 D4） | 未开始 | |
 
 ### max depth = 1 最终落成三道，全部是结构性的
@@ -130,6 +130,18 @@ ALTER TABLE task_runs ADD COLUMN subagent_id TEXT;
 
 四道都不是计数器。计数器要靠正确读写才生效，而「看不到工具」与「数据库拒绝」是
 结构性的。
+
+### 取消传播分两种，因为事实不同
+
+- **没开跑的**（queued/claimed）→ `cancelled`，它们没有产生任何副作用；
+- **已经在跑的**（running）→ `interrupted` 并附 `parent_run_cancelled`。它可能已经写过
+  文件、发过请求，标成 cancelled 会让「它到底做过什么」这个问题永远没有答案。
+
+清理**挂在 `finish` 上并与终态写在同一个事务里**，而不是靠调用方多调一次。`finish` 是
+所有终态的唯一入口；放在调用方，早晚会有一条路径忘记调，留下永远跑不完的子 Run。
+
+**重启恢复不需要新代码**：子 Run 与普通 Run 同表同机制，`recover_stale` 天然覆盖——
+这正是 §4.2「不新建表」那个决定的回报。
 
 ### 两处实施中才确定的判断
 
