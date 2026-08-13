@@ -2,7 +2,7 @@
 
 > 日期：2026-08-12
 > 文档类型：Phase 9 后端设计（D4 的前置）
-> 状态：`DRAFT FOR REVIEW / IMPLEMENTATION NOT STARTED`
+> 状态：`IN PROGRESS`（2026-08-12）——第 1～3 块已实现，见 §9
 > 上位规划：[D1～D5 分 Phase 落地文档 §7](../../engineering/desktop/20260810_桌面多Agent分Phase落地.md)
 
 ## 1. 为什么先写这份
@@ -104,6 +104,41 @@ ALTER TABLE task_runs ADD COLUMN subagent_id TEXT;
 
 比落地文档原先描述的「8 项前置」小，因为其中 4 项已经存在。**主要风险不在实现量，
 而在边界**：depth-1、工具/预算只能收窄、上下文隔离，这三条一旦松动，后面很难收回。
+
+## 9. 实施进度（2026-08-12）
+
+| 块 | 状态 | 落点 |
+| --- | --- | --- |
+| 1. 子 Agent 声明与校验 | 已实现 | `config.py` 的 `[[subagents]]` 与 `_subagents()` |
+| 2. 父子 Run 关联 | 已实现 | 迁移 0013 + `TaskRunRepository.enqueue_child/list_children` |
+| 3. `delegate_task` 与收窄 | 已实现 | `tools/delegate.py` |
+| 4. 取消传播与重启恢复 | 未开始 | |
+| 5. Bridge / UI（即 D4） | 未开始 | |
+
+### max depth = 1 最终落成三道，全部是结构性的
+
+设计时只写了「靠 `allowed_tool_names` 去掉 `delegate_task`」一道。实施中发现单靠
+它不够，补成三道：
+
+1. **配置层**：`[[subagents]].tools` 里写 `delegate_task` 直接拒绝加载；
+2. **工具集计算**：`subagent_tool_names()` 无论声明与父集写了什么，都把它从交集里去掉；
+3. **运行期**：`delegate_task` 执行时复核 `context.allowed_tool_names`，已经在子 Agent
+   里就拒绝——这一道防的是「工具集算对了但上下文被别处构造错」。
+
+另有**持久层**的第四道：`enqueue_child` 在同一事务里检查父 Run 是否本身就是子 Run，
+是则 `subagent_depth_exceeded`。它防的是绕过工具层直接调仓库。
+
+四道都不是计数器。计数器要靠正确读写才生效，而「看不到工具」与「数据库拒绝」是
+结构性的。
+
+### 两处实施中才确定的判断
+
+**（a）工具集取交集，不是直接用声明。** 父自己可能已被上一层收窄（自动化档就会），
+只有交集才是真实可用集。交集为空直接拒绝，而不是派一个什么都做不了的子 Agent。
+
+**（b）`delegate_task` 合法但不默认启用。** 没声明 `[[subagents]]` 时它无处可派，
+默认开着只是给模型多一个空工具。为此把「合法工具名」与「默认启用集」拆成
+`KNOWN_TOOL_NAMES` 与 `BUILTIN_TOOL_NAMES`。
 
 ## 8. 明确不做
 
