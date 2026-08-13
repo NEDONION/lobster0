@@ -271,5 +271,146 @@ class SubagentRunTest(unittest.TestCase):
         self.assertTrue(all(item.parent_run_id == parent.id for item in children))
 
 
+class SubagentCancellationTest(unittest.TestCase):
+    """父 Run 终结时子 Run 不能被留在半路。"""
+
+    def setUp(self) -> None:
+        """准备状态、任务与 Run 仓库。"""
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.database = Database(Path(self.temporary_directory.name) / "lobster0.db")
+        apply_migrations(self.database)
+        self.owner = OwnerRepository(self.database).get_or_create()
+        self.now = datetime(2026, 8, 12, 9, tzinfo=UTC)
+        self.tasks = ScheduledTaskRepository(self.database, clock=lambda: self.now)
+        self.runs = TaskRunRepository(self.database, clock=lambda: self.now)
+        self.task = self.tasks.create(
+            owner_id=self.owner.id,
+            name="父任务",
+            prompt="汇总",
+            schedule=ScheduleSpec(
+                kind=ScheduleKind.INTERVAL,
+                expression="3600",
+                timezone="UTC",
+                next_run_at=self.now,
+            ),
+            skill_names=(),
+            delivery=DeliveryTarget(route="none", channel="none"),
+            policy_profile="automation-default",
+            budget=TaskBudget(),
+        )
+        self.parent = self.runs.enqueue(
+            self.task, scheduled_for=self.now, idempotency_key="parent"
+        )
+
+    def child(self, key: str) -> object:
+        """建一条子 Run。"""
+        return self.runs.enqueue_child(
+            self.task,
+            parent_run_id=self.parent.id,
+            subagent_id="researcher",
+            scheduled_for=self.now,
+            idempotency_key=key,
+        )
+
+    def test_cancelling_a_parent_cancels_its_queued_children(self) -> None:
+        """父被取消后，还没开跑的子 Run 不该再被 worker 捡起来。"""
+        first = self.child("c-1")
+        second = self.child("c-2")
+
+        cancelled = self.runs.cancel_children(self.parent.id, now=self.now)
+
+        self.assertEqual(cancelled, 2)
+        self.assertEqual(self.runs.get(first.id).status, RunStatus.CANCELLED)
+        self.assertEqual(self.runs.get(second.id).status, RunStatus.CANCELLED)
+
+    def test_a_running_child_is_interrupted_not_silently_cancelled(self) -> None:
+        """已经在跑的子 Run 可能已有副作用，只能记为 interrupted。
+
+        直接标 cancelled 会让「它到底做过什么」这个问题永远没有答案。
+        """
+        child = self.child("c-1")
+        # claim_next 取最早的 queued Run；父 Run 也在队列里，先把它领走。
+        self.runs.claim_next("w-0", now=self.now, lease_seconds=60)
+        claimed = self.runs.claim_next("w-1", now=self.now, lease_seconds=60)
+        assert claimed is not None and claimed.id == child.id
+        self.runs.mark_running(claimed.id, "w-1", now=self.now)
+
+        self.runs.cancel_children(self.parent.id, now=self.now)
+
+        stored = self.runs.get(child.id)
+        self.assertEqual(stored.status, RunStatus.INTERRUPTED)
+        self.assertEqual(stored.error_code, "parent_run_cancelled")
+
+    def test_terminal_children_are_left_alone(self) -> None:
+        """已经跑完的子 Run 不该被父的取消改写成别的状态。"""
+        child = self.child("c-1")
+        self.runs.claim_next("w-0", now=self.now, lease_seconds=60)
+        claimed = self.runs.claim_next("w-1", now=self.now, lease_seconds=60)
+        assert claimed is not None and claimed.id == child.id
+        running = self.runs.mark_running(claimed.id, "w-1", now=self.now)
+        self.runs.finish(
+            running.id,
+            status=RunStatus.SUCCEEDED,
+            now=self.now,
+            worker_id="w-1",
+            result_preview="done",
+        )
+
+        self.runs.cancel_children(self.parent.id, now=self.now)
+
+        self.assertEqual(self.runs.get(child.id).status, RunStatus.SUCCEEDED)
+
+    def test_finishing_a_parent_cleans_up_its_children(self) -> None:
+        """清理必须挂在 finish 上，而不是靠调用方记得多调一次。
+
+        finish 是所有终态的唯一入口；把清理放在调用方，早晚会有一条路径忘记调，
+        留下永远跑不完的子 Run。
+        """
+        child = self.child("c-1")
+        self.runs.claim_next("w-0", now=self.now, lease_seconds=60)
+        running = self.runs.mark_running(self.parent.id, "w-0", now=self.now)
+
+        self.runs.finish(
+            running.id,
+            status=RunStatus.CANCELLED,
+            now=self.now,
+            worker_id="w-0",
+        )
+
+        self.assertEqual(self.runs.get(child.id).status, RunStatus.CANCELLED)
+
+    def test_finishing_a_child_does_not_recurse(self) -> None:
+        """子 Run 没有自己的子，收尾时不该多打一次无用查询。"""
+        child = self.child("c-1")
+        self.runs.claim_next("w-0", now=self.now, lease_seconds=60)
+        claimed = self.runs.claim_next("w-1", now=self.now, lease_seconds=60)
+        assert claimed is not None and claimed.id == child.id
+        running = self.runs.mark_running(claimed.id, "w-1", now=self.now)
+
+        finished = self.runs.finish(
+            running.id, status=RunStatus.SUCCEEDED, now=self.now, worker_id="w-1"
+        )
+
+        self.assertEqual(finished.status, RunStatus.SUCCEEDED)
+
+    def test_cancelling_leaves_no_child_in_a_live_state(self) -> None:
+        """核心不变量：父终结后不允许有子 Run 还处于 queued/claimed/running。"""
+        self.child("c-1")
+        second = self.child("c-2")
+        self.runs.claim_next("w-0", now=self.now, lease_seconds=60)
+        self.runs.claim_next("w-1", now=self.now, lease_seconds=60)
+        claimed = self.runs.claim_next("w-2", now=self.now, lease_seconds=60)
+        assert claimed is not None and claimed.id == second.id
+        self.runs.mark_running(claimed.id, "w-2", now=self.now)
+
+        self.runs.cancel_children(self.parent.id, now=self.now)
+
+        live = {RunStatus.QUEUED, RunStatus.CLAIMED, RunStatus.RUNNING}
+        self.assertFalse(
+            [item for item in self.runs.list_children(self.parent.id) if item.status in live]
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

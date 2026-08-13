@@ -623,6 +623,44 @@ class TaskRunRepository:
             ).fetchall()
         return tuple(_run_from_row(row) for row in rows)
 
+    def cancel_children(self, parent_run_id: int, *, now: datetime) -> int:
+        """父 Run 终结时收拾掉它派出去的子 Run。
+
+        分两种处理，因为它们的事实不同：
+
+        - 还没开跑的（queued/claimed）直接 ``cancelled``——它们没有产生任何副作用；
+        - 已经在跑的（running）只能记 ``interrupted``，并附 ``parent_run_cancelled``。
+          它可能已经写过文件、发过请求，标成 cancelled 会让「它到底做过什么」
+          这个问题永远没有答案。
+
+        已经终结的子 Run 一律不动。
+
+        Returns:
+            被改写状态的子 Run 条数。
+        """
+        current = _as_utc(now, "subagent cancel time")
+        with self._database.connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            cancelled = connection.execute(
+                """
+                UPDATE task_runs
+                SET status = 'cancelled', worker_id = NULL, lease_expires_at = NULL,
+                    completed_at = ?, error_code = 'parent_run_cancelled'
+                WHERE parent_run_id = ? AND status IN ('queued', 'claimed')
+                """,
+                (current.isoformat(), parent_run_id),
+            ).rowcount
+            interrupted = connection.execute(
+                """
+                UPDATE task_runs
+                SET status = 'interrupted', worker_id = NULL, lease_expires_at = NULL,
+                    completed_at = ?, error_code = 'parent_run_cancelled'
+                WHERE parent_run_id = ? AND status = 'running'
+                """,
+                (current.isoformat(), parent_run_id),
+            ).rowcount
+        return int(cancelled) + int(interrupted)
+
     def enqueue_and_advance(
         self,
         task: ScheduledTask,
@@ -1014,6 +1052,32 @@ class TaskRunRepository:
                     run_id,
                 ),
             )
+            # 父 Run 终结即收拾它派出去的子 Run，就在同一个事务里。
+            # 挂在 finish 上而不是靠调用方多调一次：finish 是所有终态的唯一入口，
+            # 放在调用方早晚会有一条路径忘记调，留下永远跑不完的子 Run。
+            # 子 Run 自己没有子，跳过这次查询。
+            finished_row = connection.execute(
+                "SELECT parent_run_id FROM task_runs WHERE id = ?", (run_id,)
+            ).fetchone()
+            if finished_row["parent_run_id"] is None:
+                connection.execute(
+                    """
+                    UPDATE task_runs
+                    SET status = 'cancelled', worker_id = NULL, lease_expires_at = NULL,
+                        completed_at = ?, error_code = 'parent_run_cancelled'
+                    WHERE parent_run_id = ? AND status IN ('queued', 'claimed')
+                    """,
+                    (current.isoformat(), run_id),
+                )
+                connection.execute(
+                    """
+                    UPDATE task_runs
+                    SET status = 'interrupted', worker_id = NULL, lease_expires_at = NULL,
+                        completed_at = ?, error_code = 'parent_run_cancelled'
+                    WHERE parent_run_id = ? AND status = 'running'
+                    """,
+                    (current.isoformat(), run_id),
+                )
             result = connection.execute(
                 "SELECT * FROM task_runs WHERE id = ?", (run_id,)
             ).fetchone()
