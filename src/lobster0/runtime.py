@@ -83,6 +83,7 @@ from lobster0.storage.tooling import (
     ToolRunRepository,
 )
 from lobster0.tools.artifacts import ReadArtifactTool
+from lobster0.tools.delegate import DelegateTaskTool
 from lobster0.tools.automation import ManageTaskTool
 from lobster0.tools.base import ToolDefinition
 from lobster0.tools.browser import browser_tools
@@ -418,6 +419,26 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         max_bytes=config.browser.download_max_bytes,
     )
     artifact_store.delete_expired()
+    async def _delegate(context, subagent, goal, *, timeout_seconds):
+        """在当前后台 Run 之下派发一次子任务。
+
+        父上下文全部取自运行期 ToolContext——父 Run 与父工具集都不由模型给出，
+        所以「只能收窄」不依赖模型的诚实。
+        """
+        from lobster0.subagents.dispatch import SubagentDispatcher
+
+        runs = TaskRunRepository(database)
+        assert context.task_run_id is not None
+        parent = runs.get(context.task_run_id)
+        dispatcher = SubagentDispatcher(
+            service=service,
+            runs=runs,
+            task=ScheduledTaskRepository(database).get(parent.task_id, owner_id=owner.id),
+            parent_run_id=parent.id,
+            parent_tools=context.allowed_tool_names or frozenset(),
+        )
+        return await dispatcher.dispatch(subagent, goal, timeout_seconds=timeout_seconds)
+
     available_tools = (
         SystemInfoTool(),
         ReadFileTool(),
@@ -462,6 +483,12 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         MemoryCorrectTool(memory_governance, messages),
         MemoryReviewListTool(memory_governance),
         ReadArtifactTool(artifact_store),
+        # 没有声明子 Agent 时不给这个工具：它无处可派，只会让模型多一个空选项。
+        *(
+            (DelegateTaskTool(config.subagents, dispatch=_delegate),)
+            if config.subagents
+            else ()
+        ),
     )
     configured_tools = tuple(
         tool for tool in available_tools if tool.definition.name in config.tools.enabled

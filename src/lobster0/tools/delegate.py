@@ -117,12 +117,19 @@ class DelegateTaskTool:
             return ToolResult.failure(
                 "subagent_depth_exceeded", "subagents cannot delegate again"
             )
+        # 交互式对话里没有 Run，子 Run 无处可挂。与其临时造一条本来不存在的
+        # Run，不如明确拒绝并说清原因——派发目前是后台任务的能力。
+        if context.task_run_id is None:
+            return ToolResult.failure(
+                "subagent_requires_background_run",
+                "delegation is only available inside a background task run",
+            )
         if self._dispatch is None:
             return ToolResult.failure("subagent_unavailable", "delegation is unavailable")
 
         try:
             outcome = await self._dispatch(
-                self._subagents[identifier], goal, timeout_seconds=timeout
+                context, self._subagents[identifier], goal, timeout_seconds=timeout
             )
         except TimeoutError:
             return ToolResult.failure("subagent_timeout", "subagent task timed out")

@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from lobster0.bootstrap import initialize_state
-from lobster0.config import load_config
+from lobster0.config import SubagentConfig, load_config
 from lobster0.memory.models import DisclosureContext
 from lobster0.paths import build_state_paths
 from lobster0.runtime import create_channel_manager, create_runtime, limits_for_channel
@@ -54,6 +54,41 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             text=True,
         )
         self.assertEqual(imported.returncode, 0, imported.stderr)
+
+    async def test_delegate_task_appears_only_when_subagents_are_declared(self) -> None:
+        """工具写好了却没接进 Runtime，模型就永远看不到它。
+
+        这是本项目反复出现的一类缺陷：部件都对，只是没被接上。
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            initialize_state(paths)
+            base = load_config(paths)
+
+            without = create_runtime(base, paths, "test-key")
+            try:
+                names = [item.name for item in without.tool_definitions]
+                self.assertNotIn("delegate_task", names)
+            finally:
+                await without.aclose()
+
+            declared = replace(
+                base,
+                tools=replace(base.tools, enabled=(*base.tools.enabled, "delegate_task")),
+                subagents=(
+                    SubagentConfig(
+                        id="researcher",
+                        description="只读检索",
+                        tools=("read_file",),
+                    ),
+                ),
+            )
+            runtime = create_runtime(declared, paths, "test-key")
+            try:
+                names = [item.name for item in runtime.tool_definitions]
+                self.assertIn("delegate_task", names)
+            finally:
+                await runtime.aclose()
 
     async def test_artifact_store_exists_even_when_the_browser_is_disabled(self) -> None:
         """附件与浏览器无关，Store 不能被 browser.enabled 挡住。

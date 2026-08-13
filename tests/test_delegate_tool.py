@@ -70,19 +70,44 @@ class DelegateTaskToolTest(unittest.IsolatedAsyncioTestCase):
         )
         self.dispatched: list[tuple[str, str, int]] = []
 
-        async def dispatch(subagent, goal, *, timeout_seconds):
+        async def dispatch(context, subagent, goal, *, timeout_seconds):
+            del context
             self.dispatched.append((subagent.id, goal, timeout_seconds))
             return {"status": "succeeded", "summary": "已完成"}
 
         self.tool = DelegateTaskTool(self.subagents, dispatch=dispatch)
 
-    def context(self, *, allowed: frozenset[str] | None = None) -> ToolContext:
-        """返回一个最小可信 ToolContext。"""
+    def context(
+        self, *, allowed: frozenset[str] | None = None, task_run_id: int | None = 7
+    ) -> ToolContext:
+        """返回一个最小可信 ToolContext；默认处在一次后台 Run 里。"""
         from pathlib import Path
 
         return ToolContext(
-            1, 1, 1, Path("/state"), Path("/work"), (), allowed_tool_names=allowed
+            1,
+            1,
+            1,
+            Path("/state"),
+            Path("/work"),
+            (),
+            allowed_tool_names=allowed,
+            task_run_id=task_run_id,
         )
+
+    async def test_interactive_chat_cannot_delegate_yet(self) -> None:
+        """交互式对话没有父 Run，子 Run 无处可挂。
+
+        与其临时造一条本来不存在的 Run，不如明确拒绝并说清原因——派发目前是
+        后台任务的能力。
+        """
+        result = await self.tool.execute(
+            self.context(task_run_id=None),
+            self.tool.validate({"subagent_id": "researcher", "goal": "查一下"}),
+        )
+
+        self.assertFalse(result.ok)
+        self.assertEqual(result.error_code, "subagent_requires_background_run")
+        self.assertEqual(self.dispatched, [])
 
     def test_description_lists_the_declared_subagents(self) -> None:
         """模型要能从工具描述里知道有谁可派，否则只能猜 id。"""
@@ -138,7 +163,7 @@ class DelegateTaskToolTest(unittest.IsolatedAsyncioTestCase):
     async def test_dispatch_failure_is_reported_not_raised(self) -> None:
         """子任务失败不该让父回合直接崩，父 Agent 要能拿到原因自行决定。"""
 
-        async def failing(subagent, goal, *, timeout_seconds):
+        async def failing(context, subagent, goal, *, timeout_seconds):
             raise TimeoutError
 
         tool = DelegateTaskTool(self.subagents, dispatch=failing)

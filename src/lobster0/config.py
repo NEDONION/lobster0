@@ -195,7 +195,7 @@ _CHECKPOINT_KEYS = frozenset(
 )
 _ATTACHMENTS_KEYS = frozenset({"max_bytes"})
 _SUBAGENT_KEYS = frozenset(
-    {"id", "description", "tools", "max_turns", "timeout_seconds"}
+    {"id", "description", "tools", "max_turns", "max_tool_calls", "timeout_seconds"}
 )
 _SUBAGENT_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,31}\Z")
 # 派发工具本身永远不进子 Agent 的工具集：这是 max depth = 1 的实现点，
@@ -459,6 +459,7 @@ class SubagentConfig:
     description: str
     tools: tuple[str, ...]
     max_turns: int = 4
+    max_tool_calls: int = 12
     timeout_seconds: int = 300
 
 
@@ -1525,6 +1526,12 @@ def _subagents(
                     f"subagents.{identifier}.max_turns",
                     minimum=1,
                     maximum=32,
+                ),
+                max_tool_calls=_bounded_integer(
+                    entry.get("max_tool_calls", 12),
+                    f"subagents.{identifier}.max_tool_calls",
+                    minimum=1,
+                    maximum=200,
                 ),
                 timeout_seconds=_bounded_integer(
                     entry.get("timeout_seconds", 300),
