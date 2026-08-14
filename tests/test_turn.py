@@ -1684,5 +1684,63 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(tool_status, "succeeded")
 
 
+class CompactionKeepsImagesTest(TurnServiceTest):
+    """上下文压缩不得把这一轮的图片丢掉。
+
+    真实事故：图片在 Channel 层已经下载成功（descriptor 1 → resolved 1），
+    但 Owner 的会话有 972 条消息，每一轮都触发压缩。压缩会用新的 history 把
+    request **整个重建**，而挂图发生在重建之前，于是图片每次都被无声丢弃。
+    模型只能说"我看不到图片"，被追问后开始编造画面细节。
+
+    链路上每一段单独看都是对的，最后一步把图扔了——这正是集成断言存在的意义。
+    """
+
+    async def test_images_survive_a_compaction_rebuild(self) -> None:
+        """压缩重建之后，请求上必须仍然带着这一轮的图片。"""
+        image = self.paths.workspace / "shot.png"
+        # 只需非空字节：读取路径不校验 PNG 结构，ImagePart 只要求非空 + 合法 MIME。
+        image.write_bytes(b"\x89PNG\r\n\x1a\n fake image bytes")
+
+        provider = FakeProvider([final_response("看到了")])
+        service = self.service(provider)
+        service._compactor = _AlwaysCompact(self.messages)
+
+        await service.handle_inbound(
+            user_id=self.owner.id,
+            channel="feishu",
+            account_id="default",
+            external_conversation_id="oc_img",
+            inbound_event_id="om_img",
+            text="看看这张图",
+            image_paths=((image, "image/png"),),
+        )
+
+        request = provider.requests[-1]
+        attached = [part for message in request.messages for part in message.images]
+        self.assertEqual(len(attached), 1, "压缩之后图片丢了")
+        self.assertEqual(attached[0].media_type, "image/png")
+
+
+class _AlwaysCompact:
+    """必定触发一次压缩重建的 Compactor 替身。"""
+
+    def __init__(self, messages) -> None:
+        self._messages = messages
+        self.compacted = False
+
+    def should_compact(self, request) -> bool:
+        """只压一次，避免与真实预算耦合。"""
+        return not self.compacted
+
+    async def compact(self, session_id: int):
+        """返回一个非 None 结果，触发 turn.py 里的 request 重建分支。"""
+        self.compacted = True
+        return self._messages.latest_compaction(session_id) or _StubCompaction()
+
+
+class _StubCompaction:
+    """只需要"不是 None"，内容不参与断言。"""
+
+
 if __name__ == "__main__":
     unittest.main()

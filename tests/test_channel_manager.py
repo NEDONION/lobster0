@@ -62,6 +62,7 @@ class TrackingTurnService:
     approval_id: int | None = None
     emit_event: bool = True
     calls: list[tuple[str, str]] = field(init=False, default_factory=list)
+    image_path_calls: list[tuple] = field(init=False, default_factory=list)
     trusted_calls: list[bool] = field(init=False, default_factory=list)
     conversation_kinds: list[str] = field(init=False, default_factory=list)
     verified_identity_calls: list[bool] = field(init=False, default_factory=list)
@@ -93,6 +94,7 @@ class TrackingTurnService:
         self.trusted_calls.append(trusted_owner)
         self.conversation_kinds.append(conversation_kind)
         self.verified_identity_calls.append(identity_verified)
+        self.image_path_calls.append(image_paths)
         session = self.sessions.get_or_create(
             user_id,
             channel,
@@ -1616,6 +1618,40 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         assert target is not None
         self.assertEqual(target.role, "assistant")
 
+    async def test_image_paths_reach_the_turn_service(self) -> None:
+        """图片必须真的穿过 Manager 到达 TurnService。
+
+        此前假 Service 收下了 image_paths 却从不记录，于是"图片能不能穿过管理器"
+        从来没有被验证过。真实症状：图在 Channel 层已经下载成功
+        （descriptor 1 → resolved 1），模型却说看不到——因为它根本没拿到。
+        """
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=4, worker_count=1)
+        paths = ((Path("/tmp/cached.png"), "image/png"),)
+        await manager.start()
+        try:
+            await manager.receive(
+                self._message("om_img", "看看这张图", image_paths=paths)
+            )
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.image_path_calls, [paths])
+
+    async def test_text_only_turn_carries_no_images(self) -> None:
+        """纯文字轮次不得凭空带上图片——否则会白白切到视觉模型。"""
+        service = TrackingTurnService(self.sessions, self.messages, self.turns)
+        manager = self._manager(service, queue_size=4, worker_count=1)
+        await manager.start()
+        try:
+            await manager.receive(self._message("om_text", "你好"))
+            await manager.wait_idle(timeout=2)
+        finally:
+            await manager.stop()
+
+        self.assertEqual(service.image_path_calls, [()])
+
     def _manager(
         self,
         service: TrackingTurnService,
@@ -1654,6 +1690,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
         chat_type: str = "p2p",
         external_user_id: str = "ou_owner",
         replied_to_message_id: str = "",
+        image_paths: tuple = (),
     ) -> InboundMessage:
         """创建一条标准化飞书消息。"""
         return InboundMessage(
@@ -1666,6 +1703,7 @@ class ChannelManagerTest(unittest.IsolatedAsyncioTestCase):
             chat_type=chat_type,
             message_type="text",
             text=text,
+            image_paths=image_paths,
             reply_to_message_id=message_id,
             replied_to_message_id=replied_to_message_id,
             received_at=datetime(2026, 8, 8, tzinfo=UTC),
