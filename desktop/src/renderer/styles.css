@@ -813,10 +813,11 @@ select:focus-visible {
   }
 }
 
+/* 不用等宽：原先这里只放一个数字，等宽合理；现在是「思考 · 3 次工具调用」这样
+   的中文标签，等宽会把字距拉得很散。 */
 .process-count {
   color: var(--lobster-text-muted);
-  font-family: var(--lobster-font-mono);
-  font-size: 11px;
+  font-size: var(--lobster-text-xs);
 }
 
 /* 展开后用一条细竖线把整段过程收拢成一块，而不是每条各自成段。 */
