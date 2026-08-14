@@ -475,6 +475,27 @@ class TurnService:
                 disclosure=disclosure,
                 tools=self._runner.tool_schemas,
             )
+            if self._compactor is not None and self._compactor.should_compact(request):
+                if self._memory_capture is not None:
+                    self._memory_capture.flush()
+                compacted = await self._compactor.compact(session.id)
+                if compacted is not None:
+                    history = tuple(
+                        _model_message(message)
+                        for message in self._messages.list_context(session.id)
+                    )
+                    request = self._context.build(
+                        self._model,
+                        history,
+                        disclosure=disclosure,
+                        tools=self._runner.tool_schemas,
+                    )
+            # 挂图必须在压缩**之后**：压缩会用新的 history 把 request 整个重建，
+            # 挂在重建之前的图片会被无声丢弃。真实事故——图片在 Channel 层已经
+            # 下载成功（descriptor 1 → resolved 1），Owner 的会话有 972 条消息，
+            # 每一轮都触发压缩，于是模型每次都收不到图，只能说"我看不到图片"，
+            # 被追问后开始编造画面细节。
+            #
             # 图片字节只在这一刻读出来：上传时不读，纯文字轮次也不读。
             # 读失败不能让整轮挂掉——附件仍以文字摘要留在上下文里，
             # 模型可以用 read_artifact 按需读取。
@@ -494,21 +515,6 @@ class TurnService:
                     )
                 except (OSError, ValueError):
                     pass
-            if self._compactor is not None and self._compactor.should_compact(request):
-                if self._memory_capture is not None:
-                    self._memory_capture.flush()
-                compacted = await self._compactor.compact(session.id)
-                if compacted is not None:
-                    history = tuple(
-                        _model_message(message)
-                        for message in self._messages.list_context(session.id)
-                    )
-                    request = self._context.build(
-                        self._model,
-                        history,
-                        disclosure=disclosure,
-                        tools=self._runner.tool_schemas,
-                    )
             tool_context = ToolContext(
                 user_id=user_id,
                 session_id=session.id,
