@@ -30,6 +30,27 @@ def _descriptor(resource_type: str = "image", file_key: str = "img_v3_x"):
     )
 
 
+def _sdk_shaped_image_message():
+    """构造一条**与真实 SDK 同形**的图片消息。
+
+    ``FakeFeishuMessage`` 是给 Adapter 用的扁平视图；``_handle_message`` 拿到的是
+    SDK 原始对象（``conversation.chat_id``、``sender.open_id``、``resources``），
+    形状完全不同。用错会被准入直接拒掉，测的就不是想测的东西了。
+    """
+    return SimpleNamespace(
+        id="om_x100b68eb5c93c0a0c3debeed80c1313",
+        conversation=SimpleNamespace(chat_id="oc_allowed", chat_type="p2p"),
+        sender=SimpleNamespace(open_id="ou_owner", sender_type="user", is_bot=False),
+        mentioned_bot=False,
+        body_text="![image](img_v3_x)",
+        raw_content_type="image",
+        resources=[_descriptor()],
+        reply=None,
+        raw={},
+        create_time=None,
+    )
+
+
 def _cached(
     *,
     decision: str = "cached",
@@ -105,6 +126,54 @@ class FeishuImageAdmissionTest(unittest.TestCase):
 
         assert isinstance(result, InboundMessage)
         self.assertEqual(result.image_paths, ())
+
+    def test_markdown_placeholder_never_reaches_the_model(self) -> None:
+        """``![image](key)`` 是 SDK 的渲染产物，不是 Owner 打的字，必须摘掉。
+
+        真实事故：模型收到了图，却盯着这段占位符回"你发的是没有 artifact_id 的
+        Markdown 链接"，全程没有描述图里任何内容。图片本身是作为 ImagePart 挂上去的，
+        占位符留在正文里只会把模型带偏。
+        """
+        result = self.adapter.normalize(
+            FakeFeishuMessage(
+                raw_content_type="image",
+                body_text="![image](img_v3_0214i_babf612d)",
+                image_descriptors=(_descriptor(),),
+            )
+        )
+
+        assert isinstance(result, InboundMessage)
+        self.assertNotIn("![image]", result.text)
+        self.assertNotIn("img_v3_0214i_babf612d", result.text)
+        self.assertEqual(result.text, "请看这张图片。")
+
+    def test_caption_survives_placeholder_stripping(self) -> None:
+        """图文混排时 Owner 的说明文字必须原样保留，只摘掉占位符。"""
+        result = self.adapter.normalize(
+            FakeFeishuMessage(
+                raw_content_type="post",
+                body_text="这个报错是什么意思 ![image](img_v3_abc) 帮我看看",
+                image_descriptors=(_descriptor(),),
+            )
+        )
+
+        assert isinstance(result, InboundMessage)
+        self.assertNotIn("![image]", result.text)
+        self.assertIn("这个报错是什么意思", result.text)
+        self.assertIn("帮我看看", result.text)
+
+    def test_multiple_images_get_plural_prompt(self) -> None:
+        """多图时提示语要说得通，不能仍旧写"这张图片"。"""
+        result = self.adapter.normalize(
+            FakeFeishuMessage(
+                raw_content_type="image",
+                body_text="![image](a) ![image](b)",
+                image_descriptors=(_descriptor(file_key="a"), _descriptor(file_key="b")),
+            )
+        )
+
+        assert isinstance(result, InboundMessage)
+        self.assertEqual(result.text, "请看这些图片。")
 
     def test_text_message_still_has_no_images(self) -> None:
         """纯文字消息必须保持原行为，不受本次改动影响。"""
@@ -193,6 +262,53 @@ class FeishuImageResolutionTest(unittest.IsolatedAsyncioTestCase):
         paths = await self.transport._resolve_images("om_x", (_descriptor(),))
 
         self.assertEqual(paths, ())
+
+
+class FeishuImageFailureHonestyTest(unittest.IsolatedAsyncioTestCase):
+    """取不回图时必须让模型照实说，而不是对着不存在的图编内容。"""
+
+    def setUp(self) -> None:
+        """构造一个下载必然失败的 Transport。"""
+        self.sdk = FakeOfficialSdk()
+        self.inbound: list[InboundMessage] = []
+        self.transport = FeishuTransport(
+            FeishuConfig(
+                enabled=True,
+                account_id="default",
+                owner_open_id="ou_owner",
+                allowed_open_ids=("ou_owner",),
+            ),
+            app_id="cli_x",
+            app_secret="secret",
+            on_inbound=self._collect,
+            sdk=self.sdk,
+        )
+
+    async def _collect(self, message: InboundMessage) -> None:
+        """记录进入管线的消息。"""
+        self.inbound.append(message)
+
+    async def test_unresolved_image_tells_the_model_it_cannot_see(self) -> None:
+        """图没取回来时，正文必须明确说明，否则模型会照着"请看这张图片"编。"""
+        self.sdk.channel.resolve_error = RuntimeError("network down")
+
+        await self.transport._handle_message(_sdk_shaped_image_message())
+
+        self.assertEqual(len(self.inbound), 1)
+        message = self.inbound[0]
+        self.assertEqual(message.image_paths, ())
+        self.assertIn("没能取回", message.text)
+        self.assertIn("不要猜测", message.text)
+
+    async def test_resolved_image_adds_no_failure_notice(self) -> None:
+        """图正常取回时不得插入任何失败提示，否则模型会自我怀疑。"""
+        self.sdk.channel.cached_resources = [_cached()]
+
+        await self.transport._handle_message(_sdk_shaped_image_message())
+
+        message = self.inbound[0]
+        self.assertEqual(len(message.image_paths), 1)
+        self.assertEqual(message.text, "请看这张图片。")
 
 
 class FeishuImageObservabilityTest(unittest.IsolatedAsyncioTestCase):

@@ -29,6 +29,8 @@ from lobster0.storage.channels import StoredInboundEvent
 _MESSAGE_ID = re.compile(r"om_[A-Za-z0-9_-]{1,128}\Z")
 _OPEN_ID = re.compile(r"ou_[A-Za-z0-9_-]{1,128}\Z")
 _CHAT_ID = re.compile(r"oc_[A-Za-z0-9_-]{1,128}\Z")
+# SDK 的 image/post 转换器统一渲染成 ``![image](<file_key>)``；file_key 不含右括号。
+_IMAGE_PLACEHOLDER = re.compile(r"!\[image\]\([^)\s]*\)")
 
 
 class FeishuMessageView(Protocol):
@@ -86,10 +88,15 @@ class FeishuAdapter:
         # 这里只看描述符判断"这条消息带没带图"——判断是免费的，下载不是。真正的
         # 下载由 Transport 在准入通过之后再做，图片路径随后补上。
         has_image = bool(message.image_descriptors)
-        text = sanitize_inbound_text(message.body_text).strip()
+        # SDK 把图片消息渲染成 ``![image](file_key)`` 放进 body_text。这是**渲染产物**，
+        # 不是 Owner 打的字：真正的图片会作为 ImagePart 挂到请求上。把它留在正文里，
+        # 模型会以为 Owner 发来了一段坏掉的 Markdown 链接，然后去分析这段链接
+        # ——真实事故：模型收到了图，却回"你发的是没有 artifact_id 的 Markdown 链接"，
+        # 全程没有描述图里的任何内容。
+        text = sanitize_inbound_text(_strip_image_placeholders(message.body_text)).strip()
         if not text and has_image:
             # 只发图不配文字是常见用法；给一句中性提示，让这一轮不至于被当成空消息丢弃。
-            text = "请看这张图片。"
+            text = "请看这张图片。" if len(message.image_descriptors) == 1 else "请看这些图片。"
         if not text:
             return IgnoredInbound("empty_message")
         if len(text) > self._config.message_max_chars:
@@ -439,12 +446,19 @@ class FeishuTransport:
             # 下载必须发生在准入**之后**：resources 只是描述符，把它换成本地文件要真的
             # 走一次网络。放在准入前，任何陌生人发一张图就能让我们下载，等于送出一个
             # 免费的流量与磁盘放大器。
-            normalized = replace(
-                normalized,
-                image_paths=await self._resolve_images(
-                    view.message_id, view.image_descriptors
-                ),
+            paths = await self._resolve_images(
+                view.message_id, view.image_descriptors
             )
+            text = normalized.text
+            if view.image_descriptors and not paths:
+                # Owner 明明发了图，我们却一张都没取回。此时正文里那句"请看这张图片"
+                # 会让模型对着不存在的图编内容。把真实情况写进这一轮，让它照实说。
+                text = (
+                    f"{text}\n\n"
+                    "（系统提示：这条消息里的图片没能取回，你看不到它。"
+                    "请如实告诉我图片读取失败，不要猜测图片内容。）"
+                )
+            normalized = replace(normalized, image_paths=paths, text=text)
             await self._on_inbound(normalized)
         elif self._observer is not None:
             try:
@@ -643,6 +657,17 @@ def _cached_image_paths(resources: Any) -> tuple[tuple[Path, str], ...]:
             continue
         found.append((Path(item.path), str(item.mime_type)))
     return tuple(found)
+
+
+def _strip_image_placeholders(text: str) -> str:
+    """去掉 SDK 为图片渲染出的 ``![image](file_key)`` 占位符。
+
+    图文混排（post）里 Owner 的说明文字要原样保留，只摘掉占位符；纯图片消息摘完
+    就是空串，由调用方补一句中性提示。
+    """
+    if not isinstance(text, str) or "![image]" not in text:
+        return text if isinstance(text, str) else ""
+    return _IMAGE_PLACEHOLDER.sub(" ", text)
 
 
 def _image_drop_reason(item: Any) -> str:
