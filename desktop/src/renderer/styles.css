@@ -1786,3 +1786,71 @@ select:focus-visible {
   font-size: 12px;
   color: var(--lobster-primary);
 }
+
+/* --- 设置页子 Agent 区 -------------------------------------------------- */
+
+.subagents-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--lobster-border);
+}
+
+.subagents-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--lobster-text-primary);
+}
+
+.subagents-note,
+.subagents-empty p {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--lobster-text-muted);
+}
+
+.subagents-note code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  font-family: var(--lobster-font-mono);
+  font-size: 11px;
+  background: var(--lobster-gray-2);
+}
+
+.subagents-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.subagents-card {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--lobster-border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--lobster-surface);
+}
+
+.subagents-card-id {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--lobster-text-primary);
+}
+
+.subagents-card-description {
+  margin: 0;
+  font-size: 12px;
+  color: var(--lobster-text-secondary);
+}
+
+.subagents-card-budget {
+  margin: 0;
+  font-size: 11px;
+  color: var(--lobster-text-muted);
+}

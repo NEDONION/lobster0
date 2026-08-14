@@ -25,6 +25,7 @@ import type {
   ProviderUpsertInput,
   SessionHistory,
   SessionMessage,
+  SubagentSummary,
   SessionSummary,
   StartTurnInput,
 } from "../common/api";
@@ -284,6 +285,24 @@ export class BridgeService {
       schedule,
     });
     return automationTask(recordValue(requiredValue(response.task)));
+  }
+
+  public async listSubagents(): Promise<SubagentSummary[]> {
+    const response = await this.requireClient().request("subagents.list", {});
+    const entries = response.subagents;
+    if (!Array.isArray(entries)) {
+      throw new BridgeRequestError("bridge_protocol", "子 Agent 列表格式无效");
+    }
+    return entries.map((value) => {
+      const record = recordValue(value);
+      return {
+        id: stringValue(record.id),
+        description: stringValue(record.description),
+        maxTurns: positiveInteger(record.max_turns),
+        maxToolCalls: positiveInteger(record.max_tool_calls),
+        timeoutSeconds: positiveInteger(record.timeout_seconds),
+      };
+    });
   }
 
   public async listArtifacts(sessionKey: string, limit: number): Promise<ArtifactSummary[]> {

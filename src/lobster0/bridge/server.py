@@ -248,6 +248,7 @@ class BridgeServer:
                             "id": item.id,
                             "description": item.description,
                             "max_turns": item.max_turns,
+                            "max_tool_calls": item.max_tool_calls,
                             "timeout_seconds": item.timeout_seconds,
                         }
                         for item in self._runtime.config.subagents

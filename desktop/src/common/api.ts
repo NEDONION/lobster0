@@ -87,6 +87,7 @@ export interface SubagentSummary {
   id: string;
   description: string;
   maxTurns: number;
+  maxToolCalls: number;
   timeoutSeconds: number;
 }
 
@@ -167,6 +168,7 @@ export interface DesktopApi {
   unhaltAutomation(): Promise<void>;
   createAutomation(input: AutomationCreateInput): Promise<AutomationSummary>;
   restartCore(): Promise<DesktopBootstrap>;
+  listSubagents(): Promise<SubagentSummary[]>;
   listArtifacts(sessionKey: string, limit?: number): Promise<ArtifactSummary[]>;
   previewArtifact(artifactId: string, maxBytes?: number): Promise<ArtifactPreview>;
   revealArtifact(artifactId: string): Promise<void>;
@@ -198,6 +200,7 @@ export const DESKTOP_CHANNELS = {
   automationUnhalt: "desktop:automations:unhalt",
   automationCreate: "desktop:automations:create",
   coreRestart: "desktop:core:restart",
+  subagentsList: "desktop:subagents:list",
   artifactsList: "desktop:artifacts:list",
   artifactPreview: "desktop:artifacts:preview",
   artifactReveal: "desktop:artifacts:reveal",
@@ -251,6 +254,7 @@ export function createDesktopApi(invoke: Invoke, subscribe: Subscribe): DesktopA
     createAutomation: (input) =>
       invoke(DESKTOP_CHANNELS.automationCreate, input) as Promise<AutomationSummary>,
     restartCore: () => invoke(DESKTOP_CHANNELS.coreRestart) as Promise<DesktopBootstrap>,
+    listSubagents: () => invoke(DESKTOP_CHANNELS.subagentsList) as Promise<SubagentSummary[]>,
     listArtifacts: (sessionKey, limit = 50) =>
       invoke(DESKTOP_CHANNELS.artifactsList, { sessionKey, limit }) as Promise<ArtifactSummary[]>,
     previewArtifact: (artifactId, maxBytes = 65_536) =>

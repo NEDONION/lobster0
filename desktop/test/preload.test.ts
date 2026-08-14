@@ -38,6 +38,7 @@ describe("Desktop Preload API", () => {
       "listArtifacts",
       "listProviders",
       "listSessions",
+      "listSubagents",
       "loadSession",
       "onFrame",
       "pickAttachment",

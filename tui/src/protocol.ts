@@ -40,6 +40,7 @@ export type RequestType =
   | "artifacts.list"
   | "artifacts.preview"
   | "artifacts.reveal"
+  | "subagents.list"
   | "bridge.shutdown";
 
 export type PermissionMode = "safe" | "smart" | "autopilot" | "yolo";

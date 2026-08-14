@@ -10,11 +10,13 @@ import type {
   ProviderUpsertInput,
   SessionHistory,
   SessionSummary,
+  SubagentSummary,
 } from "../common/api";
 import { AutomationPanel } from "./automation-panel";
 import { ModelsPanel } from "./models-panel";
 import { NAV_ITEMS, type ViewId } from "./navigation";
 import { PERMISSION_MODE_OPTIONS } from "./permission-modes";
+import { SubagentsPanel } from "./subagents-panel";
 import { SESSION_GROUP_LABELS, groupSessionsByRecency } from "./session-groups";
 import { TaskWorkbench } from "./task-workbench";
 
@@ -64,6 +66,11 @@ export function App(): React.JSX.Element {
   const [automationError, setAutomationError] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderList | null>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
+  const [subagents, setSubagents] = useState<SubagentSummary[]>([]);
+  const [subagentError, setSubagentError] = useState<string | null>(null);
+
+  // Core 未开放该能力时整区不渲染：旧版 Core 不该看到一个空区并怀疑自己配错了。
+  const canReadSubagents = bootstrap?.capabilities.includes("subagents_read") ?? false;
   const [settingsError, setSettingsError] = useState<string | null>(null);
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [taskBusy, setTaskBusy] = useState(false);
@@ -130,6 +137,27 @@ export function App(): React.JSX.Element {
       active = false;
     };
   }, [bootstrap, view]);
+
+  useEffect(() => {
+    if (!bootstrap || view !== "settings" || !canReadSubagents) {
+      return;
+    }
+    let active = true;
+    void window.lobster0.listSubagents().then((value) => {
+      if (active) {
+        setSubagents(value);
+        setSubagentError(null);
+      }
+    }).catch(() => {
+      // 本区失败不影响 Models 区与其余设置。
+      if (active) {
+        setSubagentError("子 Agent 列表读取失败。");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [bootstrap, view, canReadSubagents]);
 
   useEffect(() => {
     if (!bootstrap || view !== "settings") {
@@ -410,6 +438,9 @@ export function App(): React.JSX.Element {
                   setSettingsBusy(false);
                 }
               }}
+              canReadSubagents={canReadSubagents}
+              subagentError={subagentError}
+              subagents={subagents}
               providerError={providerError}
               providers={providers}
               onChooseWorkspace={() => void chooseWorkspace()}
@@ -436,6 +467,9 @@ function ViewPreview({
   taskBusy,
   canWriteAutomation,
   canWriteProviders,
+  canReadSubagents,
+  subagents,
+  subagentError,
   providers,
   providerError,
   onRefreshProviders,
@@ -464,6 +498,9 @@ function ViewPreview({
   settingsBusy: boolean;
   canWriteAutomation: boolean;
   canWriteProviders: boolean;
+  canReadSubagents: boolean;
+  subagents: SubagentSummary[];
+  subagentError: string | null;
   providers: ProviderList | null;
   providerError: string | null;
   onRefreshProviders: () => void;
@@ -568,6 +605,9 @@ function ViewPreview({
         onUpsert={onUpsertProvider}
         providers={providers}
       />
+      {canReadSubagents ? (
+        <SubagentsPanel error={subagentError} subagents={subagents} />
+      ) : null}
     </section>
   );
 }
