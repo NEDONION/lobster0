@@ -62,6 +62,10 @@ _CAPABILITIES = frozenset(
         "typing_stop",
         "progress_create",
         "progress_update",
+        # 入站图片的下载与缓存。它和 Typing/进度卡同类：失败只让这一轮少一项能力，
+        # 不改变权威回复。但它此前完全没有痕迹——图片没进模型时，日志里一片空白，
+        # 只有 Owner 在 IM 里看到"我看不到图片"，无从判断断在哪一环。
+        "media_resolve",
     }
 )
 
@@ -268,6 +272,52 @@ class ChannelObserver:
             session_id=session_id,
             turn_id=turn_id,
         )
+
+    def media(
+        self,
+        *,
+        channel: str,
+        account_id: str,
+        external_message_id: str,
+        descriptor_count: int,
+        resolved_count: int,
+        outcome: str,
+        error_code: str | None = None,
+        user_id: int | None = None,
+    ) -> None:
+        """记录入站图片从"描述符"到"本地文件"的每一次转换，成功也记。
+
+        ## 为什么成功也要记
+
+        这条链路的失败模式全都是**静默**的：描述符为空、下载被拒、MIME 不符、
+        文件超限——每一种的结果都一样，就是"这一轮没有图"，日志里什么都不留。
+        2026-08-13 排查"飞书看不到图"时，正是因为只有失败分支没有埋点，无法区分
+        "SDK 没给描述符"和"下载失败了"，只能靠反复重启和手工复现去猜。
+
+        记下 ``descriptor_count`` 与 ``resolved_count`` 两个数，就能一眼分辨：
+
+        - ``0 → 0``：SDK 根本没给图片描述符，问题在通道或消息类型；
+        - ``N → 0``：拿到了描述符但一张都没落地，问题在下载或过滤；
+        - ``N → M``（M < N）：部分被过滤，``error_code`` 说明原因；
+        - ``N → N``：正常。
+
+        Args:
+            descriptor_count: SDK 给出的图片描述符数量。
+            resolved_count: 最终可用的本地图片数量。
+            outcome: ``resolved`` / ``empty`` / ``failed``。
+            error_code: 稳定错误码；``outcome`` 为 ``resolved`` 时可省略。
+        """
+        metadata = self._chain_metadata(channel, account_id, external_message_id)
+        metadata["descriptor_count"] = _non_negative_int(
+            descriptor_count, "descriptor_count"
+        )
+        metadata["resolved_count"] = _non_negative_int(resolved_count, "resolved_count")
+        metadata["outcome"] = _choice(
+            outcome, frozenset({"resolved", "empty", "failed"}), "outcome"
+        )
+        if error_code is not None:
+            metadata["error_code"] = _error_code(error_code)
+        self._record("channel.media.resolved", metadata, user_id=user_id)
 
     def tool_count(self, turn_id: int | None) -> int:
         """返回某个内部 Turn 的 ToolRun 数量；未知 Turn 按零处理。"""

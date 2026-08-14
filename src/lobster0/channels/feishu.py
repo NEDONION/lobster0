@@ -474,17 +474,62 @@ class FeishuTransport:
         为它们付一次下载与磁盘是纯浪费。
 
         任何一步失败都只让这一轮没有图，不让整条消息处理失败——看不到图是能力降级，
-        丢掉 Owner 的消息是故障。
+        丢掉 Owner 的消息是故障。但**每一种结果都要留痕**：这里所有失败模式的表现
+        完全相同（这一轮没有图），不记数就没法事后区分是哪一环断的。
         """
-        if not descriptors or not message_id:
+        if not message_id:
+            self._observe_media(message_id, 0, 0, "failed", "media_message_id_missing")
+            return ()
+        if not descriptors:
+            # 不是错误：纯文字轮次本来就没有描述符。但它与"SDK 该给却没给"表现一致，
+            # 记下来才能分辨。
+            self._observe_media(message_id, 0, 0, "empty", "media_no_descriptors")
             return ()
         try:
             cached = await self._channel.resolve_resources_to_cache(
                 message_id=message_id, resources=list(descriptors)
             )
         except Exception:  # noqa: BLE001 - 下载失败不得吞掉 Owner 的消息
+            self._observe_media(
+                message_id, len(descriptors), 0, "failed", "media_download_failed"
+            )
             return ()
-        return _cached_image_paths(cached)
+        paths = _cached_image_paths(cached)
+        if not paths:
+            # 报出第一个被丢弃图片的具体原因，而不是笼统的"没拿到"——
+            # "SDK 没落盘"和"MIME 不支持"是两种完全不同的修法。
+            reason = next(
+                (code for item in cached if (code := _image_drop_reason(item))),
+                "media_not_cached",
+            )
+            self._observe_media(message_id, len(descriptors), 0, "empty", reason)
+        else:
+            self._observe_media(message_id, len(descriptors), len(paths), "resolved")
+        return paths
+
+    def _observe_media(
+        self,
+        message_id: str,
+        descriptor_count: int,
+        resolved_count: int,
+        outcome: str,
+        error_code: str | None = None,
+    ) -> None:
+        """上报一次图片解析结果；埋点自身失败绝不影响消息处理。"""
+        if self._observer is None:
+            return
+        try:
+            self._observer.media(
+                channel="feishu",
+                account_id=self._config.account_id,
+                external_message_id=message_id or "invalid",
+                descriptor_count=descriptor_count,
+                resolved_count=resolved_count,
+                outcome=outcome,
+                error_code=error_code,
+            )
+        except Exception:  # noqa: BLE001 - 观测不得成为新的故障源
+            pass
 
     def _handle_reconnecting(self) -> None:
         """同步接收 SDK 自动重连通知并更新安全状态。"""
@@ -594,16 +639,31 @@ def _cached_image_paths(resources: Any) -> tuple[tuple[Path, str], ...]:
         return ()
     found: list[tuple[Path, str]] = []
     for item in resources:
-        if getattr(item, "decision", None) != "cached":
+        if _image_drop_reason(item):
             continue
-        mime = str(getattr(item, "mime_type", "") or "")
-        if mime not in {"image/png", "image/jpeg"}:
-            continue
-        path = getattr(item, "path", None)
-        if path is None:
-            continue
-        found.append((Path(path), mime))
+        found.append((Path(item.path), str(item.mime_type)))
     return tuple(found)
+
+
+def _image_drop_reason(item: Any) -> str:
+    """判定一个缓存结果为何不可用；可用时返回空串。
+
+    三种丢弃原因在最终表现上完全一样——这一轮没有图——不分开记就没法排查。
+    与 ``_cached_image_paths`` 共用同一份判断，避免"过滤逻辑"和"上报原因"漂移成
+    两套各说各话的规则。
+    """
+    decision = getattr(item, "decision", None)
+    if decision != "cached":
+        # skipped/rejected 表示 SDK 因超限或策略没有真的落盘，path 不可读。
+        return "media_not_cached"
+    mime = str(getattr(item, "mime_type", "") or "")
+    if mime not in {"image/png", "image/jpeg"}:
+        # 音频、文件等不能当作图片送进视觉模型。
+        return "media_unsupported_mime"
+    if getattr(item, "path", None) is None:
+        # 判定为已缓存却没有路径，属于 SDK 契约异常，值得单独一个码。
+        return "media_path_missing"
+    return ""
 
 
 def _parent_message_id(message: Any) -> str:
