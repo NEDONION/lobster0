@@ -28,9 +28,12 @@
   --lobster-chat-user-foreground: #634136;
   --lobster-chat-bot: #f1efe9;
   --lobster-chat-bot-foreground: #0b0b0b;
+  /* 三档文字都必须在 --lobster-background 上达到 WCAG AA 4.5:1，且彼此拉开层级。
+     旧的 muted #8a887f 只有 3.37:1——步数、时间、token 数全用它渲染，于是界面上
+     所有「次要但仍要被读到」的数字都读不清。见 test/theme-contrast.test.ts。 */
   --lobster-text-primary: #0b0b0b;
-  --lobster-text-secondary: #65635b;
-  --lobster-text-muted: #8a887f;
+  --lobster-text-secondary: #5c5a52;
+  --lobster-text-muted: #716f66;
   --lobster-border: rgba(224, 218, 206, 0.6);
   --lobster-border-subtle: rgba(224, 218, 206, 0.3);
   --lobster-input-border: rgba(224, 218, 206, 0.6);
@@ -53,8 +56,13 @@
 
   --lobster-ui-font-size: 14px;
   --lobster-code-font-size: 12px;
-  --lobster-ui-font-weight-normal: 445;
+  /* 445 是早先为模仿 Claude 引入的非常规基础字重，代价是把加粗的对比削掉了一半
+     （445 → 600 只差 155）。回到 400 / 700：差 300，而且 700 是中文字体真实存在
+     的字重，不依赖 font-synthesis 合成。 */
+  --lobster-ui-font-weight-normal: 400;
   --lobster-ui-font-weight-medium: 500;
+  --lobster-ui-font-weight-semibold: 600;
+  --lobster-ui-font-weight-bold: 700;
   --lobster-text-xs: 12px;
   --lobster-text-sm: 14px;
   --lobster-text-base: 16px;
