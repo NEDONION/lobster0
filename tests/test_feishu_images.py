@@ -34,13 +34,17 @@ def _cached(
     *,
     decision: str = "cached",
     mime_type: str = "image/png",
-    path: str = "/tmp/cached.png",
+    path: str | None = "/tmp/cached.png",
 ):
-    """构造一个与真实 ``CachedResource`` 同形的下载结果。"""
+    """构造一个与真实 ``CachedResource`` 同形的下载结果。
+
+    ``path`` 允许为 ``None``：真实 ``CachedResource.path`` 是 ``Optional``，
+    "判定已缓存却没有路径"是必须能表达的一种 SDK 契约异常。
+    """
     return SimpleNamespace(
         decision=decision,
         mime_type=mime_type,
-        path=Path(path),
+        path=None if path is None else Path(path),
         sha256="a" * 64,
         size=4,
         reason=None,
@@ -189,6 +193,110 @@ class FeishuImageResolutionTest(unittest.IsolatedAsyncioTestCase):
         paths = await self.transport._resolve_images("om_x", (_descriptor(),))
 
         self.assertEqual(paths, ())
+
+
+class FeishuImageObservabilityTest(unittest.IsolatedAsyncioTestCase):
+    """每一种结果都必须留痕——所有失败模式的表现完全一样，不记数就查不出来。"""
+
+    def setUp(self) -> None:
+        """构造带观测器的 Transport。"""
+        self.sdk = FakeOfficialSdk()
+        self.observer = _RecordingObserver()
+        self.transport = FeishuTransport(
+            FeishuConfig(
+                enabled=True,
+                account_id="default",
+                owner_open_id="ou_owner",
+                allowed_open_ids=("ou_owner",),
+            ),
+            app_id="cli_x",
+            app_secret="secret",
+            on_inbound=self._collect,
+            sdk=self.sdk,
+            observer=self.observer,
+        )
+
+    async def _collect(self, message: InboundMessage) -> None:
+        """本用例不关心投递结果。"""
+
+    async def test_success_records_both_counts(self) -> None:
+        """成功也要记：只记失败的话，"什么都没发生"依然无从判断。"""
+        self.sdk.channel.cached_resources = [_cached()]
+
+        await self.transport._resolve_images("om_x", (_descriptor(),))
+
+        self.assertEqual(
+            self.observer.media_events,
+            [("om_x", 1, 1, "resolved", None)],
+        )
+
+    async def test_each_failure_mode_has_its_own_code(self) -> None:
+        """三种丢弃原因必须可区分——修法完全不同。"""
+        cases = (
+            (_cached(decision="rejected"), "media_not_cached"),
+            (_cached(mime_type="application/pdf"), "media_unsupported_mime"),
+            (_cached(path=None), "media_path_missing"),
+        )
+        for resource, expected in cases:
+            with self.subTest(expected=expected):
+                self.observer.media_events.clear()
+                self.sdk.channel.cached_resources = [resource]
+
+                await self.transport._resolve_images("om_x", (_descriptor(),))
+
+                self.assertEqual(
+                    self.observer.media_events,
+                    [("om_x", 1, 0, "empty", expected)],
+                )
+
+    async def test_download_failure_is_distinguishable_from_no_descriptors(self) -> None:
+        """"下载失败"与"SDK 没给描述符"必须分开——正是这次查不出来的根因。"""
+        self.sdk.channel.resolve_error = RuntimeError("network down")
+        await self.transport._resolve_images("om_x", (_descriptor(),))
+
+        self.observer.media_events.clear()
+        await self.transport._resolve_images("om_y", ())
+
+        self.assertEqual(
+            self.observer.media_events,
+            [("om_y", 0, 0, "empty", "media_no_descriptors")],
+        )
+
+    async def test_observer_failure_never_breaks_message_handling(self) -> None:
+        """埋点自身失败绝不能成为新的故障源。"""
+        self.observer.explode = True
+        self.sdk.channel.cached_resources = [_cached()]
+
+        paths = await self.transport._resolve_images("om_x", (_descriptor(),))
+
+        self.assertEqual(paths, ((Path("/tmp/cached.png"), "image/png"),))
+
+
+class _RecordingObserver:
+    """只记录 media 观测调用的最小观测器。"""
+
+    def __init__(self) -> None:
+        self.media_events: list[tuple[str, int, int, str, str | None]] = []
+        self.explode = False
+
+    def media(
+        self,
+        *,
+        channel: str,
+        account_id: str,
+        external_message_id: str,
+        descriptor_count: int,
+        resolved_count: int,
+        outcome: str,
+        error_code: str | None = None,
+        user_id: int | None = None,
+    ) -> None:
+        """记录一次图片解析观测。"""
+        if self.explode:
+            raise RuntimeError("observer is broken")
+        self.media_events.append(
+            (external_message_id, descriptor_count, resolved_count, outcome, error_code)
+        )
 
 
 if __name__ == "__main__":

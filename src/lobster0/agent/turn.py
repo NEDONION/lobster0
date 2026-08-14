@@ -232,6 +232,10 @@ class TurnService:
             conversation_kind="local",
             identity_verified=True,
             attachments=attachments,
+            # 曾经漏传：``handle`` 收下了 image_paths 却没往下交，于是 CLI/桌面端
+            # 直接传本地图片这条路静默失效，症状与飞书那次一模一样——没有报错，
+            # 只是模型看不见图。
+            image_paths=image_paths,
         )
 
     def _attachment_summaries(

@@ -171,3 +171,33 @@ class AttachImagesToRequestTest(unittest.TestCase):
         self.assertEqual(updated.messages[-1].content, "user-text")
         self.assertEqual(updated.messages[-1].role, "user")
         self.assertEqual(updated.model, "deepseek-v4-pro")
+
+
+class HandleForwardsImagePathsTest(unittest.IsolatedAsyncioTestCase):
+    """``TurnService.handle`` 必须把本地图片路径交给 ``handle_inbound``。
+
+    真实缺陷：``handle`` 声明了 ``image_paths`` 参数却没有往下传，于是 CLI 与桌面端
+    直接给本地图片这条路静默失效——没有报错，只是模型看不见图。症状与飞书那次
+    完全一样，而且同样不会有任何日志。
+    """
+
+    async def test_image_paths_reach_handle_inbound(self) -> None:
+        """转发必须真的发生；只声明参数不算实现。"""
+        from unittest.mock import AsyncMock, patch
+
+        from lobster0.agent.turn import TurnService
+
+        paths = ((Path("/tmp/a.png"), "image/png"),)
+        service = TurnService.__new__(TurnService)
+        with patch.object(
+            TurnService, "handle_inbound", new=AsyncMock(return_value=None)
+        ) as inbound:
+            await TurnService.handle(
+                service,
+                user_id=1,
+                text="看看这张图",
+                conversation_id="c1",
+                image_paths=paths,
+            )
+
+        self.assertEqual(inbound.await_args.kwargs["image_paths"], paths)
