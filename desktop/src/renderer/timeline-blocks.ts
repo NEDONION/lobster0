@@ -46,6 +46,34 @@ export function groupTimeline(items: readonly TimelineItem[]): TimelineBlock[] {
 }
 
 /**
+ * 描述一个过程块里有什么，用作折叠标题。
+ *
+ * 原先显示的是 `items.length`「N 步」，但那个 N 把两种完全不同的东西当成同一
+ * 单位：一整轮的思考只产生**一个** reasoning 条目（`event.model_reasoning` 来
+ * 一次就追加一条，正文再长也是一条），于是一屏思考和一次 `read_file` 都显示
+ * 「1 步」。
+ *
+ * 「步」承诺的是可数的动作，而思考不是动作。因此**只数工具调用**——调了三次
+ * 就是三次，数字有意义；思考写成「思考」，想知道多长展开就看到了。
+ *
+ * 不去解析思考正文推断步骤数：模型的思考没有稳定结构，按换行或编号去数得到的
+ * 是排版的数字而不是过程的数字，看起来更精确，实则误导更深。
+ */
+export function processSummary(items: readonly ProcessItem[]): string {
+  const tools = items.filter((item) => item.kind === "tool").length;
+  const parts: string[] = [];
+  if (items.some((item) => item.kind === "reasoning")) {
+    parts.push("思考");
+  }
+  if (tools > 0) {
+    parts.push(`${tools} 次工具调用`);
+  }
+  // 只有本地提示时也要说点什么：空标题无法区分「没有内容」与「坏了」。
+  // 本地提示本身不计入——它是界面对用户说的话，不是 Agent 做的事。
+  return parts.length > 0 ? parts.join(" · ") : "运行记录";
+}
+
+/**
  * 返回值得单独展示的工具摘要，没有就返回 null。
  *
  * Core 当前在 `agent/runner.py` 里把 `summary` 直接设成工具名，若照单全收会在

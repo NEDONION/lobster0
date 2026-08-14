@@ -1,7 +1,12 @@
 import type { TimelineItem } from "@lobster0/pi-tui/state";
 import { describe, expect, it } from "vitest";
 
-import { groupTimeline, toolDetail } from "../src/renderer/timeline-blocks";
+import {
+  groupTimeline,
+  processSummary,
+  toolDetail,
+  type ProcessItem,
+} from "../src/renderer/timeline-blocks";
 
 function user(id: number): TimelineItem {
   return { kind: "user", id, content: `u${id}` };
@@ -91,5 +96,55 @@ describe("toolDetail", () => {
     expect(toolDetail({ name: "read_file", summary: "" })).toBeNull();
     expect(toolDetail({ name: "read_file", summary: "   " })).toBeNull();
     expect(toolDetail({ name: "read_file", summary: " read_file " })).toBeNull();
+  });
+});
+
+describe("processSummary", () => {
+  const reasoning = { kind: "reasoning", id: 1, turnId: 1, content: "想了很多", expanded: true } as const;
+  const tool = (id: number): ProcessItem => ({
+    kind: "tool",
+    id,
+    turnId: 1,
+    callId: `c${id}`,
+    name: "read_file",
+    summary: "",
+    arguments: {},
+    status: "succeeded",
+    lifecycle: ["requested", "started", "finished"],
+    preview: "",
+    durationMs: null,
+    expanded: false,
+  });
+  const local = { kind: "local", id: 9, content: "已中断", tone: "info" } as const;
+
+  it("never puts a number on thinking alone", () => {
+    // Owner 展开「过程 1 步」看到的是整整一屏思考。一整轮的思考只产生一个
+    // reasoning 条目，正文再长也是一条——把它数成「1 步」既不准确，也无法
+    // 回答折叠块唯一要回答的问题：值不值得展开。
+    const summary = processSummary([reasoning]);
+
+    expect(summary).toContain("思考");
+    expect(summary).not.toMatch(/\d/u);
+  });
+
+  it("counts tool calls, because those really are discrete actions", () => {
+    expect(processSummary([tool(1), tool(2), tool(3)])).toBe("3 次工具调用");
+  });
+
+  it("names both when the block has thinking and tools", () => {
+    const summary = processSummary([reasoning, tool(2), tool(3)]);
+
+    expect(summary).toContain("思考");
+    expect(summary).toContain("2 次工具调用");
+  });
+
+  it("ignores local notices — they are not things the agent did", () => {
+    // 本地提示是界面对用户说的话，不是 Agent 的动作。展开后仍然显示。
+    expect(processSummary([tool(1), local])).toBe("1 次工具调用");
+  });
+
+  it("still says something when the block holds only a local notice", () => {
+    // 空标题无法区分「没有内容」与「坏了」。
+    expect(processSummary([local])).not.toBe("");
   });
 });

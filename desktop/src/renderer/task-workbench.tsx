@@ -37,7 +37,7 @@ import {
   type DesktopTaskStatus,
 } from "./task-state";
 import { telemetryFacts } from "./telemetry-facts";
-import { groupTimeline, toolDetail } from "./timeline-blocks";
+import { groupTimeline, processSummary, toolDetail } from "./timeline-blocks";
 
 interface TaskWorkbenchProps {
   sessionKey: string;
@@ -429,7 +429,7 @@ export function TaskWorkbench({
                 >
                   <ChevronRightIcon className="process-caret" />
                   <span>过程</span>
-                  <span className="process-count">{block.items.length} 步</span>
+                  <span className="process-count">{processSummary(block.items)}</span>
                 </button>
                 {expanded ? (
                   <div className="process-items">
