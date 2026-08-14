@@ -11,7 +11,9 @@
   line-height: 1.6;
   color: var(--lobster-foreground);
   background: var(--lobster-background);
-  font-synthesis: none;
+  /* 允许合成字重：中文字体常常缺 700 这一档，`none` 会让中文加粗几乎不生效。
+     宁可让少数字体的加粗略糙，也不要「加粗看不出来」。 */
+  font-synthesis: weight;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -593,8 +595,10 @@ select:focus-visible {
   font-size: var(--lobster-text-xs);
 }
 
+/* 对话是长文阅读场景，14px 是给密集列表用的尺寸。15px 而不是 16px：侧栏与右栏
+   仍是密集布局，15px 是两者的平衡点。 */
 .message .markdown {
-  font-size: var(--lobster-text-sm);
+  font-size: 15px;
 }
 
 .message-assistant .markdown {
@@ -649,7 +653,7 @@ select:focus-visible {
 .markdown h3,
 .markdown h4 {
   margin: 4px 0 0;
-  font-weight: 600;
+  font-weight: var(--lobster-ui-font-weight-bold);
   line-height: 1.35;
 }
 
@@ -659,7 +663,9 @@ select:focus-visible {
 .markdown h4 { font-size: var(--lobster-text-sm); }
 
 .markdown strong {
-  font-weight: 600;
+  /* 正文里的加粗是「这句是重点」的唯一信号，必须一眼可见。 */
+  font-weight: var(--lobster-ui-font-weight-bold);
+  color: var(--lobster-text-primary);
 }
 
 .markdown em {
@@ -770,17 +776,18 @@ select:focus-visible {
 .process-toggle {
   display: flex;
   width: fit-content;
-  height: 28px;
+  height: 30px;
   align-items: center;
   gap: 6px;
   margin: 0;
-  padding: 0 10px 0 8px;
+  padding: 0 10px 0 6px;
   border: 0;
   border-radius: 8px;
   color: var(--lobster-text-secondary);
   background: transparent;
   cursor: pointer;
-  font-size: var(--lobster-text-xs);
+  font-size: var(--lobster-text-sidebarCompact);
+  font-weight: var(--lobster-ui-font-weight-medium);
 }
 
 .process-toggle:hover {
@@ -788,16 +795,22 @@ select:focus-visible {
   background: var(--lobster-hover);
 }
 
+/* 展开态靠旋转同一个图标，而不是换成第二个图标：换图标做不了过渡，
+   旋转可以，且只需维护一份路径。颜色跟随按钮文字（currentColor），
+   不再固定成最淡的一档灰——那是 Owner 报「箭头太小」的另一半原因。 */
 .process-caret {
-  display: inline-block;
-  width: 12px;
-  color: var(--lobster-text-muted);
-  font-size: 11px;
-  text-align: center;
+  flex: none;
+  transition: transform 0.15s ease;
 }
 
-.process-toggle:hover .process-caret {
-  color: var(--lobster-foreground);
+.process-block[data-expanded="true"] .process-caret {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .process-caret {
+    transition: none;
+  }
 }
 
 .process-count {

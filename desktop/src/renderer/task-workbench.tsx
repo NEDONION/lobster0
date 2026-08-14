@@ -24,6 +24,7 @@ import {
   removeAttachment,
 } from "./attachment-draft";
 import { resolveComposerKeyAction } from "./composer-keys";
+import { ChevronRightIcon, CloseIcon } from "./icons";
 import { Markdown } from "./markdown";
 import {
   appendDesktopUser,
@@ -296,7 +297,7 @@ export function TaskWorkbench({
                   setAttachments((current) => removeAttachment(current, item.artifactId))}
                 type="button"
               >
-                ×
+                <CloseIcon />
               </button>
             </li>
           ))}
@@ -420,7 +421,7 @@ export function TaskWorkbench({
                   onClick={() => toggleProcess(block.id)}
                   type="button"
                 >
-                  <span className="process-caret" aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+                  <ChevronRightIcon className="process-caret" />
                   <span>过程</span>
                   <span className="process-count">{block.items.length} 步</span>
                 </button>
