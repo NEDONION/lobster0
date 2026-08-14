@@ -123,6 +123,55 @@ class ConversationConsoleTest(unittest.TestCase):
         tool_message = next(m for m in history["messages"] if m["role"] == "tool")
         self.assertEqual(tool_message["tool_name"], "run_command")
 
+    def test_history_carries_the_attachments_of_a_user_message(self) -> None:
+        """附件早就写进了 metadata_json，却从没下发——渲染层因此无法在气泡里
+        显示"这条消息带了什么"，上传的图片在桌面版完全看不见。
+
+        只下发可安全展示的摘要，**不含图片字节**：历史可能有几十条消息，每条
+        都塞 data URI 会让一次 session.load 变成几十兆。缩略图按需走
+        artifacts.preview。
+        """
+        session = self.sessions.get_or_create_cli(self.owner_id, "task-1")
+        self.turns.create_with_user_message(
+            session.id,
+            "event-1",
+            "model",
+            "这张图里写了什么",
+            attachments=(
+                {
+                    "artifact_id": "art_" + "a" * 64,
+                    "filename": "screenshot.png",
+                    "media_type": "image/png",
+                    "byte_size": 2048,
+                },
+            ),
+        )
+
+        history = self.console.history(self.owner_id, session_key="task-1", limit=100)
+
+        user_message = next(m for m in history["messages"] if m["role"] == "user")
+        self.assertEqual(
+            user_message["attachments"],
+            [
+                {
+                    "artifact_id": "art_" + "a" * 64,
+                    "filename": "screenshot.png",
+                    "media_type": "image/png",
+                    "size_bytes": 2048,
+                }
+            ],
+        )
+
+    def test_history_omits_the_attachment_field_when_there_are_none(self) -> None:
+        """没有附件的消息不出现该字段：旧客户端不该因为多出一个空数组而变化。"""
+        session = self.sessions.get_or_create_cli(self.owner_id, "task-1")
+        self.turns.create_with_user_message(session.id, "event-1", "model", "你好")
+
+        history = self.console.history(self.owner_id, session_key="task-1", limit=100)
+
+        user_message = next(m for m in history["messages"] if m["role"] == "user")
+        self.assertNotIn("attachments", user_message)
+
     def test_history_keeps_an_assistant_turn_that_only_called_tools(self) -> None:
         """只调工具、没写正文的那一轮此前被 content 判空丢掉。
 

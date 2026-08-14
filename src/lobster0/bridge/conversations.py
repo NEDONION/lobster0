@@ -12,6 +12,11 @@ from lobster0.storage.conversations import (
 from lobster0.storage.database import Database
 
 
+# 与 protocol._MAX_ATTACHMENTS 同一个上限：一条消息最多能带这么多附件，投影时
+# 再夹一次，防止历史里某条被写坏的 metadata 撑爆一帧。
+_MAX_ATTACHMENTS = 10
+
+
 class ConversationQueryError(RuntimeError):
     """表示可安全返回给 Desktop 的稳定会话查询错误。"""
 
@@ -180,12 +185,57 @@ def _message_summary(
     reasoning = _reasoning(message)
     if reasoning:
         summary["reasoning"] = _content(reasoning)
+    attachments = _attachments(message)
+    if attachments:
+        summary["attachments"] = attachments
     names = _tool_call_names(message)
     if names:
         summary["tool_calls"] = list(names)
     if message.role == "tool":
         summary["tool_name"] = names_by_call.get(message.tool_call_id or "")
     return summary
+
+
+def _attachments(message: object) -> list[JsonValue]:
+    """读取该条消息携带的附件摘要。
+
+    附件早就写在 ``metadata_json`` 里，只是此前从没下发，于是渲染层无从知道
+    一条消息带了什么——上传的图片在界面上完全看不见。
+
+    **只投影可安全展示的四个字段，且不含文件字节。** 历史可能有几十条消息，
+    每条都内联 data URI 会让一次 session.load 涨到几十兆；缩略图由界面按需
+    通过 ``artifacts.preview`` 单独取，那条路径已经带归属校验。
+
+    逐字段校验类型而不是整块透传：``metadata_json`` 是历史数据，早期写入的
+    形状不一定与今天一致，坏掉的一条不该让整个会话打不开。
+    """
+    raw = message.metadata.get("attachments")
+    if not isinstance(raw, list):
+        return []
+    attachments: list[JsonValue] = []
+    for item in raw[:_MAX_ATTACHMENTS]:
+        if not isinstance(item, dict):
+            continue
+        artifact_id = item.get("artifact_id")
+        filename = item.get("filename")
+        media_type = item.get("media_type")
+        byte_size = item.get("byte_size")
+        if not isinstance(artifact_id, str) or not isinstance(filename, str):
+            continue
+        if not isinstance(media_type, str) or not isinstance(byte_size, int):
+            continue
+        attachments.append(
+            {
+                "artifact_id": artifact_id,
+                "filename": filename,
+                "media_type": media_type,
+                # 存储里叫 byte_size，但线上早已由 attachment.stage 定为
+                # size_bytes。投影时对齐线上约定，免得 Desktop 为同一个概念
+                # 维护两个字段名。
+                "size_bytes": byte_size,
+            }
+        )
+    return attachments
 
 
 def _reasoning(message: object) -> str:

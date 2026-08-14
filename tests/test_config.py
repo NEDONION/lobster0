@@ -842,6 +842,38 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(config.attachments.max_bytes, 10 * 1024 * 1024)
         self.assertLessEqual(config.attachments.max_bytes, config.browser.download_max_bytes)
 
+    def test_image_carry_over_defaults_to_one_turn(self) -> None:
+        """默认让上传后紧接着的那一次追问还能看到图。
+
+        图片是上下文里最贵的部分，永远带着会迅速烧掉预算；一轮都不带则
+        「这图里第三行写的什么」必然答不上来。1 是覆盖绝大多数追问的最小值。
+        """
+        self._write_config('[agent]\nmodel = "m"\n')
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(config.attachments.carry_over_turns, 1)
+        self.assertEqual(config.attachments.max_images_per_request, 4)
+
+    def test_image_carry_over_can_be_turned_off(self) -> None:
+        """0 表示只有上传那一轮带图——本次改动之前的行为。"""
+        self._write_config(
+            '[agent]\nmodel = "m"\n[attachments]\ncarry_over_turns = 0\n'
+        )
+
+        config = load_config(self.paths, {})
+
+        self.assertEqual(config.attachments.carry_over_turns, 0)
+
+    def test_image_carry_over_is_bounded(self) -> None:
+        """越界即拒绝加载，而不是静默收敛——静默会让人以为自己配的生效了。"""
+        for body in ("carry_over_turns = -1", "max_images_per_request = 0"):
+            with self.subTest(body=body):
+                self._write_config(f'[agent]\nmodel = "m"\n[attachments]\n{body}\n')
+
+                with self.assertRaises(ConfigError):
+                    load_config(self.paths, {})
+
     def test_attachment_limit_above_the_store_bound_is_refused(self) -> None:
         """附件上限不能超过 Store 的硬边界。
 

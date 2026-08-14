@@ -213,6 +213,17 @@ export class BridgeService {
         if (typeof record.tool_name === "string") {
           message.toolName = record.tool_name;
         }
+        // 逐条校验后收集：metadata_json 是历史数据，早期写入的形状不一定与今天
+        // 一致。坏掉的一条只丢它自己，不能让整个会话打不开——这一路已经因为
+        // stringValue 拒绝空串栽过一次。
+        if (Array.isArray(record.attachments)) {
+          const attachments = record.attachments
+            .map((item) => attachmentRef(item))
+            .filter((item): item is AttachmentRef => item !== null);
+          if (attachments.length > 0) {
+            message.attachments = attachments;
+          }
+        }
         return message;
       }),
     };
@@ -587,6 +598,26 @@ function artifactSummary(record: Record<string, JsonValue>): ArtifactSummary {
     origin: stringValue(record.origin),
     createdAt: stringValue(record.created_at),
   };
+}
+
+/**
+ * 把历史消息里的一条附件摘要转成 AttachmentRef；形状不对时返回 null。
+ *
+ * 返回 null 而不是抛错：坏掉的一条只该丢它自己，不该让整个会话打不开。
+ */
+function attachmentRef(value: JsonValue): AttachmentRef | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, JsonValue>;
+  const { artifact_id: id, filename, media_type: mediaType, size_bytes: size } = record;
+  if (typeof id !== "string" || typeof filename !== "string") {
+    return null;
+  }
+  if (typeof mediaType !== "string" || typeof size !== "number") {
+    return null;
+  }
+  return { artifactId: id, filename, mediaType, sizeBytes: size };
 }
 
 function providerSummary(record: Record<string, JsonValue>): ProviderSummary {

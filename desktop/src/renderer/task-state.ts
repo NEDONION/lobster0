@@ -7,7 +7,7 @@ import {
   type Telemetry,
 } from "@lobster0/pi-tui/state";
 
-import type { SessionHistory, SessionMessage } from "../common/api";
+import type { AttachmentRef, SessionHistory, SessionMessage } from "../common/api";
 
 export type DesktopTaskStatus =
   | "idle"
@@ -41,6 +41,18 @@ export interface DesktopTaskState {
    * 它之后的第一段新文本前补一个空行。
    */
   pendingParagraphBreak: boolean;
+  /**
+   * 每条用户消息带的附件，按时间线条目 id 索引。
+   *
+   * 为什么是旁挂的表而不是 `UserItem` 上的字段：`UserItem` 定义在共享库
+   * `@lobster0/pi-tui` 里，终端 TUI 也在用它。终端渲染不了缩略图，为它加一个
+   * 永远用不上的字段还要重建 dist，代价不划算。这张表只在追加条目时写入、
+   * 此后不再变动，不存在与时间线不同步的窗口。
+   *
+   * 只存摘要，缩略图按需通过 `previewArtifact` 取——见
+   * docs/superpowers/specs/2026-08-12-desktop-attachment-in-message-design.md。
+   */
+  attachmentsByItemId: Readonly<Record<number, AttachmentRef[]>>;
 }
 
 export function createDesktopTaskState(sessionKey: string): DesktopTaskState {
@@ -51,14 +63,26 @@ export function createDesktopTaskState(sessionKey: string): DesktopTaskState {
     error: null,
     turnTelemetry: {},
     pendingParagraphBreak: false,
+    attachmentsByItemId: {},
   };
 }
 
 export function appendDesktopUser(
   state: DesktopTaskState,
   content: string,
+  attachments: readonly AttachmentRef[] = [],
 ): DesktopTaskState {
-  return { ...state, run: appendUser(state.run, content), error: null };
+  // 条目 id 取自追加**之前**的 nextItemId——appendUser 就是用它建条目的。
+  const itemId = state.run.nextItemId;
+  const next = { ...state, run: appendUser(state.run, content), error: null };
+  if (attachments.length === 0) {
+    // 不写空数组：空数组与「没有」在渲染层是两种分支，会让气泡多出一个空容器。
+    return next;
+  }
+  return {
+    ...next,
+    attachmentsByItemId: { ...next.attachmentsByItemId, [itemId]: [...attachments] },
+  };
 }
 
 export function continueDesktopApproval(state: DesktopTaskState): DesktopTaskState {
@@ -105,7 +129,7 @@ function finishLatestTool(
 function hydrateMessage(state: DesktopTaskState, message: SessionMessage): DesktopTaskState {
   const turnId = message.turnId ?? 0;
   if (message.role === "user") {
-    return appendDesktopUser(state, message.content);
+    return appendDesktopUser(state, message.content, message.attachments ?? []);
   }
   if (message.role === "tool") {
     // 工具条目由发起它的那条 Assistant 生成（那里才有工具名与顺序）；

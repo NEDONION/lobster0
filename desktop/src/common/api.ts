@@ -47,6 +47,13 @@ export interface SessionMessage {
   toolCalls?: string[];
   /** 工具结果对应的工具名，由 Core 从 call_id 关联。 */
   toolName?: string | null;
+  /**
+   * 这条消息带的附件；没有附件时缺席。
+   *
+   * 只含摘要，**不含文件字节**——历史可能有几十条消息，每条都内联 data URI
+   * 会让一次 session.load 涨到几十兆。缩略图按需走 `previewArtifact`。
+   */
+  attachments?: AttachmentRef[];
 }
 
 export interface SessionHistory {

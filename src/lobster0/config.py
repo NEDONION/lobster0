@@ -193,7 +193,9 @@ _SANDBOX_KEYS = frozenset(
 _CHECKPOINT_KEYS = frozenset(
     {"enabled", "max_entries", "max_total_bytes", "max_file_bytes", "max_count"}
 )
-_ATTACHMENTS_KEYS = frozenset({"max_bytes"})
+_ATTACHMENTS_KEYS = frozenset(
+    {"max_bytes", "carry_over_turns", "max_images_per_request"}
+)
 _SUBAGENT_KEYS = frozenset(
     {"id", "description", "tools", "max_turns", "max_tool_calls", "timeout_seconds"}
 )
@@ -473,6 +475,15 @@ class AttachmentsConfig:
     """
 
     max_bytes: int = 10 * 1024 * 1024
+    # 最近几轮上传的图片继续进入模型请求。0 = 只有上传那一轮带图。
+    #
+    # 默认 1 而不是"永远带着"：图片是上下文里最贵的部分，一张几百 KB 的图每轮
+    # 重复发送会迅速烧掉预算。1 覆盖了绝大多数「这图里 X 是什么」的追问；想让
+    # 它一直可见的人可以调大，但那是显式选择，不是默认代价。
+    carry_over_turns: int = 1
+    # 一次请求最多带几张图。无论 carry_over_turns 配了多少都不得突破——
+    # 防止一轮里翻出十几张历史图片把请求撑爆。
+    max_images_per_request: int = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -1087,6 +1098,18 @@ def load_config(
         minimum=1024,
         maximum=100 * 1024 * 1024,
     )
+    attachments_carry_over_turns = _bounded_integer(
+        attachments_raw.get("carry_over_turns", 1),
+        "attachments.carry_over_turns",
+        minimum=0,
+        maximum=20,
+    )
+    attachments_max_images = _bounded_integer(
+        attachments_raw.get("max_images_per_request", 4),
+        "attachments.max_images_per_request",
+        minimum=1,
+        maximum=20,
+    )
     browser_download_max_bytes = _bounded_integer(
         browser_raw.get("download_max_bytes", 20 * 1024 * 1024),
         "browser.download_max_bytes",
@@ -1284,7 +1307,11 @@ def load_config(
             inactivity_timeout_seconds=browser_inactivity_timeout_seconds,
             download_max_bytes=browser_download_max_bytes,
         ),
-        attachments=AttachmentsConfig(max_bytes=attachments_max_bytes),
+        attachments=AttachmentsConfig(
+            max_bytes=attachments_max_bytes,
+            carry_over_turns=attachments_carry_over_turns,
+            max_images_per_request=attachments_max_images,
+        ),
         subagents=subagents,
     )
 

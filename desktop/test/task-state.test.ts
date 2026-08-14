@@ -306,3 +306,47 @@ describe("hydrateSession 回放过程", () => {
     expect(state.run.timeline.length).toBeGreaterThan(0);
   });
 });
+
+describe("消息气泡里的附件", () => {
+  it("把用户消息的附件按时间线条目 id 记下来", () => {
+    // 附件必须能定位到**具体哪一条**消息：一个会话里可能上传多次，
+    // 只记「这个会话有哪些附件」无法还原每条气泡该显示什么。
+    const state = hydrateSession({
+      sessionKey: "task-1",
+      updatedAt: "2026-08-14T00:00:00Z",
+      turns: [],
+      messages: [
+        { role: "user", content: "先看这个", turnId: 1 },
+        {
+          role: "user",
+          content: "这张图里写了什么",
+          turnId: 2,
+          attachments: [
+            {
+              artifactId: `art_${"a".repeat(64)}`,
+              filename: "shot.png",
+              mediaType: "image/png",
+              sizeBytes: 2048,
+            },
+          ],
+        },
+      ],
+    });
+
+    const items = state.run.timeline.filter((item) => item.kind === "user");
+    expect(state.attachmentsByItemId[items[0]!.id]).toBeUndefined();
+    expect(state.attachmentsByItemId[items[1]!.id]?.[0]?.filename).toBe("shot.png");
+  });
+
+  it("没有附件时不留下空数组", () => {
+    // 空数组与「没有」在渲染层是两种分支，留空数组会让气泡多出一个空容器。
+    const state = hydrateSession({
+      sessionKey: "task-1",
+      updatedAt: "2026-08-14T00:00:00Z",
+      turns: [],
+      messages: [{ role: "user", content: "你好", turnId: 1 }],
+    });
+
+    expect(state.attachmentsByItemId).toEqual({});
+  });
+});

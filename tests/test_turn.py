@@ -226,9 +226,13 @@ class TurnServiceTest(unittest.IsolatedAsyncioTestCase):
         runner: AgentRunner | None = None,
         approvals: ApprovalRepository | None = None,
         artifacts: "ArtifactStore | None" = None,
+        carry_over_turns: int = 0,
+        max_images_per_request: int = 4,
     ) -> TurnService:
         """用真实 Repository/Context/Runner 和指定模型 Fake 构造服务。"""
         return TurnService(
+            carry_over_turns=carry_over_turns,
+            max_images_per_request=max_images_per_request,
             owner_id=self.owner.id,
             model="deepseek-v4-pro",
             sessions=self.sessions,
@@ -1719,6 +1723,144 @@ class CompactionKeepsImagesTest(TurnServiceTest):
         attached = [part for message in request.messages for part in message.images]
         self.assertEqual(len(attached), 1, "压缩之后图片丢了")
         self.assertEqual(attached[0].media_type, "image/png")
+
+
+def _png_1x1(red: int = 0) -> bytes:
+    """生成一张 1x1 的合法 PNG，颜色可变以得到不同的内容地址。"""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, body: bytes) -> bytes:
+        return (
+            struct.pack(">I", len(body))
+            + kind
+            + body
+            + struct.pack(">I", zlib.crc32(kind + body) & 0xFFFFFFFF)
+        )
+
+    header = struct.pack(">IIBBBBB", 1, 1, 8, 2, 0, 0, 0)
+    pixels = zlib.compress(bytes([0, red & 0xFF, 0, 0]))
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + chunk(b"IHDR", header)
+        + chunk(b"IDAT", pixels)
+        + chunk(b"IEND", b"")
+    )
+
+
+class ImageCarryOverTest(TurnServiceTest):
+    """上传之后的追问也要看得见图。
+
+    Owner 的原话是「对话模型和看图的模型不互通上下文」。查下来不是模型切换的
+    问题——同一个请求对象带着完整历史，只是换了后端。真正的问题是 `summaries`
+    只来自**当前这一轮**的附件：上传那一轮模型看得见，下一轮追问「这图里第三
+    行写的什么」时图片已经不在请求里，模型只剩历史里那行文字清单。
+    """
+
+    def _image_store(self) -> ArtifactStore:
+        """放得下一张小图的 Store。"""
+        return ArtifactStore(
+            Database(self.paths.database),
+            owner_id=self.owner.id,
+            root=self.paths.artifacts,
+            staging_root=self.paths.downloads,
+            max_bytes=4096,
+        )
+
+    def _put_image(self, store: ArtifactStore, name: str, red: int = 0) -> str:
+        """在 Store 里放一张真 PNG，返回 id。
+
+        Store 会校验魔数与尺寸，假字节过不了。``red`` 用来让每张图的字节不同——
+        Store 是内容寻址的，字节相同就是同一个 Artifact。
+        """
+        staged = self.paths.downloads / name
+        staged.write_bytes(_png_1x1(red))
+        staged.chmod(0o600)
+        return store.put(
+            staged, declared_media_type="image/png", source="user_upload"
+        ).artifact_id
+
+    async def test_the_next_turn_still_sees_the_uploaded_image(self) -> None:
+        """默认配置下，上传后紧接着的那一次追问仍然带着图。"""
+        store = self._image_store()
+        artifact_id = self._put_image(store, "shot.png")
+        provider = FakeProvider([final_response("看到了"), final_response("第三行是 X")])
+        service = self.service(provider, artifacts=store, carry_over_turns=1)
+
+        await service.handle(
+            self.owner.id, "看看这张图", "default",
+            attachments=((artifact_id, "shot.png"),),
+        )
+        await service.handle(self.owner.id, "这图里第三行写的什么", "default")
+
+        attached = [p for m in provider.requests[-1].messages for p in m.images]
+        self.assertEqual(len(attached), 1, "追问那一轮没带图")
+
+    async def test_carry_over_zero_keeps_todays_behaviour(self) -> None:
+        """回归防线：关掉之后与本次改动之前逐条一致——追问那轮不带图。"""
+        store = self._image_store()
+        artifact_id = self._put_image(store, "shot.png")
+        provider = FakeProvider([final_response("看到了"), final_response("不知道")])
+        service = self.service(provider, artifacts=store, carry_over_turns=0)
+
+        await service.handle(
+            self.owner.id, "看看这张图", "default",
+            attachments=((artifact_id, "shot.png"),),
+        )
+        await service.handle(self.owner.id, "第三行呢", "default")
+
+        attached = [p for m in provider.requests[-1].messages for p in m.images]
+        self.assertEqual(attached, [])
+
+    async def test_a_carried_image_is_never_attached_twice(self) -> None:
+        """当前轮的附件已在 summaries 里，历史里也有同一条——必须按 id 去重。
+
+        重复挂图会让同一张图在请求里出现两次，白烧一倍的图片预算。
+        """
+        store = self._image_store()
+        artifact_id = self._put_image(store, "shot.png")
+        provider = FakeProvider([final_response("看到了")])
+        service = self.service(provider, artifacts=store, carry_over_turns=3)
+
+        await service.handle(
+            self.owner.id, "看看这张图", "default",
+            attachments=((artifact_id, "shot.png"),),
+        )
+
+        attached = [p for m in provider.requests[-1].messages for p in m.images]
+        self.assertEqual(len(attached), 1)
+
+    async def test_the_number_of_images_per_request_is_capped(self) -> None:
+        """无论带回多少轮，一次请求的图片数都有硬上限。"""
+        store = self._image_store()
+        provider = FakeProvider([final_response("ok")] * 5)
+        service = self.service(
+            provider, artifacts=store, carry_over_turns=10, max_images_per_request=2
+        )
+        for index in range(4):
+            await service.handle(
+                self.owner.id, f"图 {index}", "default",
+                attachments=((self._put_image(store, f"s{index}.png", red=index + 1), f"s{index}.png"),),
+            )
+
+        attached = [p for m in provider.requests[-1].messages for p in m.images]
+        self.assertLessEqual(len(attached), 2)
+
+    async def test_images_are_not_carried_across_sessions(self) -> None:
+        """带回的必须是当前会话的附件，不能串到别的会话。"""
+        store = self._image_store()
+        artifact_id = self._put_image(store, "shot.png")
+        provider = FakeProvider([final_response("看到了"), final_response("这里没图")])
+        service = self.service(provider, artifacts=store, carry_over_turns=5)
+
+        await service.handle(
+            self.owner.id, "看看这张图", "session-a",
+            attachments=((artifact_id, "shot.png"),),
+        )
+        await service.handle(self.owner.id, "刚才那张图呢", "session-b")
+
+        attached = [p for m in provider.requests[-1].messages for p in m.images]
+        self.assertEqual(attached, [])
 
 
 class _AlwaysCompact:
