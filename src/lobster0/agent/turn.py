@@ -151,6 +151,8 @@ class TurnService:
         automation_gate: Callable[[], bool] | None = None,
         automation_continuation: AutomationApprovalContinuation | None = None,
         artifacts: ArtifactStore | None = None,
+        carry_over_turns: int = 0,
+        max_images_per_request: int = 4,
         state_home: Path,
         workspace: WorkspaceConfig,
     ) -> None:
@@ -165,6 +167,8 @@ class TurnService:
             context: 负责身份文件与历史组合的 ContextBuilder。
             runner: 负责模型与 Tool Call 循环的 AgentRunner。
             artifacts: 可选的 ArtifactStore；缺省时附件功能不可用。
+            carry_over_turns: 最近几轮上传的图片继续进入请求；0 表示只带当前轮。
+            max_images_per_request: 一次请求最多带几张图，无论带回多少轮。
             memory_capture: 可选的 completed Turn durable capture，不运行提取器。
             automation_continuation: 可选的 durable TaskRun 审批续跑结算器。
             state_home: 当前实例的状态根目录。
@@ -185,6 +189,8 @@ class TurnService:
         self._automation_gate = automation_gate
         self._automation_continuation = automation_continuation
         self._artifacts = artifacts
+        self._carry_over_turns = carry_over_turns
+        self._max_images_per_request = max_images_per_request
         self._state_home = state_home
         self._workspace = workspace
 
@@ -237,6 +243,63 @@ class TurnService:
             # 只是模型看不见图。
             image_paths=image_paths,
         )
+
+    def _images_for_request(
+        self, session_id: int, current: tuple[dict[str, JsonValue], ...]
+    ) -> tuple[dict[str, JsonValue], ...]:
+        """算出本轮请求要挂哪些图：当前轮的，加上最近几轮带回的。
+
+        为什么需要带回：``current`` 只含**这一轮**的附件。上传那一轮模型看得见，
+        下一轮追问「这图里第三行写的什么」时图片已经不在请求里，模型只剩历史里
+        那行文字清单——Owner 报的"看图模型不互通上下文"实际是这个。
+
+        只带图片：非图片附件本来就以文字清单进上下文，模型可以用 ``read_artifact``
+        按需读，重复塞进请求没有意义。
+
+        按 ``artifact_id`` 去重：当前轮的附件此刻已经写进历史，不去重会让同一张图
+        在请求里出现两次，白烧一倍的图片预算。
+        """
+        images = [item for item in current if _is_image(item)]
+        seen = {str(item["artifact_id"]) for item in images}
+        if self._carry_over_turns > 0:
+            # 倒着走，先拿最近的——上限砍掉的应当是最旧的那几张。
+            for item in self._recent_image_attachments(session_id):
+                artifact_id = str(item["artifact_id"])
+                if artifact_id in seen:
+                    continue
+                seen.add(artifact_id)
+                images.append(item)
+        # 无论带回多少轮都不得突破上限：一轮里翻出十几张历史图片会把请求撑爆。
+        return tuple(images[: self._max_images_per_request])
+
+    def _recent_image_attachments(
+        self, session_id: int
+    ) -> list[dict[str, JsonValue]]:
+        """按由新到旧取最近 ``carry_over_turns`` 轮用户消息里的图片附件。
+
+        以 ``list_context`` 为来源而不是全量历史：压缩之后被移出上下文的轮次，
+        其图片也不该再回来——否则上下文越压越大，压缩就白做了。
+        """
+        collected: list[dict[str, JsonValue]] = []
+        # 倒着走遇到的第一条用户消息就是**当前轮**——它此刻已经写进历史，且已经在
+        # current 里。从 -1 起算，让它不占带回预算，否则 carry_over_turns = 1 会被
+        # 当前轮吃光，上一轮一张图都带不回来。
+        turns_seen = -1
+        for message in reversed(self._messages.list_context(session_id)):
+            if message.role != "user":
+                continue
+            turns_seen += 1
+            if turns_seen == 0:
+                continue
+            if turns_seen > self._carry_over_turns:
+                break
+            raw = message.metadata.get("attachments")
+            if not isinstance(raw, list):
+                continue
+            for item in raw:
+                if isinstance(item, dict) and _is_image(item):
+                    collected.append(item)
+        return collected
 
     def _attachment_summaries(
         self, attachments: tuple[tuple[str, str], ...]
@@ -499,10 +562,11 @@ class TurnService:
             # 图片字节只在这一刻读出来：上传时不读，纯文字轮次也不读。
             # 读失败不能让整轮挂掉——附件仍以文字摘要留在上下文里，
             # 模型可以用 read_artifact 按需读取。
-            if summaries and self._artifacts is not None:
+            image_summaries = self._images_for_request(session.id, summaries)
+            if image_summaries and self._artifacts is not None:
                 try:
                     request = attach_images_to_request(
-                        request, build_image_parts(self._artifacts, summaries)
+                        request, build_image_parts(self._artifacts, image_summaries)
                     )
                 except (ArtifactError, OSError, ValueError):
                     pass
@@ -1186,6 +1250,12 @@ def _telemetry(result: AgentRunResult, started: float) -> dict[str, JsonValue]:
 def _elapsed_ms(started: float) -> int:
     """把单调时钟差值转换为非负毫秒。"""
     return max(0, round((time.monotonic() - started) * 1000))
+
+
+def _is_image(attachment: dict[str, JsonValue]) -> bool:
+    """判断一条附件摘要是不是图片。"""
+    media_type = attachment.get("media_type")
+    return isinstance(media_type, str) and media_type.startswith("image/")
 
 
 def _with_attachment_manifest(text: str, attachments: tuple[dict[str, JsonValue], ...]) -> str:

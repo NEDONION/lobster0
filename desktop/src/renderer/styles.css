@@ -1867,3 +1867,67 @@ select:focus-visible {
   font-size: 11px;
   color: var(--lobster-text-muted);
 }
+
+/* ---------- 消息气泡里的附件 ---------- */
+
+/* 附件显示在气泡内部而不是只在右栏：右栏答的是「这个会话产生过什么」，
+   气泡答的是「这条消息带了什么」。见
+   docs/superpowers/specs/2026-08-12-desktop-attachment-in-message-design.md。 */
+.message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* 用户气泡整体右对齐，附件必须跟着走，否则会贴在左边像是另一条消息。 */
+.message-user .message-attachments {
+  justify-content: flex-end;
+}
+
+.message-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 5px 10px 5px 6px;
+  border: 1px solid var(--lobster-border);
+  border-radius: 10px;
+  background: var(--lobster-surface);
+  font-size: var(--lobster-text-xs);
+}
+
+.message-attachment .attachment-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--lobster-text-primary);
+}
+
+.message-attachment .attachment-size {
+  flex: none;
+  color: var(--lobster-text-muted);
+  font-family: var(--lobster-font-mono);
+}
+
+/* 尺寸固定：缩略图是异步取回的，等它到了再撑开会让整条消息跳一下。
+   取不到时保持空占位，而不是让整条消息看起来坏掉。 */
+.attachment-thumb {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
+  border-radius: 7px;
+  background: var(--lobster-surface-raised);
+}
+
+.attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

@@ -25,6 +25,7 @@ import {
 } from "./attachment-draft";
 import { resolveComposerKeyAction } from "./composer-keys";
 import { ChevronRightIcon, CloseIcon } from "./icons";
+import { MessageAttachments } from "./message-attachments";
 import { Markdown } from "./markdown";
 import {
   appendDesktopUser,
@@ -207,8 +208,10 @@ export function TaskWorkbench({
       await window.lobster0.startTurn(
         ids.length > 0 ? { sessionKey, text, attachmentIds: ids } : { sessionKey, text },
       );
+      // 附件一并交给状态层：发出去之后气泡里就要看得见自己上传了什么，
+      // 而不是等到下次重开会话、从 history 里读回来才显示。
       setTask((current) => ({
-        ...appendDesktopUser(current, text),
+        ...appendDesktopUser(current, text, attachments),
         status: "running",
       }));
       setDraft("");
@@ -406,6 +409,9 @@ export function TaskWorkbench({
                 <article className={`message message-${item.kind}`} key={block.id}>
                   <span>{item.kind === "user" ? "你" : "Lobster0"}</span>
                   {item.content ? <Markdown content={item.content} /> : <p>…</p>}
+                  <MessageAttachments
+                    attachments={task.attachmentsByItemId[item.id] ?? []}
+                  />
                   {item.kind === "assistant" ? (
                     <MessageTelemetry telemetry={task.turnTelemetry[item.turnId]} />
                   ) : null}

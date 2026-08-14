@@ -210,6 +210,30 @@ class AgentRuntimeTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 await runtime.aclose()
 
+    async def test_create_runtime_wires_the_image_carry_over_config(self) -> None:
+        """配置写了带回几轮，就必须真的传进 TurnService。
+
+        这一路已经出现过九次「协议/实现写好了，但没人接上」——功能全绿却完全
+        不可用。带回图片这条尤其难从界面上察觉：不生效时模型只是"看不到图"，
+        与配置没写时表现一模一样。
+        """
+        with tempfile.TemporaryDirectory() as directory:
+            paths = build_state_paths(Path(directory).resolve())
+            initialize_state(paths)
+            paths.config.write_text(
+                "[agent]\nmodel = \"m\"\n"
+                "[attachments]\ncarry_over_turns = 3\nmax_images_per_request = 2\n",
+                encoding="utf-8",
+            )
+            config = load_config(paths)
+
+            runtime = create_runtime(config, paths, "test-key")
+            try:
+                self.assertEqual(runtime.service._carry_over_turns, 3)
+                self.assertEqual(runtime.service._max_images_per_request, 2)
+            finally:
+                await runtime.aclose()
+
     async def test_runtime_receives_hard_budget_expanded_from_legacy_soft_config(self) -> None:
         """旧配置仅给较大 soft 时 Runtime 应收到相同的计算后 hard。"""
         with tempfile.TemporaryDirectory() as directory:

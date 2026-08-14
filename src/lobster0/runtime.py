@@ -574,6 +574,8 @@ def create_runtime(config: AppConfig, paths: StatePaths, api_key: str) -> AgentR
         ),
         approvals=approvals,
         artifacts=artifact_store,
+        carry_over_turns=config.attachments.carry_over_turns,
+        max_images_per_request=config.attachments.max_images_per_request,
         compactor=ContextCompactor(
             messages,
             provider,

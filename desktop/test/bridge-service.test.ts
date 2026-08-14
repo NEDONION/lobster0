@@ -299,6 +299,72 @@ describe("loadSession 的消息映射", () => {
     expect(history.messages[0]?.toolCalls).toEqual(["http_get"]);
     expect(history.messages[1]?.role).toBe("tool");
   });
+
+  it("carries the attachments of a user message", async () => {
+    // Core 早就把附件写进了 metadata_json，但此前从没下发——渲染层因此无法在
+    // 气泡里显示「这条消息带了什么」，上传的图在桌面版完全看不见。
+    const client = new FakeClient();
+    client.responses.set("session.history", {
+      session_key: "task-1",
+      updated_at: "2026-08-14T00:00:00Z",
+      turns: [],
+      messages: [
+        {
+          role: "user",
+          content: "这张图里写了什么",
+          turn_id: 1,
+          attachments: [
+            {
+              artifact_id: `art_${"a".repeat(64)}`,
+              filename: "shot.png",
+              media_type: "image/png",
+              size_bytes: 2048,
+            },
+          ],
+        },
+      ],
+    });
+    const service = new BridgeService(() => client, {});
+    await service.start();
+
+    const history = await service.loadSession("task-1", 100);
+
+    expect(history.messages[0]?.attachments).toEqual([
+      {
+        artifactId: `art_${"a".repeat(64)}`,
+        filename: "shot.png",
+        mediaType: "image/png",
+        sizeBytes: 2048,
+      },
+    ]);
+  });
+
+  it("drops a malformed attachment without failing the whole session", async () => {
+    // metadata_json 是历史数据，早期写入的形状不一定与今天一致。
+    // 坏掉的一条不该让整个会话打不开——这一路已经因为 stringValue 拒绝空串
+    // 栽过一次。
+    const client = new FakeClient();
+    client.responses.set("session.history", {
+      session_key: "task-1",
+      updated_at: "2026-08-14T00:00:00Z",
+      turns: [],
+      messages: [
+        {
+          role: "user",
+          content: "看看",
+          turn_id: 1,
+          attachments: [{ filename: "broken.png" }],
+        },
+      ],
+    });
+    const service = new BridgeService(() => client, {});
+    await service.start();
+
+    const history = await service.loadSession("task-1", 100);
+
+    expect(history.messages[0]?.content).toBe("看看");
+    expect(history.messages[0]?.attachments).toBeUndefined();
+  });
 });
 
 describe("revealArtifact", () => {
