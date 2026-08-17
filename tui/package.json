@@ -22,7 +22,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@earendil-works/pi-tui": "0.84.1"
+    "@earendil-works/pi-tui": "0.84.2"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
