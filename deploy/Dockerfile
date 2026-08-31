@@ -12,7 +12,7 @@
 #     --build-arg LOBSTER0_WHEEL_SHA256=<64 hex> \
 #     -t ghcr.io/nedonion/lobster0:0.7.0 .
 
-FROM python@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36 AS builder
+FROM python@sha256:b0aed0e0059e9b1527ef57689a7206f32526627b0713e2228a916df62880188a AS builder
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -64,7 +64,7 @@ RUN set -eu; \
     printf '%s\n' "$LOBSTER0_REQUIRE_NATIVE_BUNDLES" > /opt/lobster0/current/native-bundles-required
 
 
-FROM python@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36 AS runtime
+FROM python@sha256:b0aed0e0059e9b1527ef57689a7206f32526627b0713e2228a916df62880188a AS runtime
 
 LABEL org.opencontainers.image.title="Lobster0" \
       org.opencontainers.image.description="Non-root complete Lobster0 runtime" \
