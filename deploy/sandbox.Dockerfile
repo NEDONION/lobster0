@@ -9,7 +9,7 @@
 #
 #   docker build -f deploy/sandbox.Dockerfile -t ghcr.io/nedonion/lobster0-sandbox:0.7.0 .
 
-FROM python@sha256:229a2c5bfa27522db7815ea81f9bed70af17ccb9de9fc7ad142b1877b5830d36 AS sandbox
+FROM python@sha256:e06cc1111ed84189e91866447f562b89faadbfbbb9937cd67e6bf4172cdb45df AS sandbox
 
 LABEL org.opencontainers.image.title="Lobster0 Sandbox" \
       org.opencontainers.image.description="Non-root read-only command image for Lobster0 Phase 6 Sandbox" \
